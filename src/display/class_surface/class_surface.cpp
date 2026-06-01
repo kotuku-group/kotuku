@@ -31,7 +31,7 @@ separate bitmap buffer.
 
 #undef __xwindows__
 #include "../defs.h"
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <numeric> // For std::gcd
 
 #ifdef _WIN32
@@ -2186,8 +2186,8 @@ SaveImage: Saves the graphics of a surface object.
 SaveImage() renders the visible content of a surface into an image and writes it to the destination object supplied in
 the action arguments.  Visible child surfaces in the captured region are included in the resulting image.
 
-The image format is selected with the `ClassID` argument.  Supported values are @Picture-compatible image classes such
-as `CLASSID::JPEG` and `CLASSID::PICTURE` (PNG).  If `ClassID` is `CLASSID::NIL`, the default @Picture implementation
+The image format is selected with the `ClassID` argument.  Supported values are @Image-compatible image classes such
+as `CLASSID::JPEG` and `CLASSID::IMAGE` (PNG).  If `ClassID` is `CLASSID::NIL`, the default @Image implementation
 is used.
 
 Errors returned while copying individual child surfaces can be propagated from ~CopySurface().
@@ -2195,8 +2195,8 @@ Errors returned while copying individual child surfaces can be propagated from ~
 -ERRORS-
 Okay
 NullArgs
-NewObject: The intermediate picture object could not be created.
-Failed: The intermediate picture object could not be initialised or saved.
+NewObject: The intermediate image object could not be created.
+Failed: The intermediate image object could not be initialised or saved.
 Search
 AccessObject
 -END-
@@ -2214,25 +2214,25 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
 
    // Create a Bitmap that is the same size as the rendered area
 
-   CLASSID class_id = (Args->ClassID IS CLASSID::NIL) ? CLASSID::PICTURE : Args->ClassID;
+   CLASSID class_id = (Args->ClassID IS CLASSID::NIL) ? CLASSID::IMAGE : Args->ClassID;
 
-   objPicture *picture;
-   if (NewObject(class_id, &picture) IS ERR::Okay) {
-      picture->setFlags(PCF::NEW);
-      picture->Bitmap->setWidth(Self->Width);
-      picture->Bitmap->setHeight(Self->Height);
+   objImage *img;
+   if (NewObject(class_id, &img) IS ERR::Okay) {
+      img->setFlags(PCF::NEW);
+      img->Bitmap->setWidth(Self->Width);
+      img->Bitmap->setHeight(Self->Height);
 
       objDisplay *display;
       objBitmap *video_bmp;
       if (access_video(Self->DisplayID, &display, &video_bmp) IS ERR::Okay) {
-         picture->Bitmap->setBitsPerPixel(video_bmp->BitsPerPixel);
-         picture->Bitmap->setBytesPerPixel(video_bmp->BytesPerPixel);
-         picture->Bitmap->setType(video_bmp->Type);
+         img->Bitmap->setBitsPerPixel(video_bmp->BitsPerPixel);
+         img->Bitmap->setBytesPerPixel(video_bmp->BytesPerPixel);
+         img->Bitmap->setType(video_bmp->Type);
          release_video(display);
       }
 
-      if (InitObject(picture) IS ERR::Okay) {
-         // Scan through the surface list and copy each buffer to our picture
+      if (InitObject(img) IS ERR::Okay) {
+         // Scan through the surface list and copy each buffer to our image
 
          const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
          auto &list = glSurfaces;
@@ -2253,24 +2253,24 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
                   bitmapid = list[j].BitmapID;
 
                   extBitmap *picbmp;
-                  picture->get(FID_Bitmap, picbmp);
+                  img->get(FID_Bitmap, picbmp);
                   if (auto error = gfx::CopySurface(list[j].SurfaceID, picbmp, BDF::NIL, 0, 0, list[j].Width,
                         list[j].Height, list[j].Left - list[i].Left, list[j].Top - list[i].Top);
                         error != ERR::Okay) {
-                     FreeResource(picture);
+                     FreeResource(img);
                      return log.warning(error);
                   }
                }
             }
          }
 
-         if (Action(AC::SaveImage, picture, Args) IS ERR::Okay) { // Save the picture to disk
-            FreeResource(picture);
+         if (Action(AC::SaveImage, img, Args) IS ERR::Okay) { // Save the image to disk
+            FreeResource(img);
             return ERR::Okay;
          }
       }
 
-      FreeResource(picture);
+      FreeResource(img);
       return log.warning(ERR::Failed);
    }
    else return log.warning(ERR::NewObject);

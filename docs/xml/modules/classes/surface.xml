@@ -204,19 +204,19 @@ the surface area first).</li>
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
       <description>
 <p>SaveImage() renders the visible content of a surface into an image and writes it to the destination object supplied in the action arguments.  Visible child surfaces in the captured region are included in the resulting image.</p>
-<p>The image format is selected with the <code>ClassID</code> argument.  Supported values are <class name="Picture">Picture</class>-compatible image classes such as <code>CLASSID::JPEG</code> and <code>CLASSID::PICTURE</code> (PNG).  If <code>ClassID</code> is <code>CLASSID::NIL</code>, the default <class name="Picture">Picture</class> implementation is used.</p>
+<p>The image format is selected with the <code>ClassID</code> argument.  Supported values are <class name="Image">Image</class>-compatible image classes such as <code>CLASSID::JPEG</code> and <code>CLASSID::IMAGE</code> (PNG).  If <code>ClassID</code> is <code>CLASSID::NIL</code>, the default <class name="Image">Image</class> implementation is used.</p>
 <p>Errors returned while copying individual child surfaces can be propagated from <function>CopySurface</function>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">The intermediate picture object could not be initialised or saved.</error>
+        <error code="Failed">The intermediate image object could not be initialised or saved.</error>
         <error code="Search">A search routine in this function failed</error>
         <error code="AccessObject">Attempting to lock an object failed</error>
-        <error code="NewObject">The intermediate picture object could not be created.</error>
+        <error code="NewObject">The intermediate image object could not be created.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </action>

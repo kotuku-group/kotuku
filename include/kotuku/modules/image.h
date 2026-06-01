@@ -1,18 +1,18 @@
 #pragma once
 
-// Name:      picture.h
+// Name:      image.h
 // Copyright: Paul Manias © 2001-2026
 // Generator: idl-c
 
 #include <kotuku/main.h>
 
-#define MODVERSION_PICTURE (1)
+#define MODVERSION_IMAGE (1)
 
 #include <kotuku/modules/display.h>
 
-class objPicture;
+class objImage;
 
-// Flags for the Picture class.
+// Flags for the Image class.
 
 enum class PCF : uint32_t {
    NIL = 0,
@@ -27,24 +27,24 @@ enum class PCF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(PCF)
 
-// Picture class definition
+// Image class definition
 
-#define VER_PICTURE (1.000000)
+#define VER_IMAGE (1.000000)
 
-class objPicture : public Object {
+class objImage : public Object {
    public:
-   static constexpr CLASSID CLASS_ID = CLASSID::PICTURE;
-   static constexpr CSTRING CLASS_NAME = "Picture";
+   static constexpr CLASSID CLASS_ID = CLASSID::IMAGE;
+   static constexpr CSTRING CLASS_NAME = "Image";
 
-   using create = kt::Create<objPicture>;
+   using create = kt::Create<objImage>;
 
-   objBitmap * Bitmap;    // Represents a picture's image data.
+   objBitmap * Bitmap;    // Represents image data.
    objBitmap * Mask;      // Refers to a Bitmap that imposes a mask on the image.
    PCF Flags;             // Optional initialisation flags.
    int DisplayHeight;     // The preferred height to use when displaying the image.
    int DisplayWidth;      // The preferred width to use when displaying the image.
    int Quality;           // Defines the quality level to use when saving the image.
-   int FrameRate;         // Refresh & redraw the picture X times per second.  Used by pictures that have an animation refresh rate
+   int FrameRate;         // Refresh & redraw the image X times per second.  Used by images that have an animation refresh rate
 
    // Action stubs
 

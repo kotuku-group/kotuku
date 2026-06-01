@@ -72,7 +72,7 @@ end
 
 function addPhoto()
    photo = viewport.scene.new('VectorImage', {
-      name = 'photo', picture=picPhoto
+      name = 'photo', image=picPhoto
    })
 
    viewport.scene.mtAddDef('photo', photo)
@@ -146,7 +146,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function buildScene()
-   picPhoto = obj.new('picture', { src=glPath .. 'data/mandril.png', bitsPerPixel=32 })
+   picPhoto = obj.new('image', { src=glPath .. 'data/mandril.png', bitsPerPixel=32 })
 
    addPhoto()
    addPattern()

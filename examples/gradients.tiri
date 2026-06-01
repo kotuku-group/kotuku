@@ -197,7 +197,7 @@ function buildScene()
 
                   bmp = gradientVP.buffer
                   if bmp then
-                     pic = obj.new('picture', {
+                     pic = obj.new('image', {
                         width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
                         flags = PCF_NEW
                      })

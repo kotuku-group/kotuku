@@ -5,7 +5,7 @@
 IdentifyFile: Analyse a file and identify a class that can process it.
 
 This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be
-identified as a datatype of the @Picture class.  An MP3 file would be identified as a datatype of the @Sound
+identified as a datatype of the @Image class.  An MP3 file would be identified as a datatype of the @Sound
 class.
 
 The method involves analysing the `Path`'s file extension and comparing it to the supported extensions of all available

@@ -1,5 +1,5 @@
 
-class extPicture : public objPicture {
+class extImage : public objImage {
    public:
    std::string prvPath;
    std::string prvAuthor;
@@ -8,8 +8,8 @@ class extPicture : public objPicture {
    std::string prvSoftware;
    std::string prvDescription;
    std::string prvDisclaimer;
-   int8_t     prvHeader[256];
-   objFile  *prvFile;
-   uint8_t    Cached:1;
-   uint8_t    Queried:1;
+   int8_t  prvHeader[256];
+   objFile *prvFile;
+   uint8_t Cached:1;
+   uint8_t Queried:1;
 };

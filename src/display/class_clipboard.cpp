@@ -278,7 +278,7 @@ Use AddObjects() to copy one or more objects by asking each object to save itsel
 `clipboard:` volume.  This avoids requiring the caller to create temporary files before copying object data.
 
 If `Datatype` is `CLIPTYPE::NIL`, the clipboard chooses a datatype from the source object's class where possible.
-@Picture objects are stored as `CLIPTYPE::IMAGE`, sound objects are stored as `CLIPTYPE::AUDIO`, and unrecognised
+@Image objects are stored as `CLIPTYPE::IMAGE`, sound objects are stored as `CLIPTYPE::AUDIO`, and unrecognised
 classes are stored as `CLIPTYPE::OBJECT`.  Set `Datatype` explicitly to override this automatic selection.
 
 All objects in a single call must belong to the same class.  The `Objects` array must be terminated with a zero entry.
@@ -324,7 +324,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 
          if (classid IS object.obj->classID()) { // The client may not mix and match classes.
             if (datatype IS CLIPTYPE::NIL) {
-               if (object.obj->classID() IS CLASSID::PICTURE) datatype = CLIPTYPE::IMAGE;
+               if (object.obj->classID() IS CLASSID::IMAGE) datatype = CLIPTYPE::IMAGE;
                else if (object.obj->classID() IS CLASSID::SOUND) datatype = CLIPTYPE::AUDIO;
                else datatype = CLIPTYPE::OBJECT;
             }

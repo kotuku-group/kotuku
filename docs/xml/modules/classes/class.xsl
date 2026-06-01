@@ -334,7 +334,7 @@
                         <li class="api-ref"><a class="rounded" href="display.html">Display</a></li>
                         <li class="api-ref"><a class="rounded" href="document.html">Document</a></li>
                         <li class="api-ref"><a class="rounded" href="font.html">Font</a></li>
-                        <li class="api-ref"><a class="rounded" href="picture.html">Picture</a></li>
+                        <li class="api-ref"><a class="rounded" href="image.html">Image</a></li>
                         <li class="api-ref"><a class="rounded" href="pointer.html">Pointer</a></li>
                         <li class="api-ref"><a class="rounded" href="surface.html">Surface</a></li>
                         <li class="api-ref"><a class="rounded" href="svg.html">SVG</a></li>

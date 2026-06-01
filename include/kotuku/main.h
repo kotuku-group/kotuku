@@ -583,7 +583,7 @@ inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontS
 [[nodiscard]] constexpr FieldValue Owner(OBJECTID Value) { return FieldValue(FID_Owner, Value); }
 [[nodiscard]] constexpr FieldValue Parent(OBJECTID Value) { return FieldValue(FID_Parent, Value); }
 [[nodiscard]] constexpr FieldValue Permissions(PERMIT Value) { return FieldValue(FID_Permissions, int(Value)); }
-[[nodiscard]] constexpr FieldValue Picture(OBJECTPTR Value) { return FieldValue(FID_Picture, Value); }
+[[nodiscard]] constexpr FieldValue Image(OBJECTPTR Value) { return FieldValue(FID_Image, Value); }
 [[nodiscard]] constexpr FieldValue PopOver(OBJECTID Value) { return FieldValue(FID_PopOver, Value); }
 [[nodiscard]] constexpr FieldValue Port(int Value) { return FieldValue(FID_Port, Value); }
 [[nodiscard]] constexpr FieldValue RefreshRate(double Value) { return FieldValue(FID_RefreshRate, Value); }

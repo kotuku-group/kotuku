@@ -341,7 +341,7 @@ setAction('SaveImage', {
    tiriPrototype = 'err = Object.acSaveImage(Dest:obj, ClassID:num)',
    params    = {
       { name='Dest', type='OBJECTID', comment='Refers to an object that will receive the encoded image data.' },
-      { name='ClassID', type='CLASSID', comment='The Picture class to use for encoding the image data.' }
+      { name='ClassID', type='CLASSID', comment='The Image class to use for encoding the image data.' }
    }
 })
 

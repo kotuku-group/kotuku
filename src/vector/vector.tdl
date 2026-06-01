@@ -3,7 +3,7 @@
 module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611,
     src={ "vector_functions.cpp", "vector_readpainter.cpp" }
   }, function()
-  c_include("<kotuku/modules/display.h>", "<kotuku/modules/picture.h>")
+  c_include("<kotuku/modules/display.h>", "<kotuku/modules/image.h>")
 
   restrict(function()
     loadFile(glPath .. 'common.tdl')
@@ -419,7 +419,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
   klass("VectorImage", { src="painters/image.cpp" }, [[
     double X                   # Starting horizontal coordinate
     double Y                   # Starting vertical coordinate
-    obj(Picture) Picture
+    obj(Image)   Image
     obj(Bitmap)  Bitmap
     int(VUNIT)   Units         # Defines the coordinate system for `(X, Y)`
     int(DMF)     Dimensions

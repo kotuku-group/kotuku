@@ -2026,11 +2026,11 @@ static std::string resolve_image_href(extSVG *Self, XTag &Tag, const std::string
 
 //********************************************************************************************************************
 
-static ERR load_pic(extSVG *Self, std::string Path, objPicture **Picture, double Width = 0, double Height = 0)
+static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, double Width = 0, double Height = 0)
 {
    kt::Log log(__FUNCTION__);
 
-   *Picture = nullptr;
+   *Image = nullptr;
    objFile *file = nullptr;
    auto val = Path.c_str();
 
@@ -2077,7 +2077,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objPicture **Picture, double
    else log.branch("%s", Path.c_str());
 
    if (error IS ERR::Okay) {
-      if (!(*Picture = objPicture::create::global(
+      if (!(*Image = objImage::create::global(
          fl::Owner(Self->Scene->UID),
          fl::Path(Path),
          fl::BitsPerPixel(32),
@@ -2141,9 +2141,9 @@ void svgState::proc_def_image(XTag &Tag) noexcept
       }
 
       if ((!id.empty()) and (!src.empty())) {
-         objPicture *pic;
+         objImage *pic;
          if (load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height) IS ERR::Okay) {
-            image->set(FID_Picture, pic);
+            image->set(FID_Image, pic);
             if (InitObject(image) IS ERR::Okay) {
                if (!Self->Cloning) {
                   Self->Scene->addDef(id.c_str(), image);
@@ -2152,12 +2152,12 @@ void svgState::proc_def_image(XTag &Tag) noexcept
             }
             else {
                FreeResource(image);
-               log.trace("Picture initialisation failed.");
+               log.trace("Image initialisation failed.");
             }
          }
          else {
             FreeResource(image);
-            log.trace("Unable to load a picture for <image/> '%s' at line %d", id.c_str(), Tag.LineNo);
+            log.trace("Unable to load an image for <image/> '%s' at line %d", id.c_str(), Tag.LineNo);
          }
       }
       else {
@@ -2219,13 +2219,13 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
       // This may appear a little confusing because an image can be invoked in SVG like a first-class shape; however to
       // do so would be inconsistent with all other scene graph members being true path-based objects.
 
-      objPicture *pic = nullptr;
+      objImage *pic = nullptr;
       load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height);
 
       if (pic) {
          if (auto image = objVectorImage::create::global(
                fl::Owner(Self->Scene->UID),
-               fl::Picture(pic),
+               fl::Image(pic),
                fl::Units(VUNIT::BOUNDING_BOX),
                fl::AspectRatio(ratio))) {
 
@@ -2236,7 +2236,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
          }
          else return ERR::CreateObject;
       }
-      else log.warning("Failed to load picture via xlink:href.");
+      else log.warning("Failed to load image via xlink:href.");
    }
 
    // NOTE: Officially, the SVG standard requires that a viewport is created to host the image (this would still

@@ -23,7 +23,7 @@
 #cmakedefine INC_MOD_JSON
 #cmakedefine INC_MOD_MP3
 #cmakedefine INC_MOD_NETWORK
-#cmakedefine INC_MOD_PICTURE
+#cmakedefine INC_MOD_IMAGE
 #cmakedefine INC_MOD_REGEX
 #cmakedefine INC_MOD_SCINTILLA
 #cmakedefine INC_MOD_SVG
@@ -77,7 +77,6 @@ using TIMER = void *;
 using CPTR = const void *;     // Pointer with read-only content
 using APTR = void *;           // 32 or 64 bit untyped pointer
 using STRING = char *;         // string pointer (NULL terminated)
-using SSTRING = char *;        // signed string pointer (NULL terminated)
 using CSTRING = const char *;
 using OBJECT = void *;             // Object pointer
 using OBJECTPTR = struct Object *; // Object pointer

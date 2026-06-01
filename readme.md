@@ -54,7 +54,7 @@ This is an example of a simple client application written in Tiri.  It loads an 
       center = true,
       width  = arg('width', 800),
       height = arg('height', 600),
-      title  = 'Picture Viewer',
+      title  = 'Image Viewer',
       icon   = 'icons:programs/pictureviewer',
       minHeight = 200,
       minWidth  = 400

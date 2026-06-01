@@ -9,7 +9,7 @@
 #define MODVERSION_VECTOR (1)
 
 #include <kotuku/modules/display.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 
 class objVectorColour;
 class objVectorTransition;
@@ -864,7 +864,7 @@ class objVectorImage : public Object {
 
    double  X;               // Apply a horizontal offset to the image, the origin of which is determined by the Units value.
    double  Y;               // Apply a vertical offset to the image, the origin of which is determined by the Units value.
-   objPicture * Picture;    // Refers to a Picture from which the source Bitmap is acquired.
+   objImage * Image;        // Refers to a Image from which the source Bitmap is acquired.
    objBitmap * Bitmap;      // Reference to a source bitmap for the rendering algorithm.
    VUNIT   Units;           // Declares the coordinate system to use for the X and Y values.
    DMF     Dimensions;      // Dimension flags define whether individual dimension fields contain fixed or scaled values.
@@ -887,8 +887,8 @@ class objVectorImage : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getPicture(objPicture * &Value) noexcept {
-      Value = this->Picture;
+   inline ERR getImage(objImage * &Value) noexcept {
+      Value = this->Image;
       return ERR::Okay;
    }
 
@@ -926,12 +926,12 @@ class objVectorImage : public Object {
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
+      auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
-   inline ERR setPicture(objPicture * Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+   inline ERR setImage(objImage * Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x08000301, Value, 1);
    }
 

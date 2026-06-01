@@ -994,7 +994,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="AUDIO">An audio clip that is recognised by the Sound class (such as wav's and mp3's).</const>
       <const name="DATA">Raw information that is uncategorised can be defined as a data clip.</const>
       <const name="FILE">Pure file references are stored as file clips.  This type is typically used by file managers for moving and copying files.</const>
-      <const name="IMAGE">Images that are recognised by the Picture class may be stored as this type (such as jpeg's and png files).</const>
+      <const name="IMAGE">Images that are recognised by the Image class may be stored as this type (such as jpeg's and png files).</const>
       <const name="OBJECT">An object that has been deserialised into binary form.</const>
       <const name="TEXT">Plain text files such as ASCII and UTF-8 must be identified through this clip type.</const>
     </constants>

@@ -134,13 +134,13 @@
     <description>
 <p>This function is the key entry point for executing actions and method routines.  An action is a predefined function call that can be called on any object, while a method is a function call that is specific to a class implementation. You can find a complete list of available actions and their associated details in the Kotuku Wiki. The actions and methods supported by any class will be referenced in their auto-generated documentation.</p>
 <p>Here are two examples that demonstrate how to make an action call.  The first performs an activation, which does not require any additional arguments.  The second performs a move operation, which requires three additional arguments to be passed to the Action() function:</p>
-<pre>1. Action(AC::Activate, Picture, nullptr);
+<pre>1. Action(AC::Activate, Image, nullptr);
 
 2. struct acMove move = { 30, 15, 0 };
    Action(AC::Move, Window, &amp;move);
 </pre>
 <p>In all cases, action calls in C++ can be simplified by using their corresponding stub functions:</p>
-<pre>1.  acActivate(Picture);
+<pre>1.  acActivate(Image);
 
 2a. acMove(Window, 30, 15, 0);
 
@@ -332,7 +332,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <description>
 <p>This function will analyse a path and determine the type of file that the path is referring to.  For instance, a path of <code>user:documents/</code> would indicate a folder reference.  A path of <code>system:</code> would be recognised as a volume. A path of <code>user:documents/copyright.txt</code> would be recognised as a file.</p>
 <p>Ambiguous references are analysed to get the correct type - for example <code>user:documents/helloworld</code> could refer to a folder or file, so the path is analysed to check the file type.  On exceptional occasions where the path could be interpreted as either a folder or a file, preference is given to the folder.</p>
-<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
+<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~images:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
 <p>To check if a volume name is valid, call <function>ResolvePath</function> first and then pass the resulting path to this function.</p>
 <p>If the queried path does not exist, a fail code is returned.  This behaviour makes the AnalysePath() function a good candidate for testing the validity of a path string.</p>
     </description>
@@ -592,8 +592,8 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>It is important that you are aware that different types of string formatting can give different results.  The following examples illustrate:</p>
 <p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents</code> results in a file called <code>kotuku:documents</code>.</p>
 <p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents/</code> results in a file called <code>kotuku:documents/makefile</code>.</p>
-<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/pictures</code> and includes a copy of all folders and files found within the pictures folder.</p>
-<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the pictures folder).</p>
+<p>Copying <code>kotuku:images/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/images</code> and includes a copy of all folders and files found within the images folder.</p>
+<p>Copying <code>kotuku:images/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the images folder).</p>
 <p>This function will overwrite any destination file(s) that already exist.</p>
 <p>The Source parameter should always clarify the type of location that is being copied.  For example if copying a folder, a forward slash must terminate the string or it will be assumed that a file is the source.</p>
 <p>The Callback parameter can be set with a function that matches this prototype:</p>
@@ -1020,7 +1020,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
       <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).</param>
     </input>
     <description>
-<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Picture">Picture</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
+<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Image">Image</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
 <p>The method involves analysing the <code>Path</code>'s file extension and comparing it to the supported extensions of all available classes.  If a class supports the file extension, the ID of that class will be returned. If the file extension is not listed in the class dictionary or if it is listed more than once, the first 80 bytes of the file's data will be loaded and checked against classes that can match against file header information.  If a match is found, the ID of the matching class will be returned.</p>
 <p>The <code>ERR::Search</code> code is returned if a suitable class does not match the targeted file.</p>
     </description>
@@ -1045,7 +1045,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </input>
     <description>
 <p>This function initialises objects so that they can be used for their intended purpose. Initialisation is compulsory, and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to this rule only apply to the <code>GetKey()</code> and <code>SetKey()</code> actions.</p>
-<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <class name="Picture">Picture</class> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
+<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <class name="Image">Image</class> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
 <p>If an object does not support the data or its configuration, an error code of <code>ERR::NoSupport</code> will be returned. Other appropriate error codes can be returned if initialisation fails.</p>
     </description>
     <result type="ERR">
@@ -1213,8 +1213,8 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
 <b>Source               Destination          Result</b>
 kotuku:makefile     kotuku:documents    kotuku:documents
 kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
-kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
-kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
+kotuku:images/      kotuku:documents/   kotuku:documents/images
+kotuku:images/      kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </pre>
 <p>This function will overwrite the destination location if it already exists.</p>
 <p>The <code>Source</code> argument should always clarify the type of location that is being copied - e.g. if you are copying a folder, you must specify a forward slash at the end of the string or the function will assume that you are moving a file.</p>
@@ -1432,7 +1432,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </input>
     <description>
 <p>This function provides a simple method for reading file content into a <code>Buffer</code>.  In some cases this procedure may be optimised for the host platform, which makes it the fastest way to read file content in simple cases.</p>
-<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
+<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~images:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -2321,7 +2321,7 @@ static ResourceManager glNodeManager = {
       <const name="CONTENT">Document content (between XML tags) - sent by document objects only</const>
       <const name="DEVICE_INPUT">Device activity</const>
       <const name="FILE">File location (the data will reflect the complete file path)</const>
-      <const name="IMAGE">Image file data, recognised by the Picture class</const>
+      <const name="IMAGE">Image file data, recognised by the Image class</const>
       <const name="INPUT_READY">Device input that has been transformed into user input</const>
       <const name="RAW">Raw unprocessed data</const>
       <const name="RECEIPT">Receipt for item data, in response to an earlier request</const>

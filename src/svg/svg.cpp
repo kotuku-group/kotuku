@@ -24,7 +24,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <algorithm>
 #include <cfloat>
 #include <kotuku/main.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
@@ -41,7 +41,7 @@ JUMPTABLE_CORE
 JUMPTABLE_DISPLAY
 JUMPTABLE_VECTOR
 
-static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modPicture = nullptr;
+static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modImage = nullptr;
 static double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
 
 struct prvSVG { // Private variables for RSVG
@@ -706,7 +706,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if (init_svg() != ERR::Okay) return ERR::AddClass;
 
-   if (objModule::load("picture", &modPicture) IS ERR::Okay) { // RSVG has a Picture class dependency
+   if (objModule::load("image", &modImage) IS ERR::Okay) { // RSVG has a Image class dependency
       if (init_rsvg() != ERR::Okay) return ERR::AddClass;
    }
 
@@ -721,7 +721,7 @@ static ERR MODExpunge(void)
 {
    if (modDisplay) { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modVector)  { FreeResource(modVector);  modVector = nullptr; }
-   if (modPicture) { FreeResource(modPicture); modPicture = nullptr; }
+   if (modImage) { FreeResource(modImage); modImage = nullptr; }
 
    if (clSVG)  { FreeResource(clSVG);  clSVG = nullptr; }
    if (clRSVG) { FreeResource(clRSVG); clRSVG = nullptr; }

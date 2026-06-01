@@ -33,7 +33,7 @@ function saveBitmap(Bitmap, Path)
    if split?? then
       filename = split[0] .. '.png'
 
-      pic = obj.new('picture', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags='NEW' })
+      pic = obj.new('image', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags='NEW' })
       Bitmap.acCopyData(pic.bitmap)
       file = obj.new('file', { flags='NEW|WRITE', path='temp:svg_test_results/' .. filename })
       pic.acSaveImage(file)

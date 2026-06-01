@@ -9,7 +9,7 @@ that is distributed with this package.  Please refer to it for further informati
 Bitmap: Represents a pixel buffer used for drawing, image transfer and display backing.
 
 The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette,
-clipping region and drawing state.  Bitmaps are used directly by @Display and @Picture objects and provide the
+clipping region and drawing state.  Bitmaps are used directly by @Display and @Image objects and provide the
 low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.
 
 To create a bitmap, set #Width and #Height before initialisation.  The pixel format can be selected explicitly with
@@ -22,7 +22,7 @@ Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video
 methods exposed by this class does not normally need to manage locking itself.
 
 Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained
-scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use @Picture when decoding
+scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use @Image when decoding
 or encoding image formats is the main concern.
 
 Raw image bytes can be read and written with #Read() and #Write().  #SaveImage() writes the clipped bitmap image as PCX

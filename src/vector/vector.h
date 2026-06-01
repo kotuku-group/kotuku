@@ -18,7 +18,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/strings.hpp>
@@ -1089,7 +1089,7 @@ inline static void save_bitmap(objBitmap *Bitmap, const std::string Name)
 {
    std::string path = "temp:bmp_" + Name + ".png";
 
-   auto pic = objPicture::create {
+   auto pic = objImage::create {
       fl::Width(Bitmap->Clip.Right - Bitmap->Clip.Left),
       fl::Height(Bitmap->Clip.Bottom - Bitmap->Clip.Top),
       fl::BitsPerPixel(32),
@@ -1109,7 +1109,7 @@ inline static void save_bitmap(std::string Name, uint8_t *Data, int Width, int H
 {
    std::string path = "temp:raw_" + Name + ".png";
 
-   auto pic = objPicture::create {
+   auto pic = objImage::create {
       fl::Width(Width),
       fl::Height(Height),
       fl::BitsPerPixel(BPP),

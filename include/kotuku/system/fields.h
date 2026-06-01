@@ -803,7 +803,7 @@
 #define FID_CX 0xbe5bf68fLL
 #define FID_CY 0x4c30758cLL
 #define FID_Stops 0xf74ee156LL
-#define FID_Picture 0x4f77ddf7LL
+#define FID_Image 0x95fbfcbeLL
 #define FID_X1 0x11a4aa5fLL
 #define FID_Y1 0x02063228LL
 #define FID_X2 0x02f459abLL

@@ -106,7 +106,7 @@
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
       <description>
 <p>This action will render the SVG document to a bitmap and save the resulting image.  The size of the image is determined by the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> of the <fl>Scene</fl>, or if not defined, the default of 1920x1080 is applied.</p>

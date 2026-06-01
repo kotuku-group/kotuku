@@ -56,13 +56,13 @@
     </field>
 
     <field>
-      <name>Picture</name>
-      <comment>Refers to a <class name="Picture">Picture</class> from which the source <fl>Bitmap</fl> is acquired.</comment>
+      <name>Image</name>
+      <comment>Refers to a <class name="Image">Image</class> from which the source <fl>Bitmap</fl> is acquired.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type class="Picture">*Picture</type>
+      <type class="Image">*Image</type>
       <description>
-<p>If an image bitmap is sourced from a <class name="Picture">Picture</class> then this field may be used to refer to the <class name="Picture">Picture</class> object.  The picture will not be used directly by the VectorImage, as only the bitmap is of interest.</p>
-<p>The picture bitmap must be in a 32-bit graphics format.</p>
+<p>If an image bitmap is sourced from a <class name="Image">Image</class> then this field may be used to refer to the <class name="Image">Image</class> object.  The image will not be used directly by the VectorImage, as only the bitmap is of interest.</p>
+<p>The image bitmap must be in a 32-bit graphics format.</p>
       </description>
     </field>
 

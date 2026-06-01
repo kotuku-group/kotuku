@@ -329,7 +329,7 @@ static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
    if (!width) width = 1920;
    if (!height) height = 1080;
 
-   auto pic = objPicture::create { fl::Width(width), fl::Height(height), fl::Flags(PCF::ALPHA|PCF::NEW) };
+   auto pic = objImage::create { fl::Width(width), fl::Height(height), fl::Flags(PCF::ALPHA|PCF::NEW) };
    if (pic.ok()) {
       if ((error = Self->render(pic->Bitmap, 0, 0, width, height)) IS ERR::Okay) {
          if ((error = acSaveImage(*pic, Args->Dest, Args->ClassID)) IS ERR::Okay) {

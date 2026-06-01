@@ -94,7 +94,7 @@
       <const name="CONTENT">Document content (between XML tags) - sent by document objects only</const>
       <const name="DEVICE_INPUT">Device activity</const>
       <const name="FILE">File location (the data will reflect the complete file path)</const>
-      <const name="IMAGE">Image file data, recognised by the Picture class</const>
+      <const name="IMAGE">Image file data, recognised by the Image class</const>
       <const name="INPUT_READY">Device input that has been transformed into user input</const>
       <const name="RAW">Raw unprocessed data</const>
       <const name="RECEIPT">Receipt for item data, in response to an earlier request</const>

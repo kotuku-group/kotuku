@@ -12,10 +12,10 @@ related to this Package.  The original libjpeg source code can be obtained from 
 #include <array>
 
 #include <kotuku/main.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 
-#include "../picture/picture.h"
+#include "../image/image.h"
 
 extern "C" {
 #include "jpeglib.h"
@@ -28,12 +28,12 @@ JUMPTABLE_DISPLAY
 static OBJECTPTR clJPEG = nullptr;
 static OBJECTPTR modDisplay = nullptr;
 
-static ERR JPEG_Activate(extPicture *);
-static ERR JPEG_Init(extPicture *);
-static ERR JPEG_Query(extPicture *);
-static ERR JPEG_SaveImage(extPicture *, struct acSaveImage *);
+static ERR JPEG_Activate(extImage *);
+static ERR JPEG_Init(extImage *);
+static ERR JPEG_Query(extImage *);
+static ERR JPEG_SaveImage(extImage *, struct acSaveImage *);
 
-static void decompress_jpeg(extPicture *, objBitmap *, struct jpeg_decompress_struct *);
+static void decompress_jpeg(extImage *, objBitmap *, struct jpeg_decompress_struct *);
 
 // Custom data source manager for Kotuku objFile
 typedef struct {
@@ -182,13 +182,13 @@ static void jpeg_kotuku_dest(j_compress_ptr cinfo, objFile *outfile) {
 
 //********************************************************************************************************************
 
-static ERR JPEG_Activate(extPicture *Self)
+static ERR JPEG_Activate(extImage *Self)
 {
    kt::Log log;
    struct jpeg_decompress_struct cinfo;
    struct jpeg_error_mgr jerr;
 
-   // Return if the picture object has already been activated
+   // Return if the image object has already been activated
 
    if (Self->Bitmap->initialised()) return ERR::Okay;
 
@@ -253,7 +253,7 @@ static ERR JPEG_Activate(extPicture *Self)
    return ERR::Okay;
 }
 
-static void decompress_jpeg(extPicture *Self, objBitmap *Bitmap, struct jpeg_decompress_struct *Cinfo)
+static void decompress_jpeg(extImage *Self, objBitmap *Bitmap, struct jpeg_decompress_struct *Cinfo)
 {
    kt::Log log;
    RGB8 rgb;
@@ -304,7 +304,7 @@ static void decompress_jpeg(extPicture *Self, objBitmap *Bitmap, struct jpeg_dec
 
 //********************************************************************************************************************
 
-static ERR JPEG_Init(extPicture *Self)
+static ERR JPEG_Init(extImage *Self)
 {
    kt::Log log;
    uint8_t *buffer;
@@ -313,7 +313,7 @@ static ERR JPEG_Init(extPicture *Self)
    Self->get(FID_Location, path);
 
    if (path.empty() or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
-      // If no location has been specified, assume that the picture is being created from scratch (e.g. to save an image to disk).  The
+      // If no location has been specified, assume that the image is being created from scratch (e.g. to save an image to disk).  The
       // programmer is required to specify the dimensions and colours of the Bitmap so that we can initialise it.
 
       if (!Self->Bitmap->Width) Self->Bitmap->Width = Self->DisplayWidth;
@@ -330,11 +330,11 @@ static ERR JPEG_Init(extPicture *Self)
    else if (Self->get(FID_Header, buffer) IS ERR::Okay) {
       if ((buffer[0] IS 0xff) and (buffer[1] IS 0xd8) and (buffer[2] IS 0xff) and
           ((buffer[3] IS 0xe0) or (buffer[3] IS 0xe1) or (buffer[3] IS 0xfe))) {
-         log.msg("The file is a JPEG picture.");
+         log.msg("The file is a JPEG image.");
          if ((Self->Flags & PCF::LAZY) IS PCF::NIL) acActivate(Self);
          return ERR::Okay;
       }
-      else log.msg("The \"%.*s\" file is not a JPEG picture.", int(path.size()), path.empty() ? "" : path.data());
+      else log.msg("The \"%.*s\" file is not a JPEG image.", int(path.size()), path.empty() ? "" : path.data());
    }
 
    return ERR::NoSupport;
@@ -342,7 +342,7 @@ static ERR JPEG_Init(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR JPEG_Query(extPicture *Self)
+static ERR JPEG_Query(extImage *Self)
 {
    kt::Log log;
    struct jpeg_decompress_struct *cinfo;
@@ -386,7 +386,7 @@ static ERR JPEG_Query(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR JPEG_SaveImage(extPicture *Self, struct acSaveImage *Args)
+static ERR JPEG_SaveImage(extImage *Self, struct acSaveImage *Args)
 {
    kt::Log log;
 
@@ -469,10 +469,10 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::InitModule;
 
-   objModule::create pic = { fl::Name("picture") }; // Load our dependency ahead of class registration
+   objModule::create pic = { fl::Name("image") }; // Load our dependency ahead of class registration
 
    clJPEG = objMetaClass::create::global(
-      fl::BaseClassID(CLASSID::PICTURE),
+      fl::BaseClassID(CLASSID::IMAGE),
       fl::ClassID(CLASSID::JPEG),
       fl::Name("JPEG"),
       fl::Category(CCF::GRAPHICS),

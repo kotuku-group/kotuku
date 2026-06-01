@@ -73,13 +73,12 @@ algorithm.  The source bitmap must be in a 32-bit graphics format.
 static ERR IMAGE_SET_Bitmap(extVectorImage *Self, objBitmap *Value)
 {
    if (Value->BitsPerPixel < 32) {
-      kt::Log log;
-      log.warning("The source image must be 32 bit, not %d bit.", Value->BitsPerPixel);
+      kt::Log().warning("The source image must be 32 bit, not %d bit.", Value->BitsPerPixel);
       return ERR::InvalidData;
    }
 
    Self->Bitmap = Value;
-   Self->Picture = nullptr;
+   Self->Image = nullptr;
    return ERR::Okay;
 }
 
@@ -91,19 +90,19 @@ Dimensions: Dimension flags define whether individual dimension fields contain f
 Of the Dimension flags that are available, only `FIXED_X`, `FIXED_Y`, `SCALED_X` and `SCALED_Y` are applicable.
 
 -FIELD-
-Picture: Refers to a @Picture from which the source #Bitmap is acquired.
+Image: Refers to a @Image from which the source #Bitmap is acquired.
 
-If an image bitmap is sourced from a @Picture then this field may be used to refer to the @Picture object.  The picture
+If an image bitmap is sourced from a @Image then this field may be used to refer to the @Image object.  The image
 will not be used directly by the VectorImage, as only the bitmap is of interest.
 
-The picture bitmap must be in a 32-bit graphics format.
+The image bitmap must be in a 32-bit graphics format.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_Picture(extVectorImage *Self, objPicture *Value)
+static ERR IMAGE_SET_Image(extVectorImage *Self, objImage *Value)
 {
    if (!Value) {
-      Self->Picture = nullptr;
+      Self->Image = nullptr;
       Self->Bitmap = nullptr;
       return ERR::Okay;
    }
@@ -111,12 +110,11 @@ static ERR IMAGE_SET_Picture(extVectorImage *Self, objPicture *Value)
    if (!Value->Bitmap) return ERR::InvalidData;
 
    if (Value->Bitmap->BitsPerPixel < 32) {
-      kt::Log log;
-      log.warning("The source image must be 32 bit, not %d bit.", Value->Bitmap->BitsPerPixel);
+      kt::Log().warning("The source image must be 32 bit, not %d bit.", Value->Bitmap->BitsPerPixel);
       return ERR::InvalidData;
    }
 
-   Self->Picture = Value;
+   Self->Image = Value;
    if (Value) Self->Bitmap = Value->Bitmap;
    return ERR::Okay;
 }
@@ -207,7 +205,7 @@ static const FieldDef clImageDimensions[] = {
 static const FieldArray clImageFields[] = {
    { "X",            FDF_DOUBLE|FDF_RW, nullptr, IMAGE_SET_X },
    { "Y",            FDF_DOUBLE|FDF_RW, nullptr, IMAGE_SET_Y },
-   { "Picture",      FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Picture, CLASSID::PICTURE },
+   { "Image",        FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Image, CLASSID::IMAGE },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Bitmap, CLASSID::BITMAP },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageUnits },
    { "Dimensions",   FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clImageDimensions },

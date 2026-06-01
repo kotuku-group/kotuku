@@ -442,7 +442,7 @@ Each provided action ID must be paired with its associated routine.
 
 Internally, the provided list is copied to the #ActionTable and the original values will serve no further purpose.
 
-The following example shows a list of !ActionArray structures borrowed from the @Picture class.  Note that such lists
+The following example shows a list of !ActionArray structures borrowed from the @Image class.  Note that such lists
 can also be auto-generated using our IDL scripts - an approach that we strongly recommend.
 
 <pre>
@@ -605,7 +605,7 @@ FileDescription: Describes the file type represented by the class.
 This field allows you to specify a description of the class' file type, if the class is designed to be file related.
 This setting can be important, as it helps to distinguish your class from the other file based classes.  Always
 make sure that your file description is short, descriptive and unique.  A file description such as `JPEG` is not
-acceptable, but `JPEG Picture` would be appropriate.
+acceptable, but `JPEG Image` would be appropriate.
 
 -FIELD-
 FileExtension: Describes the file extension represented by the class.
@@ -849,7 +849,7 @@ static ERR GET_SubClasses(extMetaClass *Self, extMetaClass ***Values, int *Eleme
 Size: The total size of the object structure represented by the MetaClass.
 
 This field value must indicate the byte size of the objects that will be created from the MetaClass.  For example, the
-@Picture class defines this value as `sizeof(objPicture)`.
+@Image class defines this value as `sizeof(objImage)`.
 
 If the size is not explicitly defined, the initialisation process will determine the structure size by
 evaluating the field definitions that have been provided.

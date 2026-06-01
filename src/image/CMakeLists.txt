@@ -1,7 +1,7 @@
-# Picture module
+# Image module
 
-set (MOD picture)
-set (INC_MOD_PICTURE TRUE PARENT_SCOPE)
+set (MOD image)
+set (INC_MOD_IMAGE TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs APPEND_IDL "${MOD}_def.c" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
 
@@ -11,7 +11,7 @@ set (SOURCES "${MOD}.cpp"
    "lib/pngwutil.c" "lib/pngmem.c" "lib/pngerror.c" "lib/pngrio.c" "lib/pngwio.c")
 
 add_library (${MOD})
-set_module_defaults (${MOD} "Pic")
+set_module_defaults (${MOD} "Img")
 target_sources (${MOD} PRIVATE ${SOURCES})
 
 target_include_directories (${MOD} PRIVATE
@@ -21,4 +21,4 @@ target_include_directories (${MOD} PRIVATE
 target_link_libraries (${MOD} PUBLIC linear_rgb)
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK} zlib)
 
-flute_test (picture_png "tests/test_png.tiri")
+flute_test (image_png "tests/test_png.tiri")

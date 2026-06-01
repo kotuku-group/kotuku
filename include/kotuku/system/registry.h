@@ -6,7 +6,7 @@
 
 enum class CLASSID : uint32_t {
    NIL = 0,
-   PICTURE = 0x4f77ddf7UL,
+   IMAGE = 0x95fbfcbeUL,
    SOUND = 0x825a6b79UL,
    BITMAP = 0xff557b59UL,
    DISPLAY = 0x39413236UL,

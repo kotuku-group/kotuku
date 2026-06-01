@@ -173,7 +173,7 @@ enums("DATA", { type="int", start=1, comment="Data codes", module="Core" }, -- N
     "XML: Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'",
     "AUDIO: Audio file data, recognised by the Sound class",
     "RECORD: Database record",
-    "IMAGE: Image file data, recognised by the Picture class",
+    "IMAGE: Image file data, recognised by the Image class",
     "REQUEST: Make a request for item data",
     "RECEIPT: Receipt for item data, in response to an earlier request",
     "FILE: File location (the data will reflect the complete file path)",

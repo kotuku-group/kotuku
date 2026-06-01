@@ -101,7 +101,7 @@
       </input>
       <description>
 <p>Use AddObjects() to copy one or more objects by asking each object to save itself to a generated file in the <code>clipboard:</code> volume.  This avoids requiring the caller to create temporary files before copying object data.</p>
-<p>If <code>Datatype</code> is <code>CLIPTYPE::NIL</code>, the clipboard chooses a datatype from the source object's class where possible. <class name="Picture">Picture</class> objects are stored as <code>CLIPTYPE::IMAGE</code>, sound objects are stored as <code>CLIPTYPE::AUDIO</code>, and unrecognised classes are stored as <code>CLIPTYPE::OBJECT</code>.  Set <code>Datatype</code> explicitly to override this automatic selection.</p>
+<p>If <code>Datatype</code> is <code>CLIPTYPE::NIL</code>, the clipboard chooses a datatype from the source object's class where possible. <class name="Image">Image</class> objects are stored as <code>CLIPTYPE::IMAGE</code>, sound objects are stored as <code>CLIPTYPE::AUDIO</code>, and unrecognised classes are stored as <code>CLIPTYPE::OBJECT</code>.  Set <code>Datatype</code> explicitly to override this automatic selection.</p>
 <p>All objects in a single call must belong to the same class.  The <code>Objects</code> array must be terminated with a zero entry.</p>
 <p>Optional flags that may be passed to this method are the same as those specified in the <method>AddFile</method> method.  The <code>CEF::DELETE</code> flag has no effect on objects.</p>
       </description>
@@ -219,7 +219,7 @@
       <const name="AUDIO">An audio clip that is recognised by the Sound class (such as wav's and mp3's).</const>
       <const name="DATA">Raw information that is uncategorised can be defined as a data clip.</const>
       <const name="FILE">Pure file references are stored as file clips.  This type is typically used by file managers for moving and copying files.</const>
-      <const name="IMAGE">Images that are recognised by the Picture class may be stored as this type (such as jpeg's and png files).</const>
+      <const name="IMAGE">Images that are recognised by the Image class may be stored as this type (such as jpeg's and png files).</const>
       <const name="OBJECT">An object that has been deserialised into binary form.</const>
       <const name="TEXT">Plain text files such as ASCII and UTF-8 must be identified through this clip type.</const>
     </constants>

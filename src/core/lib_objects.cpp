@@ -642,7 +642,7 @@ does not require any additional arguments.  The second performs a move operation
 arguments to be passed to the Action() function:
 
 <pre>
-1. Action(AC::Activate, Picture, nullptr);
+1. Action(AC::Activate, Image, nullptr);
 
 2. struct acMove move = { 30, 15, 0 };
    Action(AC::Move, Window, &move);
@@ -651,7 +651,7 @@ arguments to be passed to the Action() function:
 In all cases, action calls in C++ can be simplified by using their corresponding stub functions:
 
 <pre>
-1.  acActivate(Picture);
+1.  acActivate(Image);
 
 2a. acMove(Window, 30, 15, 0);
 
@@ -1596,7 +1596,7 @@ This function initialises objects so that they can be used for their intended pu
 and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to
 this rule only apply to the `GetKey()` and `SetKey()` actions.
 
-If the initialisation of an object fails due to a support problem (for example, if a PNG @Picture object attempts to
+If the initialisation of an object fails due to a support problem (for example, if a PNG @Image object attempts to
 load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can
 support the object's configuration is available, the object's interface will be shared between both the base-class
 and the derived class.

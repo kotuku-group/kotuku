@@ -581,7 +581,7 @@ gui.columnView = function(Options)
                -- Checkbox mode leverages the icon mechanisms that are already in place.
 --[[
                if not glTick and not tick_error then
-                  obj.new('picture', src='templates:images/tick') then
+                  obj.new('image', src='templates:images/tick') then
                end
 
                if item.checked then

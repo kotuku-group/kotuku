@@ -411,7 +411,7 @@ Ambiguous references are analysed to get the correct type - for example `user:do
 folder or file, so the path is analysed to check the file type.  On exceptional occasions where the path could be
 interpreted as either a folder or a file, preference is given to the folder.
 
-File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~pictures:photo` could be
+File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~images:photo` could be
 matched to `photo.jpg` in the same folder).
 
 To check if a volume name is valid, call ~ResolvePath() first and then pass the resulting path to this
@@ -687,11 +687,11 @@ Copying `kotuku:makefile` to `kotuku:documents` results in a file called `kotuku
 
 Copying `kotuku:makefile` to `kotuku:documents/` results in a file called `kotuku:documents/makefile`.
 
-Copying `kotuku:pictures/` to `kotuku:documents/` results in a folder at `kotuku:documents/pictures` and includes
-a copy of all folders and files found within the pictures folder.
+Copying `kotuku:images/` to `kotuku:documents/` results in a folder at `kotuku:documents/images` and includes
+a copy of all folders and files found within the images folder.
 
-Copying `kotuku:pictures/` to `kotuku:documents` results in a folder at `kotuku:documents` (if the documents folder
-already exists, it receives additional content from the pictures folder).
+Copying `kotuku:images/` to `kotuku:documents` results in a folder at `kotuku:documents` (if the documents folder
+already exists, it receives additional content from the images folder).
 
 This function will overwrite any destination file(s) that already exist.
 
@@ -1092,8 +1092,8 @@ following examples illustrate:
 <b>Source               Destination          Result</b>
 kotuku:makefile     kotuku:documents    kotuku:documents
 kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
-kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
-kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
+kotuku:images/      kotuku:documents/   kotuku:documents/images
+kotuku:images/      kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </>
 
 This function will overwrite the destination location if it already exists.
@@ -1144,7 +1144,7 @@ ReadFileToBuffer: Reads a file into a buffer.
 This function provides a simple method for reading file content into a `Buffer`.  In some cases this procedure may be
 optimised for the host platform, which makes it the fastest way to read file content in simple cases.
 
-File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~pictures:photo` could be
+File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~images:photo` could be
 matched to `photo.jpg` in the same folder).
 
 -INPUT-

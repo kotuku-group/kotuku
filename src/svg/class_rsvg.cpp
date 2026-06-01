@@ -1,9 +1,9 @@
 /*********************************************************************************************************************
 
 -CLASS-
-RSVG: Picture-based SVG renderer providing bitmap integration for SVG documents.
+RSVG: Image-based SVG renderer providing bitmap integration for SVG documents.
 
-The RSVG class extends the @Picture class to provide seamless integration of SVG documents within bitmap-based image
+The RSVG class extends the @Image class to provide seamless integration of SVG documents within bitmap-based image
 workflows.  This renderer automatically handles SVG-to-bitmap conversion, enabling SVG content to be treated as
 standard raster images within applications that primarily work with bitmap formats.
 
@@ -12,13 +12,13 @@ handling of both standard (.svg) and compressed (.svgz) SVG files.
 
 *********************************************************************************************************************/
 
-// SVG renderer for the Picture class
+// SVG renderer for the Image class
 
-#include "../picture/picture.h"
+#include "../image/image.h"
 
 //********************************************************************************************************************
 
-static ERR RSVG_Activate(extPicture *Self)
+static ERR RSVG_Activate(extImage *Self)
 {
    prvSVG *prv;
    if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
@@ -38,7 +38,7 @@ static ERR RSVG_Activate(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_Free(extPicture *Self)
+static ERR RSVG_Free(extImage *Self)
 {
    if (auto prv = (prvSVG *)Self->DerivedPtr) {
       if (prv->SVG) { FreeResource(prv->SVG); prv->SVG = nullptr; }
@@ -48,7 +48,7 @@ static ERR RSVG_Free(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_Init(extPicture *Self)
+static ERR RSVG_Init(extImage *Self)
 {
    kt::Log log;
    std::string_view path;
@@ -82,7 +82,7 @@ static ERR RSVG_Init(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_Query(extPicture *Self)
+static ERR RSVG_Query(extImage *Self)
 {
    kt::Log log;
    prvSVG *prv;
@@ -168,7 +168,7 @@ static ERR RSVG_Query(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_Resize(extPicture *Self, struct acResize *Args)
+static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
 {
    prvSVG *prv;
    if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
@@ -214,7 +214,7 @@ static const ActionArray clActions[] = {
 static ERR init_rsvg(void)
 {
    clRSVG = objMetaClass::create::global(
-      fl::BaseClassID(CLASSID::PICTURE),
+      fl::BaseClassID(CLASSID::IMAGE),
       fl::ClassID(CLASSID::RSVG),
       fl::Name("RSVG"),
       fl::Category(CCF::GRAPHICS),

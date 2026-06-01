@@ -208,7 +208,7 @@
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
     </action>
 
