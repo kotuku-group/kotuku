@@ -1008,7 +1008,7 @@ if (NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
 endif ()
 
 if (NOT DISABLE_JPEG AND NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
-   add_subdirectory (src/picture_jpeg)
+   add_subdirectory (src/image_jpeg)
    list (APPEND LIB_LIST jpeg)
 endif ()
 

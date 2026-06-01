@@ -85,7 +85,6 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static int object_close_handler(lua_State *);
 [[nodiscard]] static int object_with_lock(lua_State *);
 
-[[nodiscard]] static int object_get_rgb(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_array(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_struct(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_string(lua_State *, const obj_read &, GCobject *);
