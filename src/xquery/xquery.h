@@ -714,15 +714,33 @@ struct CompiledXQuery {
    ankerl::unordered_dense::map<URI_STR, extXML *> XMLCache;
 
    CompiledXQuery() = default;
-   CompiledXQuery(CompiledXQuery &&) = default;
-   CompiledXQuery &operator=(CompiledXQuery &&) = default;
+   CompiledXQuery(CompiledXQuery &&Source) noexcept { *this = std::move(Source); }
+   CompiledXQuery &operator=(CompiledXQuery &&Source) noexcept {
+      if (this IS &Source) return *this;
+
+      clear_xml_cache();
+
+      expression   = std::move(Source.expression);
+      prolog       = std::move(Source.prolog);
+      module_cache = std::move(Source.module_cache);
+      error_msg    = std::move(Source.error_msg);
+      XMLCache     = std::move(Source.XMLCache);
+      Source.XMLCache.clear();
+
+      return *this;
+   }
    CompiledXQuery(const CompiledXQuery &) = delete;
    CompiledXQuery &operator=(const CompiledXQuery &) = delete;
 
    ~CompiledXQuery() {
+      clear_xml_cache();
+   }
+
+   void clear_xml_cache() {
       for (auto &entry : XMLCache) {
          if (entry.second) FreeResource(entry.second);
       }
+      XMLCache.clear();
    }
 
    XQF feature_flags() const;
