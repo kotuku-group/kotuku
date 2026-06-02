@@ -206,11 +206,6 @@ class objHTTP : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
 
    // Customised field getting
 

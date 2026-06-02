@@ -212,7 +212,7 @@ static int async_action(lua_State *Lua)
       lua_rotate(Lua, 1, -4);
       lua_pop(Lua, 4);
       if ((error = build_args(Lua, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
-         if (!result_count) {
+         if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
          else {
@@ -313,7 +313,7 @@ static int async_method(lua_State *Lua)
             lua_rotate(Lua, 1, -4);
             lua_pop(Lua, 4);
             if ((error = build_args(Lua, args, argsize, argbuffer.get(), &resultcount)) IS ERR::Okay) {
-               if (!resultcount) {
+               if (not resultcount) {
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }
                else {

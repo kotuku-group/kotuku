@@ -551,7 +551,7 @@ extern "C" ERR validate_process(int ProcessID)
    log.function("PID: %d", ProcessID);
 
    if (glValidateProcessID IS ProcessID) glValidateProcessID = 0;
-   if ((ProcessID IS glProcessID) or (!ProcessID)) return ERR::Okay;
+   if ((ProcessID IS glProcessID) or (not ProcessID)) return ERR::Okay;
 
    #ifdef _WIN32
       // On Windows we don't check if the process is alive because validation can often occur during the final shutdown
@@ -615,7 +615,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
       do {
          size = sizeof(buffer);
-         if ((!winReadStd(Task->Platform, TSTD_OUT, buffer, &size)) and (size)) {
+         if ((not winReadStd(Task->Platform, TSTD_OUT, buffer, &size)) and (size)) {
             log.msg("Processing %d remaining bytes on stdout.", size);
             output_callback(Task, &Task->OutputCallback, buffer, size);
          }
@@ -624,7 +624,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
       do {
          size = sizeof(buffer);
-         if ((!winReadStd(Task->Platform, TSTD_ERR, buffer, &size)) and (size)) {
+         if ((not winReadStd(Task->Platform, TSTD_ERR, buffer, &size)) and (size)) {
             log.msg("Processing %d remaining bytes on stderr.", size);
             output_callback(Task, &Task->ErrorCallback, buffer, size);
          }
@@ -866,9 +866,9 @@ static ERR TASK_Activate(extTask *Self)
    if (Self->ErrorCallback.defined()) internal_redirect |= TSTD_ERR;
    if ((Self->Flags & TSF::PIPE) != TSF::NIL) internal_redirect |= TSTD_IN;
 
-   if (not (winerror = winLaunchProcess(Self, final_buffer.data(), (!launchdir.empty()) ? launchdir.data() : 0, group,
-         internal_redirect, &Self->Platform, hide_output, (!redirect_stdout.empty()) ? redirect_stdout.data() : nullptr,
-         (!redirect_stderr.empty()) ? redirect_stderr.data() : nullptr, &Self->ProcessID))) {
+   if (not (winerror = winLaunchProcess(Self, final_buffer.data(), (not launchdir.empty()) ? launchdir.data() : 0, group,
+         internal_redirect, &Self->Platform, hide_output, (not redirect_stdout.empty()) ? redirect_stdout.data() : nullptr,
+         (not redirect_stderr.empty()) ? redirect_stderr.data() : nullptr, &Self->ProcessID))) {
 
       error = ERR::Okay;
       if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->TimeOut > 0)) {
@@ -880,7 +880,7 @@ static ERR TASK_Activate(extTask *Self)
          auto wait_error = ProcessMessages(PMF::NIL, Self->TimeOut * 1000.0);
          if (wait_error != ERR::Okay) error = wait_error;
 
-         if ((!Self->ReturnCodeSet) and (Self->Platform)) {
+         if ((not Self->ReturnCodeSet) and (Self->Platform)) {
             winGetExitCodeProcess(Self->Platform, &Self->ReturnCode);
             if (Self->ReturnCode != 259) Self->ReturnCodeSet = true;
          }
@@ -946,11 +946,11 @@ static ERR TASK_Activate(extTask *Self)
 
    std::string rpath;
    if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
-      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (!requested_shell)) buffer << shell_quote(rpath);
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (not requested_shell)) buffer << shell_quote(rpath);
       else buffer << rpath;
    }
    else {
-      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (!requested_shell)) buffer << shell_quote(Self->Location);
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (not requested_shell)) buffer << shell_quote(Self->Location);
       else buffer << Self->Location;
    }
 
@@ -1205,7 +1205,7 @@ mutates-object, copies-input
 
 static ERR TASK_AddArgument(extTask *Self, struct task::AddArgument *Args)
 {
-   if ((!Args) or (!Args->Argument) or (!*Args->Argument)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Argument) or (not *Args->Argument)) return ERR::NullArgs;
 
    auto src = Args->Argument;
    if ((*src IS '"') or (*src IS '\'')) {
@@ -1329,7 +1329,7 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
 
@@ -1374,7 +1374,7 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
             case REG_SZ:
             case REG_EXPAND_SZ:
                Output.assign((char *)Buffer, Length);
-               while ((!Output.empty()) and (Output.back() IS 0)) Output.pop_back();
+               while ((not Output.empty()) and (Output.back() IS 0)) Output.pop_back();
                return true;
 
             default:
@@ -1693,7 +1693,7 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
 
@@ -1783,7 +1783,7 @@ SetKey: Variable fields are supported for the general storage of program variabl
 
 static ERR TASK_SetKey(extTask *Self, struct acSetKey *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    Self->Fields[Args->Key] = Args->Value;
    return ERR::Okay;

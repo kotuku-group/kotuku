@@ -723,11 +723,6 @@ class objBitmap : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
    inline ERR copyArea(objBitmap * DestBitmap, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) noexcept {
       struct bmp::CopyArea args = { DestBitmap, Flags, X, Y, Width, Height, XDest, YDest };
       return(Action(AC(-1), this, &args));

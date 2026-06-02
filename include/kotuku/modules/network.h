@@ -241,11 +241,6 @@ class objClientSocket : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
 
    // Customised field getting
 
@@ -622,11 +617,6 @@ class objNetSocket : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
    inline ERR connect(CSTRING Address, int Port, double Timeout) noexcept {
       struct ns::Connect args = { Address, Port, Timeout };
       return(Action(AC(-1), this, &args));
@@ -879,11 +869,6 @@ class objNetServer : public objNetSocket {
          if (Result) *Result = 0;
          return error;
       }
-   }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
    }
    inline ERR disconnectClient(objNetClient * Client) noexcept {
       struct ns::DisconnectClient args = { Client };

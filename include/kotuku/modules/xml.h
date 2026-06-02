@@ -257,12 +257,6 @@ class objXML : public Object {
       struct acDataFeed args = { Object, Datatype, Buffer, Size };
       return Action(AC::DataFeed, this, &args);
    }
-   inline ERR getKey(std::string_view Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
-      auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
-      return error;
-   }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
    inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {

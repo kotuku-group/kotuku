@@ -2930,11 +2930,6 @@ class objFile : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
    inline ERR startStream(OBJECTID SubscriberID, FL Flags, int Length) noexcept {
       struct fl::StartStream args = { SubscriberID, Flags, Length };
       return(Action(AC(-1), this, &args));
@@ -3687,11 +3682,6 @@ class objTask : public Object {
          if (Result) *Result = 0;
          return error;
       }
-   }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
    }
    inline ERR expunge() noexcept {
       return(Action(AC(-1), this, nullptr));
@@ -4690,30 +4680,6 @@ struct evHotplug {
    char Product[40];    // Name of product or the hardware device
    char Vendor[40];     // Name of vendor
 };
-
-// Speed efficient way of setting a string field that is managed with AllocMemory().
-
-inline ERR set_string_field(const std::string_view Source, STRING &Dest)
-{
-   MemInfo info;
-   if (auto error = MemoryIDInfo(GetMemoryID(Dest), &info, sizeof(info)); error IS ERR::Okay) {
-      if (Source.size()+1 < info.Size) {
-         copymem(Source.data(), Dest, Source.size());
-         Dest[Source.size()] = 0;
-         return ERR::Okay;
-      }
-      else {
-         FreeResource(GetMemoryID(Dest));
-         if (AllocMemory(Source.size() + 1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Dest, nullptr) IS ERR::Okay) {
-            copymem(Source.data(), Dest, Source.size());
-            Dest[Source.size()] = 0;
-            return ERR::Okay;
-         }
-         else return ERR::AllocMemory;
-      }
-   }
-   else return error;
-}
 
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {

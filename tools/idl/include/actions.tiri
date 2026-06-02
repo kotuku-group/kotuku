@@ -162,11 +162,6 @@ global glActionStubs = {
          if (Result) *Result = 0;
          return error;
       }
-   }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
    }]],
    SelectArea = [[
    inline ERR acSelectArea(double X, double Y, double Width, double Height) noexcept {

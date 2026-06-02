@@ -610,56 +610,6 @@ static ERR XML_GetEntity(extXML *Self, struct xml::GetEntity *Args)
 
 /*********************************************************************************************************************
 
--ACTION-
-GetKey: Deprecated.  Use the Evaluate() method instead.
-
-Deprecated.  Use the Evaluate() method instead.
-
--END-
-
-*********************************************************************************************************************/
-
-static ERR XML_GetKey(extXML *Self, struct acGetKey *Args)
-{
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
-   if ((not Args->Value) or (Args->Size < 1)) return log.warning(ERR::NullArgs);
-   if (not Self->initialised()) return log.warning(ERR::NotInitialised);
-
-   Args->Value[0] = 0;
-
-   log.error("GetKey() usage is deprecated in the XML class.  Use Evaluate() instead.");
-
-   objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, std::string_view(Args->Key));
-      if (auto error = xq->init(); error IS ERR::Okay) {
-         if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
-            std::string_view result;
-            if (xq->get(FID_ResultString, result) IS ERR::Okay) kt::strcopy(std::string(result), Args->Value, Args->Size);
-            FreeResource(xq);
-            return ERR::Okay;
-         }
-         else {
-            std::string_view sv;
-            if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
-            FreeResource(xq);
-            return error;
-         }
-      }
-      else {
-         std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
-         FreeResource(xq);
-         return error;
-      }
-   }
-   else return log.warning(ERR::NewObject);
-}
-
-/*********************************************************************************************************************
-
 -METHOD-
 GetNamespaceURI: Retrieve the namespace URI for a given namespace UID.
 

@@ -269,10 +269,10 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "DRIVER_SIZE")
 
   enums("FDB", { type="int", start=1, comment="Feedback event indicators." },
-    "DECOMPRESS_FILE",
-    "COMPRESS_FILE",
-    "REMOVE_FILE",
-    "DECOMPRESS_OBJECT")
+    "DECOMPRESS_FILE: A file is being decompressed to a filesystem path.",
+    "COMPRESS_FILE: A file or folder is being added to a compressed stream.",
+    "REMOVE_FILE: A file is being removed from a compressed stream.",
+    "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
 
   enums("CF", { type="int", start=1, comment="Compression stream formats" },
     "GZIP: The 'gzip' format",
@@ -1693,30 +1693,6 @@ struct evHotplug {
    char Product[40];    // Name of product or the hardware device
    char Vendor[40];     // Name of vendor
 };
-
-// Speed efficient way of setting a string field that is managed with AllocMemory().
-
-inline ERR set_string_field(const std::string_view Source, STRING &Dest)
-{
-   MemInfo info;
-   if (auto error = MemoryIDInfo(GetMemoryID(Dest), &info, sizeof(info)); error IS ERR::Okay) {
-      if (Source.size()+1 < info.Size) {
-         copymem(Source.data(), Dest, Source.size());
-         Dest[Source.size()] = 0;
-         return ERR::Okay;
-      }
-      else {
-         FreeResource(GetMemoryID(Dest));
-         if (AllocMemory(Source.size() + 1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Dest, nullptr) IS ERR::Okay) {
-            copymem(Source.data(), Dest, Source.size());
-            Dest[Source.size()] = 0;
-            return ERR::Okay;
-         }
-         else return ERR::AllocMemory;
-      }
-   }
-   else return error;
-}
 
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {

@@ -70,21 +70,6 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     </action>
 
     <action>
-      <name>GetKey</name>
-      <comment>Deprecated.  Use the Evaluate() method instead.</comment>
-      <prototype>ERR acGetKey(*Object, std::string_view Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
-      <input>
-        <param type="STRVIEW" name="Key">The name of a key value.</param>
-        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
-      </input>
-      <description>
-<p>Deprecated.  Use the Evaluate() method instead.</p>
-      </description>
-    </action>
-
-    <action>
       <name>Reset</name>
       <comment>Clears the information held in an XML object.</comment>
       <prototype>ERR acReset(*Object)</prototype>

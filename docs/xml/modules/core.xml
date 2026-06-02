@@ -2493,10 +2493,10 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="FDB" comment="Feedback event indicators.">
-      <const name="COMPRESS_FILE"/>
-      <const name="DECOMPRESS_FILE"/>
-      <const name="DECOMPRESS_OBJECT"/>
-      <const name="REMOVE_FILE"/>
+      <const name="COMPRESS_FILE">A file or folder is being added to a compressed stream.</const>
+      <const name="DECOMPRESS_FILE">A file is being decompressed to a filesystem path.</const>
+      <const name="DECOMPRESS_OBJECT">A file is being decompressed into an object.</const>
+      <const name="REMOVE_FILE">A file is being removed from a compressed stream.</const>
     </constants>
 
     <constants lookup="FDL" comment="Options for the File Delete() method.">

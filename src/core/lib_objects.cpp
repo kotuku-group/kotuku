@@ -2145,8 +2145,7 @@ case-insensitive, pure-query
 CLASSID ResolveClassName(const std::string_view &ClassName)
 {
    if (ClassName.empty()) {
-      kt::Log log(__FUNCTION__);
-      log.warning(ERR::NullArgs);
+      kt::Log(__FUNCTION__).warning(ERR::NullArgs);
       return CLASSID::NIL;
    }
 
@@ -2181,8 +2180,7 @@ CSTRING ResolveClassID(CLASSID ID)
 {
    if (glClassDB.contains(ID)) return glClassDB[ID].Name.c_str();
 
-   kt::Log log(__FUNCTION__);
-   log.warning("Failed to resolve ID $%.8x", uint32_t(ID));
+   kt::Log(__FUNCTION__).warning("Failed to resolve ID $%.8x", uint32_t(ID));
    return nullptr;
 }
 

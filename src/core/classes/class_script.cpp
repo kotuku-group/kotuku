@@ -58,7 +58,7 @@ DataFeed: Script source code can be passed to the object as XML or text via data
 
 static ERR SCRIPT_DataFeed(objScript *Self, struct acDataFeed *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    if (Args->Datatype IS DATA::XML) {
       Self->setStatement((STRING)Args->Buffer);
@@ -98,7 +98,7 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 1024)) return log.warning(ERR::Args);
 
    auto save_id      = Self->ProcedureID;
@@ -251,7 +251,7 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 32)) return log.warning(ERR::Args);
 
    auto save_id = Self->ProcedureID;
@@ -319,7 +319,7 @@ static ERR SCRIPT_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Procedure) or (!Args->Procedure[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Procedure) or (not Args->Procedure[0])) return log.warning(ERR::NullArgs);
    Args->ProcedureID = strihash(Args->Procedure);
    return ERR::Okay;
 }
@@ -351,7 +351,7 @@ static ERR SCRIPT_Init(objScript *Self)
 {
    kt::Log log;
 
-   if (!Self->TargetID) { // Define the target if it has not been set already
+   if (not Self->TargetID) { // Define the target if it has not been set already
       log.detail("Target not set, defaulting to owner #%d.", Self->ownerID());
       Self->TargetID = Self->ownerID();
    }
@@ -400,7 +400,7 @@ static ERR SCRIPT_SetKey(objScript *Self, struct acSetKey *Args)
 {
    // It is acceptable to set zero-length string values (this has its uses in some scripts).
 
-   if ((!Args) or (Args->Key.empty())) return ERR::NullArgs;
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
    kt::Log log;
    log.trace("%.*s = %.*s", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());

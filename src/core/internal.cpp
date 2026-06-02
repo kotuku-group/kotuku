@@ -182,7 +182,8 @@ Read(Bytes (FD_INT), Buffer (FD_PTRRESULT), BufferSize (FD_PTRSIZE), &BytesRead 
 </pre>
 
 A standard PTR followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It is assumed
-that this is one-way traffic only, and the function will not fill the buffer with data.  Example:
+that this is one-way traffic only, and the function will not fill the buffer with data if FD_MUTABLE is not set.
+Example:
 
 <pre>
 Write(Bytes (FD_INT, Buffer (FD_PTR), BufferSize (FD_PTRSIZE), &BytesWritten (FD_INTRESULT));
