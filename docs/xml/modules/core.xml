@@ -3112,23 +3112,23 @@ static ResourceManager glNodeManager = {
 
     <constants lookup="VAS" comment="For use by VirtualVolume()">
       <const name="CASE_SENSITIVE">Set to true if the volume's paths are case-sensitive.</const>
-      <const name="CLOSE_DIR"/>
-      <const name="CREATE_LINK"/>
-      <const name="DELETE"/>
+      <const name="CLOSE_DIR">Register the callback used to close an opened virtual folder.</const>
+      <const name="CREATE_LINK">Register the callback used to create a symbolic link on a virtual volume.</const>
+      <const name="DELETE">Register the callback used to delete a virtual file or folder.</const>
       <const name="DEREGISTER">Remove the virtual volume from the system.</const>
-      <const name="DRIVER_SIZE"/>
-      <const name="GET_DEVICE_INFO"/>
-      <const name="GET_INFO"/>
-      <const name="IDENTIFY_FILE"/>
-      <const name="IGNORE_FILE"/>
-      <const name="MAKE_DIR"/>
-      <const name="OPEN_DIR"/>
-      <const name="READ_LINK"/>
-      <const name="RENAME"/>
-      <const name="SAME_FILE"/>
-      <const name="SCAN_DIR"/>
-      <const name="TEST_PATH"/>
-      <const name="WATCH_PATH"/>
+      <const name="DRIVER_SIZE">Set the size of the driver-specific data attached to folder scans.</const>
+      <const name="GET_DEVICE_INFO">Register the callback used to retrieve storage device information for a virtual path.</const>
+      <const name="GET_INFO">Register the callback used to retrieve information for a virtual file or folder.</const>
+      <const name="IDENTIFY_FILE">Register the callback used to identify the class associated with a virtual file.</const>
+      <const name="IGNORE_FILE">Register the callback used when a virtual file object no longer needs to be watched.</const>
+      <const name="MAKE_DIR">Register the callback used to create a virtual folder.</const>
+      <const name="OPEN_DIR">Register the callback used to open a virtual folder for scanning.</const>
+      <const name="READ_LINK">Register the callback used to read a symbolic link target from a virtual path.</const>
+      <const name="RENAME">Register the callback used to rename or move a virtual path.</const>
+      <const name="SAME_FILE">Register the callback used to determine if two virtual paths refer to the same file.</const>
+      <const name="SCAN_DIR">Register the callback used to retrieve entries from an opened virtual folder.</const>
+      <const name="TEST_PATH">Register the callback used to test and resolve a virtual path.</const>
+      <const name="WATCH_PATH">Register the callback used to watch a virtual path for changes.</const>
     </constants>
 
     <constants lookup="VLF" comment="VlogF flags">
