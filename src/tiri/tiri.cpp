@@ -229,10 +229,12 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    // Record actions that have result parameters.
    uint64_t result_mask = 0;
    for (int action_id=1; glActions[action_id].Name; action_id++) {
-      for (int arg=0; glActions[action_id].Args[arg].Name; arg++) {
-         if (glActions[action_id].Args[arg].Type & FD_RESULT) {
-            result_mask |= 1<<action_id;
-            break;
+      if (glActions[action_id].Args) {
+         for (int arg=0; glActions[action_id].Args[arg].Name; arg++) {
+            if (glActions[action_id].Args[arg].Type & FD_RESULT) {
+               result_mask |= 1<<action_id;
+               break;
+            }
          }
       }
    }
