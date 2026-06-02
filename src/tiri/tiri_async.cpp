@@ -213,7 +213,7 @@ static int async_action(lua_State *Lua)
 
    ERR error = ERR::Okay;
    if (arg_size > 0) {
-      if ((1<<int(action_id)) & glActionsWithResults) {
+      if ((uint64_t(1) << int(action_id)) & glActionsWithResults) {
          abort();
          luaL_error(Lua, "Actions that return results are not yet supported.");
       }

@@ -56,16 +56,27 @@ static int process_results(prvTiri *, APTR, const FunctionField *);
 //********************************************************************************************************************
 // Support for mutable array results
 
-template <class T> static ERR make_cpp_array_result(APTR *Result)
+struct cpp_array_result {
+   APTR Data;
+   void (*Delete)(APTR);
+};
+
+template <class T> static void delete_cpp_array_result(APTR Result)
+{
+   delete (kt::vector<T> *)Result;
+}
+
+template <class T> static ERR make_cpp_array_result(cpp_array_result *Result)
 {
    auto vector = new (std::nothrow) kt::vector<T>;
    if (not vector) return ERR::AllocMemory;
 
-   *Result = vector;
+   Result->Data = vector;
+   Result->Delete = delete_cpp_array_result<T>;
    return ERR::Okay;
 }
 
-static ERR make_cpp_array_result(int Type, APTR *Result)
+static ERR make_cpp_array_result(int Type, cpp_array_result *Result)
 {
    if (Type & FD_STR) return make_cpp_array_result<std::string>(Result);
    else if ((Type & FD_OBJECT) and (Type & FD_PTR)) return make_cpp_array_result<OBJECTPTR>(Result);
@@ -528,7 +539,7 @@ static int module_call(lua_State *Lua)
    std::vector<std::string_view> string_views;
    std::vector<allocated_struct_ref> allocated_structs;
    std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
-   std::vector<APTR> cpp_arrays;
+   std::vector<cpp_array_result> cpp_arrays;
    strings.reserve(8); // Keep the collection stable
    string_views.reserve(8);
 
@@ -539,13 +550,13 @@ static int module_call(lua_State *Lua)
          FreeResource(entry.Data);
       }
       for (auto &entry : cpp_arrays) {
-         delete (kt::vector<int8_t> *)(entry);
+         if (entry.Delete) entry.Delete(entry.Data);
       }
       std::vector<std::string>().swap(strings);
       std::vector<std::string_view>().swap(string_views);
       std::vector<allocated_struct_ref>().swap(allocated_structs);
       std::vector<mutable_cpp_string_ref>().swap(mutable_cpp_strings);
-      std::vector<APTR>().swap(cpp_arrays);
+      std::vector<cpp_array_result>().swap(cpp_arrays);
    };
 
    auto copy_mutable_cpp_strings = [&]() {
@@ -620,9 +631,9 @@ static int module_call(lua_State *Lua)
          if ((argtype & FD_CPP) and (argtype & FD_ARRAY) and (argtype & FD_MUTABLE)) {
             // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
             // We set this up here, then convert the resulting values to a Tiri array when the function returns.
-            APTR result_ref;
+            cpp_array_result result_ref = { };
             if (auto error = make_cpp_array_result(argtype, &result_ref); error IS ERR::Okay) {
-               ((APTR *)(buffer + j))[0] = result_ref; // kt::vector<>
+               ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
                cpp_arrays.push_back(result_ref);
                arg_values[in]  = buffer + j;
                arg_types[in++] = &ffi_type_pointer;

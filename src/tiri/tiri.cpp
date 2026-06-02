@@ -232,7 +232,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       if (glActions[action_id].Args) {
          for (int arg=0; glActions[action_id].Args[arg].Name; arg++) {
             if (glActions[action_id].Args[arg].Type & FD_RESULT) {
-               result_mask |= 1<<action_id;
+               result_mask |= uint64_t(1) << action_id;
                break;
             }
          }
