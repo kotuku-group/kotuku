@@ -1025,7 +1025,7 @@ struct acCopyData      { static const AC id = AC::CopyData; OBJECTPTR Dest; };
 struct acDataFeed      { static const AC id = AC::DataFeed; OBJECTPTR Object; DATA Datatype; const void *Buffer; int Size; };
 struct acDragDrop      { static const AC id = AC::DragDrop; OBJECTPTR Source; int Item; std::string_view Datatype; };
 struct acDraw          { static const AC id = AC::Draw; int X; int Y; int Width; int Height; };
-struct acGetKey        { static const AC id = AC::GetKey; std::string_view Key; STRING Value; int Size; };
+struct acGetKey        { static const AC id = AC::GetKey; std::string_view Key; std::string *Value; };
 struct acMove          { static const AC id = AC::Move; double DeltaX; double DeltaY; double DeltaZ; };
 struct acMoveToPoint   { static const AC id = AC::MoveToPoint; double X; double Y; double Z; MTF Flags; };
 struct acNewChild      { static const AC id = AC::NewChild; OBJECTPTR Object; };
@@ -1087,10 +1087,10 @@ inline ERR acDataFeed(OBJECTPTR Object, OBJECTPTR Sender, DATA Datatype, const v
    return Action(AC::DataFeed, Object, &args);
 }
 
-inline ERR acGetKey(OBJECTPTR Object, std::string_view Key, STRING Value, int Size) {
-   struct acGetKey args = { Key, Value, Size };
-   ERR error = Action(AC::GetKey, Object, &args);
-   if ((error != ERR::Okay) and (Value)) Value[0] = 0;
+inline ERR acGetKey(OBJECTPTR Object, std::string_view Key, std::string &Value) {
+   struct acGetKey args = { Key, &Value };
+   auto error = Action(AC::GetKey, Object, &args);
+   if (error != ERR::Okay) Value.clear();
    return error;
 }
 

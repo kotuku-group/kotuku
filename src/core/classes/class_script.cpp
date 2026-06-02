@@ -332,15 +332,14 @@ GetKey: Script parameters can be retrieved through this action.
 
 static ERR SCRIPT_GetKey(objScript *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Value)) return ERR::NullArgs;
-   if (Args->Size < 2) return ERR::Args;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
    if (auto it = Self->Vars.find(Args->Key); it != Self->Vars.end()) {
-      strcopy(it->second, Args->Value, Args->Size);
+      Args->Value->assign(it->second);
       return ERR::Okay;
    }
    else {
-      Args->Value[0] = 0;
+      Args->Value->clear();
       return ERR::UnsupportedField;
    }
 }

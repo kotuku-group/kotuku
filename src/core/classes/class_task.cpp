@@ -1482,21 +1482,14 @@ GetKey: Retrieves custom key values.
 static ERR TASK_GetKey(extTask *Self, struct acGetKey *Args)
 {
    kt::Log log;
-   int j;
 
-   if ((!Args) or (!Args->Value) or (Args->Size <= 0)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Value)) return log.warning(ERR::NullArgs);
 
    if (auto it = Self->Fields.find(Args->Key); it != Self->Fields.end()) {
-      for (j=0; (it->second[j]) and (j < Args->Size-1); j++) Args->Value[j] = it->second[j];
-      Args->Value[j++] = 0;
-
-      if (j >= Args->Size) return ERR::BufferOverflow;
-      else return ERR::Okay;
+      Args->Value->assign(it->second);
+      return ERR::Okay;
    }
-
-   log.warning("The variable \"%.*s\" does not exist.", int(Args->Key.size()), Args->Key.data());
-
-   return ERR::Okay;
+   else return log.warning(ERR::UnsupportedField);
 }
 
 //********************************************************************************************************************
