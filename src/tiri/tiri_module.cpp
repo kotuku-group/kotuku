@@ -529,8 +529,8 @@ static int module_call(lua_State *Lua)
    std::vector<allocated_struct_ref> allocated_structs;
    std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
    std::vector<APTR> cpp_arrays;
-   strings.reserve(4); // Keep the collection stable
-   string_views.reserve(4);
+   strings.reserve(8); // Keep the collection stable
+   string_views.reserve(8);
 
    // Cleanup lambda for early exits.  Note that we can't rely on RAII because luaL_error() breaks out of the function.
    auto cleanup = [&]() {

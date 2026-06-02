@@ -434,10 +434,12 @@ int lj_opt_loop(jit_State* J)
          case LJ_TRERR_TYPEINS:  //  Type instability.
          case LJ_TRERR_GFAIL:  //  Guard would always fail.
             // Unrolling via recording fixes many cases, e.g. a flipped boolean.
-            if (--J->instunroll < 0)  //  But do not unroll forever.
-               break;
+            if (--J->instunroll < 0) break;  //  But do not unroll forever.
+
             {
+#ifdef LUA_USE_ASSERT
                TValue* expected_base = restorestack(L, base_before);
+#endif
                TValue* expected_top = restorestack(L, top_before);
 #ifdef LUA_USE_ASSERT
                if (not (L->base IS expected_base)) {
@@ -458,6 +460,7 @@ int lj_opt_loop(jit_State* J)
                }
                if (L->cframe) cframe_nres(cframe_raw(L->cframe)) = cframe_nres_before;
             }
+
             loop_undo(J, nins, nsnap, nsnapmap);
             return 1;  //  Loop optimization failed, continue recording.
          default:

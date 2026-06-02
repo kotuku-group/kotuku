@@ -85,7 +85,11 @@ static void trace_abort_restore_retry_stack(jit_State *J, CSTRING Path)
 
    if (glTraceAbortStack.jit IS J) {
       lua_State *L = J->L;
+
+#ifdef LUA_USE_ASSERT
       TValue *base_before = restorestack(L, glTraceAbortStack.base_before);
+#endif
+
       TValue *top_before = restorestack(L, glTraceAbortStack.top_before);
 
 #ifdef LUA_USE_ASSERT
