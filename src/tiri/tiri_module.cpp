@@ -463,9 +463,16 @@ static int module_call(lua_State *Lua)
       struct_record *Def;
    };
 
+   struct mutable_cpp_string_ref {
+      std::string *Source;
+      GCstr *Target;
+      int Arg;
+   };
+
    std::vector<std::string*> allocated_strings;
    std::vector<std::string_view*> allocated_string_views;
    std::vector<allocated_struct_ref> allocated_structs;
+   std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
 
    // Cleanup lambda for early exits.  Note that we can't rely on RAII because luaL_error() breaks out of the function.
    auto cleanup = [&]() {
@@ -474,6 +481,21 @@ static int module_call(lua_State *Lua)
       for (auto &entry : allocated_structs) {
          if (entry.Def) destroy_struct_cpp_strings(*entry.Def, entry.Data);
          FreeResource(entry.Data);
+      }
+   };
+
+   auto copy_mutable_cpp_strings = [&]() {
+      for (auto &entry : mutable_cpp_strings) {
+         auto capacity = size_t(entry.Target->len);
+         auto length = entry.Source->size();
+         if (length > capacity) {
+            cleanup();
+            luaL_argerror(Lua, entry.Arg, "Mutable buffer too small.");
+         }
+
+         auto target = strdatawr(entry.Target);
+         if (length) copymem(entry.Source->data(), target, length);
+         if (length < capacity) clearmem(target + length, capacity - length);
       }
    };
 
@@ -1009,6 +1031,7 @@ static int module_call(lua_State *Lua)
 
    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, total_args, return_type, arg_types) IS FFI_OK) {
       ffi_call(&cif, (void (*)())function, &rc, arg_values);
+      copy_mutable_cpp_strings();
 
       // Process the result based on the return type
       if (restype & FD_STR) {
