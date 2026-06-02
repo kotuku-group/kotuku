@@ -238,6 +238,11 @@ ERR XPathEvaluator::evaluate_xpath_expression(const XPathNode &XPath, XPathVal *
    if (xml) {
       (void)xml->getMap(); // Ensure the tag ID and ParentID values are defined
 
+      if (xml->Tags.empty()) {
+         if (parse_context) parse_context->error_msg = "XML document contains no tags.";
+         return ERR::NoData;
+      }
+
       // Set context to document root if not already set
 
       if (not context.context_node) push_context(&xml->Tags[0], 1, 1);

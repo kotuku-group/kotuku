@@ -113,11 +113,12 @@ static std::string xml_escape(const std::string &str)
 {
    std::string escaped;
    bool needs_escaping = false;
-   for (char c : str) {
-      if (CSTRING esc = xml_escape_table[static_cast<unsigned char>(c)]) {
+   for (size_t index = 0; index < str.size(); ++index) {
+      char c = str[index];
+      if (CSTRING esc = xml_escape_table[uint8_t(c)]) {
          if (not needs_escaping) {
             escaped.reserve(str.size() + (str.size()>>4));
-            escaped = str.substr(0, &c - str.data());
+            escaped = str.substr(0, index);
             needs_escaping = true;
          }
          escaped += esc;
@@ -135,7 +136,6 @@ static ERR build_query(extXQuery *Self)
 {
    kt::Log log;
 
-   Self->StaleBuild = false;
    Self->ListVariables.clear();
    Self->ListFunctions.clear();
 
@@ -176,14 +176,13 @@ static ERR build_query(extXQuery *Self)
    // Evaluator reads from the parse context; do not mutate the AST.
    // ModuleCache holds strong ref; ParseResult.module_cache is weak to break cycles with cached modules.
 
-   if (not Self->ModuleCache) {
-      Self->ModuleCache = std::make_shared<XQueryModuleCache>();
-      Self->ModuleCache->query = Self;
-   }
+   Self->ModuleCache = std::make_shared<XQueryModuleCache>();
+   Self->ModuleCache->query = Self;
    Self->ParseResult.module_cache = Self->ModuleCache;
 
    if (Self->ParseResult.prolog) Self->ParseResult.prolog->bind_module_cache(Self->ModuleCache);
 
+   Self->StaleBuild = false;
    return ERR::Okay;
 }
 
@@ -266,10 +265,13 @@ static ERR XQUERY_Activate(extXQuery *Self)
    }
 
    Self->XML = nullptr;
+   Self->ResultString.clear();
+   Self->Result = XPathVal();
    Self->ConstructedNodes.clear();
+   Self->ParseResult.error_msg.clear();
    XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
    auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
-   if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
+   Self->ConstructedNodes = std::move(eval.constructed_nodes);
    Self->ErrorMsg = Self->ParseResult.error_msg;
    return err;
 }
@@ -290,6 +292,7 @@ static ERR XQUERY_Clear(extXQuery *Self)
    Self->ListVariables.clear();
    Self->ListFunctions.clear();
    Self->ParseResult = CompiledXQuery();
+   Self->ModuleCache.reset();
    Self->ResultString.clear();
    Self->Result = XPathVal();
    Self->ConstructedNodes.clear();
@@ -333,6 +336,7 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    Self->ResultString.clear();
    Self->Result = XPathVal();
    Self->ConstructedNodes.clear();
+   Self->ParseResult.error_msg.clear();
 
    int len = 0, max_len = std::min<int>(std::ssize(Self->Statement), 40);
    while ((Self->Statement[len] != '\n') and (len < max_len)) len++;
@@ -378,14 +382,14 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
          eval.push_context(root_tag, 1, 1);
       }
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
-      if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
+      Self->ConstructedNodes = std::move(eval.constructed_nodes);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
    }
    else {
       XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
-      if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
+      Self->ConstructedNodes = std::move(eval.constructed_nodes);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
    }
@@ -513,27 +517,28 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
    std::ostringstream stream;
 
    auto flags = Args->ResultFlags;
-   if (flags == XIF::NIL) flags = XIF::ALL;
+   if (flags IS XIF::NIL) flags = XIF::ALL;
+   auto name_filter = Args->Name ? Args->Name : "*";
 
    // Extract function information based on ResultFlags
-   auto process_function = [&](const XQueryFunction &fn) {
+   auto process_function = [&](const XQueryProlog &Prolog, const XQueryFunction &Function) {
       if (stream.tellp()) stream << '\n';
 
       stream << "<function>";
       if ((flags & XIF::NAME) != XIF::NIL) {
-         auto fname = to_lexical_name(*Self->ParseResult.prolog, fn.qname);
+         auto fname = to_lexical_name(Prolog, Function.qname);
          stream << std::format("<name>{}</name>", xml_escape(fname));
       }
 
       if ((flags & XIF::PARAMETERS) != XIF::NIL) {
          stream << "<parameters>";
-         size_t parameter_count = fn.parameter_names.size();
+         size_t parameter_count = Function.parameter_names.size();
          for (size_t i = 0; i < parameter_count; ++i) {
             stream << "<parameter>";
-            stream << std::format("<name>${}</name>", xml_escape(fn.parameter_names[i]));
-            bool has_type = (i < fn.parameter_types.size()) and (not fn.parameter_types[i].empty());
+            stream << std::format("<name>${}</name>", xml_escape(Function.parameter_names[i]));
+            bool has_type = (i < Function.parameter_types.size()) and (not Function.parameter_types[i].empty());
             if (has_type) {
-               stream << std::format("<type>{}</type>", xml_escape(fn.parameter_types[i]));
+               stream << std::format("<type>{}</type>", xml_escape(Function.parameter_types[i]));
             }
             stream << "</parameter>";
          }
@@ -541,22 +546,22 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
       }
 
       if ((flags & XIF::RETURN_TYPE) != XIF::NIL) {
-         stream << std::format("<returnType>{}</returnType>", fn.return_type ? xml_escape(*fn.return_type) : "item()*");
+         stream << std::format("<returnType>{}</returnType>", Function.return_type ? xml_escape(*Function.return_type) : "item()*");
       }
 
       if ((flags & XIF::USER_DEFINED) != XIF::NIL) {
-         stream << std::format("<userDefined>{}</userDefined>", fn.is_external ? "false" : "true");
+         stream << std::format("<userDefined>{}</userDefined>", Function.is_external ? "false" : "true");
       }
 
       if ((flags & XIF::SIGNATURE) != XIF::NIL) {
-         stream << std::format("<signature>{}</signature>", xml_escape(fn.signature()));
+         stream << std::format("<signature>{}</signature>", xml_escape(Function.signature()));
       }
 
       if ((flags & XIF::AST) != XIF::NIL) {
-         if (fn.body) {
+         if (Function.body) {
             std::string body;
-            XPathEvaluator eval(Self, Self->XML, fn.body.get(), &Self->ParseResult);
-            body = xml_escape(eval.build_ast_signature(fn.body.get()));
+            XPathEvaluator eval(Self, Self->XML, Function.body.get(), &Self->ParseResult);
+            body = xml_escape(eval.build_ast_signature(Function.body.get()));
             stream << "<ast>" << body << "</ast>";
          }
       }
@@ -567,8 +572,8 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
       for (const auto &entry : Self->ParseResult.prolog->functions) {
          const auto &fn = entry.second;
          auto fname = to_lexical_name(*Self->ParseResult.prolog, fn.qname);
-         if (kt::wildcmp(Args->Name, fname)) {
-            process_function(fn);
+         if (kt::wildcmp(name_filter, fname)) {
+            process_function(*Self->ParseResult.prolog, fn);
          }
       }
 
@@ -577,10 +582,11 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
       if (mod_cache) {
          for (auto it = mod_cache->modules.begin(); it != mod_cache->modules.end(); ++it) {
             if ((it->second) and (it->second->prolog)) {
+               const auto &module_prolog = *it->second->prolog;
                for (auto fn = it->second->prolog->functions.begin(); fn != it->second->prolog->functions.end(); ++fn) {
-                  auto fname = to_lexical_name(*Self->ParseResult.prolog, fn->second.qname);
-                  if (kt::wildcmp(Args->Name, fname)) {
-                     process_function(fn->second);
+                  auto fname = to_lexical_name(module_prolog, fn->second.qname);
+                  if (kt::wildcmp(name_filter, fname)) {
+                     process_function(module_prolog, fn->second);
                   }
                }
             }
@@ -591,8 +597,8 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
 
       std::string result = stream.str();
       Args->Result = kt::strclone(result.c_str());
-
-      return ERR::Okay;
+      if (Args->Result) return ERR::Okay;
+      else return ERR::AllocMemory;
    }
    else return log.warning(ERR::Search);
 }
@@ -717,6 +723,13 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
 
    auto xml = (extXML *)Args->XML;
    Self->XML = xml;
+   if ((Args->Callback) and (Args->Callback->defined())) Self->Callback = *Args->Callback;
+   else Self->Callback.Type = CALL::NIL;
+   Self->ParseResult.error_msg.clear();
+
+   auto clear_callback = kt::Defer([&]() {
+      Self->Callback.Type = CALL::NIL;
+   });
 
    if ((Args->Index != 0) and (not xml)) {
       Self->ErrorMsg = "An XML object is required when Index is specified.";
@@ -735,9 +748,6 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
             return log.warning(ERR::NotFound);
          }
       }
-
-      if ((Args->Callback) and (Args->Callback->defined())) Self->Callback = *Args->Callback;
-      else Self->Callback.Type = CALL::NIL;
 
       (void)xml->getMap(); // Ensure the tag ID and ParentID values are defined
       XPathEvaluator eval(Self, xml, Self->ParseResult.expression.get(), &Self->ParseResult);
@@ -1031,23 +1041,23 @@ static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
       for (const auto &var : Self->Variables) {
          Self->ListVariables.push_back(var.first);
       }
-   }
 
-   // Scan imported modules for additional variables
+      // Scan imported modules for additional variables
 
-   if (Self->ParseResult.prolog) {
-      // Include variables declared in the main query prolog
-      for (auto var = Self->ParseResult.prolog->variables.begin(); var != Self->ParseResult.prolog->variables.end(); ++var) {
-         Self->ListVariables.push_back(var->first);
-      }
+      if (Self->ParseResult.prolog) {
+         // Include variables declared in the main query prolog
+         for (auto var = Self->ParseResult.prolog->variables.begin(); var != Self->ParseResult.prolog->variables.end(); ++var) {
+            Self->ListVariables.push_back(var->first);
+         }
 
-      // Include variables declared in imported modules
-      std::shared_ptr<XQueryModuleCache> mod_cache = Self->ParseResult.prolog->get_module_cache();
-      if (mod_cache) {
-         for (auto it = mod_cache->modules.begin(); it != mod_cache->modules.end(); ++it) {
-            if ((it->second) and (it->second->prolog)) {
-               for (auto var = it->second->prolog->variables.begin(); var != it->second->prolog->variables.end(); ++var) {
-                  Self->ListVariables.push_back(var->first);
+         // Include variables declared in imported modules
+         std::shared_ptr<XQueryModuleCache> mod_cache = Self->ParseResult.prolog->get_module_cache();
+         if (mod_cache) {
+            for (auto it = mod_cache->modules.begin(); it != mod_cache->modules.end(); ++it) {
+               if ((it->second) and (it->second->prolog)) {
+                  for (auto var = it->second->prolog->variables.begin(); var != it->second->prolog->variables.end(); ++var) {
+                     Self->ListVariables.push_back(var->first);
+                  }
                }
             }
          }
