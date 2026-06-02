@@ -627,7 +627,7 @@ static ERR xq_get_object_key(OBJECTPTR Object, std::string_view Key, std::string
    std::string buffer(4096, 0);
    while (true) {
       buffer.back() = 0;
-      struct acGetKey var = { key.c_str(), buffer.data(), int(buffer.size()) };
+      struct acGetKey var = { key, &buffer };
       if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
       if (buffer.back()) {
          buffer.resize(buffer.size() * 2);

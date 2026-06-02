@@ -997,15 +997,15 @@ GetKey: Entries in the HTTP response header can be read as key-values.
 
 static ERR HTTP_GetKey(extHTTP *Self, struct acGetKey *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
    if (auto key_it = Self->ResponseHeaders.find(Args->Key); key_it != Self->ResponseHeaders.end()) {
-      kt::strcopy(key_it->second, Args->Value, Args->Size);
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
    if (auto key_it = Self->Headers.find(Args->Key); key_it != Self->Headers.end()) {
-      kt::strcopy(key_it->second, Args->Value, Args->Size);
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 

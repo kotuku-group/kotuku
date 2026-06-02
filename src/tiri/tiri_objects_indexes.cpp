@@ -317,9 +317,9 @@ static int object_get(lua_State *Lua)
          return 1;
       }
       else { // Revert to getKey() if the class supports it failed
-         char buffer[8192];
+         std::string buffer;
 
-         if ((acGetKey(obj, fieldname, buffer, sizeof(buffer)) IS ERR::Okay) and (buffer[0])) {
+         if ((acGetKey(obj, fieldname, buffer) IS ERR::Okay) and (not buffer.empty())) {
             lua_pushstring(Lua, buffer);
          }
          else lua_pushvalue(Lua, 2); // Push the client's default value
@@ -343,8 +343,8 @@ static int object_getkey(lua_State *Lua)
       auto def = object_context(Lua);
       ERR error;
       if (auto obj = access_object(def)) {
-         char buffer[8192];
-         if ((error = acGetKey(obj, fieldname, buffer, sizeof(buffer))) IS ERR::Okay) {
+         std::string buffer;
+         if ((error = acGetKey(obj, fieldname, buffer)) IS ERR::Okay) {
             lua_pushstring(Lua, buffer);
          }
          release_object(def);

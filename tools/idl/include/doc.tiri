@@ -174,12 +174,11 @@ setAction('Free', {
 
 setAction('GetKey', {
    comment   = 'Retrieves custom key values that are not defined by an object\'s structure.',
-   prototype = 'ERR acGetKey(*Object, std::string_view Key, STRING Value, INT Size)',
-   tiriPrototype = 'err = Object.acGetKey(Key:str, Value:str, Size:num)',
+   prototype = 'ERR acGetKey(*Object, std::string_view Key, std::string &Value)',
+   tiriPrototype = 'err = Object.acGetKey(Key:str, Value:str)',
    params    = {
       { name='Key', type='STRVIEW', comment='The name of a key value.' },
-      { name='Value', type='STRING', comment='Pointer to a buffer space large enough to hold the retrieved value.' },
-      { name='Size', type='INT', comment='Indicates the byte size of the Buffer.' }
+      { name='Value', type='STRING', comment='Pointer to a buffer space large enough to hold the retrieved value.' }
    }
 })
 

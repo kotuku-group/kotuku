@@ -242,8 +242,8 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    OBJECTID id;
    if (FindObject("glStyle", CLASSID::XML, &id) IS ERR::Okay) {
-      char buffer[40];
-      if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer, sizeof(buffer)) IS ERR::Okay) {
+      std::string buffer;
+      if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer) IS ERR::Okay) {
          read_rgb8(buffer, &glHighlight);
       }
    }
