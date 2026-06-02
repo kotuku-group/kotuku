@@ -103,12 +103,11 @@ http.acActivate()
     <action>
       <name>GetKey</name>
       <comment>Entries in the HTTP response header can be read as key-values.</comment>
-      <prototype>ERR acGetKey(*Object, std::string_view Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
     </action>
 

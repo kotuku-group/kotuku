@@ -441,8 +441,8 @@ static int module_index(lua_State *Lua)
 //                     struct when RESOURCE is set.
 // RESULT|ARRAY      = Type **.  Function writes an array pointer; returned to Tiri as an array.  ARRAYSIZE may
 //                     follow to define element count.
-// RESULT|BUFFER     = APTR.  Caller supplies a mutable Tiri buffer or array for the function to fill; BUFSIZE or
-//                     ARRAYSIZE must follow.
+// RESULT|BUFFER     = APTR.  Caller supplies a mutable Tiri buffer or array for the function to fill; BUFSIZE
+//                     must follow.
 // RESULT|BUFFER|CPP = Unsupported.  kt::vector<> output marshalling is not implemented for module calls.
 //
 // Mixed direction:
@@ -453,7 +453,7 @@ static int module_index(lua_State *Lua)
 static int module_call(lua_State *Lua)
 {
    kt::Log log(__FUNCTION__);
-   objScript *Self = Lua->script;
+
    uint8_t buffer[MAX_MODULE_ARGS * 16]; // 16 bytes seems overkill but some parameters output meta information (e.g. size).
    int i;
 
@@ -469,19 +469,23 @@ static int module_call(lua_State *Lua)
       int Arg;
    };
 
-   std::vector<std::string*> allocated_strings;
-   std::vector<std::string_view*> allocated_string_views;
+   std::vector<std::string> strings;
+   std::vector<std::string_view> string_views;
    std::vector<allocated_struct_ref> allocated_structs;
    std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
+   strings.reserve(4); // Keep the collection stable
+   string_views.reserve(4);
 
    // Cleanup lambda for early exits.  Note that we can't rely on RAII because luaL_error() breaks out of the function.
    auto cleanup = [&]() {
-      for (auto ptr : allocated_strings) delete ptr;
-      for (auto ptr : allocated_string_views) delete ptr;
       for (auto &entry : allocated_structs) {
          if (entry.Def) destroy_struct_cpp_strings(*entry.Def, entry.Data);
          FreeResource(entry.Data);
       }
+      std::vector<std::string>().swap(strings);
+      std::vector<std::string_view>().swap(string_views);
+      std::vector<allocated_struct_ref>().swap(allocated_structs);
+      std::vector<mutable_cpp_string_ref>().swap(mutable_cpp_strings);
    };
 
    auto copy_mutable_cpp_strings = [&]() {
@@ -499,7 +503,7 @@ static int module_call(lua_State *Lua)
       }
    };
 
-   auto prv = (prvTiri *)Self->DerivedPtr;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv) {
       log.warning(ERR::ObjectCorrupt);
       return 0;
@@ -639,9 +643,9 @@ static int module_call(lua_State *Lua)
             if (argtype & FD_CPP) {
                // Special case; we provide a std::string that will be used as a buffer for storing the result and destroy
                // it after processing results.
-               auto str_ptr = new std::string;
-               allocated_strings.push_back(str_ptr);
-               ((std::string **)(buffer + j))[0] = str_ptr;
+
+               strings.emplace_back();
+               ((std::string **)(buffer + j))[0] = &strings.back();
                arg_values[in]  = buffer + j;
                arg_types[in++] = &ffi_type_pointer;
                j += sizeof(APTR);
@@ -694,14 +698,14 @@ static int module_call(lua_State *Lua)
          switch(lua_type(Lua, i)) {
             case LUA_TSTRING: { // Name of function to call
                lua_getglobal(Lua, lua_tostring(Lua, i));
-               func = FUNCTION(Self, luaL_ref(Lua, LUA_REGISTRYINDEX));
+               func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
                ((FUNCTION **)(buffer + j))[0] = &func;
                break;
             }
 
             case LUA_TFUNCTION: { // Direct function reference
                lua_pushvalue(Lua, i);
-               func = FUNCTION(Self, luaL_ref(Lua, LUA_REGISTRYINDEX));
+               func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
                ((FUNCTION **)(buffer + j))[0] = &func;
                break;
             }
@@ -725,14 +729,8 @@ static int module_call(lua_State *Lua)
          auto type = lua_type(Lua, i);
          int type_size = sizeof(APTR);
 
-         if (argtype & FD_CPP) { // std::string_view (enforced, cannot be nullptr)
-            size_t len;
-            auto str = lua_tolstring(Lua, i, &len);
-            auto view_ptr = new std::string_view(str, len);
-            allocated_string_views.push_back(view_ptr);
-            ((std::string_view **)(buffer + j))[0] = view_ptr;
-         }
-         else if (argtype & FD_MUTABLE) {
+         if (argtype & FD_MUTABLE) {
+            // The client is expected to provide a mutable string with preallocated size, which can be acquired from string.alloc()
             if (type != LUA_TSTRING) {
                cleanup();
                luaL_argerror(Lua, i, "Mutable buffer required.");
@@ -743,7 +741,23 @@ static int module_call(lua_State *Lua)
                cleanup();
                luaL_argerror(Lua, i, "Mutable buffer required.");
             }
-            ((CSTRING *)(buffer + j))[0] = strdatawr(string);
+
+            if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
+               size_t len;
+               if (auto str = lua_tolstring(Lua, i, &len)) strings.emplace_back(str, len);
+               else strings.emplace_back();
+
+               auto cppstr = &strings.back();
+               mutable_cpp_strings.push_back({ cppstr, string, i });
+               ((std::string **)(buffer + j))[0] = cppstr;
+            }
+            else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
+         }
+         else if (argtype & FD_CPP) { // Read-only std::string_view (enforced, cannot be nullptr)
+            size_t len;
+            if (auto str = lua_tolstring(Lua, i, &len)) string_views.emplace_back(str, len);
+            else string_views.emplace_back();
+            ((std::string_view **)(buffer + j))[0] = &string_views.back();
          }
          else if ((type IS LUA_TSTRING) or (type IS LUA_TNUMBER) or (type IS LUA_TBOOLEAN)) {
             ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
@@ -1052,7 +1066,7 @@ static int module_call(lua_State *Lua)
                // needed when a struct's use is beyond informational and can be passed to other functions.
                //
                // Otherwise, the default behaviour is to convert the struct's content to a regular Lua table.
-               if (restype & FD_RESOURCE) push_struct(Self, structptr, args->Name, (restype & FD_ALLOC) ? TRUE : FALSE, TRUE);
+               if (restype & FD_RESOURCE) push_struct(Lua->script, structptr, args->Name, (restype & FD_ALLOC) ? TRUE : FALSE, TRUE);
                else if ((error = named_struct_to_table(Lua, args->Name, structptr)) != ERR::Okay) {
                   if (error IS ERR::Search) {
                      // Unknown structs are returned as pointers - this is mainly to indicate that there is a value
