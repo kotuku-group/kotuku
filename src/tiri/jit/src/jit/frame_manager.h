@@ -260,7 +260,9 @@ class SlotView {
    void check_bounds([[maybe_unused]] int32_t idx) const {
       int32_t abs_slot = int32_t(J->baseslot) + idx;
       assert(abs_slot >= 0 && "absolute slot index below zero");
-      assert(abs_slot < int32_t(LJ_MAX_JSLOTS) && "absolute slot index exceeds maximum");
+      // The slot array is sized LJ_MAX_JSLOTS + LJ_STACK_EXTRA; the extra region is legitimate
+      // transient headroom used during call/metamethod setup before a frame is committed.
+      assert(abs_slot < int32_t(LJ_MAX_JSLOTS + LJ_STACK_EXTRA) && "absolute slot index exceeds maximum");
    }
 
 public:
@@ -291,15 +293,15 @@ public:
    // Clear a range of slots [start, start+count)
    void clear_range(int32_t start, BCREG count) {
       assert(start >= FRC::FUNC_SLOT_OFFSET && "clear_range start below minimum");
-      assert(start + int32_t(count) <= int32_t(LJ_MAX_JSLOTS - J->baseslot) && "clear_range exceeds maximum");
+      assert(start + int32_t(count) <= int32_t(LJ_MAX_JSLOTS + LJ_STACK_EXTRA - J->baseslot) && "clear_range exceeds maximum");
       memset(&J->base[start], 0, sizeof(TRef) * count);
    }
 
    // Copy slots: copy count slots from src to dest (handles overlapping regions)
    void copy(int32_t dest, int32_t src, ptrdiff_t count) {
       assert(dest >= FRC::FUNC_SLOT_OFFSET && src >= FRC::FUNC_SLOT_OFFSET && "copy indices below minimum");
-      assert(dest + count <= int32_t(LJ_MAX_JSLOTS - J->baseslot) && "copy dest exceeds maximum");
-      assert(src + count <= int32_t(LJ_MAX_JSLOTS - J->baseslot) && "copy src exceeds maximum");
+      assert(dest + count <= int32_t(LJ_MAX_JSLOTS + LJ_STACK_EXTRA - J->baseslot) && "copy dest exceeds maximum");
+      assert(src + count <= int32_t(LJ_MAX_JSLOTS + LJ_STACK_EXTRA - J->baseslot) && "copy src exceeds maximum");
       memmove(&J->base[dest], &J->base[src], sizeof(TRef) * count);
    }
 
