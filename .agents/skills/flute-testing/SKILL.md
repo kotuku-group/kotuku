@@ -82,7 +82,7 @@ If running outside the repository root, use an absolute path for the `file=` par
 
 ```powershell
 build/agents-install/origo tools/flute.tiri file=src/example/tests/test_example.tiri `
-   --set-volume scripts=E:/parasol/scripts --log-warning
+   --set-volume scripts=E:/kotuku/scripts --log-warning
 ```
 
 After C++ or build-system changes, build and install before running `ctest`:
