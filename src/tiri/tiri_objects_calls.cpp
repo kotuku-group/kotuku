@@ -215,10 +215,7 @@ ERR build_args(lua_State *Lua, const FunctionField *args, int ArgsSize, int8_t *
                else if (args[i+1].Type & FD_INT64) ((int64_t *)(argbuffer + j))[0] = len;
             }
          }
-         else if (type IS LUA_TNUMBER) {
-            luaL_argerror(Lua, n, "Cannot use a number as a buffer pointer.");
-            return ERR::WrongType;
-         }
+         else if (type IS LUA_TNUMBER) luaL_argerror(Lua, n, "Cannot use a number as a buffer pointer.");
          else {
             //log.trace("Arg: %s, Value: Buffer", args[i].Name);
             ((APTR *)(argbuffer + j))[0] = lua_touserdata(Lua, n);
@@ -228,28 +225,36 @@ ERR build_args(lua_State *Lua, const FunctionField *args, int ArgsSize, int8_t *
       else if (args[i].Type & FD_STR) {
          j = ALIGN64(j);
          if (args[i].Type & FD_MUTABLE) {
-            if (type != LUA_TSTRING) {
-               luaL_argerror(Lua, n, "Mutable buffer required.");
-               return ERR::WrongType;
-            }
+            if (type != LUA_TSTRING) luaL_argerror(Lua, n, "Mutable buffer required.");
             auto string = strV(Lua->base + n - 1);
             if (not check_mutable_string_arg(Lua, n, string)) return ERR::WrongType;
             ((CSTRING *)(argbuffer + j))[0] = strdatawr(string);
+            j += sizeof(CSTRING);
          }
          else if ((type IS LUA_TSTRING) or (type IS LUA_TNUMBER)) {
-            ((CSTRING *)(argbuffer + j))[0] = lua_tostring(Lua, n);
+            if (args[i].Type & FD_CPP) {
+               ((std::string_view *)(argbuffer + j))[0] = lua_tostringview(Lua, n);
+               j += sizeof(std::string_view);
+            }
+            else {
+               ((CSTRING *)(argbuffer + j))[0] = lua_tostring(Lua, n);
+               j += sizeof(CSTRING);
+            }
          }
          else if (type <= 0) {
-            ((CSTRING *)(argbuffer + j))[0] = nullptr;
-         }
-         else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
-            luaL_error(Lua, ERR::InvalidType, "Arg #%d (%s) requires a string and not untyped pointer.", i, args[i].Name);
+            if (args[i].Type & FD_CPP) {
+               ((std::string_view *)(argbuffer + j))[0] = std::string_view{};
+               j += sizeof(std::string_view);
+            }
+            else {
+               ((CSTRING *)(argbuffer + j))[0] = nullptr;
+               j += sizeof(CSTRING);
+            }
          }
          else luaL_error(Lua, ERR::InvalidType, "Arg #%d (%s) requires a string, got %s '%s'.", i, args[i].Name, lua_typename(Lua, type), lua_tostring(Lua, n));
 
          //log.trace("Arg: %s, Value: %s", args[i].Name, ((STRING *)(argbuffer + j))[0]);
 
-         j += sizeof(STRING);
       }
       else if (args[i].Type & FD_PTR) {
          j = ALIGN64(j);

@@ -406,7 +406,7 @@ class objSound : public Object {
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
+   inline ERR getKey(std::string_view Key, STRING Value, int Size) noexcept {
       struct acGetKey args = { Key, Value, Size };
       auto error = Action(AC::GetKey, this, &args);
       if ((error != ERR::Okay) and (Value)) Value[0] = 0;
@@ -441,7 +441,7 @@ class objSound : public Object {
    inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
-   inline ERR acSetKey(CSTRING FieldName, CSTRING Value) noexcept {
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }

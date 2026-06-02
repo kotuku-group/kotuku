@@ -1025,7 +1025,7 @@ struct acCopyData      { static const AC id = AC::CopyData; OBJECTPTR Dest; };
 struct acDataFeed      { static const AC id = AC::DataFeed; OBJECTPTR Object; DATA Datatype; const void *Buffer; int Size; };
 struct acDragDrop      { static const AC id = AC::DragDrop; OBJECTPTR Source; int Item; CSTRING Datatype; };
 struct acDraw          { static const AC id = AC::Draw; int X; int Y; int Width; int Height; };
-struct acGetKey        { static const AC id = AC::GetKey; CSTRING Key; STRING Value; int Size; };
+struct acGetKey        { static const AC id = AC::GetKey; std::string_view Key; STRING Value; int Size; };
 struct acMove          { static const AC id = AC::Move; double DeltaX; double DeltaY; double DeltaZ; };
 struct acMoveToPoint   { static const AC id = AC::MoveToPoint; double X; double Y; double Z; MTF Flags; };
 struct acNewChild      { static const AC id = AC::NewChild; OBJECTPTR Object; };
@@ -1033,12 +1033,12 @@ struct acNewOwner      { static const AC id = AC::NewOwner; OBJECTPTR NewOwner; 
 struct acRead          { static const AC id = AC::Read; APTR Buffer; int Length; int Result; };
 struct acRedimension   { static const AC id = AC::Redimension; double X; double Y; double Z; double Width; double Height; double Depth; };
 struct acRedo          { static const AC id = AC::Redo; int Steps; };
-struct acRename        { static const AC id = AC::Rename; CSTRING Name; };
+struct acRename        { static const AC id = AC::Rename; std::string_view Name; };
 struct acResize        { static const AC id = AC::Resize; double Width; double Height; double Depth; };
 struct acSaveImage     { static const AC id = AC::SaveImage; OBJECTPTR Dest; union { CLASSID ClassID; CLASSID Class; }; };
 struct acSaveToObject  { static const AC id = AC::SaveToObject; OBJECTPTR Dest; union { CLASSID ClassID; CLASSID Class; }; };
 struct acSeek          { static const AC id = AC::Seek; double Offset; SEEK Position; };
-struct acSetKey        { static const AC id = AC::SetKey; CSTRING Key; CSTRING Value; };
+struct acSetKey        { static const AC id = AC::SetKey; std::string_view Key; std::string_view Value; };
 struct acUndo          { static const AC id = AC::Undo; int Steps; };
 struct acWrite         { static const AC id = AC::Write; CPTR Buffer; int Length; int Result; };
 
@@ -1087,7 +1087,7 @@ inline ERR acDataFeed(OBJECTPTR Object, OBJECTPTR Sender, DATA Datatype, const v
    return Action(AC::DataFeed, Object, &args);
 }
 
-inline ERR acGetKey(OBJECTPTR Object, CSTRING Key, STRING Value, int Size) {
+inline ERR acGetKey(OBJECTPTR Object, std::string_view Key, STRING Value, int Size) {
    struct acGetKey args = { Key, Value, Size };
    ERR error = Action(AC::GetKey, Object, &args);
    if ((error != ERR::Okay) and (Value)) Value[0] = 0;
@@ -1121,7 +1121,7 @@ inline ERR acRedimension(OBJECTPTR Object, double X, double Y, double Z, double 
    return Action(AC::Redimension, Object, &args);
 }
 
-inline ERR acRename(OBJECTPTR Object, CSTRING Name) {
+inline ERR acRename(OBJECTPTR Object, std::string_view Name) {
    struct acRename args = { Name };
    return Action(AC::Rename, Object, &args);
 }
@@ -1186,7 +1186,7 @@ template <class T> inline ERR acSeekCurrent(OBJECTPTR Object, T Offset) {
    return acSeek(Object, Offset, SEEK::CURRENT);
 }
 
-inline ERR acSetKey(OBJECTPTR Object, CSTRING Key, CSTRING Value) {
+inline ERR acSetKey(OBJECTPTR Object, std::string_view Key, std::string_view Value) {
    struct acSetKey args = { Key, Value };
    return Action(AC::SetKey, Object, &args);
 }

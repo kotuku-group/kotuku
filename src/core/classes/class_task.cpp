@@ -1486,8 +1486,7 @@ static ERR TASK_GetKey(extTask *Self, struct acGetKey *Args)
 
    if ((!Args) or (!Args->Value) or (Args->Size <= 0)) return log.warning(ERR::NullArgs);
 
-   auto it = Self->Fields.find(Args->Key);
-   if (it != Self->Fields.end()) {
+   if (auto it = Self->Fields.find(Args->Key); it != Self->Fields.end()) {
       for (j=0; (it->second[j]) and (j < Args->Size-1); j++) Args->Value[j] = it->second[j];
       Args->Value[j++] = 0;
 
@@ -1495,7 +1494,7 @@ static ERR TASK_GetKey(extTask *Self, struct acGetKey *Args)
       else return ERR::Okay;
    }
 
-   log.warning("The variable \"%s\" does not exist.", Args->Key);
+   log.warning("The variable \"%.*s\" does not exist.", int(Args->Key.size()), Args->Key.data());
 
    return ERR::Okay;
 }
@@ -1784,7 +1783,7 @@ SetKey: Variable fields are supported for the general storage of program variabl
 
 static ERR TASK_SetKey(extTask *Self, struct acSetKey *Args)
 {
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return ERR::NullArgs;
+   if (!Args) return ERR::NullArgs;
 
    Self->Fields[Args->Key] = Args->Value;
    return ERR::Okay;
