@@ -412,7 +412,7 @@ GetKey: Read XQuery variable values.
 
 static ERR XQUERY_GetKey(extXQuery *Self, struct acGetKey *Args)
 {
-   if ((not Args) or (not Args->Value) or (not Args->Key)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value) or (Args->Key.empty())) return ERR::NullArgs;
    if (Args->Size < 2) return ERR::Args;
 
    if (auto it = Self->Variables.find(Args->Key); it != Self->Variables.end()) {
@@ -765,10 +765,6 @@ SetKey: Set XQuery variable values.
 Use SetKey to store key-value pairs that can be referenced in XQuery expressions using the variable syntax
 `$variableName`.
 
--INPUT-
-cstr Key: The name of the variable (case sensitive).
-cstr Value: The string value to store or NULL to remove an existing key.
-
 -ERRORS-
 Okay:
 NullArgs: The `Key` parameter was not specified.
@@ -780,18 +776,12 @@ static ERR XQUERY_SetKey(extXQuery *Self, struct acSetKey *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Key)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Key.empty())) return log.warning(ERR::NullArgs);
 
-   log.trace("Setting variable '%s' = '%s'", Args->Key, Args->Value ? Args->Value : "");
+   log.trace("Setting variable '%.*s' = '%.*s'", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
-   if (Args->Value) {
-      Self->Variables[Args->Key] = Args->Value;
-   }
-   else {
-      // Remove variable if Value is null
-      Self->Variables.erase(Args->Key);
-   }
-
+   Self->Variables[Args->Key] = Args->Value;
+   Self->ListVariables.clear();
    return ERR::Okay;
 }
 

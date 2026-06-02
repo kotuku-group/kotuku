@@ -104,10 +104,10 @@
     <action>
       <name>Rename</name>
       <comment>Changes the name of a file.</comment>
-      <prototype>ERR acRename(*Object, CSTRING Name)</prototype>
+      <prototype>ERR acRename(*Object, std::string_view Name)</prototype>
       <tiriPrototype>err = Object.acRename(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The new name for the object.</param>
+        <param type="STRVIEW" name="Name">The new name for the object.</param>
       </input>
     </action>
 

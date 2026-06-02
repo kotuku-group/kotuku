@@ -283,16 +283,30 @@ struct CaseInsensitiveMap {
 };
 
 struct CaseInsensitiveHash {
-   std::size_t operator()(const std::string& s) const noexcept {
-      std::string lower = s;
-      std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-      return std::hash<std::string>{}(lower);
+   using is_transparent = void;
+
+   std::size_t operator()(std::string_view Value) const noexcept {
+      std::size_t hash = 5381;
+      for (auto ch : Value) {
+         hash = ((hash << 5) + hash) + std::tolower(uint8_t(ch));
+      }
+      return hash;
    }
 };
 
 struct CaseInsensitiveEqual {
-   bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+   using is_transparent = void;
+
+   bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      if (Lhs.size() != Rhs.size()) return false;
+
+      for (size_t i=0; i < Lhs.size(); i++) {
+         auto lhs = std::tolower(uint8_t(Lhs[i]));
+         auto rhs = std::tolower(uint8_t(Rhs[i]));
+         if (lhs != rhs) return false;
+      }
+
+      return true;
    }
 };
 

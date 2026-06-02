@@ -269,25 +269,24 @@ static void close_debug_socket_file()
 }
 #endif
 
-static bool valid_http_header_name(CSTRING Key)
+static bool valid_http_header_name(std::string_view Key)
 {
-   if ((!Key) or (!*Key)) return false;
+   if (Key.empty()) return false;
 
    constexpr CSTRING separators = "()<>@,;:\\\"/[]?={}";
-   for (auto key = (const uint8_t *)Key; *key; key++) {
-      if ((*key <= 0x20) or (*key >= 0x7f)) return false;
-      if (std::strchr(separators, *key)) return false;
+   for (auto ch : Key) {
+      auto key = uint8_t(ch);
+      if ((key <= 0x20) or (key >= 0x7f)) return false;
+      if (std::strchr(separators, key)) return false;
    }
 
    return true;
 }
 
-static bool valid_http_header_value(CSTRING Value)
+static bool valid_http_header_value(std::string_view Value)
 {
-   if (!Value) return false;
-
-   for (auto value = (const uint8_t *)Value; *value; value++) {
-      if ((*value IS '\r') or (*value IS '\n')) return false;
+   for (auto ch : Value) {
+      if ((ch IS '\r') or (ch IS '\n')) return false;
    }
 
    return true;
@@ -296,15 +295,31 @@ static bool valid_http_header_value(CSTRING Value)
 extern "C" uint8_t glAuthScript[];
 static int glAuthScriptLength;
 
+struct http_header_hash {
+   using is_transparent = void;
+
+   std::size_t operator()(std::string_view Value) const noexcept {
+      return std::hash<std::string_view>{}(Value);
+   }
+};
+
+struct http_header_equal {
+   using is_transparent = void;
+
+   bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      return Lhs IS Rhs;
+   }
+};
+
 class extHTTP : public objHTTP {
    public:
    FUNCTION Incoming;
    FUNCTION Outgoing;
    FUNCTION AuthCallback;
    FUNCTION StateChanged;
-   ankerl::unordered_dense::map<std::string, std::string> ResponseHeaders;
+   ankerl::unordered_dense::map<std::string, std::string, http_header_hash, http_header_equal> ResponseHeaders;
    kt::vector<std::string> ResponseKeys;
-   ankerl::unordered_dense::map<std::string, std::string> Headers;
+   ankerl::unordered_dense::map<std::string, std::string, http_header_hash, http_header_equal> Headers;
    std::string Response;   // Response header buffer
    std::string URI;        // Temporary string, used only when the user reads the URI
    std::string Username;
@@ -984,13 +999,13 @@ static ERR HTTP_GetKey(extHTTP *Self, struct acGetKey *Args)
 {
    if (!Args) return ERR::NullArgs;
 
-   if (Self->ResponseHeaders.contains(Args->Key)) {
-      kt::strcopy(Self->ResponseHeaders[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->ResponseHeaders.find(Args->Key); key_it != Self->ResponseHeaders.end()) {
+      kt::strcopy(key_it->second, Args->Value, Args->Size);
       return ERR::Okay;
    }
 
-   if (Self->Headers.contains(Args->Key)) {
-      kt::strcopy(Self->Headers[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->Headers.find(Args->Key); key_it != Self->Headers.end()) {
+      kt::strcopy(key_it->second, Args->Value, Args->Size);
       return ERR::Okay;
    }
 

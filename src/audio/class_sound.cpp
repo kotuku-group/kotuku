@@ -646,7 +646,7 @@ The following custom key values are formally recognised and may be defined autom
 
 static ERR SOUND_GetKey(extSound *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Key)) return ERR::NullArgs;
+   if (!Args) return ERR::NullArgs;
 
    std::string name(Args->Key);
    if (Self->Tags.contains(name)) {
@@ -1103,7 +1103,7 @@ SetKey: Define custom tags that will be saved with the sample data.
 
 static ERR SOUND_SetKey(extSound *Self, struct acSetKey *Args)
 {
-   if ((!Args) or (!Args->Key) or (!Args->Key[0])) return ERR::NullArgs;
+   if ((!Args) or (Args->Key.empty())) return ERR::NullArgs;
 
    Self->Tags[std::string(Args->Key)] = Args->Value;
    return ERR::Okay;

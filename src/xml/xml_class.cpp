@@ -624,7 +624,7 @@ static ERR XML_GetKey(extXML *Self, struct acGetKey *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if ((not Args->Key) or (not Args->Value) or (Args->Size < 1)) return log.warning(ERR::NullArgs);
+   if ((not Args->Value) or (Args->Size < 1)) return log.warning(ERR::NullArgs);
    if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
    Args->Value[0] = 0;
@@ -1618,7 +1618,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Key)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
 
    objXQuery *xq;
@@ -1666,7 +1666,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
                if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
             }
-            log.warning("Failed to find '%s'", Args->Key);
+            log.warning("Failed to find '%.*s'", int(Args->Key.size()), Args->Key.data());
             return error;
          }
       }
@@ -1674,7 +1674,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
          std::string_view sv;
          if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
-         log.msg("Failed to compile '%s'", Args->Key);
+         log.msg("Failed to compile '%.*s'", int(Args->Key.size()), Args->Key.data());
          return error;
       }
    }

@@ -694,14 +694,14 @@ key-value will be given the same name as that specified in the widget's element.
 
 static ERR DOCUMENT_GetKey(extDocument *Self, struct acGetKey *Args)
 {
-   if ((not Args) or (not Args->Value) or (not Args->Key) or (Args->Size < 2)) return ERR::Args;
+   if ((not Args) or (not Args->Value) or (Args->Size < 2)) return ERR::Args;
 
-   if (Self->Vars.contains(Args->Key)) {
-      strcopy(Self->Vars[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->Vars.find(Args->Key); key_it != Self->Vars.end()) {
+      strcopy(key_it->second, Args->Value, Args->Size);
       return ERR::Okay;
    }
-   else if (Self->Params.contains(Args->Key)) {
-      strcopy(Self->Params[Args->Key], Args->Value, Args->Size);
+   else if (auto key_it = Self->Params.find(Args->Key); key_it != Self->Params.end()) {
+      strcopy(key_it->second, Args->Value, Args->Size);
       return ERR::Okay;
    }
 
@@ -2005,10 +2005,13 @@ static ERR DOCUMENT_SetKey(extDocument *Self, struct acSetKey *Args)
 {
    // Note: Zero-length parameter values are permitted.
 
-   if ((not Args) or (not Args->Key)) return ERR::NullArgs;
-   if (not Args->Key[0]) return ERR::Args;
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
-   Self->Vars[Args->Key] = Args->Value;
+   auto key_it = Self->Vars.lower_bound(Args->Key);
+   if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
+      key_it->second.assign(Args->Value);
+   }
+   else Self->Vars.emplace_hint(key_it, std::string(Args->Key), std::string(Args->Value));
 
    return ERR::Okay;
 }

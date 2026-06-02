@@ -952,9 +952,19 @@ class XPathParser {
 
 //*********************************************************************************************************************
 
+struct fi_hash {
+   using is_transparent = void;
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
+};
+
+struct fi_equal {
+   using is_transparent = void;
+   [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
+};
+
 class extXQuery : public objXQuery {
 public:
-   ankerl::unordered_dense::map<std::string, std::string> Variables; // XPath variable references
+   ankerl::unordered_dense::map<std::string, std::string, fi_hash, fi_equal> Variables; // XPath variable references
    ankerl::unordered_dense::map<std::string, FUNCTION> RegisteredFunctions;
    FUNCTION Callback;
    FUNCTION ResolveVariable;

@@ -37,7 +37,7 @@ global glActionStubs = {
       return Action(AC::CopyData, this, &args);
    }]],
    DragDrop = [[
-   inline ERR dragDrop(OBJECTPTR Source, int Item, CSTRING Datatype) noexcept {
+   inline ERR dragDrop(OBJECTPTR Source, int Item, std::string_view Datatype) noexcept {
       struct acDragDrop args = { .Source = Source, .Item = Item, .Datatype = Datatype };
       return Action(AC::DragDrop, this, &args);
    }]],
@@ -95,7 +95,7 @@ global glActionStubs = {
       return Action(AC::Redimension, this, &args);
    }]],
    Rename = [[
-   inline ERR rename(CSTRING Name) noexcept {
+   inline ERR rename(std::string_view Name) noexcept {
       struct acRename args = { Name };
       return Action(AC::Rename, this, &args);
    }]],
@@ -110,7 +110,7 @@ global glActionStubs = {
       return Action(AC::Undo, this, &args);
    }]],
    GetKey = [[
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
+   inline ERR getKey(std::string_view Key, STRING Value, int Size) noexcept {
       struct acGetKey args = { Key, Value, Size };
       auto error = Action(AC::GetKey, this, &args);
       if ((error != ERR::Okay) and (Value)) Value[0] = 0;
@@ -140,21 +140,6 @@ global glActionStubs = {
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
    ]],
-   SetKeys = [[
-   inline ERR setKeys(CSTRING tags, ...) noexcept {
-      struct acSetKey args;
-      va_list list;
-      va_start(list, tags);
-      while ((args.Field = va_arg(list, STRING)) != TAGEND) {
-         args.Value = va_arg(list, STRING);
-         if (Action(AC::SetKey, this, &args) != ERR::Okay) {
-            va_end(list);
-            return ERR::Failed;
-         }
-      }
-      va_end(list);
-      return ERR::Okay;
-   }]],
    Write = [[
    inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
       struct acWrite write = { (int8_t *)Buffer, Size };
@@ -189,7 +174,7 @@ global glActionStubs = {
       return Action(AC::SelectArea, this, &area);
    }]],
    SetKey = [[
-   inline ERR acSetKey(CSTRING FieldName, CSTRING Value) noexcept {
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }]],

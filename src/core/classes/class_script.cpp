@@ -332,7 +332,7 @@ GetKey: Script parameters can be retrieved through this action.
 
 static ERR SCRIPT_GetKey(objScript *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Value) or (!Args->Key)) return ERR::NullArgs;
+   if ((!Args) or (!Args->Value)) return ERR::NullArgs;
    if (Args->Size < 2) return ERR::Args;
 
    if (auto it = Self->Vars.find(Args->Key); it != Self->Vars.end()) {
@@ -400,13 +400,17 @@ static ERR SCRIPT_SetKey(objScript *Self, struct acSetKey *Args)
 {
    // It is acceptable to set zero-length string values (this has its uses in some scripts).
 
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return ERR::NullArgs;
-   if (!Args->Key[0]) return ERR::NullArgs;
+   if ((!Args) or (Args->Key.empty())) return ERR::NullArgs;
 
    kt::Log log;
-   log.trace("%s = %s", Args->Key, Args->Value);
+   log.trace("%.*s = %.*s", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
-   Self->Vars[Args->Key] = Args->Value;
+   auto key_it = Self->Vars.lower_bound(Args->Key);
+   if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
+      key_it->second.assign(Args->Value);
+   }
+   else Self->Vars.emplace_hint(key_it, std::string(Args->Key), std::string(Args->Value));
+
    return ERR::Okay;
 }
 

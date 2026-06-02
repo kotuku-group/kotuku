@@ -1225,12 +1225,12 @@ static ERR FILE_Rename(extFile *Self, struct acRename *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name) or (not Args->Name[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
 
-   log.branch("%s to %s", Self->Path.c_str(), Args->Name);
+   log.branch("%s to %.*s", Self->Path.c_str(), int(Args->Name.size()), Args->Name.data());
 
-   auto name = std::string_view(Args->Name, strlen(Args->Name));
+   auto name = Args->Name;
 
    if ((Self->isFolder) or ((Self->Flags & FL::FOLDER) != FL::NIL)) {
       if (Self->Path.ends_with(':')) { // Renaming a volume
