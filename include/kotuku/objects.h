@@ -1023,7 +1023,7 @@ inline void SharedObjectAccess::release() {
 struct acClipboard     { static const AC id = AC::Clipboard; CLIPMODE Mode; };
 struct acCopyData      { static const AC id = AC::CopyData; OBJECTPTR Dest; };
 struct acDataFeed      { static const AC id = AC::DataFeed; OBJECTPTR Object; DATA Datatype; const void *Buffer; int Size; };
-struct acDragDrop      { static const AC id = AC::DragDrop; OBJECTPTR Source; int Item; CSTRING Datatype; };
+struct acDragDrop      { static const AC id = AC::DragDrop; OBJECTPTR Source; int Item; std::string_view Datatype; };
 struct acDraw          { static const AC id = AC::Draw; int X; int Y; int Width; int Height; };
 struct acGetKey        { static const AC id = AC::GetKey; std::string_view Key; STRING Value; int Size; };
 struct acMove          { static const AC id = AC::Move; double DeltaX; double DeltaY; double DeltaZ; };
@@ -1072,7 +1072,7 @@ inline ERR acClipboard(OBJECTPTR Object, CLIPMODE Mode) {
    return Action(AC::Clipboard, Object, &args);
 }
 
-inline ERR acDragDrop(OBJECTPTR Object, OBJECTPTR Source, int Item, CSTRING Datatype) {
+inline ERR acDragDrop(OBJECTPTR Object, OBJECTPTR Source, int Item, std::string_view Datatype) {
    struct acDragDrop args = { Source, Item, Datatype };
    return Action(AC::DragDrop, Object, &args);
 }

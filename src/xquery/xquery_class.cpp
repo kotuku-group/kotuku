@@ -780,14 +780,8 @@ static ERR XQUERY_SetKey(extXQuery *Self, struct acSetKey *Args)
 
    log.trace("Setting variable '%.*s' = '%.*s'", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
-   if (not Args->Value.empty()) {
-      Self->Variables[Args->Key] = Args->Value;
-   }
-   else { // Remove existing variable when Value is empty
-      if (auto it = Self->Variables.find(Args->Key); it != Self->Variables.end()) Self->Variables.erase(it);
-      else Self->Variables[Args->Key] = "";
-   }
-
+   Self->Variables[Args->Key] = Args->Value;
+   Self->ListVariables.clear();
    return ERR::Okay;
 }
 

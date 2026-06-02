@@ -263,7 +263,8 @@ static int object_get(lua_State *Lua)
 {
    kt::Log log("obj.get");
 
-   if (auto fieldname = luaL_checkstring(Lua, 1)) {
+   std::string_view fieldname;
+   if (luaL_checkstring(Lua, 1, fieldname)) {
       auto def = object_context(Lua);
 
       auto obj = access_object(def);
@@ -273,9 +274,10 @@ static int object_get(lua_State *Lua)
       }
 
       OBJECTPTR target;
-      if (fieldname[0] IS '$') { // Get field as a string, good for CSV arrays, flags and lookups
+      if (fieldname.starts_with('$')) { // Get field as a string, good for CSV arrays, flags and lookups
+         fieldname.remove_prefix(1);
          std::string buffer;
-         if (obj->get(fieldhash(fieldname+1), buffer) IS ERR::Okay) lua_pushlstring(Lua, buffer.c_str(), buffer.size());
+         if (obj->get(fieldhash(fieldname), buffer) IS ERR::Okay) lua_pushlstring(Lua, buffer.c_str(), buffer.size());
          else lua_pushvalue(Lua, 2); // Push the client's default value
          release_object(def);
          return 1;
@@ -311,7 +313,7 @@ static int object_get(lua_State *Lua)
          }
 
          release_object(def);
-         if (!result) lua_pushvalue(Lua, 2); // An error occurred if no result.  Push the client's default value
+         if (not result) lua_pushvalue(Lua, 2); // An error occurred if no result.  Push the client's default value
          return 1;
       }
       else { // Revert to getKey() if the class supports it failed
@@ -336,7 +338,8 @@ static int object_get(lua_State *Lua)
 
 static int object_getkey(lua_State *Lua)
 {
-   if (auto fieldname = luaL_checkstring(Lua, 1)) {
+   std::string_view fieldname;
+   if (luaL_checkstring(Lua, 1, fieldname)) {
       auto def = object_context(Lua);
       ERR error;
       if (auto obj = access_object(def)) {
@@ -365,8 +368,8 @@ static int object_set(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   CSTRING fieldname;
-   if (!(fieldname = luaL_checkstring(Lua, 1))) return 0;
+   std::string_view fieldname;
+   if (not luaL_checkstring(Lua, 1, fieldname)) return 0;
 
    if (auto obj = access_object(def)) {
       int type = lua_type(Lua, 2);
@@ -395,7 +398,8 @@ static int object_set(lua_State *Lua)
 static int object_setkey(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   if (auto fieldname = luaL_checkstring(Lua, 1)) {
+   std::string_view fieldname;
+   if (luaL_checkstring(Lua, 1, fieldname)) {
       auto value = luaL_optstring(Lua, 2, nullptr);
       if (auto obj = access_object(def)) {
          ERR error = acSetKey(obj, fieldname, value);

@@ -123,12 +123,12 @@ setAction('Disable', {
 
 setAction('DragDrop', {
    comment   = 'Manages drag and drop from one object to another.',
-   prototype = 'ERR acDragDrop(*Object, OBJECTID Source, INT Item, DATA Datatype)',
-   tiriPrototype = 'err = Object.acDragDrop(Source:obj, Item:num, Datatype:DATA)',
+   prototype = 'ERR acDragDrop(*Object, OBJECTID Source, INT Item, STRVIEW Datatype)',
+   tiriPrototype = 'err = Object.acDragDrop(Source:obj, Item:num, Datatype:str)',
    params    = {
       { name='Source', type='OBJECTID', comment='Refers to the object containing the source data.' },
       { name='Item', type='INT', comment='An item ID, relevant to the source object.' },
-      { name='Datatype', type='DATA', lookup='DATA', comment='The type of data represented by the source item.' }
+      { name='Datatype', type='STRVIEW', comment='The types of data represented by the source item.' }
    }
 })
 
@@ -174,10 +174,10 @@ setAction('Free', {
 
 setAction('GetKey', {
    comment   = 'Retrieves custom key values that are not defined by an object\'s structure.',
-   prototype = 'ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)',
+   prototype = 'ERR acGetKey(*Object, std::string_view Key, STRING Value, INT Size)',
    tiriPrototype = 'err = Object.acGetKey(Key:str, Value:str, Size:num)',
    params    = {
-      { name='Key', type='CSTRING', comment='The name of a key value.' },
+      { name='Key', type='STRVIEW', comment='The name of a key value.' },
       { name='Value', type='STRING', comment='Pointer to a buffer space large enough to hold the retrieved value.' },
       { name='Size', type='INT', comment='Indicates the byte size of the Buffer.' }
    }
@@ -311,10 +311,10 @@ setAction('Refresh', {
 
 setAction('Rename', {
    comment   = 'Renames an object.',
-   prototype = 'ERR acRename(*Object, CSTRING Name)',
+   prototype = 'ERR acRename(*Object, std::string_view Name)',
    tiriPrototype = 'err = Object.acRename(Name:str)',
    params    = {
-      { name='Name', type='CSTRING', comment='The new name for the object.' }
+      { name='Name', type='STRVIEW', comment='The new name for the object.' }
    }
 })
 
@@ -377,11 +377,11 @@ setAction('SetField', {
 
 setAction('SetKey', {
    comment   = 'Sets custom key values that are not defined by an object\'s structure.',
-   prototype = 'ERR acSetKey(*Object, CSTRING Key, CSTRING Value)',
+   prototype = 'ERR acSetKey(*Object, std::string_view Key, std::string_view Value)',
    tiriPrototype = 'err = Object.acSetKey(Key:str, Value:str)',
    params    = {
-      { name='Key', type='CSTRING', comment='The name of the target key.' },
-      { name='Value', type='CSTRING', comment='The string value to associate with Key.' }
+      { name='Key', type='STRVIEW', comment='The name of the target key.' },
+      { name='Value', type='STRVIEW', comment='The string value to associate with Key.' }
    }
 })
 
