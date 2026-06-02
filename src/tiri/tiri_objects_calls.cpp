@@ -118,7 +118,13 @@ static int object_method_call(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Build argument buffer for actions and methods.
+// Build an argument buffer for actions and methods.  This follows the FD parsing logic of module_call() for the most
+// part, as that is the base-line for argument parsing.  However, some differences apply in part due to the fact that
+// action parameters are stored in structs.
+//
+// NOTE: FD_RESULT types are treated as real result values that are returned after the ERR code.  They don't need to
+// be provided up-front by the client.  FD_MUTABLE types are mutable buffers that must be provided by the client and
+// are manipulated in-place by the action.
 
 static bool check_mutable_string_arg(lua_State *Lua, int Arg, GCstr *String)
 {

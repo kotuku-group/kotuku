@@ -447,8 +447,8 @@ static int module_index(lua_State *Lua)
 //
 // Mixed direction:
 //
-// MUTABLE|RESULT|Type  = Volatile/direct output.  Intended for short-lived storage owned by the callee.  Prefer a
-//                        plain RESULT form when Tiri should receive a stable value.
+// MUTABLE|RESULT = An empty, mutable buffer is required on input (e.g. std::string) and it will be used to store the
+//                  result.  Typically used with CPP types because the buffer needs to be manipulable.
 
 static int module_call(lua_State *Lua)
 {
@@ -602,7 +602,6 @@ static int module_call(lua_State *Lua)
                if (not lj_str_ismutable(string)) {
                   cleanup();
                   luaL_argerror(Lua, i, "Mutable buffer required.");
-                  return 0;
                }
 
                ((APTR *)(buffer + j))[0] = strdatawr(string);
@@ -630,13 +629,11 @@ static int module_call(lua_State *Lua)
                else {
                   cleanup();
                   luaL_error(Lua, ERR::InvalidType, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
-                  return 0;
                }
             }
             else {
                cleanup();
                luaL_error(Lua, ERR::Args, "A memory buffer is required in arg #%d.", i);
-               return 0;
             }
          }
          else if (argtype & FD_STR) { // FD_RESULT
