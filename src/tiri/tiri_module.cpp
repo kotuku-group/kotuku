@@ -26,6 +26,7 @@
 #include <mutex>
 #include <memory>
 #include <span>
+#include <new>
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
@@ -51,6 +52,59 @@ static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Store
 
 static int module_call(lua_State *);
 static int process_results(prvTiri *, APTR, const FunctionField *);
+
+//********************************************************************************************************************
+// Support for mutable array results
+
+template <class T> static ERR make_cpp_array_result(APTR *Result)
+{
+   auto vector = new (std::nothrow) kt::vector<T>;
+   if (not vector) return ERR::AllocMemory;
+
+   *Result = vector;
+   return ERR::Okay;
+}
+
+static ERR make_cpp_array_result(int Type, APTR *Result)
+{
+   if (Type & FD_STR) return make_cpp_array_result<std::string>(Result);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) return make_cpp_array_result<OBJECTPTR>(Result);
+   else if (Type & FD_PTR) return make_cpp_array_result<APTR>(Result);
+   else if (Type & FD_DOUBLE) return make_cpp_array_result<double>(Result);
+   else if (Type & FD_FLOAT) return make_cpp_array_result<float>(Result);
+   else if (Type & FD_INT64) return make_cpp_array_result<int64_t>(Result);
+   else if (Type & FD_INT) return make_cpp_array_result<int>(Result);
+   else if (Type & FD_WORD) return make_cpp_array_result<int16_t>(Result);
+   else if (Type & FD_BYTE) return make_cpp_array_result<uint8_t>(Result);
+   else return ERR::NoSupport;
+}
+
+template <class T> static void push_cpp_array_result(lua_State *Lua, int Type, std::string_view Name, APTR Source)
+{
+   auto vector = (kt::vector<T> *)Source;
+   make_any_array(Lua, Type, Name, int(vector->size()), vector->data());
+}
+
+static bool push_cpp_array_result(lua_State *Lua, int Type, std::string_view Name, APTR Source)
+{
+   if (Type & FD_STR) {
+      auto vector = (kt::vector<std::string> *)Source;
+      make_array(Lua, AET::STR_CPP, int(vector->size()), vector);
+   }
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) push_cpp_array_result<OBJECTPTR>(Lua, Type, Name, Source);
+   else if (Type & FD_PTR) push_cpp_array_result<APTR>(Lua, Type, Name, Source);
+   else if (Type & FD_DOUBLE) push_cpp_array_result<double>(Lua, Type, Name, Source);
+   else if (Type & FD_FLOAT) push_cpp_array_result<float>(Lua, Type, Name, Source);
+   else if (Type & FD_INT64) push_cpp_array_result<int64_t>(Lua, Type, Name, Source);
+   else if (Type & FD_INT) push_cpp_array_result<int>(Lua, Type, Name, Source);
+   else if (Type & FD_WORD) push_cpp_array_result<int16_t>(Lua, Type, Name, Source);
+   else if (Type & FD_BYTE) push_cpp_array_result<uint8_t>(Lua, Type, Name, Source);
+   else return false;
+
+   return true;
+}
+
+//********************************************************************************************************************
 
 [[nodiscard]] static GCstr * string_arg(lua_State *Lua, int Arg) noexcept
 {
@@ -413,7 +467,7 @@ static int module_index(lua_State *Lua)
 // OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
 // ARRAY        = Type *.  Accepts a Tiri array and passes its data pointer.  ARRAYSIZE can follow.
 // ARRAY|BUFFER = Type *.  Accepts a Tiri array and treats ARRAYSIZE/BUFSIZE as byte capacity.
-// ARRAY|CPP    = Unsupported.  kt::vector<> marshalling is not implemented for module calls.
+// ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
 // FUNCTION     = FUNCTION *.  Accepts a Tiri function or global function name.
 //
 // Mutable combinations.  User is expected to supply a reference to a suitable storage area, as defined by the type
@@ -441,14 +495,15 @@ static int module_index(lua_State *Lua)
 //                     struct when RESOURCE is set.
 // RESULT|ARRAY      = Type **.  Function writes an array pointer; returned to Tiri as an array.  ARRAYSIZE may
 //                     follow to define element count.
+// RESULT|ARRAY|CPP  = kt::vector<> *.  Tiri provides an empty kt::vector<>; returned to Tiri as an array.
 // RESULT|BUFFER     = APTR.  Caller supplies a mutable Tiri buffer or array for the function to fill; BUFSIZE
 //                     must follow.
 // RESULT|BUFFER|CPP = Unsupported.  kt::vector<> output marshalling is not implemented for module calls.
 //
 // Mixed direction:
 //
-// MUTABLE|RESULT = An empty, mutable buffer is required on input (e.g. std::string) and it will be used to store the
-//                  result.  Typically used with CPP types because the buffer needs to be manipulable.
+// MUTABLE|RESULT|CPP = An empty C++ buffer is supplied as input (e.g. std::string or kt::vector<>) and it will be
+//                      used to store the result.
 
 static int module_call(lua_State *Lua)
 {
@@ -473,6 +528,7 @@ static int module_call(lua_State *Lua)
    std::vector<std::string_view> string_views;
    std::vector<allocated_struct_ref> allocated_structs;
    std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
+   std::vector<APTR> cpp_arrays;
    strings.reserve(4); // Keep the collection stable
    string_views.reserve(4);
 
@@ -482,10 +538,14 @@ static int module_call(lua_State *Lua)
          if (entry.Def) destroy_struct_cpp_strings(*entry.Def, entry.Data);
          FreeResource(entry.Data);
       }
+      for (auto &entry : cpp_arrays) {
+         delete (kt::vector<int8_t> *)(entry);
+      }
       std::vector<std::string>().swap(strings);
       std::vector<std::string_view>().swap(string_views);
       std::vector<allocated_struct_ref>().swap(allocated_structs);
       std::vector<mutable_cpp_string_ref>().swap(mutable_cpp_strings);
+      std::vector<APTR>().swap(cpp_arrays);
    };
 
    auto copy_mutable_cpp_strings = [&]() {
@@ -557,7 +617,23 @@ static int module_call(lua_State *Lua)
 
          RMSG("Result for arg %d stored at %p", i, end);
 
-         if (argtype & FD_BUFFER) { // For fixed-size buffers; the next parameter must indicate the size.
+         if ((argtype & FD_CPP) and (argtype & FD_ARRAY) and (argtype & FD_MUTABLE)) {
+            // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
+            // We set this up here, then convert the resulting values to a Tiri array when the function returns.
+            APTR result_ref;
+            if (auto error = make_cpp_array_result(argtype, &result_ref); error IS ERR::Okay) {
+               ((APTR *)(buffer + j))[0] = result_ref; // kt::vector<>
+               cpp_arrays.push_back(result_ref);
+               arg_values[in]  = buffer + j;
+               arg_types[in++] = &ffi_type_pointer;
+               j += sizeof(APTR);
+            }
+            else {
+               cleanup();
+               luaL_error(Lua, error, "Function '%s' uses an unsupported C++ array result type.", mod->Functions[index].Name);
+            }
+         }
+         else if (argtype & FD_BUFFER) { // For fixed-size buffers; the next parameter must indicate the size.
             // The client must supply an argument that will store a buffer result.  This is a different case to the
             // storage of type values.  Buffers can be combined with FD_ARRAY to store more than one element.
 
@@ -638,16 +714,26 @@ static int module_call(lua_State *Lua)
          }
          else if (argtype & FD_STR) { // FD_RESULT
             if (argtype & FD_CPP) {
-               // Special case; we provide a std::string that will be used as a buffer for storing the result and destroy
-               // it after processing results.
+               if (argtype & FD_MUTABLE) {
+                  // Use of MUTABLE enables support for std::string buffering.  We provide our own std::string that will be used as
+                  // the buffer, it gets converted to a Tiri string when the function returns.
 
-               strings.emplace_back();
-               ((std::string **)(buffer + j))[0] = &strings.back();
-               arg_values[in]  = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
-               j += sizeof(APTR);
+                  strings.emplace_back();
+                  ((std::string **)(buffer + j))[0] = &strings.back();
+                  arg_values[in]  = buffer + j;
+                  arg_types[in++] = &ffi_type_pointer;
+                  j += sizeof(APTR);
+               }
+               else {
+                  // Non-mutable string reference, supported as a std::string_view
+                  string_views.emplace_back();
+                  ((std::string_view **)(buffer + j))[0] = &string_views.back();
+                  arg_values[in]  = buffer + j;
+                  arg_types[in++] = &ffi_type_pointer;
+                  j += sizeof(APTR);
+               }
             }
-            else {
+            else { // C-style string reference, this parameter style is being deprecated.
                end -= sizeof(APTR);
                ((APTR *)(buffer + j))[0] = end;
                ((APTR *)end)[0] = nullptr;
@@ -1135,21 +1221,29 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
             scan += sizeof(APTR);
             if (var) {
                std::string_view argname(args[i].Name);
-               APTR values = ((APTR *)var)[0];
-               int total_elements = -1; // If -1, make_any_table() assumes the array is null terminated.
-
-               if (args[i+1].Type & FD_ARRAYSIZE) {
-                  CPTR size_var = ((APTR *)scan)[0];
-                  if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
-                  else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
-                  else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
+               if (argtype & FD_CPP) {
+                  if (not push_cpp_array_result(prv->Lua, argtype, argname, var)) {
+                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
+                     lua_pushnil(prv->Lua);
+                  }
                }
+               else {
+                  APTR values = ((APTR *)var)[0];
+                  int total_elements = -1; // If -1, make_any_table() assumes the array is null terminated.
 
-               if (values) {
-                  make_any_array(prv->Lua, argtype, argname, total_elements, values);
-                  if (argtype & FD_ALLOC) FreeResource(values);
+                  if (args[i+1].Type & FD_ARRAYSIZE) {
+                     CPTR size_var = ((APTR *)scan)[0];
+                     if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
+                     else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
+                     else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
+                  }
+
+                  if (values) {
+                     make_any_array(prv->Lua, argtype, argname, total_elements, values);
+                     if (argtype & FD_ALLOC) FreeResource(values);
+                  }
+                  else lua_pushnil(prv->Lua);
                }
-               else lua_pushnil(prv->Lua);
             }
             else lua_pushnil(prv->Lua);
             results++;
@@ -1159,9 +1253,15 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
       else if (argtype & FD_STR) {
          if (argtype & FD_RESULT) {
             if (auto var = ((APTR *)scan)[0]) {
-               if (argtype & FD_CPP) { // std::string variant
-                  auto str_result = (std::string *)var;
-                  lua_pushlstring(prv->Lua, str_result->data(), str_result->size());
+               if (argtype & FD_CPP) {
+                  if (argtype & FD_MUTABLE) { // std::string variant
+                     auto str_result = (std::string *)var;
+                     lua_pushlstring(prv->Lua, str_result->data(), str_result->size());
+                  }
+                  else { // std::string_view
+                     auto str_result = (std::string_view *)var;
+                     lua_pushlstring(prv->Lua, str_result->data(), str_result->size());
+                  }
                }
                else {
                   lua_pushstring(prv->Lua, ((STRING *)var)[0]);

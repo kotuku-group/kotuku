@@ -10,9 +10,9 @@ extern ERR XValueNodes(struct XPathValue * Value, kt::vector<struct XTag *> * Re
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsXValueNodes[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_ARRAY|FD_PTR|FD_RESULT }, { 0, 0 } };
+FDEF argsXValueNodes[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_ARRAY|FD_PTR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
 FDEF argsXValueToNumber[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_DOUBLE|FD_RESULT }, { 0, 0 } };
-FDEF argsXValueToString[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_STR|FD_RESULT }, { 0, 0 } };
+FDEF argsXValueToString[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)xml::XValueToNumber, "XValueToNumber", argsXValueToNumber },
