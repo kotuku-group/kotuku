@@ -3374,27 +3374,25 @@ class objScript : public Object {
 
    using create = kt::Create<objScript>;
 
-   std::string Path;         // The location of a script file to be loaded.
-   std::string Procedure;    // Specifies a procedure name to be executed.
-   OBJECTID TargetID;        // Reference to the default container that new script objects will be initialised to.
-   SCF      Flags;           // Optional flags.
-   ERR      Error;           // If a script fails during execution, an error code may be readable here.
-   int      CurrentLine;     // Indicates the current line being executed when in debug mode.
-   int      LineOffset;      // For debugging purposes, this value is added to any message referencing a line number.
+   std::string Path;            // The location of a script file to be loaded.
+   std::string Procedure;       // Specifies a procedure name to be executed.
+   std::string ErrorMessage;    // A human readable error string may be declared here following a script execution failure.
+   OBJECTID TargetID;           // Reference to the default container that new script objects will be initialised to.
+   SCF      Flags;              // Optional flags.
+   ERR      Error;              // If a script fails during execution, an error code may be readable here.
+   int      CurrentLine;        // Indicates the current line being executed when in debug mode.
+   int      LineOffset;         // For debugging purposes, this value is added to any message referencing a line number.
 
 #ifdef PRV_SCRIPT
    int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars; // Global parameters
+   KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
-   char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    std::string String;
    std::string WorkingPath;
-   std::string ErrorMessage;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
-   char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
 #endif
 
@@ -3456,6 +3454,11 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getErrorMessage(std::string_view &Value) noexcept {
+      Value = this->ErrorMessage;
+      return ERR::Okay;
+   }
+
    inline ERR getTarget(OBJECTID &Value) noexcept {
       Value = this->TargetID;
       return ERR::Okay;
@@ -3482,14 +3485,7 @@ class objScript : public Object {
    }
 
    inline ERR getCacheFile(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getErrorMessage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -3501,13 +3497,6 @@ class objScript : public Object {
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getLanguage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3544,6 +3533,11 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
+      this->ErrorMessage = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setTarget(OBJECTID Value) noexcept {
       this->TargetID = Value;
       return ERR::Okay;
@@ -3561,12 +3555,7 @@ class objScript : public Object {
    }
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 

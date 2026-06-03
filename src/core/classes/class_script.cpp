@@ -316,9 +316,7 @@ mutates-object, creates-resource
 
 static ERR SCRIPT_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
 {
-   kt::Log log;
-
-   if ((not Args) or Args->Procedure.empty()) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Procedure.empty()) return kt::Log().warning(ERR::NullArgs);
    Args->ProcedureID = strihash(Args->Procedure);
    return ERR::Okay;
 }
@@ -347,10 +345,8 @@ static ERR SCRIPT_GetKey(objScript *Self, struct acGetKey *Args)
 
 static ERR SCRIPT_Init(objScript *Self)
 {
-   kt::Log log;
-
    if (not Self->TargetID) { // Define the target if it has not been set already
-      log.detail("Target not set, defaulting to owner #%d.", Self->ownerID());
+      kt::Log().detail("Target not set, defaulting to owner #%d.", Self->ownerID());
       Self->TargetID = Self->ownerID();
    }
 
@@ -366,16 +362,6 @@ static ERR SCRIPT_NewPlacement(objScript *Self)
    new (Self) objScript;
 
    Self->CurrentLine = -1;
-
-   // Assume that the script is in English
-
-   Self->Language[0] = 'e';
-   Self->Language[1] = 'n';
-   Self->Language[2] = 'g';
-   Self->Language[3] = 0;
-
-   strcopy("lang", Self->LanguageDir, sizeof(Self->LanguageDir));
-
    return ERR::Okay;
 }
 
@@ -400,8 +386,7 @@ static ERR SCRIPT_SetKey(objScript *Self, struct acSetKey *Args)
 
    if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
-   kt::Log log;
-   log.trace("%.*s = %.*s", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
+   kt::Log().trace("%.*s = %.*s", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
    auto key_it = Self->Vars.lower_bound(Args->Key);
    if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
@@ -459,41 +444,9 @@ propagated through the call stack.
 -FIELD-
 ErrorMessage: A human readable error string may be declared here following a script execution failure.
 
-*********************************************************************************************************************/
-
-static ERR GET_ErrorMessage(objScript *Self, std::string_view &Value)
-{
-   Value = Self->ErrorMessage;
-   return Self->ErrorMessage.empty() ? ERR::FieldNotSet : ERR::Okay;
-}
-
-static ERR SET_ErrorMessage(objScript *Self, std::string_view &Value)
-{
-   Self->ErrorMessage.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Flags: Optional flags.
 Lookup: SCF
-
--FIELD-
-Language: Indicates the language (locale) that the source script is written in.
-
-The Language value indicates the language in which the source script was written.  The default setting is `ENG`, the
-code for international English.
-
-*********************************************************************************************************************/
-
-static ERR GET_Language(objScript *Self, std::string_view &Value)
-{
-   Value = std::string_view((const char *)&Self->Language, 3);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 LineOffset: For debugging purposes, this value is added to any message referencing a line number.
@@ -786,18 +739,17 @@ static ERR SET_WorkingPath(objScript *Self, std::string_view &Value)
 #include "class_script_def.c"
 
 static const FieldArray clScriptFields[] = {
-   { "Procedure",   FDF_CPPSTRING|FDF_RW|FDF_PURE },
-   { "Path",        FDF_CPPSTRING|FDF_RI|FDF_PURE, nullptr, SET_Path },
-   { "Target",      FDF_OBJECTID|FDF_RW },
-   { "Flags",       FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
-   { "Error",       FDF_INT|FDF_R },
-   { "CurrentLine", FDF_INT|FDF_R },
-   { "LineOffset",  FDF_INT|FDF_RW },
+   { "Procedure",    FDF_CPPSTRING|FDF_RW|FDF_PURE },
+   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE, nullptr, SET_Path },
+   { "ErrorMessage", FDF_CPPSTRING|FDF_RW|FDF_PURE },
+   { "Target",       FDF_OBJECTID|FDF_RW },
+   { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
+   { "Error",        FDF_INT|FDF_R },
+   { "CurrentLine",  FDF_INT|FDF_R },
+   { "LineOffset",   FDF_INT|FDF_RW },
    // Virtual Fields
    { "CacheFile",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_CacheFile, SET_CacheFile },
-   { "ErrorMessage", FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_ErrorMessage, SET_ErrorMessage },
    { "WorkingPath",  FDF_CPPSTRING|FDF_RW,                      GET_WorkingPath, SET_WorkingPath },
-   { "Language",     FDF_CPPSTRING|FDF_R|FDF_PURE,              GET_Language },
    { "Results",      FDF_ARRAY|FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Results, SET_Results },
    { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Statement",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_String, SET_String },
