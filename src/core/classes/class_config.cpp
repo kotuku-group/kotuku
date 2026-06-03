@@ -66,7 +66,7 @@ static bool check_for_key(std::string_view);
 static ERR parse_config(extConfig *, std::string_view);
 static ConfigGroup * find_group_wild(extConfig *Self, std::string_view Group);
 static void merge_groups(ConfigGroups &, ConfigGroups &);
-static std::string_view sort_key_value(const ConfigGroup &, CSTRING);
+static std::string_view sort_key_value(const ConfigGroup &, std::string_view);
 static void apply_filters(extConfig *);
 static void apply_key_filter(extConfig *, std::string_view);
 static void apply_group_filter(extConfig *, std::string_view);
@@ -231,8 +231,8 @@ DeleteKey: Deletes single key entries.
 This method deletes a single key from the Config object.
 
 -INPUT-
-cstr Group: The name of the targeted group.
-cstr Key: The name of the targeted key.
+cpp(strview) Group: The name of the targeted group.
+cpp(strview) Key: The name of the targeted key.
 
 -ERRORS-
 Okay
@@ -249,13 +249,14 @@ static ERR CONFIG_DeleteKey(extConfig *Self, struct cfg::DeleteKey *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Group) or (not Args->Key)) return ERR::NullArgs;
+   if ((not Args) or Args->Group.empty() or Args->Key.empty()) return ERR::NullArgs;
 
-   log.msg("Group: %s, Key: %s", Args->Group, Args->Key);
+   log.msg("Group: %.*s, Key: %.*s", int(Args->Group.size()), Args->Group.data(), int(Args->Key.size()),
+      Args->Key.data());
 
    for (auto & [group, keys] : Self->Groups) {
       if (group IS Args->Group) {
-         keys.erase(Args->Key);
+         if (auto it = keys.find(Args->Key); it != keys.end()) keys.erase(it);
          return ERR::Okay;
       }
    }
@@ -271,7 +272,7 @@ DeleteGroup: Deletes entire groups of configuration data.
 This method will delete an entire group of key-values from a config object if a matching group name is provided.
 
 -INPUT-
-cstr Group: The name of the group that will be deleted.
+cpp(strview) Group: The name of the group that will be deleted.
 
 -ERRORS-
 Okay: The group was deleted or does not exist.
@@ -285,7 +286,7 @@ mutates-object, idempotent
 
 static ERR CONFIG_DeleteGroup(extConfig *Self, struct cfg::DeleteGroup *Args)
 {
-   if ((not Args) or (not Args->Group)) return ERR::NullArgs;
+   if ((not Args) or Args->Group.empty()) return ERR::NullArgs;
 
    for (auto it = Self->Groups.begin(); it != Self->Groups.end(); it++) {
       if (it->first IS Args->Group) {
@@ -429,7 +430,7 @@ The path to the configuration file is all that is required.  Existing data in th
 source in cases where there matching set of group keys.
 
 -INPUT-
-cstr Path: The location of the configuration file that you want to merge.
+cpp(strview) Path: The location of the configuration file that you want to merge.
 
 -ERRORS-
 Okay
@@ -446,9 +447,9 @@ static ERR CONFIG_MergeFile(extConfig *Self, struct cfg::MergeFile *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Path)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Path.empty()) return log.warning(ERR::NullArgs);
 
-   log.branch("%s", Args->Path);
+   log.branch("%.*s", int(Args->Path.size()), Args->Path.data());
 
    extConfig::create src = { fl::Path(Args->Path) };
 
@@ -477,13 +478,13 @@ only for as long as the client has exclusive access to the config object.  The p
 if more information is written to the config object.  For this reason, consider copying the result if it will be
 used extensively.
 
-If the `Group` parameter is set to `NULL`, the scan routine will treat all of the config data as a one dimensional array.
-If the `Key` parameter is set to `NULL` then the first key in the requested group is returned.  If both parameters
-are `NULL` then the first known key value will be returned.
+If the `Group` parameter is empty, the scan routine will treat all of the config data as a one dimensional array.
+If the `Key` parameter is empty then the first key in the requested group is returned.  If both parameters are empty
+then the first known key value will be returned.
 
 -INPUT-
-cstr Group: The name of a group to examine for a key.  If `NULL`, all groups are scanned.
-cstr Key: The name of a key to retrieve (case sensitive).
+cpp(strview) Group: The name of a group to examine for a key.  If empty, all groups are scanned.
+cpp(strview) Key: The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.
 &cstr Data: The key value will be stored in this parameter on returning.
 
 -ERRORS-
@@ -504,9 +505,9 @@ static ERR CONFIG_ReadValue(extConfig *Self, struct cfg::ReadValue *Args)
    if (not Args) return log.warning(ERR::NullArgs);
 
    for (auto & [group, keys] : Self->Groups) {
-      if ((Args->Group) and (group != Args->Group)) continue;
+      if ((not Args->Group.empty()) and (group != Args->Group)) continue;
 
-      if (not Args->Key) {
+      if (Args->Key.empty()) {
          if (keys.empty()) Args->Data = "";
          else Args->Data = keys.cbegin()->second.c_str();
          return ERR::Okay;
@@ -517,7 +518,8 @@ static ERR CONFIG_ReadValue(extConfig *Self, struct cfg::ReadValue *Args)
       }
    }
 
-   log.trace("Could not find key %s : %s.", Args->Group, Args->Key);
+   log.trace("Could not find key %.*s : %.*s.", int(Args->Group.size()), Args->Group.data(), int(Args->Key.size()),
+      Args->Key.data());
    Args->Data = nullptr;
    return ERR::Search;
 }
@@ -595,9 +597,9 @@ config object.  The error code `ERR::Search` is returned if this is the case.  P
 information on the behaviour of this function.
 
 -INPUT-
-cstr Group: The name of the group.  Wildcards are supported.
-cstr Key:  The name of the key.
-cstr Data: The data that will be added to the given group/key.
+cpp(strview) Group: The name of the group.  Wildcards are supported.
+cpp(strview) Key:  The name of the key.
+cpp(strview) Data: The data that will be added to the given group/key.
 
 -ERRORS-
 Okay
@@ -613,12 +615,13 @@ mutates-object, copies-input
 static ERR CONFIG_Set(extConfig *Self, struct cfg::Set *Args)
 {
    if (not Args) return ERR::NullArgs;
-   if ((not Args->Group) or (not Args->Group[0])) return ERR::NullArgs;
-   if ((not Args->Key) or (not Args->Key[0])) return ERR::NullArgs;
+   if (Args->Group.empty()) return ERR::NullArgs;
+   if (Args->Key.empty()) return ERR::NullArgs;
 
    auto group = find_group_wild(Self, Args->Group);
    if (group) {
-      group->second[Args->Key] = Args->Data;
+      if (auto it = group->second.find(Args->Key); it != group->second.end()) it->second.assign(Args->Data);
+      else group->second.emplace(Args->Key, Args->Data);
       return ERR::Okay;
    }
    else return ERR::Search;
@@ -633,7 +636,7 @@ The SortByKey() method sorts the groups of a config object by key values (the na
 every group).
 
 -INPUT-
-cstr Key: The name of the key to sort on.
+cpp(strview) Key: The name of the key to sort on.
 int Descending: Set to true if a descending sort is required.
 
 -ERRORS-
@@ -648,7 +651,7 @@ mutates-object
 
 static ERR CONFIG_SortByKey(extConfig *Self, struct cfg::SortByKey *Args)
 {
-   if ((not Args) or (not Args->Key)) { // Sort by group name if no args provided.
+   if ((not Args) or Args->Key.empty()) { // Sort by group name if no args or key provided.
       std::sort(Self->Groups.begin(), Self->Groups.end(),
          [](const ConfigGroup &a, const ConfigGroup &b ) {
          return a.first < b.first;
@@ -659,7 +662,7 @@ static ERR CONFIG_SortByKey(extConfig *Self, struct cfg::SortByKey *Args)
 
    kt::Log log;
 
-   log.branch("Key: %s, Descending: %d", Args->Key, Args->Descending);
+   log.branch("Key: %.*s, Descending: %d", int(Args->Key.size()), Args->Key.data(), Args->Descending);
 
    auto descending = Args->Descending;
    std::sort(Self->Groups.begin(), Self->Groups.end(),
@@ -682,9 +685,9 @@ value are required.  If the `Group` and `Key` arguments match an existing entry 
 that entry will be replaced with the new Data value.
 
 -INPUT-
-cstr Group: The name of the group.
-cstr Key:   The name of the key.
-cstr Data:  The data that will be added to the given group/key.
+cpp(strview) Group: The name of the group.
+cpp(strview) Key:   The name of the key.
+cpp(strview) Data:  The data that will be added to the given group/key.
 
 -ERRORS-
 Okay
@@ -702,10 +705,10 @@ static ERR CONFIG_WriteValue(extConfig *Self, struct cfg::WriteValue *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Group) or (not Args->Key)) return log.warning(ERR::NullArgs);
-   if ((not Args->Group[0]) or (not Args->Key[0])) return log.warning(ERR::EmptyString);
+   if ((not Args) or Args->Group.empty() or Args->Key.empty()) return log.warning(ERR::NullArgs);
 
-   log.trace("%s.%s = %s", Args->Group, Args->Key, Args->Data);
+   log.trace("%.*s.%.*s = %.*s", int(Args->Group.size()), Args->Group.data(), int(Args->Key.size()),
+      Args->Key.data(), int(Args->Data.size()), Args->Data.data());
 
    return Self->write(Args->Group, Args->Key, Args->Data);
 }
@@ -888,7 +891,7 @@ static void merge_groups(ConfigGroups &Dest, ConfigGroups &Source)
 
 //********************************************************************************************************************
 
-static std::string_view sort_key_value(const ConfigGroup &Group, CSTRING Key)
+static std::string_view sort_key_value(const ConfigGroup &Group, std::string_view Key)
 {
    if (auto it = Group.second.find(Key); it != Group.second.end()) return it->second;
    else return {};

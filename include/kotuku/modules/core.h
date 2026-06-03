@@ -2843,8 +2843,8 @@ namespace fl {
 struct StartStream { OBJECTID SubscriberID; FL Flags; int Length; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct StopStream { static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Delete { FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Move { CSTRING Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Copy { CSTRING Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Move { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Copy { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDate { int Year; int Month; int Day; int Hour; int Minute; int Second; FDT Type; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ReadLine { STRING Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct BufferContent { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -2941,11 +2941,11 @@ class objFile : public Object {
       struct fl::Delete args = { &Callback };
       return(Action(AC(-3), this, &args));
    }
-   inline ERR move(CSTRING Dest, FUNCTION Callback) noexcept {
+   inline ERR move(const std::string_view & Dest, FUNCTION Callback) noexcept {
       struct fl::Move args = { Dest, &Callback };
       return(Action(AC(-4), this, &args));
    }
-   inline ERR copy(CSTRING Dest, FUNCTION Callback) noexcept {
+   inline ERR copy(const std::string_view & Dest, FUNCTION Callback) noexcept {
       struct fl::Copy args = { Dest, &Callback };
       return(Action(AC(-5), this, &args));
    }
@@ -3150,14 +3150,14 @@ class objFile : public Object {
 // Config methods
 
 namespace cfg {
-struct ReadValue { CSTRING Group; CSTRING Key; CSTRING Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Set { CSTRING Group; CSTRING Key; CSTRING Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct WriteValue { CSTRING Group; CSTRING Key; CSTRING Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DeleteKey { CSTRING Group; CSTRING Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DeleteGroup { CSTRING Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadValue { std::string_view Group; std::string_view Key; CSTRING Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Set { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct WriteValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DeleteKey { std::string_view Group; std::string_view Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DeleteGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetGroupFromIndex { int Index; CSTRING Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SortByKey { CSTRING Key; int Descending; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct MergeFile { CSTRING Path; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SortByKey { std::string_view Key; int Descending; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct MergeFile { std::string_view Path; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Merge { OBJECTPTR Source; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -3242,25 +3242,25 @@ class objConfig : public Object {
       struct acSaveToObject args = { Dest, { ClassID } };
       return Action(AC::SaveToObject, this, &args);
    }
-   inline ERR readValue(CSTRING Group, CSTRING Key, CSTRING * Data) noexcept {
+   inline ERR readValue(const std::string_view & Group, const std::string_view & Key, CSTRING * Data) noexcept {
       struct cfg::ReadValue args = { Group, Key, (CSTRING)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Data) *Data = args.Data;
       return(error);
    }
-   inline ERR set(CSTRING Group, CSTRING Key, CSTRING Data) noexcept {
+   inline ERR set(const std::string_view & Group, const std::string_view & Key, const std::string_view & Data) noexcept {
       struct cfg::Set args = { Group, Key, Data };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR writeValue(CSTRING Group, CSTRING Key, CSTRING Data) noexcept {
+   inline ERR writeValue(const std::string_view & Group, const std::string_view & Key, const std::string_view & Data) noexcept {
       struct cfg::WriteValue args = { Group, Key, Data };
       return(Action(AC(-3), this, &args));
    }
-   inline ERR deleteKey(CSTRING Group, CSTRING Key) noexcept {
+   inline ERR deleteKey(const std::string_view & Group, const std::string_view & Key) noexcept {
       struct cfg::DeleteKey args = { Group, Key };
       return(Action(AC(-4), this, &args));
    }
-   inline ERR deleteGroup(CSTRING Group) noexcept {
+   inline ERR deleteGroup(const std::string_view & Group) noexcept {
       struct cfg::DeleteGroup args = { Group };
       return(Action(AC(-5), this, &args));
    }
@@ -3270,11 +3270,11 @@ class objConfig : public Object {
       if (Group) *Group = args.Group;
       return(error);
    }
-   inline ERR sortByKey(CSTRING Key, int Descending) noexcept {
+   inline ERR sortByKey(const std::string_view & Key, int Descending) noexcept {
       struct cfg::SortByKey args = { Key, Descending };
       return(Action(AC(-7), this, &args));
    }
-   inline ERR mergeFile(CSTRING Path) noexcept {
+   inline ERR mergeFile(const std::string_view & Path) noexcept {
       struct cfg::MergeFile args = { Path };
       return(Action(AC(-9), this, &args));
    }
@@ -3359,11 +3359,11 @@ class objConfig : public Object {
 // Script methods
 
 namespace sc {
-struct Exec { CSTRING Procedure; const struct ScriptArg * Args; int TotalArgs; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Exec { std::string_view Procedure; const struct ScriptArg * Args; int TotalArgs; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DerefProcedure { FUNCTION * Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Callback { int64_t ProcedureID; const struct ScriptArg * Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetProcedureID { CSTRING Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DebugLog { CSTRING Options; CSTRING Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetProcedureID { std::string_view Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DebugLog { std::string_view Options; CSTRING Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3374,11 +3374,13 @@ class objScript : public Object {
 
    using create = kt::Create<objScript>;
 
-   OBJECTID TargetID;  // Reference to the default container that new script objects will be initialised to.
-   SCF      Flags;     // Optional flags.
-   ERR      Error;     // If a script fails during execution, an error code may be readable here.
-   int      CurrentLine; // Indicates the current line being executed when in debug mode.
-   int      LineOffset; // For debugging purposes, this value is added to any message referencing a line number.
+   std::string Path;         // The location of a script file to be loaded.
+   std::string Procedure;    // Specifies a procedure name to be executed.
+   OBJECTID TargetID;        // Reference to the default container that new script objects will be initialised to.
+   SCF      Flags;           // Optional flags.
+   ERR      Error;           // If a script fails during execution, an error code may be readable here.
+   int      CurrentLine;     // Indicates the current line being executed when in debug mode.
+   int      LineOffset;      // For debugging purposes, this value is added to any message referencing a line number.
 
 #ifdef PRV_SCRIPT
    int64_t  ProcedureID;          // For callbacks
@@ -3386,11 +3388,9 @@ class objScript : public Object {
    kt::vector<std::string> Results;
    char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string Path;              // File location of the script
    std::string String;
    std::string WorkingPath;
    std::string ErrorMessage;
-   std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
@@ -3417,7 +3417,7 @@ class objScript : public Object {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR exec(CSTRING Procedure, const struct ScriptArg * Args, int TotalArgs) noexcept {
+   inline ERR exec(const std::string_view & Procedure, const struct ScriptArg * Args, int TotalArgs) noexcept {
       struct sc::Exec args = { Procedure, Args, TotalArgs };
       return(Action(AC(-1), this, &args));
    }
@@ -3431,13 +3431,13 @@ class objScript : public Object {
       if (Error) *Error = args.Error;
       return(error);
    }
-   inline ERR getProcedureID(CSTRING Procedure, int64_t * ProcedureID) noexcept {
+   inline ERR getProcedureID(const std::string_view & Procedure, int64_t * ProcedureID) noexcept {
       struct sc::GetProcedureID args = { Procedure, (int64_t)0 };
       ERR error = Action(AC(-4), this, &args);
       if (ProcedureID) *ProcedureID = args.ProcedureID;
       return(error);
    }
-   inline ERR debugLog(CSTRING Options, CSTRING * Result) noexcept {
+   inline ERR debugLog(const std::string_view & Options, CSTRING * Result) noexcept {
       struct sc::DebugLog args = { Options, (CSTRING)0 };
       ERR error = Action(AC(-5), this, &args);
       if (Result) *Result = args.Result;
@@ -3445,6 +3445,16 @@ class objScript : public Object {
    }
 
    // Customised field getting
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getProcedure(std::string_view &Value) noexcept {
+      Value = this->Procedure;
+      return ERR::Okay;
+   }
 
    inline ERR getTarget(OBJECTID &Value) noexcept {
       Value = this->TargetID;
@@ -3472,7 +3482,7 @@ class objScript : public Object {
    }
 
    inline ERR getCacheFile(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -3495,21 +3505,7 @@ class objScript : public Object {
    }
 
    inline ERR getLanguage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getProcedure(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -3538,6 +3534,16 @@ class objScript : public Object {
 
    // Customised field setting
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00904500, &Value, 1);
+   }
+
+   inline ERR setProcedure(const std::string_view &Value) noexcept {
+      this->Procedure = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setTarget(OBJECTID Value) noexcept {
       this->TargetID = Value;
       return ERR::Okay;
@@ -3555,7 +3561,7 @@ class objScript : public Object {
    }
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
@@ -3567,16 +3573,6 @@ class objScript : public Object {
    inline ERR setWorkingPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, 0x00804300, &Value, 1);
-   }
-
-   inline ERR setProcedure(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
    inline ERR setResults(const kt::vector<std::string> *Value) noexcept {

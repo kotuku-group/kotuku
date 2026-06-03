@@ -419,7 +419,7 @@ copied to the new location.  If an error occurs when copying a sub-folder or fil
 and an error code will be returned.
 
 -INPUT-
-cstr Dest: The destination file path for the copy operation.
+cpp(strview) Dest: The destination file path for the copy operation.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -878,7 +878,7 @@ destination path then it will be over-written with the new data.
 The #Position field will be reset as a result of calling this method.
 
 -INPUT-
-cstr Dest: The desired path for the file.
+cpp(strview) Dest: The desired path for the file.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -897,13 +897,13 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Dest) or (not Args->Dest[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Dest.empty()) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
 
    auto src = std::string_view(Self->Path);
-   auto dest = std::string_view(Args->Dest, strlen(Args->Dest));
+   auto dest = Args->Dest;
 
-   log.msg("%s to %s", src.data(), dest.data());
+   log.msg("%.*s to %.*s", int(src.size()), src.data(), int(dest.size()), dest.data());
 
    if ((dest.ends_with('/')) or (dest.ends_with('\\')) or (dest.ends_with(':'))) {
       // If a trailing slash has been specified, we are moving the file into a folder, rather than to a direct path.
@@ -925,7 +925,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
       if ((error = fs_copy(src, newpath, Args->Callback, true)) IS ERR::Okay) {
          Self->Path.assign(newpath);
       }
-      else log.warning("Failed to move %s to %s", src.data(), newpath.data());
+      else log.warning("Failed to move %.*s to %s", int(src.size()), src.data(), newpath.c_str());
 
       return error;
    }

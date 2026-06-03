@@ -993,11 +993,11 @@ extern void lua_gettable(lua_State *L, int idx)
 //********************************************************************************************************************
 // Get table field by string key
 
-extern void lua_getfield(lua_State *L, int idx, CSTRING k)
+extern void lua_getfield(lua_State *L, int idx, std::string_view k)
 {
    cTValue *t = index2adr_check(L, idx);
    TValue key;
-   setstrV(L, &key, lj_str_newz(L, k));
+   setstrV(L, &key, lj_str_newsv(L, k));
    cTValue *v = lj_meta_tget(L, t, &key);
    if (v IS nullptr) v = MetaCall::invokeGet(L);
    copyTV(L, L->top, v);
@@ -1041,22 +1041,6 @@ extern int lua_getmetatable(lua_State *L, int idx)
    settabV(L, L->top, mt);
    incr_top(L);
    return 1;
-}
-
-//********************************************************************************************************************
-// Get metatable field by string key
-
-extern int luaL_getmetafield(lua_State *L, int idx, CSTRING field)
-{
-   if (lua_getmetatable(L, idx)) {
-      cTValue *tv = lj_tab_getstr(tabV(L->top - 1), lj_str_newz(L, field));
-      if (tv and !tvisnil(tv)) {
-         copyTV(L, L->top - 1, tv);
-         return 1;
-      }
-      L->top--;
-   }
-   return 0;
 }
 
 //********************************************************************************************************************
@@ -1396,53 +1380,6 @@ extern int lua_pcall(lua_State *L, int nargs, int nresults, int errfunc)
    status = lj_vm_pcall(L, api_call_base(L, nargs), nresults + 1, ef);
    if (status) hook_restore(g, oldh);
    return status;
-}
-
-//********************************************************************************************************************
-// Prepare C function call with userdata argument
-
-static TValue* cpcall(lua_State *L, lua_CFunction func, void* ud)
-{
-   GCfunc* fn = lj_func_newC(L, 0, getcurrenv(L));
-   TValue* top = L->top;
-   fn->c.f = func;
-   setfuncV(L, top++, fn);
-   setnilV(top++);
-   ud = lj_lightud_intern(L, ud);
-   setrawlightudV(top++, ud);
-   cframe_nres(L->cframe) = 1 + 0;  //  Zero results.
-   L->top = top;
-   return top - 1;  //  Now call the newly allocated C function.
-}
-
-//********************************************************************************************************************
-// Call C function with error handling
-
-extern int lua_cpcall(lua_State *L, lua_CFunction func, void *ud)
-{
-   global_State *g = G(L);
-   uint8_t oldh = hook_save(g);
-   int status;
-   lj_checkapi(L->status IS LUA_OK or L->status IS LUA_ERRERR, "thread called in wrong state %d", L->status);
-   status = lj_vm_cpcall(L, func, ud, cpcall);
-   if (status) hook_restore(g, oldh);
-   return status;
-}
-
-//********************************************************************************************************************
-// Call metamethod function
-
-extern int luaL_callmeta(lua_State *L, int idx, const char *field)
-{
-   if (luaL_getmetafield(L, idx, field)) {
-      TValue* top = L->top--;
-      setnilV(top++);
-      copyTV(L, top++, index2adr(L, idx));
-      L->top = top;
-      lj_vm_call(L, top - 1, 1 + 1);
-      return 1;
-   }
-   return 0;
 }
 
 //********************************************************************************************************************

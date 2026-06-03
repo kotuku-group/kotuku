@@ -1434,6 +1434,8 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   })
 
   klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
+    cpp(str) Path        # Location of the script
+    cpp(str) Procedure   # Specifies a procedure name to be executed
     oid Target           # The object that script objects must be initialised to, e.g. for obj.new()
     int(SCF) Flags       # Optional flags
     error Error          # If an error occurred, this field will indicate the error number
@@ -1446,11 +1448,9 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
    kt::vector<std::string> Results;
    char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string Path;              // File location of the script
    std::string String;
    std::string WorkingPath;
    std::string ErrorMessage;
-   std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs

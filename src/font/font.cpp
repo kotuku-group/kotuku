@@ -803,7 +803,7 @@ ERR RefreshFonts(void)
    scan_fixed_folder(glConfig);
    scan_truetype_folder(glConfig);
 
-   if (auto error = glConfig->sortByKey(nullptr, false); error != ERR::Okay) return error; // Sort by font name.
+   if (auto error = glConfig->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
 
    // Create a style list for each font, e.g.
    //

@@ -308,8 +308,8 @@ static void emit_globals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compac
    int count = 0;
    lua_pushnil(Prv->Lua);
    while (lua_next(Prv->Lua, storage_table_idx)) {
-      CSTRING key = lua_tostring(Prv->Lua, -2);
-      int type = lua_type(Prv->Lua, -1);
+      auto key = lua_tostringview(Prv->Lua, -2);
+      auto type = lua_type(Prv->Lua, -1);
 
       std::string value;
 
@@ -318,11 +318,14 @@ static void emit_globals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compac
             case LUA_TBOOLEAN: value = lua_toboolean(Prv->Lua, -1) ? "true" : "false"; break;
             case LUA_TNUMBER:  value = lua_tostring(Prv->Lua, -1); break;
             case LUA_TSTRING: {
-               size_t len;
-               CSTRING str = lua_tolstring(Prv->Lua, -1, &len);
-               std::string_view sv(str, len);
-               if (len > 40) value = "\"" + std::string(sv.substr(0, 40)) + "...\"";
-               else value = "\"" + std::string(sv) + "\"";
+               auto sv = lua_tostringview(Prv->Lua, -1);
+               value.append("\"");
+               if (sv.size() > 40) {
+                  value.append(sv.substr(0, 40));
+                  value.append("...");
+               }
+               else value.append(sv);
+               value.append("\"");
                break;
             }
          }
@@ -425,7 +428,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
    auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv->Lua) return log.warning(ERR::NotInitialised);
 
-   log.branch("Options: %s", Args->Options ? Args->Options : "(none)");
+   log.branch("Options: %.*s", int(Args->Options.size()), Args->Options.data());
 
    // Parse options (CSV list)
 
@@ -446,7 +449,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
       return haystack.find(needle) != std::string_view::npos;
    };
 
-   if (Args->Options) {
+   if (not Args->Options.empty()) {
       const std::string_view options = Args->Options;
 
       if (has_option(options, "all")) {
@@ -712,20 +715,20 @@ static ERR TIRI_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Procedure) or (not Args->Procedure[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Procedure.empty()) return log.warning(ERR::NullArgs);
 
    auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
 
    if ((not prv->Lua) or (not Self->ActivationCount)) {
-      log.warning("Cannot resolve function '%s'.  Script requires activation.", Args->Procedure);
+      log.warning("Cannot resolve function '%.*s'.  Script requires activation.", int(Args->Procedure.size()), Args->Procedure.data());
       return ERR::NotFound;
    }
 
    lua_getglobal(prv->Lua, Args->Procedure);
    if (not lua_isfunction(prv->Lua, -1)) {
       lua_pop(prv->Lua, 1);
-      log.warning("Failed to resolve function name '%s' to an ID.", Args->Procedure);
+      log.warning("Failed to resolve function name '%.*s' to an ID.", int(Args->Procedure.size()), Args->Procedure.data());
       return ERR::NotFound;
    }
 
@@ -735,7 +738,7 @@ static ERR TIRI_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
       return ERR::Okay;
    }
    else {
-      log.warning("Failed to resolve function name '%s' to an ID.", Args->Procedure);
+      log.warning("Failed to resolve function name '%.*s' to an ID.", int(Args->Procedure.size()), Args->Procedure.data());
       return ERR::NotFound;
    }
 }

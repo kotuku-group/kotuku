@@ -142,7 +142,7 @@ implementation.
 The resulting log information is returned as a string, which needs to be deallocated once no longer required.
 
 -INPUT-
-cstr Options: Options to pass to the underlying language.
+cpp(strview) Options: Options to pass to the underlying language.
 &!cstr Result: Resulting log information.
 
 -ERRORS-
@@ -232,7 +232,7 @@ if the `Int` field is defined then an `FD_INT` `Type` must be used.  Supplementa
 documented in detail in the Kotuku Wiki.
 
 -INPUT-
-cstr Procedure: The name of the procedure to execute, or NULL for the default entry point.
+cpp(strview) Procedure: The name of the procedure to execute, or leave empty for the default entry point.
 cstruct(*ScriptArg) Args: Optional parameters to pass to the procedure.
 int TotalArgs: Total number of `Args` provided.
 
@@ -257,8 +257,7 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
    auto save_id = Self->ProcedureID;
    auto save_name = std::move(Self->Procedure);
    Self->ProcedureID = 0;
-   if (Args->Procedure) Self->Procedure = Args->Procedure;
-   else Self->Procedure.clear();
+   Self->Procedure = Args->Procedure;
 
    const ScriptArg *save_args = Self->ProcArgs;
    Self->ProcArgs  = Args->Args;
@@ -302,7 +301,7 @@ reference, call #DerefProcedure() once access to the procedure is no longer requ
 destroying the script will also dereference all procedures.
 
 -INPUT-
-cstr Procedure:   The name of the procedure.
+cpp(strview) Procedure:   The name of the procedure.
 &large ProcedureID: The computed ID will be returned in this parameter.
 
 -ERRORS-
@@ -319,7 +318,7 @@ static ERR SCRIPT_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Arg
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Procedure) or (not Args->Procedure[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Procedure.empty()) return log.warning(ERR::NullArgs);
    Args->ProcedureID = strihash(Args->Procedure);
    return ERR::Okay;
 }
@@ -521,7 +520,7 @@ valid existing object).
 static ERR GET_Path(objScript *Self, std::string_view &Value)
 {
    Value = Self->Path;
-   return Self->Path.empty() ? ERR::FieldNotSet : ERR::Okay;
+   return ERR::Okay;
 }
 
 static ERR SET_Path(objScript *Self, std::string_view &Value)
@@ -623,7 +622,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Procedure: Specifies a procedure to be executed from within a script.
+Procedure: Specifies a procedure name to be executed.
 
 Sometimes scripts are split into several procedures or functions that can be executed independently from the 'main'
 area of the script.  If a loaded script contains procedures, the client can set the Procedure field to execute a
@@ -631,22 +630,6 @@ specific routine whenever the script is activated with the #Activate() action.
 
 If this field is not set, the first procedure in the script, or the 'main' procedure (as defined by the script type) is
 executed by default.
-
-*********************************************************************************************************************/
-
-static ERR GET_Procedure(objScript *Self, std::string_view &Value)
-{
-   Value = Self->Procedure;
-   return Self->Procedure.empty() ? ERR::FieldNotSet : ERR::Okay;
-}
-
-static ERR SET_Procedure(objScript *Self, std::string_view &Value)
-{
-   Self->Procedure.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Results: Stores multiple string results for languages that support this feature.
@@ -686,14 +669,13 @@ It is also commonly used for executing scripts that have been embedded into prog
 static ERR GET_String(objScript *Self, std::string_view &Value)
 {
    Value = Self->String;
-   return Self->String.empty() ? ERR::FieldNotSet : ERR::Okay;
+   return ERR::Okay;
 }
 
 static ERR SET_String(objScript *Self, std::string_view &Value)
 {
    Self->Path.clear(); // Path removed when a statement string is being set
    Self->String.assign(check_bom(Value));
-
    return ERR::Okay;
 }
 
@@ -804,6 +786,8 @@ static ERR SET_WorkingPath(objScript *Self, std::string_view &Value)
 #include "class_script_def.c"
 
 static const FieldArray clScriptFields[] = {
+   { "Procedure",   FDF_CPPSTRING|FDF_RW|FDF_PURE },
+   { "Path",        FDF_CPPSTRING|FDF_RI|FDF_PURE, nullptr, SET_Path },
    { "Target",      FDF_OBJECTID|FDF_RW },
    { "Flags",       FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
    { "Error",       FDF_INT|FDF_R },
@@ -812,17 +796,14 @@ static const FieldArray clScriptFields[] = {
    // Virtual Fields
    { "CacheFile",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_CacheFile, SET_CacheFile },
    { "ErrorMessage", FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_ErrorMessage, SET_ErrorMessage },
-   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,             GET_WorkingPath, SET_WorkingPath },
+   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,                      GET_WorkingPath, SET_WorkingPath },
    { "Language",     FDF_CPPSTRING|FDF_R|FDF_PURE,              GET_Language },
-   { "Location",     FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
-   { "Procedure",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_Procedure, SET_Procedure },
-   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE,             GET_Path, SET_Path },
    { "Results",      FDF_ARRAY|FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Results, SET_Results },
    { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Statement",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_String, SET_String },
    { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_String, SET_String },
-   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs, nullptr },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables, nullptr },
+   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables },
    END_FIELD
 };
 
