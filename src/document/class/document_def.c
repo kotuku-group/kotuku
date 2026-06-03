@@ -72,3 +72,4 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::SetKey, DOCUMENT_SetKey },
    { AC::NIL, nullptr }
 };
+

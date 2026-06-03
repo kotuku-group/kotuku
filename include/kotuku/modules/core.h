@@ -3696,38 +3696,28 @@ class objTask : public Object {
    // Customised field getting
 
    inline ERR getLaunchPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->LaunchPath;
+      return ERR::Okay;
    }
 
    inline ERR getName(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->Name;
+      return ERR::Okay;
    }
 
    inline ERR getLocation(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->Location;
+      return ERR::Okay;
    }
 
    inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->Path;
+      return ERR::Okay;
    }
 
    inline ERR getProcessPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->ProcessPath;
+      return ERR::Okay;
    }
 
    inline ERR getTimeOut(double &Value) noexcept {
@@ -3814,23 +3804,23 @@ class objTask : public Object {
    // Customised field setting
 
    inline ERR setLaunchPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      this->LaunchPath = Value;
+      return ERR::Okay;
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      this->Name = Value;
+      return ERR::Okay;
    }
 
    inline ERR setLocation(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setTimeOut(const double Value) noexcept {

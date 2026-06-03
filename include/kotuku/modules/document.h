@@ -415,3 +415,4 @@ constexpr FieldValue EventMask(DEF Value) { return FieldValue(FID_EventMask, int
 constexpr FieldValue Flags(DCF Value) { return FieldValue(FID_Flags, int(Value)); }
 
 }
+

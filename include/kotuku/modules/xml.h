@@ -27,6 +27,7 @@ enum class XMS : int {
    NEW = -1,
    UPDATE_ONLY = -2,
    UPDATE = -3,
+   REMOVE = -4,
 };
 
 // Options for the Sort method.

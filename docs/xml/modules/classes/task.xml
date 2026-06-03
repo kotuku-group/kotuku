@@ -283,7 +283,7 @@
     <field>
       <name>LaunchPath</name>
       <comment>Launched executables will start in the path specified here.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
       <description>
 <p>Use the LaunchPath field to specify the folder that a launched executable will start in when the task object is activated.  This will override all other path options, such as the <code>RESET_PATH</code> flag.</p>
@@ -293,7 +293,7 @@
     <field>
       <name>Location</name>
       <comment>Location of an executable file to launch.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>std::string</type>
       <description>
 <p>When a task object is activated, the Location field will be checked for a valid filename.  If the path is valid, the executable code will be loaded from this source.  The source must be in an executable format recognised by the native platform.</p>
@@ -304,7 +304,7 @@
     <field>
       <name>Name</name>
       <comment>Name of the task.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
       <description>
 <p>This field specifies the name of the task or program that has been initialised. It is up to the developer of the program to set the Name which will appear in this field.  If there is no name for the task then the system may assign a randomly generated name.</p>
@@ -349,7 +349,7 @@ end
     <field>
       <name>Path</name>
       <comment>The current working folder of the active process.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>std::string</type>
       <description>
 <p>The Path specifies the 'working folder' that determines where files are loaded from when an absolute path is not otherwise specified for file access.  Initially the working folder is usually set to the folder of the parent process, such as that of a terminal shell.</p>
@@ -383,7 +383,7 @@ end
     <field>
       <name>ProcessPath</name>
       <comment>The path of the executable that is associated with the task.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>std::string</type>
       <description>
 <p>The ProcessPath is set to the path of the executable file that is associated with the task (not including the executable file name).  This value is managed internally and cannot be altered.</p>
