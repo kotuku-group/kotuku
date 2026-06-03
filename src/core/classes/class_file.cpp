@@ -374,7 +374,7 @@ static ERR FILE_BufferContent(extFile *Self)
       }
    }
 
-   log.msg("File content now buffered in a %" PF64 " byte memory block.", (int64_t)Self->Size);
+   log.msg("File content now buffered in a %" PF64 " byte memory block.", (long long)Self->Size);
 
    close(Self->Handle);
    Self->Handle = -1;
@@ -1331,7 +1331,7 @@ static ERR FILE_Seek(extFile *Self, struct acSeek *Args)
    if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
 
    if (auto ret = lseek64(Self->Handle, Self->Position, SEEK_SET); ret != Self->Position) {
-      log.warning("Failed to Seek to new position of %" PF64 " (return %" PF64 ").", (int64_t)Self->Position, (int64_t)ret);
+      log.warning("Failed to Seek to new position of %" PF64 " (return %" PF64 ").", (long long)Self->Position, (long long)ret);
       Self->Position = oldpos;
       return ERR::SystemCall;
    }
@@ -2510,7 +2510,7 @@ static ERR GET_Size(extFile *Self, int64_t *Size)
       struct stat64 stats;
       if (not stat64(path.data(), &stats)) {
          *Size = stats.st_size;
-         log.trace("The file size is %" PF64, (int64_t)*Size);
+         log.trace("The file size is %" PF64, (long long)*Size);
          return ERR::Okay;
       }
       else return convert_errno(errno, ERR::SystemCall);
@@ -2550,7 +2550,7 @@ static ERR SET_Size(extFile *Self, int64_t Size)
          return ERR::Okay;
       }
       else {
-         log.warning("Failed to set file size to %" PF64, (int64_t)Size);
+         log.warning("Failed to set file size to %" PF64, (long long)Size);
          return ERR::SystemCall;
       }
    }
@@ -2572,7 +2572,7 @@ static ERR SET_Size(extFile *Self, int64_t Size)
       // Some filesystem drivers do not support truncation for the purpose of
       // enlarging files.  In this case, we have to write to the end of the file.
 
-      log.warning("%" PF64 " bytes, ftruncate: %s", (int64_t)Size, strerror(errno));
+      log.warning("%" PF64 " bytes, ftruncate: %s", (long long)Size, strerror(errno));
 
       if (Size > Self->Size) {
          std::string_view path;
