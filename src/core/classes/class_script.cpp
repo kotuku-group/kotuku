@@ -520,7 +520,7 @@ valid existing object).
 static ERR GET_Path(objScript *Self, std::string_view &Value)
 {
    Value = Self->Path;
-   return Self->Path.empty() ? ERR::FieldNotSet : ERR::Okay;
+   return ERR::Okay;
 }
 
 static ERR SET_Path(objScript *Self, std::string_view &Value)
@@ -669,14 +669,13 @@ It is also commonly used for executing scripts that have been embedded into prog
 static ERR GET_String(objScript *Self, std::string_view &Value)
 {
    Value = Self->String;
-   return Self->String.empty() ? ERR::FieldNotSet : ERR::Okay;
+   return ERR::Okay;
 }
 
 static ERR SET_String(objScript *Self, std::string_view &Value)
 {
    Self->Path.clear(); // Path removed when a statement string is being set
    Self->String.assign(check_bom(Value));
-
    return ERR::Okay;
 }
 
@@ -803,8 +802,8 @@ static const FieldArray clScriptFields[] = {
    { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Statement",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_String, SET_String },
    { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_String, SET_String },
-   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs, nullptr },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables, nullptr },
+   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables },
    END_FIELD
 };
 
