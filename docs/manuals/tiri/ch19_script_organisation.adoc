@@ -174,6 +174,8 @@ This pattern allows libraries to include self-test or demonstration code that do
 
 indexterm:[dynamic loading] Loads, parses, and executes a Tiri script at runtime.  `Path` is a string specifying the file location.  If the path is not fully qualified, it is resolved relative to the current working directory of the process.
 
+If `Path` begins with `./` or `../`, it is resolved relative to the directory of the calling script.  If the calling script's directory is not available, the current working directory is used as a fallback.  This makes it possible to load companion files from the same directory as the caller regardless of the process working directory.
+
 `loadFile()` raises an exception if the file cannot be opened, parsed, or if execution fails.
 
 [source,tiri]
@@ -194,7 +196,7 @@ return {
 ----
 
 [%unbreakable]
-.main.tiri
+.main.tiri — loads config.tiri from the same directory as main.tiri
 [source,tiri]
 ----
 config = loadFile('./config.tiri')
