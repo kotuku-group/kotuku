@@ -103,7 +103,7 @@ end
    doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })
    assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'Object action should resolve to class docs')
-   assert(locations[0].range.start.line > 30, 'Object action should resolve below the XML class info section.')
+   assert(locations[0].range.start.line > 30, f'Object action should resolve below the XML class info section, got {locations[0].range.start.line}.')
 end
 
 @Test function ModuleFunctionResolution()
