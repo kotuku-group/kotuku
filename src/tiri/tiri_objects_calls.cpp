@@ -68,12 +68,9 @@ static int object_method_call_args(lua_State *Lua)
    auto method = (MethodEntry *)lua_touserdata(Lua, lua_upvalueindex(2));
 
    auto argbuffer = std::make_unique<int8_t[]>(method->Size+8); // +8 for overflow protection in build_args()
-   int resultcount;
-   ERR error = build_args(Lua, method->Name, method->Args, method->Size, argbuffer.get(), &resultcount);
-   if (error != ERR::Okay) {
-      luaL_error(Lua, ERR::Args, "Argument build failure for method %s.", method->Name);
-      return 0;
-   }
+   int result_count;
+   ERR error = build_args(Lua, method->Name, method->Args, method->Size, argbuffer.get(), &result_count);
+   if (error != ERR::Okay) luaL_error(Lua, ERR::Args, "Argument build failure for method %s.", method->Name);
 
    int results = 1;
    bool release = false;
