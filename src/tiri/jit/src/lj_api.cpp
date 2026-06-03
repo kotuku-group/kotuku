@@ -1044,22 +1044,6 @@ extern int lua_getmetatable(lua_State *L, int idx)
 }
 
 //********************************************************************************************************************
-// Get metatable field by string key
-
-extern int luaL_getmetafield(lua_State *L, int idx, CSTRING field)
-{
-   if (lua_getmetatable(L, idx)) {
-      cTValue *tv = lj_tab_getstr(tabV(L->top - 1), lj_str_newz(L, field));
-      if (tv and !tvisnil(tv)) {
-         copyTV(L, L->top - 1, tv);
-         return 1;
-      }
-      L->top--;
-   }
-   return 0;
-}
-
-//********************************************************************************************************************
 // Get function/userdata/thread environment table
 
 extern void lua_getfenv(lua_State *L, int idx)
