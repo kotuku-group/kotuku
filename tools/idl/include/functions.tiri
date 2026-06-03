@@ -954,6 +954,22 @@ global function klass(Name, Options:table, Spec, Private, Custom)
 
    -- Export method definitions for a class
 
+   function actionMethodStorageType(Param:table):str
+      local param_type = Param.basicType
+      local reference = false
+
+      if param_type:endsWith('&') then
+         param_type = param_type:sub(0, -2):trim()
+         reference = true
+      end
+
+      if reference and param_type:startsWith('const ') then
+         param_type = param_type:sub(6):trim()
+      end
+
+      return param_type
+   end
+
    if cl.methods then
       pfx  = cl.methodPrefix
       lpfx = pfx:lower()
@@ -1002,7 +1018,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          params = ''
          if method.params then
             for param in values(method.params) do
-               struct_params ..= param.basicType .. ' ' .. pName(param) .. '; '
+               struct_params ..= actionMethodStorageType(param) .. ' ' .. pName(param) .. '; '
 
                if params?? then params ..= ', ' end
 
@@ -1015,7 +1031,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                   if v?? then v ..= ', ' end
 
                   if param.resultValue then
-                     v ..= '(' .. param.basicType .. ')0'
+                     v ..= '(' .. actionMethodStorageType(param) .. ')0'
                      results = true
                   else
                      v ..= pName(param)

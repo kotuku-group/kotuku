@@ -2843,8 +2843,8 @@ namespace fl {
 struct StartStream { OBJECTID SubscriberID; FL Flags; int Length; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct StopStream { static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Delete { FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Move { CSTRING Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Copy { CSTRING Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Move { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Copy { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDate { int Year; int Month; int Day; int Hour; int Minute; int Second; FDT Type; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ReadLine { STRING Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct BufferContent { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -2941,11 +2941,11 @@ class objFile : public Object {
       struct fl::Delete args = { &Callback };
       return(Action(AC(-3), this, &args));
    }
-   inline ERR move(CSTRING Dest, FUNCTION Callback) noexcept {
+   inline ERR move(const std::string_view & Dest, FUNCTION Callback) noexcept {
       struct fl::Move args = { Dest, &Callback };
       return(Action(AC(-4), this, &args));
    }
-   inline ERR copy(CSTRING Dest, FUNCTION Callback) noexcept {
+   inline ERR copy(const std::string_view & Dest, FUNCTION Callback) noexcept {
       struct fl::Copy args = { Dest, &Callback };
       return(Action(AC(-5), this, &args));
    }

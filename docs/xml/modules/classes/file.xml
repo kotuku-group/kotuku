@@ -177,10 +177,10 @@
     <method>
       <name>Copy</name>
       <comment>Copies the data of a file to another location.</comment>
-      <prototype>ERR fl::Copy(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Copy(OBJECTPTR Object, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = Copy(Dest:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Dest">The destination file path for the copy operation.</param>
+        <param type="const std::string_view &amp;" name="Dest">The destination file path for the copy operation.</param>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
@@ -230,10 +230,10 @@
     <method>
       <name>Move</name>
       <comment>Moves a file to a new location.</comment>
-      <prototype>ERR fl::Move(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Move(OBJECTPTR Object, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = Move(Dest:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Dest">The desired path for the file.</param>
+        <param type="const std::string_view &amp;" name="Dest">The desired path for the file.</param>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
