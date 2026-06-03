@@ -189,11 +189,11 @@ struct GetContent { int Index; STRING Buffer; int Length; static const AC id = A
 struct Sort { CSTRING XPath; CSTRING Sort; XSF Flags; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveTag { int Index; int Total; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct MoveTags { int Index; int Total; int DestIndex; XMI Where; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetAttrib { int Index; CSTRING Attrib; CSTRING Value; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetAttrib { int Index; std::string_view Attrib; std::string *Value; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InsertXPath { CSTRING XPath; XMI Where; CSTRING XML; int Result; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Search { CSTRING Expression; FUNCTION * Callback; int Result; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Filter { CSTRING XPath; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Evaluate { CSTRING Statement; CSTRING Result; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Search { std::string_view Expression; FUNCTION * Callback; int Result; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Filter { std::string_view XPath; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Evaluate { std::string_view Statement; std::string *Result; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ValidateDocument { static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InsertContent { int Index; XMI Where; CSTRING Content; int Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveXPath { CSTRING XPath; int Limit; static const AC id = AC(-15); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -231,7 +231,7 @@ class objXML : public Object {
    template <class T> inline ERR insertStatement(int Index, XMI Where, T Statement, XTag **Result) {
       int index_result;
       XTag *tag_result;
-      if (auto error = insertXML(Index, Where, to_cstring(Statement), &index_result); error IS ERR::Okay) {
+      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); error IS ERR::Okay) {
          error = getTag(index_result, &tag_result);
          *Result = tag_result;
          return error;
@@ -239,16 +239,14 @@ class objXML : public Object {
       else return error;
    }
 
-   template <class T> inline ERR setAttribValue(int Tag, int Flags, T &&Attrib, int Value) {
-      auto attrib = to_cstring(Attrib);
+   template <class T> inline ERR setAttribValue(int Tag, XMS AttribID, T &&Attrib, int Value) {
       auto buffer = std::to_string(Value);
-      return setAttrib(Tag, Flags, attrib, buffer.c_str());
+      return setAttrib(Tag, AttribID, std::string_view(Attrib), buffer);
    }
 
-   template <class T> inline ERR setAttribValue(int Tag, int Flags, T &&Attrib, double Value) {
-      auto attrib = to_cstring(Attrib);
+   template <class T> inline ERR setAttribValue(int Tag, XMS AttribID, T &&Attrib, double Value) {
       auto buffer = std::to_string(Value);
-      return setAttrib(Tag, Flags, attrib, buffer.c_str());
+      return setAttrib(Tag, AttribID, std::string_view(Attrib), buffer);
    }
 
    // Action stubs
@@ -300,10 +298,9 @@ class objXML : public Object {
       struct xml::MoveTags args = { Index, Total, DestIndex, Where };
       return(Action(AC(-7), this, &args));
    }
-   inline ERR getAttrib(int Index, CSTRING Attrib, CSTRING * Value) noexcept {
-      struct xml::GetAttrib args = { Index, Attrib, (CSTRING)0 };
+   inline ERR getAttrib(int Index, const std::string_view & Attrib, std::string &Value) noexcept {
+      struct xml::GetAttrib args = { Index, Attrib, &Value };
       ERR error = Action(AC(-8), this, &args);
-      if (Value) *Value = args.Value;
       return(error);
    }
    inline ERR insertXPath(CSTRING XPath, XMI Where, CSTRING XML, int * Result) noexcept {
@@ -312,20 +309,19 @@ class objXML : public Object {
       if (Result) *Result = args.Result;
       return(error);
    }
-   inline ERR search(CSTRING Expression, FUNCTION Callback, int * Result) noexcept {
+   inline ERR search(const std::string_view & Expression, FUNCTION Callback, int * Result) noexcept {
       struct xml::Search args = { Expression, &Callback, (int)0 };
       ERR error = Action(AC(-10), this, &args);
       if (Result) *Result = args.Result;
       return(error);
    }
-   inline ERR filter(CSTRING XPath) noexcept {
+   inline ERR filter(const std::string_view & XPath) noexcept {
       struct xml::Filter args = { XPath };
       return(Action(AC(-11), this, &args));
    }
-   inline ERR evaluate(CSTRING Statement, CSTRING * Result) noexcept {
-      struct xml::Evaluate args = { Statement, (CSTRING)0 };
+   inline ERR evaluate(const std::string_view & Statement, std::string &Result) noexcept {
+      struct xml::Evaluate args = { Statement, &Result };
       ERR error = Action(AC(-12), this, &args);
-      if (Result) *Result = args.Result;
       return(error);
    }
    inline ERR validateDocument() noexcept {

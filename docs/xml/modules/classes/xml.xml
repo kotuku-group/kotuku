@@ -114,11 +114,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Evaluate</name>
       <comment>Run an XQuery expression against the XML data.</comment>
-      <prototype>ERR xml::Evaluate(OBJECTPTR Object, CSTRING Statement, CSTRING * Result)</prototype>
+      <prototype>ERR xml::Evaluate(OBJECTPTR Object, const std::string_view &amp; Statement, std::string * Result)</prototype>
       <tiriPrototype>err, Result:str = Evaluate(Statement:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Statement">An XQuery expression to evaluate.</param>
-        <param type="CSTRING *" name="Result">An allocated string from the evaluation is returned here.</param>
+        <param type="const std::string_view &amp;" name="Statement">An XQuery expression to evaluate.</param>
+        <param type="std::string *" name="Result">The evaluation result is returned here.</param>
       </input>
       <description>
 <p>The Evaluate method allows the execution of XPath 2.0+ and XQuery 1.0+ expressions against the data contained within the XML object.  This is a lazy execution method that compiles and evaluates the provided expression in a single step, returning the result as a string.  For more complex scenarios or repeated evaluations, consider using the Compile and Evaluate functions in the XPath module.</p>
@@ -128,16 +128,16 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>mutates-object, caller-owns-result, null-terminated-result</tags>
+      <tags>mutates-object, caller-owns-result, mutates-input</tags>
     </method>
 
     <method>
       <name>Filter</name>
       <comment>Filters the XML data structure to retain only a specific tag and its descendants.</comment>
-      <prototype>ERR xml::Filter(OBJECTPTR Object, CSTRING XPath)</prototype>
+      <prototype>ERR xml::Filter(OBJECTPTR Object, const std::string_view &amp; XPath)</prototype>
       <tiriPrototype>err = Filter(XPath:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="XPath">A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.</param>
+        <param type="const std::string_view &amp;" name="XPath">A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.</param>
       </input>
       <description>
 <p>The Filter method provides a mechanism for reducing large XML documents to a specific subtree, permanently removing all content that exists outside the targeted element and its children.  This operation is particularly valuable for performance optimisation when working with large documents where only a specific section is relevant.</p>
@@ -146,7 +146,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <result>
         <error code="Okay">The filtering operation completed successfully and the XML structure now contains only the specified subtree.</error>
         <error code="Search">No matching tag could be found for the specified XPath expression.</error>
-        <error code="NullArgs">The XPath parameter was NULL or empty.</error>
+        <error code="NullArgs">The XPath parameter was empty.</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -154,29 +154,28 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>GetAttrib</name>
       <comment>Retrieves the value of a specific XML attribute from a tagged element.</comment>
-      <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, CSTRING Attrib, CSTRING * Value)</prototype>
+      <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, const std::string_view &amp; Attrib, std::string * Value)</prototype>
       <tiriPrototype>err, Value:str = GetAttrib(Index:num, Attrib:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as <method>Search</method>.</param>
-        <param type="CSTRING" name="Attrib">The name of the attribute to retrieve (case insensitive).  If NULL or empty, the element's tag name is returned instead.</param>
-        <param type="CSTRING *" name="Value">Pointer to a string pointer that will receive the attribute value.  Set to NULL if the specified attribute does not exist.</param>
+        <param type="const std::string_view &amp;" name="Attrib">The name of the attribute to retrieve (case insensitive).  If empty, the element's tag name is returned instead.</param>
+        <param type="std::string *" name="Value">Receives the attribute value.  It is cleared if the specified attribute does not exist.</param>
       </input>
       <description>
 <p>The GetAttrib method provides efficient access to individual attribute values within XML elements.  Given a tag identifier and attribute name, the method performs a case-insensitive search through the element's attribute collection and returns the corresponding value.</p>
 <p>When a specific attribute name is provided, the method searches through all attributes of the target tag.  The search is case-insensitive to accommodate XML documents with varying capitalisation conventions.</p>
-<p>When the attribute name is NULL or empty, the method returns the tag name itself, providing convenient access to element names without requiring separate API calls.</p>
+<p>When the attribute name is empty, the method returns the tag name itself, providing convenient access to element names without requiring separate API calls.</p>
 <header>Performance Considerations</header>
 <p>For applications requiring frequent attribute access or high-performance scenarios, C++ developers should consider direct access to the <st>XMLAttrib</st> structure array.  This bypasses the method call overhead and provides immediate access to all attributes simultaneously.</p>
 <p>The method performs a linear search through the attribute collection, so performance scales with the number of attributes per element.  For elements with many attributes, caching frequently accessed values may improve performance.</p>
 <header>Data Integrity</header>
-<p>The returned string pointer references internal XML object memory and remains valid until the XML structure is modified.  Callers should not attempt to modify or free the returned string.  For persistent storage, the string content should be copied to application-managed memory.</p>
       </description>
       <result>
         <error code="Okay">The attribute was successfully found and its value returned.</error>
         <error code="NotFound">Either the specified tag Index does not exist, or the named attribute was not found within the tag.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
-      <tags>pure-query, object-owns-result, null-terminated-result, case-insensitive</tags>
+      <tags>pure-query, caller-owns-result, case-insensitive, mutates-input</tags>
     </method>
 
     <method>
@@ -511,10 +510,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Search</name>
       <comment>Searches for XML elements using XPath and XQuery expressions with optional callback processing.</comment>
-      <prototype>ERR xml::Search(OBJECTPTR Object, CSTRING Expression, FUNCTION * Callback, INT * Result)</prototype>
+      <prototype>ERR xml::Search(OBJECTPTR Object, const std::string_view &amp; Expression, FUNCTION * Callback, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = Search(Expression:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Expression">A valid XQuery expression.</param>
+        <param type="const std::string_view &amp;" name="Expression">A valid XQuery expression.</param>
         <param type="FUNCTION *" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
         <param type="INT *" name="Result">UID of the first matching tag.  Only valid when Callback is undefined.</param>
       </input>
@@ -530,7 +529,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Okay">A matching tag was found (or callback processing completed successfully).</error>
         <error code="Search">No matching tag could be found for the specified expression.</error>
         <error code="NoData">The XML document contains no data to search.</error>
-        <error code="NullArgs">The Expression was NULL or the Result parameter was NULL when no callback was provided.</error>
+        <error code="NullArgs">The Expression was empty or the Result parameter was NULL when no callback was provided.</error>
       </result>
       <tags>mutates-object, callback-inlines</tags>
     </method>

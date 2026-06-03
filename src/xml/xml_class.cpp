@@ -194,11 +194,11 @@ step, returning the result as a string.  For more complex scenarios or repeated 
 Compile and Evaluate functions in the XPath module.
 
 -INPUT-
-cstr Statement: An XQuery expression to evaluate.
-!&cstr Result: An allocated string from the evaluation is returned here.
+cpp(strview) Statement: An XQuery expression to evaluate.
+^&cpp(str) Result: The evaluation result is returned here.
 
 -TAGS-
-mutates-object, caller-owns-result, null-terminated-result
+mutates-object, caller-owns-result
 
 -ERRORS-
 Okay
@@ -206,30 +206,27 @@ NullArgs
 AllocMemory
 -END-
 
-A pointer to a std::string as a result would be better, but not supported by TDL yet (does work for functions).
-
-&cpp(str) Result: An allocated string from the evaluation is returned here.
-
 *********************************************************************************************************************/
 
 static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Statement)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Statement.empty() or (not Args->Result)) return log.warning(ERR::NullArgs);
+   Args->Result->clear();
 
    log.branch("");
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, std::string_view(Args->Statement));
+      xq->set(FID_Statement, Args->Statement);
       if (auto error = xq->init(); error IS ERR::Okay) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
             std::string_view result;
-            if (xq->get(FID_ResultString, result) IS ERR::Okay) Args->Result = kt::strclone(result);
+            if (xq->get(FID_ResultString, result) IS ERR::Okay) Args->Result->assign(result);
+            else error = ERR::FieldNotSet;
             FreeResource(xq);
-            if (!Args->Result) return log.warning(ERR::AllocMemory);
-            return ERR::Okay;
+            return error;
          }
          else {
             std::string_view sv;
@@ -262,14 +259,14 @@ new XML structure is created containing only the matched tag and its complete de
 tags, parent elements (excluding the direct lineage) and unrelated branches are permanently discarded.
 
 -INPUT-
-cstr XPath: A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.
+cpp(strview) XPath: A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.
 
 -TAGS-
 mutates-object
 
 -ERRORS-
 Okay: The filtering operation completed successfully and the XML structure now contains only the specified subtree.
-NullArgs: The XPath parameter was NULL or empty.
+NullArgs: The XPath parameter was empty.
 Search: No matching tag could be found for the specified XPath expression.
 
 *********************************************************************************************************************/
@@ -278,11 +275,11 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->XPath)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->XPath.empty()) return log.warning(ERR::NullArgs);
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, std::string_view(Args->XPath));
+      xq->set(FID_Statement, Args->XPath);
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -343,7 +340,7 @@ All other error codes are ignored to maintain search robustness.
 Note: If an error occurs, check the #ErrorMsg field for a custom error message containing further details.
 
 -INPUT-
-cstr Expression: A valid XQuery expression.
+cpp(strview) Expression: A valid XQuery expression.
 ptr(func) Callback: Optional pointer to a callback function for processing multiple matches.
 &int Result: UID of the first matching tag.  Only valid when Callback is undefined.
 
@@ -352,7 +349,7 @@ mutates-object, callback-inlines
 
 -ERRORS-
 Okay: A matching tag was found (or callback processing completed successfully).
-NullArgs: The Expression was NULL or the Result parameter was NULL when no callback was provided.
+NullArgs: The Expression was empty or the Result parameter was NULL when no callback was provided.
 NoData: The XML document contains no data to search.
 Search: No matching tag could be found for the specified expression.
 
@@ -364,13 +361,15 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
 
    Self->ErrorMsg.clear();
 
-   if ((not Args) or (not Args->Expression)) return ERR::NullArgs;
-   if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) log.msg("Expression: %s", Args->Expression);
+   if ((not Args) or Args->Expression.empty()) return ERR::NullArgs;
+   if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) {
+      log.msg("Expression: %.*s", int(Args->Expression.size()), Args->Expression.data());
+   }
    if (Self->Tags.empty()) return ERR::NoData;
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, std::string_view(Args->Expression));
+      xq->set(FID_Statement, Args->Expression);
 
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
@@ -433,7 +432,7 @@ collection and returns the corresponding value.
 When a specific attribute name is provided, the method searches through all attributes of the target tag.  The search
 is case-insensitive to accommodate XML documents with varying capitalisation conventions.
 
-When the attribute name is NULL or empty, the method returns the tag name itself, providing convenient access to
+When the attribute name is empty, the method returns the tag name itself, providing convenient access to
 element names without requiring separate API calls.
 
 <header>Performance Considerations</header>
@@ -447,17 +446,13 @@ attributes per element.  For elements with many attributes, caching frequently a
 
 <header>Data Integrity</header>
 
-The returned string pointer references internal XML object memory and remains valid until the XML structure is
-modified.  Callers should not attempt to modify or free the returned string.  For persistent storage, the string
-content should be copied to application-managed memory.
-
 -INPUT-
 int Index: The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as #Search().
-cstr Attrib: The name of the attribute to retrieve (case insensitive).  If NULL or empty, the element's tag name is returned instead.
-&cstr Value: Pointer to a string pointer that will receive the attribute value.  Set to NULL if the specified attribute does not exist.
+cpp(strview) Attrib: The name of the attribute to retrieve (case insensitive).  If empty, the element's tag name is returned instead.
+^&cpp(str) Value: Receives the attribute value.  It is cleared if the specified attribute does not exist.
 
 -TAGS-
-pure-query, object-owns-result, null-terminated-result, case-insensitive
+pure-query, caller-owns-result, case-insensitive
 
 -ERRORS-
 Okay: The attribute was successfully found and its value returned.
@@ -472,25 +467,28 @@ static ERR XML_GetAttrib(extXML *Self, struct xml::GetAttrib *Args)
 {
    kt::Log log;
 
-   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Value)) return log.warning(ERR::NullArgs);
+   Args->Value->clear();
 
    auto tag = Self->getTag(Args->Index);
    if (not tag) return log.warning(ERR::NotFound);
 
-   if ((not Args->Attrib) or (not Args->Attrib[0])) {
-      Args->Value = tag->Attribs[0].Name.c_str();
+   if (Args->Attrib.empty()) {
+      Args->Value->assign(tag->Attribs[0].Name);
       return ERR::Okay;
    }
 
    for (auto &attrib : tag->Attribs) {
       if (kt::iequals(Args->Attrib, attrib.Name)) {
-         Args->Value = attrib.Value.c_str();
-         log.trace("Attrib %s = %s", Args->Attrib, Args->Value);
+         Args->Value->assign(attrib.Value);
+         log.trace("Attrib %.*s = %s", int(Args->Attrib.size()), Args->Attrib.data(), Args->Value->c_str());
          return ERR::Okay;
       }
    }
 
-   if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) log.msg("Attrib %s not found in tag %d", Args->Attrib, Args->Index);
+   if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) {
+      log.msg("Attrib %.*s not found in tag %d", int(Args->Attrib.size()), Args->Attrib.data(), Args->Index);
+   }
    return ERR::NotFound;
 }
 

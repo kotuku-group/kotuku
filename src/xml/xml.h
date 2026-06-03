@@ -219,10 +219,10 @@ class extXML : public objXML {
 
    // Namespace utility methods
 
-   inline uint32_t registerNamespace(const std::string &URI) {
+   inline uint32_t registerNamespace(std::string_view URI) {
       if (URI.empty()) return 0;
       auto hash = kt::strhash(URI);
-      NSRegistry[hash] = URI;
+      NSRegistry[hash] = std::string(URI);
       return hash;
    }
 
