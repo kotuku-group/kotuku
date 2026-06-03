@@ -593,8 +593,8 @@ to suit the target path.  If the `Path` starts with a forward slash and the sour
 folder will be used in the target path for the compressed files and folders.
 
 -INPUT-
-cstr Location: The location of the file(s) to add.
-cstr Path:     The path that is prefixed to the file name when added to the compression object.  May be `NULL` for no path.
+cpp(strview) Location: The location of the file(s) to add.
+cpp(strview) Path:     The path that is prefixed to the file name when added to the compression object.  May be empty for no path.
 
 -ERRORS-
 Okay: The file was added to the compression object.
@@ -612,7 +612,7 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Location) or (!*Args->Location)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Location.empty()) return log.warning(ERR::NullArgs);
    if (!Self->FileIO) return log.warning(ERR::MissingPath);
 
    if ((Self->Flags & CMF::READ_ONLY) != CMF::NIL) return log.warning(ERR::NoPermission);
@@ -628,25 +628,22 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
    std::string src(Args->Location);
    std::string path;
    bool incdir = false;
-   if (!Args->Path) path = "";
+   if (Args->Path.empty()) path = "";
    else { // Accept the path by default but check it for illegal symbols just in case
       if (Args->Path[0] IS '/') { // Special mode: prefix src folder name to the root path
          incdir = true;
-         path.assign(Args->Path + 1);
+         path.assign(Args->Path.data() + 1, Args->Path.size() - 1);
       }
       else path.assign(Args->Path);
 
-      for (int i=0; path[i]; i++) {
-         if (path.find_first_of("*?\":|<>") != std::string::npos) {
-            log.warning("Illegal characters in path: %s", path.c_str());
-            if (Self->OutputID) {
-               std::ostringstream out;
-               out << "Warning - path ignored due to illegal characters: " << path << "\n";
-               print(Self, out.str());
-            }
-            path.clear();
-            break;
+      if (path.find_first_of("*?\":|<>") != std::string::npos) {
+         log.warning("Illegal characters in path: %s", path.c_str());
+         if (Self->OutputID) {
+            std::ostringstream out;
+            out << "Warning - path ignored due to illegal characters: " << path << "\n";
+            print(Self, out.str());
          }
+         path.clear();
       }
    }
 
@@ -1281,9 +1278,9 @@ This method sends feedback at regular intervals during decompression.  For furth
 please refer to the #Feedback field.
 
 -INPUT-
-cstr Path: The full path name of the file to extract from the archive.
-cstr Dest: The destination to extract the file to.
-int Flags: Optional flags.  Currently unused.
+cpp(strview) Path: The full path name of the file to extract from the archive.
+cpp(strview) Dest: The destination to extract the file to.
+int Flags:        Optional flags.  Currently unused.
 
 -ERRORS-
 Okay: The file was successfully extracted.
@@ -1306,27 +1303,21 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 {
    kt::Log log;
 
-   if (Self->Files.empty()) return ERR::NoData;
-
    // Validate arguments
 
-   if ((!Args) or (!Args->Path)) {
+   if ((not Args) or Args->Path.empty()) {
       if (Self->OutputID) print(Self, "Please supply a Path setting that refers to a compressed file archive.\n");
 
       return log.warning(ERR::NullArgs);
    }
 
-   if (!Args->Dest) {
+   if (Args->Dest.empty()) {
       if (Self->OutputID) print(Self, "Please supply a Destination that refers to a folder for decompression.\n");
 
       return log.warning(ERR::NullArgs);
    }
 
-   if ((!*Args->Path) or (!*Args->Dest)) {
-      if (Self->OutputID) print(Self, "Please supply valid Path and Destination settings.\n");
-
-      return log.warning(ERR::Args);
-   }
+   if (Self->Files.empty()) return ERR::NoData;
 
    if (!Self->FileIO) {
       if (Self->OutputID) print(Self, "Internal error - decompression aborted.\n");
@@ -1349,13 +1340,16 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
    // Search for the file(s) in our archive that match the given name and extract them to the destination folder.
 
-   log.branch("%s TO %s, Permissions: $%.8x", Args->Path, Args->Dest, int(Self->Permissions));
+   log.branch("%.*s TO %.*s, Permissions: $%.8x", int(Args->Path.size()), Args->Path.data(),
+      int(Args->Dest.size()), Args->Dest.data(), int(Self->Permissions));
 
    std::string destpath(Args->Dest);
    auto dest_len = destpath.size();
 
    uint16_t pathend = 0;
-   for (uint16_t i=0; Args->Path[i]; i++) if ((Args->Path[i] IS '/') or (Args->Path[i] IS '\\')) pathend = i + 1;
+   for (uint16_t i=0; i < Args->Path.size(); i++) {
+      if ((Args->Path[i] IS '/') or (Args->Path[i] IS '\\')) pathend = i + 1;
+   }
 
    ERR error      = ERR::Okay;
    Self->FileIndex = 0;
@@ -1473,7 +1467,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
 exit:
    if ((error IS ERR::Okay) and (Self->FileIndex <= 0)) {
-      log.msg("No files matched the path \"%s\".", Args->Path);
+      log.msg("No files matched the path \"%.*s\".", int(Args->Path.size()), Args->Path.data());
       error = ERR::Search;
    }
 
@@ -1494,8 +1488,8 @@ Note that if decompressing to a @File object, the seek position will point to th
 method returns.  Reset the seek position to zero if the decompressed data needs to be read back.
 
 -INPUT-
-cstr Path: The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.
-obj Object: The target object for the decompressed source data.
+cpp(strview) Path: The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.
+obj Object:       The target object for the decompressed source data.
 
 -ERRORS-
 Okay
@@ -1514,12 +1508,13 @@ static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::Decomp
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Path) or (!Args->Path[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Path.empty()) return log.warning(ERR::NullArgs);
    if (!Args->Object) return log.warning(ERR::NullArgs);
    if (!Self->FileIO) return log.warning(ERR::MissingPath);
    if (Self->isDerived()) return ERR::NoSupport; // Object belongs to a Compression derived class
 
-   log.branch("%s TO %p, Permissions: $%.8x", Args->Path, Args->Object, int(Self->Permissions));
+   log.branch("%.*s TO %p, Permissions: $%.8x", int(Args->Path.size()), Args->Path.data(), Args->Object,
+      int(Self->Permissions));
 
    Self->FileIndex = 0;
 
@@ -1563,7 +1558,8 @@ static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::Decomp
    }
 
    if (error != ERR::Okay) {
-      log.msg("No files matched the path \"%s\" from %d files.", Args->Path, total_scanned);
+      log.msg("No files matched the path \"%.*s\" from %d files.", int(Args->Path.size()), Args->Path.data(),
+         total_scanned);
       return ERR::Search;
    }
 
@@ -1585,9 +1581,9 @@ values will be discarded on the next call to this method.  If persistent values 
 structure immediately after the call.
 
 -INPUT-
-cstr Path: Search for a specific item or items, using wildcards.
-int CaseSensitive: Set to `true` if `Path` comparisons are case-sensitive.
-int Wildcard: Set to `true` if `Path` uses wildcards.
+cpp(strview) Path: Search for a specific item or items, using wildcards.
+int CaseSensitive:  Set to `true` if `Path` comparisons are case-sensitive.
+int Wildcard:       Set to `true` if `Path` uses wildcards.
 &struct(*CompressedItem) Item: The discovered item is returned in this parameter, or `NULL` if the search failed.
 
 -ERRORS-
@@ -1607,16 +1603,17 @@ static ERR COMPRESSION_Find(extCompression *Self, struct cmp::Find *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Path)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Path.empty()) return log.warning(ERR::NullArgs);
    if (Self->isDerived()) return ERR::NoSupport;
 
-   log.traceBranch("Path: %s, Case: %d, Wildcard: %d", Args->Path, Args->CaseSensitive, Args->Wildcard);
+   log.traceBranch("Path: %.*s, Case: %d, Wildcard: %d", int(Args->Path.size()), Args->Path.data(),
+      Args->CaseSensitive, Args->Wildcard);
    for (auto &item : Self->Files) {
       if (Args->Wildcard) {
          if (!wildcmp(Args->Path, item.Name, Args->CaseSensitive)) continue;
       }
       else if (Args->CaseSensitive) {
-         if (item.Name != Args->Path) continue;
+         if (std::string_view(item.Name) != Args->Path) continue;
       }
       else if (!iequals(item.Name, Args->Path)) continue;
 
@@ -1838,7 +1835,7 @@ Depending on internal optimisation techniques, the compressed file may not shrin
 object is closed or the #Flush() action is called.
 
 -INPUT-
-cstr Path: The full path name of the file to delete from the archive.
+cpp(strview) Path: The full path name of the file to delete from the archive.
 
 -ERRORS-
 Okay: The file was successfully deleted.
@@ -1855,13 +1852,13 @@ static ERR COMPRESSION_RemoveFile(extCompression *Self, struct cmp::RemoveFile *
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Path)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Path.empty()) return log.warning(ERR::NullArgs);
 
    if (Self->isDerived()) return ERR::NoSupport;
 
    // Search for the file(s) in our archive that match the given name and delete them.
 
-   log.msg("%s", Args->Path);
+   log.msg("%.*s", int(Args->Path.size()), Args->Path.data());
 
    for (auto it = Self->Files.begin(); it != Self->Files.end(); ) {
       if (wildcmp(Args->Path, it->Name)) {
@@ -1899,8 +1896,8 @@ The !CompressedItem structure consists of the following fields:
 To search for a single item with a path and name already known, use the #Find() method instead.
 
 -INPUT-
-cstr Folder: If defined, only items within the specified folder are returned.  Use an empty string for files in the root folder.
-cstr Filter: Search for a specific item or items by name, using wildcards.  If `NULL` or an empty string, all items will be scanned.
+cpp(strview) Folder: Only items within the specified folder are returned.  Use an empty string for files in the root folder.
+cpp(strview) Filter: Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.
 ptr(func) Callback: This callback function will be called with a pointer to a !CompressedItem structure.
 
 -ERRORS-
@@ -1918,46 +1915,38 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
 
    if (Self->isDerived()) return ERR::NoSupport;
 
-   log.traceBranch("Folder: \"%s\", Filter: \"%s\"", Args->Folder, Args->Filter);
+   log.traceBranch("Folder: \"%.*s\", Filter: \"%.*s\"", int(Args->Folder.size()), Args->Folder.data(),
+      int(Args->Filter.size()), Args->Filter.data());
 
-   int folder_len = 0;
-   if (Args->Folder) {
-      folder_len = strlen(Args->Folder);
-      if ((folder_len > 0) and (Args->Folder[folder_len-1] IS '/')) folder_len--;
-   }
+   auto folder = Args->Folder;
+   if ((not folder.empty()) and (folder.back() IS '/')) folder.remove_suffix(1);
+   const auto folder_len = folder.size();
 
    ERR error = ERR::Okay;
 
    for (auto &item : Self->Files) {
       log.trace("Item: %s", item.Name);
 
-      if (Args->Folder) {
-         if (std::ssize(item.Name) > folder_len) {
-            if (iequals(Args->Folder, item.Name)) {
-               if ((folder_len > 0) and (item.Name[folder_len] != '/')) continue;
-               if ((item.Name[folder_len] IS '/') and (!item.Name[folder_len+1])) continue;
+      std::string_view item_name(item.Name);
+      if (folder.empty()) {
+         if (item_name.find('/') != std::string_view::npos) continue;
+      }
+      else {
+         if (item_name.size() <= folder_len) continue;
+         if (!iequals(item_name.substr(0, folder_len), folder)) continue;
+         if (item_name[folder_len] != '/') continue;
+         if (item_name.size() <= folder_len + 1) continue;
 
-               // Skip this item if it is within other sub-folders.
+         // Skip this item if it is within other sub-folders.
 
-               int i;
-               for (i=folder_len+1; item.Name[i]; i++) {
-                  if (item.Name[i] IS '/') break;
-               }
-               if (item.Name[i] IS '/') continue;
-            }
-            else continue;
-         }
-         else continue;
+         if (item_name.substr(folder_len + 1).find('/') != std::string_view::npos) continue;
       }
 
-      if ((Args->Filter) and (Args->Filter[0])) {
-         if (wildcmp(Args->Filter, item.Name)) break;
-         else continue;
-      }
+      if ((not Args->Filter.empty()) and (not wildcmp(Args->Filter, item.Name))) continue;
 
       CompressedItem meta;
       zipfile_to_item(item, meta);
