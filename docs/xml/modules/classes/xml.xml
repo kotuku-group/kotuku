@@ -6,7 +6,7 @@
     <name>XML</name>
     <type>class</type>
     <module>XML</module>
-    <comment>Provides an interface for the management of structured data.</comment>
+    <comment>Parses, queries and updates XML document structures.</comment>
     <fileExtension>xml</fileExtension>
     <fileDescription>Extendable Markup Language (XML)</fileDescription>
     <version>1</version>
@@ -15,20 +15,12 @@
     <category>Data</category>
     <copyright>Paul Manias © 2001-2026</copyright>
     <description>
-<p>The XML class is designed to provide robust functionality for creating, parsing and maintaining XML data structures. It supports both well-formed and loosely structured XML documents, offering flexible parsing behaviours to accommodate various XML formats.  The class includes comprehensive support for XPath 2.0 and XQuery 1.0 queries, content manipulation and document validation.</p>
-<p>The class has been designed in such a way as to accommodate other structured data formats such as JSON and YAML.  In this way, the class not only provides XML support but also serves as Kotuku's general-purpose structured data handler.  It also makes it trivial to convert between different structured data formats, and benefit from the cross-application use of features, such as applying XPath 2.0 queries on data originating from YAML.</p>
-<header>Data Loading and Parsing</header>
-<p>XML documents can be loaded into an XML object through multiple mechanisms:</p>
-<p>The <fl>Path</fl> field allows loading from file system sources, with automatic parsing upon initialisation.  The class supports <function module="Core">LoadFile</function> caching for frequently accessed files, improving performance for repeated operations.</p>
-<p>The <fl>Statement</fl> field enables direct parsing of XML strings, supporting dynamic content processing and in-memory document construction.</p>
-<p>The <fl>Source</fl> field provides object-based input, allowing XML data to be sourced from any object supporting the Read action.</p>
-<p>For batch processing scenarios, the <fl>Path</fl> or <fl>Statement</fl> fields can be changed post-initialisation, causing the XML object to clear old data and parse the new.  This approach optimises memory usage by reusing existing object instances rather than creating new ones.</p>
-<header>Document Structure and Access</header>
-<p>Successfully parsed XML data is accessible through the <fl>Tags</fl> field, which contains a hierarchical array of <st>XTag</st> structures.  Each XTag represents a complete XML element including its attributes, content and child elements. The structure maintains the original document hierarchy, enabling both tree traversal and direct element access.</p>
-<p>C++ developers benefit from direct access to the Tags field, represented as <code>kt::vector&lt;XTag&gt;</code>.  This provides efficient iteration and element access with standard STL semantics.  Altering tag attributes is permitted and methods to do so are provided in the C++ header for <code>objXML</code> and <code>XTag</code>, with additional functions in the <code>xml</code> namespace. Check the header for details.</p>
-<p>Tiri developers need to be aware that reading the <fl>Tags</fl> field generates a copy of the entire tag structure - it should therefore be read only as needed and cached until the XML object is modified.</p>
-<header>Not Supported</header>
-<p>DTD processing and validation is intentionally not supported.  While the class can parse DOCTYPE declarations, it does not load or  validate against external DTDs as this is now a legacy technology.  Use XML Schema (XSD) for validation instead.</p></description>
+<p>The XML class creates and maintains parsed XML data as a hierarchy of <st>XTag</st> structures.  It accepts both strictly well-formed XML and the module's default relaxed parsing mode, depending on the <fl>Flags</fl> supplied by the caller.  Parsed documents can be queried with XPath/XQuery expressions, modified with XML methods and validated against an XML Schema loaded with <method>LoadSchema</method>.</p>
+<p>XML data can be loaded from a file path, from an in-memory XML statement or from another object that supports the Read action.  Set <fl>Path</fl> to load from the file system, <fl>Statement</fl> to parse an XML string, or <fl>Source</fl> to read from another object.  When <fl>Path</fl> or <fl>Statement</fl> is changed after initialisation, the object clears the previous document and parses the new source.</p>
+<p>Parsed content is available through <fl>Tags</fl>.  Each <st>XTag</st> stores the element name, attributes, child tags, content nodes, line number and namespace ID.  C++ callers can traverse the hierarchy directly through <code>kt::vector&lt;XTag&gt;</code>; Tiri callers should cache <fl>Tags</fl> only while the XML object remains unchanged because reading the field copies the structure.</p>
+<p>Use the XML object's methods when changing the tree so that modification timestamps and derived state remain consistent.  Direct read access to <st>XTag</st> is appropriate for traversal and high-volume inspection.</p>
+<p>
+<b>Not supported:</b> DTD validation is not implemented.  The parser records DOCTYPE declarations and selected entity, notation and identifier data, but it does not load or validate external DTDs.  Use XML Schema (XSD) validation instead.</p></description>
     <source>
       <file>xml_class.cpp</file>
     </source>
@@ -41,8 +33,12 @@
       <prototype>ERR acClear(*Object)</prototype>
       <tiriPrototype>err = Object.acClear()</tiriPrototype>
       <description>
-<p>The Clear action removes all parsed XML content from the object, including the complete tag hierarchy, cached data structures and internal state information.  This action effectively returns the XML object to its freshly-initialised condition, ready to accept new XML data.</p>
+<p>The Clear action removes parsed XML content, namespace base URI mappings, DOCTYPE information, entity data, notation data and parser status.  The object remains usable and can receive new XML data afterwards.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+      </result>
+      <tags>mutates-object</tags>
     </action>
 
     <action>
@@ -57,16 +53,24 @@
         <param type="INT" name="Size">The size of the data in Buffer.</param>
       </input>
       <description>
-<p>The DataFeed action provides a mechanism for supplying XML content to the object from external sources or streaming data.  This action supports both complete document replacement and incremental content addition, depending on the current state of the XML object.</p>
-<p>The action accepts data in XML or plain text format and automatically performs parsing and integration.  When the object contains no existing content, the provided data becomes the complete document structure.  If the object already contains parsed XML, the new data is parsed separately and appended to the existing tag hierarchy.</p>
-<p>If the provided data contains malformed XML or cannot be parsed according to the current validation settings, the action will return appropriate error codes without modifying the existing document structure.  This ensures that partial parsing failures do not corrupt previously loaded content.</p>
-<p>Attempts to feed data into a read-only XML object will be rejected to maintain document integrity.</p>
+<p>DataFeed accepts XML or text data and parses it into the object's tag hierarchy.  If the object has no existing tags, the parsed data becomes the document structure.  If tags already exist, the new data is parsed into a temporary hierarchy and appended to the root-level tag list.</p>
+<p>The action is rejected when <fl>ReadOnly</fl> is enabled.  Parse failures are returned to the caller; when appending to an existing document, the existing tag hierarchy is left unchanged if the new data cannot be parsed.</p>
 <p>Example:</p>
 <code>
 local xml = obj.new('xml')
 local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 </code>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Failed">General failure</error>
+        <error code="InvalidData">There is an error in the provided data</error>
+        <error code="ReadOnly">A delete or write operation failed due to read-only status</error>
+        <error code="Syntax">Invalid syntax detected</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="UnbalancedXML">The XML tags do not balance</error>
+      </result>
+      <tags>mutates-object, copies-input</tags>
     </action>
 
     <action>
@@ -97,15 +101,19 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
       <description>
-<p>Use SetKey to add tag attributes and content using XPaths.  The XPath is specified in the <code>Key</code> parameter and the data is specified in the <code>Value</code> parameter.  Setting the Value to <code>NULL</code> will remove the attribute or existing content, while an empty string will keep an attribute but eliminate any associated data.</p>
+<p>Use SetKey to add tag attributes and content using XPaths.  The XPath is specified in the <code>Key</code> parameter and the data is specified in the <code>Value</code> parameter.  If the XPath resolves to an attribute, the attribute is updated or created on the matched tag.  If the XPath resolves to an element, the element's first content node is updated or a new content node is created.</p>
 <p>It is not possible to add new tags using this action - it is only possible to update existing tags.</p>
 <p>Please note that making changes to the XML tree will render all previously obtained tag pointers and indexes invalid.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Search">Failed to find the tag referenced by the XPath.</error>
+        <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="ReadOnly">Changes to the XML structure are not permitted.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="SanityCheckFailed">A sanity check has failed</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </action>
 
   </actions>
@@ -125,10 +133,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>mutates-object, caller-owns-result, mutates-input</tags>
+      <tags>mutates-object, mutates-input</tags>
     </method>
 
     <method>
@@ -137,15 +146,16 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <prototype>ERR xml::Filter(OBJECTPTR Object, const std::string_view &amp; XPath)</prototype>
       <tiriPrototype>err = Filter(XPath:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="XPath">A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.</param>
+        <param type="const std::string_view &amp;" name="XPath">XPath/XQuery expression that identifies the target tag to retain.</param>
       </input>
       <description>
 <p>The Filter method provides a mechanism for reducing large XML documents to a specific subtree, permanently removing all content that exists outside the targeted element and its children.  This operation is particularly valuable for performance optimisation when working with large documents where only a specific section is relevant.</p>
-<p>The filtering process begins by locating the target element using the provided XPath expression.  Once found, a new XML structure is created containing only the matched tag and its complete descendant hierarchy.  All sibling tags, parent elements (excluding the direct lineage) and unrelated branches are permanently discarded.</p>
+<p>The filtering process locates the first element matched by the supplied XPath/XQuery expression.  The XML object is then replaced by a new root-level structure containing that tag and its descendants.  Sibling tags, parent elements and unrelated branches are discarded.</p>
       </description>
       <result>
-        <error code="Okay">The filtering operation completed successfully and the XML structure now contains only the specified subtree.</error>
+        <error code="Okay">The XML structure now contains only the first matched subtree.</error>
         <error code="Search">No matching tag could be found for the specified XPath expression.</error>
+        <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="NullArgs">The XPath parameter was empty.</error>
       </result>
       <tags>mutates-object</tags>
@@ -157,25 +167,23 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, const std::string_view &amp; Attrib, std::string * Value)</prototype>
       <tiriPrototype>err, Value:str = GetAttrib(Index:num, Attrib:str)</tiriPrototype>
       <input>
-        <param type="INT" name="Index">The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as <method>Search</method>.</param>
-        <param type="const std::string_view &amp;" name="Attrib">The name of the attribute to retrieve (case insensitive).  If empty, the element's tag name is returned instead.</param>
+        <param type="INT" name="Index">The unique identifier of the XML tag to search.</param>
+        <param type="const std::string_view &amp;" name="Attrib">The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.</param>
         <param type="std::string *" name="Value">Receives the attribute value.  It is cleared if the specified attribute does not exist.</param>
       </input>
       <description>
 <p>The GetAttrib method provides efficient access to individual attribute values within XML elements.  Given a tag identifier and attribute name, the method performs a case-insensitive search through the element's attribute collection and returns the corresponding value.</p>
 <p>When a specific attribute name is provided, the method searches through all attributes of the target tag.  The search is case-insensitive to accommodate XML documents with varying capitalisation conventions.</p>
 <p>When the attribute name is empty, the method returns the tag name itself, providing convenient access to element names without requiring separate API calls.</p>
-<header>Performance Considerations</header>
 <p>For applications requiring frequent attribute access or high-performance scenarios, C++ developers should consider direct access to the <st>XMLAttrib</st> structure array.  This bypasses the method call overhead and provides immediate access to all attributes simultaneously.</p>
 <p>The method performs a linear search through the attribute collection, so performance scales with the number of attributes per element.  For elements with many attributes, caching frequently accessed values may improve performance.</p>
-<header>Data Integrity</header>
       </description>
       <result>
         <error code="Okay">The attribute was successfully found and its value returned.</error>
         <error code="NotFound">Either the specified tag Index does not exist, or the named attribute was not found within the tag.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
-      <tags>pure-query, caller-owns-result, case-insensitive, mutates-input</tags>
+      <tags>pure-query, case-insensitive, mutates-input</tags>
     </method>
 
     <method>
@@ -184,11 +192,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <prototype>ERR xml::GetContent(OBJECTPTR Object, INT Index, std::string * Buffer)</prototype>
       <tiriPrototype>err, Buffer:str = GetContent(Index:num)</tiriPrototype>
       <input>
-        <param type="INT" name="Index">The unique identifier of the XML element from which to extract content.  This must correspond to a valid tag ID as returned by search methods.</param>
+        <param type="INT" name="Index">The unique identifier of the XML element from which to extract content.</param>
         <param type="std::string *" name="Buffer">Receives the extracted content string.</param>
       </input>
       <description>
-<p>The GetContent method provides efficient extraction of text content from XML elements using a shallow parsing approach. It retrieves only the immediate text content of the specified element, deliberately excluding any text contained within nested child elements.  This behaviour is valuable for scenarios requiring precise content extraction without recursive tag processing.</p>
+<p>The GetContent method extracts only the immediate content-node children of the specified element.  Text contained inside nested elements is not included.</p>
 <p>Consider the following XML structure:</p>
 <pre>&lt;body&gt;
   Hello
@@ -197,8 +205,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 &lt;/body&gt;
 </pre>
 <p>The GetContent method would extract <code>Hello world!</code> and deliberately exclude <code>emphasis</code> since it is contained within the nested <code>&lt;bold&gt;</code> element.</p>
-<header>Comparison with Deep Extraction</header>
-<p>For scenarios requiring complete text extraction including all nested content, use the <method>Serialise</method> method with appropriate flags to perform deep content analysis.  The GetContent method is optimised for cases where nested tag content should be excluded from the result.</p>
+<p>For scenarios requiring serialised XML rather than immediate text content, use <method>Serialise</method>.  To inspect nested text content, traverse the child <st>XTag</st> hierarchy directly.</p>
 <p>It is recommended that C++ programs bypass this method and access the <st>XMLAttrib</st> structure directly.</p>
       </description>
       <result>
@@ -206,7 +213,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NotFound">The tag identified by Index does not exist in the XML structure.</error>
         <error code="NullArgs">Either the Buffer parameter was NULL or other required arguments were missing.</error>
       </result>
-      <tags>pure-query, caller-owns-result, mutates-input</tags>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>
@@ -226,7 +233,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No matching entity could be found for the specified name.</error>
         <error code="NullArgs">Either the Name was empty or Value parameter was NULL.</error>
       </result>
-      <tags>pure-query, caller-owns-result, case-sensitive, mutates-input</tags>
+      <tags>pure-query, case-sensitive, mutates-input</tags>
     </method>
 
     <method>
@@ -246,7 +253,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No namespace found for the specified UID.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
-      <tags>pure-query, caller-owns-result, mutates-input</tags>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>
@@ -266,7 +273,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No matching notation could be found for the specified name.</error>
         <error code="NullArgs">Either the Name was empty or Value parameter was NULL.</error>
       </result>
-      <tags>pure-query, caller-owns-result, case-sensitive, mutates-input</tags>
+      <tags>pure-query, case-sensitive, mutates-input</tags>
     </method>
 
     <method>
@@ -279,7 +286,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <param type="struct XTag **" name="Result">The <st>XTag</st> is returned in this parameter.</param>
       </input>
       <description>
-<p>This method will return the <st>XTag</st> structure for a given tag <code>Index</code>.  The <code>Index</code> is checked to ensure it is valid prior to retrieval, and an <code>ERR::OutOfRange</code> error will be returned if it is invalid.</p>
+<p>This method will return the <st>XTag</st> structure for a given tag <code>Index</code>.  The <code>Index</code> is checked to ensure it is valid prior to retrieval, and an <code>ERR::NotFound</code> error will be returned if it is invalid.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -296,8 +303,8 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <tiriPrototype>err, Result:num = InsertContent(Index:num, Where:num, Content:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the target XML element that will serve as the reference point for insertion.</param>
-        <param type="XMI" name="Where" lookup="XMI">Specifies the insertion position relative to the target element.  Use PREV or NEXT for sibling insertion, or CHILD for child content insertion.</param>
-        <param type="const std::string_view &amp;" name="Content">The text content to insert.  Special XML characters will be automatically escaped to ensure document validity.</param>
+        <param type="XMI" name="Where" lookup="XMI">Specifies the insertion position relative to the target element.  Use <code>PREV</code> or <code>NEXT</code> for sibling insertion, or <code>CHILD</code> for child content insertion.</param>
+        <param type="const std::string_view &amp;" name="Content">The text content to insert.  Special XML characters will be automatically escaped.</param>
         <param type="INT *" name="Result">Pointer to an integer that will receive the unique identifier of the newly created content node.</param>
       </input>
       <description>
@@ -330,11 +337,15 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The statement was added successfully.</error>
+        <error code="Failed">General failure</error>
+        <error code="InvalidData">There is an error in the provided data</error>
         <error code="NotFound">The target Index does not correspond to a valid XML element.</error>
         <error code="Args">The Where parameter specifies an invalid insertion position.</error>
         <error code="NoData">The provided XML statement parsed to an empty result.</error>
         <error code="ReadOnly">Changes to the XML data are not permitted.</error>
+        <error code="Syntax">Invalid syntax detected</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
+        <error code="UnbalancedXML">The XML tags do not balance</error>
       </result>
       <tags>mutates-object, copies-input</tags>
     </method>
@@ -347,17 +358,25 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <input>
         <param type="const std::string_view &amp;" name="XPath">An XPath string that refers to the target insertion point.</param>
         <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> for a child insert.</param>
-        <param type="const std::string_view &amp;" name="XML">The statement to process.</param>
+        <param type="const std::string_view &amp;" name="XML">XML statement to parse and insert.</param>
         <param type="INT *" name="Result">The index of the new tag is returned here.</param>
       </input>
       <description>
-<p>The InsertXPath method is used to translate and insert a new set of XML tags into any position within the XML tree.  A standard XML statement must be provided in the XML parameter and the target insertion point is referenced as a valid <code>XPath</code> location string.  An insertion point relative to the <code>XPath</code> target must be specified in the <code>Where</code> parameter.  The new tags can be inserted as a child of the target by using an Insert value of <code>XMI::CHILD</code> or <code>XMI::CHILD_END</code>.  To insert behind or after the target, use <code>XMI::PREV</code> or <code>XMI::NEXT</code>.</p>
+<p>The InsertXPath method is used to translate and insert a new set of XML tags into any position within the XML tree.  A standard XML statement must be provided in the XML parameter and the target insertion point is referenced as a valid <code>XPath</code> location string.  An insertion point relative to the <code>XPath</code> target must be specified in the <code>Where</code> parameter.  The new tags can be inserted as a child of the target by using a <code>Where</code> value of <code>XMI::CHILD</code> or <code>XMI::CHILD_END</code>.  To insert behind or after the target, use <code>XMI::PREV</code> or <code>XMI::NEXT</code>.</p>
       </description>
       <result>
         <error code="Okay">The XML statement was successfully inserted at the specified XPath location.</error>
+        <error code="Failed">General failure</error>
+        <error code="InvalidData">There is an error in the provided data</error>
+        <error code="NotFound">The target resolved by XPath could not be used as an insertion point.</error>
         <error code="Search">The XPath could not be resolved to a valid location.</error>
+        <error code="Args">The Where parameter specifies an invalid insertion position.</error>
+        <error code="NoData">The provided XML statement parsed to an empty result.</error>
+        <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
+        <error code="Syntax">Invalid syntax detected</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
+        <error code="UnbalancedXML">The XML tags do not balance</error>
       </result>
       <tags>mutates-object, copies-input</tags>
     </method>
@@ -375,6 +394,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">Schema was successfully loaded and parsed.</error>
+        <error code="InvalidData">The schema document did not contain a usable root element.</error>
         <error code="NoData">The schema document did not contain any parsable definitions.</error>
         <error code="CreateObject">The file in Path could not be processed as XML content.</error>
         <error code="NullArgs">The Path argument was not provided.</error>
@@ -389,13 +409,13 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <tiriPrototype>err = MoveTags(Index:num, Total:num, DestIndex:num, Where:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Index of the source tag to be moved.</param>
-        <param type="INT" name="Total">The total number of sibling tags (including the targeted tag) to be moved from the source index.  Minimum value of 1.</param>
-        <param type="INT" name="DestIndex">The destination tag index.  If the index exceeds the total number of tags, the value will be automatically limited to the last tag index.</param>
-        <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> for a child insert.</param>
+        <param type="INT" name="Total">The total number of sibling tags, including the targeted tag, to move from the source index.  Minimum value of 1.</param>
+        <param type="INT" name="DestIndex">The destination tag index.</param>
+        <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> or <code>CHILD_END</code> for a child insert.</param>
       </input>
       <description>
 <p>This method is used to move XML tags within the XML tree structure.  It supports the movement of single and groups of tags from one index to another.  The client must supply the index of the tag that will be moved and the index of the target tag.  All child tags of the source will be included in the move.</p>
-<p>An insertion point relative to the target index must be specified in the <code>Where</code> parameter.  The source tag can be inserted as a child of the destination by using a <code>Where</code> of <code>XMI::CHILD</code>.  To insert behind or after the target, use <code>XMI::PREV</code> or <code>XMI::NEXT</code>.</p>
+<p>An insertion point relative to the target index must be specified in the <code>Where</code> parameter.  The source tag can be inserted as a child of the destination by using <code>XMI::CHILD</code> or <code>XMI::CHILD_END</code>.  To insert behind or after the target, use <code>XMI::PREV</code> or <code>XMI::NEXT</code>.</p>
       </description>
       <result>
         <error code="Okay">Tags were moved successfully.</error>
@@ -422,7 +442,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The namespace was successfully registered.</error>
-        <error code="Failed">The URI was empty or invalid.</error>
+        <error code="Args">The URI could not be registered.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
       <tags>mutates-object, copies-input</tags>
@@ -435,11 +455,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <tiriPrototype>err = RemoveTag(Index:num, Total:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Reference to the tag that will be removed.</param>
-        <param type="INT" name="Total">The total number of sibling (neighbouring) tags that should also be deleted.  A value of one or less will remove only the indicated tag and its children.  The total may exceed the number of tags actually available, in which case all tags up to the end of the branch will be affected.</param>
+        <param type="INT" name="Total">The total number of sibling tags to delete, including the indicated tag.  A value of one or less removes only the indicated tag and its children.  The requested range should stay within the available sibling sequence.</param>
       </input>
       <description>
 <p>The RemoveTag method is used to remove one or more tags from an XML structure.  Child tags will automatically be discarded as a consequence of using this method, in order to maintain a valid XML structure.</p>
-<p>This method is capable of deleting multiple tags if the <code>Total</code> parameter is set to a value greater than 1.  Each consecutive tag and its children following the targeted tag will be removed from the XML structure until the count is exhausted. This is useful for mass delete operations.</p>
+<p>This method can delete multiple sibling tags when the <code>Total</code> parameter is greater than 1.  Each selected tag and its children are removed.  The requested range should stay within the available sibling sequence.</p>
 <p>Note: Removing tags will destabilise all cached address pointers that have been acquired from the XML object.</p>
       </description>
       <result>
@@ -453,17 +473,17 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 
     <method>
       <name>RemoveXPath</name>
-      <comment>Removes tag(s) from the XML structure, using an xpath lookup.</comment>
+      <comment>Removes tag(s) from the XML structure using an XPath lookup.</comment>
       <prototype>ERR xml::RemoveXPath(OBJECTPTR Object, const std::string_view &amp; XPath, INT Limit)</prototype>
       <tiriPrototype>err = RemoveXPath(XPath:str, Limit:num)</tiriPrototype>
       <input>
         <param type="const std::string_view &amp;" name="XPath">An XML path string.</param>
-        <param type="INT" name="Limit">The maximum number of matching tags to delete.  A value of one or zero will remove only the indicated tag and its children.  A value of -1 removes all matching tags.</param>
+        <param type="INT" name="Limit">The maximum number of matching tags to delete.  A value of one or zero removes only the indicated tag and its children.  A value of -1 removes all matching tags.</param>
       </input>
       <description>
 <p>The RemoveXPath method is used to remove one or more tags from an XML structure.  Child tags will automatically be discarded as a consequence of using this method, in order to maintain a valid XML structure.</p>
 <p>Individual tag attributes can also be removed if an attribute is referenced at the end of the <code>XPath</code>.</p>
-<p>The removal routine will be repeated so that each tag that matches the XPath will be deleted, or the <code>Limit</code> is reached.</p>
+<p>The removal routine is repeated until no further match is found or the <code>Limit</code> is reached.  No-match completion is reported as <code>ERR::Okay</code>.</p>
 <p>This method is volatile and will destabilise any cached address pointers that have been acquired from the XML object.</p>
       </description>
       <result>
@@ -481,12 +501,12 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <prototype>ERR xml::ResolvePrefix(OBJECTPTR Object, const std::string_view &amp; Prefix, INT TagID, UINT * Result)</prototype>
       <tiriPrototype>err, Result:num = ResolvePrefix(Prefix:str, TagID:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Prefix">The namespace prefix to resolve. Use empty string for default namespace.</param>
+        <param type="const std::string_view &amp;" name="Prefix">The namespace prefix to resolve.  Use an empty string for the default namespace.</param>
         <param type="INT" name="TagID">The tag ID defining the starting scope for namespace resolution.</param>
-        <param type="UINT *" name="Result">Pointer to an integer that will receive the resolved namespace hash.</param>
+        <param type="UINT *" name="Result">Receives the resolved namespace URI hash.</param>
       </input>
       <description>
-<p>This method resolves a namespace prefix to its corresponding URI by examining namespace declarations within the specified tag's hierarchical scope. The resolution process:</p>
+<p>This method resolves a namespace prefix to its corresponding namespace URI hash by examining namespace declarations within the specified tag's hierarchical scope.  The resolution process:</p>
 <list type="ordered">
 <li>Walks up the tag hierarchy from the specified tag to the root.</li>
 <li>Examines xmlns:prefix and xmlns attributes in each tag to find the declaration.</li>
@@ -496,8 +516,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The prefix was successfully resolved.</error>
-        <error code="NotFound">The specified tag was not found.</error>
-        <error code="Search">The prefix could not be resolved in any accessible scope.</error>
+        <error code="Search">The prefix could not be resolved in any accessible scope, or TagID did not identify a tag.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
       <tags>pure-query</tags>
@@ -511,21 +530,22 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <input>
         <param type="const std::string_view &amp;" name="Expression">A valid XQuery expression.</param>
         <param type="FUNCTION *" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
-        <param type="INT *" name="Result">UID of the first matching tag.  Only valid when Callback is undefined.</param>
+        <param type="INT *" name="Result">UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.</param>
       </input>
       <description>
 <p>The Search method provides the primary mechanism for locating XML elements within the document structure using XPath and XQuery expressions.  The method supports both single-result queries and comprehensive tree traversal with callback-based processing for complex operations.</p>
 <p>When no callback function is provided, Search returns the first matching element and terminates the search immediately.  This is optimal for simple queries where only the first occurrence is required.</p>
-<p>When a callback function is specified, Search continues searching through the entire document structure, calling the provided function for each matching element.  This enables comprehensive processing of all matching elements in a single traversal.</p>
+<p>When a callback function is specified, Search calls it for each matching element until the query completes, the callback returns an error, or the callback returns <code>ERR::Terminate</code>.</p>
 <p>The C++ prototype for Callback is <code>ERR Function(*XML, int TagID, CSTRING Attrib, APTR Meta)</code>.</p>
-<p>The callback should return <code>ERR::Okay</code> to continue processing, or <code>ERR::Terminate</code> to halt the search immediately. All other error codes are ignored to maintain search robustness.</p>
+<p>The callback should return <code>ERR::Okay</code> to continue processing, or <code>ERR::Terminate</code> to halt the search immediately. Other callback errors are returned to the caller.</p>
 <p>Note: If an error occurs, check the <fl>ErrorMsg</fl> field for a custom error message containing further details.</p>
       </description>
       <result>
         <error code="Okay">A matching tag was found (or callback processing completed successfully).</error>
         <error code="Search">No matching tag could be found for the specified expression.</error>
         <error code="NoData">The XML document contains no data to search.</error>
-        <error code="NullArgs">The Expression was empty or the Result parameter was NULL when no callback was provided.</error>
+        <error code="NewObject">NewObject() failed to produce a new object</error>
+        <error code="NullArgs">The Expression was empty.</error>
       </result>
       <tags>mutates-object, callback-inlines</tags>
     </method>
@@ -550,7 +570,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NoData">No information has been loaded into the XML object.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
-      <tags>pure-query, caller-owns-result, mutates-input</tags>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>
@@ -560,20 +580,20 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <tiriPrototype>err = SetAttrib(Index:num, Attrib:num, Name:str, Value:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Identifies the tag that is to be updated.</param>
-        <param type="XMS" name="Attrib" lookup="XMS">Either the index number of the attribute that is to be updated, or set to <code>NEW</code>, <code>UPDATE</code> or <code>UPDATE_ONLY</code>.</param>
-        <param type="const std::string_view &amp;" name="Name">String containing the new name for the attribute.  If empty during indexed updates, the name will not be changed.  If Attrib is <code>UPDATE</code>, <code>UPDATE_ONLY</code> or <code>REMOVE</code>, the <code>Name</code> is used to find the attribute.</param>
+        <param type="XMS" name="Attrib" lookup="XMS">Attribute index to update, or <code>NEW</code>, <code>UPDATE</code>, <code>UPDATE_ONLY</code> or <code>REMOVE</code>.</param>
+        <param type="const std::string_view &amp;" name="Name">New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is <code>UPDATE</code>, <code>UPDATE_ONLY</code> or <code>REMOVE</code>, this name is used to find the attribute.</param>
         <param type="const std::string_view &amp;" name="Value">String containing the new value for the attribute.</param>
       </input>
       <description>
-<p>This method is used to update and add attributes to existing XML tags, as well as adding or modifying content.</p>
+<p>This method updates existing XML tag attributes, creates new attributes and clears content.</p>
 <p>The data for the attribute is defined in the <code>Name</code> and <code>Value</code> parameters.  Use an empty string if no data is to be associated with the attribute.  Set <code>Attrib</code> to <code>XMS::REMOVE</code> to remove an attribute, or to clear element content if <code>Name</code> is empty.</p>
 <p>NOTE: The attribute at position 0 declares the name of the tag and should not normally be accompanied with a value declaration.  However, if the tag represents content within its parent, then the Name must be left empty and the <code>Value</code> string will determine the content.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">The attribute, identified by <code>Name</code>, could not be found.</error>
+        <error code="Search">The tag identified by <code>Index</code> or the attribute identified by <code>Name</code> could not be found.</error>
         <error code="Args">Invalid arguments passed to function</error>
-        <error code="OutOfRange">The <code>Index</code> or <code>Attrib</code> value is out of range.</error>
+        <error code="OutOfRange">The <code>Attrib</code> value is outside the tag's attribute array.</error>
         <error code="ReadOnly">The XML object is read-only.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -617,6 +637,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <result>
         <error code="Okay">The XML object was successfully sorted.</error>
         <error code="Search">The provided XPath failed to locate a tag.</error>
+        <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
@@ -629,14 +650,14 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <prototype>ERR xml::ValidateDocument(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = ValidateDocument()</tiriPrototype>
       <description>
-<p>This method performs structural and simple type validation of the document using the loaded XML Schema.  The Result parameter returns <code>1</code> when the document conforms to the schema, otherwise <code>0</code>.</p>
+<p>This method performs structural and simple type validation of the document using the loaded XML Schema.  It returns <code>ERR::Okay</code> when the document conforms to the schema.  Validation failures return an error and populate <fl>ErrorMsg</fl> with the reason where available.</p>
       </description>
       <result>
         <error code="Okay">Validation completed successfully.</error>
+        <error code="InvalidData">The document structure, namespace or element content failed schema validation.</error>
         <error code="Search">The schema does not define the root element present in the document.</error>
         <error code="NoData">The XML document does not contain any parsed tags.</error>
         <error code="NoSupport">No schema has been loaded for this XML object.</error>
-        <error code="NullArgs">The Result parameter was not supplied.</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -646,7 +667,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
   <fields>
     <field>
       <name>DocType</name>
-      <comment>Root element name from DOCTYPE declaration</comment>
+      <comment>Root element name from a parsed DOCTYPE declaration.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>std::string</type>
     </field>
@@ -695,7 +716,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 
     <field>
       <name>PublicID</name>
-      <comment>Public identifier for external DTD</comment>
+      <comment>Public identifier from a parsed DOCTYPE declaration.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>std::string</type>
     </field>
@@ -729,7 +750,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <description>
 <p>Set the Statement field to parse an XML formatted data string through the object.  If this field is set after initialisation then the XML object will clear any existing data first.</p>
 <p>Be aware that setting this field with an invalid statement will result in an empty XML object.</p>
-<p>Reading the Statement field will return a serialised string of XML data.  By default all tags will be included in the statement.  The string result is an allocation that must be freed.</p>
+<p>Reading the Statement field returns a serialised string of XML data.  By default, all tags are included in the statement.  The string result is an allocation that must be freed by the caller.</p>
 <p>If the statement is an XQuery expression with base-uri references, the <fl>Path</fl> field should be set to establish the base path for relative references.</p>
       </description>
       <tags>caller-owns-result</tags>
@@ -737,7 +758,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 
     <field>
       <name>SystemID</name>
-      <comment>System identifier for external DTD</comment>
+      <comment>System identifier from a parsed DOCTYPE declaration.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>std::string</type>
     </field>

@@ -6,54 +6,27 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -CLASS-
-XML: Provides an interface for the management of structured data.
+XML: Parses, queries and updates XML document structures.
 
-The XML class is designed to provide robust functionality for creating, parsing and maintaining XML data structures.
-It supports both well-formed and loosely structured XML documents, offering flexible parsing behaviours to
-accommodate various XML formats.  The class includes comprehensive support for XPath 2.0 and XQuery 1.0
-queries, content manipulation and document validation.
+The XML class creates and maintains parsed XML data as a hierarchy of !XTag structures.  It accepts both strictly
+well-formed XML and the module's default relaxed parsing mode, depending on the #Flags supplied by the caller.  Parsed
+documents can be queried with XPath/XQuery expressions, modified with XML methods and validated against an XML Schema
+loaded with #LoadSchema().
 
-The class has been designed in such a way as to accommodate other structured data formats such as JSON and YAML.  In
-this way, the class not only provides XML support but also serves as Kotuku's general-purpose structured
-data handler.  It also makes it trivial to convert between different structured data formats, and benefit from
-the cross-application use of features, such as applying XPath 2.0 queries on data originating from YAML.
+XML data can be loaded from a file path, from an in-memory XML statement or from another object that supports the Read
+action.  Set #Path to load from the file system, #Statement to parse an XML string, or #Source to read from another
+object.  When #Path or #Statement is changed after initialisation, the object clears the previous document and parses
+the new source.
 
-<header>Data Loading and Parsing</header>
+Parsed content is available through #Tags.  Each !XTag stores the element name, attributes, child tags, content nodes,
+line number and namespace ID.  C++ callers can traverse the hierarchy directly through `kt::vector&lt;XTag&gt;`; Tiri
+callers should cache #Tags only while the XML object remains unchanged because reading the field copies the structure.
 
-XML documents can be loaded into an XML object through multiple mechanisms:
+Use the XML object's methods when changing the tree so that modification timestamps and derived state remain
+consistent.  Direct read access to !XTag is appropriate for traversal and high-volume inspection.
 
-The #Path field allows loading from file system sources, with automatic parsing upon initialisation.  The class
-supports ~Core.LoadFile() caching for frequently accessed files, improving performance for repeated operations.
-
-The #Statement field enables direct parsing of XML strings, supporting dynamic content processing and in-memory
-document construction.
-
-The #Source field provides object-based input, allowing XML data to be sourced from any object supporting the Read
-action.
-
-For batch processing scenarios, the #Path or #Statement fields can be changed post-initialisation, causing the XML
-object to clear old data and parse the new.  This approach optimises memory usage by reusing existing object
-instances rather than creating new ones.
-
-<header>Document Structure and Access</header>
-
-Successfully parsed XML data is accessible through the #Tags field, which contains a hierarchical array of !XTag
-structures.  Each XTag represents a complete XML element including its attributes, content and child elements.
-The structure maintains the original document hierarchy, enabling both tree traversal and direct element access.
-
-C++ developers benefit from direct access to the Tags field, represented as `kt::vector&lt;XTag&gt;`.  This provides
-efficient iteration and element access with standard STL semantics.  Altering tag attributes is permitted and methods
-to do so are provided in the C++ header for `objXML` and `XTag`, with additional functions in the `xml` namespace.
-Check the header for details.
-
-Tiri developers need to be aware that reading the #Tags field generates a copy of the entire tag structure - it
-should therefore be read only as needed and cached until the XML object is modified.
-
-<header>Not Supported</header>
-
-DTD processing and validation is intentionally not supported.  While the class can parse DOCTYPE declarations, it
-does not load or  validate against external DTDs as this is now a legacy technology.  Use XML Schema (XSD) for
-validation instead.
+<b>Not supported:</b> DTD validation is not implemented.  The parser records DOCTYPE declarations and selected entity,
+notation and identifier data, but it does not load or validate external DTDs.  Use XML Schema (XSD) validation instead.
 
 -END-
 
@@ -101,7 +74,14 @@ static ERR find_all_tags(extXML *Self, int TagID, CSTRING Attrib, matching_tag_o
 -ACTION-
 Clear: Completely clears all XML data and resets the object to its initial state.
 
-The Clear action removes all parsed XML content from the object, including the complete tag hierarchy, cached data structures and internal state information.  This action effectively returns the XML object to its freshly-initialised condition, ready to accept new XML data.
+The Clear action removes parsed XML content, namespace base URI mappings, DOCTYPE information, entity data, notation
+data and parser status.  The object remains usable and can receive new XML data afterwards.
+
+-TAGS-
+mutates-object
+
+-ERRORS-
+Okay
 -END-
 *********************************************************************************************************************/
 
@@ -127,19 +107,12 @@ static ERR XML_Clear(extXML *Self)
 -ACTION-
 DataFeed: Processes and integrates external XML data into the object's document structure.
 
-The DataFeed action provides a mechanism for supplying XML content to the object from external sources or streaming
-data.  This action supports both complete document replacement and incremental content addition, depending on the
-current state of the XML object.
+DataFeed accepts XML or text data and parses it into the object's tag hierarchy.  If the object has no existing tags,
+the parsed data becomes the document structure.  If tags already exist, the new data is parsed into a temporary
+hierarchy and appended to the root-level tag list.
 
-The action accepts data in XML or plain text format and automatically performs parsing and integration.  When the
-object contains no existing content, the provided data becomes the complete document structure.  If the object already
-contains parsed XML, the new data is parsed separately and appended to the existing tag hierarchy.
-
-If the provided data contains malformed XML or cannot be parsed according to the current validation settings, the
-action will return appropriate error codes without modifying the existing document structure.  This ensures that
-partial parsing failures do not corrupt previously loaded content.
-
-Attempts to feed data into a read-only XML object will be rejected to maintain document integrity.
+The action is rejected when #ReadOnly is enabled.  Parse failures are returned to the caller; when appending to an
+existing document, the existing tag hierarchy is left unchanged if the new data cannot be parsed.
 
 Example:
 
@@ -147,6 +120,18 @@ Example:
 local xml = obj.new('xml')
 local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 </code>
+
+-TAGS-
+mutates-object, copies-input
+
+-ERRORS-
+Okay
+NullArgs
+ReadOnly
+InvalidData
+Syntax
+Failed
+UnbalancedXML
 
 -END-
 
@@ -198,12 +183,13 @@ cpp(strview) Statement: An XQuery expression to evaluate.
 ^&cpp(str) Result: The evaluation result is returned here.
 
 -TAGS-
-mutates-object, caller-owns-result
+mutates-object
 
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
+FieldNotSet
+NewObject
 -END-
 
 *********************************************************************************************************************/
@@ -254,20 +240,23 @@ The Filter method provides a mechanism for reducing large XML documents to a spe
 all content that exists outside the targeted element and its children.  This operation is particularly valuable for
 performance optimisation when working with large documents where only a specific section is relevant.
 
-The filtering process begins by locating the target element using the provided XPath expression.  Once found, a
-new XML structure is created containing only the matched tag and its complete descendant hierarchy.  All sibling
-tags, parent elements (excluding the direct lineage) and unrelated branches are permanently discarded.
+The filtering process locates the first element matched by the supplied XPath/XQuery expression.  The XML object is
+then replaced by a new root-level structure containing that tag and its descendants.  Sibling tags, parent elements and
+unrelated branches are discarded.
 
 -INPUT-
-cpp(strview) XPath: A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.
+cpp(strview) XPath: XPath/XQuery expression that identifies the target tag to retain.
 
 -TAGS-
 mutates-object
 
 -ERRORS-
-Okay: The filtering operation completed successfully and the XML structure now contains only the specified subtree.
+Okay: The XML structure now contains only the first matched subtree.
 NullArgs: The XPath parameter was empty.
 Search: No matching tag could be found for the specified XPath expression.
+NewObject
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -328,30 +317,32 @@ with callback-based processing for complex operations.
 When no callback function is provided, Search returns the first matching element and terminates the search
 immediately.  This is optimal for simple queries where only the first occurrence is required.
 
-When a callback function is specified, Search continues searching through the entire document structure, calling the
-provided function for each matching element.  This enables comprehensive processing of all matching elements in a
-single traversal.
+When a callback function is specified, Search calls it for each matching element until the query completes, the
+callback returns an error, or the callback returns `ERR::Terminate`.
 
 The C++ prototype for Callback is `ERR Function(*XML, int TagID, CSTRING Attrib, APTR Meta)`.
 
 The callback should return `ERR::Okay` to continue processing, or `ERR::Terminate` to halt the search immediately.
-All other error codes are ignored to maintain search robustness.
+Other callback errors are returned to the caller.
 
 Note: If an error occurs, check the #ErrorMsg field for a custom error message containing further details.
 
 -INPUT-
 cpp(strview) Expression: A valid XQuery expression.
 ptr(func) Callback: Optional pointer to a callback function for processing multiple matches.
-&int Result: UID of the first matching tag.  Only valid when Callback is undefined.
+&int Result: UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.
 
 -TAGS-
 mutates-object, callback-inlines
 
 -ERRORS-
 Okay: A matching tag was found (or callback processing completed successfully).
-NullArgs: The Expression was empty or the Result parameter was NULL when no callback was provided.
+NullArgs: The Expression was empty.
 NoData: The XML document contains no data to search.
 Search: No matching tag could be found for the specified expression.
+NewObject
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -435,8 +426,6 @@ is case-insensitive to accommodate XML documents with varying capitalisation con
 When the attribute name is empty, the method returns the tag name itself, providing convenient access to
 element names without requiring separate API calls.
 
-<header>Performance Considerations</header>
-
 For applications requiring frequent attribute access or high-performance scenarios, C++ developers should consider
 direct access to the !XMLAttrib structure array.  This bypasses the method call overhead and provides immediate
 access to all attributes simultaneously.
@@ -444,15 +433,13 @@ access to all attributes simultaneously.
 The method performs a linear search through the attribute collection, so performance scales with the number of
 attributes per element.  For elements with many attributes, caching frequently accessed values may improve performance.
 
-<header>Data Integrity</header>
-
 -INPUT-
-int Index: The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as #Search().
-cpp(strview) Attrib: The name of the attribute to retrieve (case insensitive).  If empty, the element's tag name is returned instead.
+int Index: The unique identifier of the XML tag to search.
+cpp(strview) Attrib: The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.
 ^&cpp(str) Value: Receives the attribute value.  It is cleared if the specified attribute does not exist.
 
 -TAGS-
-pure-query, caller-owns-result, case-insensitive
+pure-query, case-insensitive
 
 -ERRORS-
 Okay: The attribute was successfully found and its value returned.
@@ -497,10 +484,8 @@ static ERR XML_GetAttrib(extXML *Self, struct xml::GetAttrib *Args)
 -METHOD-
 GetContent: Extracts the immediate text content of an XML element, excluding nested tags.
 
-The GetContent method provides efficient extraction of text content from XML elements using a shallow parsing approach.
-It retrieves only the immediate text content of the specified element, deliberately excluding any text contained within
-nested child elements.  This behaviour is valuable for scenarios requiring precise content extraction without
-recursive tag processing.
+The GetContent method extracts only the immediate content-node children of the specified element.  Text contained
+inside nested elements is not included.
 
 Consider the following XML structure:
 
@@ -515,25 +500,24 @@ Consider the following XML structure:
 The GetContent method would extract `Hello world!` and deliberately exclude `emphasis` since it is contained within the
 nested `&lt;bold&gt;` element.
 
-<header>Comparison with Deep Extraction</header>
-
-For scenarios requiring complete text extraction including all nested content, use the #Serialise() method with
-appropriate flags to perform deep content analysis.  The GetContent method is optimised for cases where nested tag
-content should be excluded from the result.
+For scenarios requiring serialised XML rather than immediate text content, use #Serialise().  To inspect nested text
+content, traverse the child !XTag hierarchy directly.
 
 It is recommended that C++ programs bypass this method and access the !XMLAttrib structure directly.
 
 -INPUT-
-int Index: The unique identifier of the XML element from which to extract content.  This must correspond to a valid tag ID as returned by search methods.
+int Index: The unique identifier of the XML element from which to extract content.
 ^&cpp(str) Buffer: Receives the extracted content string.
 
 -TAGS-
-pure-query, caller-owns-result
+pure-query
 
 -ERRORS-
 Okay: The content string was successfully extracted and copied to the buffer.
 NullArgs: Either the Buffer parameter was NULL or other required arguments were missing.
 NotFound: The tag identified by Index does not exist in the XML structure.
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -573,7 +557,7 @@ cpp(strview) Name: The name of the entity to retrieve.  This must correspond to 
 ^&cpp(str) Value: Receives the resolved entity value on success.
 
 -TAGS-
-pure-query, caller-owns-result, case-sensitive
+pure-query, case-sensitive
 
 -ERRORS-
 Okay: The entity was found and its value returned.
@@ -611,7 +595,7 @@ uint NamespaceID: The UID of the namespace.
 ^&cpp(str) Result: Receives the namespace URI.
 
 -TAGS-
-pure-query, caller-owns-result
+pure-query
 
 -ERRORS-
 Okay: The namespace URI was successfully retrieved.
@@ -650,7 +634,7 @@ cpp(strview) Name: The notation name to look up.
 ^&cpp(str) Value: Receives the notation descriptor on success.
 
 -TAGS-
-pure-query, caller-owns-result, case-sensitive
+pure-query, case-sensitive
 
 -ERRORS-
 Okay: The notation was found and its descriptor returned.
@@ -682,7 +666,7 @@ static ERR XML_GetNotation(extXML *Self, struct xml::GetNotation *Args)
 GetTag: Returns a pointer to the !XTag structure for a given tag index.
 
 This method will return the !XTag structure for a given tag `Index`.  The `Index` is checked to ensure it is valid
-prior to retrieval, and an `ERR::OutOfRange` error will be returned if it is invalid.
+prior to retrieval, and an `ERR::NotFound` error will be returned if it is invalid.
 
 -INPUT-
 int Index:  The index of the tag that is being retrieved.
@@ -695,6 +679,8 @@ pure-query, object-owns-result
 Okay
 NullArgs
 NotFound: The Index is not recognised.
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -765,8 +751,8 @@ To modify existing content, call #SetAttrib() instead.
 
 -INPUT-
 int Index: The unique identifier of the target XML element that will serve as the reference point for insertion.
-int(XMI) Where: Specifies the insertion position relative to the target element.  Use PREV or NEXT for sibling insertion, or CHILD for child content insertion.
-cpp(strview) Content: The text content to insert.  Special XML characters will be automatically escaped to ensure document validity.
+int(XMI) Where: Specifies the insertion position relative to the target element.  Use `PREV` or `NEXT` for sibling insertion, or `CHILD` for child content insertion.
+cpp(strview) Content: The text content to insert.  Special XML characters will be automatically escaped.
 &int Result: Pointer to an integer that will receive the unique identifier of the newly created content node.
 
 -TAGS-
@@ -778,6 +764,8 @@ NullArgs: Required parameters were NULL or not properly specified.
 NotFound: The target Index does not correspond to a valid XML element.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
 Args: The Where parameter specifies an invalid insertion position.
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -827,8 +815,8 @@ InsertXML: Parse an XML string and insert it in the XML tree.
 The InsertXML() method is used to translate and insert a new set of XML tags into any position within the XML tree.  A
 standard XML statement must be provided in the XML parameter and the target insertion point is specified in the Index
 parameter.  An insertion point relative to the target index must be specified in the `Where` parameter.  The new tags
-can be inserted as a child of the target by using a `Where` value of `XMI::CHILD`.  Use `XMI::CHILD_END` to insert at the end
-of the child list.  To insert behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
+can be inserted as a child of the target by using a `Where` value of `XMI::CHILD`.  Use `XMI::CHILD_END` to insert at
+the end of the child list.  To insert behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
 
 -INPUT-
 int Index: The new data will target the tag specified here.
@@ -846,6 +834,12 @@ NullArgs: Required parameters were NULL or not properly specified.
 NotFound: The target Index does not correspond to a valid XML element.
 ReadOnly: Changes to the XML data are not permitted.
 NoData: The provided XML statement parsed to an empty result.
+InvalidData
+Syntax
+Failed
+UnbalancedXML
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -916,14 +910,15 @@ InsertXPath: Inserts an XML statement in an XML tree.
 
 The InsertXPath method is used to translate and insert a new set of XML tags into any position within the XML tree.  A
 standard XML statement must be provided in the XML parameter and the target insertion point is referenced as a valid
-`XPath` location string.  An insertion point relative to the `XPath` target must be specified in the `Where` parameter.  The
-new tags can be inserted as a child of the target by using an Insert value of `XMI::CHILD` or `XMI::CHILD_END`.  To insert
-behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
+`XPath` location string.  An insertion point relative to the `XPath` target must be specified in the `Where`
+parameter.  The new tags can be inserted as a child of the target by using a `Where` value of `XMI::CHILD` or
+`XMI::CHILD_END`.  To
+insert behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
 
 -INPUT-
 cpp(strview) XPath: An XPath string that refers to the target insertion point.
 int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` for a child insert.
-cpp(strview) XML: The statement to process.
+cpp(strview) XML: XML statement to parse and insert.
 &int Result: The index of the new tag is returned here.
 
 -TAGS-
@@ -932,8 +927,18 @@ mutates-object, copies-input
 -ERRORS-
 Okay: The XML statement was successfully inserted at the specified XPath location.
 NullArgs: Required parameters were NULL or not properly specified.
+Args: The Where parameter specifies an invalid insertion position.
 Search: The XPath could not be resolved to a valid location.
+NotFound: The target resolved by XPath could not be used as an insertion point.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
+NoData: The provided XML statement parsed to an empty result.
+NewObject
+InvalidData
+Syntax
+Failed
+UnbalancedXML
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -993,14 +998,14 @@ tags from one index to another.  The client must supply the index of the tag tha
 target tag.  All child tags of the source will be included in the move.
 
 An insertion point relative to the target index must be specified in the `Where` parameter.  The source tag can be
-inserted as a child of the destination by using a `Where` of `XMI::CHILD`.  To insert behind or after the target, use
-`XMI::PREV` or `XMI::NEXT`.
+inserted as a child of the destination by using `XMI::CHILD` or `XMI::CHILD_END`.  To insert behind or after the
+target, use `XMI::PREV` or `XMI::NEXT`.
 
 -INPUT-
 int Index: Index of the source tag to be moved.
-int Total: The total number of sibling tags (including the targeted tag) to be moved from the source index.  Minimum value of 1.
-int DestIndex: The destination tag index.  If the index exceeds the total number of tags, the value will be automatically limited to the last tag index.
-int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` for a child insert.
+int Total: The total number of sibling tags, including the targeted tag, to move from the source index.  Minimum value of 1.
+int DestIndex: The destination tag index.
+int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` or `CHILD_END` for a child insert.
 
 -TAGS-
 mutates-object
@@ -1117,7 +1122,7 @@ mutates-object, copies-input
 -ERRORS-
 Okay: The namespace was successfully registered.
 NullArgs: Required arguments were not specified correctly.
-Failed: The URI was empty or invalid.
+Args: The URI could not be registered.
 
 -END-
 
@@ -1145,15 +1150,14 @@ RemoveTag: Removes tag(s) from the XML structure.
 The RemoveTag method is used to remove one or more tags from an XML structure.  Child tags will automatically be
 discarded as a consequence of using this method, in order to maintain a valid XML structure.
 
-This method is capable of deleting multiple tags if the `Total` parameter is set to a value greater than 1.  Each
-consecutive tag and its children following the targeted tag will be removed from the XML structure until the count is
-exhausted. This is useful for mass delete operations.
+This method can delete multiple sibling tags when the `Total` parameter is greater than 1.  Each selected tag and its
+children are removed.  The requested range should stay within the available sibling sequence.
 
 Note: Removing tags will destabilise all cached address pointers that have been acquired from the XML object.
 
 -INPUT-
 int Index: Reference to the tag that will be removed.
-int Total: The total number of sibling (neighbouring) tags that should also be deleted.  A value of one or less will remove only the indicated tag and its children.  The total may exceed the number of tags actually available, in which case all tags up to the end of the branch will be affected.
+int Total: The total number of sibling tags to delete, including the indicated tag.  A value of one or less removes only the indicated tag and its children.  The requested range should stay within the available sibling sequence.
 
 -TAGS-
 mutates-object
@@ -1207,20 +1211,21 @@ static ERR XML_RemoveTag(extXML *Self, struct xml::RemoveTag *Args)
 /*********************************************************************************************************************
 
 -METHOD-
-RemoveXPath: Removes tag(s) from the XML structure, using an xpath lookup.
+RemoveXPath: Removes tag(s) from the XML structure using an XPath lookup.
 
 The RemoveXPath method is used to remove one or more tags from an XML structure.  Child tags will automatically be
 discarded as a consequence of using this method, in order to maintain a valid XML structure.
 
 Individual tag attributes can also be removed if an attribute is referenced at the end of the `XPath`.
 
-The removal routine will be repeated so that each tag that matches the XPath will be deleted, or the `Limit` is reached.
+The removal routine is repeated until no further match is found or the `Limit` is reached.  No-match completion is
+reported as `ERR::Okay`.
 
 This method is volatile and will destabilise any cached address pointers that have been acquired from the XML object.
 
 -INPUT-
 cpp(strview) XPath: An XML path string.
-int Limit: The maximum number of matching tags to delete.  A value of one or zero will remove only the indicated tag and its children.  A value of -1 removes all matching tags.
+int Limit: The maximum number of matching tags to delete.  A value of one or zero removes only the indicated tag and its children.  A value of -1 removes all matching tags.
 
 -TAGS-
 mutates-object
@@ -1311,8 +1316,8 @@ static ERR XML_Reset(extXML *Self)
 -METHOD-
 ResolvePrefix: Resolve a namespace prefix to the UID of its namespace URI within a tag's scope.
 
-This method resolves a namespace prefix to its corresponding URI by examining namespace declarations within the
-specified tag's hierarchical scope. The resolution process:
+This method resolves a namespace prefix to its corresponding namespace URI hash by examining namespace declarations
+within the specified tag's hierarchical scope.  The resolution process:
 
 <list type="ordered">
 <li>Walks up the tag hierarchy from the specified tag to the root.</li>
@@ -1323,9 +1328,9 @@ specified tag's hierarchical scope. The resolution process:
 This approach correctly handles nested namespace scopes and prefix redefinitions.
 
 -INPUT-
-cpp(strview) Prefix: The namespace prefix to resolve. Use empty string for default namespace.
+cpp(strview) Prefix: The namespace prefix to resolve.  Use an empty string for the default namespace.
 int TagID: The tag ID defining the starting scope for namespace resolution.
-&uint Result: Pointer to an integer that will receive the resolved namespace hash.
+&uint Result: Receives the resolved namespace URI hash.
 
 -TAGS-
 pure-query
@@ -1333,8 +1338,7 @@ pure-query
 -ERRORS-
 Okay: The prefix was successfully resolved.
 NullArgs: Required arguments were not specified correctly.
-NotFound: The specified tag was not found.
-Search: The prefix could not be resolved in any accessible scope.
+Search: The prefix could not be resolved in any accessible scope, or TagID did not identify a tag.
 
 -END-
 
@@ -1387,13 +1391,15 @@ int(XMF) Flags: Use `INCLUDE_SIBLINGS` to include siblings of the tag found at I
 ^&cpp(str) Result: The resulting string is returned in this parameter.
 
 -TAGS-
-pure-query, caller-owns-result
+pure-query
 
 -ERRORS-
 Okay: The XML string was successfully serialised.
 NullArgs: Required parameters were NULL or not properly specified.
 NoData: No information has been loaded into the XML object.
 NotFound: The specified tag Index does not exist in the XML structure.
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -1445,7 +1451,7 @@ static ERR XML_Serialise(extXML *Self, struct xml::Serialise *Args)
 -METHOD-
 SetAttrib: Adds, updates and removes XML attributes.
 
-This method is used to update and add attributes to existing XML tags, as well as adding or modifying content.
+This method updates existing XML tag attributes, creates new attributes and clears content.
 
 The data for the attribute is defined in the `Name` and `Value` parameters.  Use an empty string if no data is to be
 associated with the attribute.  Set `Attrib` to `XMS::REMOVE` to remove an attribute, or to clear element content if
@@ -1457,8 +1463,8 @@ declaration.  However, if the tag represents content within its parent, then the
 
 -INPUT-
 int Index: Identifies the tag that is to be updated.
-int(XMS) Attrib: Either the index number of the attribute that is to be updated, or set to `NEW`, `UPDATE` or `UPDATE_ONLY`.
-cpp(strview) Name: String containing the new name for the attribute.  If empty during indexed updates, the name will not be changed.  If Attrib is `UPDATE`, `UPDATE_ONLY` or `REMOVE`, the `Name` is used to find the attribute.
+int(XMS) Attrib: Attribute index to update, or `NEW`, `UPDATE`, `UPDATE_ONLY` or `REMOVE`.
+cpp(strview) Name: New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is `UPDATE`, `UPDATE_ONLY` or `REMOVE`, this name is used to find the attribute.
 cpp(strview) Value: String containing the new value for the attribute.
 
 -TAGS-
@@ -1468,8 +1474,8 @@ mutates-object, copies-input, case-insensitive
 Okay
 NullArgs
 Args
-OutOfRange: The `Index` or `Attrib` value is out of range.
-Search: The attribute, identified by `Name`, could not be found.
+OutOfRange: The `Attrib` value is outside the tag's attribute array.
+Search: The tag identified by `Index` or the attribute identified by `Name` could not be found.
 ReadOnly: The XML object is read-only.
 -END-
 
@@ -1558,17 +1564,30 @@ static ERR XML_SetAttrib(extXML *Self, struct xml::SetAttrib *Args)
 SetKey: Sets attributes and content in the XML tree using XPaths.
 
 Use SetKey to add tag attributes and content using XPaths.  The XPath is specified in the `Key` parameter and the data
-is specified in the `Value` parameter.  Setting the Value to `NULL` will remove the attribute or existing content,
-while an empty string will keep an attribute but eliminate any associated data.
+is specified in the `Value` parameter.  If the XPath resolves to an attribute, the attribute is updated or created on
+the matched tag.  If the XPath resolves to an element, the element's first content node is updated or a new content
+node is created.
 
 It is not possible to add new tags using this action - it is only possible to update existing tags.
 
 Please note that making changes to the XML tree will render all previously obtained tag pointers and indexes invalid.
 
+-INPUT-
+strview Key: XPath expression identifying the element or attribute to update.
+strview Value: New attribute or content value.
+
+-TAGS-
+mutates-object, copies-input
+
 -ERRORS-
 Okay
+NullArgs
 ReadOnly: Changes to the XML structure are not permitted.
 Search: Failed to find the tag referenced by the XPath.
+SanityCheckFailed
+NewObject
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -1704,6 +1723,7 @@ Okay: The XML object was successfully sorted.
 NullArgs: Required parameters were NULL or not properly specified.
 Search: The provided XPath failed to locate a tag.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
+NewObject
 -END-
 
 *********************************************************************************************************************/
@@ -1860,7 +1880,7 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-DocType: Root element name from DOCTYPE declaration
+DocType: Root element name from a parsed DOCTYPE declaration.
 
 *********************************************************************************************************************/
 
@@ -1947,7 +1967,7 @@ has been made.  A rough idea of the total number of change requests can also be 
 difference.
 
 -FIELD-
-PublicID: Public identifier for external DTD
+PublicID: Public identifier from a parsed DOCTYPE declaration.
 
 *********************************************************************************************************************/
 
@@ -1961,7 +1981,7 @@ static ERR SET_PublicID(extXML *Self, const std::string_view &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-SystemID: System identifier for external DTD
+SystemID: System identifier from a parsed DOCTYPE declaration.
 
 *********************************************************************************************************************/
 
@@ -2035,8 +2055,8 @@ initialisation then the XML object will clear any existing data first.
 
 Be aware that setting this field with an invalid statement will result in an empty XML object.
 
-Reading the Statement field will return a serialised string of XML data.  By default all tags will be included in the
-statement.  The string result is an allocation that must be freed.
+Reading the Statement field returns a serialised string of XML data.  By default, all tags are included in the
+statement.  The string result is an allocation that must be freed by the caller.
 
 If the statement is an XQuery expression with base-uri references, the #Path field should be set to establish
 the base path for relative references.
@@ -2113,10 +2133,11 @@ static ERR SET_Statement(extXML *Self, const std::string_view &Value)
 Tags: Provides direct access to the XML document structure.
 
 The Tags field exposes the complete XML document structure as a hierarchical array of !XTag structures.  This field
-becomes available after successful XML parsing and provides the primary interface for reading XML content programmatically.
+becomes available after successful XML parsing and provides the primary interface for reading XML content
+programmatically.
 
-Each !XTag will have at least one attribute set in the `Attribs` array.  The first attribute will either reflect
-the tag name or a content string if the `Name` is undefined.  The `Children` array provides access to all child elements.
+Each !XTag will have at least one attribute set in the `Attribs` array.  The first attribute will either reflect the
+tag name or a content string if the `Name` is undefined.  The `Children` array provides access to all child elements.
 
 Direct read access to the Tags hierarchy is safe and efficient for traversing the document structure.  However,
 modifications should be performed using the XML object's methods (#InsertXML(), #SetAttrib(), #RemoveTag(), etc.) to
@@ -2151,7 +2172,10 @@ blocking, mutates-object, creates-resource
 Okay: Schema was successfully loaded and parsed.
 NullArgs: The Path argument was not provided.
 NoData: The schema document did not contain any parsable definitions.
+InvalidData: The schema document did not contain a usable root element.
 CreateObject: The file in Path could not be processed as XML content.
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -2191,19 +2215,19 @@ static ERR XML_LoadSchema(extXML *Self, struct xml::LoadSchema *Args)
 -METHOD-
 ValidateDocument: Validate the XML document against the currently loaded schema.
 
-This method performs structural and simple type validation of the document using
-the loaded XML Schema.  The Result parameter returns `1` when the document
-conforms to the schema, otherwise `0`.
+This method performs structural and simple type validation of the document using the loaded XML Schema.  It returns
+`ERR::Okay` when the document conforms to the schema.  Validation failures return an error and populate #ErrorMsg with
+the reason where available.
 
 -TAGS-
 mutates-object
 
 -ERRORS-
 Okay: Validation completed successfully.
-NullArgs: The Result parameter was not supplied.
 NoSupport: No schema has been loaded for this XML object.
 NoData: The XML document does not contain any parsed tags.
 Search: The schema does not define the root element present in the document.
+InvalidData: The document structure, namespace or element content failed schema validation.
 -END-
 
 *********************************************************************************************************************/
