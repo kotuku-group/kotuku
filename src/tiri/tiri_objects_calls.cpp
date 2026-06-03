@@ -1,5 +1,7 @@
 // Refer: lib_object.cpp
 
+#include <new>
+
 //********************************************************************************************************************
 // Lua C closure executed via calls to obj.acName()
 
@@ -156,12 +158,57 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *args, int Args
    int j = 0;
    size_t buffer_capacity = 0;
    bool buffer_capacity_known = false;
-   for (i=0,n=1; (args[i].Name) and (j < ArgsSize) and (top > 0); i++,n++,top--) {
-      int type = lua_type(Lua, n);
-
+   for (i=0,n=1; (args[i].Name) and (j < ArgsSize); i++) {
       if (not (args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
 
-      if (args[i].Type & FD_RESULT) resultcount++;
+      if (args[i].Type & FD_RESULT) {
+         resultcount++;
+
+         if (args[i].Type & FD_ARRAY) {
+            j = ALIGN64(j);
+            j += sizeof(APTR);
+         }
+         else if ((args[i].Type & FD_PTR) or (args[i].Type & FD_STRUCT)) {
+            j = ALIGN64(j);
+            j += sizeof(APTR);
+         }
+         else if (args[i].Type & FD_STR) {
+            // std::string is treated as a special result type
+            j = ALIGN64(j);
+            if (args[i].Type & FD_CPP) {
+               if (args[i].Type & FD_MUTABLE) { // std::string *
+                  auto str_result = new (std::nothrow) std::string;
+                  if (not str_result) return ERR::AllocMemory;
+                  ((std::string **)(argbuffer + j))[0] = str_result;
+                  j += sizeof(std::string *);
+               }
+               else { // Embedded std::string_view
+                  new (argbuffer + j) std::string_view;
+                  j += sizeof(std::string_view);
+               }
+            }
+            else j += sizeof(STRING);
+         }
+         else if (args[i].Type & FD_INT) {
+            j += sizeof(int);
+         }
+         else if (args[i].Type & FD_DOUBLE) {
+            j = ALIGN64(j);
+            j += sizeof(double);
+         }
+         else if (args[i].Type & FD_INT64) {
+            j = ALIGN64(j);
+            j += sizeof(int64_t);
+         }
+         else {
+            log.warning("Unsupported result arg %s, flags $%.8x, aborting now.", args[i].Name, args[i].Type);
+            return ERR::WrongType;
+         }
+
+         continue;
+      }
+
+      int type = (top > 0) ? lua_type(Lua, n) : LUA_TNIL;
 
       //log.trace("Processing arg %s, type $%.8x", args[i].Name, args[i].Type);
 
@@ -298,6 +345,9 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *args, int Args
                }
                else luaL_error(Lua, ERR::AllocMemory);
             }
+            else if ((type IS LUA_TNIL) or (type IS LUA_TNONE)) {
+               ((FUNCTION **)(argbuffer + j))[0] = nullptr;
+            }
             else luaL_error(Lua, ERR::InvalidType, "Arg #%d (%s) of %s() requires a string or function, got %s '%s'.", i, args[i].Name, Name, lua_typename(Lua, type), lua_tostring(Lua, n));
          }
          else if (type IS LUA_TSTRING) {
@@ -382,12 +432,9 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *args, int Args
          log.warning("Unsupported arg %s, flags $%.8x, aborting now.", args[i].Name, args[i].Type);
          return ERR::WrongType;
       }
-   }
 
-   // Finish counting the number of result types registered in the argument list
-
-   for (; (args[i].Name); i++) {
-      if (args[i].Type & FD_RESULT) resultcount++;
+      n++;
+      if (top > 0) top--;
    }
 
    log.trace("Processed %d args (%d bytes), detected %d result parameters.", i, j, resultcount);
@@ -409,7 +456,7 @@ static int get_results(lua_State *Lua, const FunctionField *args, const int8_t *
    for (i=0; args[i].Name; i++) {
       const int type = args[i].Type;
       if (type & FD_ARRAY) { // Pointer to an array.
-         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         of = ALIGN64(of);
          if (type & FD_RESULT) {
             int total_elements = -1;  // If -1, make_any_array() assumes the array is null terminated.
             if (args[i+1].Type & FD_ARRAYSIZE) {
@@ -419,8 +466,7 @@ static int get_results(lua_State *Lua, const FunctionField *args, const int8_t *
                else log.warning("Invalid parameter definition for '%s' of $%.8x", args[i+1].Name, args[i+1].Type);
             }
 
-            CPTR values = ((APTR *)(ArgBuf + of))[0];
-            if (values) {
+            if (CPTR values = ((APTR *)(ArgBuf + of))[0]) {
                make_any_array(Lua, type, args[i].Name, total_elements, values);
                if (type & FD_ALLOC) FreeResource(values);
             }
@@ -430,21 +476,46 @@ static int get_results(lua_State *Lua, const FunctionField *args, const int8_t *
          of += sizeof(APTR);
       }
       else if (type & FD_STR) {
-         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         of = ALIGN64(of);
          if (type & FD_RESULT) {
-            CPTR val = ArgBuf + of;
-            RMSG("Result-Arg: %s, Value: %.20s (String)", args[i].Name, ((STRING *)val)[0]);
-            lua_pushstring(Lua, ((STRING *)val)[0]);
-            if (type & FD_ALLOC) {
-               APTR ptr = ((STRING *)val)[0];
-               if (ptr) FreeResource(ptr);
+            // RESULT|CPP|STR = std::string_view = Function manipulates an embedded std::string_view that references an internal buffer
+            //                  Can be combined with ALLOC, in which case the client must free the referenced data pointer.
+            // RESULT|MUTABLE|CPP|STR = std::string * = Function manipulates the std::string reference directly
+            // RESULT|STR = CSTRING * = Function returns a direct pointer string, either internal or allocated
+            if (type & FD_CPP) {
+               if (type & FD_MUTABLE) { // std::string *
+                  if (auto str_result = ((std::string **)(ArgBuf + of))[0]; str_result) {
+                     RMSG("Result-Arg: %s, Value: %.*s (std::string)", args[i].Name,
+                        int(str_result->size()), str_result->data());
+                     lua_pushstring(Lua, str_result[0]);
+                     delete str_result;
+                  }
+                  else lua_pushnil(Lua);
+               }
+               else { // Embedded std::string_view
+                  auto &str_result = ((std::string_view *)(ArgBuf + of))[0];
+                  RMSG("Result-Arg: %s, Value: %.*s (std::string_view)", args[i].Name,
+                     int(str_result.size()), str_result.data());
+                  lua_pushstring(Lua, str_result);
+                  if ((type & FD_ALLOC) and str_result.data()) FreeResource(GetMemoryID(str_result.data()));
+               }
+            }
+            else { // CSTRING
+               CPTR val = ArgBuf + of;
+               RMSG("Result-Arg: %s, Value: %.20s (String)", args[i].Name, ((STRING *)val)[0]);
+               lua_pushstring(Lua, ((STRING *)val)[0]);
+               if (type & FD_ALLOC) {
+                  APTR ptr = ((STRING *)val)[0];
+                  if (ptr) FreeResource(ptr);
+               }
             }
             total++;
          }
-         of += sizeof(STRING);
+         if ((type & FD_CPP) and (not (type & FD_MUTABLE))) of += sizeof(std::string_view);
+         else of += sizeof(STRING);
       }
       else if (type & FD_STRUCT) { // Pointer to a struct
-         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         of = ALIGN64(of);
          if (type & FD_RESULT) {
             APTR ptr_struct = ((APTR *)(ArgBuf + of))[0];
             RMSG("Result-Arg: %s, Struct: %p", args[i].Name, ptr_struct);
@@ -467,10 +538,9 @@ static int get_results(lua_State *Lua, const FunctionField *args, const int8_t *
          of += sizeof(APTR);
       }
       else if (type & FD_PTR) {
-         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         of = ALIGN64(of);
          if (type & FD_FUNCTION) {
-            FUNCTION *func;
-            if ((func = (FUNCTION *)((APTR *)(ArgBuf+of))[0])) {
+            if (auto func = (FUNCTION *)((APTR *)(ArgBuf+of))[0]) {
                log.trace("Removing function memory allocation %p", func);
                FreeResource(func);
             }
