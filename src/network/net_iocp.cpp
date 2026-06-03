@@ -552,17 +552,17 @@ public:
       }
 
       auto task = CurrentTask();
-      CSTRING value;
-      if (task->getEnv(HKEY_PROXY "ProxyEnable", &value) != ERR::Okay) {
+      std::string value;
+      if (task->getEnv(HKEY_PROXY "ProxyEnable", value) != ERR::Okay) {
          log.msg("Host does not have proxies enabled (registry setting: %s)", HKEY_PROXY);
          return ERR::Okay;
       }
 
-      bool enabled = (strtol(value, nullptr, 0) > 0);
+      bool enabled = (strtol(value.c_str(), nullptr, 0) > 0);
 
-      CSTRING servers;
-      if ((task->getEnv(HKEY_PROXY "ProxyServer", &servers) IS ERR::Okay) and servers[0]) {
-         log.msg("Host has defined default proxies: %s", servers);
+      std::string servers;
+      if ((task->getEnv(HKEY_PROXY "ProxyServer", servers) IS ERR::Okay) and (not servers.empty())) {
+         log.msg("Host has defined default proxies: %s", servers.c_str());
 
          auto proxy_entries = parse_proxy_string(servers, enabled);
 
@@ -618,9 +618,8 @@ public:
          }
 
          if (!port_name.empty()) {
-            CSTRING servers;
-            task->getEnv(HKEY_PROXY "ProxyServer", &servers);
-            std::string server_list = servers ? servers : "";
+            std::string server_list;
+            task->getEnv(HKEY_PROXY "ProxyServer", server_list);
 
             const std::string search_pattern = std::format("{}=", port_name);
             if (auto pos = server_list.find(search_pattern); pos != std::string::npos) {

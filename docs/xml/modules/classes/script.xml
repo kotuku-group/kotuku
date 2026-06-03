@@ -226,8 +226,8 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>ErrorMessage</name>
       <comment>A human readable error string may be declared here following a script execution failure.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>std::string</type>
     </field>
 
     <field>
@@ -237,16 +237,6 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <type lookup="SCF">SCF</type>
       <description>
 <types lookup="SCF"/>
-      </description>
-    </field>
-
-    <field>
-      <name>Language</name>
-      <comment>Indicates the language (locale) that the source script is written in.</comment>
-      <access read="G">Get</access>
-      <type>STRING</type>
-      <description>
-<p>The Language value indicates the language in which the source script was written.  The default setting is <code>ENG</code>, the code for international English.</p>
       </description>
     </field>
 

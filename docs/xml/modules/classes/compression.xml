@@ -80,11 +80,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressFile</name>
       <comment>Add files to a compression object.</comment>
-      <prototype>ERR cmp::CompressFile(OBJECTPTR Object, CSTRING Location, CSTRING Path)</prototype>
+      <prototype>ERR cmp::CompressFile(OBJECTPTR Object, const std::string_view &amp; Location, const std::string_view &amp; Path)</prototype>
       <tiriPrototype>err = CompressFile(Location:str, Path:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Location">The location of the file(s) to add.</param>
-        <param type="CSTRING" name="Path">The path that is prefixed to the file name when added to the compression object.  May be <code>NULL</code> for no path.</param>
+        <param type="const std::string_view &amp;" name="Location">The location of the file(s) to add.</param>
+        <param type="const std::string_view &amp;" name="Path">The path that is prefixed to the file name when added to the compression object.  May be empty for no path.</param>
       </input>
       <description>
 <p>The CompressFile method is used to add new files and folders to a compression object. The client must supply the <code>Location</code> of the file to compress, as well as the <code>Path</code> that is prefixed to the file name when it is in the compression object.  The <code>Location</code> parameter accepts wildcards, allowing multiple files to be processed in a single function call.</p>
@@ -217,11 +217,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>DecompressFile</name>
       <comment>Extracts one or more files from a compression object.</comment>
-      <prototype>ERR cmp::DecompressFile(OBJECTPTR Object, CSTRING Path, CSTRING Dest, INT Flags)</prototype>
+      <prototype>ERR cmp::DecompressFile(OBJECTPTR Object, const std::string_view &amp; Path, const std::string_view &amp; Dest, INT Flags)</prototype>
       <tiriPrototype>err = DecompressFile(Path:str, Dest:str, Flags:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The full path name of the file to extract from the archive.</param>
-        <param type="CSTRING" name="Dest">The destination to extract the file to.</param>
+        <param type="const std::string_view &amp;" name="Path">The full path name of the file to extract from the archive.</param>
+        <param type="const std::string_view &amp;" name="Dest">The destination to extract the file to.</param>
         <param type="INT" name="Flags">Optional flags.  Currently unused.</param>
       </input>
       <description>
@@ -247,10 +247,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>DecompressObject</name>
       <comment>Decompresses one file to a target object.</comment>
-      <prototype>ERR cmp::DecompressObject(OBJECTPTR Object, CSTRING Path, OBJECTPTR Object)</prototype>
+      <prototype>ERR cmp::DecompressObject(OBJECTPTR Object, const std::string_view &amp; Path, OBJECTPTR Object)</prototype>
       <tiriPrototype>err = DecompressObject(Path:str, Object:obj)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.</param>
+        <param type="const std::string_view &amp;" name="Path">The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.</param>
         <param type="OBJECTPTR" name="Object">The target object for the decompressed source data.</param>
       </input>
       <description>
@@ -335,10 +335,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>Find</name>
       <comment>Find the first item that matches a given filter.</comment>
-      <prototype>ERR cmp::Find(OBJECTPTR Object, CSTRING Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)</prototype>
+      <prototype>ERR cmp::Find(OBJECTPTR Object, const std::string_view &amp; Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)</prototype>
       <tiriPrototype>err, Item:any = Find(Path:str, CaseSensitive:num, Wildcard:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">Search for a specific item or items, using wildcards.</param>
+        <param type="const std::string_view &amp;" name="Path">Search for a specific item or items, using wildcards.</param>
         <param type="INT" name="CaseSensitive">Set to <code>true</code> if <code>Path</code> comparisons are case-sensitive.</param>
         <param type="INT" name="Wildcard">Set to <code>true</code> if <code>Path</code> uses wildcards.</param>
         <param type="struct CompressedItem **" name="Item">The discovered item is returned in this parameter, or <code>NULL</code> if the search failed.</param>
@@ -359,10 +359,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>RemoveFile</name>
       <comment>Deletes one or more files from a compression object.</comment>
-      <prototype>ERR cmp::RemoveFile(OBJECTPTR Object, CSTRING Path)</prototype>
+      <prototype>ERR cmp::RemoveFile(OBJECTPTR Object, const std::string_view &amp; Path)</prototype>
       <tiriPrototype>err = RemoveFile(Path:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The full path name of the file to delete from the archive.</param>
+        <param type="const std::string_view &amp;" name="Path">The full path name of the file to delete from the archive.</param>
       </input>
       <description>
 <p>This method deletes compressed files from a compression object.  If the file is in a folder then the client must specify the complete path in conjunction with the file name.  Wild cards are accepted if you want to delete multiple files.  A <code>Path</code> setting of <code>*</code> will delete an archive's entire contents, while a more conservative <code>Path</code> of <code>documents/ *</code> would delete all files and directories under the documents path.  Directories can be declared using either the back-slash or the forward-slash characters.</p>
@@ -379,11 +379,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>Scan</name>
       <comment>Scan the archive's index of compressed data.</comment>
-      <prototype>ERR cmp::Scan(OBJECTPTR Object, CSTRING Folder, CSTRING Filter, FUNCTION * Callback)</prototype>
+      <prototype>ERR cmp::Scan(OBJECTPTR Object, const std::string_view &amp; Folder, const std::string_view &amp; Filter, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = Scan(Folder:str, Filter:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Folder">If defined, only items within the specified folder are returned.  Use an empty string for files in the root folder.</param>
-        <param type="CSTRING" name="Filter">Search for a specific item or items by name, using wildcards.  If <code>NULL</code> or an empty string, all items will be scanned.</param>
+        <param type="const std::string_view &amp;" name="Folder">Only items within the specified folder are returned.  Use an empty string for files in the root folder.</param>
+        <param type="const std::string_view &amp;" name="Filter">Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.</param>
         <param type="FUNCTION *" name="Callback">This callback function will be called with a pointer to a <st>CompressedItem</st> structure.</param>
       </input>
       <description>

@@ -3374,27 +3374,25 @@ class objScript : public Object {
 
    using create = kt::Create<objScript>;
 
-   std::string Path;         // The location of a script file to be loaded.
-   std::string Procedure;    // Specifies a procedure name to be executed.
-   OBJECTID TargetID;        // Reference to the default container that new script objects will be initialised to.
-   SCF      Flags;           // Optional flags.
-   ERR      Error;           // If a script fails during execution, an error code may be readable here.
-   int      CurrentLine;     // Indicates the current line being executed when in debug mode.
-   int      LineOffset;      // For debugging purposes, this value is added to any message referencing a line number.
+   std::string Path;            // The location of a script file to be loaded.
+   std::string Procedure;       // Specifies a procedure name to be executed.
+   std::string ErrorMessage;    // A human readable error string may be declared here following a script execution failure.
+   OBJECTID TargetID;           // Reference to the default container that new script objects will be initialised to.
+   SCF      Flags;              // Optional flags.
+   ERR      Error;              // If a script fails during execution, an error code may be readable here.
+   int      CurrentLine;        // Indicates the current line being executed when in debug mode.
+   int      LineOffset;         // For debugging purposes, this value is added to any message referencing a line number.
 
 #ifdef PRV_SCRIPT
    int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars; // Global parameters
+   KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
-   char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    std::string String;
    std::string WorkingPath;
-   std::string ErrorMessage;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
-   char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
 #endif
 
@@ -3456,6 +3454,11 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getErrorMessage(std::string_view &Value) noexcept {
+      Value = this->ErrorMessage;
+      return ERR::Okay;
+   }
+
    inline ERR getTarget(OBJECTID &Value) noexcept {
       Value = this->TargetID;
       return ERR::Okay;
@@ -3482,14 +3485,7 @@ class objScript : public Object {
    }
 
    inline ERR getCacheFile(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getErrorMessage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -3501,13 +3497,6 @@ class objScript : public Object {
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getLanguage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3544,6 +3533,11 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
+      this->ErrorMessage = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setTarget(OBJECTID Value) noexcept {
       this->TargetID = Value;
       return ERR::Okay;
@@ -3561,12 +3555,7 @@ class objScript : public Object {
    }
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
@@ -3624,10 +3613,10 @@ struct ActionEntry {
 
 namespace task {
 struct Expunge { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddArgument { CSTRING Argument; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddArgument { std::string_view Argument; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Quit { static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetEnv { CSTRING Name; CSTRING Value; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetEnv { CSTRING Name; CSTRING Value; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetEnv { std::string_view Name; std::string *Value; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetEnv { std::string_view Name; std::string_view Value; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3682,20 +3671,19 @@ class objTask : public Object {
    inline ERR expunge() noexcept {
       return(Action(AC(-1), this, nullptr));
    }
-   inline ERR addArgument(CSTRING Argument) noexcept {
+   inline ERR addArgument(const std::string_view & Argument) noexcept {
       struct task::AddArgument args = { Argument };
       return(Action(AC(-2), this, &args));
    }
    inline ERR quit() noexcept {
       return(Action(AC(-3), this, nullptr));
    }
-   inline ERR getEnv(CSTRING Name, CSTRING * Value) noexcept {
-      struct task::GetEnv args = { Name, (CSTRING)0 };
+   inline ERR getEnv(const std::string_view & Name, std::string &Value) noexcept {
+      struct task::GetEnv args = { Name, &Value };
       ERR error = Action(AC(-4), this, &args);
-      if (Value) *Value = args.Value;
       return(error);
    }
-   inline ERR setEnv(CSTRING Name, CSTRING Value) noexcept {
+   inline ERR setEnv(const std::string_view & Name, const std::string_view & Value) noexcept {
       struct task::SetEnv args = { Name, Value };
       return(Action(AC(-5), this, &args));
    }
@@ -4286,19 +4274,19 @@ class objTime : public Object {
 
 namespace cmp {
 struct CompressBuffer { APTR Input; int InputSize; APTR Output; int OutputSize; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressFile { CSTRING Location; CSTRING Path; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressFile { std::string_view Location; std::string_view Path; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressBuffer { APTR Input; APTR Output; int OutputSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressFile { CSTRING Path; CSTRING Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveFile { CSTRING Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressFile { std::string_view Path; std::string_view Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveFile { std::string_view Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressStream { APTR Input; int Length; FUNCTION * Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStream { APTR Input; int Length; FUNCTION * Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressStreamStart { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressStreamEnd { FUNCTION * Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStreamEnd { FUNCTION * Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStreamStart { static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressObject { CSTRING Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Scan { CSTRING Folder; CSTRING Filter; FUNCTION * Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Find { CSTRING Path; int CaseSensitive; int Wildcard; struct CompressedItem * Item; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressObject { std::string_view Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Scan { std::string_view Folder; std::string_view Filter; FUNCTION * Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Find { std::string_view Path; int CaseSensitive; int Wildcard; struct CompressedItem * Item; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4328,7 +4316,7 @@ class objCompression : public Object {
       if (Result) *Result = args.Result;
       return(error);
    }
-   inline ERR compressFile(CSTRING Location, CSTRING Path) noexcept {
+   inline ERR compressFile(const std::string_view & Location, const std::string_view & Path) noexcept {
       struct cmp::CompressFile args = { Location, Path };
       return(Action(AC(-2), this, &args));
    }
@@ -4338,11 +4326,11 @@ class objCompression : public Object {
       if (Result) *Result = args.Result;
       return(error);
    }
-   inline ERR decompressFile(CSTRING Path, CSTRING Dest, int Flags) noexcept {
+   inline ERR decompressFile(const std::string_view & Path, const std::string_view & Dest, int Flags) noexcept {
       struct cmp::DecompressFile args = { Path, Dest, Flags };
       return(Action(AC(-4), this, &args));
    }
-   inline ERR removeFile(CSTRING Path) noexcept {
+   inline ERR removeFile(const std::string_view & Path) noexcept {
       struct cmp::RemoveFile args = { Path };
       return(Action(AC(-5), this, &args));
    }
@@ -4368,15 +4356,15 @@ class objCompression : public Object {
    inline ERR decompressStreamStart() noexcept {
       return(Action(AC(-11), this, nullptr));
    }
-   inline ERR decompressObject(CSTRING Path, OBJECTPTR Object) noexcept {
+   inline ERR decompressObject(const std::string_view & Path, OBJECTPTR Object) noexcept {
       struct cmp::DecompressObject args = { Path, Object };
       return(Action(AC(-12), this, &args));
    }
-   inline ERR scan(CSTRING Folder, CSTRING Filter, FUNCTION Callback) noexcept {
+   inline ERR scan(const std::string_view & Folder, const std::string_view & Filter, FUNCTION Callback) noexcept {
       struct cmp::Scan args = { Folder, Filter, &Callback };
       return(Action(AC(-13), this, &args));
    }
-   inline ERR find(CSTRING Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {
+   inline ERR find(const std::string_view & Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {
       struct cmp::Find args = { Path, CaseSensitive, Wildcard, (struct CompressedItem *)0 };
       ERR error = Action(AC(-14), this, &args);
       if (Item) *Item = args.Item;

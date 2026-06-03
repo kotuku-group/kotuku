@@ -1434,27 +1434,25 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   })
 
   klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
-    cpp(str) Path        # Location of the script
-    cpp(str) Procedure   # Specifies a procedure name to be executed
-    oid Target           # The object that script objects must be initialised to, e.g. for obj.new()
-    int(SCF) Flags       # Optional flags
-    error Error          # If an error occurred, this field will indicate the error number
-    int CurrentLine      # Current line being executed, or failed line if script execution terminated
-    int LineOffset       # An optional offset to use when reporting line numbers
+    cpp(str) Path         # Location of the script
+    cpp(str) Procedure    # Specifies a procedure name to be executed
+    cpp(str) ErrorMessage # Human readable error string defined on failure
+    oid Target            # The object that script objects must be initialised to, e.g. for obj.new()
+    int(SCF) Flags        # Optional flags
+    error Error           # If an error occurred, this field will indicate the error number
+    int CurrentLine       # Current line being executed, or failed line if script execution terminated
+    int LineOffset        # An optional offset to use when reporting line numbers
   ]],
   [[
    int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars; // Global parameters
+   KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
-   char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    std::string String;
    std::string WorkingPath;
-   std::string ErrorMessage;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
-   char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
   ]])
 

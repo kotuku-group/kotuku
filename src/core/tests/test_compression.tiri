@@ -1,11 +1,16 @@
 -- $TIRI
 -- Flute tests for the Compression module
 
+global glScanItems = { }
+global glScanCount = 0
+
 @AfterAll function cleanup()
    mSys.DeleteFile('temp:cmp_test/')
    mSys.DeleteFile('temp:cmp_icons/')
    mSys.DeleteFile('temp:cmp_test_json.zip')
    mSys.DeleteFile('temp:cmp_test_scripts.zip')
+   mSys.DeleteFile('temp:cmp_empty_args.zip')
+   mSys.DeleteFile('temp:cmp_decompress_object.tiri')
    mSys.DeleteFile('temp:scripts.gz')
    mSys.DeleteFile('temp:gui.tiri')
    mSys.DeleteFile('temp:window.tiri')
@@ -14,6 +19,12 @@ end
 global function streamedOutput(CompressedID, Data)
    err, len = glOutFile.acWrite(Data)
    if err != ERR_Okay then return ERR_Write end
+   return ERR_Okay
+end
+
+global function compressionScanCallback(Compression, Item)
+   glScanCount++
+   glScanItems[Item.path] = true
    return ERR_Okay
 end
 
@@ -28,14 +39,19 @@ end
    end
 
    file_count = 0
-   cmp = obj.new('compression', {
-      path     = 'styles:icons/Default.zip',
-      feedback = function(Compression, Info)
-         if Info.progress is 0 then
-            file_count++
+   try
+      cmp = obj.new('compression', {
+         path     = 'styles:icons/Default.zip',
+         feedback = function(Compression, Info)
+            if Info.progress is 0 then
+               file_count++
+            end
          end
-      end
-   })
+      })
+   except e
+      print('Icon archive could not be opened; skipping test: ' .. e.message)
+      return
+   end
 
    if not cmp then return end -- Non-existance of the icon archive means this test is skipped
 
@@ -72,9 +88,86 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=3) function StringViewMethodInputs()
+   cmp = obj.new('compression', { path='temp:cmp_test_json.zip' } )
+
+   glScanItems = { }
+   glScanCount = 0
+
+   err = cmp.mtScan('', '', 'compressionScanCallback')
+   assert(err is ERR_Okay, 'Scan() failed: ' .. mSys.GetErrorMsg(err))
+   assert(glScanCount is 2, 'Root Scan() returned ' .. glScanCount .. ' entries.')
+   assert(glScanItems['gui.tiri'], 'Root Scan() did not return gui.tiri.')
+   assert(glScanItems['window.tiri'], 'Root Scan() did not return window.tiri.')
+
+   glScanItems = { }
+   glScanCount = 0
+
+   err = cmp.mtScan('', 'gui.tiri', 'compressionScanCallback')
+   assert(err is ERR_Okay, 'Filtered Scan() failed: ' .. mSys.GetErrorMsg(err))
+   assert(glScanCount is 1, 'Filtered Scan() returned ' .. glScanCount .. ' entries.')
+   assert(glScanItems['gui.tiri'], 'Filtered Scan() did not return gui.tiri.')
+
+   err, item = cmp.mtFind('gui.tiri', false, false)
+   assert(err is ERR_Okay, 'Find() failed: ' .. mSys.GetErrorMsg(err))
+   assert(item.path is 'gui.tiri', 'Find() returned ' .. tostring(item.path))
+
+   source_file = obj.new('file', { path='scripts:gui.tiri' })
+   source_size = source_file.size
+   source_data = array<byte, source_size>
+   err = mSys.ReadFileToBuffer('scripts:gui.tiri', source_data)
+   assert(err is ERR_Okay, 'Failed to read source data: ' .. mSys.GetErrorMsg(err))
+
+   output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
+   err = cmp.mtDecompressObject('gui.tiri', output)
+   assert(err is ERR_Okay, 'DecompressObject() failed: ' .. mSys.GetErrorMsg(err))
+   output = nil
+   processing.collect()
+
+   output_file = obj.new('file', { path='temp:cmp_decompress_object.tiri' })
+   assert(output_file.size is source_size, f"DecompressObject() wrote {output_file.size} bytes, expected {source_size}.")
+   output_data = array<byte, source_size>
+   err = mSys.ReadFileToBuffer('temp:cmp_decompress_object.tiri', output_data)
+   assert(err is ERR_Okay, 'Failed to read decompressed output: ' .. mSys.GetErrorMsg(err))
+   assert(output_data:getString() is source_data:getString(), 'DecompressObject() output does not match the source.')
+
+   err = cmp.mtRemoveFile('window.tiri')
+   assert(err is ERR_Okay, 'RemoveFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, item = cmp.mtFind('window.tiri', false, false)
+   assert(err is ERR_Search, 'Find() should not locate removed file, got ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=4) function EmptyRequiredStringArguments()
+   cmp = obj.new('compression', { path='temp:cmp_empty_args.zip', flags=FL_NEW } )
+   output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
+
+   err = cmp.mtCompressFile('', '')
+   assert(err is ERR_NullArgs, 'Expected CompressFile() to reject empty Location, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('', 'temp:')
+   assert(err is ERR_NullArgs, 'Expected DecompressFile() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('gui.tiri', '')
+   assert(err is ERR_NullArgs, 'Expected DecompressFile() to reject empty Dest, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtRemoveFile('')
+   assert(err is ERR_NullArgs, 'Expected RemoveFile() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressObject('', output)
+   assert(err is ERR_NullArgs, 'Expected DecompressObject() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err, item = cmp.mtFind('', false, false)
+   assert(err is ERR_NullArgs, 'Expected Find() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Compress an entire folder and then decompress it to a new location.
 
-@Test(priority=3) function CompressFolder()
+@Test(priority=5) function CompressFolder()
    file_count = 0
    global glCompressedFiles = { }
 
@@ -100,7 +193,7 @@ end
    processing.collect() -- Flush the compressed file to disk
 end
 
-@Test(priority=4) function DecompressFolder()
+@Test(priority=6) function DecompressFolder()
    file_count = 0
    cmp = obj.new('compression', {
       path     = 'temp:cmp_test_scripts.zip',
@@ -124,7 +217,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Test streamed compression
 
-@Test(priority=5) function StreamedCompression()
+@Test(priority=7) function StreamedCompression()
    cmp = obj.new('compression' , { } )
    file = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ } )
 
@@ -147,7 +240,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=6) function ArchiveVolume()
+@Test(priority=8) function ArchiveVolume()
    cmp = obj.new('compression', { path='temp:cmp_test_scripts.zip', archiveName='test' } )
    file = obj.new('file', { path='scripts:gui/button.tiri' } )
    file_size = file.size
@@ -191,7 +284,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Test streamed decompression
 
-@Test(priority=7) function StreamedDecompression()
+@Test(priority=9) function StreamedDecompression()
    cmp = obj.new('compression' , { } )
    file = obj.new('file', { src='temp:scripts.gz', flags=FL_READ } )
 

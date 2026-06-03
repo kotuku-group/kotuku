@@ -479,9 +479,9 @@ global function buildInputParameters(List)
          if param.mutable then fd ..= '|FD_MUTABLE' end
          if param.resultValue then fd ..= '|FD_RESULT' end
          if param.struct then
-            plist ..= "{ \"" .. param.struct .. ":" .. param.name .. "\", " .. fd .. " }, "
+            plist ..= f'{{ "{param.struct}:{param.name}", {fd} }}, '
          else
-            plist ..= "{ \"" .. param.name .. "\", " .. fd .. " }, "
+            plist ..= f'{{ "{param.name}", {fd} }}, '
          end
       end
    end
