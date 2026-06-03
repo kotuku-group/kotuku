@@ -88,10 +88,10 @@
     <method>
       <name>AddArgument</name>
       <comment>Adds a new argument to the Parameters field.</comment>
-      <prototype>ERR task::AddArgument(OBJECTPTR Object, CSTRING Argument)</prototype>
+      <prototype>ERR task::AddArgument(OBJECTPTR Object, const std::string_view &amp; Argument)</prototype>
       <tiriPrototype>err = AddArgument(Argument:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Argument">The new argument string.</param>
+        <param type="const std::string_view &amp;" name="Argument">The new argument string.</param>
       </input>
       <description>
 <p>This method will add a new argument to the end of the <fl>Parameters</fl> field array.  If the string is surrounded by quotes, they will be removed automatically.</p>
@@ -120,11 +120,11 @@
     <method>
       <name>GetEnv</name>
       <comment>Retrieves environment variables for the active process.</comment>
-      <prototype>ERR task::GetEnv(OBJECTPTR Object, CSTRING Name, CSTRING * Value)</prototype>
+      <prototype>ERR task::GetEnv(OBJECTPTR Object, const std::string_view &amp; Name, std::string * Value)</prototype>
       <tiriPrototype>err, Value:str = GetEnv(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the environment variable to retrieve.</param>
-        <param type="CSTRING *" name="Value">The value of the environment variable is returned in this parameter.</param>
+        <param type="const std::string_view &amp;" name="Name">The name of the environment variable to retrieve.</param>
+        <param type="std::string *" name="Value">The value of the environment variable is returned in this parameter.</param>
       </input>
       <description>
 <p>On platforms that support environment variables, GetEnv() returns the value of the environment variable matching the <code>Name</code> string.  If there is no matching variable, <code>ERR::DoesNotExist</code> is returned.</p>
@@ -139,10 +139,11 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
         <error code="DoesNotExist">The environment variable is undefined.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
@@ -163,14 +164,14 @@
     <method>
       <name>SetEnv</name>
       <comment>Sets environment variables for the active process.</comment>
-      <prototype>ERR task::SetEnv(OBJECTPTR Object, CSTRING Name, CSTRING Value)</prototype>
+      <prototype>ERR task::SetEnv(OBJECTPTR Object, const std::string_view &amp; Name, const std::string_view &amp; Value)</prototype>
       <tiriPrototype>err = SetEnv(Name:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the environment variable to set.</param>
-        <param type="CSTRING" name="Value">The value to assign to the environment variable.</param>
+        <param type="const std::string_view &amp;" name="Name">The name of the environment variable to set.</param>
+        <param type="const std::string_view &amp;" name="Value">The value to assign to the environment variable.  If empty, the variable is removed.</param>
       </input>
       <description>
-<p>On platforms that support environment variables, SetEnv() is used for defining values for named variables.  A <code>Name</code> and accompanying <code>Value</code> string are required.  If the <code>Value</code> is <code>NULL</code>, the environment variable is removed if it already exists.</p>
+<p>On platforms that support environment variables, SetEnv() is used for defining values for named variables.  A <code>Name</code> and accompanying <code>Value</code> string are required.  If the <code>Value</code> is empty, the environment variable is removed if it already exists.</p>
 <p>In Windows, it is possible to set registry keys if the string starts with one of the following (in all other cases, the system's environment variables are queried):</p>
 <pre>\HKEY_LOCAL_MACHINE\
 \HKEY_CURRENT_USER\
@@ -181,8 +182,8 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
 

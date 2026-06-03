@@ -967,7 +967,19 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          param_type = param_type:sub(6):trim()
       end
 
+      if Param.resultValue and Param.mutable then
+         param_type ..= ' *'
+      end
+
       return param_type
+   end
+
+   function actionMethodParameterType(Param:table):str
+      if Param.resultValue and Param.mutable then
+         return Param.basicType .. ' &'
+      else
+         return Param.type .. ' '
+      end
    end
 
    if cl.methods then
@@ -1018,7 +1030,12 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          params = ''
          if method.params then
             for param in values(method.params) do
-               struct_params ..= actionMethodStorageType(param) .. ' ' .. pName(param) .. '; '
+               local storage_type = actionMethodStorageType(param)
+               if param.resultValue and param.mutable then
+                  struct_params ..= storage_type .. pName(param) .. '; '
+               else
+                  struct_params ..= storage_type .. ' ' .. pName(param) .. '; '
+               end
 
                if params?? then params ..= ', ' end
 
@@ -1027,10 +1044,13 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                   if v?? then v ..= ', ' end
                   v ..= '&' .. pName(param)
                else
-                  params ..= param.type .. ' ' .. pName(param)
+                  params ..= actionMethodParameterType(param) .. pName(param)
                   if v?? then v ..= ', ' end
 
-                  if param.resultValue then
+                  if param.resultValue and param.mutable then
+                     v ..= '&' .. pName(param)
+                     results = true
+                  elseif param.resultValue then
                      v ..= '(' .. actionMethodStorageType(param) .. ')0'
                      results = true
                   else
@@ -1062,7 +1082,9 @@ global function klass(Name, Options:table, Spec, Private, Custom)
             inline ..= f'      ERR error = Action(AC(-{method.id}), this, {args});\n'
             for p in values(method.params) do
                if p.resultValue then
-                  inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                  if not p.mutable then
+                     inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                  end
                end
             end
             inline ..= '      return(error);\n'

@@ -3613,10 +3613,10 @@ struct ActionEntry {
 
 namespace task {
 struct Expunge { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddArgument { CSTRING Argument; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddArgument { std::string_view Argument; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Quit { static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetEnv { CSTRING Name; CSTRING Value; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetEnv { CSTRING Name; CSTRING Value; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetEnv { std::string_view Name; std::string *Value; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetEnv { std::string_view Name; std::string_view Value; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3671,20 +3671,19 @@ class objTask : public Object {
    inline ERR expunge() noexcept {
       return(Action(AC(-1), this, nullptr));
    }
-   inline ERR addArgument(CSTRING Argument) noexcept {
+   inline ERR addArgument(const std::string_view & Argument) noexcept {
       struct task::AddArgument args = { Argument };
       return(Action(AC(-2), this, &args));
    }
    inline ERR quit() noexcept {
       return(Action(AC(-3), this, nullptr));
    }
-   inline ERR getEnv(CSTRING Name, CSTRING * Value) noexcept {
-      struct task::GetEnv args = { Name, (CSTRING)0 };
+   inline ERR getEnv(const std::string_view & Name, std::string &Value) noexcept {
+      struct task::GetEnv args = { Name, &Value };
       ERR error = Action(AC(-4), this, &args);
-      if (Value) *Value = args.Value;
       return(error);
    }
-   inline ERR setEnv(CSTRING Name, CSTRING Value) noexcept {
+   inline ERR setEnv(const std::string_view & Name, const std::string_view & Value) noexcept {
       struct task::SetEnv args = { Name, Value };
       return(Action(AC(-5), this, &args));
    }

@@ -1192,7 +1192,7 @@ This method will add a new argument to the end of the #Parameters field array.  
 they will be removed automatically.
 
 -INPUT-
-cstr Argument: The new argument string.
+cpp(strview) Argument: The new argument string.
 
 -ERRORS-
 Okay
@@ -1205,14 +1205,16 @@ mutates-object, copies-input
 
 static ERR TASK_AddArgument(extTask *Self, struct task::AddArgument *Args)
 {
-   if ((not Args) or (not Args->Argument) or (not *Args->Argument)) return ERR::NullArgs;
+   if ((not Args) or Args->Argument.empty()) return ERR::NullArgs;
 
    auto src = Args->Argument;
-   if ((*src IS '"') or (*src IS '\'')) {
-      auto end = *src++;
-      int len = 0;
-      while ((src[len]) and (src[len] != end)) len++;
-      Self->Parameters.emplace_back(std::string(src, len));
+   if ((src.front() IS '"') or (src.front() IS '\'')) {
+      auto quote = src.front();
+      src.remove_prefix(1);
+      if (auto end = src.find(quote); end != std::string_view::npos) {
+         Self->Parameters.emplace_back(src.substr(0, end));
+      }
+      else Self->Parameters.emplace_back(src);
    }
    else Self->Parameters.emplace_back(Args->Argument);
 
@@ -1310,18 +1312,18 @@ NOTE: If your programming language uses backslash as an escape character, rememb
 `Name` string.
 
 -INPUT-
-cstr Name:  The name of the environment variable to retrieve.
-&cstr Value: The value of the environment variable is returned in this parameter.
+cpp(strview) Name: The name of the environment variable to retrieve.
+^&cpp(str) Value: The value of the environment variable is returned in this parameter.
 
 -ERRORS-
 Okay
-Args
+NullArgs
 DoesNotExist: The environment variable is undefined.
 NoSupport: The platform does not support environment variables.
 -END-
 
 -TAGS-
-pure-query, object-owns-result, null-terminated-result
+pure-query, caller-owns-result
 
 *********************************************************************************************************************/
 
@@ -1329,11 +1331,10 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Name.empty() or (not Args->Value)) return log.warning(ERR::NullArgs);
+   Args->Value->clear();
 
 #ifdef _WIN32
-
-   Args->Value = nullptr;
 
    if (glCurrentTask != Self) return ERR::ExecViolation;
 
@@ -1405,7 +1406,6 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
          APTR keyhandle;
          if (not RegOpenKeyExA(key.ID, folder.c_str(), 0, KEY_READ, &keyhandle)) {
             if (enumerate) {
-               Self->Env.clear();
                char value_name[256];
                int8_t buffer[4096];
 
@@ -1416,8 +1416,8 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
                   int data_len = sizeof(buffer);
                   int type;
                   if (RegEnumValueA(keyhandle, index, value_name, &name_len, 0, &type, buffer, &data_len)) break;
-                  if (not Self->Env.empty()) Self->Env += '\t';
-                  Self->Env.append(value_name, name_len);
+                  if (not Args->Value->empty()) Args->Value->push_back('\t');
+                  Args->Value->append(value_name, name_len);
                }
 
                // Enumerate all sub-keys (folders) at this key.  Each sub-key name is
@@ -1427,29 +1427,30 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
                   int name_len = sizeof(value_name);
                   if (RegEnumKeyExA(keyhandle, index, value_name, &name_len, 0, nullptr, nullptr, nullptr)) break;
 
-                  if (not Self->Env.empty()) Self->Env += '\t';
-                  Self->Env.append(value_name, name_len);
-                  Self->Env += '\\';
+                  if (not Args->Value->empty()) Args->Value->push_back('\t');
+                  Args->Value->append(value_name, name_len);
+                  Args->Value->push_back('\\');
                }
 
                winCloseHandle(keyhandle);
-               if (Self->Env.empty()) return ERR::DoesNotExist;
-               Args->Value = Self->Env.c_str();
+               if (Args->Value->empty()) return ERR::DoesNotExist;
                return ERR::Okay;
             }
             else {
                int type;
                int8_t buffer[4096];
                int envlen = sizeof(buffer);
+               bool found = false;
                if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
-                  if (not format_value(type, buffer, envlen, Self->Env)) {
-                     log.warning("Unsupported registry type %d for key %s", type, Args->Name);
+                  if (not format_value(type, buffer, envlen, *Args->Value)) {
+                     log.warning("Unsupported registry type %d for key %.*s", type, int(Args->Name.size()),
+                        Args->Name.data());
                   }
-                  else Args->Value = Self->Env.c_str();
+                  else found = true;
                }
                winCloseHandle(keyhandle);
 
-               if (Args->Value) return ERR::Okay;
+               if (found) return ERR::Okay;
                else return ERR::DoesNotExist;
             }
          }
@@ -1457,13 +1458,16 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
       }
    }
 
-   winGetEnv(Args->Name, Self->Env);
-   if (Self->Env.empty()) return ERR::DoesNotExist;
-   Args->Value = Self->Env.c_str();
+   std::string name(Args->Name);
+   winGetEnv(name.c_str(), *Args->Value);
+   if (Args->Value->empty()) return ERR::DoesNotExist;
    return ERR::Okay;
 
 #elif __unix__
-   if ((Args->Value = getenv(Args->Name))) {
+
+   std::string name(Args->Name);
+   if (auto value = getenv(name.c_str())) {
+      Args->Value->assign(value);
       return ERR::Okay;
    }
    else return ERR::DoesNotExist;
@@ -1650,7 +1654,7 @@ static ERR TASK_Quit(extTask *Self)
 SetEnv: Sets environment variables for the active process.
 
 On platforms that support environment variables, SetEnv() is used for defining values for named variables.  A `Name`
-and accompanying `Value` string are required.  If the `Value` is `NULL`, the environment variable is removed if it
+and accompanying `Value` string are required.  If the `Value` is empty, the environment variable is removed if it
 already exists.
 
 In Windows, it is possible to set registry keys if the string starts with one of the following (in all other cases, the
@@ -1668,12 +1672,12 @@ the existing key value is a number such as `DWORD` or `QWORD`, then the Value wi
 key is set.
 
 -INPUT-
-cstr Name:  The name of the environment variable to set.
-cstr Value: The value to assign to the environment variable.
+cpp(strview) Name:  The name of the environment variable to set.
+cpp(strview) Value: The value to assign to the environment variable.  If empty, the variable is removed.
 
 -ERRORS-
 Okay
-Args
+NullArgs
 NoSupport: The platform does not support environment variables.
 -END-
 
@@ -1686,11 +1690,14 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Name.empty()) return log.warning(ERR::NullArgs);
+
+   std::string name(Args->Name);
+   std::string value(Args->Value);
 
 #ifdef _WIN32
 
-   if (Args->Name[0] IS '\\') {
+   if (name.starts_with('\\')) {
       int ki, len;
       const struct {
          uint32_t ID;
@@ -1702,11 +1709,11 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
          { HKEY_USERS,          "\\HKEY_USERS\\" }
       };
 
-      log.msg("Registry: %s = %s", Args->Name, Args->Value);
+      log.msg("Registry: %s = %s", name.c_str(), value.c_str());
 
       for (ki=0; ki < std::ssize(keys); ki++) {
-         if (startswith(keys[ki].HKey, Args->Name)) {
-            CSTRING str = Args->Name + strlen(keys[ki].HKey); // str = Kotuku\Something
+         if (startswith(keys[ki].HKey, name)) {
+            CSTRING str = name.c_str() + strlen(keys[ki].HKey); // str = Kotuku\Something
 
             for (len=strlen(str); (len > 0) and (str[len] != '\\'); len--);
 
@@ -1720,23 +1727,23 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
 
                      switch(type) {
                         case REG_DWORD: {
-                           int int32 = strtol(Args->Value, nullptr, 0);
+                           int int32 = strtol(value.c_str(), nullptr, 0);
                            RegSetValueExA(keyhandle, str+len+1, 0, REG_DWORD, &int32, sizeof(int32));
                            break;
                         }
 
                         case REG_QWORD: {
-                           int64_t int64 = strtoll(Args->Value, nullptr, 0);
+                           int64_t int64 = strtoll(value.c_str(), nullptr, 0);
                            RegSetValueExA(keyhandle, str+len+1, 0, REG_QWORD, &int64, sizeof(int64));
                            break;
                         }
 
                         default: {
-                           RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, Args->Value, strlen(Args->Value)+1);
+                           RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, value.c_str(), value.size() + 1);
                         }
                      }
                   }
-                  else RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, Args->Value, strlen(Args->Value)+1);
+                  else RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, value.c_str(), value.size() + 1);
 
                   winCloseHandle(keyhandle);
                }
@@ -1750,14 +1757,14 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
       return log.warning(ERR::TaskExecutionFailed);
    }
    else {
-      winSetEnv(Args->Name, Args->Value);
+      winSetEnv(name.c_str(), value.empty() ? nullptr : value.c_str());
       return ERR::Okay;
    }
 
 #elif __unix__
 
-   if (Args->Value) setenv(Args->Name, Args->Value, 1);
-   else unsetenv(Args->Name);
+   if (value.empty()) unsetenv(name.c_str());
+   else setenv(name.c_str(), value.c_str(), 1);
    return ERR::Okay;
 
 #else
