@@ -99,10 +99,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>DeleteGroup</name>
       <comment>Deletes entire groups of configuration data.</comment>
-      <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, CSTRING Group)</prototype>
+      <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, const std::string_view &amp; Group)</prototype>
       <tiriPrototype>err = DeleteGroup(Group:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the group that will be deleted.</param>
+        <param type="const std::string_view &amp;" name="Group">The name of the group that will be deleted.</param>
       </input>
       <description>
 <p>This method will delete an entire group of key-values from a config object if a matching group name is provided.</p>
@@ -117,11 +117,11 @@ print('The Action class is located at ' .. str)
     <method>
       <name>DeleteKey</name>
       <comment>Deletes single key entries.</comment>
-      <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, CSTRING Group, CSTRING Key)</prototype>
+      <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key)</prototype>
       <tiriPrototype>err = DeleteKey(Group:str, Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the targeted group.</param>
-        <param type="CSTRING" name="Key">The name of the targeted key.</param>
+        <param type="const std::string_view &amp;" name="Group">The name of the targeted group.</param>
+        <param type="const std::string_view &amp;" name="Key">The name of the targeted key.</param>
       </input>
       <description>
 <p>This method deletes a single key from the Config object.</p>
@@ -177,10 +177,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>MergeFile</name>
       <comment>Merges a configuration file into existing configuration data.</comment>
-      <prototype>ERR cfg::MergeFile(OBJECTPTR Object, CSTRING Path)</prototype>
+      <prototype>ERR cfg::MergeFile(OBJECTPTR Object, const std::string_view &amp; Path)</prototype>
       <tiriPrototype>err = MergeFile(Path:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The location of the configuration file that you want to merge.</param>
+        <param type="const std::string_view &amp;" name="Path">The location of the configuration file that you want to merge.</param>
       </input>
       <description>
 <p>The MergeFile() method is used to pull configuration data from a file and merge it into the target config object. The path to the configuration file is all that is required.  Existing data in the target will be overwritten by the source in cases where there matching set of group keys.</p>
@@ -196,16 +196,16 @@ print('The Action class is located at ' .. str)
     <method>
       <name>ReadValue</name>
       <comment>Reads a key-value string.</comment>
-      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING * Data)</prototype>
+      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key, CSTRING * Data)</prototype>
       <tiriPrototype>err, Data:str = ReadValue(Group:str, Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of a group to examine for a key.  If <code>NULL</code>, all groups are scanned.</param>
-        <param type="CSTRING" name="Key">The name of a key to retrieve (case sensitive).</param>
+        <param type="const std::string_view &amp;" name="Group">The name of a group to examine for a key.  If empty, all groups are scanned.</param>
+        <param type="const std::string_view &amp;" name="Key">The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.</param>
         <param type="CSTRING *" name="Data">The key value will be stored in this parameter on returning.</param>
       </input>
       <description>
 <p>This function retrieves key values in their original string format.  On success, the resulting string remains valid only for as long as the client has exclusive access to the config object.  The pointer can also be invalidated if more information is written to the config object.  For this reason, consider copying the result if it will be used extensively.</p>
-<p>If the <code>Group</code> parameter is set to <code>NULL</code>, the scan routine will treat all of the config data as a one dimensional array. If the <code>Key</code> parameter is set to <code>NULL</code> then the first key in the requested group is returned.  If both parameters are <code>NULL</code> then the first known key value will be returned.</p>
+<p>If the <code>Group</code> parameter is empty, the scan routine will treat all of the config data as a one dimensional array. If the <code>Key</code> parameter is empty then the first key in the requested group is returned.  If both parameters are empty then the first known key value will be returned.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -218,12 +218,12 @@ print('The Action class is located at ' .. str)
     <method>
       <name>Set</name>
       <comment>Sets keys in existing config groups (aborts if the group does not exist).</comment>
-      <prototype>ERR cfg::Set(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING Data)</prototype>
+      <prototype>ERR cfg::Set(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key, const std::string_view &amp; Data)</prototype>
       <tiriPrototype>err = Set(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the group.  Wildcards are supported.</param>
-        <param type="CSTRING" name="Key">The name of the key.</param>
-        <param type="CSTRING" name="Data">The data that will be added to the given group/key.</param>
+        <param type="const std::string_view &amp;" name="Group">The name of the group.  Wildcards are supported.</param>
+        <param type="const std::string_view &amp;" name="Key">The name of the key.</param>
+        <param type="const std::string_view &amp;" name="Data">The data that will be added to the given group/key.</param>
       </input>
       <description>
 <p>This method is identical to <method>WriteValue</method> except it will abort if the name of the referred group does not exist in the config object.  The error code <code>ERR::Search</code> is returned if this is the case.  Please refer to <method>WriteValue</method> for further information on the behaviour of this function.</p>
@@ -239,10 +239,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>SortByKey</name>
       <comment>Sorts config data using a sequence of sort instructions.</comment>
-      <prototype>ERR cfg::SortByKey(OBJECTPTR Object, CSTRING Key, INT Descending)</prototype>
+      <prototype>ERR cfg::SortByKey(OBJECTPTR Object, const std::string_view &amp; Key, INT Descending)</prototype>
       <tiriPrototype>err = SortByKey(Key:str, Descending:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the key to sort on.</param>
+        <param type="const std::string_view &amp;" name="Key">The name of the key to sort on.</param>
         <param type="INT" name="Descending">Set to true if a descending sort is required.</param>
       </input>
       <description>
@@ -258,12 +258,12 @@ print('The Action class is located at ' .. str)
     <method>
       <name>WriteValue</name>
       <comment>Adds new entries to config objects.</comment>
-      <prototype>ERR cfg::WriteValue(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING Data)</prototype>
+      <prototype>ERR cfg::WriteValue(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key, const std::string_view &amp; Data)</prototype>
       <tiriPrototype>err = WriteValue(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the group.</param>
-        <param type="CSTRING" name="Key">The name of the key.</param>
-        <param type="CSTRING" name="Data">The data that will be added to the given group/key.</param>
+        <param type="const std::string_view &amp;" name="Group">The name of the group.</param>
+        <param type="const std::string_view &amp;" name="Key">The name of the key.</param>
+        <param type="const std::string_view &amp;" name="Data">The data that will be added to the given group/key.</param>
       </input>
       <description>
 <p>Use the WriteValue() method to add or update information in a config object.  A <code>Group</code> name, <code>Key</code> name, and <code>Data</code> value are required.  If the <code>Group</code> and <code>Key</code> arguments match an existing entry in the config object, the data of that entry will be replaced with the new Data value.</p>

@@ -136,7 +136,7 @@ end
    err = cfg.mtMerge(cfgMerge);
    assert(err is ERR_Okay, 'Merge() returned ' .. mSys.GetErrorMsg(err))
 
-   err, value = cfg.mtReadValue(nil, 'Styles')
+   err, value = cfg.mtReadValue('', 'Styles')
    assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
 
    err, value = cfg.mtReadValue('MergedGroup', 'Hello')
@@ -274,6 +274,61 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ReadValueEmptySelectors()
+   cfg = new_config()
+
+   err, value = cfg.mtReadValue('', 'Styles')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Bold,Bold Italic,Italic,Regular', 'Empty group selector returned ' .. tostring(value))
+
+   err, value = cfg.mtReadValue('Clean', '')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'fonts:fixed/clean.fon', 'Empty key selector returned ' .. tostring(value))
+
+   err, value = cfg.mtReadValue('', '')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'fonts:fixed/clean.fon', 'Empty selectors returned ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmptyRequiredStringArguments()
+   cfg = new_config()
+
+   err = cfg.mtWriteValue('', 'Name', 'Value')
+   assert(err is ERR_NullArgs, 'Expected WriteValue() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtWriteValue('Clean', '', 'Value')
+   assert(err is ERR_NullArgs, 'Expected WriteValue() to reject an empty key, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtSet('', 'Name', 'Value')
+   assert(err is ERR_NullArgs, 'Expected Set() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtSet('Clean', '', 'Value')
+   assert(err is ERR_NullArgs, 'Expected Set() to reject an empty key, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtDeleteKey('', 'Name')
+   assert(err is ERR_NullArgs, 'Expected DeleteKey() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtDeleteKey('Clean', '')
+   assert(err is ERR_NullArgs, 'Expected DeleteKey() to reject an empty key, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtDeleteGroup('')
+   assert(err is ERR_NullArgs, 'Expected DeleteGroup() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtMergeFile('')
+   assert(err is ERR_NullArgs, 'Expected MergeFile() to reject an empty path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtWriteValue('EmptyValue', 'Name', '')
+   assert(err is ERR_Okay, 'WriteValue() should allow an empty data value, got ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('EmptyValue', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is '', 'Expected an empty value, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function Sorting()
    cfg = new_config()
 
@@ -286,6 +341,22 @@ end
    assert(groupName is 'Courier Sans', 'Second group is incorrect, returned ' .. groupName)
    err, groupName = cfg.mtGetGroupFromIndex(2)
    assert(groupName is 'Alpha', 'Third group is incorrect, returned ' .. groupName)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SortingByEmptyKeyUsesGroupName()
+   cfg = new_config()
+
+   err = cfg.mtSortByKey('', false)
+   assert(err is ERR_Okay, 'SortByKey() returned ' .. mSys.GetErrorMsg(err))
+
+   err, groupName = cfg.mtGetGroupFromIndex(0)
+   assert(groupName is 'Alpha', 'First group is incorrect, returned ' .. groupName)
+   err, groupName = cfg.mtGetGroupFromIndex(1)
+   assert(groupName is 'Clean', 'Second group is incorrect, returned ' .. groupName)
+   err, groupName = cfg.mtGetGroupFromIndex(2)
+   assert(groupName is 'Courier Sans', 'Third group is incorrect, returned ' .. groupName)
 end
 
 ----------------------------------------------------------------------------------------------------------------------

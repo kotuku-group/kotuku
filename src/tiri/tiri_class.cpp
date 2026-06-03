@@ -902,7 +902,7 @@ static ERR run_script(objScript *Self)
    int top;
    bool pcall_failed = false;
    if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
-      if (not Self->Procedure.empty()) lua_getglobal(prv->Lua, Self->Procedure.c_str());
+      if (not Self->Procedure.empty()) lua_getglobal(prv->Lua, Self->Procedure);
       else lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Self->ProcedureID);
 
       if (lua_isfunction(prv->Lua, -1)) {
