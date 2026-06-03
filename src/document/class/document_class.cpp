@@ -254,7 +254,7 @@ formatted - please refer to the @Script class' Exec method for more information 
 parameters.
 
 -INPUT-
-cstr Function:  The name of the function that will be called.
+cpp(strview) Function: The name of the function that will be called.
 struct(*ScriptArg) Args: Pointer to an optional list of parameters to pass to the procedure.
 int TotalArgs: The total number of entries in the `Args` array.
 
@@ -271,7 +271,7 @@ static ERR DOCUMENT_CallFunction(extDocument *Self, doc::CallFunction *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Function)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Function.empty())) return log.warning(ERR::NullArgs);
 
    // Function is in the format 'function()' or 'script.function()'
 
@@ -501,7 +501,7 @@ If the editable section is associated with an `OnEnter` trigger, the trigger wil
 invoked.
 
 -INPUT-
-cstr Name: The name of the edit cell that will be activated.
+cpp(strview) Name: The name of the edit cell that will be activated.  If empty, the current edit cell is deactivated.
 int Flags: Optional flags.
 
 -ERRORS-
@@ -519,7 +519,7 @@ static ERR DOCUMENT_Edit(extDocument *Self, doc::Edit *Args)
 {
    if (not Args) return ERR::NullArgs;
 
-   if (not Args->Name) {
+   if (Args->Name.empty()) {
       if ((not Self->CursorIndex.valid()) or (not Self->ActiveEditDef)) return ERR::Okay;
       deactivate_edit(Self, true);
       return ERR::Okay;
@@ -550,7 +550,7 @@ FeedParser: Private. Inserts content into a document during the parsing stage.
 Private
 
 -INPUT-
-cstr String: Content to insert
+cpp(strview) String: Content to insert
 
 -ERRORS-
 Okay
@@ -565,7 +565,7 @@ static ERR DOCUMENT_FeedParser(extDocument *Self, doc::FeedParser *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->String)) return ERR::NullArgs;
+   if ((not Args) or (Args->String.empty())) return ERR::NullArgs;
 
    if (not Self->Processing) return log.warning(ERR::Failed);
 
@@ -591,7 +591,7 @@ will be returned as byte indexes in the document stream.  The starting byte will
 the end byte will refer to an `SCODE::INDEX_END` code.
 
 -INPUT-
-cstr Name:  The name of the index to search for.
+cpp(strview) Name: The name of the index to search for.
 &int Start: The byte position of the index is returned in this parameter.
 &int End:   The byte position at which the index ends is returned in this parameter.
 
@@ -609,9 +609,9 @@ static ERR DOCUMENT_FindIndex(extDocument *Self, doc::FindIndex *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
-   log.trace("Name: %s", Args->Name);
+   log.trace("Name: %.*s", int(Args->Name.size()), Args->Name.data());
 
    auto name_hash = strihash(Args->Name);
    for (INDEX i=0; i < INDEX(Self->Stream.size()); i++) {
@@ -636,7 +636,7 @@ static ERR DOCUMENT_FindIndex(extDocument *Self, doc::FindIndex *Args)
       }
    }
 
-   log.detail("Failed to find index '%s'", Args->Name);
+   log.detail("Failed to find index '%.*s'", int(Args->Name.size()), Args->Name.data());
    return ERR::Search;
 }
 
@@ -721,7 +721,7 @@ it is named.  Then make calls to HideIndex() and #ShowIndex() with the index nam
 The document layout is automatically updated and pushed to the display when this method is called.
 
 -INPUT-
-cstr Name: The name of the index.
+cpp(strview) Name: The name of the index.
 
 -ERRORS-
 Okay
@@ -739,9 +739,9 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
    kt::Log log(__FUNCTION__);
    int tab;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
-   log.msg("Index: %s", Args->Name);
+   log.msg("Index: %.*s", int(Args->Name.size()), Args->Name.data());
 
    auto &stream = Self->Stream;
    auto name_hash = strihash(Args->Name);
@@ -923,7 +923,7 @@ The document view will not be automatically redrawn by this method.  This must b
 to the document are complete.
 
 -INPUT-
-cstr XML: An XML string in RIPL format.
+cpp(strview) XML: An XML string in RIPL format.
 int Index: The byte position at which to insert the new content.
 
 -ERRORS-
@@ -943,7 +943,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->XML)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->XML.empty())) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > int(Self->Stream.size()))) return log.warning(ERR::OutOfRange);
 
    if (Self->Stream.data.empty()) return ERR::NoData;
@@ -958,7 +958,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
       Self->invalidate_text_width_cache();
 
       ERR error = insert_xml(Self, &Self->Stream, *xml, xml->Tags, (Args->Index IS -1) ? Self->Stream.size() : Args->Index, STYLE::NIL);
-      if (error != ERR::Okay) log.warning("Insert failed for: %s", Args->XML);
+      if (error != ERR::Okay) log.warning("Insert failed for: %.*s", int(Args->XML.size()), Args->XML.data());
 
       return error;
    }
@@ -980,7 +980,7 @@ The document view will not be automatically redrawn by this method.  This must b
 to the document are complete.
 
 -INPUT-
-cstr Text: A UTF-8 text string.
+cpp(strview) Text: A UTF-8 text string.
 int Index: Reference to a `TEXT` control code that will receive the content.  If `-1`, the text will be inserted at the end of the document stream.
 int Char: A character offset within the `TEXT` control code that will be injected with content.  If `-1`, the text will be injected at the end of the target string.
 int Preformat: If `true`, the text will be treated as pre-formatted (all whitespace, including consecutive whitespace will be recognised).
@@ -1001,7 +1001,7 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Args) or (not Args->Text)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Text.empty())) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
 
    log.traceBranch("Index: %d, Preformat: %d", Args->Index, Args->Preformat);
@@ -1950,7 +1950,7 @@ selectable links due to the nature of their functionality.
 
 -INPUT-
 int Index: Index to a link (links are in the order in which they are created in the document, zero being the first link).  Ignored if the `Name` parameter is set.
-cstr Name: The name of the link to select (set to `NULL` if an `Index` is defined).
+cpp(strview) Name: The name of the link to select.  Leave empty if an `Index` is defined.
 
 -ERRORS-
 Okay
@@ -1969,7 +1969,7 @@ static ERR DOCUMENT_SelectLink(extDocument *Self, doc::SelectLink *Args)
 
    if (not Args) return log.warning(ERR::NullArgs);
 
-   if ((Args->Name) and (Args->Name[0])) {
+   if (not Args->Name.empty()) {
 /*
       LONG i;
       for (i=0; i < Self->Tabs.size(); i++) {
@@ -2028,7 +2028,7 @@ it is named.  Then make calls to #HideIndex() and ShowIndex() with the index nam
 The document layout is automatically updated and pushed to the display when this method is called.
 
 -INPUT-
-cstr Name: The name of the index.
+cpp(strview) Name: The name of the index.
 
 -ERRORS-
 Okay
@@ -2045,9 +2045,9 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
-   log.branch("Index: %s", Args->Name);
+   log.branch("Index: %.*s", int(Args->Name.size()), Args->Name.data());
 
    auto &stream = Self->Stream;
    auto name_hash = strihash(Args->Name);

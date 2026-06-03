@@ -112,8 +112,6 @@ extern "C" DLLCALL int WINAPI RegEnumKeyExA(APTR hKey, int dwIndex, STRING lpNam
 static MSGID glProcessBreak = MSGID::NIL;
 #endif
 
-static ERR GET_LaunchPath(extTask *, std::string_view &);
-
 static ERR TASK_Activate(extTask *);
 static ERR TASK_Free(extTask *);
 static ERR TASK_GetEnv(extTask *, struct task::GetEnv *);
@@ -909,8 +907,7 @@ static ERR TASK_Activate(extTask *Self)
       return quoted;
    };
 
-   std::string_view path;
-   GET_LaunchPath(Self, path);
+   std::string_view path = Self->LaunchPath;
    requested_shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
    std::ostringstream buffer;
@@ -2132,22 +2129,6 @@ LaunchPath: Launched executables will start in the path specified here.
 Use the LaunchPath field to specify the folder that a launched executable will start in when the task object is
 activated.  This will override all other path options, such as the `RESET_PATH` flag.
 
-*********************************************************************************************************************/
-
-static ERR GET_LaunchPath(extTask *Self, std::string_view &Value)
-{
-   Value = Self->LaunchPath;
-   return ERR::Okay;
-}
-
-static ERR SET_LaunchPath(extTask *Self, const std::string_view &Value)
-{
-   Self->LaunchPath.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Location: Location of an executable file to launch.
 
@@ -2192,22 +2173,6 @@ Name: Name of the task.
 This field specifies the name of the task or program that has been initialised. It is up to the developer of the
 program to set the Name which will appear in this field.  If there is no name for the task then the system may
 assign a randomly generated name.
-
-*********************************************************************************************************************/
-
-static ERR GET_Name(extTask *Self, std::string_view &Value)
-{
-   Value = Self->Name;
-   return ERR::Okay;
-}
-
-static ERR SET_Name(extTask *Self, const std::string_view &Value)
-{
-   Self->Name.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Parameters: Command line arguments (list format).
@@ -2275,12 +2240,6 @@ truncated.
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extTask *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(extTask *Self, const std::string_view &Value)
 {
    std::string new_path;
@@ -2334,16 +2293,6 @@ executable file name).  This value is managed internally and cannot be altered.
 
 In Microsoft Windows it is not always possible to determine the origins of an executable, in which case the
 ProcessPath is set to the working folder in use at the time the process was launched.
-
-*********************************************************************************************************************/
-
-static ERR GET_ProcessPath(extTask *Self, std::string_view &Value)
-{
-   Value = Self->ProcessPath;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Priority: The task priority in relation to other tasks is be defined here.
@@ -2485,6 +2434,11 @@ process to return.  The time out is defined in seconds.
 *********************************************************************************************************************/
 
 static const FieldArray clFields[] = {
+   { "LaunchPath",      FDF_CPPSTRING|FDF_RW },
+   { "Name",            FDF_CPPSTRING|FDF_RW },
+   { "Location",        FDF_CPPSTRING|FDF_RW, nullptr, SET_Location },
+   { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "ProcessPath",     FDF_CPPSTRING|FDF_R },
    { "TimeOut",         FDF_DOUBLE|FDF_RW },
    { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clFlags },
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },
@@ -2497,12 +2451,7 @@ static const FieldArray clFields[] = {
    { "ErrorCallback",  FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
    { "ExitCallback",   FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_ExitCallback,    SET_ExitCallback },
    { "InputCallback",  FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN
-   { "LaunchPath",     FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_LaunchPath,      SET_LaunchPath },
-   { "Location",       FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Location,        SET_Location },
-   { "Name",           FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Name,            SET_Name },
    { "OutputCallback", FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_OutputCallback,  SET_OutputCallback }, // STDOUT
-   { "Path",           FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Path,            SET_Path },
-   { "ProcessPath",    FDF_CPPSTRING|FDF_R|FDF_PURE,    GET_ProcessPath },
    { "Priority",       FDF_INT|FDF_RW,         GET_Priority, SET_Priority },
    // Synonyms
    { "Src",            FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Location, SET_Location },

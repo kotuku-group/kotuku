@@ -1200,11 +1200,15 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
 
          if (line_offset + CHUNK >= output.size()) {
             lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset the file position back to normal
+            output.clear();
             return log.warning(ERR::BufferOverflow);
          }
       }
 
-      if (not line_offset) return ERR::NoData;
+      if (not line_offset) {
+         output.clear();
+         return ERR::NoData;
+      }
 
       Self->Position += line_offset;
       if (output[line_offset] IS '\n') {
@@ -1326,8 +1330,7 @@ static ERR FILE_Seek(extFile *Self, struct acSeek *Args)
 
    if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
 
-   int64_t ret;
-   if ((ret = lseek64(Self->Handle, Self->Position, SEEK_SET)) != Self->Position) {
+   if (auto ret = lseek64(Self->Handle, Self->Position, SEEK_SET); ret != Self->Position) {
       log.warning("Failed to Seek to new position of %" PF64 " (return %" PF64 ").", (long long)Self->Position, (long long)ret);
       Self->Position = oldpos;
       return ERR::SystemCall;
