@@ -356,10 +356,7 @@ static int module_test(lua_State *Lua)
 static int module_load(lua_State *Lua)
 {
    auto modname = luaL_checkstring(Lua, 1);
-   if (not modname) {
-      luaL_argerror(Lua, 1, "String expected for module name.");
-      return 0;
-   }
+   if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
 
    kt::Log log(__FUNCTION__);
    log.branch("Module: %s", modname);
@@ -374,7 +371,6 @@ static int module_load(lua_State *Lua)
 
    if ((modname[i]) or (i >= 32)) {
       luaL_error(Lua, ERR::Syntax, "Invalid module name; only alpha-numeric names are permitted with max 32 chars.");
-      return 0;
    }
 
    if (auto loaded_mod = objModule::create::global(fl::Name(modname))) {
@@ -396,7 +392,6 @@ static int module_load(lua_State *Lua)
 
       if (defs_error != ERR::Okay) {
          luaL_error(Lua, defs_error, "Failed to process definitions for the %s module.", modname);
-         return 0;
       }
 
       new_module(Lua, loaded_mod);
@@ -405,8 +400,8 @@ static int module_load(lua_State *Lua)
    else {
       log.debranch();
       luaL_error(Lua, ERR::LoadModule, "Failed to load the %s module.", modname);
-      return 0;
    }
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -429,7 +424,7 @@ static int module_tostring(lua_State *Lua)
    if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
       std::string_view name;
       if (mod->Module->get(FID_Name, name) IS ERR::Okay) {
-         lua_pushlstring(Lua, name.data(), name.size());
+         lua_pushstring(Lua, name);
       }
       else lua_pushnil(Lua);
    }
@@ -1266,12 +1261,10 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
             if (auto var = ((APTR *)scan)[0]) {
                if (argtype & FD_CPP) {
                   if (argtype & FD_MUTABLE) { // std::string variant
-                     auto str_result = (std::string *)var;
-                     lua_pushlstring(prv->Lua, str_result->data(), str_result->size());
+                     lua_pushstring(prv->Lua, *((std::string *)var));
                   }
                   else { // std::string_view
-                     auto str_result = (std::string_view *)var;
-                     lua_pushlstring(prv->Lua, str_result->data(), str_result->size());
+                     lua_pushstring(prv->Lua, *((std::string_view *)var));
                   }
                }
                else {
