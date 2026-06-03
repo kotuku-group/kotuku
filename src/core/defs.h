@@ -1197,7 +1197,7 @@ extern "C" int winGetCurrentProcessId(void);
 extern "C" int winGetExitCodeProcess(WINHANDLE, int *Code);
 extern "C" size_t winGetFileSize(STRING);
 extern "C" size_t winGetProcessMemoryUsage(int ProcessID);
-extern "C" APTR winGetProcAddress(WINHANDLE, CSTRING);
+extern "C" APTR winGetProcAddress(WINHANDLE, std::string_view);
 extern "C" WINHANDLE winGetStdInput(void);
 extern "C" void winInitialise(int *, void *);
 extern "C" void winInitializeCriticalSection(APTR Lock);

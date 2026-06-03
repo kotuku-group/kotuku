@@ -1717,17 +1717,17 @@ using ModClose   = void (*)(OBJECTPTR);
 using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
 using ModOpen    = ERR (*)(OBJECTPTR);
 using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(CSTRING, int *, int *);
+using ModTest    = void (*)(const std::string_view &, int *, int *);
 struct ModHeader {
-   MHF     Flags;                                 // Special flags, type of function table wanted from the Core
-   CSTRING Definitions;                           // Module definition string, usable by run-time languages such as Tiri
-   ERR (*Init)(OBJECTPTR, struct CoreBase *);     // A one-off initialisation routine for when the module is first opened.
-   void (*Close)(OBJECTPTR);                      // A function that will be called each time the module is closed.
-   ERR (*Open)(OBJECTPTR);                        // A function that will be called each time the module is opened.
-   ERR (*Expunge)(void);                          // Reference to an expunge function to terminate the module.
-   void (*Test)(CSTRING, int *, int *);           // A function that can run embedded unit tests in development builds.
-   CSTRING Name;                                  // Name of the module
-   CSTRING Namespace;                             // A reserved system-wide namespace for function names.
+   MHF     Flags;                                            // Special flags, type of function table wanted from the Core
+   CSTRING Definitions;                                      // Module definition string, usable by run-time languages such as Tiri
+   ERR (*Init)(OBJECTPTR, struct CoreBase *);                // A one-off initialisation routine for when the module is first opened.
+   void (*Close)(OBJECTPTR);                                 // A function that will be called each time the module is closed.
+   ERR (*Open)(OBJECTPTR);                                   // A function that will be called each time the module is opened.
+   ERR (*Expunge)(void);                                     // Reference to an expunge function to terminate the module.
+   void (*Test)(const std::string_view &, int *, int *);     // A function that can run embedded unit tests in development builds.
+   CSTRING Name;                                             // Name of the module
+   CSTRING Namespace;                                        // A reserved system-wide namespace for function names.
    STRUCTS *StructDefs;
    class RootModule *Root;
 
@@ -2846,7 +2846,7 @@ struct Delete { FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJEC
 struct Move { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Copy { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDate { int Year; int Month; int Day; int Hour; int Minute; int Second; FDT Type; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ReadLine { STRING Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadLine { std::string *Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct BufferContent { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Next { objFile * File; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Watch { FUNCTION * Callback; MFF Flags; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -2864,10 +2864,11 @@ class objFile : public Object {
    FL       Flags;      // File flags and options.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
    public:
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
    }
 
    // Action stubs
@@ -2953,10 +2954,9 @@ class objFile : public Object {
       struct fl::SetDate args = { Year, Month, Day, Hour, Minute, Second, Type };
       return(Action(AC(-6), this, &args));
    }
-   inline ERR readLine(STRING * Result) noexcept {
-      struct fl::ReadLine args = { (STRING)0 };
+   inline ERR readLine(std::string &Result) noexcept {
+      struct fl::ReadLine args = { &Result };
       ERR error = Action(AC(-7), this, &args);
-      if (Result) *Result = args.Result;
       return(error);
    }
    inline ERR bufferContent() noexcept {
@@ -3991,8 +3991,8 @@ class objThread : public Object {
 // Module methods
 
 namespace mod {
-struct ResolveSymbol { CSTRING Name; APTR Address; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Test { CSTRING Options; int Passed; int Total; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResolveSymbol { std::string_view Name; APTR Address; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Test { std::string_view Options; int Passed; int Total; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4031,13 +4031,13 @@ class objModule : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR resolveSymbol(CSTRING Name, APTR * Address) noexcept {
+   inline ERR resolveSymbol(const std::string_view & Name, APTR * Address) noexcept {
       struct mod::ResolveSymbol args = { Name, (APTR)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Address) *Address = args.Address;
       return(error);
    }
-   inline ERR test(CSTRING Options, int * Passed, int * Total) noexcept {
+   inline ERR test(const std::string_view & Options, int * Passed, int * Total) noexcept {
       struct mod::Test args = { Options, (int)0, (int)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Passed) *Passed = args.Passed;
@@ -4110,7 +4110,7 @@ class objModule : public Object {
 
 namespace pt {
 struct SetTime { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetTimeZoneInfo { CSTRING ZoneID; int StartYear; int EndYear; struct TimeZoneInfo * Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetTimeZoneInfo { std::string_view ZoneID; int StartYear; int EndYear; struct TimeZoneInfo * Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4141,7 +4141,7 @@ class objTime : public Object {
    inline ERR setTime() noexcept {
       return(Action(AC(-1), this, nullptr));
    }
-   inline ERR getTimeZoneInfo(CSTRING ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
+   inline ERR getTimeZoneInfo(const std::string_view & ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
       struct pt::GetTimeZoneInfo args = { ZoneID, StartYear, EndYear, (struct TimeZoneInfo *)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Info) *Info = args.Info;

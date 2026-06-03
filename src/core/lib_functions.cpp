@@ -454,7 +454,6 @@ int64_t GetResource(RES Resource)
          else return -1;
 
       case RES::CPU_SPEED: {
-         CSTRING line;
          static int cpu_mhz = 0;
 
          if (cpu_mhz) return cpu_mhz;
@@ -462,9 +461,10 @@ int64_t GetResource(RES Resource)
          auto file = objFile::create { fl::Path("drive1:proc/cpuinfo"), fl::Flags(FL::READ|FL::BUFFER) };
 
          if (file.ok()) {
-            while ((line = file->readLine())) {
+            std::string line;
+            while (file->readLine(line) IS ERR::Okay) {
                if (startswith("cpu MHz", line)) {
-                  if (auto value = strchr(line, ':')) cpu_mhz = int(strtod(value + 1, nullptr));
+                  if (auto value = strchr(line.c_str(), ':')) cpu_mhz = int(strtod(value + 1, nullptr));
                }
             }
          }

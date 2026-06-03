@@ -758,7 +758,7 @@ Returns normalised time-zone information for a named zone or for the host system
 !TimeZoneInfo resource includes the preferred public zone identifier, the host-native identifier, the data source,
 standard UTC offset and any transition records found within the requested inclusive year range.
 
-The `ZoneID` value may be `NULL` or empty to request the local system zone.  Explicit zone IDs support `UTC` aliases on
+The `ZoneID` value may be empty to request the local system zone.  Explicit zone IDs support `UTC` aliases on
 all platforms.  Linux builds also accept IANA zone names that resolve under `/usr/share/zoneinfo`.  Windows builds
 accept Windows native time-zone IDs and the IANA IDs that are mapped by the Core Windows time-zone wrapper.
 
@@ -770,7 +770,7 @@ Transition `Instant` values are UTC Unix epoch timestamps in microseconds.  `Off
 daylight-saving period.
 
 -INPUT-
-cstr ZoneID: Empty or NULL requests the local system zone.
+cpp(strview) ZoneID: Zone identifier, or an empty string to request the local system zone.
 int StartYear: Inclusive first year.  Must be in the supported 1601-9999 range.
 int EndYear: Inclusive final year.  Must be >= StartYear, no later than 9999 and within 400 years of `StartYear`.
 !struct(*TimeZoneInfo) Info: Receives the allocated metadata and transition resource.  Release with ~Core.FreeResource() when no longer required.
@@ -804,7 +804,7 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
       new (tz) struct TimeZoneInfo;
       SetResourceMgr(tz, &glTimeZoneHandler);
 
-      const std::string_view zone_id = Args->ZoneID ? std::string_view(Args->ZoneID) : std::string_view();
+      const std::string_view zone_id = Args->ZoneID;
       if (is_utc_zone(zone_id)) {
          fill_utc_info(*tz, Args->StartYear, Args->EndYear, zone_id.empty() ? 1 : 0, 0);
          Args->Info = tz;

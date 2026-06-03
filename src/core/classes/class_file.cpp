@@ -1137,15 +1137,14 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
 -METHOD-
 ReadLine: Reads the next line from the file.
 
-Reads one line from the file into an internal buffer, which is returned in the Result argument.  Reading a line will
-increase the #Position field by the amount of bytes read from the file.  You must have set the `FL::READ` bit in
+Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line
+will increase the #Position field by the amount of bytes read from the file.  You must have set the `FL::READ` bit in
 the #Flags field when you initialised the file, or the call will fail.
 
-The line buffer is managed internally, so there is no need to free the `Result` string.  `ERR::NoData` is returned
-once all lines have been read.
+`ERR::NoData` is returned once all lines have been read.
 
 -INPUT-
-&str Result: The resulting string is returned in this parameter.
+^&cpp(str) Result: The string provided in this parameter will be updated with the line read from the file.
 
 -ERRORS-
 Okay: The file information was read into the buffer.
@@ -1165,19 +1164,23 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
 {
    kt::Log log;
 
-   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
    if ((Self->Flags & FL::READ) IS FL::NIL) return log.warning(ERR::FileReadFlag);
+
+   std::string &output = *Args->Result;
+   output.clear();
 
    if (Self->Buffer) {
       if (Self->Position >= Self->Size) return ERR::NoData;
-      auto content = std::string_view((char *)Self->Buffer, Self->Size);
-      auto line_feed = content.find('\n', Self->Position);
-      if (line_feed IS std::string::npos) {
-         Self->prvLine.assign((char *)Self->Buffer, Self->Position);
+      const std::size_t start = std::size_t(Self->Position);
+      auto content = std::string_view((char *)Self->Buffer, std::size_t(Self->Size));
+      auto line_feed = content.find('\n', start);
+      if (line_feed IS std::string_view::npos) {
+         output.assign((char *)Self->Buffer + start, std::size_t(Self->Size) - start);
          Self->Position = Self->Size;
       }
       else {
-         Self->prvLine.assign((char *)Self->Buffer, Self->Position, line_feed - Self->Position);
+         output.assign((char *)Self->Buffer + start, line_feed - start);
          Self->Position = line_feed + 1;
       }
       return ERR::Okay;
@@ -1186,16 +1189,16 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
       if (Self->isFolder) return log.warning(ERR::ExpectedFile);
       if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
 
-      Self->prvLine.resize(4096); // We'll shrink it later
+      output.resize(4096); // We'll shrink it later
       int result;
       const int CHUNK = 256;
       std::size_t line_offset = 0;
-      while ((result = read(Self->Handle, Self->prvLine.data()+line_offset, CHUNK)) > 0) {
+      while ((result = read(Self->Handle, output.data()+line_offset, CHUNK)) > 0) {
          int i;
-         for (i=0; (i < result) and (Self->prvLine[line_offset] != '\n'); i++, line_offset++);
+         for (i=0; (i < result) and (output[line_offset] != '\n'); i++, line_offset++);
          if (i < result) break;
 
-         if (line_offset + CHUNK >= Self->prvLine.size()) {
+         if (line_offset + CHUNK >= output.size()) {
             lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset the file position back to normal
             return log.warning(ERR::BufferOverflow);
          }
@@ -1204,13 +1207,12 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
       if (not line_offset) return ERR::NoData;
 
       Self->Position += line_offset;
-      if (Self->prvLine[line_offset] IS '\n') {
+      if (output[line_offset] IS '\n') {
          Self->Position++; // Skip the line feed
          lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset position to the start of the next line
       }
 
-      Self->prvLine.resize(line_offset);
-      Args->Result = Self->prvLine.data();
+      output.resize(line_offset);
       return ERR::Okay;
    }
 }

@@ -335,7 +335,7 @@ extern void allocator_unit_tests(int &, int &);
 extern void bulk_unit_tests(int &, int &);
 #endif
 
-static void MODTest(CSTRING Options, int *Passed, int *Total)
+static void MODTest(const std::string_view &Options, int *Passed, int *Total)
 {
 #ifdef ENABLE_UNIT_TESTS
    {

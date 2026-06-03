@@ -501,7 +501,7 @@ loaded into memory or an `ERR::FieldNotSet` error will be returned.  If the symb
 returned.
 
 -INPUT-
-cstr Name: The name of the symbol to resolve.
+cpp(strview) Name: The name of the symbol to resolve.
 &ptr Address: The address of the symbol will be returned in this parameter.
 
 -ERRORS-
@@ -520,7 +520,7 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((!Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
    #ifdef KOTUKU_STATIC
@@ -532,20 +532,21 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
       return ERR::Okay;
    }
    else {
-      log.msg("Failed to resolve '%s' in %s module.", Args->Name, Self->Root->Name.c_str());
+      log.msg("Failed to resolve '%.*s' in %s module.", int(Args->Name.size()), Args->Name.data(), Self->Root->Name.c_str());
       return ERR::NotFound;
    }
 #elif __unix__
+   const std::string symbol_name(Args->Name);
    #ifdef KOTUKU_STATIC
-   if ((Args->Address = dlsym(RTLD_DEFAULT, Args->Name))) {
+   if ((Args->Address = dlsym(RTLD_DEFAULT, symbol_name.c_str()))) {
    #else
    if ((!Self->Root) or (!Self->Root->LibraryBase)) return ERR::FieldNotSet;
-   if ((Args->Address = dlsym(Self->Root->LibraryBase, Args->Name))) {
+   if ((Args->Address = dlsym(Self->Root->LibraryBase, symbol_name.c_str()))) {
    #endif
       return ERR::Okay;
    }
    else {
-      log.msg("Failed to resolve '%s' in %s module.", Args->Name, Self->Root->Name.c_str());
+      log.msg("Failed to resolve '%.*s' in %s module.", int(Args->Name.size()), Args->Name.data(), Self->Root->Name.c_str());
       return ERR::NotFound;
    }
 #else
@@ -565,7 +566,7 @@ for what the unit tests should do, but it is typically expected that test result
 Unit tests should never be compiled into production releases of the code.
 
 -INPUT-
-cstr Options: Optional CSV list of testing options.
+cpp(strview) Options: Optional CSV list of testing options.
 &int Passed: The number of tests that passed will be returned in this parameter.
 &int Total: The total number of tests that were executed will be returned in this parameter.
 
@@ -772,9 +773,9 @@ static void free_module(MODHANDLE handle)
 
 //********************************************************************************************************************
 
-static const FunctionField argsResolveSymbol[] = { { "Name", FD_STR }, { "Address", FD_PTR|FD_RESULT }, { nullptr, 0 } };
+static const FunctionField argsResolveSymbol[] = { { "Name", FD_CPP|FD_STR }, { "Address", FD_PTR|FD_RESULT }, { nullptr, 0 } };
 static const FunctionField argsTest[] = {
-   { "Options", FD_STR },
+   { "Options", FD_CPP|FD_STR },
    { "Passed", FD_INT|FD_RESULT },
    { "Total", FD_INT|FD_RESULT },
    { nullptr, 0 }

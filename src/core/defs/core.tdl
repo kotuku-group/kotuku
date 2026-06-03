@@ -688,7 +688,7 @@ using ModClose   = void (*)(OBJECTPTR);
 using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
 using ModOpen    = ERR (*)(OBJECTPTR);
 using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(CSTRING, int *, int *);
+using ModTest    = void (*)(const std::string_view &, int *, int *);
 
   ]])
 
@@ -699,7 +699,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     fptr(void obj) Close           # A function that will be called each time the module is closed.
     fptr(error obj) Open           # A function that will be called each time the module is opened.
     fptr(error) Expunge            # Reference to an expunge function to terminate the module.
-    fptr(void cstr &int &int) Test # A function that can run embedded unit tests in development builds.
+    fptr(void cpp(strview) &int &int) Test # A function that can run embedded unit tests in development builds.
     cstr Name                      # Name of the module
     cstr Namespace                 # A reserved system-wide namespace for function names.
   ]],
@@ -1343,10 +1343,11 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   ]],
   nil,
   [[
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
    }
   ]])
 
