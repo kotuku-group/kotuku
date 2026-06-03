@@ -83,6 +83,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="WrongClass">The Client object is not of type <code>NetClient</code>.</error>
       </result>
+      <tags>mutates-object, closes-handle</tags>
     </method>
 
     <method>
@@ -101,6 +102,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, closes-handle</tags>
     </method>
 
   </methods>

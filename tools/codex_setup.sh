@@ -13,7 +13,7 @@ BRANCH_NAME="${BRANCH_NAME:-master}"
 ARTIFACT_NAME="${ARTIFACT_NAME:-kotuku-install-ubuntu-latest-FastBuild}"
 DEST_DIR="${DEST_DIR:-install/agents}"
 GITHUB_HOST="${GITHUB_HOST:-github.com}"
-DEFAULT_REPOSITORY="parasol-framework/kotuku"
+DEFAULT_REPOSITORY="kotuku-group/kotuku"
 
 # Older versions of gh (including the one available in this environment)
 # do not support the --hostname flag.  Setting GH_HOST ensures the CLI

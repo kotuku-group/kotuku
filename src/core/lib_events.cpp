@@ -93,6 +93,9 @@ int EventSize: The size of the `Event` structure, in bytes.
 Okay
 NullArgs
 
+-TAGS-
+does-not-take-ownership
+
 *********************************************************************************************************************/
 
 ERR BroadcastEvent(APTR Event, int EventSize)
@@ -138,6 +141,9 @@ cpp(strview) Event:    The name of the event (case-sensitive).
 
 -RESULT-
 large: The event ID is returned as a 64-bit integer.
+
+-TAGS-
+copies-input, case-sensitive
 
 *********************************************************************************************************************/
 
@@ -192,7 +198,11 @@ ptr(func) Callback: The function that will be subscribed to the event.
 -ERRORS-
 Okay
 NullArgs
+Args
 AllocMemory
+
+-TAGS-
+creates-resource, callback-held, does-not-take-ownership
 
 *********************************************************************************************************************/
 
@@ -255,6 +265,9 @@ function must be provided.
 
 -INPUT-
 ptr Handle: An event handle returned from ~SubscribeEvent()
+
+-TAGS-
+closes-handle
 -END-
 
 *********************************************************************************************************************/

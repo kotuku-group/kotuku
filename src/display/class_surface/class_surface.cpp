@@ -31,7 +31,7 @@ separate bitmap buffer.
 
 #undef __xwindows__
 #include "../defs.h"
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <numeric> // For std::gcd
 
 #ifdef _WIN32
@@ -611,6 +611,9 @@ NullArgs
 NoPermission: Public objects cannot draw directly to surfaces.
 AllocMemory: The callback list could not be expanded.
 ArrayFull: The callback list has reached its maximum size.
+
+-TAGS-
+mutates-object, callback-held
 -END-
 
 *********************************************************************************************************************/
@@ -754,7 +757,7 @@ static ERR SURFACE_Focus(extSurface *Self)
 
    if (Self->disabled()) return ERR::Okay|ERR::Notified;
 
-   if (auto msg = GetActionMsg()) {
+   if (auto msg = GetActionMsg(AC::Focus)) {
       // This is a message - in which case it could have been delayed and thus superseded by a more recent message.
 
       if (msg->Time < glLastFocusTime) {
@@ -1065,13 +1068,16 @@ int(RNF) Flags: Private
 
 -ERRORS-
 Okay
+
+-TAGS-
+mutates-object, private
 -END-
 
 *********************************************************************************************************************/
 
 static ERR SURFACE_InheritedFocus(extSurface *Self, struct drw::InheritedFocus *Args)
 {
-   if (auto msg = GetActionMsg()) {
+   if (auto msg = GetActionMsg(drw::InheritedFocus::id)) {
       // This is a message - in which case it could have been delayed and thus superseded by a more recent message.
 
       if (msg->Time < glLastFocusTime) {
@@ -1567,6 +1573,9 @@ on that window.  On Microsoft Windows, this normally minimises the window to the
 Calling Minimise() on a surface that is already in the minimised state may result in the host window being restored to
 the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the
 host platform.
+
+-TAGS-
+blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1918,6 +1927,9 @@ ptr(func) Callback: Callback routine to remove, or `NULL` to remove all associat
 -ERRORS-
 Okay
 Search: The requested callback was not found.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2017,6 +2029,9 @@ int(DMF) Dimensions: Dimension flags.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2111,6 +2126,9 @@ int RefreshRate: Optional refresh rate in frames per second.  If not specified, 
 -ERRORS-
 Okay
 Failed
+
+-TAGS-
+non-blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2168,8 +2186,8 @@ SaveImage: Saves the graphics of a surface object.
 SaveImage() renders the visible content of a surface into an image and writes it to the destination object supplied in
 the action arguments.  Visible child surfaces in the captured region are included in the resulting image.
 
-The image format is selected with the `ClassID` argument.  Supported values are @Picture-compatible image classes such
-as `CLASSID::JPEG` and `CLASSID::PICTURE` (PNG).  If `ClassID` is `CLASSID::NIL`, the default @Picture implementation
+The image format is selected with the `ClassID` argument.  Supported values are @Image-compatible image classes such
+as `CLASSID::JPEG` and `CLASSID::IMAGE` (PNG).  If `ClassID` is `CLASSID::NIL`, the default @Image implementation
 is used.
 
 Errors returned while copying individual child surfaces can be propagated from ~CopySurface().
@@ -2177,8 +2195,8 @@ Errors returned while copying individual child surfaces can be propagated from ~
 -ERRORS-
 Okay
 NullArgs
-NewObject: The intermediate picture object could not be created.
-Failed: The intermediate picture object could not be initialised or saved.
+NewObject: The intermediate image object could not be created.
+Failed: The intermediate image object could not be initialised or saved.
 Search
 AccessObject
 -END-
@@ -2196,25 +2214,25 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
 
    // Create a Bitmap that is the same size as the rendered area
 
-   CLASSID class_id = (Args->ClassID IS CLASSID::NIL) ? CLASSID::PICTURE : Args->ClassID;
+   CLASSID class_id = (Args->ClassID IS CLASSID::NIL) ? CLASSID::IMAGE : Args->ClassID;
 
-   objPicture *picture;
-   if (NewObject(class_id, &picture) IS ERR::Okay) {
-      picture->setFlags(PCF::NEW);
-      picture->Bitmap->setWidth(Self->Width);
-      picture->Bitmap->setHeight(Self->Height);
+   objImage *img;
+   if (NewObject(class_id, &img) IS ERR::Okay) {
+      img->setFlags(PCF::NEW);
+      img->Bitmap->setWidth(Self->Width);
+      img->Bitmap->setHeight(Self->Height);
 
       objDisplay *display;
       objBitmap *video_bmp;
       if (access_video(Self->DisplayID, &display, &video_bmp) IS ERR::Okay) {
-         picture->Bitmap->setBitsPerPixel(video_bmp->BitsPerPixel);
-         picture->Bitmap->setBytesPerPixel(video_bmp->BytesPerPixel);
-         picture->Bitmap->setType(video_bmp->Type);
+         img->Bitmap->setBitsPerPixel(video_bmp->BitsPerPixel);
+         img->Bitmap->setBytesPerPixel(video_bmp->BytesPerPixel);
+         img->Bitmap->setType(video_bmp->Type);
          release_video(display);
       }
 
-      if (InitObject(picture) IS ERR::Okay) {
-         // Scan through the surface list and copy each buffer to our picture
+      if (InitObject(img) IS ERR::Okay) {
+         // Scan through the surface list and copy each buffer to our image
 
          const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
          auto &list = glSurfaces;
@@ -2235,24 +2253,24 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
                   bitmapid = list[j].BitmapID;
 
                   extBitmap *picbmp;
-                  picture->get(FID_Bitmap, picbmp);
+                  img->get(FID_Bitmap, picbmp);
                   if (auto error = gfx::CopySurface(list[j].SurfaceID, picbmp, BDF::NIL, 0, 0, list[j].Width,
                         list[j].Height, list[j].Left - list[i].Left, list[j].Top - list[i].Top);
                         error != ERR::Okay) {
-                     FreeResource(picture);
+                     FreeResource(img);
                      return log.warning(error);
                   }
                }
             }
          }
 
-         if (Action(AC::SaveImage, picture, Args) IS ERR::Okay) { // Save the picture to disk
-            FreeResource(picture);
+         if (Action(AC::SaveImage, img, Args) IS ERR::Okay) { // Save the image to disk
+            FreeResource(img);
             return ERR::Okay;
          }
       }
 
-      FreeResource(picture);
+      FreeResource(img);
       return log.warning(ERR::Failed);
    }
    else return log.warning(ERR::NewObject);
@@ -2275,6 +2293,9 @@ double Adjustment: Value to add to the current opacity multiplier, or zero to as
 Okay
 NullArgs
 NoSupport: The surface does not own the bitmap buffer required for independent opacity.
+
+-TAGS-
+non-blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2584,29 +2605,29 @@ static const FieldArray clSurfaceFields[] = {
    { "Dimensions",   FDF_INT|FDF_RW, nullptr, SET_Dimensions, &clSurfaceDimensions },
    { "DragStatus",   FDF_INT|FDF_LOOKUP|FDF_R, nullptr, nullptr, &clSurfaceDragStatus },
    { "Cursor",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Cursor, &clSurfaceCursor },
-   { "Colour",       FDF_RGB|FDF_RW },
+   { "Colour",       FD_ARRAY|FD_BYTE|FDF_RW, nullptr, nullptr, 4 },
    { "Type",         FDF_SYSTEM|FDF_INT|FDF_RI, nullptr, nullptr, &clSurfaceType },
    { "Modal",        FDF_INT|FDF_RW, nullptr, SET_Modal },
    // Virtual fields
-   { "AbsX",          FDF_VIRTUAL|FDF_INT|FDF_RW, GET_AbsX, SET_AbsX },
-   { "AbsY",          FDF_VIRTUAL|FDF_INT|FDF_RW, GET_AbsY, SET_AbsY },
-   { "BitsPerPixel",  FDF_VIRTUAL|FDF_INT|FDF_RI, GET_BitsPerPixel, SET_BitsPerPixel },
-   { "Bottom",        FDF_VIRTUAL|FDF_INT|FDF_R,  GET_Bottom },
-   { "Movement",      FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, nullptr, SET_Movement, &MovementFlags },
-   { "Opacity",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, GET_Opacity, SET_Opacity },
+   { "AbsX",          FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW, GET_AbsX, SET_AbsX },
+   { "AbsY",          FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW, GET_AbsY, SET_AbsY },
+   { "BitsPerPixel",  FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RI, GET_BitsPerPixel, SET_BitsPerPixel },
+   { "Bottom",        FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_Bottom },
+   { "Movement",      FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, GET_Movement, SET_Movement, &MovementFlags },
+   { "Opacity",       FDF_VIRTUAL|FDF_DOUBLE|FDF_PURE|FDF_RW, GET_Opacity, SET_Opacity },
    { "RevertFocus",   FDF_SYSTEM|FDF_VIRTUAL|FDF_OBJECTID|FDF_W, nullptr, SET_RevertFocus },
-   { "Right",         FDF_VIRTUAL|FDF_INT|FDF_R,  GET_Right },
-   { "UserFocus",     FDF_VIRTUAL|FDF_INT|FDF_R,  GET_UserFocus },
-   { "Visible",       FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Visible, SET_Visible },
+   { "Right",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_Right },
+   { "UserFocus",     FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_UserFocus },
+   { "Visible",       FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW, GET_Visible, SET_Visible },
    { "VisibleHeight", FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleHeight },
    { "VisibleWidth",  FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleWidth },
    { "VisibleX",      FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleX },
    { "VisibleY",      FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleY },
-   { "WindowType",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, GET_WindowType, SET_WindowType, &clWindowType },
-   { "WindowHandle",  FDF_VIRTUAL|FDF_POINTER|FDF_RW, GET_WindowHandle, SET_WindowHandle },
+   { "WindowType",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW, GET_WindowType, SET_WindowType, &clWindowType },
+   { "WindowHandle",  FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW, GET_WindowHandle, SET_WindowHandle },
    // Unit fields
-   { "XOffset",       FDF_VIRTUAL|FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_XOffset, SET_XOffset },
-   { "YOffset",       FDF_VIRTUAL|FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_YOffset, SET_YOffset },
+   { "XOffset",       FDF_VIRTUAL|FDF_UNIT|FDF_INT|FDF_SCALED|FDF_PURE|FDF_RW, GET_XOffset, SET_XOffset },
+   { "YOffset",       FDF_VIRTUAL|FDF_UNIT|FDF_INT|FDF_SCALED|FDF_PURE|FDF_RW, GET_YOffset, SET_YOffset },
    END_FIELD
 };
 

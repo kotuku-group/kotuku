@@ -26,6 +26,7 @@
 #include <mutex>
 #include <memory>
 #include <span>
+#include <new>
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
@@ -51,6 +52,70 @@ static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Store
 
 static int module_call(lua_State *);
 static int process_results(prvTiri *, APTR, const FunctionField *);
+
+//********************************************************************************************************************
+// Support for mutable array results
+
+struct cpp_array_result {
+   APTR Data;
+   void (*Delete)(APTR);
+};
+
+template <class T> static void delete_cpp_array_result(APTR Result)
+{
+   delete (kt::vector<T> *)Result;
+}
+
+template <class T> static ERR make_cpp_array_result(cpp_array_result *Result)
+{
+   auto vector = new (std::nothrow) kt::vector<T>;
+   if (not vector) return ERR::AllocMemory;
+
+   Result->Data = vector;
+   Result->Delete = delete_cpp_array_result<T>;
+   return ERR::Okay;
+}
+
+static ERR make_cpp_array_result(int Type, cpp_array_result *Result)
+{
+   if (Type & FD_STR) return make_cpp_array_result<std::string>(Result);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) return make_cpp_array_result<OBJECTPTR>(Result);
+   else if (Type & FD_PTR) return make_cpp_array_result<APTR>(Result);
+   else if (Type & FD_DOUBLE) return make_cpp_array_result<double>(Result);
+   else if (Type & FD_FLOAT) return make_cpp_array_result<float>(Result);
+   else if (Type & FD_INT64) return make_cpp_array_result<int64_t>(Result);
+   else if (Type & FD_INT) return make_cpp_array_result<int>(Result);
+   else if (Type & FD_WORD) return make_cpp_array_result<int16_t>(Result);
+   else if (Type & FD_BYTE) return make_cpp_array_result<uint8_t>(Result);
+   else return ERR::NoSupport;
+}
+
+template <class T> static void push_cpp_array_result(lua_State *Lua, int Type, std::string_view Name, APTR Source)
+{
+   auto vector = (kt::vector<T> *)Source;
+   make_any_array(Lua, Type, Name, int(vector->size()), vector->data());
+}
+
+static bool push_cpp_array_result(lua_State *Lua, int Type, std::string_view Name, APTR Source)
+{
+   if (Type & FD_STR) {
+      auto vector = (kt::vector<std::string> *)Source;
+      make_array(Lua, AET::STR_CPP, int(vector->size()), vector);
+   }
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) push_cpp_array_result<OBJECTPTR>(Lua, Type, Name, Source);
+   else if (Type & FD_PTR) push_cpp_array_result<APTR>(Lua, Type, Name, Source);
+   else if (Type & FD_DOUBLE) push_cpp_array_result<double>(Lua, Type, Name, Source);
+   else if (Type & FD_FLOAT) push_cpp_array_result<float>(Lua, Type, Name, Source);
+   else if (Type & FD_INT64) push_cpp_array_result<int64_t>(Lua, Type, Name, Source);
+   else if (Type & FD_INT) push_cpp_array_result<int>(Lua, Type, Name, Source);
+   else if (Type & FD_WORD) push_cpp_array_result<int16_t>(Lua, Type, Name, Source);
+   else if (Type & FD_BYTE) push_cpp_array_result<uint8_t>(Lua, Type, Name, Source);
+   else return false;
+
+   return true;
+}
+
+//********************************************************************************************************************
 
 [[nodiscard]] static GCstr * string_arg(lua_State *Lua, int Arg) noexcept
 {
@@ -291,10 +356,7 @@ static int module_test(lua_State *Lua)
 static int module_load(lua_State *Lua)
 {
    auto modname = luaL_checkstring(Lua, 1);
-   if (not modname) {
-      luaL_argerror(Lua, 1, "String expected for module name.");
-      return 0;
-   }
+   if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
 
    kt::Log log(__FUNCTION__);
    log.branch("Module: %s", modname);
@@ -309,7 +371,6 @@ static int module_load(lua_State *Lua)
 
    if ((modname[i]) or (i >= 32)) {
       luaL_error(Lua, ERR::Syntax, "Invalid module name; only alpha-numeric names are permitted with max 32 chars.");
-      return 0;
    }
 
    if (auto loaded_mod = objModule::create::global(fl::Name(modname))) {
@@ -331,7 +392,6 @@ static int module_load(lua_State *Lua)
 
       if (defs_error != ERR::Okay) {
          luaL_error(Lua, defs_error, "Failed to process definitions for the %s module.", modname);
-         return 0;
       }
 
       new_module(Lua, loaded_mod);
@@ -340,8 +400,8 @@ static int module_load(lua_State *Lua)
    else {
       log.debranch();
       luaL_error(Lua, ERR::LoadModule, "Failed to load the %s module.", modname);
-      return 0;
    }
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -362,7 +422,7 @@ static int module_destruct(lua_State *Lua)
 static int module_tostring(lua_State *Lua)
 {
    if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      CSTRING name;
+      std::string_view name;
       if (mod->Module->get(FID_Name, name) IS ERR::Okay) {
          lua_pushstring(Lua, name);
       }
@@ -401,11 +461,60 @@ static int module_index(lua_State *Lua)
 }
 
 //********************************************************************************************************************
+// Makes a call to a Kotuku module function.  module_call() sets the benchmark for processing FD parameters.
+//
+// A breakdown of possible FD configurations follows.  Input values:
+//
+// STR          = CSTRING.  Read-only string pointer.  Tiri string/number/boolean are accepted; NULL permitted
+// STR|CPP      = const std::string_view &.  Read-only string view.  A real string value is required.
+// PTR          = APTR.  Raw pointer input.  Tiri strings, arrays, structs, objects and userdata can provide
+//                backing storage depending on the call.
+// PTR|STRUCT   = Struct *.  Accepts an existing Tiri struct or converts a Tiri table to a temporary struct.
+// OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
+// ARRAY        = Type *.  Accepts a Tiri array and passes its data pointer.  ARRAYSIZE can follow.
+// ARRAY|BUFFER = Type *.  Accepts a Tiri array and treats ARRAYSIZE/BUFSIZE as byte capacity.
+// ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
+// FUNCTION     = FUNCTION *.  Accepts a Tiri function or global function name.
+//
+// Mutable combinations.  User is expected to supply a reference to a suitable storage area, as defined by the type
+// The storage area may contain existing data for consumption prior to mutation.  Failure to provide storage would be
+// considered an error.  Often used for reading data into buffers, like the Read() action.
+//
+// PTR|MUTABLE     = APTR.  Mutable raw pointer/buffer input.  Tiri strings must be mutable.
+// STR|MUTABLE     = STRING.  A mutable Tiri string buffer is required, normally from string.alloc().
+//                   The function mutates the buffer in-place.  A BUFSIZE is expected for the next parameter.
+// STR|MUTABLE|CPP = std::string *.  A mutable Tiri string buffer is required.  Tiri content is copied into
+//                   a temporary std::string before the call, then copied back after the call.  If the final
+//                   string is larger than the Tiri buffer, the call fails.
+//
+// Result combintations.  The function will return a reference to its own storage area, or allocate a new one.  Result
+// values will be returned as true Tiri results, unlike mutable types which are manipulated in-place.
+//
+// RESULT|STR        = CSTRING *.  Function writes a non-allocated C string pointer; returned to Tiri as a string.
+// RESULT|STR|ALLOC  = CSTRING *.  Function writes an allocated C string pointer; returned to Tiri then freed.
+// RESULT|STR|CPP    = std::string *.  Tiri provides a temporary std::string; returned to Tiri as a string.
+//
+// RESULT|PTR        = APTR *.  Function writes a pointer; returned to Tiri as light userdata unless specialised.
+// RESULT|PTR|ALLOC  = APTR *.  Function writes an allocated block; returned as a binary string when BUFSIZE is
+//                     available, then freed.
+// RESULT|PTR|STRUCT = Struct **.  Function writes a struct pointer; returned as a Tiri table, or as a managed
+//                     struct when RESOURCE is set.
+// RESULT|ARRAY      = Type **.  Function writes an array pointer; returned to Tiri as an array.  ARRAYSIZE may
+//                     follow to define element count.
+// RESULT|ARRAY|CPP  = kt::vector<> *.  Tiri provides an empty kt::vector<>; returned to Tiri as an array.
+// RESULT|BUFFER     = APTR.  Caller supplies a mutable Tiri buffer or array for the function to fill; BUFSIZE
+//                     must follow.
+// RESULT|BUFFER|CPP = Unsupported.  kt::vector<> output marshalling is not implemented for module calls.
+//
+// Mixed direction:
+//
+// MUTABLE|RESULT|CPP = An empty C++ buffer is supplied as input (e.g. std::string or kt::vector<>) and it will be
+//                      used to store the result.
 
 static int module_call(lua_State *Lua)
 {
    kt::Log log(__FUNCTION__);
-   objScript *Self = Lua->script;
+
    uint8_t buffer[MAX_MODULE_ARGS * 16]; // 16 bytes seems overkill but some parameters output meta information (e.g. size).
    int i;
 
@@ -415,21 +524,52 @@ static int module_call(lua_State *Lua)
       struct_record *Def;
    };
 
-   std::vector<std::string*> allocated_strings;
-   std::vector<std::string_view*> allocated_string_views;
+   struct mutable_cpp_string_ref {
+      std::string *Source;
+      GCstr *Target;
+      int Arg;
+   };
+
+   std::vector<std::string> strings;
+   std::vector<std::string_view> string_views;
    std::vector<allocated_struct_ref> allocated_structs;
+   std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
+   std::vector<cpp_array_result> cpp_arrays;
+   strings.reserve(8); // Keep the collection stable
+   string_views.reserve(8);
 
    // Cleanup lambda for early exits.  Note that we can't rely on RAII because luaL_error() breaks out of the function.
    auto cleanup = [&]() {
-      for (auto ptr : allocated_strings) delete ptr;
-      for (auto ptr : allocated_string_views) delete ptr;
       for (auto &entry : allocated_structs) {
          if (entry.Def) destroy_struct_cpp_strings(*entry.Def, entry.Data);
          FreeResource(entry.Data);
       }
+      for (auto &entry : cpp_arrays) {
+         if (entry.Delete) entry.Delete(entry.Data);
+      }
+      std::vector<std::string>().swap(strings);
+      std::vector<std::string_view>().swap(string_views);
+      std::vector<allocated_struct_ref>().swap(allocated_structs);
+      std::vector<mutable_cpp_string_ref>().swap(mutable_cpp_strings);
+      std::vector<cpp_array_result>().swap(cpp_arrays);
    };
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto copy_mutable_cpp_strings = [&]() {
+      for (auto &entry : mutable_cpp_strings) {
+         auto capacity = size_t(entry.Target->len);
+         auto length = entry.Source->size();
+         if (length > capacity) {
+            cleanup();
+            luaL_argerror(Lua, entry.Arg, "Mutable buffer too small.");
+         }
+
+         auto target = strdatawr(entry.Target);
+         if (length) copymem(entry.Source->data(), target, length);
+         if (length < capacity) clearmem(target + length, capacity - length);
+      }
+   };
+
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv) {
       log.warning(ERR::ObjectCorrupt);
       return 0;
@@ -483,7 +623,23 @@ static int module_call(lua_State *Lua)
 
          RMSG("Result for arg %d stored at %p", i, end);
 
-         if (argtype & FD_BUFFER) {
+         if ((argtype & FD_CPP) and (argtype & FD_ARRAY) and (argtype & FD_MUTABLE)) {
+            // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
+            // We set this up here, then convert the resulting values to a Tiri array when the function returns.
+            cpp_array_result result_ref = { };
+            if (auto error = make_cpp_array_result(argtype, &result_ref); error IS ERR::Okay) {
+               ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
+               cpp_arrays.push_back(result_ref);
+               arg_values[in]  = buffer + j;
+               arg_types[in++] = &ffi_type_pointer;
+               j += sizeof(APTR);
+            }
+            else {
+               cleanup();
+               luaL_error(Lua, error, "Function '%s' uses an unsupported C++ array result type.", mod->Functions[index].Name);
+            }
+         }
+         else if (argtype & FD_BUFFER) { // For fixed-size buffers; the next parameter must indicate the size.
             // The client must supply an argument that will store a buffer result.  This is a different case to the
             // storage of type values.  Buffers can be combined with FD_ARRAY to store more than one element.
 
@@ -524,11 +680,10 @@ static int module_call(lua_State *Lua)
                }
             }
             else if (lua_type(Lua, i) IS LUA_TSTRING) {
-               auto string = string_arg(Lua, i);
+               GCstr *string = string_arg(Lua, i);
                if (not lj_str_ismutable(string)) {
                   cleanup();
                   luaL_argerror(Lua, i, "Mutable buffer required.");
-                  return 0;
                }
 
                ((APTR *)(buffer + j))[0] = strdatawr(string);
@@ -556,27 +711,35 @@ static int module_call(lua_State *Lua)
                else {
                   cleanup();
                   luaL_error(Lua, ERR::InvalidType, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
-                  return 0;
                }
             }
             else {
                cleanup();
                luaL_error(Lua, ERR::Args, "A memory buffer is required in arg #%d.", i);
-               return 0;
             }
          }
          else if (argtype & FD_STR) { // FD_RESULT
             if (argtype & FD_CPP) {
-               // Special case; we provide a std::string that will be used as a buffer for storing the result and destroy
-               // it after processing results.
-               auto str_ptr = new std::string;
-               allocated_strings.push_back(str_ptr);
-               ((std::string **)(buffer + j))[0] = str_ptr;
-               arg_values[in]  = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
-               j += sizeof(APTR);
+               if (argtype & FD_MUTABLE) {
+                  // Use of MUTABLE enables support for std::string buffering.  We provide our own std::string that will be used as
+                  // the buffer, it gets converted to a Tiri string when the function returns.
+
+                  strings.emplace_back();
+                  ((std::string **)(buffer + j))[0] = &strings.back();
+                  arg_values[in]  = buffer + j;
+                  arg_types[in++] = &ffi_type_pointer;
+                  j += sizeof(APTR);
+               }
+               else {
+                  // Non-mutable string reference, supported as a std::string_view
+                  string_views.emplace_back();
+                  ((std::string_view **)(buffer + j))[0] = &string_views.back();
+                  arg_values[in]  = buffer + j;
+                  arg_types[in++] = &ffi_type_pointer;
+                  j += sizeof(APTR);
+               }
             }
-            else {
+            else { // C-style string reference, this parameter style is being deprecated.
                end -= sizeof(APTR);
                ((APTR *)(buffer + j))[0] = end;
                ((APTR *)end)[0] = nullptr;
@@ -624,14 +787,14 @@ static int module_call(lua_State *Lua)
          switch(lua_type(Lua, i)) {
             case LUA_TSTRING: { // Name of function to call
                lua_getglobal(Lua, lua_tostring(Lua, i));
-               func = FUNCTION(Self, luaL_ref(Lua, LUA_REGISTRYINDEX));
+               func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
                ((FUNCTION **)(buffer + j))[0] = &func;
                break;
             }
 
             case LUA_TFUNCTION: { // Direct function reference
                lua_pushvalue(Lua, i);
-               func = FUNCTION(Self, luaL_ref(Lua, LUA_REGISTRYINDEX));
+               func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
                ((FUNCTION **)(buffer + j))[0] = &func;
                break;
             }
@@ -653,28 +816,37 @@ static int module_call(lua_State *Lua)
       }
       else if (argtype & FD_STR) {
          auto type = lua_type(Lua, i);
+         int type_size = sizeof(APTR);
 
-         if (argtype & FD_CPP) { // std::string_view (enforced, cannot be nullptr)
-            size_t len;
-            auto str = lua_tolstring(Lua, i, &len);
-            auto view_ptr = new std::string_view(str, len);
-            allocated_string_views.push_back(view_ptr);
-            ((std::string_view **)(buffer + j))[0] = view_ptr;
-         }
-         else if (argtype & FD_MUTABLE) {
+         if (argtype & FD_MUTABLE) {
+            // The client is expected to provide a mutable string with preallocated size, which can be acquired from string.alloc()
             if (type != LUA_TSTRING) {
                cleanup();
                luaL_argerror(Lua, i, "Mutable buffer required.");
-               return 0;
             }
 
-            auto string = string_arg(Lua, i);
+            GCstr *string = string_arg(Lua, i);
             if (not lj_str_ismutable(string)) {
                cleanup();
                luaL_argerror(Lua, i, "Mutable buffer required.");
-               return 0;
             }
-            ((CSTRING *)(buffer + j))[0] = strdatawr(string);
+
+            if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
+               size_t len;
+               if (auto str = lua_tolstring(Lua, i, &len)) strings.emplace_back(str, len);
+               else strings.emplace_back();
+
+               auto cppstr = &strings.back();
+               mutable_cpp_strings.push_back({ cppstr, string, i });
+               ((std::string **)(buffer + j))[0] = cppstr;
+            }
+            else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
+         }
+         else if (argtype & FD_CPP) { // Read-only std::string_view (enforced, cannot be nullptr)
+            size_t len;
+            if (auto str = lua_tolstring(Lua, i, &len)) string_views.emplace_back(str, len);
+            else string_views.emplace_back();
+            ((std::string_view **)(buffer + j))[0] = &string_views.back();
          }
          else if ((type IS LUA_TSTRING) or (type IS LUA_TNUMBER) or (type IS LUA_TBOOLEAN)) {
             ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
@@ -685,22 +857,20 @@ static int module_call(lua_State *Lua)
          else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
             cleanup();
             luaL_error(Lua, ERR::InvalidType, "Arg #%d (%s) requires a string and not untyped pointer.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)), lua_tostring(Lua, i));
-            return 0;
          }
          else {
             cleanup();
             luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected string, got %s '%s'.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)), lua_tostring(Lua, i));
-            return 0;
          }
 
          arg_values[in] = buffer + j;
          arg_types[in++] = &ffi_type_pointer;
-         j += sizeof(APTR);
+         j += type_size;
       }
       else if (argtype & FD_ARRAY) { // Pass array data pointer
          if (argtype & FD_CPP) {
+            cleanup();
             luaL_error(Lua, ERR::NoSupport, "No support for calls utilising C++ arrays.");
-            return 0;
          }
 
          if (lua_type(Lua, i) IS LUA_TARRAY) {
@@ -731,8 +901,8 @@ static int module_call(lua_State *Lua)
                      i++;
                   }
                   else {
+                     cleanup();
                      luaL_error(Lua, ERR::NoSupport, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
-                     return 0;
                   }
                }
                else {
@@ -753,20 +923,17 @@ static int module_call(lua_State *Lua)
                   else {
                      cleanup();
                      luaL_error(Lua, ERR::NoSupport, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
-                     return 0;
                   }
                }
             }
             else {
                cleanup();
                luaL_error(Lua, ERR::NoSupport, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
-               return 0;
             }
          }
          else {
             cleanup();
             luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected array, got '%s'.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)));
-            return 0;
          }
       }
       else if (argtype & FD_PTR) {
@@ -887,13 +1054,11 @@ static int module_call(lua_State *Lua)
                else {
                   cleanup();
                   luaL_error(Lua, ERR::Failed, "Failed to convert table to struct for arg #%d (%s).", i, args[i].Name);
-                  return 0;
                }
             }
             else {
                cleanup();
                luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected pointer, got table.", i, args[i].Name);
-               return 0;
             }
          }
          else {
@@ -937,12 +1102,10 @@ static int module_call(lua_State *Lua)
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
          cleanup();
          luaL_error(Lua, ERR::NoSupport, "Functions using tags are not supported.");
-         return 0;
       }
       else {
          cleanup();
-         log.warning("%s() unsupported arg '%s', flags $%.8x, aborting now.", mod->Functions[index].Name, args[i].Name, argtype);
-         return 0;
+         luaL_error(Lua, ERR::NoSupport, "%s() unsupported arg '%s', flags $%.8x, aborting now.", mod->Functions[index].Name, args[i].Name, argtype);
       }
    }
 
@@ -971,6 +1134,7 @@ static int module_call(lua_State *Lua)
 
    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, total_args, return_type, arg_types) IS FFI_OK) {
       ffi_call(&cif, (void (*)())function, &rc, arg_values);
+      copy_mutable_cpp_strings();
 
       // Process the result based on the return type
       if (restype & FD_STR) {
@@ -991,7 +1155,7 @@ static int module_call(lua_State *Lua)
                // needed when a struct's use is beyond informational and can be passed to other functions.
                //
                // Otherwise, the default behaviour is to convert the struct's content to a regular Lua table.
-               if (restype & FD_RESOURCE) push_struct(Self, structptr, args->Name, (restype & FD_ALLOC) ? TRUE : FALSE, TRUE);
+               if (restype & FD_RESOURCE) push_struct(Lua->script, structptr, args->Name, (restype & FD_ALLOC) ? TRUE : FALSE, TRUE);
                else if ((error = named_struct_to_table(Lua, args->Name, structptr)) != ERR::Okay) {
                   if (error IS ERR::Search) {
                      // Unknown structs are returned as pointers - this is mainly to indicate that there is a value
@@ -1063,21 +1227,29 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
             scan += sizeof(APTR);
             if (var) {
                std::string_view argname(args[i].Name);
-               APTR values = ((APTR *)var)[0];
-               int total_elements = -1; // If -1, make_any_table() assumes the array is null terminated.
-
-               if (args[i+1].Type & FD_ARRAYSIZE) {
-                  CPTR size_var = ((APTR *)scan)[0];
-                  if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
-                  else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
-                  else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
+               if (argtype & FD_CPP) {
+                  if (not push_cpp_array_result(prv->Lua, argtype, argname, var)) {
+                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
+                     lua_pushnil(prv->Lua);
+                  }
                }
+               else {
+                  APTR values = ((APTR *)var)[0];
+                  int total_elements = -1; // If -1, make_any_table() assumes the array is null terminated.
 
-               if (values) {
-                  make_any_array(prv->Lua, argtype, argname, total_elements, values);
-                  if (argtype & FD_ALLOC) FreeResource(values);
+                  if (args[i+1].Type & FD_ARRAYSIZE) {
+                     CPTR size_var = ((APTR *)scan)[0];
+                     if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
+                     else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
+                     else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
+                  }
+
+                  if (values) {
+                     make_any_array(prv->Lua, argtype, argname, total_elements, values);
+                     if (argtype & FD_ALLOC) FreeResource(values);
+                  }
+                  else lua_pushnil(prv->Lua);
                }
-               else lua_pushnil(prv->Lua);
             }
             else lua_pushnil(prv->Lua);
             results++;
@@ -1087,9 +1259,13 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
       else if (argtype & FD_STR) {
          if (argtype & FD_RESULT) {
             if (auto var = ((APTR *)scan)[0]) {
-               if (argtype & FD_CPP) { // std::string variant
-                  auto str_result = (std::string *)var;
-                  lua_pushlstring(prv->Lua, str_result->data(), str_result->size());
+               if (argtype & FD_CPP) {
+                  if (argtype & FD_MUTABLE) { // std::string variant
+                     lua_pushstring(prv->Lua, *((std::string *)var));
+                  }
+                  else { // std::string_view
+                     lua_pushstring(prv->Lua, *((std::string_view *)var));
+                  }
                }
                else {
                   lua_pushstring(prv->Lua, ((STRING *)var)[0]);

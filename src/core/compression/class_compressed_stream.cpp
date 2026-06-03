@@ -385,7 +385,7 @@ static const FieldArray clStreamFields[] = {
    { "Output",      FDF_OBJECT|FDF_RI },
    { "Format",      FDF_INT|FDF_LOOKUP|FD_RI, nullptr, nullptr, &clCompressedStreamFormat },
    // Virtual fields
-   { "Size",        FDF_INT64|FDF_R, CSTREAM_GET_Size },
+   { "Size",        FDF_INT64|FDF_R|FDF_PURE, CSTREAM_GET_Size },
    END_FIELD
 };
 

@@ -180,9 +180,11 @@ static ERR object_free(Object *Object)
       return ERR::InUse;
    }
 
+#ifndef NDEBUG
    if (Object->ActionDepth > 0) {
-      // The object is still in use.  This should only be triggered if the object wasn't locked with LockObject().
-      log.trace("Object in use; marking for collection.");
+      // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
+      // is considered a critical error.
+      log.error("Object in use; marking for collection.");
       if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
       if (not Object->defined(NF::COLLECT)) {
          Object->setFlag(NF::COLLECT);
@@ -190,6 +192,7 @@ static ERR object_free(Object *Object)
       }
       return ERR::InUse;
    }
+#endif
 
    if (Object->classID() IS CLASSID::METACLASS)   log.branch("%s, Owner: %d", Object->className(), Object->ownerID());
    else if (Object->classID() IS CLASSID::MODULE) log.branch("%s, Owner: %d", ((extModule *)Object)->Name.c_str(), Object->ownerID());
@@ -214,7 +217,7 @@ static ERR object_free(Object *Object)
       }
    }
 
-   if (mc->Base) { // Sub-class detected, so call the base class
+   if (mc->Base) { // Derived class detected, so call the base class
       if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
          if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
             if (Object->collecting()) {
@@ -242,11 +245,11 @@ static ERR object_free(Object *Object)
 
    NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 
-   if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be sub-class or base-class
+   if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
       mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
    }
 
-   if (mc->Base) { // Sub-class detected, so call the base class
+   if (mc->Base) { // Derived class detected, so call the base class
       if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
          mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
       }
@@ -257,11 +260,9 @@ static ERR object_free(Object *Object)
       glSubscriptions.erase(Object->UID);
    }
 
-   // If a private child structure is present, remove it
-
-   if (Object->ChildPrivate) {
-      if (FreeResource(Object->ChildPrivate) != ERR::Okay) log.warning("Invalid ChildPrivate address %p.", Object->ChildPrivate);
-      Object->ChildPrivate = nullptr;
+   if (Object->DerivedPtr) {
+      if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
+      Object->DerivedPtr = nullptr;
    }
 
    free_children(Object);
@@ -270,7 +271,8 @@ static ERR object_free(Object *Object)
       if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
          for (auto it=glTimers.begin(); it != glTimers.end(); ) {
             if (it->SubscriberID IS Object->UID) {
-               log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64, mc->ClassName, Object->UID, &it->Routine, (long long)it->Interval);
+               log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
+                  mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
                if (it->Routine.isScript()) {
                   ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
                }
@@ -281,7 +283,7 @@ static ERR object_free(Object *Object)
       }
    }
 
-   if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Child detected
+   if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Derived class detected
    if (mc->OpenCount > 0) mc->OpenCount--;
 
    if (Object->Name[0]) { // Remove the object from the name lookup list
@@ -640,7 +642,7 @@ does not require any additional arguments.  The second performs a move operation
 arguments to be passed to the Action() function:
 
 <pre>
-1. Action(AC::Activate, Picture, nullptr);
+1. Action(AC::Activate, Image, nullptr);
 
 2. struct acMove move = { 30, 15, 0 };
    Action(AC::Move, Window, &move);
@@ -649,7 +651,7 @@ arguments to be passed to the Action() function:
 In all cases, action calls in C++ can be simplified by using their corresponding stub functions:
 
 <pre>
-1.  acActivate(Picture);
+1.  acActivate(Image);
 
 2a. acMove(Window, 30, 15, 0);
 
@@ -667,9 +669,11 @@ ptr Parameters: Optional parameter structure associated with `Action`.
 -ERRORS-
 Okay:
 NullArgs:
-IllegalActionID: The `Action` parameter is invalid.
+AccessObject:
 NoAction:        The `Action` is not supported by the object's supporting class.
-ObjectCorrupt:   The `Object` state is corrupted.
+
+-TAGS-
+mutates-object, blocking, callback-inlines
 -END-
 
 **********************************************************************************************************************/
@@ -682,32 +686,34 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
    if (not lock.granted()) return ERR::AccessObject;
 
    extObjectContext new_context(Object, ActionID);
+#ifndef NDEBUG
    Object->ActionDepth++;
+#endif
    auto cl = Object->ExtClass;
 
    ERR error;
    if (ActionID >= AC::NIL) {
-      if (cl->ActionTable[int(ActionID)].PerformAction) { // Can be a base-class or sub-class call
+      if (cl->ActionTable[int(ActionID)].PerformAction) { // Can be a base-class or derived class call
          error = cl->ActionTable[int(ActionID)].PerformAction(Object, Parameters);
 
          if (error IS ERR::NoAction) {
-            if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a sub-class
+            if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a derived class
                error = cl->Base->ActionTable[int(ActionID)].PerformAction(Object, Parameters);
             }
          }
       }
-      else if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a sub-class
+      else if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a derived class
          error = cl->Base->ActionTable[int(ActionID)].PerformAction(Object, Parameters);
       }
       else error = ERR::NoAction;
    }
    else { // Method call
-      // Note that sub-classes may return ERR::NoAction if propagation to the base class is desirable.
+      // Note that derived classes may return ERR::NoAction if propagation to the base class is desirable.
       auto routine = (ERR (*)(OBJECTPTR, APTR))cl->Methods[-int(ActionID)].Routine;
       if (routine) error = routine(Object, Parameters);
       else error = ERR::NoAction;
 
-      if ((error IS ERR::NoAction) and (cl->Base)) {  // If this is a child, check the base class
+      if ((error IS ERR::NoAction) and (cl->Base)) {  // If this is a derived class, check the base class
          auto routine = (ERR (*)(OBJECTPTR, APTR))cl->Base->Methods[-int(ActionID)].Routine;
          if (routine) error = routine(Object, Parameters);
       }
@@ -742,7 +748,9 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
       glSubReadOnly--;
    }
 
+#ifndef NDEBUG
    Object->ActionDepth--;
+#endif
    return error;
 }
 
@@ -789,6 +797,9 @@ The argument types that can be used by actions are limited to those listed in th
 -INPUT-
 &array(struct(ActionTable)) Actions: A pointer to the Core's action table `struct ActionTable *` is returned. Please note that the first entry in the `ActionTable` list has all fields driven to `NULL`, because valid action ID's start from one, not zero.  The final action in the list is also terminated with `NULL` fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.
 &arraysize Size: Total number of elements in the returned list.
+
+-TAGS-
+static-result, non-null-result, pure-query
 
 *********************************************************************************************************************/
 
@@ -844,10 +855,12 @@ ptr(func) Callback: Optional function called on the main thread after the action
 -ERRORS-
 Okay
 NullArgs
-IllegalMethodID
+InvalidData
+MarkedForDeletion
 MissingClass
-NewObject
-Init
+
+-TAGS-
+copies-input, callback-held, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -943,6 +956,9 @@ arraysize Size: Total number of elements in the `Objects` list.
 Okay
 NullArgs
 
+-TAGS-
+blocking
+
 *********************************************************************************************************************/
 
 ERR AsyncCancel(OBJECTID *Objects, int Size)
@@ -991,6 +1007,9 @@ oid Object: The object to query.
 
 -RESULT-
 int: The number of pending async actions (in-flight + queued), or zero if none.
+
+-TAGS-
+blocking, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -1029,6 +1048,13 @@ Okay: All async actions completed.
 TimeOut: The timeout expired before all actions completed.
 NullArgs
 InUse: Another AsyncWait() call is already active.
+OutsideMainThread:
+Recursion:
+SystemLocked:
+Terminate:
+
+-TAGS-
+main-thread-only, blocking, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -1152,6 +1178,10 @@ True: The object supports the specified action.
 False: The action is not supported.
 NullArgs:
 LostClass:
+OutOfRange:
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -1195,6 +1225,9 @@ True:  The object exists.
 False: The object ID does not exist.
 LockFailed:
 
+-TAGS-
+blocking, pure-query
+
 *********************************************************************************************************************/
 
 ERR CheckObjectExists(OBJECTID ObjectID)
@@ -1220,6 +1253,12 @@ Call ClassDatabase() to obtain an array of all classes known to the system.
 
 -ERRORS-
 Okay
+NullArgs
+AllocMemory
+SystemLocked
+
+-TAGS-
+caller-owns-result, creates-resource, blocking
 
 *********************************************************************************************************************/
 
@@ -1258,6 +1297,9 @@ To get the context of the caller (the client), use ~ParentContext().
 -RESULT-
 obj: Returns an object pointer (of which the process has exclusive access to).  Cannot return `NULL` except in the initial start-up and late shut-down sequence of the Core.
 
+-TAGS-
+api-owns-result, nullable-result, pure-query
+
 *********************************************************************************************************************/
 
 OBJECTPTR CurrentContext(void)
@@ -1279,6 +1321,9 @@ the case when called from an action or method.
 
 -RESULT-
 obj: An object reference is returned, or `NULL` if there is no parent context.
+
+-TAGS-
+api-owns-result, nullable-result, pure-query
 
 *********************************************************************************************************************/
 
@@ -1304,13 +1349,16 @@ In any event of failure, `NULL` is returned.
 
 If the ID of a named class is not known, call ~ResolveClassName() first and pass the resulting ID to this function.
 
-NOTE: To retrieve a list of all sub-classes associated with a base-class, read the SubClasses field of the @MetaClass.
+NOTE: To retrieve a list of all derived classes associated with a base-class, read the SubClasses field of the @MetaClass.
 
 -INPUT-
 cid ClassID: A class ID such as one retrieved from ~ResolveClassName().
 
 -RESULT-
 obj(MetaClass): Returns a pointer to the @MetaClass structure that has been found as a result of the search, or `NULL` if no matching class was found.
+
+-TAGS-
+api-owns-result, nullable-result, blocking
 
 *********************************************************************************************************************/
 
@@ -1324,7 +1372,7 @@ objMetaClass * FindClass(CLASSID ClassID)
    // Class is not loaded.  Try and find the class in the dictionary.  If we find one, we can
    // initialise the module and then find the new Class.
    //
-   // Note: Children of the class are not automatically loaded into memory if they are unavailable at the time.  Doing so
+   // Note: Derived classes are not automatically loaded into memory if they are unavailable at the time.  Doing so
    // would result in lost CPU and memory resources due to loading code that may not be needed.
 
    kt::Log log(__FUNCTION__);
@@ -1373,11 +1421,12 @@ cid ClassID:   Optional.  Set to a class ID to filter the results down to a spec
 
 -ERRORS-
 Okay: At least one matching object was found and stored in the `ObjectID`.
-Args:
-Search: No objects matching the given name could be found.
-LockFailed:
+NullArgs:
 EmptyString:
-DoesNotExist:
+Search: No objects matching the given name could be found.
+
+-TAGS-
+blocking, case-insensitive
 -END-
 
 *********************************************************************************************************************/
@@ -1419,16 +1468,28 @@ This function is for use by action and method support routines only.  It will re
 action currently under execution has been called directly from the ~ProcessMessages() function.  In all other
 cases a `NULL` pointer is returned.
 
+Only works when called from the main thread, which acts as the message dispatcher.
+
+-INPUT-
+int(AC) Action: Action identifier represented by the caller.
+
 -RESULT-
 resource(Message): A !Message structure is returned if the function is called in valid circumstances, otherwise `NULL`.
 
+-TAGS-
+volatile-result, nullable-result
+
 *********************************************************************************************************************/
 
-Message * GetActionMsg(void)
+Message * GetActionMsg(ACTIONID ActionID)
 {
-   if (auto obj = current_action()) {
-      if (obj->defined(NF::MESSAGE) and (obj->ActionDepth IS 1)) {
-         return (Message *)tlCurrentMsg;
+   // Ref: msg_action()
+   if ((tlMainThread) and (glCurrentActionMsg)) {
+      if (OBJECTPTR obj = current_action()) {
+         if ((glCurrentActionMsg->ObjectID IS obj->UID) and (glCurrentActionMsg->ActionID IS ActionID)) {
+            glCurrentActionMsg = nullptr; // Calling GetActionMsg() is a one-shot operation
+            return (Message *)tlCurrentMsg;
+         }
       }
    }
    return nullptr;
@@ -1451,6 +1512,9 @@ oid Object: The object to be examined.
 -RESULT-
 cid: Returns the base class ID of the object or zero if failure.
 
+-TAGS-
+blocking, pure-query
+
 *********************************************************************************************************************/
 
 CLASSID GetClassID(OBJECTID ObjectID)
@@ -1471,6 +1535,9 @@ oid Object: The ID of the object to lookup.
 
 -RESULT-
 obj: The address of the object is returned, or `NULL` if the ID does not relate to an object.
+
+-TAGS-
+api-owns-result, nullable-result, blocking
 
 *********************************************************************************************************************/
 
@@ -1505,6 +1572,9 @@ oid Object: The ID of an object to query.
 -RESULT-
 oid: Returns the ID of the object's owner.  If the object does not have a owner (i.e. if it is untracked) or if the provided ID is invalid, this function will return 0.
 
+-TAGS-
+blocking, pure-query
+
 *********************************************************************************************************************/
 
 OBJECTID GetOwnerID(OBJECTID ObjectID)
@@ -1526,10 +1596,10 @@ This function initialises objects so that they can be used for their intended pu
 and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to
 this rule only apply to the `GetKey()` and `SetKey()` actions.
 
-If the initialisation of an object fails due to a support problem (for example, if a PNG @Picture object attempts to
-load a JPEG file), the initialiser will search for a sub-class that can handle the data.  If a sub-class that can
+If the initialisation of an object fails due to a support problem (for example, if a PNG @Image object attempts to
+load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can
 support the object's configuration is available, the object's interface will be shared between both the base-class
-and the sub-class.
+and the derived class.
 
 If an object does not support the data or its configuration, an error code of `ERR::NoSupport` will be returned.
 Other appropriate error codes can be returned if initialisation fails.
@@ -1542,6 +1612,9 @@ Okay: The object was initialised.
 LostClass
 DoubleInit
 ObjectCorrupt
+
+-TAGS-
+mutates-object, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -1558,16 +1631,16 @@ ERR InitObject(OBJECTPTR Object)
       return ERR::Okay;
    }
 
-   if (Object->Name[0]) log.branch("%s #%d, Name: %s, Owner: %d", cl->ClassName, Object->UID, Object->Name, Object->ownerID());
-   else log.branch("%s #%d, Owner: %d", cl->ClassName, Object->UID, Object->ownerID());
+   if (Object->Name[0]) log.branch("%s #%d, Name: %s, Owner: %d", cl->ClassName.c_str(), Object->UID, Object->Name, Object->ownerID());
+   else log.branch("%s #%d, Owner: %d", cl->ClassName.c_str(), Object->UID, Object->ownerID());
 
    extObjectContext new_context(Object, AC::Init);
 
-   bool use_subclass = false;
+   bool use_derived = false;
    ERR error = ERR::Okay;
-   if (Object->isSubClass()) {
-      // For sub-classes, the base-class gets called first.  It should verify that
-      // the object is sub-classed so as to prevent it from doing 'too much' initialisation.
+   if (Object->isDerived()) {
+      // For derived classes, the base-class gets called first.  It should verify that
+      // the object is derived classed so as to prevent it from doing 'too much' initialisation.
 
       if (cl->Base->ActionTable[int(AC::Init)].PerformAction) {
          error = cl->Base->ActionTable[int(AC::Init)].PerformAction(Object, nullptr);
@@ -1586,12 +1659,12 @@ ERR InitObject(OBJECTPTR Object)
    else {
       // Meaning of special error codes:
       //
-      // ERR::NoSupport: The source data is not recognised.  Search for a sub-class that might have better luck.  Note
+      // ERR::NoSupport: The source data is not recognised.  Search for a derived class that might have better luck.  Note
       //   that in the first case we can only support classes that are already in memory.  The second part of this
-      //   routine supports checking of sub-classes that aren't loaded yet.
+      //   routine supports checking of derived classes that aren't loaded yet.
       //
-      // ERR::UseSubClass: Can be returned by the base-class.  Similar to ERR::NoSupport, but avoids scanning of
-      // sub-classes that aren't loaded in memory.
+      // ERR::UseDerived: Can be returned by the base-class.  Similar to ERR::NoSupport, but avoids scanning of
+      // derived classes that aren't loaded in memory.
 
       auto &subclasses = Object->ExtClass->SubClasses;
       auto subindex = subclasses.begin();
@@ -1606,11 +1679,11 @@ ERR InitObject(OBJECTPTR Object)
          if (error IS ERR::Okay) {
             Object->setFlag(NF::INITIALISED);
 
-            if (Object->isSubClass()) {
-               // Increase the open count of the sub-class (see NewObject() for details on object
+            if (Object->isDerived()) {
+               // Increase the open count of the derived class (see NewObject() for details on object
                // reference counting).
 
-               log.msg("Object class switched to sub-class \"%s\".", Object->className());
+               log.msg("Object class switched to derived class \"%s\".", Object->className());
 
                Object->ExtClass->OpenCount++;
                Object->setFlag(NF::RECLASSED); // This flag indicates that the object originally belonged to the base-class
@@ -1618,13 +1691,13 @@ ERR InitObject(OBJECTPTR Object)
 
             return ERR::Okay;
          }
-         else if (error IS ERR::UseSubClass) {
-            log.trace("Requested to use registered sub-class.");
-            use_subclass = true;
+         else if (error IS ERR::UseDerived) {
+            log.trace("Requested to use registered derived class.");
+            use_derived = true;
          }
          else if (error != ERR::NoSupport) break;
 
-         // Attempt to initialise with the next known sub-class.
+         // Attempt to initialise with the next known derived class.
 
          if (subindex != subclasses.end()) {
             Object->ExtClass = *subindex;
@@ -1636,25 +1709,25 @@ ERR InitObject(OBJECTPTR Object)
 
    Object->Class = cl;  // Put back the original to retain integrity
 
-   // If the base class and its loaded sub-classes failed, check the object for a Path field and check the data
-   // against sub-classes that are not currently in memory.
+   // If the base class and its loaded derived classes failed, check the object for a Path field and check the data
+   // against derived classes that are not currently in memory.
    //
-   // This is the only way we can support the automatic loading of sub-classes without causing undue load on CPU and
-   // memory resources (loading each sub-class into memory just to check whether or not the data is supported is overkill).
+   // This is the only way we can support the automatic loading of derived classes without causing undue load on CPU and
+   // memory resources (loading each derived class into memory just to check whether or not the data is supported is overkill).
 
    std::string_view path;
-   if (use_subclass) { // If ERR::UseSubClass was set and the sub-class was not registered, do not call IdentifyFile()
-      log.warning("ERR::UseSubClass was used but no suitable sub-class was registered.");
+   if (use_derived) { // If ERR::UseDerived was set and the derived class was not registered, do not call IdentifyFile()
+      log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
    else if ((error IS ERR::NoSupport) and (Object->get(FID_Path, path) IS ERR::Okay) and (not path.empty())) {
-      CLASSID class_id, subclass_id;
-      if (IdentifyFile(path, cl->BaseClassID, &class_id, &subclass_id) IS ERR::Okay) {
-         if ((class_id IS Object->classID()) and (subclass_id != CLASSID::NIL)) {
-            log.msg("Searching for subclass $%.8x", uint32_t(subclass_id));
-            if ((Object->ExtClass = (extMetaClass *)FindClass(subclass_id))) {
+      CLASSID class_id, derived_id;
+      if (IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id) IS ERR::Okay) {
+         if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
+            log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
+            if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
                if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
                   if ((error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr)) IS ERR::Okay) {
-                     log.msg("Object class switched to sub-class \"%s\".", Object->className());
+                     log.msg("Object class switched to derived class \"%s\".", Object->className());
                      Object->setFlag(NF::INITIALISED);
                      Object->ExtClass->OpenCount++;
                      return ERR::Okay;
@@ -1662,7 +1735,7 @@ ERR InitObject(OBJECTPTR Object)
                }
                else return ERR::Okay;
             }
-            else log.warning("Failed to load module for class #%d.", uint32_t(subclass_id));
+            else log.warning("Failed to load module for class #%d.", uint32_t(derived_id));
          }
       }
       else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
@@ -1691,9 +1764,11 @@ ptr(cpp(array(resource(ChildEntry)))) List: Must refer to an array of !ChildEntr
 
 -ERRORS-
 Okay: Zero or more children were found and listed.
-Args
 NullArgs
 LockFailed
+
+-TAGS-
+mutates-input, blocking, pure-query
 
 *********************************************************************************************************************/
 
@@ -1750,6 +1825,9 @@ Okay
 NullArgs
 MissingClass: The `ClassID` is invalid or refers to a class that is not installed.
 AllocMemory
+
+-TAGS-
+caller-owns-result, creates-resource, blocking, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -1777,7 +1855,10 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
 
-   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) log.branch("%s #%d, Flags: $%x", mc->ClassName, glPrivateIDCounter.load(std::memory_order_relaxed), int(Flags));
+   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
+      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(),
+         glPrivateIDCounter.load(std::memory_order_relaxed), int(Flags));
+   }
 
    OBJECTPTR head = nullptr;
    MEMORYID head_id;
@@ -1792,11 +1873,13 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
 
       ERR error = ERR::Okay;
-      if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
-         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
-      }
-      else if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
+      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
+         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
+         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
          error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+      }
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
+         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
       }
 
       if (error != ERR::Okay) {
@@ -1835,10 +1918,10 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       }
 
       // After the header has been created we can set the context, then call the base class's NewObject() support.  If this
-      // object belongs to a sub-class, we will also call its supporting NewObject() action if it has specified one.
+      // object belongs to a derived class, we will also call its supporting NewObject() action if it has specified one.
       //
-      // Note: Hooking into NewObject gives sub-classes an opportunity to detect that they have been targeted by the client
-      // on creation, as opposed to during initialisation.  This can allow ChildPrivate to be configured early on in the
+      // Note: Hooking into NewObject gives derived classes an opportunity to detect that they have been targeted by the client
+      // on creation, as opposed to during initialisation.  This can allow DerivedPtr to be configured early on in the
       // process, making it possible to set custom fields that would depend on it.
 
       kt::SwitchContext context(head);
@@ -1909,6 +1992,9 @@ obj Object: Pointer to the object that is to receive the notification message.
 int(AC) Action: The action ID for notification.
 ptr Args: Pointer to an action parameter structure that is relevant to the `Action` ID.
 error Error: The error code that is associated with the action result.
+
+-TAGS-
+blocking, callback-inlines, does-not-take-ownership
 
 -END-
 
@@ -1985,10 +2071,12 @@ ptr Args:   The relevant argument structure for the `Action`, or `NULL` if not r
 Okay:
 NullArgs:
 OutOfRange: The `Action` ID is invalid.
-NoMatchingObject:
 MissingClass:
-Failed:
-IllegalMethodID:
+InvalidData:
+NoMatchingObject:
+
+-TAGS-
+copies-input, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -2047,6 +2135,9 @@ cpp(strview) Name: The name of the class that requires resolution.
 
 -RESULT-
 cid: Returns the class ID identified from the class name, or `NULL` if the class could not be found.
+
+-TAGS-
+case-insensitive, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -2054,8 +2145,7 @@ cid: Returns the class ID identified from the class name, or `NULL` if the class
 CLASSID ResolveClassName(const std::string_view &ClassName)
 {
    if (ClassName.empty()) {
-      kt::Log log(__FUNCTION__);
-      log.warning(ERR::NullArgs);
+      kt::Log(__FUNCTION__).warning(ERR::NullArgs);
       return CLASSID::NIL;
    }
 
@@ -2079,6 +2169,9 @@ cid ID: The ID of the class that needs to be resolved.
 
 -RESULT-
 cstr: Returns the name of the class, or `NULL` if the ID is not recognised.  Standard naming conventions apply, so it can be expected that the string is capitalised and without spaces, e.g. `NetSocket`.
+
+-TAGS-
+api-owns-result, null-terminated-result, nullable-result, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -2087,8 +2180,7 @@ CSTRING ResolveClassID(CLASSID ID)
 {
    if (glClassDB.contains(ID)) return glClassDB[ID].Name.c_str();
 
-   kt::Log log(__FUNCTION__);
-   log.warning("Failed to resolve ID $%.8x", uint32_t(ID));
+   kt::Log(__FUNCTION__).warning("Failed to resolve ID $%.8x", uint32_t(ID));
    return nullptr;
 }
 
@@ -2117,9 +2209,12 @@ obj Owner: The new owner for the `Object`.
 -ERRORS-
 Okay
 NullArgs
-Args
 Recursion
+SystemCorrupt
 SystemLocked
+
+-TAGS-
+mutates-object, blocking, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -2227,8 +2322,10 @@ cpp(strview) Name: The new name for the object, or an empty string to clear an e
 -ERRORS-
 Okay:
 NullArgs:
-Search: The `Object` is not recognised by the system - the address may be invalid.
 LockFailed:
+
+-TAGS-
+copies-input, mutates-object, blocking
 
 *********************************************************************************************************************/
 
@@ -2322,6 +2419,9 @@ NullArgs:
 Args:
 OutOfRange: The Action parameter is invalid.
 
+-TAGS-
+callback-held, does-not-take-ownership, blocking
+
 *********************************************************************************************************************/
 
 ERR SubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
@@ -2364,6 +2464,9 @@ int(AC) Action: The ID of the action that will be unsubscribed, or zero for all 
 Okay:
 NullArgs:
 Args:
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/

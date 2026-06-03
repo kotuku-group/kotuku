@@ -129,6 +129,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="InvalidState">The NetSocket was not in the state <code>NTC::DISCONNECTED</code> or the object is a <class name="NetServer">NetServer</class>.</error>
         <error code="HostNotFound">Host name resolution failed.</error>
       </result>
+      <tags>non-blocking, mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -147,6 +148,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="Failed">General failure</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>
@@ -167,6 +169,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="Args">Invalid multicast address.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -186,6 +189,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="Args">Invalid multicast address.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -211,6 +215,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
         <error code="BufferOverflow">Receive buffer is too small for the incoming packet.</error>
       </result>
+      <tags>non-blocking, mutates-input, mutates-object</tags>
     </method>
 
     <method>
@@ -237,6 +242,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="NetworkUnreachable">The destination network is unreachable.</error>
         <error code="NullArgs">Invalid arguments provided.</error>
       </result>
+      <tags>non-blocking, consumes-input</tags>
     </method>
 
   </methods>
@@ -245,8 +251,8 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <field>
       <name>Address</name>
       <comment>An IP address or domain name to connect to.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <access read="R" write="I">Read/Init</access>
+      <type>std::string</type>
       <description>
 <p>For NetSocket clients, if this field is set with an IP address or domain name prior to initialisation, an attempt to connect to that location will be made when the object is initialised.  Post-initialisation this field cannot be set by the client, however calls to <method>Connect</method> will result in it being updated so that it always reflects the named address of the current connection.</p>
 <p>For <class name="NetServer">NetServer</class> listeners, this inherited field identifies the local address to bind before initialisation.  Use <code>localhost</code>, <code>*</code>, an IPv4 address or an IPv6 address.</p>

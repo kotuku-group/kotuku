@@ -165,7 +165,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "Cannot execute a thread that is already running",
  "Failure reported from OpenGL",
  "Operation permitted from the main thread only",
- "Requested to use a registered sub-class (not an error)",
+ "Requested to use a registered derived class (not an error)",
  "The expected type was not provided",
  "Thread objects must be locked prior to activation",
  "A message queue operation has failed",

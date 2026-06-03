@@ -7,18 +7,18 @@ Guy Eric Schalnat.
 **********************************************************************************************************************
 
 -CLASS-
-Picture: Loads and saves picture files in a variety of different data formats.
+Image: Loads and saves image files in a variety of different data formats.
 
-The Picture class provides a standard API for programs to load picture files of any supported data type.  It is future
+The Image class provides a standard API for programs to load image files of any supported data type.  It is future
 proof in that future data formats can be supported by installing class drivers on the user's system.
 
-The default file format for loading and saving pictures is PNG.  Other formats such as JPEG are supported via
-sub-classes, which can be loaded into the system at boot time or on demand.  Some rare formats such as TIFF are
+The default file format for loading and saving images is PNG.  Other formats such as JPEG are supported via
+derived classes, which can be loaded into the system at boot time or on demand.  Some rare formats such as TIFF are
 also supported, but user preference may dictate whether or not the necessary driver is installed.
 
 <header>Technical Notes</>
 
-To find out general information about a picture before initialising it, #Query() it first so that the picture object
+To find out general information about an image before initialising it, #Query() it first so that the image object
 can load initial details on the file format.
 
 Images are also remapped automatically if the source palette and destination palettes do not match, or if there are
@@ -37,23 +37,23 @@ rendered image size.
 #include "lib/pngpriv.h"
 
 #include <kotuku/main.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 
-#include "picture.h"
+#include "image.h"
 
 using namespace kt;
 
-static OBJECTPTR clPicture = nullptr;
+static OBJECTPTR clImage = nullptr;
 static OBJECTPTR modDisplay = nullptr;
 static thread_local bool tlError = false;
 
 JUMPTABLE_CORE
 JUMPTABLE_DISPLAY
 
-static ERR decompress_png(extPicture *, objBitmap *, int, int, png_structp, png_infop, png_uint_32, png_uint_32);
+static ERR decompress_png(extImage *, objBitmap *, int, int, png_structp, png_infop, png_uint_32, png_uint_32);
 static void read_row_callback(png_structp, png_uint_32, int);
 static void write_row_callback(png_structp, png_uint_32, int);
 static void png_error_hook(png_structp png_ptr, png_const_charp message);
@@ -61,7 +61,7 @@ static void png_warning_hook(png_structp png_ptr, png_const_charp message);
 static void kotuku_flush_callback(png_structp png);
 void kotuku_read_callback(png_structp png, png_bytep data, png_size_t length);
 void kotuku_write_callback(png_structp png, png_bytep data, png_size_t length);
-static ERR create_picture_class(void);
+static ERR create_image_class(void);
 
 //********************************************************************************************************************
 
@@ -93,14 +93,14 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::InitModule;
 
-   return(create_picture_class());
+   return(create_image_class());
 }
 
 //********************************************************************************************************************
 
 static ERR MODExpunge(void)
 {
-   if (clPicture)  { FreeResource(clPicture); clPicture = nullptr; }
+   if (clImage)    { FreeResource(clImage); clImage = nullptr; }
    if (modDisplay) { FreeResource(modDisplay); modDisplay = nullptr; }
    return ERR::Okay;
 }
@@ -108,22 +108,22 @@ static ERR MODExpunge(void)
 /*********************************************************************************************************************
 
 -ACTION-
-Activate: Loads image data into a picture object.
+Activate: Loads image data into an image object.
 
 Loading an image file requires a call to Activate() after initialisation.  The #Path field will be used to source
 the image file.
 
-Pre-setting picture field values will place restrictions on the image file that is to be loaded.  For example, if
+Pre-setting image field values will place restrictions on the image file that is to be loaded.  For example, if
 the source image is wider than a preset @Bitmap.Width, the image will have its right edge clipped.  The same is
 true for the @Bitmap.Height and other restrictions apply to fields such as the @Bitmap.Palette.
 
-Once the picture is loaded, the image data will be held in the picture's #Bitmap object.  Manipulating the #Bitmap
+Once the image is loaded, the image data will be held in the image's #Bitmap object.  Manipulating the #Bitmap
 object is permitted.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR PICTURE_Activate(extPicture *Self)
+static ERR IMAGE_Activate(extImage *Self)
 {
    kt::Log log;
 
@@ -142,7 +142,7 @@ static ERR PICTURE_Activate(extPicture *Self)
    volatile bool mask_created = false;
 
    if (!Self->prvFile) {
-      CSTRING path;
+      std::string_view path;
       if (Self->get(FID_Path, path) != ERR::Okay) return log.warning(ERR::GetField);
 
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
@@ -208,7 +208,7 @@ static ERR PICTURE_Activate(extPicture *Self)
       bmp->Flags |= BMF::ALPHA_CHANNEL;
    }
    else if (color_type & PNG_COLOR_MASK_ALPHA) {
-      // A picture can have an alpha channel that is separate to the RGB image data.
+      // An image can have an alpha channel that is separate to the RGB image data.
       if ((Self->Mask = objBitmap::create::local(
             fl::Width(Self->Bitmap->Width), fl::Height(Self->Bitmap->Height),
             fl::AmtColours(256), fl::Flags(BMF::MASK)))) {
@@ -392,12 +392,12 @@ exit:
 
 //********************************************************************************************************************
 
-static ERR PICTURE_Free(extPicture *Self)
+static ERR IMAGE_Free(extImage *Self)
 {
    if (Self->prvFile) { FreeResource(Self->prvFile); Self->prvFile = nullptr; }
    if (Self->Bitmap)  { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
    if (Self->Mask)    { FreeResource(Self->Mask); Self->Mask = nullptr; }
-   Self->~extPicture();
+   Self->~extImage();
    return ERR::Okay;
 }
 
@@ -406,9 +406,9 @@ static ERR PICTURE_Free(extPicture *Self)
 -ACTION-
 Init: Prepares the object for use.
 
-Objects that belong to the Picture class can be initialised in two possible ways.  If you have not set the
+Objects that belong to the Image class can be initialised in two possible ways.  If you have not set the
 #Path field or have chosen to use the `NEW` flag, the initialisation routine will create a
-#Bitmap area that contains no image data.  This allows you to fill the picture with your own image data and
+#Bitmap area that contains no image data.  This allows you to fill the image with your own image data and
 save it using the #SaveImage() or #SaveToObject() actions.  You must set the @Bitmap.Width, @Bitmap.Height
 and colour specifications at a minimum, or the initialisation process will fail.
 
@@ -420,12 +420,12 @@ with a registered data format, an error code of `ERR::NoSupport` is returned.  Y
 
 *********************************************************************************************************************/
 
-static ERR PICTURE_Init(extPicture *Self)
+static ERR IMAGE_Init(extImage *Self)
 {
    kt::Log log;
 
    if ((Self->prvPath.empty()) or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
-      // If no path has been specified, assume that the picture is being created from scratch (e.g. to save an
+      // If no path has been specified, assume that the image is being created from scratch (e.g. to save an
       // image to disk).  The programmer is required to specify the dimensions and colours of the Bitmap so that we can
       // initialise it.
 
@@ -454,7 +454,7 @@ static ERR PICTURE_Init(extPicture *Self)
                else return log.warning(ERR::Init);
             }
 
-            if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+            if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
             return ERR::Okay;
          }
@@ -463,7 +463,7 @@ static ERR PICTURE_Init(extPicture *Self)
       else return log.warning(ERR::InvalidDimension);
    }
    else {
-      if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+      if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
       // Test the given path to see if it matches our supported file format.
 
@@ -499,24 +499,24 @@ static ERR PICTURE_Init(extPicture *Self)
 
 //********************************************************************************************************************
 
-static ERR PICTURE_NewObject(extPicture *Self)
+static ERR IMAGE_NewObject(extImage *Self)
 {
    Self->Quality = 80; // 80% quality rating when saving
    return NewLocalObject(CLASSID::BITMAP, &Self->Bitmap);
 }
 
-static ERR PICTURE_NewPlacement(extPicture *Self)
+static ERR IMAGE_NewPlacement(extImage *Self)
 {
-   new (Self) extPicture;
+   new (Self) extImage;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR PICTURE_Query(extPicture *Self)
+static ERR IMAGE_Query(extImage *Self)
 {
    kt::Log log;
-   CSTRING path;
+   std::string_view path;
    png_uint_32 width, height;
    int bit_depth, color_type;
 
@@ -590,39 +590,39 @@ exit:
 
 /*********************************************************************************************************************
 -ACTION-
-Read: Reads raw image data from a Picture object.
+Read: Reads raw image data from an Image object.
 -END-
 *********************************************************************************************************************/
 
-static ERR PICTURE_Read(extPicture *Self, struct acRead *Args)
+static ERR IMAGE_Read(extImage *Self, struct acRead *Args)
 {
    return Action(AC::Read, Self->Bitmap, Args);
 }
 
 /*********************************************************************************************************************
 -ACTION-
-Refresh: Refreshes a loaded picture - draws the next frame.
+Refresh: Refreshes a loaded image - draws the next frame.
 -END-
 *********************************************************************************************************************/
 
-static ERR PICTURE_Refresh(extPicture *Self)
+static ERR IMAGE_Refresh(extImage *Self)
 {
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
-SaveImage: Saves the picture image to a data object.
+SaveImage: Saves the image to a data object.
 
 If no destination is specified then the image will be saved as a new file targeting #Path.
 
 -END-
 *********************************************************************************************************************/
 
-static ERR PICTURE_SaveImage(extPicture *Self, struct acSaveImage *Args)
+static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
 {
    kt::Log log;
-   CSTRING path;
+   std::string_view path;
    png_bytep row_pointers;
    uint8_t *row_buffer = nullptr;
    png_color palette[256];
@@ -937,26 +937,26 @@ exit:
 
 /*********************************************************************************************************************
 -ACTION-
-SaveToObject: Saves the picture image to a data object.
+SaveToObject: Saves the image to a data object.
 -END-
 *********************************************************************************************************************/
 
-static ERR PICTURE_SaveToObject(extPicture *Self, struct acSaveToObject *Args)
+static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
    ERR (**routine)(OBJECTPTR, APTR);
 
    if (!Args) return log.warning(ERR::NullArgs);
 
-   if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::PICTURE)) {
+   if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::IMAGE)) {
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
       if (!mc) return log.warning(ERR::NoSupport);
 
       if ((mc->get(FID_ActionTable, routine) IS ERR::Okay) and (routine)) {
-         if ((routine[int(AC::SaveToObject)]) and (routine[int(AC::SaveToObject)] != (APTR)PICTURE_SaveToObject)) {
+         if ((routine[int(AC::SaveToObject)]) and (routine[int(AC::SaveToObject)] != (APTR)IMAGE_SaveToObject)) {
             return routine[int(AC::SaveToObject)](Self, Args);
          }
-         else if ((routine[int(AC::SaveImage)]) and (routine[int(AC::SaveImage)] != (APTR)PICTURE_SaveImage)) {
+         else if ((routine[int(AC::SaveImage)]) and (routine[int(AC::SaveImage)] != (APTR)IMAGE_SaveImage)) {
             struct acSaveImage saveimage;
             saveimage.Dest = Args->Dest;
             return routine[int(AC::SaveImage)](Self, &saveimage);
@@ -970,22 +970,22 @@ static ERR PICTURE_SaveToObject(extPicture *Self, struct acSaveToObject *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-Seek: Seeks to a new read/write position within a Picture object.
+Seek: Seeks to a new read/write position within an Image object.
 -END-
 *********************************************************************************************************************/
 
-static ERR PICTURE_Seek(extPicture *Self, struct acSeek *Args)
+static ERR IMAGE_Seek(extImage *Self, struct acSeek *Args)
 {
    return Action(AC::Seek, Self->Bitmap, Args);
 }
 
 /*********************************************************************************************************************
 -ACTION-
-Write: Writes raw image data to a picture object.
+Write: Writes raw image data to an image object.
 -END-
 *********************************************************************************************************************/
 
-static ERR PICTURE_Write(extPicture *Self, struct acWrite *Args)
+static ERR IMAGE_Write(extImage *Self, struct acWrite *Args)
 {
    return Action(AC::Write, Self->Bitmap, Args);
 }
@@ -997,7 +997,7 @@ Author: The name of the person or company that created the image.
 
 *********************************************************************************************************************/
 
-static ERR GET_Author(extPicture *Self, std::string_view &Value)
+static ERR GET_Author(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvAuthor.empty()) {
       Value = Self->prvAuthor;
@@ -1006,7 +1006,7 @@ static ERR GET_Author(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Author(extPicture *Self, std::string_view &Value)
+static ERR SET_Author(extImage *Self, std::string_view &Value)
 {
    Self->prvAuthor.assign(Value);
    return ERR::Okay;
@@ -1015,9 +1015,9 @@ static ERR SET_Author(extPicture *Self, std::string_view &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Bitmap: Represents a picture's image data.
+Bitmap: Represents image data.
 
-The details of a picture's graphical image and data are defined in its associated bitmap object.  It contains
+The image graphics data is defined in its associated bitmap object.  It contains
 information on the image dimensions and palette for example.  The @Bitmap.Palette can be preset if you want to
 remap the  source image to a specific set of colour values.
 
@@ -1031,7 +1031,7 @@ example `Copyright J. Bloggs (c) 1992.`
 
 *********************************************************************************************************************/
 
-static ERR GET_Copyright(extPicture *Self, std::string_view &Value)
+static ERR GET_Copyright(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvCopyright.empty()) {
       Value = Self->prvCopyright;
@@ -1040,7 +1040,7 @@ static ERR GET_Copyright(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Copyright(extPicture *Self, std::string_view &Value)
+static ERR SET_Copyright(extImage *Self, std::string_view &Value)
 {
    Self->prvCopyright.assign(Value);
    return ERR::Okay;
@@ -1055,7 +1055,7 @@ description.
 
 *********************************************************************************************************************/
 
-static ERR GET_Description(extPicture *Self, std::string_view &Value)
+static ERR GET_Description(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvDescription.empty()) {
       Value = Self->prvDescription;
@@ -1064,7 +1064,7 @@ static ERR GET_Description(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Description(extPicture *Self, std::string_view &Value)
+static ERR SET_Description(extImage *Self, std::string_view &Value)
 {
    Self->prvDescription.assign(Value);
    return ERR::Okay;
@@ -1078,7 +1078,7 @@ If it is necessary to associate a disclaimer with an image, the legal text may b
 
 *********************************************************************************************************************/
 
-static ERR GET_Disclaimer(extPicture *Self, std::string_view &Value)
+static ERR GET_Disclaimer(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvDisclaimer.empty()) {
       Value = Self->prvDisclaimer;
@@ -1087,7 +1087,7 @@ static ERR GET_Disclaimer(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Disclaimer(extPicture *Self, std::string_view &Value)
+static ERR SET_Disclaimer(extImage *Self, std::string_view &Value)
 {
    Self->prvDisclaimer.assign(Value);
    return ERR::Okay;
@@ -1099,9 +1099,9 @@ static ERR SET_Disclaimer(extPicture *Self, std::string_view &Value)
 DisplayHeight: The preferred height to use when displaying the image.
 
 The #DisplayWidth and DisplayHeight fields define the preferred pixel dimensions to use for the display when viewing the
-image in a 96DPI environment.  Both fields will be set automatically when the picture source is loaded.  If
+image in a 96DPI environment.  Both fields will be set automatically when the image source is loaded.  If
 the source does not specify a suitable value for these fields, they may be initialised to a value based on the
-picture's @Bitmap.Width and @Bitmap.Height.
+image's @Bitmap.Width and @Bitmap.Height.
 
 In the case of a scalable image source such as SVG, the #DisplayWidth and DisplayHeight can be pre-configured by the
 client, and the loader will scale the source image to the preferred dimensions on load.
@@ -1110,9 +1110,9 @@ client, and the loader will scale the source image to the preferred dimensions o
 DisplayWidth: The preferred width to use when displaying the image.
 
 The DisplayWidth and #DisplayHeight fields define the preferred pixel dimensions to use for the display when viewing the
-image in a 96DPI environment.  Both fields will be set automatically when the picture source is loaded.  If
+image in a 96DPI environment.  Both fields will be set automatically when the image source is loaded.  If
 the source does not specify a suitable value for these fields, they may be initialised to a value based on the
-picture's @Bitmap.Width and @Bitmap.Height.
+image's @Bitmap.Width and @Bitmap.Height.
 
 In the case of a scalable image source such as SVG, the DisplayWidth and #DisplayHeight can be pre-configured by the
 client, and the loader will scale the source image to the preferred dimensions on load.
@@ -1121,17 +1121,17 @@ client, and the loader will scale the source image to the preferred dimensions o
 Flags:  Optional initialisation flags.
 
 -FIELD-
-Header: Contains the first 32 bytes of data in a picture's file header.
+Header: Contains the first 32 bytes of data in an image's file header.
 
-The Header field is a pointer to a 32 byte buffer that contains the first 32 bytes of information read from a picture
+The Header field is a pointer to a 32 byte buffer that contains the first 32 bytes of information read from an image
 file on initialisation.  This special field is considered to be helpful only to developers writing add on components
-for the picture class.
+for the image class.
 
-The buffer that is referred to by the Header field is not populated until the Init action is called on the picture object.
+The buffer that is referred to by the Header field is not populated until the Init action is called on the image object.
 
 *********************************************************************************************************************/
 
-static ERR GET_Header(extPicture *Self, APTR *Value)
+static ERR GET_Header(extImage *Self, APTR *Value)
 {
    *Value = Self->prvHeader;
    return ERR::Okay;
@@ -1143,7 +1143,7 @@ Path: The location of source image data.
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extPicture *Self, std::string_view &Value)
+static ERR GET_Path(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvPath.empty()) {
       Value = Self->prvPath;
@@ -1152,7 +1152,7 @@ static ERR GET_Path(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Path(extPicture *Self, std::string_view &Value)
+static ERR SET_Path(extImage *Self, std::string_view &Value)
 {
    Self->prvPath.assign(Value);
    return ERR::Okay;
@@ -1163,18 +1163,18 @@ static ERR SET_Path(extPicture *Self, std::string_view &Value)
 -FIELD-
 Mask: Refers to a Bitmap that imposes a mask on the image.
 
-If a source picture includes a mask, the Mask field will refer to a Bitmap object that contains the mask image once the
-picture source has been loaded.  The mask will be expressed as either a 256 colour alpha bitmap, or a 1-bit mask with
+If a source image includes a mask, the Mask field will refer to a Bitmap object that contains the mask image once the
+image source has been loaded.  The mask will be expressed as either a 256 colour alpha bitmap, or a 1-bit mask with
 8 pixels per byte.
 
-If creating a picture from scratch that needs to support a mask, set the `MASK` flag prior to initialisation
-and the picture class will allocate the mask bitmap automatically.
+If creating an image from scratch that needs to support a mask, set the `MASK` flag prior to initialisation
+and the image class will allocate the mask bitmap automatically.
 
 -FIELD-
 Quality: Defines the quality level to use when saving the image.
 
 The quality level to use when saving the image is defined here.  The value is expressed as a percentage between 0 and
-100%, with 100% being of the highest quality.  If the picture format is loss-less, such as PNG, then the quality level
+100%, with 100% being of the highest quality.  If the image format is loss-less, such as PNG, then the quality level
 may be used to determine the compression factor.
 
 In all cases, the impact of selecting a high level of quality will increase the time it takes to save the image.
@@ -1184,7 +1184,7 @@ Software: The name of the application that was used to draw the image.
 
 *********************************************************************************************************************/
 
-static ERR GET_Software(extPicture *Self, std::string_view &Value)
+static ERR GET_Software(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvSoftware.empty()) {
       Value = Self->prvSoftware;
@@ -1193,7 +1193,7 @@ static ERR GET_Software(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Software(extPicture *Self, std::string_view &Value)
+static ERR SET_Software(extImage *Self, std::string_view &Value)
 {
    Self->prvSoftware.assign(Value);
    return ERR::Okay;
@@ -1205,7 +1205,7 @@ Title: The title of the image.
 -END-
 *********************************************************************************************************************/
 
-static ERR GET_Title(extPicture *Self, std::string_view &Value)
+static ERR GET_Title(extImage *Self, std::string_view &Value)
 {
    if (not Self->prvTitle.empty()) {
       Value = Self->prvTitle;
@@ -1214,7 +1214,7 @@ static ERR GET_Title(extPicture *Self, std::string_view &Value)
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Title(extPicture *Self, std::string_view &Value)
+static ERR SET_Title(extImage *Self, std::string_view &Value)
 {
    Self->prvTitle.assign(Value);
    return ERR::Okay;
@@ -1279,7 +1279,7 @@ static void png_warning_hook(png_structp png_ptr, png_const_charp message)
 
 //********************************************************************************************************************
 
-static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int ColourType, png_structp ReadPtr,
+static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int ColourType, png_structp ReadPtr,
                             png_infop InfoPtr, png_uint_32 PngWidth, png_uint_32 PngHeight)
 {
    ERR error = ERR::Failed;
@@ -1511,50 +1511,50 @@ exit:
 
 //********************************************************************************************************************
 
-#include "picture_def.c"
+#include "image_def.c"
 
 static const FieldArray clFields[] = {
    { "Bitmap",        FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Mask",          FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
-   { "Flags",         FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clPictureFlags },
+   { "Flags",         FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clImageFlags },
    { "DisplayHeight", FDF_INT|FDF_RW },
    { "DisplayWidth",  FDF_INT|FDF_RW },
    { "Quality",       FDF_INT|FDF_RW },
    { "FrameRate",     FDF_SYSTEM|FDF_INT|FDF_R },
    // Virtual fields
-   { "Author",        FDF_CPPSTRING|FDF_RW,  GET_Author, SET_Author },
-   { "Copyright",     FDF_CPPSTRING|FDF_RW,  GET_Copyright, SET_Copyright },
-   { "Description",   FDF_CPPSTRING|FDF_RW,  GET_Description, SET_Description },
-   { "Disclaimer",    FDF_CPPSTRING|FDF_RW,  GET_Disclaimer, SET_Disclaimer },
-   { "Header",        FDF_POINTER|FDF_RI, GET_Header },
-   { "Path",          FDF_CPPSTRING|FDF_RI,  GET_Path, SET_Path },
-   { "Location",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
-   { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
-   { "Software",      FDF_CPPSTRING|FDF_RW,  GET_Software, SET_Software },
-   { "Title",         FDF_CPPSTRING|FDF_RW,  GET_Title, SET_Title },
+   { "Author",        FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Author, SET_Author },
+   { "Copyright",     FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Copyright, SET_Copyright },
+   { "Description",   FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Description, SET_Description },
+   { "Disclaimer",    FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Disclaimer, SET_Disclaimer },
+   { "Header",        FDF_POINTER|FDF_RI|FDF_PURE, GET_Header },
+   { "Path",          FDF_CPPSTRING|FDF_RI|FDF_PURE,  GET_Path, SET_Path },
+   { "Location",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
+   { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
+   { "Software",      FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Software, SET_Software },
+   { "Title",         FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Title, SET_Title },
    END_FIELD
 };
 
-static ERR create_picture_class(void)
+static ERR create_image_class(void)
 {
-   clPicture = objMetaClass::create::global(
-      fl::ClassVersion(VER_PICTURE),
-      fl::Name("Picture"),
+   clImage = objMetaClass::create::global(
+      fl::ClassVersion(VER_IMAGE),
+      fl::Name("Image"),
       fl::Category(CCF::GRAPHICS),
       fl::Flags(CLF::INHERIT_LOCAL),
       fl::FileExtension("png"),
       fl::FileDescription("PNG Image"),
       fl::FileHeader("[0:$89504e470d0a1a0a]"),
       fl::Icon("filetypes/image"),
-      fl::Actions(clPictureActions),
+      fl::Actions(clImageActions),
       fl::Fields(clFields),
-      fl::Size(sizeof(extPicture)),
+      fl::Size(sizeof(extImage)),
       fl::Path(MOD_PATH));
 
-   return clPicture ? ERR::Okay : ERR::AddClass;
+   return clImage ? ERR::Okay : ERR::AddClass;
 }
 
 //********************************************************************************************************************
 
 KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
-extern "C" struct ModHeader * register_picture_module() { return &ModHeader; }
+extern "C" struct ModHeader * register_image_module() { return &ModHeader; }

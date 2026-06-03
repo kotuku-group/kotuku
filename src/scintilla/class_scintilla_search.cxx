@@ -351,10 +351,10 @@ This field defines the string sequence that will be searched for when calling ei
 
 *********************************************************************************************************************/
 
-static ERR SET_Text(objScintillaSearch *Self, CSTRING Value)
+static ERR SET_Text(objScintillaSearch *Self, const std::string_view &Value)
 {
    if (Self->Text) { FreeResource(Self->Text); Self->Text = nullptr; }
-   if (Value) {
+   if (not Value.empty()) {
       if (!(Self->Text = kt::strclone(Value))) return ERR::AllocMemory;
    }
    return ERR::Okay;
@@ -395,7 +395,7 @@ static const FieldDef clFlags[] = {
 
 static const FieldArray clFields[] = {
    { "Scintilla", FDF_OBJECT|FDF_RI, nullptr, nullptr, CLASSID::SCINTILLA },
-   { "Text",      FDF_STRING|FDF_RW, nullptr, SET_Text },
+   { "Text",      FDF_CPPSTRING|FDF_RW, nullptr, SET_Text },
    { "Flags",     FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clFlags },
    END_FIELD
 };

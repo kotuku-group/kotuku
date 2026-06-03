@@ -13,7 +13,8 @@ set (INC_MOD_NETWORK TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME "${MOD}_defs" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    APPEND_IDL "module_def.c"
-   ARGS "output-defs=module_def.c" "output-proto=module_def.c")
+   ARGS "output-defs=module_def.c" "output-proto=module_def.c"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/network.cpp")
 
 add_library (${MOD})
 

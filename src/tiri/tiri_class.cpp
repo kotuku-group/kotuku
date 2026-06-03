@@ -98,7 +98,7 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
 [[maybe_unused]] static void dump_global_table(objScript *Self, STRING Global)
 {
    kt::Log log("print_env");
-   lua_State *lua = ((prvTiri *)Self->ChildPrivate)->Lua;
+   lua_State *lua = ((prvTiri *)Self->DerivedPtr)->Lua;
    lua_getglobal(lua, Global);
    if (lua_istable(lua, -1) ) {
       lua_pushnil(lua);
@@ -138,8 +138,8 @@ static ERR SET_JitOptions(objScript *, JOF);
 static ERR GET_Procedures(objScript *, kt::vector<std::string> **, int *);
 
 static const FieldArray clFields[] = {
-   { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, GET_JitOptions, SET_JitOptions, &clJitOptions },
-   { "Procedures", FDF_VIRTUAL|FDF_CPP|FDF_ARRAY|FDF_STRING|FDF_R, GET_Procedures },
+   { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clJitOptions },
+   { "Procedures", FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Procedures },
    END_FIELD
 };
 
@@ -172,7 +172,7 @@ static const ActionArray clActions[] = {
 
 void process_error(objScript *Self, CSTRING Procedure)
 {
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
 
    auto flags = VLF::WARNING;
    if (prv->Lua->CaughtError != ERR::Okay) {
@@ -275,7 +275,7 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 
    if (Result != ERR::Okay) return;
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return;
 
    for (auto &scan : prv->ActionList) {
@@ -350,7 +350,7 @@ static ERR TIRI_Activate(objScript *Self)
    log.trace("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
       Self->Procedure.empty() ? "." : Self->Procedure.c_str(), (long long)Self->ProcedureID);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
 
    if ((prv->Recurse) and (Self->Procedure.empty()) and (not Self->ProcedureID)) {
@@ -417,7 +417,7 @@ static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
       Self->setStatement((CSTRING)Args->Buffer);
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
-      auto prv = (prvTiri *)Self->ChildPrivate;
+      auto prv = (prvTiri *)Self->DerivedPtr;
 
       log.branch("Incoming data receipt from #%d", Args->Object ? Args->Object->UID : 0);
 
@@ -486,7 +486,7 @@ static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
 
 static ERR TIRI_Free(objScript *Self)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
+   if (auto prv = (prvTiri *)Self->DerivedPtr) {
       if (prv->FocusEventHandle) { UnsubscribeEvent(prv->FocusEventHandle); prv->FocusEventHandle = nullptr; }
 
       auto lua = prv->Lua;
@@ -576,10 +576,10 @@ static ERR TIRI_Init(objScript *Self)
 
    // Allocate private structure if not done by NewObject().
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if ((error IS ERR::Okay) and (not prv)) {
-      if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->ChildPrivate) IS ERR::Okay) {
-         prv = (prvTiri *)Self->ChildPrivate;
+      if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+         prv = (prvTiri *)Self->DerivedPtr;
          new (prv) prvTiri;
       }
       else error = ERR::AllocMemory;
@@ -600,8 +600,8 @@ static ERR TIRI_Init(objScript *Self)
 
    if (not (prv->Lua = luaL_newstate(Self))) {
       log.warning("Failed to open a Lua instance.");
-      FreeResource(Self->ChildPrivate);
-      Self->ChildPrivate = nullptr;
+      FreeResource(Self->DerivedPtr);
+      Self->DerivedPtr = nullptr;
       if (src_file) FreeResource(src_file);
       return ERR::Failed;
    }
@@ -616,7 +616,7 @@ static ERR TIRI_Init(objScript *Self)
 
 static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
 {
-   auto prv = (prvTiri*)Self->ChildPrivate;
+   auto prv = (prvTiri*)Self->DerivedPtr;
    if (not prv) return ERR::Okay;
 
    if (prv->Recurse) {
@@ -627,13 +627,13 @@ static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
 }
 
 //********************************************************************************************************************
-// The client has specifically asked for a Tiri script to be created - this allows us to configure ChildPrivate
+// The client has specifically asked for a Tiri script to be created - this allows us to configure DerivedPtr
 // early.  Otherwise, it is created during Init().
 
 static ERR TIRI_NewObject(objScript *Self)
 {
-   if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->ChildPrivate) IS ERR::Okay) {
-      auto prv = (prvTiri *)Self->ChildPrivate;
+   if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+      auto prv = (prvTiri *)Self->DerivedPtr;
       new (prv) prvTiri;
       return ERR::Okay;
    }
@@ -659,7 +659,7 @@ static ERR TIRI_Query(objScript *Self)
 
    if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
    if (prv->Recurse) return ERR::NothingDone; // Do nothing, script is running.
 
@@ -793,7 +793,7 @@ static ERR TIRI_SaveToObject(objScript *Self, struct acSaveToObject *Args)
 
    log.branch("Compiling the statement...");
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
 
    auto chunk_name = make_chunk_name(Self);
@@ -824,7 +824,7 @@ This field allows the client to configure debugging options related to the Just-
 
 static ERR GET_JitOptions(objScript *Self, JOF *Value)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
+   if (auto prv = (prvTiri *)Self->DerivedPtr) {
       *Value = prv->JitOptions;
       return ERR::Okay;
    }
@@ -833,7 +833,7 @@ static ERR GET_JitOptions(objScript *Self, JOF *Value)
 
 static ERR SET_JitOptions(objScript *Self, JOF Value)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
+   if (auto prv = (prvTiri *)Self->DerivedPtr) {
       if (prv->Recurse) {
          kt::Log().warning("Changing JIT options after parsing is ineffective.");
          return ERR::InvalidState;
@@ -857,7 +857,7 @@ It will otherwise return an empty array.
 
 static ERR GET_Procedures(objScript *Self, kt::vector<std::string> **Value, int *Elements)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
+   if (auto prv = (prvTiri *)Self->DerivedPtr) {
       prv->Procedures.clear();
       lua_pushnil(prv->Lua);
       while (lua_next(prv->Lua, LUA_GLOBALSINDEX)) {
@@ -892,7 +892,7 @@ static ERR run_script(objScript *Self)
 {
    kt::Log log(__FUNCTION__);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
 
    log.traceBranch("Procedure: %s, Top: %d", Self->Procedure.c_str(), lua_gettop(prv->Lua));
 
@@ -1041,20 +1041,17 @@ static ERR run_script(objScript *Self)
    if (not pcall_failed) { // If the procedure returned results, copy them to the Results field of the Script.
       int results = lua_gettop(prv->Lua) - top + 1;
 
+      ERR error = ERR::Okay;
       if (results > 0) {
-         std::vector<CSTRING> array;
-         array.resize(results+1);
-
-         // NB: The Results field will take a clone of the Lua strings, so this sub-routine is safe to pass
-         // on Lua's temporary string results.
-
-         int i;
-         for (i=0; i < results; i++) {
-            array[i] = lua_tostring(prv->Lua, -results+i);
-            log.trace("Result: %d/%d: %s", i, results, array[i]);
+         kt::vector<std::string> array;
+         array.resize(results);
+         for (int i=0; i < results; i++) {
+            size_t size;
+            auto str = lua_tolstring(prv->Lua, -results+i, &size);
+            if (str) array[i] = std::string_view(str, size);
+            else Self->Error = error = ERR::LimitedSuccess;
          }
-         array[i] = nullptr;
-         Self->set(FID_Results, array.data(), i);
+         Self->set(FID_Results, array);
          lua_pop(prv->Lua, results);  // pop returned values
       }
 
@@ -1065,7 +1062,7 @@ static ERR run_script(objScript *Self)
          ProcessMessages(PMF::NIL, 0);
       }
 
-      return ERR::Okay;
+      return error;
    }
    else {
       // LuaJIT catches C++ exceptions, but we would prefer that crashes occur normally so that they can be traced in
@@ -1091,7 +1088,7 @@ static ERR register_interfaces(objScript *Self)
 
    log.traceBranch("Registering Kotuku and Tiri interfaces with Lua.");
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
 
 #ifndef NDEBUG
    int stack_top = lua_gettop(prv->Lua);

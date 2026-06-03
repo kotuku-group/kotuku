@@ -10,7 +10,7 @@ Compression: Compresses data into archives, supporting a variety of compression 
 
 The Compression class provides an interface to compress and decompress data.  It provides support for file
 based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip
-files, while other forms of compressed data can be supported by installing additional compression sub-classes.
+files, while other forms of compressed data can be supported by installing additional compression derived classes.
 
 The following examples demonstrate basic usage of compression objects in Tiri:
 
@@ -182,13 +182,13 @@ static const int HEAD_LENGTH         = 30;  // END
 
 class extCompression : public objCompression {
    public:
-   OBJECTPTR FileIO;             // File input/output
-   STRING *  FileList;           // List of all files held in the compression object
+   OBJECTPTR   FileIO;           // File input/output
+   STRING *    FileList;         // List of all files held in the compression object
    std::string Path;             // Location of the compressed data
-   uint8_t     Header[32];         // The first 32 bytes of data from the compressed file (for sub-classes only)
+   uint8_t     Header[32];       // The first 32 bytes of data from the compressed file (for derived classes only)
    std::string Password;         // Password for the compressed object
-   FUNCTION  Feedback;           // Set a function here to get de/compression feedack
-   uint32_t     ArchiveHash;        // Archive reference, used for the 'archive:' volume
+   FUNCTION    Feedback;         // Set a function here to get de/compression feedack
+   uint32_t    ArchiveHash;      // Archive reference, used for the 'archive:' volume
 
    // Zip only fields
    z_stream Zip;
@@ -531,6 +531,9 @@ Args
 NullArgs
 Failed
 BufferOverflow: The output buffer is not large enough.
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -598,7 +601,10 @@ Okay: The file was added to the compression object.
 Args:
 File: An error was encountered when trying to open the source file.
 NoPermission: The `READ_ONLY` flag has been set on the compression object.
-NoSupport: The sub-class does not support this method.
+NoSupport: The derived class does not support this method.
+
+-TAGS-
+blocking, mutates-object, copies-input, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -611,7 +617,7 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
 
    if ((Self->Flags & CMF::READ_ONLY) != CMF::NIL) return log.warning(ERR::NoPermission);
 
-   if (Self->isSubClass()) return log.warning(ERR::NoSupport);
+   if (Self->isDerived()) return log.warning(ERR::NoSupport);
 
    if (Self->OutputID) {
       std::ostringstream out;
@@ -732,6 +738,9 @@ The level of compression is determined by the #CompressionLevel field value.
 Okay
 Failed: Failed to initialise the decompression process.
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR COMPRESSION_CompressStreamStart(extCompression *Self)
@@ -773,7 +782,7 @@ multiple streams at once, create a compression object for each individual stream
 No meta-information is written to the stream, so the client will need a way to record the total number of bytes that
 have been output during the compression process. This value must be stored somewhere in order to decompress the
 stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress
-the stream.  We recommend that the compression object's sub-class ID is stored for future reference.
+the stream.  We recommend that the compression object's derived class ID is stored for future reference.
 
 The following C code illustrates a simple means of compressing a file to another file using a stream:
 
@@ -823,6 +832,9 @@ NullArgs
 Args
 BufferOverflow: The output buffer is not large enough to contain the compressed data.
 Retry: Please recall the method using a larger output buffer.
+
+-TAGS-
+mutates-input, mutates-object, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -933,6 +945,9 @@ Okay
 NullArgs
 BufferOverflow: The supplied Output buffer is not large enough (check the #MinOutputSize field for the minimum allowable size).
 
+-TAGS-
+mutates-input, mutates-object, callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::CompressStreamEnd *Args)
@@ -1018,6 +1033,9 @@ has been processed, then call #DecompressStreamEnd().
 Okay
 Failed: Failed to initialise the decompression process.
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR COMPRESSION_DecompressStreamStart(extCompression *Self)
@@ -1071,6 +1089,9 @@ Okay
 NullArgs
 AllocMemory
 BufferOverflow: The output buffer is not large enough.
+
+-TAGS-
+mutates-input, mutates-object, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -1170,6 +1191,9 @@ ptr(func) Callback: Refers to a function that will be called for each decompress
 Okay
 NullArgs
 
+-TAGS-
+mutates-object, callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR COMPRESSION_DecompressStreamEnd(extCompression *Self, struct cmp::DecompressStreamEnd *Args)
@@ -1204,6 +1228,9 @@ bufsize OutputSize: Size of the decompression buffer.
 Okay
 Args
 BufferOverflow: The output buffer is not large enough to hold the decompressed information.
+
+-TAGS-
+mutates-input, mutates-object
 
 *********************************************************************************************************************/
 
@@ -1270,6 +1297,9 @@ Write: Failed to write uncompressed information to a destination file.
 Cancelled: The decompression process was cancelled by the feedback mechanism.
 Failed
 
+-TAGS-
+blocking, mutates-object, callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::DecompressFile *Args)
@@ -1304,9 +1334,9 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
       return log.warning(ERR::MissingPath);
    }
 
-   // If the object belongs to a Compression sub-class, return ERR::NoSupport
+   // If the object belongs to a Compression derived class, return ERR::NoSupport
 
-   if (Self->isSubClass()) return ERR::NoSupport;
+   if (Self->isDerived()) return ERR::NoSupport;
 
    // Tell the user what we are doing
 
@@ -1475,6 +1505,9 @@ Seek
 Write
 Failed
 
+-TAGS-
+blocking, mutates-object, updates-seek-index, callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::DecompressObject *Args)
@@ -1484,7 +1517,7 @@ static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::Decomp
    if ((!Args) or (!Args->Path) or (!Args->Path[0])) return log.warning(ERR::NullArgs);
    if (!Args->Object) return log.warning(ERR::NullArgs);
    if (!Self->FileIO) return log.warning(ERR::MissingPath);
-   if (Self->isSubClass()) return ERR::NoSupport; // Object belongs to a Compression sub-class
+   if (Self->isDerived()) return ERR::NoSupport; // Object belongs to a Compression derived class
 
    log.branch("%s TO %p, Permissions: $%.8x", Args->Path, Args->Object, int(Self->Permissions));
 
@@ -1563,6 +1596,9 @@ NoSupport
 NullArgs
 Search
 
+-TAGS-
+pure-query, api-owns-result
+
 *********************************************************************************************************************/
 
 static thread_local CompressedItem glFindMeta;
@@ -1572,7 +1608,7 @@ static ERR COMPRESSION_Find(extCompression *Self, struct cmp::Find *Args)
    kt::Log log;
 
    if ((!Args) or (!Args->Path)) return log.warning(ERR::NullArgs);
-   if (Self->isSubClass()) return ERR::NoSupport;
+   if (Self->isDerived()) return ERR::NoSupport;
 
    log.traceBranch("Path: %s, Case: %d, Wildcard: %d", Args->Path, Args->CaseSensitive, Args->Wildcard);
    for (auto &item : Self->Files) {
@@ -1600,7 +1636,7 @@ Flush: Flushes all pending actions.
 
 static ERR COMPRESSION_Flush(extCompression *Self)
 {
-   if (Self->isSubClass()) return ERR::Okay;
+   if (Self->isDerived()) return ERR::Okay;
 
    Self->Zip.avail_in = 0;
 
@@ -1808,6 +1844,9 @@ cstr Path: The full path name of the file to delete from the archive.
 Okay: The file was successfully deleted.
 NullArgs
 NoSupport
+
+-TAGS-
+blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1818,7 +1857,7 @@ static ERR COMPRESSION_RemoveFile(extCompression *Self, struct cmp::RemoveFile *
 
    if ((!Args) or (!Args->Path)) return log.warning(ERR::NullArgs);
 
-   if (Self->isSubClass()) return ERR::NoSupport;
+   if (Self->isDerived()) return ERR::NoSupport;
 
    // Search for the file(s) in our archive that match the given name and delete them.
 
@@ -1868,6 +1907,9 @@ ptr(func) Callback: This callback function will be called with a pointer to a !C
 Okay
 NoSupport
 NullArgs
+
+-TAGS-
+pure-query, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -1878,7 +1920,7 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
 
-   if (Self->isSubClass()) return ERR::NoSupport;
+   if (Self->isDerived()) return ERR::NoSupport;
 
    log.traceBranch("Folder: \"%s\", Filter: \"%s\"", Args->Folder, Args->Filter);
 
@@ -1985,7 +2027,7 @@ static const FieldArray clFields[] = {
    // Virtual fields
    { "ArchiveName",      FDF_CPPSTRING|FDF_W,    nullptr, SET_ArchiveName },
    { "Path",             FDF_CPPSTRING|FDF_RW,   GET_Path, SET_Path },
-   { "Feedback",         FDF_FUNCTIONPTR|FDF_RW, GET_Feedback, SET_Feedback },
+   { "Feedback",         FDF_FUNCTION|FDF_RW,    GET_Feedback, SET_Feedback },
    { "Header",           FDF_POINTER|FDF_R,      GET_Header },
    { "Password",         FDF_CPPSTRING|FDF_RW,   GET_Password, SET_Password },
    { "Size",             FDF_INT64|FDF_R,        GET_Size },

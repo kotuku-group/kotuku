@@ -1,0 +1,615 @@
+
+rx_comment_chars  = <{ regex.new('[`!@#]') }>
+rx_lowercase_id   = <{ regex.new([[^[a-z]ID$]]) }>
+rx_empty_lines    = <{ regex.new([[^\n*$]]) }>
+rx_strip_newlines = <{ regex.new([[^\n*(.*\S)]], regex.DOT_ALL) }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return true when the class owns at least one concrete storage field.
+
+function classHasPhysicalFields(Class:table):bool
+   for f in values(Class.fields) do
+      if not f.virtual then return true end
+   end
+
+   return false
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Normalise an action stub so blank template padding is not emitted into generated headers.
+
+function actionStub(Stub:str):str
+   if rx_empty_lines.test(Stub) then return '' end
+
+   local strip = rx_strip_newlines.extract(Stub)
+   if strip then return strip end
+
+   return Stub
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit the class member storage declarations and any private or custom C++ blocks.
+
+function outputPhysicalFields(Class:table, Private:str, Custom:str)
+   output('')
+
+   local max_len = 3 + Class.longestFieldType + 1 + 2
+
+   for f in values(Class.fields) do
+      if f.virtual then continue end
+
+      local left
+      local field_name = cName(f, true)
+      if field_name?? then
+         left = string.format(f'   %-{Class.longestType}s %s;', f.type, field_name)
+      else
+         left = string.format(f'   %-{Class.longestType}s;', f.type)
+      end
+
+      if f.comment?? then
+         local clean_comment = rx_comment_chars.replace(f.comment, '')
+         output(string.format('%-' .. max_len .. 's // %s', left, clean_comment))
+      else
+         output(left)
+      end
+   end
+
+   if Private?? then
+      output()
+      output('#ifdef PRV_' .. Class.name:upper())
+      output(Private)
+      output('#endif')
+   end
+
+   if Custom?? then
+      output('   public:')
+      output(Custom)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit inline C++ wrappers for registered class actions.
+
+function outputActionStubs(Class:table)
+   output('')
+   output('   // Action stubs\n')
+
+   if not table.empty(Class.sortedActions) then
+      for action in values(Class.sortedActions) do
+         if glActionStubs[action.name] then
+            if glActionStubs[action.name]:len() != 0 then
+               output(actionStub(glActionStubs[action.name]))
+            end
+         else
+            output(f'   // {action.name}\n')
+         end
+      end
+
+      if not Class.actions['Init'] then
+         output(glActionStubs['Init'])
+      end
+   else
+      output(glActionStubs['Init'])
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit inline C++ wrappers for registered methods that need nested class declarations.
+
+function outputNestedMethods(Class:table)
+   if not table.empty(Class.methods) then
+      for m in values(Class.methods) do
+         if m.nestedInline then output(m.nestedInline) end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a field member name into the matching generated field identifier name.
+
+function fieldSetIDName(FieldName:str):str
+   local id = FieldName:sub(-3)
+   if rx_lowercase_id.test(id) then return FieldName:sub(0, -3) end
+
+   return FieldName
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Select the C++ argument type used by generated set-field functions.
+
+function fieldSetType(Field:table):str
+   local field_type = Field.type
+
+   if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
+
+   if field_type:startsWith('const ') then return field_type end
+
+   if (Field.flags has FD_STRING) and (not (Field.flags has FD_ARRAY)) then
+      if field_type:startsWith('STRING') or field_type:startsWith('CSTRING') then return 'T &&' end
+      return f'const {field_type}'
+   elseif Field.flags has (FD_POINTER | FD_OBJECT) then
+      return field_type -- Applying const to pointers can cause type conversion issues.
+   else
+      return f'const {field_type}'
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return the element type for generated array getters.
+
+function fieldArrayElementType(Field:table):str
+   local field_type = Field.type
+
+   if field_type:endsWith('[]') then return field_type:sub(0, -3):trim() end
+   if field_type:endsWith('*') then return field_type:sub(0, -2):trim() end
+
+   return field_type
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Select the C++ result type used by generated get-field functions.
+
+function fieldGetType(Field:table):str
+   local field_type = Field.type
+
+   if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
+
+   if Field.flags has FD_ARRAY then
+      if Field.flags has FD_CPP then return field_type end
+      return fieldArrayElementType(Field)
+   elseif Field.flags has FD_STRING then
+      if Field.flags has FD_ALLOC then return 'std::string' end
+      return 'std::string_view'
+   else
+      return field_type
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Format field definition flags as the hexadecimal literal used in generated C++.
+
+function fieldFlagsHex(Flags:num):str
+   return string.format('%08x', Flags):sub(-8)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return true when a setter must route through the field write API rather than direct assignment.
+
+function useFieldWriteValue(Field:table):bool
+   return (Field.write is 'Set') or Field.setField?? or Field.virtual
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return true when a getter must route through the field read API rather than direct assignment.
+
+function useFieldGetValue(Field:table):bool
+   return (Field.read is 'Get') or Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+      ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit the opening signature for a generated getter.
+
+function outputFieldGetSignature(Field:table, FidName:str, FieldType:str)
+   if Field.flags has FD_ARRAY then
+      if Field.flags has FD_CPP then -- kt::vector
+         output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
+      else
+         output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
+      end
+   elseif Field.flags has FD_FUNCTION then
+      output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
+   else
+      output(f'   inline ERR get{FidName}({FieldType} &Value) noexcept {{')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a GetValue() call with object context handling.
+
+function outputGetValueCall(Field:table, FieldType:str, Indent:str)
+   -- Defining context ensures that allocations and log messages are linked to the object.  A pure field skips this
+   -- process, but the developer has to take care and keep the supporting Get function simple.
+
+   if not (Field.flags has FD_PURE) then
+      output(Indent .. 'SetObjectContext(this, field, AC::NIL);')
+   end
+
+   if Field.flags has FD_UNIT then
+      output(Indent .. 'Unit var(0, FD_DOUBLE);')
+      output(Indent .. 'auto error = field->GetValue(this, &var);')
+      output(Indent .. 'if (error IS ERR::Okay) Value = var.Value;')
+   elseif Field.flags has FD_ARRAY then
+      if Field.flags has FD_CPP then
+         output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&))field->GetValue;')
+         output(Indent .. 'auto error = get_field(this, Value);')
+      else
+         output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&, int &))field->GetValue;')
+         output(Indent .. 'auto error = get_field(this, Value, Elements);')
+      end
+   elseif Field.flags has FD_STRING then
+      if Field.flags has FD_ALLOC then
+         output(Indent .. 'std::string_view view;')
+         output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;')
+         output(Indent .. 'auto error = get_field(this, view);')
+         output(Indent .. 'if (error IS ERR::Okay) {')
+         output(Indent .. '   Value.assign(view);')
+         output(Indent .. '   if (view.data()) FreeResource(GetMemoryID(view.data()));')
+         output(Indent .. '}')
+      else
+         output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;')
+         output(Indent .. 'auto error = get_field(this, Value);')
+      end
+   elseif Field.flags has FD_FUNCTION then
+      output(Indent .. 'auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;')
+      output(Indent .. 'auto error = get_field(this, Value);')
+
+   else -- Suitable for primitives only.
+      output(Indent .. 'auto error = field->GetValue(this, &Value);')
+   end
+
+   if not (Field.flags has FD_PURE) then
+      output(Indent .. 'RestoreObjectContext();')
+   end
+
+   output(Indent .. 'return error;')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a complete getter body that delegates reads to the field description.
+
+function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
+   outputFieldGetSignature(Field, FidName, FieldType)
+
+   if Field.read is 'Get' then
+      -- Virtual access to value
+      output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
+      outputGetValueCall(Field, FieldType, Indent)
+   else
+      -- Direct access to value
+      offset = tostring(Field.offset)
+
+      if Field.flags has FD_ARRAY then
+         if Field.flags has FD_CPP then -- kt::vector
+            output(Indent .. f'Value = ({FieldType} *)(((int8_t *)this) + {offset});')
+         else -- Primitive array
+            if Field.arg >= 1 and not (Field.flags has FD_STRUCT) then -- Embedded array with known size
+               output(Indent .. f'Elements = {Field.arg};')
+               output(Indent .. f'Value = ({FieldType} *)(((int8_t *)this) + {offset});')
+            else
+               output(Indent .. f'Value = *(({FieldType} **)(((int8_t *)this) + {offset}));')
+               output(Indent .. 'Elements = -1;')
+            end
+         end
+      elseif Field.flags has FD_STRING then
+         if Field.flags has FD_ALLOC then
+            output(Indent .. 'Value.assign(*((std::string *)(((int8_t *)this) + {offset})));')
+         else
+            output(Indent .. 'Value = *((std::string *)(((int8_t *)this) + {offset}));')
+         end
+      else
+         output(Indent .. f'Value = *(({FieldType} *)(((int8_t *)this) + {offset}));')
+      end
+
+      output(Indent .. 'return ERR::Okay;')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a complete getter body that reads directly from class storage.
+
+function outputDirectFieldGetter(Field:table, FieldName:str, FidName:str, FieldType:str, Indent:str)
+   outputFieldGetSignature(Field, FidName, FieldType)
+   output(Indent .. f'Value = this->{FieldName};')
+   output(Indent .. 'return ERR::Okay;')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a getter for a single field when the TDL definition allows reads.
+
+function outputFieldGetter(Class:table, Field:table)
+   local field_name = cName(Field, true)
+   if not field_name?? then return end
+   if not Field.read then return end
+   if Field.private then return end
+
+   local fid_name = fieldSetIDName(field_name)
+   local field_type = fieldGetType(Field)
+   local indent = '      '
+
+   if useFieldGetValue(Field) then
+      outputFieldReadGetter(Class, Field, fid_name, field_type, indent)
+   else
+      outputDirectFieldGetter(Field, field_name, fid_name, field_type, indent)
+   end
+
+   output('   }\n')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit all custom get-field functions for the class.
+
+function outputFieldGetters(Class:table)
+   output('')
+   output('   // Customised field getting\n')
+
+   for f in values(Class.fields) do
+      outputFieldGetter(Class, f)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit the opening signature for a direct-assignment field setter.
+
+function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
+   if FieldType is 'T &&' then
+      output(f'   template <class T> inline ERR set{FidName}({FieldType} Value) noexcept {{')
+   elseif Field.flags has FD_STRING then
+      output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
+   else
+      output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit the opening signature for a setter that calls FIELD::WriteValue().
+
+function outputFieldWriteSignature(Field:table, FidName:str, FieldType:str)
+   if FieldType:endsWith('[]') then
+      local array_type = FieldType:sub(0,-3) .. '*'
+      output(f'   inline ERR set{FidName}({array_type} Value, int Elements) noexcept {{')
+   elseif Field.flags has FD_ARRAY then
+      if Field.flags has FD_CPP then -- kt::vector
+         output(f'   inline ERR set{FidName}({FieldType} *Value) noexcept {{')
+      else
+         output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
+      end
+   elseif Field.flags has FD_STRING then -- std::string internally, accessed as std::string_view.
+      output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
+   elseif FieldType is 'T &&' then
+      output(f'   template <class T> inline ERR set{FidName}({FieldType} Value) noexcept {{')
+   else
+      output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit the run-time guard for fields that can only be written before initialisation.
+
+function outputInitialisedCheck(Field:table, Indent:str)
+   if Field.write is 'Init' then
+      output(Indent .. 'if (this->initialised()) return ERR::NoFieldAccess;')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a complete setter body that delegates assignment to FIELD::WriteValue().
+
+function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
+   if Field.struct and not FieldType:endsWith('*') then
+      FieldType = FieldType .. ' *'
+   end
+
+   outputFieldWriteSignature(Field, FidName, FieldType)
+   outputInitialisedCheck(Field, Indent)
+
+   output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
+
+   if Field.flags has FD_UNIT then
+      if Field.flags has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT) then
+         output(Indent .. 'Unit var(Value);')
+         output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var, 1);')
+      else
+         -- Pass through as pointer; requires further analysis to determine viability.
+         output(Indent .. 'return field->WriteValue(this, field, FD_POINTER, Value, 1);')
+      end
+   elseif Field.flags has FD_ARRAY then
+      local flags = fieldFlagsHex(Field.flags)
+      if Field.flags has FD_CPP then -- kt::vector
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, int(Value->size()));')
+      else
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, Elements);')
+      end
+   elseif Field.flags has FD_FUNCTION then
+      output(Indent .. 'return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);')
+   elseif Field.flags has FD_STRING then -- Embedded std::string, or std::string_view set-value.
+      local flags = fieldFlagsHex((Field.flags | FD_CPP) & ~FD_POINTER)
+      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, &Value, 1);')
+   elseif Field.flags has FD_POINTER then
+      local flags = fieldFlagsHex(Field.flags)
+      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, Value, 1);')
+   elseif Field.flags has (FD_DOUBLE | FD_FLOAT) then
+      output(Indent .. 'return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);')
+   elseif Field.flags has FD_INT64 then
+      output(Indent .. 'return field->WriteValue(this, field, FD_INT64, &Value, 1);')
+   else
+      output(Indent .. 'return field->WriteValue(this, field, FD_INT, &Value, 1);')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a complete setter body that assigns directly to class storage.
+
+function outputDirectFieldSetter(Field:table, FieldName:str, FidName:str, FieldType:str, Indent:str)
+   outputDirectSetSignature(Field, FidName, FieldType)
+   outputInitialisedCheck(Field, Indent)
+   output(Indent .. f'this->{FieldName} = Value;')
+   output(Indent .. 'return ERR::Okay;')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit a setter for a single field when the TDL definition allows writes.
+
+function outputFieldSetter(Class:table, Field:table)
+   local field_name = cName(Field, true)
+   if not field_name?? then return end
+   if not Field.write then return end
+
+   local fid_name = fieldSetIDName(field_name)
+   local field_type = fieldSetType(Field)
+   local indent = '      '
+
+   if useFieldWriteValue(Field) then
+      outputFieldWriteSetter(Class, Field, fid_name, field_type, indent)
+   else
+      outputDirectFieldSetter(Field, field_name, fid_name, field_type, indent)
+   end
+
+   output('   }\n')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit all custom set-field functions for the class.
+
+function outputFieldSetters(Class:table)
+   output('')
+   output('   // Customised field setting\n')
+
+   for f in values(Class.fields) do
+      outputFieldSetter(Class, f)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Emit the full C++ class declaration used by generated public headers.
+
+global function outputClassHeader(Class:table, Private:str, Custom:str)
+   priority(f'class obj{Class.name};') -- Forward declaration
+   output('class obj' .. Class.name ..  ' : public ' .. (Class.base ?? 'Object') .. ' {')
+   output('   public:')
+   output(f'   static constexpr CLASSID CLASS_ID = CLASSID::{Class.name:upper()};')
+   output(f'   static constexpr CSTRING CLASS_NAME = "{Class.name}";')
+   output('')
+   output('   using create = kt::Create<obj' .. Class.name .. '>;')
+
+   if classHasPhysicalFields(Class) then
+      outputPhysicalFields(Class, Private, Custom)
+   end
+
+   outputActionStubs(Class)
+   outputNestedMethods(Class)
+   outputFieldGetters(Class)
+   outputFieldSetters(Class)
+
+   output('};')
+   output()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Append one logical output line while suppressing repeated blank lines.
+
+function appendOutputLine(Content:str, Blank:num, Line:str)
+   local out = Line .. '\n'
+   if out is '\n' then
+      Blank++
+   else
+      Blank = 0
+   end
+
+   if Blank < 2 then Content ..= out end
+
+   return Content, Blank
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Append all lines in an output array while carrying blank-line state.
+
+function appendOutputArray(Content:str, Blank:num, List:any)
+   for a=0, #List-1 do
+      Content, Blank = appendOutputLine(Content, Blank, List[a])
+   end
+
+   return Content, Blank
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build the C++ function jump table section for modular and static builds.
+
+function buildFunctionTableOutput():str
+   local out = ''
+   out ..= '#ifdef KOTUKU_STATIC\n'
+   out ..= f'#define JUMPTABLE_{glModule.name:upper()} [[maybe_unused]] static struct ' ..
+      f'{glModule.name}Base *{glModule.name}Base = nullptr;\n'
+   out ..= '#else\n'
+   out ..= f'#define JUMPTABLE_{glModule.name:upper()} struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
+   out ..= '#endif\n\n'
+
+   out ..= f'struct {glModule.name}Base {{\n'
+   out ..= '#ifndef KOTUKU_STATIC\n'
+   for k, func in ipairs(glFunctions) do
+      if func.def?? then
+         out ..= func.def .. '\n'
+      end
+   end
+   out ..= '#endif // KOTUKU_STATIC\n'
+   out ..= '};\n\n'
+
+   out ..= '#if !defined(KOTUKU_STATIC) and !defined(PRV_' .. glModule.name:upper() .. '_MODULE)\n'
+   out ..= f'extern struct {glModule.name}Base *{glModule.name}Base;\n'
+   if glFunctionPrefix?? then
+      out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
+   end
+
+   for k, func in ipairs(glFunctions) do
+      if func.macro?? then
+         out ..= func.macro() .. '\n'
+      end
+   end
+
+   if glFunctionPrefix?? then
+      out ..= '} // namespace\n'
+   end
+
+   out ..= '#else\n'
+   if glFunctionPrefix?? then
+      out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
+   end
+
+   for k, func in ipairs(glFunctions) do
+      if func.staticMacro?? and (func.status != 'private') then
+         out ..= func.staticMacro() .. '\n'
+      end
+   end
+
+   if glFunctionPrefix?? then
+      out ..= '} // namespace\n'
+   end
+
+   out ..= '#endif // KOTUKU_STATIC\n\n'
+
+   return out
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Save the generated C++ header content, preserving existing files when unchanged.
+
+global function saveOutput()
+   outPath = glOutputPath
+   if not outPath then
+      if glModule.name?? then
+         outPath = 'sdk:include/kotuku/modules/' .. glModule.name:lower() .. '.h'
+      else
+         error('No output path specified in command-line.')
+      end
+   end
+
+   verbose("Saving C header to \"" .. outPath .. "\"")
+
+   content = ''
+
+   priority() -- Blank line at the end
+
+   blank = 0
+   content, blank = appendOutputArray(content, blank, glHeader)
+   content, blank = appendOutputArray(content, blank, glConstants)
+
+   for a=0, #glOutput-1 do
+      if glOutput[a] is '__FUNCTION_TABLE__' then
+         content ..= buildFunctionTableOutput()
+      else
+         content, blank = appendOutputLine(content, blank, glOutput[a])
+      end
+   end
+
+   saveIfModified(outPath, content, 'C header output')
+end

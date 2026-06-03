@@ -269,25 +269,24 @@ static void close_debug_socket_file()
 }
 #endif
 
-static bool valid_http_header_name(CSTRING Key)
+static bool valid_http_header_name(std::string_view Key)
 {
-   if ((!Key) or (!*Key)) return false;
+   if (Key.empty()) return false;
 
    constexpr CSTRING separators = "()<>@,;:\\\"/[]?={}";
-   for (auto key = (const uint8_t *)Key; *key; key++) {
-      if ((*key <= 0x20) or (*key >= 0x7f)) return false;
-      if (std::strchr(separators, *key)) return false;
+   for (auto ch : Key) {
+      auto key = uint8_t(ch);
+      if ((key <= 0x20) or (key >= 0x7f)) return false;
+      if (std::strchr(separators, key)) return false;
    }
 
    return true;
 }
 
-static bool valid_http_header_value(CSTRING Value)
+static bool valid_http_header_value(std::string_view Value)
 {
-   if (!Value) return false;
-
-   for (auto value = (const uint8_t *)Value; *value; value++) {
-      if ((*value IS '\r') or (*value IS '\n')) return false;
+   for (auto ch : Value) {
+      if ((ch IS '\r') or (ch IS '\n')) return false;
    }
 
    return true;
@@ -296,14 +295,31 @@ static bool valid_http_header_value(CSTRING Value)
 extern "C" uint8_t glAuthScript[];
 static int glAuthScriptLength;
 
+struct http_header_hash {
+   using is_transparent = void;
+
+   std::size_t operator()(std::string_view Value) const noexcept {
+      return std::hash<std::string_view>{}(Value);
+   }
+};
+
+struct http_header_equal {
+   using is_transparent = void;
+
+   bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      return Lhs IS Rhs;
+   }
+};
+
 class extHTTP : public objHTTP {
    public:
    FUNCTION Incoming;
    FUNCTION Outgoing;
    FUNCTION AuthCallback;
    FUNCTION StateChanged;
-   ankerl::unordered_dense::map<std::string, std::string> ResponseKeys;
-   ankerl::unordered_dense::map<std::string, std::string> Headers;
+   ankerl::unordered_dense::map<std::string, std::string, http_header_hash, http_header_equal> ResponseHeaders;
+   kt::vector<std::string> ResponseKeys;
+   ankerl::unordered_dense::map<std::string, std::string, http_header_hash, http_header_equal> Headers;
    std::string Response;   // Response header buffer
    std::string URI;        // Temporary string, used only when the user reads the URI
    std::string Username;
@@ -981,15 +997,15 @@ GetKey: Entries in the HTTP response header can be read as key-values.
 
 static ERR HTTP_GetKey(extHTTP *Self, struct acGetKey *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
-   if (Self->ResponseKeys.contains(Args->Key)) {
-      kt::strcopy(Self->ResponseKeys[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->ResponseHeaders.find(Args->Key); key_it != Self->ResponseHeaders.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
-   if (Self->Headers.contains(Args->Key)) {
-      kt::strcopy(Self->Headers[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->Headers.find(Args->Key); key_it != Self->Headers.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
@@ -1005,8 +1021,7 @@ static ERR HTTP_Init(extHTTP *Self)
    if (!Self->ProxyDefined) {
       std::lock_guard<std::mutex> proxy_lock(glProxyMutex);
       if ((glProxy) and (glProxy->find(Self->Port, true) IS ERR::Okay)) {
-         if (glProxy->Server) Self->ProxyServer.assign(glProxy->Server);
-         else Self->ProxyServer.clear();
+         Self->ProxyServer = glProxy->Server;
          Self->ProxyPort   = glProxy->ServerPort; // NB: Default is usually 8080
 
          log.msg("Using preset proxy server '%s:%d'", Self->ProxyServer.c_str(), Self->ProxyPort);
@@ -1102,17 +1117,17 @@ static const FieldArray clFields[] = {
    { "ProxyPort",      FDF_INT|FDF_RW },
    { "BufferSize",     FDF_INT|FDF_RW, nullptr, SET_BufferSize },
    // Virtual fields
-   { "AuthCallback",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_AuthCallback, SET_AuthCallback },
+   { "AuthCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_AuthCallback, SET_AuthCallback },
    { "ContentType",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_ContentType, SET_ContentType },
-   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Incoming, SET_Incoming },
+   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_Incoming, SET_Incoming },
    { "Location",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Location, SET_Location },
-   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Outgoing, SET_Outgoing },
+   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_Outgoing, SET_Outgoing },
    { "Realm",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Realm, SET_Realm },
    { "RecvBuffer",     FDF_VIRTUAL|FDF_ARRAY|FDF_BYTE|FDF_R, GET_RecvBuffer },
-   { "ResponseKeys",   FDF_VIRTUAL|FDF_ARRAY|FDF_STRING|FDF_ALLOC|FDF_R, GET_ResponseKeys },
+   { "ResponseKeys",   FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_ResponseKeys },
    { "Src",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
    { "URL",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
-   { "StateChanged",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_StateChanged, SET_StateChanged },
+   { "StateChanged",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_StateChanged, SET_StateChanged },
    { "Username",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,      nullptr, SET_Username },
    { "Password",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,      nullptr, SET_Password },
    END_FIELD

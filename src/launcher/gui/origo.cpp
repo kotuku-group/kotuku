@@ -245,8 +245,8 @@ ERROR exec_script(CSTRING ScriptFile, OBJECTID *CoreObjectID, int ShowTime, STRI
 
    *CoreObjectID = 0;
 
-   CLASSID class_id, subclass;
-   if (!(error = IdentifyFile(ScriptFile, &class_id, &subclass))) {
+   CLASSID class_id, derived_id;
+   if (!(error = IdentifyFile(ScriptFile, &class_id, &derived_id))) {
       if (class_id IS ID_COMPRESSION) {
          // The Tiri source may be a compressed file that contains multiple script files.  This part of the routine will decompress the contents to "temp:scripts/".
 
@@ -309,11 +309,11 @@ ERROR exec_script(CSTRING ScriptFile, OBJECTID *CoreObjectID, int ShowTime, STRI
    }
    else {
       printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", ScriptFile, GetErrorMsg(error));
-      subclass = CLASSID::SCRIPT;
-      class_id = CLASSID::SCRIPT;
+      derived_id = CLASSID::SCRIPT;
+      class_id   = CLASSID::SCRIPT;
    }
 
-   if (!NewObject(subclass ? subclass : class_id, 0, &glScript)) {
+   if (!NewObject(derived_id ? derived_id : class_id, 0, &glScript)) {
       if (!TargetID) TargetID = CurrentTaskID();
 
       glScript->setFields(fl::Path(ScriptFile), fl::Target(TargetID), fl::Procedure(Procedure));

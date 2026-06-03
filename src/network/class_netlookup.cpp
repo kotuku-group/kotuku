@@ -41,7 +41,7 @@ struct resolve_buffer {
       ptr       += sizeof(ERR);
       *(IPAddress *)ptr = IP;
       ptr       += sizeof(IPAddress);
-      if (!Address.empty()) kt::copymem(Address.data(), ptr, Address.size() + 1);
+      if (not Address.empty()) kt::copymem(Address.data(), ptr, Address.size() + 1);
       return ser;
    }
 
@@ -154,7 +154,14 @@ cstr Address: IP address to be resolved, e.g. 123.111.94.82.
 Okay: The IP address was resolved successfully.
 Args
 NullArgs
-Failed: The address could not be resolved
+Retry
+Failed: The address could not be resolved.
+Memory
+BufferOverflow
+SystemCall
+
+-TAGS-
+blocking, mutates-object, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -162,12 +169,12 @@ static ERR NETLOOKUP_BlockingResolveAddress(extNetLookup *Self, struct nl::Block
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Address)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Address)) return log.warning(ERR::NullArgs);
 
    log.branch("Address: %s", Args->Address);
 
    IPAddress ip;
-   if (net::StrToAddress(Args->Address, &ip) IS ERR::Okay) {
+   if (net::StrToAddress(std::string_view(Args->Address), &ip) IS ERR::Okay) {
       DNSEntry info;
       if (auto error = resolve_address(Args->Address, &ip, info); error IS ERR::Okay) {
          Self->Info = info;
@@ -197,10 +204,16 @@ The results can be read from the #Addresses field or received via the #Callback 
 cstr HostName: The host name to be resolved.
 
 -ERRORS-
-Okay:
-NullArgs:
-AllocMemory:
-Failed:
+Okay
+NullArgs
+Retry
+Failed
+Memory
+BufferOverflow
+SystemCall
+
+-TAGS-
+blocking, mutates-object, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -208,7 +221,7 @@ static ERR NETLOOKUP_BlockingResolveName(extNetLookup *Self, struct nl::ResolveN
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->HostName)) return log.error(ERR::NullArgs);
+   if ((not Args) or (not Args->HostName)) return log.error(ERR::NullArgs);
 
    log.branch("Host: %s", Args->HostName);
 
@@ -230,6 +243,9 @@ static ERR NETLOOKUP_BlockingResolveName(extNetLookup *Self, struct nl::ResolveN
 Free: Terminate the object.
 
 This routine may block temporarily if there are unresolved requests awaiting completion in separate threads.
+
+-TAGS-
+blocking, mutates-object
 
 *********************************************************************************************************************/
 
@@ -268,7 +284,8 @@ ResolveAddress: Resolves an IP address to a host name.
 
 ResolveAddress() performs a IP address resolution, converting an address to an official host name and list of
 IP addresses.  The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication
-is used so that the function can return immediately.  The #Callback function will be called on completion of the process.
+is used so that the function can return immediately.  The #Callback function will be called on completion of the
+process.
 
 If synchronous (blocking) operation is desired then use the #BlockingResolveAddress() method.
 
@@ -277,9 +294,12 @@ cstr Address: IP address to be resolved, e.g. "123.111.94.82".
 
 -ERRORS-
 Okay: The IP address was resolved successfully.
-Args
 NullArgs
+FieldNotSet
 Failed: The address could not be resolved
+
+-TAGS-
+non-blocking, mutates-object, copies-input, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -287,7 +307,7 @@ static ERR NETLOOKUP_ResolveAddress(extNetLookup *Self, struct nl::ResolveAddres
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Address)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Address)) return log.warning(ERR::NullArgs);
    if (Self->Callback.Type IS CALL::NIL) return log.warning(ERR::FieldNotSet);
 
    log.branch("Address: %s", Args->Address);
@@ -345,10 +365,11 @@ If synchronous (blocking) operation is desired then use the #BlockingResolveName
 cstr HostName: The host name to be resolved.
 
 -ERRORS-
-Okay:
-NullArgs:
-AllocMemory:
-Failed:
+Okay
+NullArgs
+
+-TAGS-
+non-blocking, mutates-object, copies-input, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -356,7 +377,7 @@ static ERR NETLOOKUP_ResolveName(extNetLookup *Self, struct nl::ResolveName *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->HostName)) return log.error(ERR::NullArgs);
+   if ((not Args) or (not Args->HostName)) return log.error(ERR::NullArgs);
 
    log.branch("Host: %s", Args->HostName);
 
@@ -400,11 +421,14 @@ Addresses: List of resolved IP addresses.
 
 A list of the most recently resolved IP addresses can be read from this field.
 
+-TAGS-
+object-owns-result, volatile-result
+
 *********************************************************************************************************************/
 
 static ERR GET_Addresses(extNetLookup *Self, int8_t **Value, int *Elements)
 {
-   if (!Self->Info.Addresses.empty()) {
+   if (not Self->Info.Addresses.empty()) {
       *Value = (int8_t *)Self->Info.Addresses.data();
       *Elements = Self->Info.Addresses.size();
       return ERR::Okay;
@@ -417,18 +441,22 @@ static ERR GET_Addresses(extNetLookup *Self, int8_t **Value, int *Elements)
 -FIELD-
 Callback: This function will be called on the completion of any name or address resolution.
 
-The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype
-is `Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)`.
+The function referenced here will receive the results of the most recently resolved name or address.  The C++
+prototype is
+`Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)`.
 
 The Tiri prototype is as follows, with results readable from the #HostName and #Addresses fields:
 `function(NetLookup, Error)`.
 
+-TAGS-
+object-owns-result, callback-held
+
 *********************************************************************************************************************/
 
-static ERR GET_Callback(extNetLookup *Self, FUNCTION **Value)
+static ERR GET_Callback(extNetLookup *Self, FUNCTION * &Value)
 {
    if (Self->Callback.defined()) {
-      *Value = &Self->Callback;
+      Value = &Self->Callback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -455,12 +483,15 @@ HostName: Name of the most recently resolved host.
 
 The name of the most recently resolved host is readable from this field.
 
+-TAGS-
+object-owns-result, volatile-result, null-terminated-result
+
 *********************************************************************************************************************/
 
-static ERR GET_HostName(extNetLookup *Self, CSTRING *Value)
+static ERR GET_HostName(extNetLookup *Self, std::string_view &Value)
 {
-   if (!Self->Info.HostName.empty()) {
-      *Value = Self->Info.HostName.c_str();
+   if (not Self->Info.HostName.empty()) {
+      Value = Self->Info.HostName;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -470,7 +501,7 @@ static ERR GET_HostName(extNetLookup *Self, CSTRING *Value)
 
 static ERR cache_host(HOSTMAP &Store, CSTRING Key, const HostLookupResult &Result, DNSEntry &Cache)
 {
-   if (!Key) {
+   if (not Key) {
       if (Result.HostName.empty()) return ERR::Args;
       Key = Result.HostName.c_str();
    }
@@ -552,9 +583,9 @@ static const FieldArray clNetLookupFields[] = {
    { "ClientData", FDF_INT64|FDF_RW },
    { "Flags",      FDF_INT|FDF_FLAGS|FDF_RW },
    // Virtual fields
-   { "Callback",  FDF_FUNCTIONPTR|FDF_RW, GET_Callback, SET_Callback },
-   { "HostName",  FDF_STRING|FDF_R, GET_HostName },
-   { "Addresses", FDF_STRUCT|FDF_ARRAY|FDF_R, GET_Addresses, nullptr, "IPAddress" },
+   { "HostName",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_R|FDF_PURE, GET_HostName },
+   { "Callback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, GET_Callback, SET_Callback },
+   { "Addresses",  FDF_VIRTUAL|FDF_STRUCT|FDF_ARRAY|FDF_R|FDF_PURE, GET_Addresses, nullptr, "IPAddress" },
    END_FIELD
 };
 

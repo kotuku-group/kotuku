@@ -5,7 +5,7 @@
 IdentifyFile: Analyse a file and identify a class that can process it.
 
 This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be
-identified as a datatype of the @Picture class.  An MP3 file would be identified as a datatype of the @Sound
+identified as a datatype of the @Image class.  An MP3 file would be identified as a datatype of the @Sound
 class.
 
 The method involves analysing the `Path`'s file extension and comparing it to the supported extensions of all available
@@ -20,14 +20,17 @@ The `ERR::Search` code is returned if a suitable class does not match the target
 cpp(strview) Path: The location of the object data.
 cid Filter:    Restrict the search to classes in this subset, or use `CLASSID::NIL` to search all classes.
 &cid Class:    Must refer to a `CLASSID` variable that will store the resulting class ID.
-&cid SubClass: Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).
+&cid SubClass: Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).
 
 -ERRORS-
 Okay
-Args
+NullArgs
 Search: A suitable class could not be found for the data source.
 FileNotFound
 Read
+
+-TAGS-
+blocking, path-resolved
 -END-
 
 *********************************************************************************************************************/
@@ -89,7 +92,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
       }
    }
 
-   // Check against the class registry to identify what class and sub-class that this data source belongs to.
+   // Check against the class registry to identify what class and derived class that this data source belongs to.
 
    if (not glClassDB.empty()) {
       // Check extension
@@ -100,7 +103,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
             if (auto ext_class_id = lookup_class_by_ext(Filter, ext); ext_class_id != CLASSID::NIL) {
                auto &rec = glClassDB[ext_class_id];
 
-               if (rec.ParentID != CLASSID::NIL) { // Confirm if ext_class_id is a sub-class
+               if (rec.ParentID != CLASSID::NIL) { // Confirm if ext_class_id is a derived class
                   *ClassID = rec.ParentID;
                   if (SubClassID) *SubClassID = rec.ClassID;
                }

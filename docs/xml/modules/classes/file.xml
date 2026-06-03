@@ -104,10 +104,10 @@
     <action>
       <name>Rename</name>
       <comment>Changes the name of a file.</comment>
-      <prototype>ERR acRename(*Object, CSTRING Name)</prototype>
+      <prototype>ERR acRename(*Object, std::string_view Name)</prototype>
       <tiriPrototype>err = Object.acRename(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The new name for the object.</param>
+        <param type="STRVIEW" name="Name">The new name for the object.</param>
       </input>
     </action>
 
@@ -171,6 +171,7 @@
         <error code="Read">Failed to read the file content.</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       </result>
+      <tags>blocking, mutates-object, creates-resource, updates-seek-index</tags>
     </method>
 
     <method>
@@ -199,6 +200,7 @@
         <error code="ResolvePath">A volume could not be resolved</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, updates-seek-index, callback-inlines</tags>
     </method>
 
     <method>
@@ -222,6 +224,7 @@
         <error code="ReadOnly">The file is on a read-only filesystem.</error>
         <error code="Locked">The file is in use.</error>
       </result>
+      <tags>blocking, mutates-object, closes-handle, callback-inlines</tags>
     </method>
 
     <method>
@@ -244,6 +247,7 @@
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, updates-seek-index, callback-inlines</tags>
     </method>
 
     <method>
@@ -266,6 +270,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, updates-seek-index, caller-owns-result</tags>
     </method>
 
     <method>
@@ -289,6 +294,7 @@
         <error code="ObjectCorrupt">The internal file handle is missing.</error>
         <error code="BufferOverflow">The line is too long for the read routine (4096 byte limit).</error>
       </result>
+      <tags>blocking, updates-seek-index, object-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -318,6 +324,7 @@
         <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -343,6 +350,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
       </result>
+      <tags>non-blocking, mutates-object, callback-held</tags>
     </method>
 
     <method>
@@ -358,6 +366,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -382,6 +391,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, callback-held</tags>
     </method>
 
   </methods>
@@ -485,6 +495,7 @@
 <p>The accepted method for referencing parent folders is <code>../</code>, which can be repeated for as many parent folders as needed to traverse the folder hierarchy.</p>
 <p>Access to <code>std*</code> handles is achieved by using the path strings <code>std:in</code>, <code>std:out</code> and <code>std:err</code>.</p>
       </description>
+      <tags>null-terminated-result</tags>
     </field>
 
     <field>

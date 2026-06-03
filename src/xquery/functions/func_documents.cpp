@@ -28,7 +28,11 @@ namespace fs = std::filesystem;
    if (file.ok()) {
       std::string buffer;
       buffer.resize(file->get<size_t>(FID_Size));
-      file->read(buffer.data(), buffer.size());
+      if (not buffer.empty()) {
+         size_t bytes_read = 0;
+         if ((file->read(buffer.data(), buffer.size(), &bytes_read) != ERR::Okay) or
+             (bytes_read != buffer.size())) return false;
+      }
       Eval.text_cache[URI] = std::move(normalise_newlines(buffer));
       Result = &Eval.text_cache[URI];
       return true;
@@ -90,7 +94,10 @@ static extXML * load_document(CompiledXQuery *State, const std::string &URI)
    auto document = kt::Create<extXML>::global({ fl::Path(URI), fl::Flags(XMF::WELL_FORMED | XMF::NAMESPACE_AWARE) });
 
    if (!document) return nullptr;
-   if (document->Tags.empty()) return nullptr;
+   if (document->Tags.empty()) {
+      FreeResource(document);
+      return nullptr;
+   }
 
    (void)document->getMap(); // Build ID map now
    State->XMLCache[URI] = document;

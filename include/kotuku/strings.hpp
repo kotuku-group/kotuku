@@ -437,6 +437,26 @@ inline int strcopy(T &&Source, std::span<char, N> Dest) noexcept
    return -1;
 }
 
+[[nodiscard]] inline int strisearch(const std::string_view Keyword, const std::string_view String) noexcept
+{
+   if (Keyword.size() > String.size()) return -1;
+   size_t string_pos = 0;
+   while (string_pos < String.size()) {
+      size_t keyword_pos;
+      for (keyword_pos=0; keyword_pos < Keyword.size(); keyword_pos++) {
+         if (string_pos + keyword_pos >= String.size()) break;
+         if (std::toupper(uint8_t(String[string_pos + keyword_pos])) != std::toupper(uint8_t(Keyword[keyword_pos]))) {
+            break;
+         }
+      }
+      if (keyword_pos == Keyword.size()) return int(string_pos);
+      for (++string_pos; (string_pos < String.size()) and ((uint8_t(String[string_pos]) & 0xc0) == 0x80);
+         string_pos++);
+   }
+
+   return -1;
+}
+
 // std::string_view conversion to numeric type.  Returns zero on error.
 // Leading whitespace is not ignored, unlike strtol() and strtod()
 

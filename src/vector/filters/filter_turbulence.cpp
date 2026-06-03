@@ -499,14 +499,18 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, STRING *Value)
+static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
    stream << "feTurbulence";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -519,13 +523,13 @@ static const FieldDef clTurbulenceType[] = {
    { nullptr, 0 }
 };
 static const FieldArray clTurbulenceFXFields[] = {
-   { "FX",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI,          TURBULENCEFX_GET_FX,      TURBULENCEFX_SET_FX },
-   { "FY",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI,          TURBULENCEFX_GET_FY,      TURBULENCEFX_SET_FY },
-   { "Octaves", FDF_VIRTUAL|FDF_INT|FDF_RI,             TURBULENCEFX_GET_Octaves, TURBULENCEFX_SET_Octaves },
-   { "Seed",    FDF_VIRTUAL|FDF_INT|FDF_RI,             TURBULENCEFX_GET_Seed,    TURBULENCEFX_SET_Seed },
-   { "Stitch",  FDF_VIRTUAL|FDF_INT|FDF_RI,             TURBULENCEFX_GET_Stitch,  TURBULENCEFX_SET_Stitch },
-   { "Type",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI,  TURBULENCEFX_GET_Type,    TURBULENCEFX_SET_Type, &clTurbulenceType },
-   { "XMLDef",  FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, TURBULENCEFX_GET_XMLDef,  nullptr },
+   { "FX",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,          TURBULENCEFX_GET_FX,      TURBULENCEFX_SET_FX },
+   { "FY",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,          TURBULENCEFX_GET_FY,      TURBULENCEFX_SET_FY },
+   { "Octaves", FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,             TURBULENCEFX_GET_Octaves, TURBULENCEFX_SET_Octaves },
+   { "Seed",    FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,             TURBULENCEFX_GET_Seed,    TURBULENCEFX_SET_Seed },
+   { "Stitch",  FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,             TURBULENCEFX_GET_Stitch,  TURBULENCEFX_SET_Stitch },
+   { "Type",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI|FDF_PURE,  TURBULENCEFX_GET_Type,    TURBULENCEFX_SET_Type, &clTurbulenceType },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, TURBULENCEFX_GET_XMLDef },
    END_FIELD
 };
 

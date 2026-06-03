@@ -94,12 +94,11 @@ if (query.ok()) {
     <action>
       <name>GetKey</name>
       <comment>Read XQuery variable values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
     </action>
 
@@ -125,11 +124,11 @@ if (query.ok()) {
     <action>
       <name>SetKey</name>
       <comment>Set XQuery variable values.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
       <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
       <description>
 <p>Use SetKey to store key-value pairs that can be referenced in XQuery expressions using the variable syntax <code>$variableName</code>.</p>
@@ -162,6 +161,7 @@ if (query.ok()) {
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, retains-input</tags>
     </method>
 
     <method>
@@ -199,6 +199,7 @@ if (query.ok()) {
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, caller-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -221,6 +222,7 @@ if (query.ok()) {
         <error code="NoSupport">The provided callback is not a C function reference.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input, callback-held</tags>
     </method>
 
     <method>
@@ -248,6 +250,7 @@ if (query.ok()) {
         <error code="Syntax">The provided query expression has syntax errors.</error>
         <error code="NullArgs">At least one required parameter was not provided.</error>
       </result>
+      <tags>mutates-object, retains-input, callback-inlines</tags>
     </method>
 
   </methods>
@@ -256,8 +259,8 @@ if (query.ok()) {
     <field>
       <name>ErrorMsg</name>
       <comment>A readable description of the last parse or execution error.</comment>
-      <access read="G">Get</access>
-      <type>STRING</type>
+      <access read="R">Read</access>
+      <type>std::string</type>
       <description>
 <p>This field may provide a textual description of the last parse or execution error that occurred.</p>
       </description>
@@ -284,19 +287,19 @@ if (query.ok()) {
 
     <field>
       <name>MemoryUsage</name>
-      <comment>Returns the total amount of memory allocated by the last compilation or evaluation.</comment>
-      <access read="G">Get</access>
+      <comment>The total amount of memory allocated by the last compilation or evaluation.</comment>
+      <access read="R">Read</access>
       <type>INT64</type>
       <description>
-<p>If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will return the total amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.</p>
+<p>If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will contain the total amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.</p>
       </description>
     </field>
 
     <field>
       <name>Path</name>
       <comment>Base path for resolving relative references.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>std::string</type>
       <description>
 <p>Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through automated means on-the-fly, which relies  on the working directory or XML document path.</p>
       </description>
@@ -355,9 +358,9 @@ if (query.ok()) {
 
     <field>
       <name>Statement</name>
-      <comment>XQuery data is processed through this field.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
+      <comment>XQuery statements are specified here.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>std::string</type>
       <description>
 <p>Set the Statement field with an XPath or XQuery expression for compilation.</p>
 <p>If this field is set after initialisation then <action>Clear</action> will be applied to the object first.  The expression will be compiled on the next execution attempt.</p>

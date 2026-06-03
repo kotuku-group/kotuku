@@ -70,21 +70,6 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     </action>
 
     <action>
-      <name>GetKey</name>
-      <comment>Deprecated.  Use the Evaluate() method instead.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
-      <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
-        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
-      </input>
-      <description>
-<p>Deprecated.  Use the Evaluate() method instead.</p>
-      </description>
-    </action>
-
-    <action>
       <name>Reset</name>
       <comment>Clears the information held in an XML object.</comment>
       <prototype>ERR acReset(*Object)</prototype>
@@ -98,18 +83,18 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Sets attributes and content in the XML tree using XPaths.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
       <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
       <description>
 <p>Use SetKey to add tag attributes and content using XPaths.  The XPath is specified in the <code>Key</code> parameter and the data is specified in the <code>Value</code> parameter.  Setting the Value to <code>NULL</code> will remove the attribute or existing content, while an empty string will keep an attribute but eliminate any associated data.</p>
@@ -143,6 +128,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, caller-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -162,6 +148,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No matching tag could be found for the specified XPath expression.</error>
         <error code="NullArgs">The XPath parameter was NULL or empty.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -189,6 +176,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NotFound">Either the specified tag Index does not exist, or the named attribute was not found within the tag.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result, case-insensitive</tags>
     </method>
 
     <method>
@@ -223,6 +211,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="BufferOverflow">The buffer was not large enough to hold the complete content.  The result is truncated but valid.</error>
         <error code="NullArgs">Either the Buffer parameter was NULL or other required arguments were missing.</error>
       </result>
+      <tags>pure-query, null-terminated-result</tags>
     </method>
 
     <method>
@@ -242,6 +231,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No matching entity could be found for the specified name.</error>
         <error code="NullArgs">Either the Name or Value parameter was NULL.</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result, case-sensitive</tags>
     </method>
 
     <method>
@@ -261,6 +251,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No namespace found for the specified UID.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -280,6 +271,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">No matching notation could be found for the specified name.</error>
         <error code="NullArgs">Either the Name or Value parameter was NULL.</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result, case-sensitive</tags>
     </method>
 
     <method>
@@ -299,6 +291,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NotFound">The Index is not recognised.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
     <method>
@@ -323,6 +316,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -347,6 +341,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">Changes to the XML data are not permitted.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -369,6 +364,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -388,6 +384,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="CreateObject">The file in Path could not be processed as XML content.</error>
         <error code="NullArgs">The Path argument was not provided.</error>
       </result>
+      <tags>blocking, mutates-object, creates-resource</tags>
     </method>
 
     <method>
@@ -413,6 +410,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
         <error code="SanityCheckFailed">An internal consistency check failed during the move operation.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -432,6 +430,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Failed">The URI was empty or invalid.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -454,6 +453,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -477,6 +477,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -504,6 +505,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Search">The prefix could not be resolved in any accessible scope.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
+      <tags>pure-query</tags>
     </method>
 
     <method>
@@ -530,6 +532,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NoData">The XML document contains no data to search.</error>
         <error code="NullArgs">The Expression was NULL or the Result parameter was NULL when no callback was provided.</error>
       </result>
+      <tags>mutates-object, callback-inlines</tags>
     </method>
 
     <method>
@@ -553,6 +556,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="AllocMemory">Failed to allocate memory for the XML string result.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>pure-query, caller-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -579,6 +583,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">The XML object is read-only.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input, case-insensitive</tags>
     </method>
 
     <method>
@@ -598,6 +603,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NotFound">The specified tag was not found.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -620,6 +626,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -637,6 +644,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NoSupport">No schema has been loaded for this XML object.</error>
         <error code="NullArgs">The Result parameter was not supplied.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -730,6 +738,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 <p>Reading the Statement field will return a serialised string of XML data.  By default all tags will be included in the statement.  The string result is an allocation that must be freed.</p>
 <p>If the statement is an XQuery expression with base-uri references, the <fl>Path</fl> field should be set to establish the base path for relative references.</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>

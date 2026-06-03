@@ -198,7 +198,7 @@ build/agents-install/origo --statement "print('Hello')" --log-warning
 If changing files under `scripts/`, make sure the modified source tree overrides installed scripts:
 
 ```powershell
-build/agents-install/origo path/to/script.tiri --set-volume scripts=E:/parasol/scripts --log-warning
+build/agents-install/origo path/to/script.tiri --set-volume scripts=E:/kotuku/scripts --log-warning
 ```
 
 Use `--log-api` for more detail and `--log-threads` when debugging thread-related issues.

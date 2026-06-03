@@ -70,15 +70,15 @@ void anim_base::set_orig_value(svgState &State)
             break;
 
          case SVF_fill: {
-            CSTRING val;
-            if ((obj->get(FID_Fill, val) IS ERR::Okay) and (val)) target_attrib_orig = val;
+            std::string_view val;
+            if ((obj->get(FID_Fill, val) IS ERR::Okay) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_fill;
             break;
          }
 
          case SVF_stroke: {
-            CSTRING val;
-            if ((obj->get(FID_Stroke, val) IS ERR::Okay) and (val)) target_attrib_orig = val;
+            std::string_view val;
+            if ((obj->get(FID_Stroke, val) IS ERR::Okay) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_stroke;
             break;
          }

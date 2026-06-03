@@ -50,6 +50,7 @@
       <description>
 <p>This method will apply the table function to a selected RGBA pixel component.  A list of values is required with a minimum size of 1.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -66,6 +67,7 @@
       <description>
 <p>This method will apply the gamma function to a selected RGBA pixel component.  The gamma function is written as <code>C' = Amplitude * pow(C, Exponent) + Offset</code>.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -79,6 +81,7 @@
       <description>
 <p>Selecting the identity function for a pixel component will render it as its original value.  By default, all pixels will use this function if no other option is chosen.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -93,6 +96,7 @@
 <p>This method will apply the invert function to a selected RGBA pixel component.  The function is written as <code>C' = 1.0 - C</code>.</p>
 <p>This feature is not compatible with SVG.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -108,6 +112,7 @@
       <description>
 <p>This method will apply the linear function to a selected RGBA pixel component.  The function is written as <code>C' = (Slope * C) + Intercept</code>.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -123,6 +128,7 @@
 <p>This method will apply the mask function to a selected RGBA pixel component.  The function is written as <code>C' = C &amp; Mask</code>.  This algorithm is particularly useful for lowering the bit depth of colours, e.g. a value of <code>0xf0</code> will reduce 8 bit colours to 4 bit.</p>
 <p>This feature is not compatible with SVG.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -139,6 +145,7 @@
 <p>This method will apply the table function to a selected RGBA pixel component.  A list of values is required with a minimum size of 1.</p>
 <p>If a single table value is supplied then the component will be output as a constant with no interpolation applied.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>
@@ -149,6 +156,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

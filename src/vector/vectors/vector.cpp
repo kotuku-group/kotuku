@@ -12,7 +12,7 @@ Vector is an abstract class that is used as a blueprint for other vector classes
 for a vector scene.  At this time the classes are @VectorClip, @VectorEllipse, @VectorGroup, @VectorPath,
 @VectorPolygon, @VectorRectangle, @VectorSpiral, @VectorText, @VectorViewport and @VectorWave.
 
-The majority of sub-classes support all of the functionality provided by Vector.  The general exception is that
+The majority of derived classes support all of the functionality provided by Vector.  The general exception is that
 graphics functions will not be supported by non-graphical classes, for instance @VectorGroup and @VectorViewport do not
 produce a vector path and therefore cannot be rendered.
 
@@ -51,10 +51,10 @@ void debug_tree(extVector *Vector, int &Level)
 
       if ((v->Class->BaseClassID IS CLASSID::VECTOR) and (v->Child)) {
          kt::Log blog(__FUNCTION__);
-         blog.branch(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName, v->Name, dim.c_str());
+         blog.branch(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim.c_str());
          debug_tree((extVector *)v->Child, Level);
       }
-      else log.msg(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName, v->Name, dim.c_str());
+      else log.msg(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim.c_str());
    }
 
    Level--;
@@ -191,6 +191,9 @@ Debug: Internal functionality for debugging.
 
 This internal method prints comprehensive debugging information to the log.
 
+-TAGS-
+private
+
 -ERRORS-
 Okay:
 
@@ -273,17 +276,10 @@ static ERR VECTOR_Enable(extVector *Self)
 
 static ERR VECTOR_Free(extVector *Self)
 {
-   Self->~extVector();
-
    if (Self->ClipMask)   UnsubscribeAction(Self->ClipMask, AC::Free);
    if (Self->Transition) UnsubscribeAction(Self->Transition, AC::Free);
    if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
    if (Self->AppendPath) UnsubscribeAction(Self->AppendPath, AC::Free);
-
-   if (Self->SID)          { FreeResource(Self->SID); Self->SID = nullptr; }
-   if (Self->FillString)   { FreeResource(Self->FillString); Self->FillString = nullptr; }
-   if (Self->StrokeString) { FreeResource(Self->StrokeString); Self->StrokeString = nullptr; }
-   if (Self->FilterString) { FreeResource(Self->FilterString); Self->FilterString = nullptr; }
 
    if (Self->Fill[0].GradientTable) { delete Self->Fill[0].GradientTable; Self->Fill[0].GradientTable = nullptr; }
    if (Self->Fill[1].GradientTable) { delete Self->Fill[1].GradientTable; Self->Fill[1].GradientTable = nullptr; }
@@ -354,6 +350,7 @@ static ERR VECTOR_Free(extVector *Self)
    delete Self->KeyboardSubscriptions; Self->KeyboardSubscriptions = nullptr;
    delete Self->FeedbackSubscriptions; Self->FeedbackSubscriptions = nullptr;
 
+   Self->~extVector();
    return ERR::Okay;
 }
 
@@ -367,6 +364,9 @@ attached to the vector then it should be noted that this will affect downstream 
 
 -INPUT-
 struct(*VectorMatrix) Matrix: Reference to the structure that requires removal.
+
+-TAGS-
+mutates-object, closes-handle
 
 -ERRORS-
 Okay:
@@ -421,6 +421,9 @@ int(VBF) Flags: Optional flags.
 &double Y: The top-most position of the boundary is returned here.
 &double Width: The width of the boundary is returned here.
 &double Height: The height of the boundary is returned here.
+
+-TAGS-
+pure-query
 
 -ERRORS-
 Okay
@@ -500,8 +503,8 @@ static ERR VECTOR_Init(extVector *Self)
    kt::Log log;
 
    if (Self->classID() IS CLASSID::VECTOR) {
-      log.warning("Vector cannot be instantiated directly (use a sub-class).");
-      return ERR::UseSubClass;
+      log.warning("Vector cannot be instantiated directly (use a derived class).");
+      return ERR::UseDerived;
    }
 
    if (!Self->Parent) {
@@ -515,7 +518,7 @@ static ERR VECTOR_Init(extVector *Self)
 
    // Reapply the filter if it couldn't be set prior to initialisation.
 
-   if ((!Self->Filter) and (Self->FilterString)) {
+   if ((!Self->Filter) and (not Self->FilterString.empty())) {
       Self->setFilter(Self->FilterString);
    }
 
@@ -622,6 +625,9 @@ transform is no longer required before then, it can be manually removed with ~Ve
 &resource(*VectorMatrix) Transform: A reference to the new transform structure is returned here.
 int End: If `true`, the matrix priority is lowered by inserting it at the end of the transform list.
 
+-TAGS-
+mutates-object, object-owns-result, creates-resource
+
 -ERRORS-
 Okay:
 NullArgs:
@@ -673,6 +679,9 @@ Transforms are taken into account, as are clip masks.
 -INPUT-
 double X: The X coordinate of the point.
 double Y: The Y coordinate of the point.
+
+-TAGS-
+pure-query
 
 -ERRORS-
 Okay: The point is in the path.
@@ -751,6 +760,9 @@ error code.
 
 -INPUT-
 int Position: Specify a relative position index here (-ve to move backwards, +ve to move forwards)
+
+-TAGS-
+mutates-object
 
 -ERRORS-
 Okay:
@@ -837,6 +849,9 @@ The prototype for the `Callback` is `ERR callback(*Vector, FM Event)`
 int(FM) Mask: Defines the feedback events required by the client.  Set to `0xffffffff` if all messages are required.
 ptr(func) Callback: The function that will receive feedback events.
 
+-TAGS-
+mutates-object, callback-held
+
 -ERRORS-
 Okay:
 NullArgs:
@@ -889,6 +904,9 @@ The prototype for the `Callback` is `ERR callback(*Vector, *InputEvent)`
 -INPUT-
 flags(JTYPE) Mask: Combine `JTYPE` flags to define the input messages required by the client.  Set to zero to remove an existing subscription.
 ptr(func) Callback: Reference to a function that will receive input messages.
+
+-TAGS-
+mutates-object, callback-held
 
 -ERRORS-
 Okay:
@@ -955,6 +973,9 @@ If the callback returns `ERR::Terminate` then the subscription will be ended.  A
 -INPUT-
 ptr(func) Callback: Reference to a callback function that will receive input messages.
 
+-TAGS-
+mutates-object, callback-held
+
 -ERRORS-
 Okay:
 NullArgs:
@@ -1000,6 +1021,9 @@ If the `Callback` returns `ERR::Terminate`, then no further coordinates will be 
 ptr(func) Callback: A function to call with the path coordinates.
 double Scale: Set to `1.0` (recommended) to trace the path at a scale of 1 to 1.
 int Transform: Set to `true` if all transforms applicable to the vector should be applied to the path.
+
+-TAGS-
+pure-query, callback-inlines
 
 -ERRORS-
 Okay:
@@ -1361,27 +1385,26 @@ feature is intended for programmed use-cases and is not SVG compliant.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Fill(extVector *Self, CSTRING *Value)
+static ERR VECTOR_GET_Fill(extVector *Self, std::string_view &Value)
 {
-   *Value = Self->FillString;
+   Value = Self->FillString;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_Fill(extVector *Self, CSTRING Value)
+static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
 {
    // Note that if an internal routine sets DisableFillColour then the colour will be stored but effectively does nothing.
-   if (Self->FillString) { FreeResource(Self->FillString); Self->FillString = nullptr; }
-
+   Self->FillString.clear();
    Self->FGFill = false;
 
-   if (!Value) {
+   if (Value.empty()) {
       Self->Fill[0].reset();
       return ERR::Okay;
    }
 
    CSTRING next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
-      Self->FillString = strclone(Value);
+      Self->FillString = Value;
 
       if (next) {
          if (*next IS ';') {
@@ -1452,7 +1475,7 @@ static ERR VECTOR_SET_FillColour(extVector *Self, float *Value, int Elements)
       mark_buffers_for_refresh(Self);
    }
 
-   if (Self->FillString) { FreeResource(Self->FillString); Self->FillString = nullptr; }
+   Self->FillString.clear();
 
    return ERR::Okay;
 }
@@ -1501,39 +1524,38 @@ The Filter value can be in the format `ID` or `url(#SID)` according to client pr
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Filter(extVector *Self, CSTRING *Value)
+static ERR VECTOR_GET_Filter(extVector *Self, std::string_view &Value)
 {
-   *Value = Self->FilterString;
+   Value = Self->FilterString;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_Filter(extVector *Self, CSTRING Value)
+static ERR VECTOR_SET_Filter(extVector *Self, const std::string_view &Value)
 {
    kt::Log log;
 
    mark_buffers_for_refresh(Self);
 
-   if ((!Value) or (!Value[0])) {
-      if (Self->FilterString) { FreeResource(Self->FilterString); Self->FilterString = nullptr; }
+   if (Value.empty()) {
+      Self->FilterString.clear();
       Self->Filter = nullptr;
       return ERR::Okay;
    }
 
-   if (!Self->Scene) { // Vector is not yet initialised, so store the filter string for later.
-      if (Self->FilterString) { FreeResource(Self->FilterString); Self->FilterString = nullptr; }
-      Self->FilterString = strclone(Value);
+   if (not Self->Scene) { // Vector is not yet initialised, so store the filter string for later.
+      Self->FilterString = Value;
       return ERR::Okay;
    }
 
+   std::string value(Value);
    OBJECTPTR def = nullptr;
-   if (Self->Scene->findDef(Value, &def) != ERR::Okay) {
-      log.warning("Failed to resolve filter '%s'", Value);
+   if (Self->Scene->findDef(value.c_str(), &def) != ERR::Okay) {
+      log.warning("Failed to resolve filter '%.*s'", int(Value.size()), Value.data());
       return ERR::Search;
    }
 
    if (def->Class->BaseClassID IS CLASSID::VECTORFILTER) {
-      if (Self->FilterString) { FreeResource(Self->FilterString); Self->FilterString = nullptr; }
-      Self->FilterString = strclone(Value);
+      Self->FilterString = Value;
       Self->Filter = (extVectorFilter *)def;
       return ERR::Okay;
    }
@@ -1575,23 +1597,21 @@ circumstances.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_SID(extVector *Self, STRING *Value)
+static ERR VECTOR_GET_SID(extVector *Self, std::string_view &Value)
 {
-   *Value = Self->SID;
+   Value = Self->SID;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_SID(extVector *Self, CSTRING Value)
+static ERR VECTOR_SET_SID(extVector *Self, const std::string_view &Value)
 {
-   if (Self->SID) FreeResource(Self->SID);
-
-   if (Value) {
-      Self->SID = strclone(Value);
-      Self->NumericID = strhash(Value);
+   if (Value.empty()) {
+      Self->SID.clear();
+      Self->NumericID = 0;
    }
    else {
-      Self->SID = nullptr;
-      Self->NumericID = 0;
+      Self->SID = Value;
+      Self->NumericID = strhash(Value);
    }
    return ERR::Okay;
 }
@@ -1935,7 +1955,7 @@ static ERR VECTOR_GET_NumericID(extVector *Self, int *Value)
 static ERR VECTOR_SET_NumericID(extVector *Self, int Value)
 {
    Self->NumericID = Value;
-   if (Self->SID) { FreeResource(Self->SID); Self->SID = nullptr; }
+   Self->SID.clear();
    return ERR::Okay;
 }
 
@@ -2115,15 +2135,15 @@ of the previous command).
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Sequence(extVector *Self, STRING *Value)
+static ERR VECTOR_GET_Sequence(extVector *Self, std::string_view &Value)
 {
    kt::Log log;
 
-   if (!Self->GeneratePath) return log.warning(ERR::Mismatch); // Path generation must be supported by the vector.
+   if (not Self->GeneratePath) return log.warning(ERR::Mismatch); // Path generation must be supported by the vector.
 
    gen_vector_tree(Self);
 
-   if (!Self->BasePath.total_vertices()) return ERR::NoData;
+   if (not Self->BasePath.total_vertices()) return ERR::NoData;
 
    std::ostringstream seq;
 
@@ -2191,8 +2211,11 @@ static ERR VECTOR_GET_Sequence(extVector *Self, STRING *Value)
 
    auto out = seq.str();
    if (out.length() > 0) {
-      *Value = strclone(out);
-      return ERR::Okay;
+      if (auto str = strclone(out)) {
+         Value = std::string_view{str, out.length()};
+         return ERR::Okay;
+      }
+      else return ERR::AllocMemory;
    }
    else return ERR::NoData;
 }
@@ -2207,20 +2230,20 @@ the ~ReadPainter() function in the Vector module.  Please refer to it for furthe
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Stroke(extVector *Self, CSTRING *Value)
+static ERR VECTOR_GET_Stroke(extVector *Self, std::string_view &Value)
 {
-   *Value = Self->StrokeString;
+   Value = Self->StrokeString;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_Stroke(extVector *Self, STRING Value)
+static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
 {
-   if (Self->StrokeString) { FreeResource(Self->StrokeString); Self->StrokeString = nullptr; }
+   Self->StrokeString.clear();
 
-   if (Value) {
-      Self->StrokeString = strclone(Value);
+   if (not Value.empty()) {
+      Self->StrokeString = Value;
       CSTRING next;
-      vec::ReadPainter(Self->Scene, Value, &Self->Stroke, &next);
+      vec::ReadPainter(Self->Scene, Self->StrokeString, &Self->Stroke, &next);
       if (next) {
          // SVG rules allow for a solid colour fallback to follow the initial painter reference.
          // This typically looks something like 'url(#thing) rgb(values)'
@@ -2526,8 +2549,8 @@ static const FieldArray clVectorFields[] = {
    { "Prev",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Prev, CLASSID::VECTOR },
    { "Parent",          FDF_OBJECT|FD_R },
    { "Matrices",        FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "VectorMatrix" },
-   { "StrokeOpacity",   FDF_DOUBLE|FDF_RW, VECTOR_GET_StrokeOpacity, VECTOR_SET_StrokeOpacity },
-   { "FillOpacity",     FDF_DOUBLE|FDF_RW, VECTOR_GET_FillOpacity, VECTOR_SET_FillOpacity },
+   { "StrokeOpacity",   FDF_DOUBLE|FDF_RW|FDF_PURE, VECTOR_GET_StrokeOpacity, VECTOR_SET_StrokeOpacity },
+   { "FillOpacity",     FDF_DOUBLE|FDF_RW|FDF_PURE, VECTOR_GET_FillOpacity, VECTOR_SET_FillOpacity },
    { "Opacity",         FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_Opacity },
    { "MiterLimit",      FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_MiterLimit },
    { "InnerMiterLimit", FDF_DOUBLE|FD_RW },
@@ -2539,29 +2562,29 @@ static const FieldArray clVectorFields[] = {
    { "ColourSpace",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorColourSpace },
    { "PathTimestamp",   FDF_INT|FDF_R },
    // Virtual fields
-   { "ClipRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW,  VECTOR_GET_ClipRule, VECTOR_SET_ClipRule, &clFillRule },
-   { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
+   { "ClipRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW,  VECTOR_GET_ClipRule, VECTOR_SET_ClipRule, &clFillRule },
+   { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,           VECTOR_GET_DisplayScale },
-   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW,          VECTOR_GET_Mask, VECTOR_SET_Mask },
-   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW,          VECTOR_GET_Morph, VECTOR_SET_Morph },
-   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW,          VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
-   { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW,        VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clMorphFlags },
-   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW,             VECTOR_GET_NumericID, VECTOR_SET_NumericID },
-   { "SID",          FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_SID, VECTOR_SET_SID },
+   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Mask, VECTOR_SET_Mask },
+   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Morph, VECTOR_SET_Morph },
+   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
+   { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE,        VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clMorphFlags },
+   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,             VECTOR_GET_NumericID, VECTOR_SET_NumericID },
+   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_SID, VECTOR_SET_SID },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,         nullptr, VECTOR_SET_ResizeEvent },
-   { "Sequence",     FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
-   { "Stroke",       FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_Stroke, VECTOR_SET_Stroke },
-   { "StrokeColour", FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW,   VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour },
+   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
+   { "Stroke",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Stroke, VECTOR_SET_Stroke },
+   { "StrokeColour", FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE,   VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour },
    { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
-   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW,          VECTOR_GET_Transition, VECTOR_SET_Transition },
-   { "Fill",         FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_Fill, VECTOR_SET_Fill },
-   { "FillColour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW,  VECTOR_GET_FillColour, VECTOR_SET_FillColour },
-   { "FillRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW,  VECTOR_GET_FillRule, VECTOR_SET_FillRule, &clFillRule },
-   { "Filter",       FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_Filter, VECTOR_SET_Filter },
-   { "LineJoin",     FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW,    VECTOR_GET_LineJoin, VECTOR_SET_LineJoin, &clLineJoin },
-   { "LineCap",      FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW,    VECTOR_GET_LineCap, VECTOR_SET_LineCap, &clLineCap },
-   { "InnerJoin",    FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW,    VECTOR_GET_InnerJoin, VECTOR_SET_InnerJoin, &clInnerJoin },
-   { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW,               VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
+   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Transition, VECTOR_SET_Transition },
+   { "Fill",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Fill, VECTOR_SET_Fill },
+   { "FillColour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  VECTOR_GET_FillColour, VECTOR_SET_FillColour },
+   { "FillRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  VECTOR_GET_FillRule, VECTOR_SET_FillRule, &clFillRule },
+   { "Filter",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Filter, VECTOR_SET_Filter },
+   { "LineJoin",     FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineJoin, VECTOR_SET_LineJoin, &clLineJoin },
+   { "LineCap",      FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineCap, VECTOR_SET_LineCap, &clLineCap },
+   { "InnerJoin",    FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_InnerJoin, VECTOR_SET_InnerJoin, &clInnerJoin },
+   { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,               VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
    END_FIELD
 };
 

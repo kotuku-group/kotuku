@@ -78,12 +78,11 @@ processing.sleep()  -- Wait for completion
     <action>
       <name>GetKey</name>
       <comment>Retrieve custom key values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
       <description>
 <p>The following custom key values are formally recognised and may be defined automatically when loading sample files:</p>
@@ -121,7 +120,7 @@ processing.sleep()  -- Wait for completion
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -142,11 +141,11 @@ processing.sleep()  -- Wait for completion
     <action>
       <name>SetKey</name>
       <comment>Define custom tags that will be saved with the sample data.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
       <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 

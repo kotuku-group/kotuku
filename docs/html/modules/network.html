@@ -4,7 +4,7 @@
 	   function gtag(){dataLayer.push(arguments);}
 	   gtag('js', new Date());
       gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../css/bootstrap.min.css" rel="stylesheet"></link><link href="../css/module-template.css" rel="stylesheet"></link></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
-<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul>
+<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li></ul>
 </div></div></nav>
 <div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow"><ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#func-collapse" aria-expanded="true">Network API</button><div class="collapse show" id="func-collapse">
 <ul class="btn-toggle-nav list-unstyled fw-normal">
@@ -43,19 +43,27 @@ in SSL mode.</li>
 <p>If a failure occurs when executing a command, the execution of all further commands is aborted and the error code is returned immediately.</p>
 <p>SetSSL() can also be used to check if SSL is supported in the current build, in which case <code>ERR::NoSecureSockets</code> will be the return value if all other arguments are <code>NULL</code>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Retry</th><td>SSL handshaking needs to be retried.</td></tr>
+<tr><th class="col-md-1">Failed</th><td>SSL setup or connection setup failed.</td></tr>
+<tr><th class="col-md-1">FieldNotSet</th><td>SSL state was not initialised for the socket.</td></tr>
+<tr><th class="col-md-1">SystemCall</th><td>The SSL library or platform SSL backend reported a system-level failure.</td></tr>
+<tr><th class="col-md-1">Disconnected</th><td>SSL reported that the peer disconnected during handshaking.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>The NetSocket argument was not specified.</td></tr>
+<tr><th class="col-md-1">WrongClass</th><td>The object is not a NetSocket.</td></tr>
+<tr><th class="col-md-1">WouldBlock</th><td>SSL handshaking would block.</td></tr>
+<tr><th class="col-md-1">InputOutput</th><td>SSL handshaking failed due to an I/O error.</td></tr>
 <tr><th class="col-md-1">NoSecureSockets</th><td>SSL support is disabled in this build.</td></tr>
 </tbody></table><div class="footer copyright text-right">Network module documentation © Paul Manias © 2005-2026</div></div>
 <div class="docs-content" style="display:none;" id="ShortToHost"><h2>ShortToHost()</h2><p class="lead">Converts a 16 bit (unsigned) word from network to host byte order.</p><div class="card card-info mb-3"><div class="card-header"><samp>UINT net::ShortToHost(UINT Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Value</td><td>Data in network byte order to be converted to host byte order</td></tr>
 </tbody></table></div></div>
 <p>Converts a 16 bit (unsigned) word from network to host byte order.</p>
     <h3>Result</h3><p>The Value in host byte order</p><div class="footer copyright text-right">Network module documentation © Paul Manias © 2005-2026</div></div>
-<div class="docs-content" style="display:none;" id="StrToAddress"><h2>StrToAddress()</h2><p class="lead">Converts an IP Address in string form to an IPAddress structure.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR net::StrToAddress(CSTRING String, struct IPAddress * Address)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>String</td><td>A null-terminated string containing the IP Address in dotted format.</td></tr>
+<div class="docs-content" style="display:none;" id="StrToAddress"><h2>StrToAddress()</h2><p class="lead">Converts an IP Address in string form to an IPAddress structure.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR net::StrToAddress(const std::string_view &amp; String, struct IPAddress * Address)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>String</td><td>A null-terminated string containing the IP Address in dotted format.</td></tr>
 <tr><td>Address</td><td>Must point to an <a data-toggle="tooltip" title="" href="?page=struct-IPAddress">IPAddress</a> structure that will be filled in.</td></tr>
 </tbody></table></div></div>
 <p>Converts an IPv4 or an IPv6 address in string format to an <a data-toggle="tooltip" title="" href="?page=struct-IPAddress">IPAddress</a> structure.  The <code>String</code> must be of form <code>1.2.3.4</code> (IPv4) or <code>2001:db8::1</code> (IPv6).  IPv6 addresses are automatically detected by the presence of colons.</p>
 <pre>struct IPAddress addr;
-if (!StrToAddress("127.0.0.1", &amp;addr)) {
+if (StrToAddress("127.0.0.1", &amp;addr) IS ERR::Okay) {
    ...
 }
 </pre>

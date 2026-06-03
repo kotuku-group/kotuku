@@ -65,7 +65,7 @@
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -104,6 +104,7 @@
         <error code="AllocMemory">Failed to allocate enough memory to hold the sample data.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
+      <tags>mutates-object, copies-input, callback-held, creates-resource</tags>
     </method>
 
     <method>
@@ -140,6 +141,7 @@
         <error code="AllocMemory">Failed to allocate the stream buffer.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
+      <tags>mutates-object, retains-input, callback-held, creates-resource</tags>
     </method>
 
     <method>
@@ -160,6 +162,7 @@
         <error code="NoSupport">PC speaker support is not available.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking</tags>
     </method>
 
     <method>
@@ -178,6 +181,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -200,6 +204,7 @@
         <error code="AllocMemory">Memory for the audio channels could not be allocated.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, creates-resource</tags>
     </method>
 
     <method>
@@ -219,6 +224,7 @@
         <error code="OutOfRange">The provided sample handle is not within the valid range.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -240,6 +246,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -268,6 +275,7 @@
         <error code="OutOfRange">The <code>Volume</code> or <code>Index</code> is out of the acceptable range.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
   </methods>

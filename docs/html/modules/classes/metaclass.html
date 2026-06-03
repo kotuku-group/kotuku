@@ -7,7 +7,7 @@
           var shiftWindow = function() { scrollBy(0, -100) };
           window.addEventListener("hashchange", shiftWindow);
           function load() { if (window.location.hash) shiftWindow(); }
-        </script></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button><div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="../api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul></div></div></nav>
+        </script></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button><div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="../api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li></ul></div></div></nav>
 <div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
 <ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button><div class="collapse" id="mod-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal"><li class="api-ref"><a class="rounded" href="../audio.html">Audio</a></li><li class="api-ref"><a class="rounded" href="../core.html">Core</a></li><li class="api-ref"><a class="rounded" href="../display.html">Display</a></li><li class="api-ref"><a class="rounded" href="../font.html">Font</a></li><li class="api-ref"><a class="rounded" href="../network.html">Network</a></li><li class="api-ref"><a class="rounded" href="../regex.html">Regex</a></li><li class="api-ref"><a class="rounded" href="../tiri.html">Tiri</a></li><li class="api-ref"><a class="rounded" href="../vector.html">Vector</a></li><li class="api-ref"><a class="rounded" href="../xml.html">XML</a></li><li class="api-ref"><a class="rounded" href="../xquery.html">XQuery</a></li></ul></div></li></ul>
 <ul class="list-unstyled"><li class="border-top my-3"></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button><div class="collapse" id="audio-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1"><li class="api-ref"><a class="rounded" href="audio.html">Audio</a></li><li class="api-ref"><a class="rounded" href="sound.html">Sound</a></li></ul></div></li>
@@ -56,7 +56,7 @@
                            
                           <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">BaseClassID</th><td class="col-md-1"><span class="text-nowrap">CLASSID</span></td><td>Specifies the base class ID of a class object.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-BaseClassID" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The BaseClassID must always be set prior to the initialisation of a new MetaClass object unless <a data-bs-toggle="tooltip" title="The name of the represented class." href="#tf-ClassName">ClassName</a> is considered sufficient.  If the BaseClassID is zero then the hash of <a data-bs-toggle="tooltip" title="The name of the represented class." href="#tf-ClassName">ClassName</a> is computed and set as the value of BaseClassID.</p>
-<p>When defining a sub-class, it is required that the BaseClassID refers to the class that is being supported.</p>
+<p>When defining a derived class, it is required that the BaseClassID refers to the class that is being supported.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Category" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Category"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
@@ -81,12 +81,12 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-ClassID" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ClassID"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
                           <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ClassID</th><td class="col-md-1"><span class="text-nowrap">CLASSID</span></td><td>Specifies the ID of a class object.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ClassID" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a sub-class.  The ClassID value always reflects the <code>strihash()</code> computation of the <a data-bs-toggle="tooltip" title="The name of the represented class." href="#tf-ClassName">ClassName</a>, and is automatically set on initialisation if not already set by the client.</p>
+<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a derived class.  The ClassID value always reflects the <code>strihash()</code> computation of the <a data-bs-toggle="tooltip" title="The name of the represented class." href="#tf-ClassName">ClassName</a>, and is automatically set on initialisation if not already set by the client.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-ClassName" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ClassName"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ClassName</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>The name of the represented class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ClassName" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ClassName</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The name of the represented class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ClassName" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field specifies the name of the represented class.  Characters should be limited to those in the range of A-Z and written in camel case, e.g. <code>KeyValue</code> and not <code>Keyvalue</code> or <code>KEYVALUE</code>.  Setting this field value is compulsory prior to initialisation.</p>
       
 </div></div></td></tr>
@@ -94,13 +94,13 @@
                            
                           <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ClassVersion</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>The version number of the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ClassVersion" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field value must reflect the version of the class structure.  Legal version numbers start from 1.0 and ascend. Revision numbers can be used to indicate bug-fixes or very minor changes.</p>
-<p>If declaring a sub-class then this value can be <code>0</code>, but base classes must set a value here.</p>
+<p>If declaring a derived class then this value can be <code>0</code>, but base classes must set a value here.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Dictionary" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Dictionary"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Dictionary</th><td class="col-md-1"><span class="text-nowrap">struct Field *</span></td><td>Returns a field lookup table sorted by field IDs.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Dictionary" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For sub-classes, use linear scanning.</p>
+<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For derived classes, use linear scanning.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Fields" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Fields"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
@@ -112,20 +112,20 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FileDescription" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FileDescription"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileDescription</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>Describes the file type represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileDescription" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileDescription</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Describes the file type represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileDescription" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Picture</code> would be appropriate.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FileExtension" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FileExtension"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileExtension</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>Describes the file extension represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileExtension" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileExtension</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Describes the file extension represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileExtension" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field describes the file extension/s that the class will recognise.  For example: <code>*.wav|*.wave|*.snd</code>.</p>
 <p>Use of the vertical bar allows more than one file extension to be supported by the class. The file extension that is preferred for saving data must come first.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FileHeader" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FileHeader"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileHeader</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>Defines a string expression that will allow relevant file data to be matched to the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileHeader" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileHeader</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Defines a string expression that will allow relevant file data to be matched to the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileHeader" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>If a class supports file data, then the FileHeader field is used to identify the types of data that the class supports. This feature is used by routines that need to analyse files and determine which classes support them.</p>
 <p>For example, the JPEG class supports files that start with a 32-bit token to identify them as JPEG.  Declaring a FileHeader expression to match these tokens will allow the FileView feature to detect JPEG files and display an appropriate icon for each JPEG entry in the file list.</p>
 <p>The expression format is <code>[Offset:Value]...</code></p>
@@ -141,13 +141,13 @@
 </tbody></table>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Icon" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Icon"><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"></i>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Icon" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Icon"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Icon</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>Associates an icon with the file data for this class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Icon" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Icon</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Associates an icon with the file data for this class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Icon" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Files that belong to a class can be associated with an icon that is declared in this field.  The icon string format is <code>folder/icon</code>.  Valid icons are available in the icon database.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Location" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Location"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Location" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Location"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Location</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Returns the path from which the class binary is loaded.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Location" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The path from which the class binary was loaded is readable from this field.  The path may not necessarily include the file extension of the source binary.</p>
@@ -178,7 +178,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>The path to the module binary that represents the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The path to the module binary that represents the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The Path field must be set on initialisation and refers to the default location of the class' module binary, for example <code>modules:display</code>. For reasons of platform portability, the file extension must not be specified at the end of the file name.</p>
       
 </div></div></td></tr>
@@ -194,8 +194,8 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-SubClasses" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-SubClasses"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
-                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">SubClasses</th><td class="col-md-1"><span class="text-nowrap">ARRAY</span></td><td>Returns a list of all sub-classes of the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-SubClasses" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">SubClasses</th><td class="col-md-1"><span class="text-nowrap">OBJECTPTR []</span></td><td>Returns a list of all derived classes of the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-SubClasses" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>This field returns an array listing all active derived classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
       
 </div></div></td></tr>
 </tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-FindField" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">FindField</th><td id="tm-FindField">Search a class definition for a specific field.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-FindField" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR mc::FindField(OBJECTPTR Object, INT ID, struct Field ** Field, objMetaClass ** Source)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The field ID to search for.  Field names can be converted to ID's by using the <code>fieldhash()</code> function.</td></tr>
@@ -238,7 +238,7 @@
 <div class="docs-content" style="display:none;" id="struct-FieldArray"><h1>FieldArray Structure</h1><p class="lead">Used to construct class blueprints for the MetaClass.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>The name of the field, e.g. <code>Width</code></td></tr>
 <tr><th>GetField</th><td><span class="text-nowrap">APTR</span></td><td><code>void GetField(*Object, APTR Result);</code></td></tr>
 <tr><th>SetField</th><td><span class="text-nowrap">APTR</span></td><td><code>ERR SetField(*Object, APTR Value);</code></td></tr>
-<tr><th>Arg</th><td><span class="text-nowrap">MAXINT</span></td><td>Can be a pointer or an integer value</td></tr>
+<tr><th>Arg</th><td><span class="text-nowrap">INT64</span></td><td>Can be a pointer or an integer value</td></tr>
 <tr><th>Flags</th><td><span class="text-nowrap">UINT</span></td><td>Special flags that describe the field</td></tr>
 </tbody></table><div class="footer copyright text-right">MetaClass class documentation © Paul Manias 1996-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">

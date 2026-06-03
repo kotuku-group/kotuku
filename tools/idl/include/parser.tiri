@@ -1,26 +1,135 @@
 
-rx_doc_name        = <{ regex.new("^[Nn]ame:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_combo       = <{ regex.new("^(\\w+):\\s+(.+)\\n", regex.MULTILINE) }>
-rx_doc_comment     = <{ regex.new("^[Cc]omment:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_category    = <{ regex.new("^[Cc]ategory:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_extproto    = <{ regex.new("^[Ee]xtPrototype:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_attrib      = <{ regex.new("^[Aa]ttribute:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_status      = <{ regex.new("^[Ss]tatus:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_lookup      = <{ regex.new("^[Ll]ookup:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_desc        = <{ regex.new("\\n\\n(.+?)\\n-[A-Z]+-\\n", regex.DOT_ALL) }>
-rx_strip_ws        = <{ regex.new("^(.*\\S)") }>
-rx_errors_section  = <{ regex.new("^-ERRORS-\\n+(.+?)-END-", regex.DOT_ALL|regex.MULTILINE) }>
-rx_input_section   = <{ regex.new("^-INPUT-\\n+(.+?)\\n+-[A-Z]+-\\n", regex.DOT_ALL|regex.MULTILINE) }>
-rx_result_section  = <{ regex.new("^-RESULT-\\n+(.+?)\\n+-END-", regex.DOT_ALL|regex.MULTILINE) }>
-rx_ecode_comment   = <{ regex.new("^([A-Za-z]+):\\s+(.+)") }>
-rx_ecode_only      = <{ regex.new("^([A-Za-z]+):?") }>
-rx_private         = <{ regex.new("^[Pp]rivate") }>
-rx_param           = <{ regex.new("^\\s*(.+)\\s+(\\S+)\\s*:\\s*(.+)$") }>
-rx_result_type     = <{ regex.new("^(.+?):\\s+(.+)$") }>
-rx_idl_section     = <{ regex.new("--IDL_BEGIN--(.+?)--IDL_END--", regex.DOT_ALL) }>
+rx_doc_name        = <{ regex.new([[^[Nn]ame:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_combo       = <{ regex.new([[^(\w+):\s+(.+)\n]], regex.MULTILINE) }>
+rx_doc_comment     = <{ regex.new([[^[Cc]omment:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_category    = <{ regex.new([[^[Cc]ategory:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_extproto    = <{ regex.new([[^[Ee]xtPrototype:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_attrib      = <{ regex.new([[^[Aa]ttribute:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_status      = <{ regex.new([[^[Ss]tatus:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_lookup      = <{ regex.new([[^[Ll]ookup:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_desc        = <{ regex.new([[\n\n(.+?)\n-[A-Z]+-\n]], regex.DOT_ALL) }>
+rx_strip_ws        = <{ regex.new([[^(.*\S)]]) }>
+rx_errors_section  = <{ regex.new([[^-ERRORS-\n+(.+?)\n+-(?:TAGS|END)-]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_input_section   = <{ regex.new([[^-INPUT-\n+(.+?)\n+-[A-Z]+-\n]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_result_section  = <{ regex.new([[^-RESULT-\n+(.+?)\n+-(?:TAGS|END)-]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_tags_section    = <{ regex.new([[^-TAGS-\n+(.+?)\n+-(?:ERRORS|RESULT|END)-]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_ecode_comment   = <{ regex.new([[^([A-Za-z]+):\s+(.+)]]) }>
+rx_ecode_only      = <{ regex.new([[^([A-Za-z]+):?]]) }>
+rx_private         = <{ regex.new([[^[Pp]rivate]]) }>
+rx_param           = <{ regex.new([[^\s*(.+)\s+(\S+)\s*:\s*(.+)$]]) }>
+rx_result_type     = <{ regex.new([[^(.+?):\s+(.+)$]]) }>
+rx_idl_section     = <{ regex.new([[--IDL_BEGIN--(.+?)--IDL_END--]], regex.DOT_ALL) }>
 rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
 
+global glTotalWarnings ?= 0
+
+global glOfficialTags = {
+   ['api-owns-result'] = true,
+   ['blocking'] = true,
+   ['callback-held'] = true,
+   ['callback-inlines'] = true,
+   ['caller-owns-result'] = true,
+   ['case-insensitive'] = true,
+   ['case-sensitive'] = true,
+   ['closes-handle'] = true,
+   ['consumes-input'] = true,
+   ['copies-input'] = true,
+   ['creates-resource'] = true,
+   ['deprecated'] = true,
+   ['does-not-take-ownership'] = true,
+   ['idempotent'] = true,
+   ['main-thread-only'] = true,
+   ['mutates-input'] = true,
+   ['mutates-object'] = true,
+   ['non-blocking'] = true,
+   ['non-null-result'] = true,
+   ['not-reentrant'] = true,
+   ['null-terminated-result'] = true,
+   ['nullable-result'] = true,
+   ['object-owns-result'] = true,
+   ['opens-handle'] = true,
+   ['path-preserved'] = true,
+   ['path-resolved'] = true,
+   ['private'] = true,
+   ['pure-query'] = true,
+   ['reentrant'] = true,
+   ['retains-input'] = true,
+   ['static-result'] = true,
+   ['takes-ownership'] = true,
+   ['thread-safe'] = true,
+   ['updates-seek-index'] = true,
+   ['volatile-result'] = true
+}
+
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse and validate comma or newline-separated documentation tags for the supplied context.
+
+function parseTags(Tags:str, Context:str):array
+   result = array<string>
+   Tags ?! return result
+
+   for item in values(Tags:replace('\n', ','):split(',')) do
+      local tag = item:trim()
+      if tag?? then
+         if glOfficialTags[tag] then
+            result = addTag(result, tag)
+         else
+            glTotalWarnings++
+            print(f"Warning: Unrecognised documentation tag '{tag}' in {Context}; tag removed.")
+         end
+      end
+   end
+
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Apply automatic documentation tags to a tag list based on a field definition.
+
+global function addTag(Tags:array, Tag:str):array
+   Tags ?= array<string>
+
+   for existing_tag in values(Tags) do
+      if existing_tag is Tag then return Tags end
+   end
+
+   Tags:push(Tag)
+   return Tags
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Apply automatic documentation tags to a tag list based on a field definition.
+
+global function getTagsFromField(Field:table, Tags:array):array
+   Field ?! return Tags
+   Tags ?= array<string>
+
+   if Field.allocated then addTag(Tags, 'caller-owns-result') end
+   if Field.flags and Field.flags has FD_ALLOC then addTag(Tags, 'caller-owns-result') end
+
+   if Field.mutable then addTag(Tags, 'mutates-input') end
+   if Field.isFunction and Field.flags and (Field.flags has FD_MUTABLE) then addTag(Tags, 'mutates-input') end
+
+   if Field.flags and Field.flags has FD_PRIVATE then addTag(Tags, 'private') end
+   return Tags
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Apply automatic documentation tags for every field or parameter in a collection.
+
+global function getTagsFromCollection(Tags:array, Fields:any):array
+   Tags ?= array<string>
+   Fields ?! return Tags
+
+   for field in values(Fields) do
+      Tags = getTagsFromField(field, Tags)
+   end
+
+   return Tags
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Route a class documentation entry to the parser for its recognised section type.
 
 global function parseClassEntry(Class, Type, Extract)
    choose Type from
@@ -32,6 +141,7 @@ global function parseClassEntry(Class, Type, Extract)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse the -CLASS- documentation header and attach it to the class definition.
 
 global function parseClassHeader(Class:table, Extract:str)
    Extract = f'-CLASS-\n{Extract:trim()}\n-END-\n'
@@ -46,6 +156,7 @@ global function parseClassHeader(Class:table, Extract:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse an -ACTION- documentation block and attach the extracted details to the class action.
 
 global function parseAction(Class:table, Extract:str)
    Extract = '-ACTION-\n' .. Extract:trim() .. '\n-END-\n'
@@ -82,9 +193,15 @@ global function parseAction(Class:table, Extract:str)
 
       table.sort(action.results, function(a,b) return a.code < b.code end)
    end
+
+   local tags = rx_tags_section.extract(Extract)
+   if tags?? then
+      action.tags = parseTags(tags, f"action '{Class.name}.{name}'")
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse a -FIELD- documentation block and attach the extracted details to the matching class field.
 
 global function parseField(Class:table, Extract:str)
    Extract = '-FIELD-\n' .. Extract:trim() .. '\n-END-\n'
@@ -115,6 +232,11 @@ global function parseField(Class:table, Extract:str)
          f.access = 'Private'
       end
       f.description = description
+
+      local tags = rx_tags_section.extract(Extract)
+      if tags?? then
+         f.tags = parseTags(tags, f"field '{Class.name}.{name}'")
+      end
    elseif Class.meta then
       print("Field '" .. Class.name .. "." .. tostring(name) .. "' is not defined in the TDL or compiled class spec.")
    end
@@ -135,6 +257,7 @@ global function parseParameterString(Parameter:str):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse a -METHOD- documentation block and attach the extracted details to the registered class method.
 
 global function parseMethod(Class:table, Extract:str)
    Extract = f'-METHOD-\n{Extract:trim()}\n-END-\n'
@@ -207,6 +330,13 @@ global function parseMethod(Class:table, Extract:str)
          end
       end
    end
+
+   local tags = rx_tags_section.extract(Extract)
+   if tags?? then
+      method.tags = parseTags(tags, f"method '{Class.name}.{name}'")
+   end
+
+   method.tags = getTagsFromCollection(method.tags, method.params)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -239,6 +369,7 @@ global function parseClassFields(Class:table, ClientSpec:str)
             if def and def.synonym != true then
                f = findClassField(Class, def.name) -- Retrieve field parsed from TDL, if defined
                if f then
+                  f.arg     = def.arg
                   f.write   = def.write
                   f.read    = def.read
                   f.flags   = def.flags
@@ -262,12 +393,19 @@ global function parseClassFields(Class:table, ClientSpec:str)
    Class.lookupFields = { }
    if Class.fields then
       for f in values(Class.fields) do
+         local err, cf, _ = Class.meta.mtFindField(calcFieldHash(f.name))
+         if err is ERR_Okay then
+            f.offset = cf.offset
+            f.index  = cf.index
+         end
+
          Class.lookupFields[f.name] = f
       end
    end
 
-   -- NB: FieldArray is not output because as yet fields (including virtual fields) cannot be accurately
-   -- described without the developer writing a custom field configuration in C.
+   -- NB: A FieldArray blueprint cannot be automatically generated because some fields (inc. virtual) cannot be accurately
+   -- described without declaring precise FD flags.  The likely solution would be to add support for a new EDF, -ATTRIBS-
+   -- for declaring a CSV list of field attributes, or integrating field attributes with -TAGS-.
 
    fdef = f'static const struct FieldArray cl{Class.name}Fields[] = {{\n'
    Class.longestType = 0
@@ -368,6 +506,7 @@ global function parseSourceFiles()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse a -CATEGORY- documentation block and make it the active function category.
 
 global function parseCategory(Extract:str)
    Extract = f'-CATEGORY-\n{Extract:trim()}\n-END-\n'
@@ -379,15 +518,15 @@ end
 -- Used by processSourceFiles() to process -FUNCTION- descriptions in self-documenting source code.
 
 global function parseFunction(Extract:str)
-   if not Extract?? then return end
+   Extract ?! return
 
    Extract = f'-FUNCTION-\n{Extract:trim()}\n-END-\n'
 
    local name, comment = rx_doc_combo.extract(Extract)
-   local status = rx_doc_status.extract(Extract)
-   local category = rx_doc_category.extract(Extract)
-   local ext_proto = rx_doc_extproto.extract(Extract)
-   local attrib = rx_doc_attrib.extract(Extract)
+   local status      = rx_doc_status.extract(Extract)
+   local category    = rx_doc_category.extract(Extract)
+   local ext_proto   = rx_doc_extproto.extract(Extract)
+   local attrib      = rx_doc_attrib.extract(Extract)
    local description = rx_doc_desc.extract(Extract)
 
    if name and name:endsWith('()') then
@@ -445,6 +584,11 @@ global function parseFunction(Extract:str)
          assert(ext_type, "Incorrectly defined result section in function '" .. name .. "'")
          def.result = cType({ type=ext_type, comment=res_comment:trim(), isFunction=true, isResponse=true }, "Function " .. name)
       end
+   end
+
+   local tags = rx_tags_section.extract(Extract)
+   if tags?? then
+      def.tags = parseTags(tags, f"function '{name}'")
    end
 
    idlFunction(name, (category ?? glCategory), comment, status, description, def)

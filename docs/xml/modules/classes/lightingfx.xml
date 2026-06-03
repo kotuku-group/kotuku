@@ -78,6 +78,7 @@ Lr,Lg,Lb = RGB components of light
 <p>This method applies a distant light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
 <p>A distant light can be thought of as like the light from the sun.  An infinite amount of parallel light rays travel in the direction that the distant light points to.  Distant lights are handy when you want equal illumination on objects in a scene.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -94,6 +95,7 @@ Lr,Lg,Lb = RGB components of light
 <p>This method applies a pointed light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
 <p>A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open flame is a good example of a point light.  The intensity of the light can be controlled by altering the alpha component of the light <fl>Colour</fl>.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -115,6 +117,7 @@ Lr,Lg,Lb = RGB components of light
 <p>This method applies a spot light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
 <p>A spot light beams light rays from the defined (X, Y, Z) position to the (PX, PY, PZ) position.  The Exponent and ConeAngle work together to constrain the edge of the light projection.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -196,6 +199,7 @@ Lr,Lg,Lb = RGB components of light
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

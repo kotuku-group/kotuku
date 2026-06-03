@@ -12,6 +12,9 @@
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding sockets and HTTP, please refer to the <class name="NetSocket">NetSocket</class>, <class name="NetServer">NetServer</class> and <class name="HTTP">HTTP</class> classes.</p></description>
+    <source>
+      <file path="src/network/">network.cpp</file>
+    </source>
     <classes>
       <class>ClientSocket</class>
       <class>NetClient</class>
@@ -27,6 +30,7 @@
     <comment>Converts an IPAddress structure to an IPAddress in dotted string form.</comment>
     <prototype>CSTRING net::AddressToStr(struct IPAddress * IPAddress)</prototype>
     <tiriPrototype>str = AddressToStr(IPAddress:any)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, null-terminated-result, nullable-result</tags>
     <input>
       <param type="struct IPAddress *" name="IPAddress">A pointer to the IPAddress structure.</param>
     </input>
@@ -41,6 +45,7 @@
     <comment>Converts a 32 bit (unsigned) long from host to network byte order.</comment>
     <prototype>UINT net::HostToLong(UINT Value)</prototype>
     <tiriPrototype>num = HostToLong(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in host byte order to be converted to network byte order</param>
     </input>
@@ -55,6 +60,7 @@
     <comment>Converts a 16 bit (unsigned) word from host to network byte order.</comment>
     <prototype>UINT net::HostToShort(UINT Value)</prototype>
     <tiriPrototype>num = HostToShort(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in host byte order to be converted to network byte order</param>
     </input>
@@ -69,6 +75,7 @@
     <comment>Converts a 32 bit (unsigned) long from network to host byte order.</comment>
     <prototype>UINT net::LongToHost(UINT Value)</prototype>
     <tiriPrototype>num = LongToHost(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in network byte order to be converted to host byte order</param>
     </input>
@@ -83,6 +90,7 @@
     <comment>Alters SSL settings on an initialised NetSocket client object.</comment>
     <prototype>ERR net::SetSSL(objNetSocket * NetSocket, const std::string_view &amp; Command, const std::string_view &amp; Value)</prototype>
     <tiriPrototype>err = SetSSL(NetSocket:obj, Command:str, Value:str)</tiriPrototype>
+    <tags>mutates-object, blocking, case-sensitive</tags>
     <input>
       <param type="objNetSocket *" name="NetSocket">The target NetSocket object.</param>
       <param type="const std::string_view &amp;" name="Command">Name of a command or option to set (case-sensitive, camel-case).</param>
@@ -102,7 +110,15 @@ in SSL mode.</li>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Retry">SSL handshaking needs to be retried.</error>
+      <error code="Failed">SSL setup or connection setup failed.</error>
+      <error code="FieldNotSet">SSL state was not initialised for the socket.</error>
+      <error code="SystemCall">The SSL library or platform SSL backend reported a system-level failure.</error>
+      <error code="Disconnected">SSL reported that the peer disconnected during handshaking.</error>
       <error code="NullArgs">The NetSocket argument was not specified.</error>
+      <error code="WrongClass">The object is not a NetSocket.</error>
+      <error code="WouldBlock">SSL handshaking would block.</error>
+      <error code="InputOutput">SSL handshaking failed due to an I/O error.</error>
       <error code="NoSecureSockets">SSL support is disabled in this build.</error>
     </result>
   </function>
@@ -112,6 +128,7 @@ in SSL mode.</li>
     <comment>Converts a 16 bit (unsigned) word from network to host byte order.</comment>
     <prototype>UINT net::ShortToHost(UINT Value)</prototype>
     <tiriPrototype>num = ShortToHost(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in network byte order to be converted to host byte order</param>
     </input>
@@ -124,16 +141,17 @@ in SSL mode.</li>
   <function>
     <name>StrToAddress</name>
     <comment>Converts an IP Address in string form to an <st>IPAddress</st> structure.</comment>
-    <prototype>ERR net::StrToAddress(CSTRING String, struct IPAddress * Address)</prototype>
+    <prototype>ERR net::StrToAddress(const std::string_view &amp; String, struct IPAddress * Address)</prototype>
     <tiriPrototype>err = StrToAddress(String:str, Address:any)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
-      <param type="CSTRING" name="String">A null-terminated string containing the IP Address in dotted format.</param>
+      <param type="const std::string_view &amp;" name="String">A null-terminated string containing the IP Address in dotted format.</param>
       <param type="struct IPAddress *" name="Address">Must point to an <st>IPAddress</st> structure that will be filled in.</param>
     </input>
     <description>
 <p>Converts an IPv4 or an IPv6 address in string format to an <st>IPAddress</st> structure.  The <code>String</code> must be of form <code>1.2.3.4</code> (IPv4) or <code>2001:db8::1</code> (IPv6).  IPv6 addresses are automatically detected by the presence of colons.</p>
 <pre>struct IPAddress addr;
-if (!StrToAddress(&quot;127.0.0.1&quot;, &amp;addr)) {
+if (StrToAddress(&quot;127.0.0.1&quot;, &amp;addr) IS ERR::Okay) {
    ...
 }
 </pre>

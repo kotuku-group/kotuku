@@ -63,6 +63,7 @@ static const struct ActionArray clVectorGradientActions[] = {
    { AC::Free, VECTORGRADIENT_Free },
    { AC::Init, VECTORGRADIENT_Init },
    { AC::NewObject, VECTORGRADIENT_NewObject },
+   { AC::NewPlacement, VECTORGRADIENT_NewPlacement },
    { AC::NIL, nullptr }
 };
 

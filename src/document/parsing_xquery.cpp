@@ -624,19 +624,11 @@ static ERR xq_get_object_key(OBJECTPTR Object, std::string_view Key, std::string
    if (CheckAction(Object, AC::GetKey) != ERR::Okay) return ERR::Search;
 
    auto key = std::string(Key);
-   std::string buffer(4096, 0);
-   while (true) {
-      buffer.back() = 0;
-      struct acGetKey var = { key.c_str(), buffer.data(), int(buffer.size()) };
-      if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
-      if (buffer.back()) {
-         buffer.resize(buffer.size() * 2);
-         continue;
-      }
-
-      Result.assign(buffer.c_str());
-      return ERR::Okay;
-   }
+   std::string buffer;
+   struct acGetKey var = { key, &buffer };
+   if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
+   Result.assign(buffer);
+   return ERR::Okay;
 }
 
 static ERR xq_get_object_field(OBJECTID ObjectID, std::string_view FieldName, std::string &Result)
@@ -850,10 +842,10 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
 
    if (auto err = query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
-      CSTRING msg;
+      std::string_view msg;
       if (query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
          Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
-            "XQuery error evaluating \"{}\": {}.", Expression, msg ? msg : "(none)");
+            "XQuery error evaluating \"{}\": {}.", Expression, msg.empty() ? std::string_view("(none)") : msg);
       }
       else Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
          "XQuery error evaluating \"{}\".", Expression);
@@ -884,10 +876,10 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
       }
    }
    else {
-      CSTRING result = nullptr;
+      std::string_view result;
       if (query->get(FID_ResultString, result) IS ERR::Okay) {
-         if ((OutString) and result) OutString->assign(result);
-         if ((OutBoolean) and result and iequals("true", result)) *OutBoolean = true;
+         if ((OutString) and not result.empty()) OutString->assign(result);
+         if ((OutBoolean) and not result.empty() and iequals("true", result)) *OutBoolean = true;
       }
    }
 

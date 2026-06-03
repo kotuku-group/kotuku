@@ -168,9 +168,9 @@ class extNetServer : public extNetSocket {
 
    objNetClient *LastClient;   // For linked-list management.
    objNetClient *Clients;      // Lists all clients connected to the NetServer.
-   CSTRING SSLCertificate;     // SSL certificate file to use for SSL listeners.
-   CSTRING SSLPrivateKey;      // Private key file to use for SSL listeners.
-   CSTRING SSLKeyPassword;     // SSL private key password.
+   std::string SSLCertificate; // SSL certificate file to use for SSL listeners.
+   std::string SSLPrivateKey;  // Private key file to use for SSL listeners.
+   std::string SSLKeyPassword; // SSL private key password.
    int    Backlog;             // The maximum number of connections that can be queued against the socket.
    int    ClientLimit;         // The maximum number of client IP addresses that can be connected to the NetServer.
    int    SocketLimit;         // Limits the number of connected sockets per client IP address.
@@ -456,7 +456,7 @@ static std::string glCertPath;
 
    static ERR resolve_ssl_certificate_paths(extNetServer *Self, ssl_certificate_paths &Paths)
    {
-      if ((!Self) or (!Self->SSLCertificate) or (!*Self->SSLCertificate)) return ERR::FieldNotSet;
+      if ((not Self) or Self->SSLCertificate.empty()) return ERR::FieldNotSet;
 
       Paths.Format = ssl_certificate_format(Self->SSLCertificate);
       if (Paths.Format IS SSLCERTFORMAT::NIL) return ERR::InvalidData;
@@ -465,7 +465,7 @@ static std::string glCertPath;
          return error;
       }
 
-      if (Self->SSLPrivateKey) {
+      if (not Self->SSLPrivateKey.empty()) {
          if (ssl_private_key_format(Self->SSLPrivateKey) IS SSLCERTFORMAT::NIL) return ERR::InvalidData;
 
          if (auto error = ResolvePath(Self->SSLPrivateKey, RSF::NIL, &Paths.PrivateKeyPath); error != ERR::Okay) {
@@ -474,7 +474,7 @@ static std::string glCertPath;
          Paths.PrivateKey.emplace(Paths.PrivateKeyPath);
       }
 
-      if (Self->SSLKeyPassword) Paths.Password.emplace(Self->SSLKeyPassword);
+      if (not Self->SSLKeyPassword.empty()) Paths.Password.emplace(Self->SSLKeyPassword);
 
       return ERR::Okay;
    }
@@ -631,6 +631,9 @@ struct(IPAddress) IPAddress: A pointer to the IPAddress structure.
 -RESULT-
 !cstr: The IP address is returned as an allocated string.
 
+-TAGS-
+caller-owns-result, creates-resource, null-terminated-result, nullable-result
+
 *********************************************************************************************************************/
 
 CSTRING AddressToStr(IPAddress *Address)
@@ -660,13 +663,13 @@ Converts an IPv4 or an IPv6 address in string format to an !IPAddress structure.
 
 <pre>
 struct IPAddress addr;
-if (!StrToAddress("127.0.0.1", &addr)) {
+if (StrToAddress("127.0.0.1", &addr) IS ERR::Okay) {
    ...
 }
 </pre>
 
 -INPUT-
-cstr String:  A null-terminated string containing the IP Address in dotted format.
+cpp(strview) String:  A null-terminated string containing the IP Address in dotted format.
 struct(IPAddress) Address: Must point to an !IPAddress structure that will be filled in.
 
 -ERRORS-
@@ -674,11 +677,14 @@ Okay:    The `Address` was converted successfully.
 NullArgs
 Failed:  The `String` was not a valid IP Address.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
-ERR StrToAddress(CSTRING Str, IPAddress *Address)
+ERR StrToAddress(const std::string_view &Str, IPAddress *Address)
 {
-   if ((!Str) or (!Address)) return ERR::NullArgs;
+   if ((Str.empty()) or (not Address)) return ERR::NullArgs;
 
    auto port = Address->Port;
    kt::clearmem(Address, sizeof(*Address));
@@ -687,22 +693,20 @@ ERR StrToAddress(CSTRING Str, IPAddress *Address)
       setIPV4(*Address, 0x7f000001, port); // 127.0.0.1
       return ERR::Okay;
    }
-   else if ((!Str[0]) or kt::iequals(Str, "*")) {
+   else if (Str IS "*") {
       setIPV4(*Address, 0, port);
       return ERR::Okay;
    }
 
-   std::string_view text(Str);
-
-   if (text.find(':') != std::string_view::npos) {
-      if (parse_ipv6_literal(text, *Address)) {
+   if (Str.find(':') != std::string_view::npos) {
+      if (parse_ipv6_literal(Str, *Address)) {
          Address->Port = port;
          return ERR::Okay;
       }
    }
    else {
       uint32_t ipv4 = 0;
-      if (parse_ipv4_literal(text, ipv4)) {
+      if (parse_ipv4_literal(Str, ipv4)) {
          setIPV4(*Address, ipv4, port);
          return ERR::Okay;
       }
@@ -724,6 +728,9 @@ uint Value: Data in host byte order to be converted to network byte order
 -RESULT-
 uint: The word in network byte order
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 uint32_t HostToShort(uint32_t Value)
@@ -743,6 +750,9 @@ uint Value: Data in host byte order to be converted to network byte order
 
 -RESULT-
 uint: The long in network byte order
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -764,6 +774,9 @@ uint Value: Data in network byte order to be converted to host byte order
 -RESULT-
 uint: The Value in host byte order
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 uint32_t ShortToHost(uint32_t Value)
@@ -783,6 +796,9 @@ uint Value: Data in network byte order to be converted to host byte order
 
 -RESULT-
 uint: The Value in host byte order.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -819,8 +835,19 @@ cpp(strview) Value: Value to set for the command or option.
 
 -ERRORS-
 Okay:
+Disconnected: SSL reported that the peer disconnected during handshaking.
+Failed: SSL setup or connection setup failed.
+FieldNotSet: SSL state was not initialised for the socket.
+InputOutput: SSL handshaking failed due to an I/O error.
 NullArgs: The NetSocket argument was not specified.
 NoSecureSockets: SSL support is disabled in this build.
+Retry: SSL handshaking needs to be retried.
+SystemCall: The SSL library or platform SSL backend reported a system-level failure.
+WouldBlock: SSL handshaking would block.
+WrongClass: The object is not a NetSocket.
+
+-TAGS-
+mutates-object, blocking, case-sensitive
 -END-
 
 *********************************************************************************************************************/
@@ -872,7 +899,7 @@ ERR SetSSL(objNetSocket *Socket, const std::string_view &Command, const std::str
 
 //********************************************************************************************************************
 
-ERR NetworkPlatform::prepare_bind_address(CSTRING Address, int Port, bool IPv6, NetworkEndpoint &Endpoint)
+ERR NetworkPlatform::prepare_bind_address(std::string_view Address, int Port, bool IPv6, NetworkEndpoint &Endpoint)
 {
    kt::clearmem(&Endpoint, sizeof(Endpoint));
 
@@ -881,12 +908,10 @@ ERR NetworkPlatform::prepare_bind_address(CSTRING Address, int Port, bool IPv6, 
    IPAddress ip;
    kt::clearmem(&ip, sizeof(ip));
 
-   if (Address) {
+   if (not Address.empty()) {
       if (auto error = net::StrToAddress(Address, &ip); error != ERR::Okay) return ERR::InvalidValue;
    }
-   else {
-      ip.Type = IPv6 ? IPADDR::V6 : IPADDR::V4;
-   }
+   else ip.Type = IPv6 ? IPADDR::V6 : IPADDR::V4;
 
    return build_address(ip, Port, IPv6, Endpoint);
 }

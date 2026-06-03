@@ -62,6 +62,15 @@ inline void luaL_argcheck(lua_State *L, bool Cond, int NumArg, const char *Extra
    if (not Cond) luaL_argerror(L, NumArg, ExtraMsg);
 }
 
+inline bool luaL_checkstring(lua_State *L, int N, std::string_view &SV) {
+   size_t len;
+   if (auto str = luaL_checklstring(L, N, &len)) {
+      SV = std::string_view{str, len};
+      return true;
+   }
+   else return false;
+}
+
 inline const char * luaL_checkstring(lua_State *L, int N) { return luaL_checklstring(L, N, nullptr); }
 inline const char * luaL_optstring(lua_State *L, int N, const char *D) { return luaL_optlstring(L, N, D, nullptr); }
 inline int luaL_checkint(lua_State *L, int N) { return int(luaL_checkinteger(L, N)); }

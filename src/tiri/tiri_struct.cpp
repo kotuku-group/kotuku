@@ -331,7 +331,7 @@ struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view Str
 
    log.traceBranch("Struct: %s, Address: %p, Deallocate: %d", StructName.data(), Address, Deallocate);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    auto def = glStructs.find(StructName);
    if (def != glStructs.end()) {
       return push_struct_def(prv->Lua, Address, def->second, Deallocate);

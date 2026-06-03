@@ -1,0 +1,243 @@
+-- Flute tests for the ?! if-empty guard operator
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function ShortHand()
+   not_true = false
+   returned_early = true
+   function test()
+      not_true ?! return
+      returned_early = false
+   end
+
+   test()
+   assert(returned_early is true, "Failed shorthand optional early return test")
+
+   true ?? "My message " .. test() .. " here"
+   assert(returned_early is true, "Failed shorthand optional early return test")
+end
+
+-- Test return with value
+@Test function ShortHandReturnValue()
+   function getValue(Input)
+      Input ?! return "default"
+      return Input
+   end
+
+   assert(getValue(nil) is "default", "nil should return default")
+   assert(getValue(false) is "default", "false should return default")
+   assert(getValue(0) is "default", "0 should return default")
+   assert(getValue("") is "default", "empty string should return default")
+   assert(getValue("hello") is "hello", "truthy should return input")
+   assert(getValue(42) is 42, "truthy number should return input")
+end
+
+@Test function ShortHandStringValues()
+   function describeString(Text)
+      Text ?! return 'empty'
+      return 'value:' .. Text
+   end
+
+   assert(describeString('') is 'empty', "Empty string should trigger shorthand return")
+   assert(describeString('hello') is 'value:hello', "Non-empty string should pass the shorthand guard")
+
+   parts = array<string>
+   runtime_empty = parts:concat()
+   assert(describeString(runtime_empty) is 'empty', "Runtime empty string should trigger shorthand return")
+end
+
+@Test function ShortHandTableValues()
+   function describeTable(Value)
+      Value ?! return 'empty'
+      return Value.name ?? 'present'
+   end
+
+   empty = { }
+   named = { name = 'table' }
+
+   assert(describeTable(empty) is 'present', "Empty table should pass the shorthand guard")
+   assert(describeTable(named) is 'table', "Non-empty table should pass the shorthand guard")
+end
+
+-- Test break in loop
+@Test function ShortHandBreak()
+   iterations = 0
+   values = { 1, 2, 0, 4, 5 }  -- 0 at index 2 should break
+
+   for i = 0, #values - 1 do
+      values[i] ?! break
+      iterations++
+   end
+
+   assert(iterations is 2, "Should break after 2 iterations, got " .. tostring(iterations))
+end
+
+-- Test continue in loop
+@Test function ShortHandContinue()
+   sum = 0
+   values = { 1, 0, 2, "", 3 }  -- Skip falsey values
+
+   for i = 0, #values - 1 do
+      values[i] ?! continue
+      sum += values[i]
+   end
+
+   assert(sum is 6, "Sum should be 6 (1+2+3), got " .. tostring(sum))
+end
+
+-- Test with runtime values (not compile-time constants)
+@Test function ShortHandRuntimeCondition()
+   function getCondition()
+      return nil
+   end
+
+   executed_body = false
+   function test()
+      getCondition() ?! return
+      executed_body = true
+   end
+
+   test()
+   assert(executed_body is false, "Body should not execute when condition is falsey")
+end
+
+-- Test truthy condition does not execute body
+@Test function ShortHandTruthySkipsBody()
+   body_executed = false
+   function test()
+      "truthy" ?! return
+      body_executed = true
+   end
+
+   test()
+   assert(body_executed is true, "Body should execute when condition is truthy")
+end
+
+@Test function ShortHandEmptyArrayReturnValue()
+   function describeArray(Items)
+      Items ?! return 'empty'
+      return #Items
+   end
+
+   empty = array<int>
+   assert(describeArray(empty) is 'empty', "Empty array should trigger shorthand return value")
+
+   single = array<int> { 0 }
+   assert(describeArray(single) is 1, "Array with a falsey element should still be truthy")
+
+   filled = array<int, 3>
+   assert(describeArray(filled) is 3, "Sized array should be truthy")
+end
+
+@Test function ShortHandEmptyArrayBareReturn()
+   visited = false
+
+   function visitArray(Items)
+      Items ?! return
+      visited = true
+   end
+
+   empty = array<string>
+   visitArray(empty)
+   assert(visited is false, "Empty array should trigger bare shorthand return")
+
+   filled = array<string> { '' }
+   visitArray(filled)
+   assert(visited is true, "Array containing an empty string should not trigger shorthand return")
+end
+
+@Test function ShortHandArrayBreak()
+   first = array<int> { 1, 2 }
+   empty = array<int>
+   after_empty = array<int> { 3 }
+   values = array<array> { first, empty, after_empty }
+
+   iterations = 0
+   total = 0
+   for i = 0, #values - 1 do
+      values[i] ?! break
+      iterations++
+      total += #values[i]
+   end
+
+   assert(iterations is 1, "Loop should break at the first empty array, got " .. tostring(iterations))
+   assert(total is 2, "Loop should only include arrays before the empty array, got " .. tostring(total))
+end
+
+@Test function ShortHandArrayContinue()
+   first = array<int> { 1 }
+   first_empty = array<int>
+   second = array<int> { 0 }
+   second_empty = array<int>
+   third = array<int> { 2, 3 }
+   values = array<array> { first, first_empty, second, second_empty, third }
+
+   iterations = 0
+   total = 0
+   for i = 0, #values - 1 do
+      values[i] ?! continue
+      iterations++
+      total += #values[i]
+   end
+
+   assert(iterations is 3, "Loop should continue past two empty arrays, got " .. tostring(iterations))
+   assert(total is 4, "Loop should add lengths for non-empty arrays only, got " .. tostring(total))
+end
+
+@Test function ShortHandArrayFromFunction()
+   empty = array<byte>
+   filled = array<byte> { 0 }
+
+   function getEmptyArray()
+      return empty
+   end
+
+   function getFilledArray()
+      return filled
+   end
+
+   empty_returned = false
+   function rejectEmpty()
+      getEmptyArray() ?! return 'empty'
+      empty_returned = true
+      return 'filled'
+   end
+
+   filled_returned = false
+   function acceptFilled()
+      getFilledArray() ?! return 'empty'
+      filled_returned = true
+      return 'filled'
+   end
+
+   assert(rejectEmpty() is 'empty', "Function-returned empty array should trigger shorthand return")
+   assert(empty_returned is false, "Function-returned empty array should not execute after the guard")
+   assert(acceptFilled() is 'filled', "Function-returned non-empty array should pass the shorthand guard")
+   assert(filled_returned is true, "Function-returned non-empty array should execute after the guard")
+end
+
+@Test function ShortHandArrayIndexedValue()
+   empty = array<int>
+   filled = array<int> { 10 }
+   slots = array<array> { empty, filled }
+
+   first_reached = false
+   function checkFirstSlot()
+      slots[0] ?! return 'empty'
+      first_reached = true
+      return 'filled'
+   end
+
+   second_reached = false
+   function checkSecondSlot()
+      slots[1] ?! return 'empty'
+      second_reached = true
+      return 'filled'
+   end
+
+   assert(checkFirstSlot() is 'empty', "Indexed empty array should trigger shorthand return")
+   assert(first_reached is false, "Indexed empty array should not execute after the guard")
+   assert(checkSecondSlot() is 'filled', "Indexed non-empty array should pass the shorthand guard")
+   assert(second_reached is true, "Indexed non-empty array should execute after the guard")
+end

@@ -53,6 +53,7 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
         <error code="FieldNotSet">The module has not been successfully initialised.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, static-result</tags>
     </method>
 
     <method>
@@ -73,6 +74,7 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">Unit tests are not defined for the module.</error>
       </result>
+      <tags>callback-inlines</tags>
     </method>
 
   </methods>

@@ -54,8 +54,8 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
    }
 
    if (objTask *task = CurrentTask()) {
-      CSTRING task_path = nullptr;
-      if ((task->get(FID_Path, task_path) IS ERR::Okay) and task_path) {
+      std::string_view task_path;
+      if ((task->get(FID_Path, task_path) IS ERR::Okay) and not task_path.empty()) {
          std::string working(task_path);
          if (not working.empty()) {
             char last = working.back();

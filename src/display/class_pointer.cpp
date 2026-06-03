@@ -1332,8 +1332,8 @@ static const FieldArray clPointerFields[] = {
    { "OverObject",   FDF_OBJECTID|FDF_R },
    { "ClickSlop",    FDF_INT|FDF_RW },
    // Virtual Fields
-   { "ButtonState",  FDF_INT|FDF_R, GET_ButtonState },
-   { "ButtonOrder",  FDF_CPPSTRING|FDF_RW, GET_ButtonOrder, SET_ButtonOrder },
+   { "ButtonState",  FDF_INT|FDF_R|FDF_PURE, GET_ButtonState },
+   { "ButtonOrder",  FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_ButtonOrder, SET_ButtonOrder },
    END_FIELD
 };
 

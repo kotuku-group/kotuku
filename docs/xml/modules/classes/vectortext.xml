@@ -47,6 +47,7 @@
         <error code="Okay">The line was deleted.</error>
         <error code="Args">The Line value was out of the valid range.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>

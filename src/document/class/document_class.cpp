@@ -13,7 +13,7 @@ detail with our existing vector API.  Consequently, document formatting is close
 and seamlessly inherits SVG functionality such as filling and stroking commands.
 
 The native document format for Kōtuku is RIPL.  Documentation for RIPL is available in the Kotuku Wiki.  Other
-document formats may be supported as sub-classes, but bear in mind that document parsing is a one-way trip and
+document formats may be supported as derived classes, but bear in mind that document parsing is a one-way trip and
 stateful information such as the HTML DOM is not supported.
 
 The Document class does not include a security barrier in its current form.  Documents that include scripted code
@@ -213,6 +213,9 @@ ptr(func) Function: The function to call when the trigger activates.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object, callback-held
 -END-
 
 *********************************************************************************************************************/
@@ -258,6 +261,9 @@ int TotalArgs: The total number of entries in the `Args` array.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+callback-inlines
 
 *********************************************************************************************************************/
 
@@ -502,6 +508,9 @@ int Flags: Optional flags.
 Okay
 NullArgs
 Search: The cell was not found.
+
+-TAGS-
+mutates-object, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -547,6 +556,9 @@ cstr String: Content to insert
 Okay
 NullArgs
 
+-TAGS-
+mutates-object, private
+
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_FeedParser(extDocument *Self, doc::FeedParser *Args)
@@ -587,6 +599,9 @@ cstr Name:  The name of the index to search for.
 Okay: The index was found and the `Start` and `End` parameters reflect its position.
 NullArgs:
 Search: The index was not found.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -679,18 +694,18 @@ key-value will be given the same name as that specified in the widget's element.
 
 static ERR DOCUMENT_GetKey(extDocument *Self, struct acGetKey *Args)
 {
-   if ((not Args) or (not Args->Value) or (not Args->Key) or (Args->Size < 2)) return ERR::Args;
+   if ((not Args) or (not Args->Value)) return ERR::Args;
 
-   if (Self->Vars.contains(Args->Key)) {
-      strcopy(Self->Vars[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->Vars.find(Args->Key); key_it != Self->Vars.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
-   else if (Self->Params.contains(Args->Key)) {
-      strcopy(Self->Params[Args->Key], Args->Value, Args->Size);
+   else if (auto key_it = Self->Params.find(Args->Key); key_it != Self->Params.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
-   Args->Value[0] = 0;
+   Args->Value->clear();
    return ERR::UnsupportedField;
 }
 
@@ -712,6 +727,9 @@ cstr Name: The name of the index.
 Okay
 NullArgs
 Search
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -914,6 +932,9 @@ NullArgs
 NoData
 CreateObject
 OutOfRange
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -969,6 +990,9 @@ Okay
 NullArgs
 OutOfRange
 Failed
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -1663,6 +1687,9 @@ OutOfRange: The Start index is not within the stream.
 Args
 NoData: Operation successful, but no data was present for extraction.
 
+-TAGS-
+pure-query, caller-owns-result, null-terminated-result
+
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
@@ -1796,6 +1823,9 @@ NullArgs
 OutOfRange: The area to be removed is outside the bounds of the document's data stream.
 Args
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_RemoveContent(extDocument *Self, doc::RemoveContent *Args)
@@ -1836,6 +1866,9 @@ ptr(func) Function: The function that is called when the trigger activates.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -1923,6 +1956,9 @@ cstr Name: The name of the link to select (set to `NULL` if an `Index` is define
 Okay
 NullArgs
 OutOfRange
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1969,10 +2005,13 @@ static ERR DOCUMENT_SetKey(extDocument *Self, struct acSetKey *Args)
 {
    // Note: Zero-length parameter values are permitted.
 
-   if ((not Args) or (not Args->Key)) return ERR::NullArgs;
-   if (not Args->Key[0]) return ERR::Args;
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
-   Self->Vars[Args->Key] = Args->Value;
+   auto key_it = Self->Vars.lower_bound(Args->Key);
+   if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
+      key_it->second.assign(Args->Value);
+   }
+   else Self->Vars.emplace_hint(key_it, std::string(Args->Key), std::string(Args->Value));
 
    return ERR::Okay;
 }
@@ -1995,6 +2034,9 @@ cstr Name: The name of the index.
 Okay
 NullArgs
 Search: The index could not be found.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2090,11 +2132,11 @@ static const FieldArray clFields[] = {
    { "Error",        FDF_INT|FDF_R },
    // Virtual fields
    { "ClientScript",  FDF_OBJECT|FDF_I,        nullptr, SET_ClientScript },
-   { "EventCallback", FDF_FUNCTIONPTR|FDF_RW,  GET_EventCallback, SET_EventCallback },
+   { "EventCallback", FDF_FUNCTION|FDF_RW,     GET_EventCallback, SET_EventCallback },
    { "Path",          FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Path },
    { "Origin",        FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Origin },
    { "PageWidth",     FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_PageWidth, SET_PageWidth },
-   { "Pretext",       FDF_STRING|FDF_W,        nullptr, SET_Pretext },
+   { "Pretext",       FDF_CPPSTRING|FDF_W,     nullptr, SET_Pretext },
    { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
    { "WorkingPath",   FDF_CPPSTRING|FDF_R,     GET_WorkingPath, nullptr },
    END_FIELD

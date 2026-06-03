@@ -245,6 +245,9 @@ int(CEF) Flags: Optional flags.
 Okay: The files were added to the clipboard.
 NullArgs
 MissingPath: `Path` was not specified.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -275,7 +278,7 @@ Use AddObjects() to copy one or more objects by asking each object to save itsel
 `clipboard:` volume.  This avoids requiring the caller to create temporary files before copying object data.
 
 If `Datatype` is `CLIPTYPE::NIL`, the clipboard chooses a datatype from the source object's class where possible.
-@Picture objects are stored as `CLIPTYPE::IMAGE`, sound objects are stored as `CLIPTYPE::AUDIO`, and unrecognised
+@Image objects are stored as `CLIPTYPE::IMAGE`, sound objects are stored as `CLIPTYPE::AUDIO`, and unrecognised
 classes are stored as `CLIPTYPE::OBJECT`.  Set `Datatype` explicitly to override this automatic selection.
 
 All objects in a single call must belong to the same class.  The `Objects` array must be terminated with a zero entry.
@@ -294,6 +297,9 @@ NullArgs
 Args
 Lock
 CreateFile
+
+-TAGS-
+blocking, mutates-object, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -318,7 +324,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 
          if (classid IS object.obj->classID()) { // The client may not mix and match classes.
             if (datatype IS CLIPTYPE::NIL) {
-               if (object.obj->classID() IS CLASSID::PICTURE) datatype = CLIPTYPE::IMAGE;
+               if (object.obj->classID() IS CLASSID::IMAGE) datatype = CLIPTYPE::IMAGE;
                else if (object.obj->classID() IS CLASSID::SOUND) datatype = CLIPTYPE::AUDIO;
                else datatype = CLIPTYPE::OBJECT;
             }
@@ -361,6 +367,9 @@ cstr String: UTF-8 text to add to the clipboard.
 Okay
 NullArgs
 CreateFile
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -529,6 +538,9 @@ NullArgs
 OutOfRange: The specified `Index` is out of the range of the available clip items.
 NoData: No clip was available that matched the requested data type.
 AllocMemory
+
+-TAGS-
+caller-owns-result
 -END-
 
 *********************************************************************************************************************/
@@ -638,6 +650,9 @@ int(CLIPTYPE) Datatype: Datatype flags to remove.  Values may be combined.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -690,10 +705,10 @@ callback should return `ERR::NoSupport`.
 
 *********************************************************************************************************************/
 
-static ERR GET_RequestHandler(objClipboard *Self, FUNCTION **Value)
+static ERR GET_RequestHandler(objClipboard *Self, FUNCTION * &Value)
 {
    if (Self->RequestHandler.defined()) {
-      *Value = &Self->RequestHandler;
+      Value = &Self->RequestHandler;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -913,7 +928,7 @@ extern "C" void win_clipboard_updated()
 
 static const FieldArray clFields[] = {
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clClipboardFlags },
-   { "RequestHandler", FDF_FUNCTIONPTR|FDF_RW, GET_RequestHandler, SET_RequestHandler },
+   { "RequestHandler", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_RequestHandler, SET_RequestHandler },
    END_FIELD
 };
 

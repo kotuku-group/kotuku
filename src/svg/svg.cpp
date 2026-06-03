@@ -24,7 +24,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <algorithm>
 #include <cfloat>
 #include <kotuku/main.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
@@ -41,7 +41,7 @@ JUMPTABLE_CORE
 JUMPTABLE_DISPLAY
 JUMPTABLE_VECTOR
 
-static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modPicture = nullptr;
+static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modImage = nullptr;
 static double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
 
 struct prvSVG { // Private variables for RSVG
@@ -91,7 +91,6 @@ class extSVG : public objSVG {
    objXML *XML;
    objVectorScene *Scene;
    std::string Folder;
-   std::string Colour = "rgb(0,0,0)"; // Default colour, used for 'currentColor' references
    class objVectorViewport *Viewport; // First viewport (the <svg> tag) to be created on parsing the SVG document.
    std::list<std::variant<anim_transform, anim_motion, anim_value>> Animations; // NB: Pointer stability is a container requirement
    ankerl::unordered_dense::map<OBJECTID, svgAnimState> Animatrix; // For animated transforms, a vector may have one matrix only.
@@ -144,10 +143,6 @@ struct svgState {
 
       operator double() const noexcept { return value; }
       operator DU() const noexcept { return type; }
-
-      inline int64_t field() const noexcept {
-         return (type == DU::SCALED) ? (field_id | TDOUBLE | TSCALE) : field_id | TDOUBLE;
-      }
 
       inline bool valid_size() const noexcept { // Return true if this is a valid width/height
          return (value >= 0.001);
@@ -711,7 +706,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if (init_svg() != ERR::Okay) return ERR::AddClass;
 
-   if (objModule::load("picture", &modPicture) IS ERR::Okay) { // RSVG has a Picture class dependency
+   if (objModule::load("image", &modImage) IS ERR::Okay) { // RSVG has a Image class dependency
       if (init_rsvg() != ERR::Okay) return ERR::AddClass;
    }
 
@@ -726,7 +721,7 @@ static ERR MODExpunge(void)
 {
    if (modDisplay) { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modVector)  { FreeResource(modVector);  modVector = nullptr; }
-   if (modPicture) { FreeResource(modPicture); modPicture = nullptr; }
+   if (modImage) { FreeResource(modImage); modImage = nullptr; }
 
    if (clSVG)  { FreeResource(clSVG);  clSVG = nullptr; }
    if (clRSVG) { FreeResource(clRSVG); clRSVG = nullptr; }

@@ -184,14 +184,16 @@ removed with ~Core:FreeResource() when no longer needed to avoid memory leaks.
 -INPUT-
 cpp(strview) Pattern: A regex pattern string.
 flags(REGEX) Flags:  Optional flags.
-&cpp(str) ErrorMsg: Optional reference for storing custom error messages.
+^&cpp(str) ErrorMsg: Optional reference for storing custom error messages.
 !ptr(struct(Regex)) Result: Pointer to store the created regex object.
 
 -ERRORS-
 Okay
-NullArgs
 AllocMemory
 Syntax
+
+-TAGS-
+caller-owns-result, creates-resource, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -252,12 +254,15 @@ If no capture groups match the provided name, `ERR::Search` is returned.
 -INPUT-
 ptr(struct(Regex)) Regex: The compiled regex object.
 cpp(strview) Name: The capture group name to resolve.
-&cpp(array(int)) Indices: Receives the resulting capture indices.
+^&cpp(array(int)) Indices: Receives the resulting capture indices.
 
 -ERRORS-
 Okay: The name was resolved and Indices populated.
 NullArgs: One or more required arguments were null.
 Search: The provided name does not exist within the regex.
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -290,12 +295,15 @@ string can include back-references like `\1`, `\2`, etc., to refer to captured g
 ptr(struct(Regex)) Regex: The compiled regex object.
 cpp(strview) Text: The input text to perform replacements on.
 cpp(strview) Replacement: The replacement string, which can include back-references like `\1`, `\2`, etc.
-&cpp(str) Output: Receives the resulting string after replacements.
+^&cpp(str) Output: Receives the resulting string after replacements.
 int(RMATCH) Flags: Optional flags to modify the replacement behavior.
 
 -ERRORS-
 Okay: Successful execution, does not necessarily mean replacements were made.
 NullArgs: One or more required input arguments were null.
+
+-TAGS-
+mutates-input
 -END-
 
 *********************************************************************************************************************/
@@ -523,6 +531,9 @@ ptr(func) Callback: Receives the match results.
 Okay: At least one match was found and processed.
 NullArgs: One or more required input arguments were null.
 Search: No matches were found.
+
+-TAGS-
+callback-inlines, does-not-take-ownership
 -END-
 
 *********************************************************************************************************************/
@@ -592,12 +603,15 @@ If no matches are found, the entire input text is returned as a single token.
 -INPUT-
 ptr(struct(Regex)) Regex: The compiled regex object.
 cpp(strview) Text: The input text to split.
-&cpp(array(cpp(str))) Output: Receives the resulting string tokens.
+^&cpp(array(cpp(str))) Output: Receives the resulting string tokens.
 int(RMATCH) Flags: Optional flags to modify the splitting behavior.
 
 -ERRORS-
 Okay: The string was successfully split into tokens. If no matches are found, the entire input text is returned as a single token.
 NullArgs: One or more required input arguments were null.
+
+-TAGS-
+mutates-input
 -END-
 
 *********************************************************************************************************************/

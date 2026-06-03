@@ -113,11 +113,12 @@ static std::string xml_escape(const std::string &str)
 {
    std::string escaped;
    bool needs_escaping = false;
-   for (char c : str) {
-      if (CSTRING esc = xml_escape_table[static_cast<unsigned char>(c)]) {
+   for (size_t index = 0; index < str.size(); ++index) {
+      char c = str[index];
+      if (CSTRING esc = xml_escape_table[uint8_t(c)]) {
          if (not needs_escaping) {
             escaped.reserve(str.size() + (str.size()>>4));
-            escaped = str.substr(0, &c - str.data());
+            escaped = str.substr(0, index);
             needs_escaping = true;
          }
          escaped += esc;
@@ -135,7 +136,6 @@ static ERR build_query(extXQuery *Self)
 {
    kt::Log log;
 
-   Self->StaleBuild = false;
    Self->ListVariables.clear();
    Self->ListFunctions.clear();
 
@@ -176,14 +176,13 @@ static ERR build_query(extXQuery *Self)
    // Evaluator reads from the parse context; do not mutate the AST.
    // ModuleCache holds strong ref; ParseResult.module_cache is weak to break cycles with cached modules.
 
-   if (not Self->ModuleCache) {
-      Self->ModuleCache = std::make_shared<XQueryModuleCache>();
-      Self->ModuleCache->query = Self;
-   }
+   Self->ModuleCache = std::make_shared<XQueryModuleCache>();
+   Self->ModuleCache->query = Self;
    Self->ParseResult.module_cache = Self->ModuleCache;
 
    if (Self->ParseResult.prolog) Self->ParseResult.prolog->bind_module_cache(Self->ModuleCache);
 
+   Self->StaleBuild = false;
    return ERR::Okay;
 }
 
@@ -257,7 +256,7 @@ static ERR XQUERY_Activate(extXQuery *Self)
       auto stats = mt.getStats();
       log.msg("Blocks allocated: %" PRId64 ", Total Size: %" PRId64 ", Avg Size: %" PRId64 " bytes",
          stats.total_alloc, stats.total_size, stats.avg_size());
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -266,10 +265,13 @@ static ERR XQUERY_Activate(extXQuery *Self)
    }
 
    Self->XML = nullptr;
+   Self->ResultString.clear();
+   Self->Result = XPathVal();
    Self->ConstructedNodes.clear();
+   Self->ParseResult.error_msg.clear();
    XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
    auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
-   if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
+   Self->ConstructedNodes = std::move(eval.constructed_nodes);
    Self->ErrorMsg = Self->ParseResult.error_msg;
    return err;
 }
@@ -290,6 +292,7 @@ static ERR XQUERY_Clear(extXQuery *Self)
    Self->ListVariables.clear();
    Self->ListFunctions.clear();
    Self->ParseResult = CompiledXQuery();
+   Self->ModuleCache.reset();
    Self->ResultString.clear();
    Self->Result = XPathVal();
    Self->ConstructedNodes.clear();
@@ -311,6 +314,9 @@ obj(XML) XML: Targeted XML document to query.  Can be NULL for XQuery expression
 int Index: Optional tag index that establishes the initial context for the query.
 int(XEF) Flags: Optional flags.
 
+-TAGS-
+mutates-object, retains-input
+
 -ERRORS-
 Okay
 NullArgs
@@ -330,6 +336,7 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    Self->ResultString.clear();
    Self->Result = XPathVal();
    Self->ConstructedNodes.clear();
+   Self->ParseResult.error_msg.clear();
 
    int len = 0, max_len = std::min<int>(std::ssize(Self->Statement), 40);
    while ((Self->Statement[len] != '\n') and (len < max_len)) len++;
@@ -340,7 +347,7 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    auto cleanup = kt::Defer([&]() {
       auto stats = mt.getStats();
       log.msg("Memory allocated: %" PRId64 " bytes in %" PRId64 " blocks, Peak usage: %" PRId64 " bytes", stats.total_alloc, stats.total_size, stats.avg_size);
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -375,14 +382,14 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
          eval.push_context(root_tag, 1, 1);
       }
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
-      if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
+      Self->ConstructedNodes = std::move(eval.constructed_nodes);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
    }
    else {
       XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
-      if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
+      Self->ConstructedNodes = std::move(eval.constructed_nodes);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
    }
@@ -409,15 +416,14 @@ GetKey: Read XQuery variable values.
 
 static ERR XQUERY_GetKey(extXQuery *Self, struct acGetKey *Args)
 {
-   if ((not Args) or (not Args->Value) or (not Args->Key)) return ERR::NullArgs;
-   if (Args->Size < 2) return ERR::Args;
+   if ((not Args) or (not Args->Value) or (Args->Key.empty())) return ERR::NullArgs;
 
    if (auto it = Self->Variables.find(Args->Key); it != Self->Variables.end()) {
-      kt::strcopy(it->second.c_str(), Args->Value, Args->Size);
+      Args->Value->assign(it->second);
       return ERR::Okay;
    }
    else {
-      Args->Value[0] = 0;
+      Args->Value->clear();
       return ERR::UnsupportedField;
    }
 }
@@ -443,7 +449,7 @@ static ERR XQUERY_Init(extXQuery *Self)
    auto cleanup = kt::Defer([&]() {
       auto stats = mt.getStats();
       kt::Log().msg("Memory allocated: %" PRId64 " bytes in %" PRId64 " blocks, Peak usage: %" PRId64 " bytes", stats.total_alloc, stats.total_size, stats.avg_size);
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -487,6 +493,9 @@ cstr Name: The name of the function or functions to inspect (supports wildcards)
 int(XIF) ResultFlags: Bitmask controlling the returned information.
 &!cstr Result: Receives a serialised XML document describing the function(s).
 
+-TAGS-
+mutates-object, caller-owns-result, null-terminated-result
+
 -ERRORS-
 Okay
 NullArgs
@@ -507,27 +516,28 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
    std::ostringstream stream;
 
    auto flags = Args->ResultFlags;
-   if (flags == XIF::NIL) flags = XIF::ALL;
+   if (flags IS XIF::NIL) flags = XIF::ALL;
+   auto name_filter = Args->Name ? Args->Name : "*";
 
    // Extract function information based on ResultFlags
-   auto process_function = [&](const XQueryFunction &fn) {
+   auto process_function = [&](const XQueryProlog &Prolog, const XQueryFunction &Function) {
       if (stream.tellp()) stream << '\n';
 
       stream << "<function>";
       if ((flags & XIF::NAME) != XIF::NIL) {
-         auto fname = to_lexical_name(*Self->ParseResult.prolog, fn.qname);
+         auto fname = to_lexical_name(Prolog, Function.qname);
          stream << std::format("<name>{}</name>", xml_escape(fname));
       }
 
       if ((flags & XIF::PARAMETERS) != XIF::NIL) {
          stream << "<parameters>";
-         size_t parameter_count = fn.parameter_names.size();
+         size_t parameter_count = Function.parameter_names.size();
          for (size_t i = 0; i < parameter_count; ++i) {
             stream << "<parameter>";
-            stream << std::format("<name>${}</name>", xml_escape(fn.parameter_names[i]));
-            bool has_type = (i < fn.parameter_types.size()) and (not fn.parameter_types[i].empty());
+            stream << std::format("<name>${}</name>", xml_escape(Function.parameter_names[i]));
+            bool has_type = (i < Function.parameter_types.size()) and (not Function.parameter_types[i].empty());
             if (has_type) {
-               stream << std::format("<type>{}</type>", xml_escape(fn.parameter_types[i]));
+               stream << std::format("<type>{}</type>", xml_escape(Function.parameter_types[i]));
             }
             stream << "</parameter>";
          }
@@ -535,22 +545,22 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
       }
 
       if ((flags & XIF::RETURN_TYPE) != XIF::NIL) {
-         stream << std::format("<returnType>{}</returnType>", fn.return_type ? xml_escape(*fn.return_type) : "item()*");
+         stream << std::format("<returnType>{}</returnType>", Function.return_type ? xml_escape(*Function.return_type) : "item()*");
       }
 
       if ((flags & XIF::USER_DEFINED) != XIF::NIL) {
-         stream << std::format("<userDefined>{}</userDefined>", fn.is_external ? "false" : "true");
+         stream << std::format("<userDefined>{}</userDefined>", Function.is_external ? "false" : "true");
       }
 
       if ((flags & XIF::SIGNATURE) != XIF::NIL) {
-         stream << std::format("<signature>{}</signature>", xml_escape(fn.signature()));
+         stream << std::format("<signature>{}</signature>", xml_escape(Function.signature()));
       }
 
       if ((flags & XIF::AST) != XIF::NIL) {
-         if (fn.body) {
+         if (Function.body) {
             std::string body;
-            XPathEvaluator eval(Self, Self->XML, fn.body.get(), &Self->ParseResult);
-            body = xml_escape(eval.build_ast_signature(fn.body.get()));
+            XPathEvaluator eval(Self, Self->XML, Function.body.get(), &Self->ParseResult);
+            body = xml_escape(eval.build_ast_signature(Function.body.get()));
             stream << "<ast>" << body << "</ast>";
          }
       }
@@ -561,8 +571,8 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
       for (const auto &entry : Self->ParseResult.prolog->functions) {
          const auto &fn = entry.second;
          auto fname = to_lexical_name(*Self->ParseResult.prolog, fn.qname);
-         if (kt::wildcmp(Args->Name, fname)) {
-            process_function(fn);
+         if (kt::wildcmp(name_filter, fname)) {
+            process_function(*Self->ParseResult.prolog, fn);
          }
       }
 
@@ -571,10 +581,11 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
       if (mod_cache) {
          for (auto it = mod_cache->modules.begin(); it != mod_cache->modules.end(); ++it) {
             if ((it->second) and (it->second->prolog)) {
+               const auto &module_prolog = *it->second->prolog;
                for (auto fn = it->second->prolog->functions.begin(); fn != it->second->prolog->functions.end(); ++fn) {
-                  auto fname = to_lexical_name(*Self->ParseResult.prolog, fn->second.qname);
-                  if (kt::wildcmp(Args->Name, fname)) {
-                     process_function(fn->second);
+                  auto fname = to_lexical_name(module_prolog, fn->second.qname);
+                  if (kt::wildcmp(name_filter, fname)) {
+                     process_function(module_prolog, fn->second);
                   }
                }
             }
@@ -585,8 +596,8 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
 
       std::string result = stream.str();
       Args->Result = kt::strclone(result.c_str());
-
-      return ERR::Okay;
+      if (Args->Result) return ERR::Okay;
+      else return ERR::AllocMemory;
    }
    else return log.warning(ERR::Search);
 }
@@ -614,6 +625,9 @@ Script callbacks are not currently supported.
 -INPUT-
 cstr FunctionName: The name of the function to register (e.g., "custom-function").
 ptr(func) Callback: The callback function to register for FunctionName.
+
+-TAGS-
+mutates-object, copies-input, callback-held
 
 -ERRORS-
 Okay
@@ -670,6 +684,9 @@ ptr(func) Callback: Optional callback function to invoke for each matching node.
 int Index: Optional tag index that establishes the initial context for the query.
 int(XEF) Flags: Optional flags.
 
+-TAGS-
+mutates-object, retains-input, callback-inlines
+
 -ERRORS-
 Okay: At least one matching node was found and processed.
 NullArgs: At least one required parameter was not provided.
@@ -695,7 +712,7 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
    auto cleanup = kt::Defer([&]() {
       auto stats = mt.getStats();
       log.msg("Memory allocated: %" PRId64 " bytes in %" PRId64 " blocks, Peak usage: %" PRId64 " bytes", stats.total_alloc, stats.total_size, stats.avg_size);
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -705,6 +722,13 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
 
    auto xml = (extXML *)Args->XML;
    Self->XML = xml;
+   if ((Args->Callback) and (Args->Callback->defined())) Self->Callback = *Args->Callback;
+   else Self->Callback.Type = CALL::NIL;
+   Self->ParseResult.error_msg.clear();
+
+   auto clear_callback = kt::Defer([&]() {
+      Self->Callback.Type = CALL::NIL;
+   });
 
    if ((Args->Index != 0) and (not xml)) {
       Self->ErrorMsg = "An XML object is required when Index is specified.";
@@ -723,9 +747,6 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
             return log.warning(ERR::NotFound);
          }
       }
-
-      if ((Args->Callback) and (Args->Callback->defined())) Self->Callback = *Args->Callback;
-      else Self->Callback.Type = CALL::NIL;
 
       (void)xml->getMap(); // Ensure the tag ID and ParentID values are defined
       XPathEvaluator eval(Self, xml, Self->ParseResult.expression.get(), &Self->ParseResult);
@@ -753,10 +774,6 @@ SetKey: Set XQuery variable values.
 Use SetKey to store key-value pairs that can be referenced in XQuery expressions using the variable syntax
 `$variableName`.
 
--INPUT-
-cstr Key: The name of the variable (case sensitive).
-cstr Value: The string value to store or NULL to remove an existing key.
-
 -ERRORS-
 Okay:
 NullArgs: The `Key` parameter was not specified.
@@ -768,18 +785,12 @@ static ERR XQUERY_SetKey(extXQuery *Self, struct acSetKey *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Key)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Key.empty())) return log.warning(ERR::NullArgs);
 
-   log.trace("Setting variable '%s' = '%s'", Args->Key, Args->Value ? Args->Value : "");
+   log.trace("Setting variable '%.*s' = '%.*s'", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
-   if (Args->Value) {
-      Self->Variables[Args->Key] = Args->Value;
-   }
-   else {
-      // Remove variable if Value is null
-      Self->Variables.erase(Args->Key);
-   }
-
+   Self->Variables[Args->Key] = Args->Value;
+   Self->ListVariables.clear();
    return ERR::Okay;
 }
 
@@ -789,19 +800,6 @@ static ERR XQUERY_SetKey(extXQuery *Self, struct acSetKey *Args)
 ErrorMsg: A readable description of the last parse or execution error.
 
 This field may provide a textual description of the last parse or execution error that occurred.
-
-*********************************************************************************************************************/
-
-static ERR GET_ErrorMsg(extXQuery *Self, CSTRING *Value)
-{
-   if (not Self->ErrorMsg.empty()) { *Value = Self->ErrorMsg.c_str(); return ERR::Okay; }
-   else {
-      *Value = nullptr;
-      return ERR::Okay;
-   }
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 FeatureFlags: Flags indicating the features of a compiled XQuery expression.
@@ -861,60 +859,16 @@ static ERR GET_Functions(extXQuery *Self, kt::vector<std::string> **Value)
 /*********************************************************************************************************************
 
 -FIELD-
-MemoryUsage: Returns the total amount of memory allocated by the last compilation or evaluation.
+MemoryUsage: The total amount of memory allocated by the last compilation or evaluation.
 
-If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will return the total
+If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will contain the total
 amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.
-
-*********************************************************************************************************************/
-
-static ERR GET_MemoryUsage(extXQuery *Self, int64_t &Value)
-{
-   Value = Self->MemUsage;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Path: Base path for resolving relative references.
 
 Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through
 automated means on-the-fly, which relies  on the working directory or XML document path.
-
-*********************************************************************************************************************/
-
-static ERR GET_Path(extXQuery *Self, STRING *Value)
-{
-   if (not Self->initialised()) {
-      if (not Self->Path.empty()) {
-         *Value = kt::strclone(Self->Path.c_str());
-         return ERR::Okay;
-      }
-      else return ERR::FieldNotSet;
-   }
-
-   if ((*Value = kt::strclone(Self->Path.c_str()))) {
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
-}
-
-static ERR SET_Path(extXQuery *Self, CSTRING Value)
-{
-   Self->Path.clear();
-
-   if ((Value) and (*Value)) {
-      Self->Path = Value;
-      return ERR::Okay;
-   }
-   else {
-      Self->Path.clear();
-      return ERR::Okay;
-   }
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 ResolveVariable: Callback function for resolving unknown variables.
@@ -937,9 +891,9 @@ unknown, or another error code to abort evaluation.
 
 *********************************************************************************************************************/
 
-static ERR GET_ResolveVariable(extXQuery *Self, FUNCTION *Value)
+static ERR GET_ResolveVariable(extXQuery *Self, FUNCTION * &Value)
 {
-   *Value = Self->ResolveVariable;
+   Value = &Self->ResolveVariable;
    return ERR::Okay;
 }
 
@@ -991,22 +945,22 @@ The string result becomes invalid if the XQuery object is modified, re-executed 
 
 *********************************************************************************************************************/
 
-static ERR GET_ResultString(extXQuery *Self, CSTRING *Value)
+static ERR GET_ResultString(extXQuery *Self, std::string_view &Value)
 {
    // Return the cached string if it exists.
    if (not Self->ResultString.empty()) {
-      *Value = Self->ResultString.c_str();
+      Value = Self->ResultString;
       return ERR::Okay;
    }
 
    if (Self->Result.is_empty()) { // An empty result isn't considered an error.
       Self->ResultString.clear();
-      *Value = "";
+      Value = Self->ResultString;
       return ERR::Okay;
    }
    else {
       Self->ResultString = Self->Result.to_string();  // Cache the result
-      *Value = Self->ResultString.c_str();
+      Value = Self->ResultString;
       return ERR::Okay;
    }
 }
@@ -1036,7 +990,7 @@ static ERR GET_ResultType(extXQuery *Self, XPVT &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Statement: XQuery data is processed through this field.
+Statement: XQuery statements are specified here.
 
 Set the Statement field with an XPath or XQuery expression for compilation.
 
@@ -1050,24 +1004,11 @@ the base path for relative references.
 
 *********************************************************************************************************************/
 
-static ERR GET_Statement(extXQuery *Self, STRING *Value)
-{
-   if (not Self->initialised()) {
-      if (not Self->Statement.empty()) {
-         *Value = kt::strclone(Self->Statement.c_str());
-         return ERR::Okay;
-      }
-      else return ERR::FieldNotSet;
-   }
-   else if ((*Value = kt::strclone(Self->Statement.c_str()))) return ERR::Okay;
-   else return ERR::AllocMemory;
-}
-
-static ERR SET_Statement(extXQuery *Self, CSTRING Value)
+static ERR SET_Statement(extXQuery *Self, const std::string_view &Value)
 {
    XQUERY_Clear(Self);
 
-   if ((Value) and (*Value)) {
+   if (not Value.empty()) {
       Self->Statement = Value;
       return ERR::Okay;
    }
@@ -1099,23 +1040,23 @@ static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
       for (const auto &var : Self->Variables) {
          Self->ListVariables.push_back(var.first);
       }
-   }
 
-   // Scan imported modules for additional variables
+      // Scan imported modules for additional variables
 
-   if (Self->ParseResult.prolog) {
-      // Include variables declared in the main query prolog
-      for (auto var = Self->ParseResult.prolog->variables.begin(); var != Self->ParseResult.prolog->variables.end(); ++var) {
-         Self->ListVariables.push_back(var->first);
-      }
+      if (Self->ParseResult.prolog) {
+         // Include variables declared in the main query prolog
+         for (auto var = Self->ParseResult.prolog->variables.begin(); var != Self->ParseResult.prolog->variables.end(); ++var) {
+            Self->ListVariables.push_back(var->first);
+         }
 
-      // Include variables declared in imported modules
-      std::shared_ptr<XQueryModuleCache> mod_cache = Self->ParseResult.prolog->get_module_cache();
-      if (mod_cache) {
-         for (auto it = mod_cache->modules.begin(); it != mod_cache->modules.end(); ++it) {
-            if ((it->second) and (it->second->prolog)) {
-               for (auto var = it->second->prolog->variables.begin(); var != it->second->prolog->variables.end(); ++var) {
-                  Self->ListVariables.push_back(var->first);
+         // Include variables declared in imported modules
+         std::shared_ptr<XQueryModuleCache> mod_cache = Self->ParseResult.prolog->get_module_cache();
+         if (mod_cache) {
+            for (auto it = mod_cache->modules.begin(); it != mod_cache->modules.end(); ++it) {
+               if ((it->second) and (it->second->prolog)) {
+                  for (auto var = it->second->prolog->variables.begin(); var != it->second->prolog->variables.end(); ++var) {
+                     Self->ListVariables.push_back(var->first);
+                  }
                }
             }
          }
@@ -1131,17 +1072,17 @@ static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
 #include "xquery_class_def.cpp"
 
 static const FieldArray clFields[] = {
-   { "ErrorMsg",        FDF_VIRTUAL|FDF_STRING|FDF_R,         GET_ErrorMsg },
-   { "MemoryUsage",     FDF_VIRTUAL|FDF_INT64|FDF_R,          GET_MemoryUsage },
-   { "Path",            FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Path, SET_Path },
-   { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_R, GET_Result, nullptr, "XPathValue" },
-   { "ResultString",    FDF_VIRTUAL|FDF_STRING|FDF_R,         GET_ResultString },
-   { "Statement",       FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Statement, SET_Statement },
-   { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_R,       GET_FeatureFlags, nullptr, &clXQueryXQF },
-   { "ResultType",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
-   { "ResolveVariable", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_ResolveVariable, SET_ResolveVariable },
-   { "Functions",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPP|FDF_STRING|FDF_R, GET_Functions },
-   { "Variables",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPP|FDF_STRING|FDF_R, GET_Variables },
+   { "ErrorMsg",        FDF_CPPSTRING|FDF_R },
+   { "Path",            FDF_CPPSTRING|FDF_RW },
+   { "Statement",       FDF_CPPSTRING|FDF_RW, nullptr, SET_Statement },
+   { "MemoryUsage",     FDF_INT64|FDF_R },
+   { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_PURE|FDF_R, GET_Result, nullptr, "XPathValue" },
+   { "ResultString",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_R, GET_ResultString },
+   { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_PURE|FDF_R, GET_FeatureFlags, nullptr, &clXQueryXQF },
+   { "ResultType",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
+   { "ResolveVariable", FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW, GET_ResolveVariable, SET_ResolveVariable },
+   { "Functions",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Functions },
+   { "Variables",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Variables },
    END_FIELD
 };
 

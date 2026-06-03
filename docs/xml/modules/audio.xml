@@ -61,6 +61,10 @@
 <li>Channel configurations: Mono and stereo with automatic format adaptation</li>
 <li>Latency: Platform-optimised with configurable buffering for real-time applications</li>
 </list></description>
+    <source>
+      <file path="src/audio/">audio.cpp</file>
+      <file path="src/audio/">commands.cpp</file>
+    </source>
     <classes>
       <class>Audio</class>
       <class>Sound</class>
@@ -72,6 +76,7 @@
     <comment>Continue playing a stopped channel.</comment>
     <prototype>ERR snd::MixContinue(objAudio * Audio, INT Handle)</prototype>
     <tiriPrototype>err = MixContinue(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -90,6 +95,7 @@
     <comment>Ends the buffering of mix commands.</comment>
     <prototype>ERR snd::MixEndSequence(objAudio * Audio, INT Handle)</prototype>
     <tiriPrototype>err = MixEndSequence(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -108,6 +114,7 @@
     <comment>Sets a channel's playback rate.</comment>
     <prototype>ERR snd::MixFrequency(objAudio * Audio, INT Handle, INT Frequency)</prototype>
     <tiriPrototype>err = MixFrequency(Audio:obj, Handle:num, Frequency:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -118,6 +125,8 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Failed">General failure</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -127,6 +136,7 @@
     <comment>Mutes the audio of a channel.</comment>
     <prototype>ERR snd::MixMute(objAudio * Audio, INT Handle, INT Mute)</prototype>
     <tiriPrototype>err = MixMute(Audio:obj, Handle:num, Mute:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -137,6 +147,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -146,6 +157,7 @@
     <comment>Sets a channel's panning value.</comment>
     <prototype>ERR snd::MixPan(objAudio * Audio, INT Handle, DOUBLE Pan)</prototype>
     <tiriPrototype>err = MixPan(Audio:obj, Handle:num, Pan:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -165,6 +177,7 @@
     <comment>Commences channel playback at a set frequency.</comment>
     <prototype>ERR snd::MixPlay(objAudio * Audio, INT Handle, INT Position)</prototype>
     <tiriPrototype>err = MixPlay(Audio:obj, Handle:num, Position:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -186,6 +199,7 @@
     <comment>Sets a new update rate for a channel.</comment>
     <prototype>ERR snd::MixRate(objAudio * Audio, INT Handle, INT Rate)</prototype>
     <tiriPrototype>err = MixRate(Audio:obj, Handle:num, Rate:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The channel set allocated from OpenChannels().</param>
@@ -196,6 +210,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -205,6 +220,7 @@
     <comment>Associate a sound sample with a mixer channel.</comment>
     <prototype>ERR snd::MixSample(objAudio * Audio, INT Handle, INT Sample)</prototype>
     <tiriPrototype>err = MixSample(Audio:obj, Handle:num, Sample:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -216,6 +232,8 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Failed">General failure</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -225,6 +243,7 @@
     <comment>Initiates buffering of mix commands.</comment>
     <prototype>ERR snd::MixStartSequence(objAudio * Audio, INT Handle)</prototype>
     <tiriPrototype>err = MixStartSequence(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -267,6 +286,7 @@
     <comment>Stops all playback on a channel.</comment>
     <prototype>ERR snd::MixStop(objAudio * Audio, INT Handle)</prototype>
     <tiriPrototype>err = MixStop(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -285,6 +305,7 @@
     <comment>Cancels any playback loop configured for a channel.</comment>
     <prototype>ERR snd::MixStopLoop(objAudio * Audio, INT Handle)</prototype>
     <tiriPrototype>err = MixStopLoop(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -303,6 +324,7 @@
     <comment>Changes the volume of a channel.</comment>
     <prototype>ERR snd::MixVolume(objAudio * Audio, INT Handle, DOUBLE Volume)</prototype>
     <tiriPrototype>err = MixVolume(Audio:obj, Handle:num, Volume:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>

@@ -35,6 +35,7 @@ static const struct ActionArray clNetServerActions[] = {
    { AC::Free, NETSERVER_Free },
    { AC::Init, NETSERVER_Init },
    { AC::NewObject, NETSERVER_NewObject },
+   { AC::NewPlacement, NETSERVER_NewPlacement },
    { AC::Read, NETSERVER_Read },
    { AC::Write, NETSERVER_Write },
    { AC::NIL, nullptr }

@@ -95,6 +95,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay: Command buffering successfully initiated.
 NullArgs: Required parameters are null or missing.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -126,6 +129,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -162,6 +168,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -222,6 +231,10 @@ int Mute: Set to true to mute the channel.  A value of 0 will undo the mute sett
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -262,6 +275,11 @@ int Frequency: The desired frequency.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+Failed
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -300,6 +318,9 @@ double Pan: The desired pan value between -1.0 and 1.0.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -345,6 +366,9 @@ Okay: Playback successfully initiated.
 NullArgs: Required parameters are null or missing.
 OutOfRange: Position exceeds sample boundaries.
 Failed: Channel not associated with a valid sample.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -536,6 +560,10 @@ int Rate: The new update rate in milliseconds.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -584,6 +612,11 @@ int Sample: A sample handle allocated from @Audio.AddSample() or @Audio.AddStrea
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+Failed
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -652,6 +685,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -697,6 +733,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -743,6 +782,9 @@ double Volume: The new volume for the channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/

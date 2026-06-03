@@ -103,23 +103,22 @@ http.acActivate()
     <action>
       <name>GetKey</name>
       <comment>Entries in the HTTP response header can be read as key-values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Options for the HTTP header can be set as key-values.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
       <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 
@@ -175,7 +174,7 @@ http.acActivate()
       <name>ContentType</name>
       <comment>Defines the content-type for <code>PUT</code> and <code>POST</code> methods.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The ContentType should be set prior to sending a <code>PUT</code> or <code>POST</code> request.  If <code>NULL</code>, the default content type for <code>POST</code> methods will be set to <code>application/x-www-form-urlencoded</code>.  For <code>PUT</code> requests the default of <code>application/binary</code> will be applied.</p>
       </description>
@@ -297,7 +296,7 @@ http.acActivate()
       <name>Location</name>
       <comment>A valid HTTP URI must be specified here.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The URI of the HTTP source must be specified here.  The string must start with <code>http://</code> or <code>https://</code>, followed by the host name, HTTP path and port number if required. The values mentioned will be broken down and stored in the <fl>Host</fl>, <fl>Path</fl> and <fl>Port</fl> fields respectively.  Note that if the port is not defined in the URI, the <fl>Port</fl> field is reset to the default (<code>80</code> for HTTP or <code>443</code> for HTTPS).</p>
 <p>An alternative to setting the Location is to set the <fl>Host</fl>, <fl>Path</fl> and <fl>Port</fl> separately.</p>
@@ -363,7 +362,7 @@ http.acActivate()
       <name>Password</name>
       <comment>The password to use when authenticating access to the server.</comment>
       <access write="S">Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>A password may be preset if authorisation is required against the HTTP server for access to a resource. Note that if authorisation is required and no username and password has been preset, the HTTP object may present a dialog box to the user to request the relevant information.</p>
 <p>A <code>401</code> status code is returned in the event of an authorisation failure.</p>
@@ -415,7 +414,7 @@ http.acActivate()
       <name>Realm</name>
       <comment>Identifies the realm during HTTP authentication.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>During the user authentication process, a realm name may be returned by the HTTP server and this will be reflected here.</p>
       </description>
@@ -435,7 +434,7 @@ http.acActivate()
       <name>ResponseKeys</name>
       <comment>Returns a string list of received response keys.</comment>
       <access read="G">Get</access>
-      <type>STRING []</type>
+      <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>This field returns a string list of all the keys found in the HTTP response header.  An empty list will be returned if no keys are found.</p>
       </description>
@@ -488,7 +487,7 @@ http.acActivate()
       <name>Username</name>
       <comment>The username to use when authenticating access to the server.</comment>
       <access write="S">Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>A username can be preset before executing an HTTP method against a secure server zone.  The supplied credentials will only be passed to the HTTP server if it asks for authorisation.  The username provided should be accompanied by a <fl>Password</fl>.</p>
 <p>In the event that a username or password is not supplied, or if the supplied credentials are invalid, the user will be presented with a dialog box and asked to enter the correct username and password.</p>

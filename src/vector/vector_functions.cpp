@@ -313,6 +313,9 @@ NullArgs
 WrongClass
 InvalidData
 
+-TAGS-
+copies-input, mutates-object
+
 *********************************************************************************************************************/
 
 ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
@@ -348,6 +351,9 @@ double X: The horizontal end point for the arc command.
 double Y: The vertical end point for the arc command.
 int(ARC) Flags: Optional flags.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 void ArcTo(APTR Vector, double RX, double RY, double Angle, double X, double Y, ARC Flags)
@@ -375,6 +381,9 @@ uint KChar: A unicode character to use for calculating the font kerning (optiona
 
 -RESULT-
 double: The pixel width of the character, or `0` if `FontHandle` is `NULL`.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -416,6 +425,9 @@ can then be used to control how overlapping areas are rendered.
 -INPUT-
 ptr Path: The vector path to modify.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 void ClosePath(APTR Vector)
@@ -437,6 +449,9 @@ double CtrlX: Control point horizontal coordinate.
 double CtrlY: Control point vertical coordinate.
 double X: The horizontal end point for the curve3 command.
 double Y: The vertical end point for the curve3 command.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -460,6 +475,9 @@ double CtrlX2: Control point 2 horizontal coordinate.
 double CtrlY2: Control point 2 vertical coordinate.
 double X: The horizontal end point for the curve4 command.
 double Y: The vertical end point for the curve4 command.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -493,6 +511,9 @@ obj FillStyle: Pointer to a valid object for fill definition, or `NULL` if none 
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object, blocking
 
 *********************************************************************************************************************/
 
@@ -530,6 +551,9 @@ struct(*VectorMatrix) Matrix: The matrix to be flushed.
 Okay
 NullArgs
 
+-TAGS-
+mutates-input, mutates-object
+
 *********************************************************************************************************************/
 
 ERR FlushMatrix(VectorMatrix *Matrix)
@@ -555,6 +579,9 @@ ptr Path: The vector path to query.
 
 -RESULT-
 int: The internal command value for the vertex will be returned.
+
+-TAGS-
+updates-seek-index
 
 *********************************************************************************************************************/
 
@@ -583,6 +610,9 @@ int Vertices: Optional.  If this is `3` or greater, the ellipse will be generate
 Okay
 NullArgs
 CreateResource
+
+-TAGS-
+caller-owns-result, creates-resource
 
 *********************************************************************************************************************/
 
@@ -647,6 +677,9 @@ Okay
 NullArgs
 CreateResource
 
+-TAGS-
+caller-owns-result, creates-resource
+
 *********************************************************************************************************************/
 
 ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Path)
@@ -709,6 +742,9 @@ InvalidValue
 InvalidData
 BufferOverflow
 
+-TAGS-
+caller-owns-result, creates-resource
+
 *********************************************************************************************************************/
 
 ERR GeneratePath(const std::string_view &Sequence, APTR *Path)
@@ -758,11 +794,15 @@ int Size: The font-size, measured in pixels @ 72 DPI.
 Okay
 Args
 AccessObject
+AllocMemory
 CreateObject
 Failed
 File
 ResolvePath
 Search
+
+-TAGS-
+api-owns-result, non-null-result, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -795,6 +835,9 @@ struct(*FontMetrics) Info: The font metrics for the `Handle` will be stored here
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -844,6 +887,9 @@ double Scale:  Set to 1.0 (recommended) to trace the path at a scale of 1 to 1.
 Okay
 NullArgs
 Function
+
+-TAGS-
+callback-inlines, updates-seek-index
 
 *********************************************************************************************************************/
 
@@ -913,6 +959,9 @@ ptr Path: The vector path to modify.
 double X: The line end point on the horizontal plane.
 double Y: The line end point on the vertical plane.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 void LineTo(APTR Vector, double X, double Y)
@@ -931,6 +980,9 @@ This function appends a move command.  The current point is moved to `X`,`Y` wit
 ptr Path: The vector path to modify.
 double X: The horizontal end point for the command.
 double Y: The vertical end point for the command.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -958,6 +1010,9 @@ double TranslateY: Matrix value F.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -986,6 +1041,9 @@ struct(*VectorMatrix) Source: The source transformation matrix.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1020,6 +1078,9 @@ cpp(strview) Transform: The transform to apply, expressed as a string instructio
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1143,6 +1204,9 @@ struct(*VectorMatrix) Matrix: The target transformation matrix.
 Okay
 NullArgs
 
+-TAGS-
+mutates-input, mutates-object
+
 *********************************************************************************************************************/
 
 ERR ResetMatrix(VectorMatrix *Matrix)
@@ -1173,6 +1237,9 @@ If the referenced `Path` is empty, this function does nothing.
 -INPUT-
 ptr Path: The vector path to rewind.
 
+-TAGS-
+updates-seek-index
+
 *********************************************************************************************************************/
 
 void RewindPath(APTR Vector)
@@ -1197,6 +1264,9 @@ double CenterY: Centre of rotation on the vertical axis.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 
 *********************************************************************************************************************/
 
@@ -1236,6 +1306,9 @@ double Y: The scale factor on the y-axis.
 Okay
 NullArgs
 
+-TAGS-
+mutates-input, mutates-object
+
 *********************************************************************************************************************/
 
 ERR Scale(VectorMatrix *Matrix, double X, double Y)
@@ -1267,6 +1340,9 @@ double Y: The angle to skew along the vertical.
 Okay
 NullArgs
 OutOfRange: At least one of the angles is out of the allowable range.
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1300,6 +1376,9 @@ ptr Path: The vector path to modify.
 double X: The horizontal end point for the smooth3 command.
 double Y: The vertical end point for the smooth3 command.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 void Smooth3(APTR Vector, double X, double Y)
@@ -1322,6 +1401,9 @@ double CtrlX: Control point horizontal coordinate.
 double CtrlY: Control point vertical coordinate.
 double X: The horizontal end point for the smooth4 instruction.
 double Y: The vertical end point for the smooth4 instruction.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -1348,6 +1430,9 @@ int Chars: Maximum number of bytes to process from `String`.  Set to `-1` for th
 
 -RESULT-
 double: The pixel width of the string, or `0` if `FontHandle` or `String` is `NULL`.
+
+-TAGS-
+blocking, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -1415,6 +1500,9 @@ double Y: Translation along the y-axis.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1444,6 +1532,9 @@ This function offsets all vertices in `Path` by `X`,`Y`.  If `Path` is `NULL`, t
 ptr Path: Pointer to a generated path.
 double X: Horizontal offset.
 double Y: Vertical offset.
+
+-TAGS-
+mutates-input
 
 -END-
 

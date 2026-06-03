@@ -3,7 +3,7 @@
 module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611,
     src={ "vector_functions.cpp", "vector_readpainter.cpp" }
   }, function()
-  c_include("<kotuku/modules/display.h>", "<kotuku/modules/picture.h>")
+  c_include("<kotuku/modules/display.h>", "<kotuku/modules/image.h>")
 
   restrict(function()
     loadFile(glPath .. 'common.tdl')
@@ -419,7 +419,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
   klass("VectorImage", { src="painters/image.cpp" }, [[
     double X                   # Starting horizontal coordinate
     double Y                   # Starting vertical coordinate
-    obj(Picture) Picture
+    obj(Image)   Image
     obj(Bitmap)  Bitmap
     int(VUNIT)   Units         # Defines the coordinate system for `(X, Y)`
     int(DMF)     Dimensions
@@ -683,7 +683,7 @@ inline void SET_VECTOR_COLOUR(objVectorColour *Colour, double Red, double Green,
 }
   ]])
 
-    c_insert([[
+    c_insert([==[
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {
    struct SubscribeInput args = { Mask, &Callback };
@@ -717,21 +717,16 @@ constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(FID_OnC
 constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(FID_TextFlags, int(Value)); }
 constexpr FieldValue Overflow(VOF Value) { return FieldValue(FID_Overflow, int(Value)); }
 
-constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(FID_Sequence, Value); }
-inline FieldValue Sequence(std::string &Value) { return FieldValue(FID_Sequence, Value.c_str()); }
+[[nodiscard]] inline FieldValue Sequence(std::string_view Value) { return FieldValue(FID_Sequence, Value); }
+[[nodiscard]] constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(FID_Sequence, Value ? std::string_view(Value) : std::string_view{}); }
 
-constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(FID_FontStyle, Value); }
-inline FieldValue FontStyle(std::string &Value) { return FieldValue(FID_FontStyle, Value.c_str()); }
+[[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(FID_FontStyle, Value); }
+[[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(FID_FontStyle, Value ? std::string_view(Value) : std::string_view{}); }
 
-template <kt::NumericOrScale T> FieldValue RoundX(T Value) {
-   return FieldValue(FID_RoundX, Value);
-}
-
-template <kt::NumericOrScale T> FieldValue RoundY(T Value) {
-   return FieldValue(FID_RoundY, Value);
-}
+template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(FID_RoundX, Value); }
+template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
-]])
+]==])
 
 end)

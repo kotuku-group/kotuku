@@ -32,7 +32,13 @@ oid Display: Object ID of the display to be analysed.
 -ERRORS-
 Okay:
 NullArgs:
+AccessObject:
 AllocMemory:
+SystemCall:
+TimeOut:
+
+-TAGS-
+api-owns-result, volatile-result, blocking
 
 *********************************************************************************************************************/
 
@@ -69,6 +75,9 @@ This function returns the type of display supported by the loaded Display module
 -RESULT-
 int(DT): Returns an integer indicating the display type.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 DT GetDisplayType(void)
@@ -104,10 +113,10 @@ cpp(strview) Filter: The filter to apply to the resolution database.  May be NUL
 struct(*DisplayInfo) Info: A pointer to a !DisplayInfo structure must be referenced here.  The structure will be filled with information when the function returns.
 
 -ERRORS-
-Okay: The resolution information was retrieved.
-Args:
 NoSupport: Native graphics system not available (e.g. hosted on Windows or X11).
-Search: There are no more display modes to return that are a match for the Filter.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -176,6 +185,9 @@ double Value: The number to be scaled.
 
 -RESULT-
 double: The scaled value is returned.
+
+-TAGS-
+pure-query
 -END-
 
 *********************************************************************************************************************/

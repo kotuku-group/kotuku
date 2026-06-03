@@ -5,11 +5,11 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
   cpp_include('<functional>', '<optional>', '<sstream>', '<kotuku/strings.hpp>', '<string_view>', '<vector>')
 
   restrict(function()
-    loadFile('sdk:src/xml/constants.tdl')
+    loadFile('../xml/constants.tdl')
   end)
 
   -- Shared enumerations for parser and evaluator state, including map/array node kinds.
-  loadFile('sdk:src/xquery/constants.tdl')
+  loadFile('./constants.tdl')
 
   flags("XEF", { comment="Options for XQuery evaluation flags." },
     "LIMIT_SCOPE: For tag specific queries, limit the scope to the specified element.")
@@ -26,6 +26,10 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
     output     = 'xquery_class_def.cpp',
     references = { 'XQF', 'XPVT', 'XEF' },
     comment    = 'Provides an interface for XQuery evaluation and execution.' }, [[
+    cpp(str) ErrorMsg    # A readable description of the last parse or execution error.
+    cpp(str) Path        # Base path for resolving relative references.
+    cpp(str) Statement   # XQuery statements are specified here.
+    large    MemoryUsage # The total amount of memory allocated by the last compilation or evaluation.
   ]])
 
   c_insert([[

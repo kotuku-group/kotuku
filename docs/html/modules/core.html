@@ -4,7 +4,7 @@
 	   function gtag(){dataLayer.push(arguments);}
 	   gtag('js', new Date());
       gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../css/bootstrap.min.css" rel="stylesheet"></link><link href="../css/module-template.css" rel="stylesheet"></link></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
-<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul>
+<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li></ul>
 </div></div></nav>
 <div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow"><ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#func-collapse" aria-expanded="true">Core API</button><div class="collapse show" id="func-collapse">
 <ul class="btn-toggle-nav list-unstyled fw-normal">
@@ -169,9 +169,14 @@
 }
 </pre>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Cancelled</th><td>The thread has been requested to stop whilst sleeping.</td></tr>
+<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
+<tr><th class="col-md-1">LockFailed</th><td>Failed to initialise the sleep record for the waiting thread.</td></tr>
 <tr><th class="col-md-1">TimeOut</th><td>Function timed-out before successful completion</td></tr>
+<tr><th class="col-md-1">MarkedForDeletion</th><td>The object is being removed and cannot be locked.</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NoMatchingObject</th><td>No matching object was found for the given object ID</td></tr>
+<tr><th class="col-md-1">DoesNotExist</th><td>The object was removed while waiting for the lock.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="Action"><h2>Action()</h2><p class="lead">This function is responsible for executing action routines.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR Action(AC Action, OBJECTPTR Object, APTR Parameters)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('AC');">Action</a></td><td>An action or method ID must be specified.</td></tr>
@@ -195,8 +200,7 @@
 <p>If the class of an object does not support the <code>Action</code> ID, an error code of <code>ERR::NoSupport</code> is returned.  To test an object to see if its class supports an action, use the <a href="?page=CheckAction">CheckAction()</a> function.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NoAction</th><td>The <code>Action</code> is not supported by the object's supporting class.</td></tr>
-<tr><th class="col-md-1">IllegalActionID</th><td>The <code>Action</code> parameter is invalid.</td></tr>
-<tr><th class="col-md-1">ObjectCorrupt</th><td>The <code>Object</code> state is corrupted.</td></tr>
+<tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ActionList"><h2>ActionList()</h2><p class="lead">Returns a pointer to the global action table.</p><div class="card card-info mb-3"><div class="card-header"><samp>void ActionList(struct ActionTable ** Actions, INT * Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Actions</td><td>A pointer to the Core's action table <code>struct ActionTable *</code> is returned. Please note that the first entry in the <code>ActionTable</code> list has all fields driven to <code>NULL</code>, because valid action ID's start from one, not zero.  The final action in the list is also terminated with <code>NULL</code> fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.</td></tr>
@@ -234,6 +238,7 @@ struct FunctionField argsResize[] = {
 <p>This function adds file tags to <a data-toggle="tooltip" title="" href="?page=struct-FileInfo">FileInfo</a> structures.  It is intended for use by the Core and external drivers only.  Tags allow extended attributes to be associated with a file, for example the number of seconds of audio in an MP3 file.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+<tr><th class="col-md-1">CreateResource</th><td>Failed to create a new resource</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="AddMsgHandler"><h2>AddMsgHandler()</h2><p class="lead">Adds a new message handler for processing incoming messages.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AddMsgHandler(MSGID MsgType, FUNCTION * Routine, struct MsgHandler ** Handle)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('MSGID');">MsgType</a></td><td>The message type that the handler will intercept.  If zero, all incoming messages are passed to the handler.</td></tr>
 <tr><td>Routine</td><td>Refers to the function that will handle incoming messages.</td></tr>
@@ -246,6 +251,7 @@ struct FunctionField argsResize[] = {
 <p>The handler must return <code>ERR::Okay</code> if the message was handled.  This means that the message will not be passed to message handlers that are yet to receive the message.  Throw <code>ERR::NothingDone</code> if the message has been ignored or <code>ERR::Continue</code> if the message was processed but may be analysed by other handlers.  Throw <code>ERR::Terminate</code> to break the current <a href="?page=ProcessMessages">ProcessMessages()</a> loop.  When using Tiri, this is best achieved by writing <code>check(errorcode)</code> in the handler.</p>
 <p>The handler will be identified by a unique pointer returned in the Handle parameter.  This handle will be garbage collected or can be passed to <a href="?page=FreeResource">FreeResource()</a> once it is no longer required.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Message handler successfully processed.</td></tr>
+<tr><th class="col-md-1">Lock</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -296,7 +302,6 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Memory block successfully allocated.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid parameters (size &lt;= 0 or both Address and ID are NULL).</td></tr>
-<tr><th class="col-md-1">ArrayFull</th><td>Memory tracking structures are full, preventing allocation tracking.</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Memory management system is currently locked by another thread.</td></tr>
 <tr><th class="col-md-1">AccessMemory</th><td>Memory block was allocated but could not be locked when both Address and ID were requested.</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>Insufficient memory available for the requested allocation.</td></tr>
@@ -315,6 +320,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
 <p>To check if a volume name is valid, call <a href="?page=ResolvePath">ResolvePath()</a> first and then pass the resulting path to this function.</p>
 <p>If the queried path does not exist, a fail code is returned.  This behaviour makes the AnalysePath() function a good candidate for testing the validity of a path string.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The path was analysed and the result is stored in the <code>Type</code> variable.</td></tr>
+<tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
 <tr><th class="col-md-1">DoesNotExist</th><td>Resource does not exist</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -332,10 +338,9 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
 <p>This function is at its most effective when used to perform lengthy processes such as the loading and parsing of data.</p>
 <p>NOTE: Tiri scripts must use the <code>async.action|method()</code> interfaces for asynchronous activity instead of this function.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Init</th><td>Error in Init()ialising an object</td></tr>
-<tr><th class="col-md-1">IllegalMethodID</th><td>Illegal method ID (outside of valid range)</td></tr>
+<tr><th class="col-md-1">InvalidData</th><td>There is an error in the provided data</td></tr>
+<tr><th class="col-md-1">MarkedForDeletion</th><td>A resource cannot be accessed as it is marked for deletion</td></tr>
 <tr><th class="col-md-1">MissingClass</th><td>The class could not be found in the system</td></tr>
-<tr><th class="col-md-1">NewObject</th><td>NewObject() failed to produce a new object</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="AsyncCancel"><h2>AsyncCancel()</h2><p class="lead">Drain the pending queue for listed objects without executing the remaining actions.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AsyncCancel(OBJECTID * Objects, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Objects</td><td>A list of object IDs to cancel.</td></tr>
@@ -358,9 +363,13 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
 <p>Call AsyncWait() to suspend the current thread until every asynchronous action that is executing or queued against the listed objects has finished.  Messages continue to be processed while waiting, so async completion callbacks fire normally.</p>
 <p>Only one AsyncWait() call may be active at any time.  If a second call is made while the first is still blocking, <code>ERR::InUse</code> is returned.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>All async actions completed.</td></tr>
+<tr><th class="col-md-1">Terminate</th><td>Termination requested</td></tr>
 <tr><th class="col-md-1">InUse</th><td>Another AsyncWait() call is already active.</td></tr>
 <tr><th class="col-md-1">TimeOut</th><td>The timeout expired before all actions completed.</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
+<tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="BroadcastEvent"><h2>BroadcastEvent()</h2><p class="lead">Broadcast an event to all event listeners in the system.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR BroadcastEvent(APTR Event, INT EventSize)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Event</td><td>Pointer to an event structure.</td></tr>
 <tr><td>EventSize</td><td>The size of the <code>Event</code> structure, in bytes.</td></tr>
@@ -384,6 +393,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">True</th><td>The object supports the specified action.</td></tr>
 <tr><th class="col-md-1">False</th><td>The action is not supported.</td></tr>
 <tr><th class="col-md-1">LostClass</th><td>The object has lost its class reference</td></tr>
+<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CheckMemoryExists"><h2>CheckMemoryExists()</h2><p class="lead">Verifies the existence of a memory block.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR CheckMemoryExists(MEMORYID ID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The unique identifier of the memory block to verify.</td></tr>
@@ -403,6 +413,9 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 </tbody></table></div></div>
 <p>Call ClassDatabase() to obtain an array of all classes known to the system.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CompareFilePaths"><h2>CompareFilePaths()</h2><p class="lead">Checks if two file paths refer to the same physical file.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR CompareFilePaths(const std::string_view &amp; PathA, const std::string_view &amp; PathB)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>PathA</td><td>File location 1.</td></tr>
 <tr><td>PathB</td><td>File location 2.</td></tr>
@@ -439,9 +452,9 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function creates new folders.  You are required to specify the full path of the new folder.  Standard permission flags can be passed to determine the new permissions to set against the newly created Dir(s).  If no permission flags are passed, only the current user will have access to the new folder (assuming that the file system supports security settings on the given media).  This function will create multiple folders if the complete path does not exist at the time of the call.</p>
 <p>On Unix systems you can define the owner and group ID's for the new folder by calling the <a href="?page=SetDefaultPermissions">SetDefaultPermissions()</a> function prior to CreateFolder().</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Virtual file system does not support folder creation.</td></tr>
 <tr><th class="col-md-1">FileExists</th><td>An identically named file or folder already exists at the <code>Path</code>.</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CreateLink"><h2>CreateLink()</h2><p class="lead">Creates symbolic links on supported file systems.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR CreateLink(const std::string_view &amp; From, const std::string_view &amp; To)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>From</td><td>The symbolic link will be created at the location specified here.</td></tr>
@@ -458,6 +471,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <tr><th class="col-md-1">BufferOverflow</th><td>One or both of the provided arguments is too long.</td></tr>
 <tr><th class="col-md-1">FileExists</th><td>The location referenced at From already exists.</td></tr>
 <tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CurrentContext"><h2>CurrentContext()</h2><p class="lead">Returns a pointer to the object that has the current context.</p><div class="card card-info mb-3"><div class="card-header"><samp>OBJECTPTR CurrentContext()</samp></div></div>
@@ -477,16 +491,18 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>Prior to the deletion of any file, a <a data-toggle="tooltip" title="" href="?page=struct-FileFeedback">FileFeedback</a> structure is passed that describes the file's location.  The callback must return a constant value that can potentially affect file processing.  Valid values are <code>FFR::Okay</code> (delete the file), <code>FFR::Skip</code> (do not delete the file) and <code>FFR::Abort</code> (abort the process completely and return <code>ERR::Cancelled</code> as an error code).</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The file or folder was deleted successfully.</td></tr>
 <tr><th class="col-md-1">File</th><td>The location could not be opened for deletion.</td></tr>
-<tr><th class="col-md-1">FileNotFound</th><td>File not found</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>The filesystem driver does not support deletion.</td></tr>
+<tr><th class="col-md-1">NoPermission</th><td>General security violation</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="DeleteVolume"><h2>DeleteVolume()</h2><p class="lead">Deletes volumes from the system.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR DeleteVolume(const std::string_view &amp; Name)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Name</td><td>The name of the volume.</td></tr>
 </tbody></table></div></div>
 <p>This function deletes volume names from the system.  Once a volume is deleted, any further references to it will result in errors unless the volume is recreated.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The volume was removed.</td></tr>
-<tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">NoPermission</th><td>An attempt to delete a system volume was denied.</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="FieldName"><h2>FieldName()</h2><p class="lead">Resolves a field ID to its registered name.</p><div class="card card-info mb-3"><div class="card-header"><samp>CSTRING FieldName(UINT FieldID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>FieldID</td><td>The unique field hash to resolve.</td></tr>
@@ -499,7 +515,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function will find a specific class by ID and return its <a href="classes/metaclass.html">MetaClass</a>.  If the class is not already loaded, the internal dictionary is checked to discover a module binary registered with that ID.  If this succeeds, the module is loaded into memory and the correct MetaClass will be returned.</p>
 <p>In any event of failure, <code>NULL</code> is returned.</p>
 <p>If the ID of a named class is not known, call <a href="?page=ResolveClassName">ResolveClassName()</a> first and pass the resulting ID to this function.</p>
-<p>NOTE: To retrieve a list of all sub-classes associated with a base-class, read the SubClasses field of the <a href="classes/metaclass.html">MetaClass</a>.</p>
+<p>NOTE: To retrieve a list of all derived classes associated with a base-class, read the SubClasses field of the <a href="classes/metaclass.html">MetaClass</a>.</p>
     <h3>Result</h3><p>Returns a pointer to the <a href="classes/metaclass.html">MetaClass</a> structure that has been found as a result of the search, or <code>NULL</code> if no matching class was found.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="FindField"><h2>FindField()</h2><p class="lead">Finds field descriptors for any class, by ID.</p><div class="card card-info mb-3"><div class="card-header"><samp>struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The target object.</td></tr>
 <tr><td>FieldID</td><td>The 'FID' number to lookup.</td></tr>
@@ -525,10 +541,8 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <p>If FindObject() cannot find any matching objects then it will return an error code.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>At least one matching object was found and stored in the <code>ObjectID</code>.</td></tr>
 <tr><th class="col-md-1">Search</th><td>No objects matching the given name could be found.</td></tr>
-<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
-<tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">EmptyString</th><td>A required string value contains no characters</td></tr>
-<tr><th class="col-md-1">DoesNotExist</th><td>Resource does not exist</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="FreeResource"><h2>FreeResource()</h2><p class="lead">Safely deallocates memory blocks allocated by AllocMemory().</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR FreeResource(MEMORYID ID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The unique identifier of the memory block to be freed.</td></tr>
 </tbody></table></div></div>
@@ -541,7 +555,6 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <tr><th class="col-md-1">InvalidData</th><td>Memory corruption detected - header or trailer markers are damaged.</td></tr>
 <tr><th class="col-md-1">MemoryDoesNotExist</th><td>The specified memory block identifier is not valid or already freed.</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Memory management system is currently locked by another thread.</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Invalid memory identifier provided.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="GenCRC32"><h2>GenCRC32()</h2><p class="lead">Generates 32-bit IEEE 802.3 CRC checksum values.</p><div class="card card-info mb-3"><div class="card-header"><samp>UINT GenCRC32(UINT CRC, APTR Data, UINT Length)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>CRC</td><td>If streaming data to this function, this value must reflect the most recently returned CRC integer.  Otherwise set to zero.</td></tr>
 <tr><td>Data</td><td>The data to generate a CRC value for.</td></tr>
@@ -550,8 +563,10 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <p>This function is used internally for the generation of 32-bit CRC checksums compatible with IEEE 802.3.  It is made available to clients to generate CRC values over any length of buffer space.  This function may be called repeatedly by feeding it CRC values in a cycle, making it ideal for processing streamed data.</p>
 <p>Note that string hashes in Kotuku use CRC-32C, which is incompatible with this function.</p>
     <h3>Result</h3><p>Returns the computed 32 bit CRC value for the given data.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="GetActionMsg"><h2>GetActionMsg()</h2><p class="lead">Returns a message structure if called from an action that was executed by the message system.</p><div class="card card-info mb-3"><div class="card-header"><samp>struct Message * GetActionMsg()</samp></div></div>
+<div class="docs-content" style="display:none;" id="GetActionMsg"><h2>GetActionMsg()</h2><p class="lead">Returns a message structure if called from an action that was executed by the message system.</p><div class="card card-info mb-3"><div class="card-header"><samp>struct Message * GetActionMsg(AC Action)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('AC');">Action</a></td><td>Action identifier represented by the caller.</td></tr>
+</tbody></table></div></div>
 <p>This function is for use by action and method support routines only.  It will return a <a data-toggle="tooltip" title="" href="?page=struct-Message">Message</a> structure if the action currently under execution has been called directly from the <a href="?page=ProcessMessages">ProcessMessages()</a> function.  In all other cases a <code>NULL</code> pointer is returned.</p>
+<p>Only works when called from the main thread, which acts as the message dispatcher.</p>
     <h3>Result</h3><p>A <a data-toggle="tooltip" title="" href="?page=struct-Message">Message</a> structure is returned if the function is called in valid circumstances, otherwise <code>NULL</code>.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="GetClassID"><h2>GetClassID()</h2><p class="lead">Returns the class ID of an ID-referenced object.</p><div class="card card-info mb-3"><div class="card-header"><samp>CLASSID GetClassID(OBJECTID Object)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The object to be examined.</td></tr>
 </tbody></table></div></div>
@@ -605,7 +620,7 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <div class="docs-content" style="display:none;" id="IdentifyFile"><h2>IdentifyFile()</h2><p class="lead">Analyse a file and identify a class that can process it.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR IdentifyFile(const std::string_view &amp; Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Path</td><td>The location of the object data.</td></tr>
 <tr><td>Filter</td><td>Restrict the search to classes in this subset, or use <code>CLASSID::NIL</code> to search all classes.</td></tr>
 <tr><td>Class</td><td>Must refer to a <code>CLASSID</code> variable that will store the resulting class ID.</td></tr>
-<tr><td>SubClass</td><td>Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).</td></tr>
+<tr><td>SubClass</td><td>Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).</td></tr>
 </tbody></table></div></div>
 <p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <a href="classes/picture.html">Picture</a> class.  An MP3 file would be identified as a datatype of the <a href="classes/sound.html">Sound</a> class.</p>
 <p>The method involves analysing the <code>Path</code>'s file extension and comparing it to the supported extensions of all available classes.  If a class supports the file extension, the ID of that class will be returned. If the file extension is not listed in the class dictionary or if it is listed more than once, the first 80 bytes of the file's data will be loaded and checked against classes that can match against file header information.  If a match is found, the ID of the matching class will be returned.</p>
@@ -613,13 +628,13 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Search</th><td>A suitable class could not be found for the data source.</td></tr>
 <tr><th class="col-md-1">FileNotFound</th><td>File not found</td></tr>
-<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">Read</th><td>Error reading data</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="InitObject"><h2>InitObject()</h2><p class="lead">Initialises an object so that it is ready for use.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR InitObject(OBJECTPTR Object)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The object to initialise.</td></tr>
 </tbody></table></div></div>
 <p>This function initialises objects so that they can be used for their intended purpose. Initialisation is compulsory, and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to this rule only apply to the <code>GetKey()</code> and <code>SetKey()</code> actions.</p>
-<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <a href="classes/picture.html">Picture</a> object attempts to load a JPEG file), the initialiser will search for a sub-class that can handle the data.  If a sub-class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the sub-class.</p>
+<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <a href="classes/picture.html">Picture</a> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
 <p>If an object does not support the data or its configuration, an error code of <code>ERR::NoSupport</code> will be returned. Other appropriate error codes can be returned if initialisation fails.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The object was initialised.</td></tr>
 <tr><th class="col-md-1">LostClass</th><td>The object has lost its class reference</td></tr>
@@ -632,7 +647,6 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <p>The ListChildren() function returns a list of all children belonging to an object.  The client must provide an empty vector of <a data-toggle="tooltip" title="" href="?page=struct-ChildEntry">ChildEntry</a> structures to host the results, which include unique object ID's and their class identifiers.</p>
 <p>Note that any child objects marked with the <code>LOCAL</code> flag will be excluded because they are private members of the targeted object.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Zero or more children were found and listed.</td></tr>
-<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -646,7 +660,8 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <p>Calls to LoadFile() must be matched with a call to <a href="?page=UnloadFile">UnloadFile()</a> to decrement the cache counter. When the counter returns to zero, the file can be unloaded from the cache during the next resource collection phase.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The file was cached successfully.</td></tr>
 <tr><th class="col-md-1">Search</th><td>If <code>CHECK_EXISTS</code> is specified, this failure indicates that the file is not cached.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">Read</th><td>Error reading data</td></tr>
+<tr><th class="col-md-1">CreateObject</th><td>A call to CreateObject() failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="LockObject"><h2>LockObject()</h2><p class="lead">Lock an object to prevent contention between threads.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR LockObject(OBJECTPTR Object, INT MilliSeconds)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The address of the object to lock.</td></tr>
@@ -694,7 +709,9 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
 <p>If the call to MemoryPtrInfo() fails then the <a data-toggle="tooltip" title="" href="?page=struct-MemInfo">MemInfo</a> structure's fields will be driven to <code>NULL</code> and an error code will be returned.</p>
 <p>Please note that referencing by a pointer requires a slow reverse-lookup to be employed in this function's search routine.  We recommend that calls to this function are avoided unless circumstances absolutely require it.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">MemoryDoesNotExist</th><td>Memory block does not exist</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="MoveFile"><h2>MoveFile()</h2><p class="lead">Moves folders and files to new locations.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR MoveFile(const std::string_view &amp; Source, const std::string_view &amp; Dest, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Source</td><td>The source path.</td></tr>
@@ -764,6 +781,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
 <tr><th class="col-md-1">DirEmpty</th><td>The folder is empty</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ParentContext"><h2>ParentContext()</h2><p class="lead">Returns the context of the client.</p><div class="card card-info mb-3"><div class="card-header"><samp>OBJECTPTR ParentContext()</samp></div></div>
@@ -783,6 +801,9 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Terminate</th><td>A <code>MSGID::QUIT</code> message type was found on the message queue.</td></tr>
 <tr><th class="col-md-1">TimeOut</th><td>Function timed-out before successful completion</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
+<tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ProtectMemory"><h2>ProtectMemory()</h2><p class="lead">Change the access permissions of a memory block.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ProtectMemory(APTR Address, MEM Flags)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Address</td><td>Pointer to a memory block obtained from <a href="?page=AllocMemory">AllocMemory()</a>.</td></tr>
 <tr><td><a onclick="showPage('MEM');">Flags</a></td><td>New access flags (MEM::READ, MEM::WRITE).</td></tr>
@@ -801,9 +822,8 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
 <p>Use QueueAction() to execute an action by way of the local message queue.  This means that the supplied <code>Action</code> and <code>Args</code> will be serialised into a message for the queue.  This function then returns immediately.</p>
 <p>The action will be executed on the next cycle of <a href="?page=ProcessMessages">ProcessMessages()</a> in line with the FIFO order of queued messages.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">InvalidData</th><td>There is an error in the provided data</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>The <code>Action</code> ID is invalid.</td></tr>
-<tr><th class="col-md-1">IllegalMethodID</th><td>Illegal method ID (outside of valid range)</td></tr>
 <tr><th class="col-md-1">MissingClass</th><td>The class could not be found in the system</td></tr>
 <tr><th class="col-md-1">NoMatchingObject</th><td>No matching object was found for the given object ID</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
@@ -817,11 +837,11 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
 <p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">File</th><td>File error, e.g. file not found</td></tr>
+<tr><th class="col-md-1">FileNotFound</th><td>File not found</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">Read</th><td>Error reading data</td></tr>
 <tr><th class="col-md-1">InvalidPath</th><td>Invalid file or folder path detected</td></tr>
 <tr><th class="col-md-1">OpenFile</th><td>The file could not be opened</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ReadInfoTag"><h2>ReadInfoTag()</h2><p class="lead">Read a named tag from a FileInfo structure.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ReadInfoTag(struct FileInfo * Info, const std::string_view &amp; Name, CSTRING * Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Info</td><td>Pointer to a valid <a data-toggle="tooltip" title="" href="?page=struct-FileInfo">FileInfo</a> structure.</td></tr>
 <tr><td>Name</td><td>The name of the tag, which must be declared in camel-case as tags are case-sensitive.</td></tr>
@@ -864,7 +884,6 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
 <p>Successful calls to <a href="?page=AccessMemory">AccessMemory()</a> must be paired with a call to ReleaseMemory() so that the memory can be made available to other processes.  Releasing the resource decreases the access count, and if applicable a thread that is in the queue for access may then be able to acquire a lock.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Search</th><td>A search routine in this function failed</td></tr>
-<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ReleaseObject"><h2>ReleaseObject()</h2><p class="lead">Release a locked object.</p><div class="card card-info mb-3"><div class="card-header"><samp>void ReleaseObject(OBJECTPTR Object)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>Pointer to the object to be released.</td></tr>
@@ -903,12 +922,14 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
 </tbody></table>
 <p>If the path resolves to a virtual drive, it may not be possible to confirm whether the target file exists if the virtual driver does not support this check.  This is common when working with network drives.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The <code>Path</code> was resolved.</td></tr>
+<tr><th class="col-md-1">InvalidData</th><td>Volume resolution returned invalid path data.</td></tr>
 <tr><th class="col-md-1">Search</th><td>The given volume does not exist.</td></tr>
 <tr><th class="col-md-1">FileNotFound</th><td>The path was resolved, but the referenced file or folder does not exist (use <code>NO_FILE_CHECK</code> to avoid this error code).</td></tr>
 <tr><th class="col-md-1">InvalidPath</th><td>The path is malformed.</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>The volume registry could not be accessed.</td></tr>
 <tr><th class="col-md-1">VirtualVolume</th><td>The path refers to a virtual volume (use <code>CHECK_VIRTUAL</code> to return <code>Okay</code> instead).</td></tr>
 <tr><th class="col-md-1">Loop</th><td>The volume refers back to itself.</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Invalid parameters were specified.</td></tr>
+<tr><th class="col-md-1">LoadModule</th><td>A volume extension could not be loaded.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ResolveUserID"><h2>ResolveUserID()</h2><p class="lead">Converts a user ID to its corresponding name.</p><div class="card card-info mb-3"><div class="card-header"><samp>CSTRING ResolveUserID(INT User)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>User</td><td>The user ID.</td></tr>
 </tbody></table></div></div>
@@ -930,7 +951,11 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <p>The <code>RDF</code> flags that may be returned in the Flags field are <code>VOLUME</code>, <code>FOLDER</code>, <code>FILE</code>, <code>LINK</code>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>An item was successfully scanned from the folder.</td></tr>
 <tr><th class="col-md-1">DirEmpty</th><td>There are no more items to scan.</td></tr>
+<tr><th class="col-md-1">InvalidData</th><td>There is an error in the provided data</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
+<tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ScanMessages"><h2>ScanMessages()</h2><p class="lead">Scans a message queue for multiple occurrences of a message type.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Handle</td><td>Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</td></tr>
 <tr><td><a onclick="showPage('MSGID');">Type</a></td><td>The message type to filter for, or zero to scan all messages in the queue.</td></tr>
@@ -946,6 +971,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small as indicated by the <code>Size</code>, the message data will be trimmed to fit without any further indication.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Search</th><td>No more messages are left on the queue, or no messages that match the given <code>Type</code> are on the queue.</td></tr>
+<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="SendMessage"><h2>SendMessage()</h2><p class="lead">Add a message to the local message queue.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('MSGID');">Type</a></td><td>The message Type/ID being sent.  Unique type ID's can be obtained from <a href="?page=AllocateID">AllocateID()</a>.</td></tr>
@@ -980,7 +1006,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <p>This function sets the name of an <code>Object</code>.  This enhances log messages and allows the object to be found in searches. Note that the length of the <code>Name</code> will be limited to the <code>MAX_NAME_LEN</code> value in the core header file.  Names exceeding the allowed length are trimmed to fit.</p>
 <p>Object names are limited to alpha-numeric characters and the underscore symbol.  Invalid characters are replaced with an underscore.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Search</th><td>The <code>Object</code> is not recognised by the system - the address may be invalid.</td></tr>
 <tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -995,7 +1020,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 </ol>
 <p>If the <code>Object</code> does not support the NewOwner action, or the <code>Owner</code> does not support the NewChild action, then the process will not fail.  It will continue on the assumption that neither party is concerned about ownership management.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
+<tr><th class="col-md-1">SystemCorrupt</th><td>System corruption detected</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
@@ -1038,6 +1063,7 @@ static ResourceManager glNodeManager = {
 <p>The SetResourcePath() function changes the default locations of the Core's resource paths.</p>
 <p>To read a resource path, use the <a href="?page=GetSystemState">GetSystemState()</a> function.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="SetVolume"><h2>SetVolume()</h2><p class="lead">Create or modify a filesystem volume.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SetVolume(const std::string_view &amp; Name, const std::string_view &amp; Path, const std::string_view &amp; Icon, const std::string_view &amp; Label, const std::string_view &amp; Device, VOLUME Flags)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Name</td><td>Required.  The name of the volume.</td></tr>
@@ -1055,7 +1081,7 @@ static ResourceManager glNodeManager = {
 <tr><th>VOLUME::SYSTEM</th><td>Identifies the volume as being created by the system (this flag is not for client use).</td></tr>
 </tbody></table>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The volume was successfully added.</td></tr>
-<tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>A valid name and path string was not provided.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="SubscribeAction"><h2>SubscribeAction()</h2><p class="lead">Monitor action calls made against an object.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The target object.</td></tr>
@@ -1093,6 +1119,7 @@ static ResourceManager glNodeManager = {
 <p>An event handle will be returned in the <code>Handle</code> parameter to identify the subscription.  This must be retained to later unsubscribe from the event with the <a href="?page=UnsubscribeEvent">UnsubscribeEvent()</a> function.</p>
 <p>The prototype for the <code>Callback</code> function is <code>Function(APTR Event, LONG Size, APTR CallbackMeta)</code>, where <code>Event</code> is the event structure that matches to the subscribed EventID.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -1107,7 +1134,6 @@ static ResourceManager glNodeManager = {
 <p>Timer management is provisioned by the <a href="?page=ProcessMessages">ProcessMessages()</a> function.  Failure to regularly process incoming messages will lead to unreliable timer cycles.  It should be noted that the smaller the <code>Interval</code> that has been used, the more imperative regular message checking becomes.  Prolonged processing inside a timer routine can also impact on other timer subscriptions that are waiting to be processed.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
-<tr><th class="col-md-1">ArrayFull</th><td>The task's timer array is at capacity - no more subscriptions can be granted.</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">InvalidState</th><td>The subscriber is marked for termination.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
@@ -1138,7 +1164,6 @@ static ResourceManager glNodeManager = {
 <p>If <code>Data</code> is defined, its size should equal that of the data already set against the message.  The size will be trimmed if it exceeds that of the existing message, as this function cannot expand the size of the queue.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The message was successfully updated.</td></tr>
 <tr><th class="col-md-1">Search</th><td>The supplied <code>Message</code> ID does not refer to a message in the queue.</td></tr>
-<tr><th class="col-md-1">AccessMemory</th><td>Access to a memory block was denied</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="UpdateTimer"><h2>UpdateTimer()</h2><p class="lead">Modify or remove a subscription created by SubscribeTimer().</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR UpdateTimer(APTR Subscription, DOUBLE Interval)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Subscription</td><td>The timer subscription to modify.</td></tr>
@@ -1146,9 +1171,9 @@ static ResourceManager glNodeManager = {
 </tbody></table></div></div>
 <p>This function complements <a href="?page=SubscribeTimer">SubscribeTimer()</a>.  It can change the interval for an existing timer subscription, or remove it if the Interval is set to zero.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Search</th><td>A search routine in this function failed</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+<tr><th class="col-md-1">AlreadyLocked</th><td>Object or resource has already been locked</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="WaitForObjects"><h2>WaitForObjects()</h2><p class="lead">Process incoming messages while waiting on objects to complete their activities.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR WaitForObjects(PMF Flags, INT TimeOut, struct ObjectSignal * ObjectSignals)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('PMF');">Flags</a></td><td>Optional flags are specified here.</td></tr>
 <tr><td>TimeOut</td><td>A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</td></tr>
@@ -1158,10 +1183,12 @@ static ResourceManager glNodeManager = {
 <p>Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the object will not be monitored.</p>
 <p>If this function is called recursively, the state of the earlier call will be preserved so that it will not be affected by subsequent calls.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">Terminate</th><td>Termination requested</td></tr>
 <tr><th class="col-md-1">TimeOut</th><td>Function timed-out before successful completion</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
 <tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
+<tr><th class="col-md-1">MessageOperation</th><td>A message queue operation has failed</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="WaitTime"><h2>WaitTime()</h2><p class="lead">Waits for a specified amount of seconds.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR WaitTime(DOUBLE Seconds)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Seconds</td><td>The number of seconds to wait for.  Fractional values are supported for sub-second precision.</td></tr>
 </tbody></table></div></div>
@@ -1284,7 +1311,7 @@ static ResourceManager glNodeManager = {
 <tr><th>DATA::CONTENT</th><td>Document content (between XML tags) - sent by document objects only</td></tr>
 <tr><th>DATA::DEVICE_INPUT</th><td>Device activity</td></tr>
 <tr><th>DATA::FILE</th><td>File location (the data will reflect the complete file path)</td></tr>
-<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Image class</td></tr>
+<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Picture class</td></tr>
 <tr><th>DATA::INPUT_READY</th><td>Device input that has been transformed into user input</td></tr>
 <tr><th>DATA::RAW</th><td>Raw unprocessed data</td></tr>
 <tr><th>DATA::RECEIPT</th><td>Receipt for item data, in response to an earlier request</td></tr>
@@ -1384,7 +1411,8 @@ static ResourceManager glNodeManager = {
 <tr><th>FD::BUFFER</th><td>FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</td></tr>
 <tr><th>FD::BUFSIZE</th><td>FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</td></tr>
 <tr><th>FD::BYTE</th><td>8 bit integer.</td></tr>
-<tr><th>FD::CPP</th><td>Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>std::vector</code>.</td></tr>
+<tr><th>FD::CLASS_TYPES</th><td>All types that directly contribute to the core definition of a C/C++ type</td></tr>
+<tr><th>FD::CPP</th><td>Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>kt::vector</code>.</td></tr>
 <tr><th>FD::CUSTOM</th><td></td></tr>
 <tr><th>FD::DOUBLE</th><td>64 bit float.</td></tr>
 <tr><th>FD::DOUBLERESULT</th><td>For actions and methods</td></tr>
@@ -1402,6 +1430,7 @@ static ResourceManager glNodeManager = {
 <tr><th>FD::LOCAL</th><td>CLASSDEF Pointer to an object that is local to the class</td></tr>
 <tr><th>FD::LOOKUP</th><td>CLASSDEF</td></tr>
 <tr><th>FD::MUTABLE</th><td>FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</td></tr>
+<tr><th>FD::NORMALISED</th><td>Supplementary, indicates a normalised float value for multiplicative scaling.</td></tr>
 <tr><th>FD::OBJECT</th><td>Supplementary, can be used with ints (for IDs) or pointers</td></tr>
 <tr><th>FD::OBJECTID</th><td>Synonym for <code>INT | OBJECT</code></td></tr>
 <tr><th>FD::OBJECTPTR</th><td>Synonym for <code>PTR | OBJECT</code></td></tr>
@@ -1414,14 +1443,14 @@ static ResourceManager glNodeManager = {
 <tr><th>FD::PTR_DOUBLERESULT</th><td>Use for pointer-based value results only.</td></tr>
 <tr><th>FD::PTR_INT64RESULT</th><td>Use for pointer-based value results only.</td></tr>
 <tr><th>FD::PTR_INTRESULT</th><td>Use for pointer-based value results only.</td></tr>
+<tr><th>FD::PURE</th><td>Supplementary, indicates that the Getter function for a field is non-mutating and context free (inc. non-logging).</td></tr>
 <tr><th>FD::R</th><td>Synonym for <code>READ</code></td></tr>
 <tr><th>FD::READ</th><td>CLASSDEF</td></tr>
 <tr><th>FD::RESOURCE</th><td>The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</td></tr>
 <tr><th>FD::RESULT</th><td>FUNCDEF Overrides <code>READ</code></td></tr>
-<tr><th>FD::RGB</th><td>Supplementary, if an int type then format is <code>0xAARRGGBB</code>, if pointer then refers to an RGB structure.</td></tr>
 <tr><th>FD::RI</th><td>Synonym for <code>READ | INIT</code></td></tr>
 <tr><th>FD::RW</th><td>Synonym for <code>READ | WRITE</code></td></tr>
-<tr><th>FD::SCALED</th><td>Supplementary, indicates a float value for multiplicative scaling.</td></tr>
+<tr><th>FD::SCALED</th><td>Synonym for <code>NORMALISED</code></td></tr>
 <tr><th>FD::STR</th><td>Synonym for <code>STRING</code></td></tr>
 <tr><th>FD::STRING</th><td>Pointer to a string.</td></tr>
 <tr><th>FD::STRRESULT</th><td>Synonym for <code>STR | RESULT</code></td></tr>
@@ -1792,10 +1821,9 @@ static ResourceManager glNodeManager = {
 <tr><th>NF::FREE_ON_UNLOCK</th><td>Read-only indicator for when the object is marked for deletion.</td></tr>
 <tr><th>NF::INITIALISED</th><td>Read-only indicator if the object has been initialised.</td></tr>
 <tr><th>NF::LOCAL</th><td>Classes can allocate local objects to stop them from being associated with the client.</td></tr>
-<tr><th>NF::MESSAGE</th><td>Action has been called against the object through the message system (managed by <a href="core.html?page=ProcessMessages">ProcessMessages()</a>).</td></tr>
 <tr><th>NF::NAME</th><td>Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</td></tr>
 <tr><th>NF::PRIVATE</th><td></td></tr>
-<tr><th>NF::RECLASSED</th><td>The object switched from the base-class to a sub-class during initialisation.</td></tr>
+<tr><th>NF::RECLASSED</th><td>The object switched from the base-class to a derived class during initialisation.</td></tr>
 <tr><th>NF::SIGNALLED</th><td>The object has been signalled and is awaiting processing.</td></tr>
 <tr><th>NF::TIMER_SUB</th><td>The object is subscribed to a timer interval.</td></tr>
 <tr><th>NF::UNIQUE</th><td>Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, <a href="core.html?page=NewObject">NewObject()</a> will return <code>ERR::ObjectExists</code>.  This flag works in conjunction with the <code>Name</code> parameter.</td></tr>
@@ -2028,7 +2056,7 @@ static ResourceManager glNodeManager = {
 <tr><th>ClassID</th><td><span class="text-nowrap">CLASSID</span></td><td>The class ID of the referenced object.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-ClassRecord"><h1>ClassRecord Structure</h1><p class="lead">Meta information for a class, as recorded in the class database.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>ClassID</th><td><span class="text-nowrap">CLASSID</span></td><td>Unique class identifier (hash of Name)</td></tr>
-<tr><th>ParentID</th><td><span class="text-nowrap">CLASSID</span></td><td>Parent class ID if this is a sub-class</td></tr>
+<tr><th>ParentID</th><td><span class="text-nowrap">CLASSID</span></td><td>Parent class ID if this is a derived class</td></tr>
 <tr><th>Category</th><td><span class="text-nowrap">CCF</span></td><td>Assigned category</td></tr>
 <tr><th>Name</th><td><span class="text-nowrap">std::string</span></td><td>Name of the class</td></tr>
 <tr><th>Path</th><td><span class="text-nowrap">std::string</span></td><td>Path to the class file</td></tr>
@@ -2115,7 +2143,7 @@ static ResourceManager glNodeManager = {
 <div class="docs-content" style="display:none;" id="struct-FieldArray"><h1>FieldArray Structure</h1><p class="lead">Used to construct class blueprints for the MetaClass.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>The name of the field, e.g. <code>Width</code></td></tr>
 <tr><th>GetField</th><td><span class="text-nowrap">APTR</span></td><td><code>void GetField(*Object, APTR Result);</code></td></tr>
 <tr><th>SetField</th><td><span class="text-nowrap">APTR</span></td><td><code>ERR SetField(*Object, APTR Value);</code></td></tr>
-<tr><th>Arg</th><td><span class="text-nowrap">MAXINT</span></td><td>Can be a pointer or an integer value</td></tr>
+<tr><th>Arg</th><td><span class="text-nowrap">INT64</span></td><td>Can be a pointer or an integer value</td></tr>
 <tr><th>Flags</th><td><span class="text-nowrap">UINT</span></td><td>Special flags that describe the field</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-FieldDef"><h1>FieldDef Structure</h1><p class="lead">Used to define constants for field references.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>The name of the constant.</td></tr>

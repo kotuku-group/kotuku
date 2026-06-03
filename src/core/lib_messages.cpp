@@ -132,6 +132,10 @@ ptr(func) Routine: Refers to the function that will handle incoming messages.
 Okay: Message handler successfully processed.
 NullArgs
 AllocMemory
+Lock
+
+-TAGS-
+caller-owns-result, creates-resource, callback-held, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -198,8 +202,14 @@ int TimeOut: A TimeOut value, measured in milliseconds.  If zero, the function w
 
 -ERRORS-
 Okay:
+OutsideMainThread:
+Recursion:
+SystemLocked:
 Terminate: A `MSGID::QUIT` message type was found on the message queue.
 TimeOut:
+
+-TAGS-
+main-thread-only, blocking, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -493,7 +503,11 @@ bufsize Size: The byte-size of the supplied `Buffer`.
 -ERRORS-
 Okay:
 NullArgs:
+OutOfRange:
 Search: No more messages are left on the queue, or no messages that match the given `Type` are on the queue.
+
+-TAGS-
+mutates-input, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -558,6 +572,9 @@ bufsize Size:   The byte-size of the `Data` being written to the message queue.
 -ERRORS-
 Okay: The message was successfully written to the message queue.
 Args:
+
+-TAGS-
+copies-input, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -623,10 +640,15 @@ struct(*ObjectSignal) ObjectSignals: A null-terminated array of objects to monit
 
 -ERRORS-
 Okay
-NullArgs
-Failed
-TimeOut
 OutsideMainThread
+MessageOperation
+Recursion
+SystemLocked
+Terminate
+TimeOut
+
+-TAGS-
+main-thread-only, blocking, callback-inlines
 
 -END-
 
@@ -834,8 +856,10 @@ bufsize Size:  The byte-size of the `Data` that has been supplied.  It must not 
 -ERRORS-
 Okay:   The message was successfully updated.
 NullArgs:
-AccessMemory:
 Search: The supplied `Message` ID does not refer to a message in the queue.
+
+-TAGS-
+copies-input, blocking
 -END-
 
 *********************************************************************************************************************/

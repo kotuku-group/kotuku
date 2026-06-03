@@ -540,14 +540,18 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR COLOURFX_GET_XMLDef(extColourFX *Self, STRING *Value)
+static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
    stream << "feColorMatrix";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -568,9 +572,9 @@ static const FieldDef clMode[] = {
 };
 
 static const FieldArray clColourFXFields[] = {
-   { "Mode",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI,  COLOURFX_GET_Mode, COLOURFX_SET_Mode, &clMode },
-   { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI, COLOURFX_GET_Values, COLOURFX_SET_Values },
-   { "XMLDef", FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R,  COLOURFX_GET_XMLDef },
+   { "Mode",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI|FDF_PURE,  COLOURFX_GET_Mode, COLOURFX_SET_Mode, &clMode },
+   { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  COLOURFX_GET_XMLDef },
    END_FIELD
 };
 

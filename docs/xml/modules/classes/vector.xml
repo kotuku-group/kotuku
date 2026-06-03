@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>Vector is an abstract class that is used as a blueprint for other vector classes that provide specific functionality for a vector scene.  At this time the classes are <class name="VectorClip">VectorClip</class>, <class name="VectorEllipse">VectorEllipse</class>, <class name="VectorGroup">VectorGroup</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPolygon">VectorPolygon</class>, <class name="VectorRectangle">VectorRectangle</class>, <class name="VectorSpiral">VectorSpiral</class>, <class name="VectorText">VectorText</class>, <class name="VectorViewport">VectorViewport</class> and <class name="VectorWave">VectorWave</class>.</p>
-<p>The majority of sub-classes support all of the functionality provided by Vector.  The general exception is that graphics functions will not be supported by non-graphical classes, for instance <class name="VectorGroup">VectorGroup</class> and <class name="VectorViewport">VectorViewport</class> do not produce a vector path and therefore cannot be rendered.</p>
+<p>The majority of derived classes support all of the functionality provided by Vector.  The general exception is that graphics functions will not be supported by non-graphical classes, for instance <class name="VectorGroup">VectorGroup</class> and <class name="VectorViewport">VectorViewport</class> do not produce a vector path and therefore cannot be rendered.</p>
 <p>To simplify the creation of complex vector graphics and maximise compatibility, we have designed the vector management code to use data structures that closely match SVG definitions.  For this reason we do not provide exhaustive documentation on the properties that can be applied to each vector type.  Instead, please refer to the SVG reference manuals from the W3C.  In cases where we are missing support for an SVG feature, assume that future support is intended unless otherwise documented.</p></description>
     <source>
       <file path="vectors/">vector.cpp</file>
@@ -94,6 +94,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>private</tags>
     </method>
 
     <method>
@@ -111,6 +112,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, closes-handle</tags>
     </method>
 
     <method>
@@ -137,6 +139,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="NotPossible">The vector does not support path generation.</error>
       </result>
+      <tags>pure-query</tags>
     </method>
 
     <method>
@@ -157,6 +160,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, object-owns-result, creates-resource</tags>
     </method>
 
     <method>
@@ -178,6 +182,7 @@
         <error code="NoSupport">The vector type does not support path generation.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query</tags>
     </method>
 
     <method>
@@ -196,6 +201,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -216,6 +222,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-held</tags>
     </method>
 
     <method>
@@ -241,6 +248,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A call to <function module="Display">SubscribeInput</function> failed.</error>
       </result>
+      <tags>mutates-object, callback-held</tags>
     </method>
 
     <method>
@@ -265,6 +273,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A call to <function module="Display">SubscribeInput</function> failed.</error>
       </result>
+      <tags>mutates-object, callback-held</tags>
     </method>
 
     <method>
@@ -287,6 +296,7 @@
         <error code="NoData">The vector does not define a path.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, callback-inlines</tags>
     </method>
 
   </methods>
@@ -655,6 +665,7 @@ Z: Close Path
 </pre>
 <p>The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate of the previous command).</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>

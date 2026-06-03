@@ -223,6 +223,7 @@ thread_local int16_t tlPrivateLockCount = 0; // Count of private *memory* locks 
 THREADID glMainThreadID = THREADID(0);
 
 Object glDummyObject;
+ActionMessage *glCurrentActionMsg = nullptr;
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 thread_local kt::vector<ObjectContext> *tlContextPtr = nullptr; // Lazy init via tls_get_context()

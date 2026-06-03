@@ -40,6 +40,14 @@ struct ThreadMsg {
    double    Key;       // Client-provided key value forwarded to the callback
 };
 
+static bool has_results(const FunctionField *Args)
+{
+   for (int i=0; Args[i].Name; i++) {
+      if (Args[i].Type & FD_RESULT) return true;
+   }
+   return false;
+}
+
 //********************************************************************************************************************
 // Callback following execution (executed by the main thread, not the child)
 // Must follow the signature declared in AsyncAction() documentation.
@@ -48,7 +56,7 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
 {
    kt::Log log("thread_callback");
 
-   auto prv = (prvTiri *)Msg->Owner->ChildPrivate;
+   auto prv = (prvTiri *)Msg->Owner->DerivedPtr;
 
    if (Msg->Callback != LUA_NOREF) {
       if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
@@ -86,8 +94,10 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
 // Usage: async.script(Script, Callback)
 //
 // Pins the Script object to prevent premature destruction, then executes it in its own thread.  The pin is
-// released when the thread completes and the callback message is processed on the main thread.  No object lock
-// is held across the thread boundary — acActivate() acquires its own lock internally via ScopedObjectAccess.
+// released when the thread completes and the callback message is processed on the main thread.
+//
+// NOTE: No object lock is held across the thread boundary — acActivate() acquires its own lock internally via
+// ScopedObjectAccess.
 
 static int async_script(lua_State *Lua)
 {
@@ -103,8 +113,8 @@ static int async_script(lua_State *Lua)
 
    // Share the parent's pool with the child script so that async.pool accesses the same data.
    {
-      auto parent_prv = (prvTiri *)Lua->script->ChildPrivate;
-      auto child_prv  = (prvTiri *)gc_script->ptr->ChildPrivate;
+      auto parent_prv = (prvTiri *)Lua->script->DerivedPtr;
+      auto child_prv  = (prvTiri *)gc_script->ptr->DerivedPtr;
       if (parent_prv and child_prv) {
          if (not parent_prv->Pool) parent_prv->Pool = std::make_shared<SharedPool>();
          child_prv->Pool = parent_prv->Pool;
@@ -203,14 +213,19 @@ static int async_action(lua_State *Lua)
 
    ERR error = ERR::Okay;
    if (arg_size > 0) {
+      if ((uint64_t(1) << int(action_id)) & glActionsWithResults) {
+         abort();
+         luaL_error(Lua, "Actions that return results are not yet supported.");
+      }
+
       auto arg_buffer = std::make_unique<int8_t[]>(arg_size+8); // +8 for overflow protection in build_args()
       int result_count;
 
       // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
       lua_rotate(Lua, 1, -4);
       lua_pop(Lua, 4);
-      if ((error = build_args(Lua, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
-         if (!result_count) {
+      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
+         if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
          else {
@@ -304,14 +319,19 @@ static int async_method(lua_State *Lua)
 
          ERR error = ERR::Okay;
          if (argsize > 0) {
+            if (has_results(args)) {
+               abort();
+               luaL_error(Lua, "Methods that return results are not yet supported.");
+            }
+
             auto argbuffer = std::make_unique<int8_t[]>(argsize+8); // +8 for overflow protection in build_args()
-            int resultcount;
+            int result_count;
 
             // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
             lua_rotate(Lua, 1, -4);
             lua_pop(Lua, 4);
-            if ((error = build_args(Lua, args, argsize, argbuffer.get(), &resultcount)) IS ERR::Okay) {
-               if (!resultcount) {
+            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count)) IS ERR::Okay) {
+               if (not result_count) {
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }
                else {
@@ -337,8 +357,8 @@ static int async_method(lua_State *Lua)
       }
    }
 
-   if (method) luaL_error(Lua, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName);
-   else luaL_error(Lua, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName);
+   if (method) luaL_error(Lua, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
+   else luaL_error(Lua, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
    return 0;
 }
 
@@ -474,7 +494,7 @@ static const luaL_Reg asynclib_methods[] = {
 
 static SharedPool * get_pool(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv->Pool) prv->Pool = std::make_shared<SharedPool>();
    return prv->Pool.get();
 }

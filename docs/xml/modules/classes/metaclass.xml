@@ -37,6 +37,7 @@
 <p>This method checks if a class has defined a given field by scanning its blueprint for a matching <code>ID</code>.  If found, a direct pointer to the <code>Field</code> struct will be returned to the client.</p>
 <p>In some classes the field might not be present in the main class spec, but does appear in an integral class.  In that case, a reference to the class will be returned in the <code>Source</code> parameter.</p>
       </description>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
   </methods>
@@ -61,7 +62,7 @@
       <description>
 <p>Action routines are associated with a new class by referring to a list of <st>ActionArray</st> items in this field. Each provided action ID must be paired with its associated routine.</p>
 <p>Internally, the provided list is copied to the <fl>ActionTable</fl> and the original values will serve no further purpose.</p>
-<p>The following example shows a list of <st>ActionArray</st> structures borrowed from the <class name="Picture">Picture</class> class.  Note that such lists can also be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
+<p>The following example shows a list of <st>ActionArray</st> structures borrowed from the <class name="Image">Image</class> class.  Note that such lists can also be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
 <pre>ActionArray clActions[] = {
    { AC::Free,          PIC_Free },
    { AC::NewObject,     PIC_NewObject },
@@ -85,7 +86,7 @@
       <type>CLASSID</type>
       <description>
 <p>The BaseClassID must always be set prior to the initialisation of a new MetaClass object unless <fl>ClassName</fl> is considered sufficient.  If the BaseClassID is zero then the hash of <fl>ClassName</fl> is computed and set as the value of BaseClassID.</p>
-<p>When defining a sub-class, it is required that the BaseClassID refers to the class that is being supported.</p>
+<p>When defining a derived class, it is required that the BaseClassID refers to the class that is being supported.</p>
       </description>
     </field>
 
@@ -106,7 +107,7 @@
       <access read="R" write="I">Read/Init</access>
       <type>CLASSID</type>
       <description>
-<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a sub-class.  The ClassID value always reflects the <code>strihash()</code> computation of the <fl>ClassName</fl>, and is automatically set on initialisation if not already set by the client.</p>
+<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a derived class.  The ClassID value always reflects the <code>strihash()</code> computation of the <fl>ClassName</fl>, and is automatically set on initialisation if not already set by the client.</p>
       </description>
     </field>
 
@@ -114,7 +115,7 @@
       <name>ClassName</name>
       <comment>The name of the represented class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>This field specifies the name of the represented class.  Characters should be limited to those in the range of A-Z and written in camel case, e.g. <code>KeyValue</code> and not <code>Keyvalue</code> or <code>KEYVALUE</code>.  Setting this field value is compulsory prior to initialisation.</p>
       </description>
@@ -127,7 +128,7 @@
       <type>DOUBLE</type>
       <description>
 <p>This field value must reflect the version of the class structure.  Legal version numbers start from 1.0 and ascend. Revision numbers can be used to indicate bug-fixes or very minor changes.</p>
-<p>If declaring a sub-class then this value can be <code>0</code>, but base classes must set a value here.</p>
+<p>If declaring a derived class then this value can be <code>0</code>, but base classes must set a value here.</p>
       </description>
     </field>
 
@@ -137,7 +138,7 @@
       <access read="G">Get</access>
       <type>struct Field *</type>
       <description>
-<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For sub-classes, use linear scanning.</p>
+<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For derived classes, use linear scanning.</p>
       </description>
     </field>
 
@@ -156,9 +157,9 @@
       <name>FileDescription</name>
       <comment>Describes the file type represented by the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
-<p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Picture</code> would be appropriate.</p>
+<p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Image</code> would be appropriate.</p>
       </description>
     </field>
 
@@ -166,7 +167,7 @@
       <name>FileExtension</name>
       <comment>Describes the file extension represented by the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>This field describes the file extension/s that the class will recognise.  For example: <code>*.wav|*.wave|*.snd</code>.</p>
 <p>Use of the vertical bar allows more than one file extension to be supported by the class. The file extension that is preferred for saving data must come first.</p>
@@ -177,7 +178,7 @@
       <name>FileHeader</name>
       <comment>Defines a string expression that will allow relevant file data to be matched to the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>If a class supports file data, then the FileHeader field is used to identify the types of data that the class supports. This feature is used by routines that need to analyse files and determine which classes support them.</p>
 <p>For example, the JPEG class supports files that start with a 32-bit token to identify them as JPEG.  Declaring a FileHeader expression to match these tokens will allow the FileView feature to detect JPEG files and display an appropriate icon for each JPEG entry in the file list.</p>
@@ -200,8 +201,8 @@
     <field>
       <name>Icon</name>
       <comment>Associates an icon with the file data for this class.</comment>
-      <access>-/-</access>
-      <type>CSTRING</type>
+      <access read="R" write="I">Read/Init</access>
+      <type>std::string</type>
       <description>
 <p>Files that belong to a class can be associated with an icon that is declared in this field.  The icon string format is <code>folder/icon</code>.  Valid icons are available in the icon database.</p>
       </description>
@@ -210,7 +211,7 @@
     <field>
       <name>Location</name>
       <comment>Returns the path from which the class binary is loaded.</comment>
-      <access read="R">Read</access>
+      <access read="G">Get</access>
       <type>STRING</type>
       <description>
 <p>The path from which the class binary was loaded is readable from this field.  The path may not necessarily include the file extension of the source binary.</p>
@@ -244,6 +245,7 @@
 <p>This field will compile a list of all objects that belong to the class.  The list is sorted with the oldest object appearing first.</p>
 <p>The resulting array must be terminated with <function>FreeResource</function> after use.</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>
@@ -260,7 +262,7 @@
       <name>Path</name>
       <comment>The path to the module binary that represents the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>The Path field must be set on initialisation and refers to the default location of the class' module binary, for example <code>modules:display</code>. For reasons of platform portability, the file extension must not be specified at the end of the file name.</p>
       </description>
@@ -279,18 +281,18 @@
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>This field value must indicate the byte size of the objects that will be created from the MetaClass.  For example, the <class name="Picture">Picture</class> class defines this value as <code>sizeof(objPicture)</code>.</p>
+<p>This field value must indicate the byte size of the objects that will be created from the MetaClass.  For example, the <class name="Image">Image</class> class defines this value as <code>sizeof(objImage)</code>.</p>
 <p>If the size is not explicitly defined, the initialisation process will determine the structure size by evaluating the field definitions that have been provided.</p>
       </description>
     </field>
 
     <field>
       <name>SubClasses</name>
-      <comment>Returns a list of all sub-classes of the class.</comment>
+      <comment>Returns a list of all derived classes of the class.</comment>
       <access read="G">Get</access>
-      <type>ARRAY</type>
+      <type>OBJECTPTR []</type>
       <description>
-<p>This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
+<p>This field returns an array listing all active derived classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
       </description>
     </field>
 
@@ -339,7 +341,7 @@
       <field name="Name" type="CSTRING">The name of the field, e.g. <code>Width</code></field>
       <field name="GetField" type="APTR"><code>void GetField(*Object, APTR Result);</code></field>
       <field name="SetField" type="APTR"><code>ERR SetField(*Object, APTR Value);</code></field>
-      <field name="Arg" type="MAXINT">Can be a pointer or an integer value</field>
+      <field name="Arg" type="INT64">Can be a pointer or an integer value</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
     </struct>
 

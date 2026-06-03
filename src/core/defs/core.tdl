@@ -250,29 +250,29 @@ constexpr bool defined(T flags, T test_flag) noexcept {
 
   enums("VAS", { type="int", start=1, comment="For use by VirtualVolume()" },
     "DEREGISTER: Remove the virtual volume from the system.",
-    "SCAN_DIR",
-    "DELETE",
-    "RENAME",
-    "OPEN_DIR",
-    "CLOSE_DIR",
-    "TEST_PATH",
-    "WATCH_PATH",
-    "IGNORE_FILE",
-    "GET_INFO",
-    "GET_DEVICE_INFO",
-    "IDENTIFY_FILE",
-    "MAKE_DIR",
-    "SAME_FILE",
+    "SCAN_DIR: Register the callback used to retrieve entries from an opened virtual folder.",
+    "DELETE: Register the callback used to delete a virtual file or folder.",
+    "RENAME: Register the callback used to rename or move a virtual path.",
+    "OPEN_DIR: Register the callback used to open a virtual folder for scanning.",
+    "CLOSE_DIR: Register the callback used to close an opened virtual folder.",
+    "TEST_PATH: Register the callback used to test and resolve a virtual path.",
+    "WATCH_PATH: Register the callback used to watch a virtual path for changes.",
+    "IGNORE_FILE: Register the callback used when a virtual file object no longer needs to be watched.",
+    "GET_INFO: Register the callback used to retrieve information for a virtual file or folder.",
+    "GET_DEVICE_INFO: Register the callback used to retrieve storage device information for a virtual path.",
+    "IDENTIFY_FILE: Register the callback used to identify the class associated with a virtual file.",
+    "MAKE_DIR: Register the callback used to create a virtual folder.",
+    "SAME_FILE: Register the callback used to determine if two virtual paths refer to the same file.",
     "CASE_SENSITIVE: Set to true if the volume's paths are case-sensitive.",
-    "READ_LINK",
-    "CREATE_LINK",
-    "DRIVER_SIZE")
+    "READ_LINK: Register the callback used to read a symbolic link target from a virtual path.",
+    "CREATE_LINK: Register the callback used to create a symbolic link on a virtual volume.",
+    "DRIVER_SIZE: Set the size of the driver-specific data attached to folder scans.")
 
   enums("FDB", { type="int", start=1, comment="Feedback event indicators." },
-    "DECOMPRESS_FILE",
-    "COMPRESS_FILE",
-    "REMOVE_FILE",
-    "DECOMPRESS_OBJECT")
+    "DECOMPRESS_FILE: A file is being decompressed to a filesystem path.",
+    "COMPRESS_FILE: A file or folder is being added to a compressed stream.",
+    "REMOVE_FILE: A file is being removed from a compressed stream.",
+    "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
 
   enums("CF", { type="int", start=1, comment="Compression stream formats" },
     "GZIP: The 'gzip' format",
@@ -288,8 +288,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
     "COLLECT: Marked for garbage collection.",
-    "RECLASSED: The object switched from the base-class to a sub-class during initialisation.",
-    "MESSAGE: Action has been called against the object through the message system (managed by ~Core.ProcessMessages()).",
+    "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
@@ -725,11 +724,11 @@ using ModTest    = void (*)(CSTRING, int *, int *);
   ]])
 
   struct("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
-    cstr   Name      # The name of the field, e.g. `Width`
-    ptr    GetField  # `void GetField(*Object, APTR Result);`
-    ptr    SetField  # `ERR SetField(*Object, APTR Value);`
-    maxint Arg       # Can be a pointer or an integer value
-    uint   Flags     # Special flags that describe the field
+    cstr  Name      # The name of the field, e.g. `Width`
+    ptr   GetField  # `void GetField(*Object, APTR Result);`
+    ptr   SetField  # `ERR SetField(*Object, APTR Value);`
+    large Arg       # Can be a pointer or an integer value
+    uint  Flags     # Special flags that describe the field
   ]],
   [[
   template <class G = APTR, class S = APTR, class T = MAXINT> FieldArray(CSTRING pName, uint32_t pFlags, G pGetField = nullptr, S pSetField = nullptr, T pArg = 0) :
@@ -1007,7 +1006,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
     cid ClassID          # Unique class identifier (hash of Name)
-    cid ParentID         # Parent class ID if this is a sub-class
+    cid ParentID         # Parent class ID if this is a derived class
     int(CCF) Category    # Assigned category
     cpp(str) Name        # Name of the class
     cpp(str) Path        # Path to the class file
@@ -1292,12 +1291,12 @@ typedef std::vector<obj_write> WRITE_TABLE;
     double ClassVersion    # Version of the class
     cstruct(*FieldArray) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
-    cstr ClassName         # Name of the class
-    cstr FileExtension     # File extension(s) supported by this class
-    cstr FileDescription   # File description
-    cstr FileHeader        # Internal file header for identifying the file
-    cstr Path              # Module path to the class
-    cstr Icon              # An icon that can be used to represent class data
+    cpp(str) ClassName         # Name of the class
+    cpp(str) FileExtension     # File extension(s) supported by this class
+    cpp(str) FileDescription   # File description
+    cpp(str) FileHeader        # Internal file header for identifying the file
+    cpp(str) Path              # Module path to the class
+    cpp(str) Icon              # An icon that can be used to represent class data
     int Size               # Byte-size of the class when produced as an object
     int(CLF) Flags         # Special flags
     cid ClassID            # ID of this class
@@ -1312,7 +1311,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
   ]])
 
 c_insert([[
-inline bool Object::isSubClass() { return Class->ClassID != Class->BaseClassID; }
+inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
@@ -1444,7 +1443,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   [[
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars; // Global parameters
-   STRING   *Results;
+   kt::vector<std::string> Results;
    char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    std::string Path;              // File location of the script
@@ -1454,7 +1453,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
    std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
-   int      ResultsTotal;
    int      TotalArgs;            // Total number of ProcArgs
    char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
@@ -1533,7 +1531,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
   nil,
   [[
    static ERR load(std::string Name, OBJECTPTR *Module = nullptr, APTR Functions = nullptr) {
-      if (auto module = objModule::create::global(kt::FieldValue(FID_Name, Name.c_str()))) {
+      if (auto module = objModule::create::global(kt::FieldValue(FID_Name, std::string_view(Name)))) {
          #ifdef KOTUKU_STATIC
             if (Module) *Module = module;
             if (Functions) ((APTR *)Functions)[0] = nullptr;
@@ -1696,30 +1694,6 @@ struct evHotplug {
    char Vendor[40];     // Name of vendor
 };
 
-// Speed efficient way of setting a string field that is managed with AllocMemory().
-
-inline ERR set_string_field(const std::string_view Source, STRING &Dest)
-{
-   MemInfo info;
-   if (auto error = MemoryIDInfo(GetMemoryID(Dest), &info, sizeof(info)); error IS ERR::Okay) {
-      if (Source.size()+1 < info.Size) {
-         copymem(Source.data(), Dest, Source.size());
-         Dest[Source.size()] = 0;
-         return ERR::Okay;
-      }
-      else {
-         FreeResource(GetMemoryID(Dest));
-         if (AllocMemory(Source.size() + 1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Dest, nullptr) IS ERR::Okay) {
-            copymem(Source.data(), Dest, Source.size());
-            Dest[Source.size()] = 0;
-            return ERR::Okay;
-         }
-         else return ERR::AllocMemory;
-      }
-   }
-   else return error;
-}
-
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
@@ -1797,7 +1771,7 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
    return func;
 };
 
-inline CSTRING Object::className() { return Class->ClassName; }
+inline CSTRING Object::className() { return Class->ClassName.c_str(); }
   ]==])
 
   if (glProgram is "idl-compile") then

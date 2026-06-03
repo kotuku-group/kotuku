@@ -29,7 +29,7 @@
         <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
         <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
         <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
-        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li>
       </ul>
     </div>
   </div>
@@ -260,7 +260,7 @@
 <div class="docs-content" id="default-page">
 
 <h1>Kotuku In Depth</h1>
-<p>In this document we get to grips with Kōtuku&#39;s object oriented design and how it differs to other systems and frameworks that exist today. We&#39;ll start with the basics, but the latter parts of this document may assume that you have installed the Kōtuku, have successfully run some examples and perhaps experimented with some of the code.</p>
+<p>In this document we get to grips with Kōtuku&#39;s object oriented design and how it differs to other systems and frameworks that exist today. We&#39;ll start with the basics, but the latter parts of this document may assume that you have installed Kōtuku, have successfully run some examples and perhaps experimented with some of the code.</p>
 <hr>
 <h1 id="table-of-contents">Table of Contents</h1>
 <ol type="1">
@@ -288,7 +288,7 @@
 </ol></li>
 </ol>
 <h2 id="design-overview">Design Overview</h2>
-<p>Kōtuku follows a modular design. It has a Core API that must be initialised when a program starts, and provides essential API calls that are needed for a functional development environment. Non-essential features are broken out into API modules (libraries) that manage a specific feature-set, such as audio, graphics and data management. Access to the core and modules is achieved via language header files that are auto-generated during the build process.</p>
+<p>Kōtuku follows a modular OO design that we call LOOM, the Live Object Orientation Model. It has a Core API that must be initialised when a program starts, and provides essential API calls that are needed for a functional development environment. Non-essential features are broken out into API modules (libraries) that manage a specific feature-set, such as audio, graphics and data management. Access to the core and modules is achieved via language header files that are auto-generated during the build process.</p>
 <p>The exact manner in which the system is boot-strapped is a choice for client, as the Kōtuku build process is highly configurable. Generally a build will either function as an all-purpose distribution (such as the official release) or a static, custom build that is compiled for a specific program.</p>
 <p>Kōtuku&#39;s base-level design objectives are:</p>
 <ul>
@@ -436,7 +436,7 @@ flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;
 <span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
 <span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> htonl<span class="op">(</span>Value<span class="op">);</span></span>
 <span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p><em>You might have noticed that a call to <code>HostToLong()</code> from a C++ program would be <code>netHostToLong()</code>. We leave out the <code>net</code> prefix in our module declaration as this is an implementation concern that is specific to the client&#39;s chosen language.</em></p>
+<p><em>You may have noticed that a call to <code>HostToLong()</code> from a C++ program would be <code>net::HostToLong()</code>. We leave the namespace prefix out of the module declaration as that is an implementation concern specific to the client&#39;s chosen language. The Tiri equivalent for instance, would be <code>mNet.HostToLong()</code>.</em></p>
 <p>The last requirement is to ensure that the function is named in the <a href="./TDL-Reference-Manual.html"><code>functionNames()</code></a> declaration in the module&#39;s TDL file. If this is not done then the function will not be exported by our automated tools.</p>
 <h2 id="classes">Classes</h2>
 <p>Kōtuku classes are defined at run-time, not during the build process as is the case for many OO languages. This is a key design feature that maximises the potential for class introspection and allows dissimilar languages to talk over common OO protocols. Advanced features also include support for design-by-contract, virtual fields, permission based field access and resource tracking.</p>
@@ -471,11 +471,11 @@ flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;
 <h3 id="class-specifications">Class Specifications</h3>
 <p>Building a class specification that will be accepted by the <code>MetaClass</code> starts with the creation of an <a href="./TDL-Reference-Manual.html">TDL</a> file before writing any code. The XML TDL file is too large to insert here, but we can look at the specification for the class itself:</p>
 <pre><code>methods(&quot;xml&quot;, &quot;XML&quot;, {
-  { id=1,  name=&quot;SetAttrib&quot; },
-  { id=2,  name=&quot;Serialise&quot; },
-  { id=3,  name=&quot;InsertXML&quot; },
-  { id=4,  name=&quot;GetContent&quot; },
-  { id=5,  name=&quot;Sort&quot; },
+  { id=1, name=&quot;SetAttrib&quot; },
+  { id=2, name=&quot;Serialise&quot; },
+  { id=3, name=&quot;InsertXML&quot; },
+  { id=4, name=&quot;GetContent&quot; },
+  { id=5, name=&quot;Sort&quot; },
   ...
 })
 
@@ -823,25 +823,26 @@ ReadOnly: The XML object is read-only.
 <p>For further information on formatting guidelines, see <a href="./Embedded-Document-Formatting.html">Embedded Document Formatting</a>.</p>
 <p>Method prototypes follow the template <code>ERR CLASS_MethodName(*Object, struct abvMethodName *Args)</code>. The <code>abv</code> code is defined in the appropriate <code>methods()</code> call in the module&#39;s TDL file. Here&#39;s the prototype for <code>SetAttrib()</code>:</p>
 <div class="sourceCode" id="cb20"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_SetAttrib<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> xmlSetAttrib <span class="op">*</span>Args<span class="op">);</span></span></code></pre></div>
-<h3 id="sub-classes">Sub-Classes</h3>
-<p>Kōtuku supports a unique inheritance concept whereby a class can inherit all aspects of another class and extend it with additional features. From the perspective of the client, the objects will look no different to that of the original class. This feature is known as <em>sub-classing</em>, whereby the dominant class is referred to as the <em>base-class</em> and the additional features are provided by a <em>sub-class</em>.</p>
+<h3 id="derived-classes">Derived Classes</h3>
+<p>Kōtuku supports two different class types - the base class (default) and derived classes (also called sub-classes). A derived class extends a base class by providing it with additional features, without breaking the support contract defined by the base class. From the perspective of the client, objects formed from a derived class will thus will be functionally equivalent to the base, but the underlying behaviour can be different.</p>
 <p>In this model, the following points are note-worthy:</p>
 <ul>
-<li>The base-class is dominant, and therefore defines the interface contract for the client. A sub-class cannot change the contract.</li>
-<li>The purpose of the sub-class should be to augment and improve the capabilities of the base-class.</li>
-<li>Inheritance is one-to-one. It isn&#39;t possible for two sub-classes to augment an object at the same time.</li>
-<li>Client code that targets the base-class will be compatible with all its sub-classes. From the client&#39;s perspective, there is no difference between the two types because the interface contract remains consistent.</li>
-<li>Sub-classes can declare new fields, methods and actions in their spec if necessary. This can be done without impacting on compatibility with the base-class or the client code that solely targets the base-class.</li>
+<li>The base-class is dominant, and therefore defines the interface contract for the client. A derived class cannot change the contract.</li>
+<li>The purpose of the derived class should be to augment and improve the capabilities of the base-class.</li>
+<li>Inheritance is one-to-one. It isn&#39;t possible for two derived classes to augment an object at the same time.</li>
+<li>Client code that targets the base-class will be compatible with all its derived classes. From the client&#39;s perspective, there is no difference between the two types, because the interface contract remains consistent.</li>
+<li>Derived classes can declare new fields, methods and actions in their spec if necessary. This can be done without impacting on compatibility with the base-class or the client code that solely targets the base-class.</li>
 </ul>
-<p>There are a number of existing classes in the default Kōtuku build that have active sub-classes, such as:</p>
+<p>There are a number of base classes in the default Kōtuku build that have active derived classes, such as:</p>
 <ul>
-<li>Picture: Supports PNG by default, extended by the JPEG sub-class.</li>
-<li>Sound: Supports WAV by default, extended by the MP3 sub-class.</li>
+<li>Picture: Supports PNG by default, extended by the JPEG class.</li>
+<li>Sound: Supports WAV by default, extended by the MP3 class.</li>
+<li>Script: Defines a contract interface with bare bones functionality, extended by the Tiri class.</li>
 <li>Vector: Defines a contract interface for supporting common vector graphics features. Extended by VectorEllipse, VectorRectangle, VectorText and many more.</li>
 <li>FilterEffect: Defines a contract interface for building graphics filter effects. Extended by ImageFX, FloodFX, CompositeFX, LightingFX and many more.</li>
 </ul>
-<p>Notice that sub-classing is commonly used for two different design approaches; a) Supporting data files; b) Defining interface contracts that can be extended with additional code.</p>
-<p>Sub-classes tend to be very easy to write, and no additional documentation needs to be written if the base-class is not being extended. Initialisation of the JPEG sub-class looks as follows:</p>
+<p>Notice that derived classes are commonly used for two different design approaches; a) Supporting data files; b) Defining interface contracts that can be extended with additional code.</p>
+<p>Interfaces for derived classes can be very easy to write, and no additional documentation needs to be written if the base-class is not being extended. Initialisation of the JPEG sub-class looks as follows:</p>
 <div class="sourceCode" id="cb21"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ActionArray clActions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Activate<span class="op">,</span>  JPEG_Activate <span class="op">},</span></span>
 <span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Init<span class="op">,</span>      JPEG_Init <span class="op">},</span></span>
@@ -864,8 +865,11 @@ ReadOnly: The XML object is read-only.
 <span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>FileHeader<span class="op">(</span><span class="st">&quot;[0:$ffd8ffe0]|[0:$ffd8ffe1]|[0:$ffd8fffe]&quot;</span><span class="op">),</span></span>
 <span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Actions<span class="op">(</span>clActions<span class="op">),</span></span>
 <span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Path<span class="op">(</span>MOD_PATH<span class="op">));</span></span></code></pre></div>
-<p>Notice that the JPEG class does not need to define a field spec as it will inherit this from the Picture base-class. It does however define a list of custom actions so that it can hook into the Picture interface and support JPEG encoding.</p>
-<p>A question remains, how is it determined that a file source is supported by a sub-class? The onus is not placed on the client to figure out what a JPEG is; this would be too onerous and at a loss of run-time dynamism. The answer lies in the initialisation process, which in the event that the base-class fails with <code>ERR::NoSupport</code> will lead to a query of the registered sub-classes to determine if support is available. Here&#39;s a look at the JPEG initialisation process, which supports the creation of new JPEG files and the loading of existing files:</p>
+<p>Notice that the JPEG class does not need to define a field spec as it will inherit this from the Picture class. It does however define a list of custom actions so that it can hook into the Picture interface and support JPEG encoding.</p>
+<h4 id="derived-class-automation">Derived Class Automation</h4>
+<p>Kōtuku&#39;s derived classes were developed with a very specific feature in mind - they should be automatically loaded for their use-cases - and without the need for client intervention. This means that derived classes can be active on a plug-and-play basis, as long as their library code is registered in the system.</p>
+<p>Consider a program that needs to load image files for instance. The established pattern in Kōtuku is to use the Picture class for that purpose. The default image format is PNG, but for the majority of use cases, the format of the file data is not an immediate concern of the client application. It is however, a concern for the user, who may want to load a JPEG image, or potentially something in a more esoteric format. Derived classes resolve this issue by checking if they support the selected file source, in which case they can step-in and support the base-class in a way that is completely transparent to the client program.</p>
+<p>The way that this works is for the base-class to fail with the <code>ERR::NoSupport</code> error code on intialisation if it does not recognise the source data. Kōtuku will respond to the error code by querying the relevant derived classes, and determine if any of them can provide support. Here&#39;s an example from the JPEG class that demonstrates how it determines if it supports the chosen file source:</p>
 <div class="sourceCode" id="cb22"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR JPEG_Init<span class="op">(</span>extPicture <span class="op">*</span>Self<span class="op">)</span></span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
 <span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
@@ -889,10 +893,10 @@ ReadOnly: The XML object is read-only.
 <span id="cb22-21"><a href="#cb22-21" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb22-22"><a href="#cb22-22" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>NoSupport<span class="op">;</span></span>
 <span id="cb22-23"><a href="#cb22-23" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<p>Notice how the file header is checked for the byte sequence that would identify the data as JPEG. If this is not matched, <code>ERR::NoSupport</code> is returned so that the initialisation sequence can query the next available sub-class. Also of note is the <code>Header</code> field; this feature is particular to the Picture class design and is intended to save each sub-class from reading the file header independently.</p>
+<p>Notice how the file header is checked for the byte sequence that would identify the data as JPEG. If this is not matched, <code>ERR::NoSupport</code> is returned so that the initialisation sequence can query the next available derived class. Also of note is the <code>Header</code> field; this feature is particular to the Picture class design and is intended to save each derived class from reading the file header independently.</p>
 <h3 id="spec-design">Spec Design</h3>
 <p>Before we leave this chapter on classes, it is worth considering Kōtuku&#39;s contractural approach to OO and how that should impact on your class designs. It is extremely common for classes to use concepts that are generic by nature, for instance a UI widget will typically express an <em>X</em>, <em>Y</em>, <em>Width</em> and <em>Height</em>. A class that loads data may specify a <em>Path</em>. Bit-options may be expressed as <em>Flags</em>. As you spend more time using Kōtuku classes, you will discover that not only does the naming schedule for fields tend to be consistent and predictable, the code rarely differs in these generic areas too.</p>
-<p>We do not enforce generic constraints at a field level as this is seen as impractical and can cause issues when deviations are warranted. We do however strongly encourage observing the terminology and methodologies that are already in place across Kōtuku&#39;s interfaces. Leveraging existing concepts if you do any work at an API level can save time, with less documentation needing to be written, and also for the client in being able to predict behaviour patterns. If in doubt, check the source code of something that shares some commonality with what you are trying to achieve.</p>
+<p>We do not enforce constraints at a field level (e.g. by associating reserved names against types) due to the impracticality and problems caused when deviations are warranted. We do however strongly encourage observing the terminology and methodologies that are already in place across Kōtuku&#39;s interfaces. Leveraging existing concepts and patterns can save time, with less documentation needing to be written, and also for the client in being able to predict behaviour patterns. If in doubt, check the source code of something that shares some commonality with what you are trying to achieve.</p>
 </div></div></div></div>
 
 <script src="../js/bootstrap.bundle.min.js"></script>

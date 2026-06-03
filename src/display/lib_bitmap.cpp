@@ -225,8 +225,12 @@ int YDest:  The vertical position to copy the area to.
 -ERRORS-
 Okay:
 NullArgs: The `Dest` parameter was not specified.
-Mismatch: The destination bitmap is not a close enough match to the source bitmap in order to perform the operation.
+InvalidObject: The `Dest` parameter does not refer to a Bitmap object.
+NotInitialised: The source Bitmap has not been initialised.
 InvalidState: The `LINEAR` flag was used when at least one bitmap is using a linear colourspace.
+
+-TAGS-
+mutates-object, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -1128,6 +1132,9 @@ Okay:
 Args:
 NullArgs:
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
 template <class INT> uint8_t UnpackSRed(BITMAPSURFACE *S, INT C)  { return (((C >> S->Format.RedPos)   & S->Format.RedMask) << S->Format.RedShift); }
@@ -1554,6 +1561,9 @@ int Height:  The height of the rectangle.
 uint Colour: The colour value to use for the rectangle.
 int(BAF) Flags: Use `FILL` to fill the rectangle.
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
 void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int Height, uint32_t Colour, BAF Flags)
@@ -1712,6 +1722,9 @@ int X: Horizontal coordinate of the pixel.
 int Y: Vertical coordinate of the pixel.
 struct(*RGB8) RGB: The colour to be drawn, in RGB format.
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, RGB8 *Pixel)
@@ -1734,6 +1747,9 @@ obj(Bitmap) Bitmap: The target bitmap object.
 int X: The horizontal coordinate of the pixel.
 int Y: The vertical coordinate of the pixel.
 uint Colour: The colour value to use for the pixel.
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -1772,6 +1788,9 @@ int RedMask:      Red component bit mask value.  Set this value to zero if the `
 int GreenMask:    Green component bit mask value.
 int BlueMask:     Blue component bit mask value.
 int AlphaMask:    Alpha component bit mask value.
+
+-TAGS-
+mutates-input, pure-query
 
 *********************************************************************************************************************/
 
@@ -1852,6 +1871,9 @@ int X: The horizontal coordinate of the pixel.
 int Y: The vertical coordinate of the pixel.
 &struct(RGB8) RGB: The colour values will be stored in this !RGB8 structure.
 
+-TAGS-
+api-owns-result, volatile-result, non-null-result
+
 *********************************************************************************************************************/
 
 void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, RGB8 **Pixel)
@@ -1884,6 +1906,9 @@ int Y: The vertical coordinate of the pixel.
 -RESULT-
 uint: The colour value of the pixel will be returned.  Zero is returned if the pixel is out of bounds.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 uint32_t ReadPixel(objBitmap *Bitmap, int X, int Y)
@@ -1913,6 +1938,9 @@ struct(*ColourFormat) ColourFormat: The new colour format to be applied to the b
 Okay
 NullArgs
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 ERR Resample(objBitmap *Bitmap, ColourFormat *Format)
@@ -1939,6 +1967,9 @@ int Top:       The vertical start of the clip region.
 int Right:     The right-most edge of the clip region.
 int Bottom:    The bottom-most edge of the clip region.
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom)
@@ -1964,6 +1995,9 @@ safe to write to video memory with the CPU, preventing any possibility of clashe
 
 -INPUT-
 obj(Bitmap) Bitmap: Pointer to the bitmap that you want to synchronise or `NULL` to sleep on the graphics accelerator.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/

@@ -1204,7 +1204,7 @@ LJLIB_CF(debug_validate)
 
    // Parse the statement using lua_load with DIAGNOSE mode
    // This requires temporarily enabling JOF::DIAGNOSE
-   auto *prv = (prvTiri *)L->script->ChildPrivate;
+   auto *prv = (prvTiri *)L->script->DerivedPtr;
    JOF old_options = prv ? prv->JitOptions : JOF::NIL;
    SCF old_flags = L->script->Flags;
    if (prv) prv->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;

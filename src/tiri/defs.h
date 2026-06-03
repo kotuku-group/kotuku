@@ -78,6 +78,7 @@ extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
 extern ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
 extern ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
+extern uint64_t glActionsWithResults;
 
 //********************************************************************************************************************
 // Compile-time constant value (64-bit integer or double)
@@ -393,7 +394,7 @@ struct lua_ref {
 
 OBJECTPTR access_object(GCobject *);
 void load_include_for_class(lua_State *, objMetaClass *);
-ERR build_args(lua_State *, const struct FunctionField *, int, int8_t *, int *);
+ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *);
 const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);
 [[maybe_unused]] int code_writer(lua_State *, CPTR, size_t, void *);

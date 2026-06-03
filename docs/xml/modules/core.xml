@@ -11,6 +11,23 @@
 <p>The Kotuku Core is a system library that provides a universal API that works on multiple platforms.  It follows an object oriented design with granular resource tracking to minimise resource usage and memory leaks.</p>
 <p>The portability of the core has been safe-guarded by keeping the functions as generalised as possible.  When writing code for a target platform it will be possible for the application to be completely sandboxed if the host's system calls are avoided.</p>
 <p>This documentation is intended for technical reference and is not suitable as an introductory guide to the framework.</p></description>
+    <source>
+      <file path="src/core/">core.cpp</file>
+      <file path="src/core/">lib_objects.cpp</file>
+      <file path="src/core/">lib_events.cpp</file>
+      <file path="src/core/">lib_fields_read.cpp</file>
+      <file path="src/core/">lib_fields_write.cpp</file>
+      <file path="src/core/">lib_filesystem.cpp</file>
+      <file path="src/core/">lib_functions.cpp</file>
+      <file path="src/core/">lib_locking.cpp</file>
+      <file path="src/core/">lib_log.cpp</file>
+      <file path="src/core/">lib_messages.cpp</file>
+      <file path="src/core/">lib_memory.cpp</file>
+      <file path="src/core/">fs_folders.cpp</file>
+      <file path="src/core/">fs_identify.cpp</file>
+      <file path="src/core/">fs_resolution.cpp</file>
+      <file path="src/core/">fs_volumes.cpp</file>
+    </source>
     <classes>
       <class>CompressedStream</class>
       <class>Compression</class>
@@ -41,6 +58,7 @@
     <comment>Grants access to memory blocks by identifier.</comment>
     <prototype>ERR AccessMemory(MEMORYID Memory, MEM Flags, INT MilliSeconds, APTR * Result)</prototype>
     <tiriPrototype>err, Result:any = AccessMemory(Memory:num, Flags:num, MilliSeconds:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="MEMORYID" name="Memory">The ID of the memory block to access.</param>
       <param type="MEM" name="Flags" lookup="MEM">Set to <code>READ</code>, <code>WRITE</code> or <code>READ_WRITE</code>.</param>
@@ -68,6 +86,7 @@
     <comment>Grants exclusive access to objects via unique ID.</comment>
     <prototype>ERR AccessObject(OBJECTID Object, INT MilliSeconds, OBJECTPTR * Result)</prototype>
     <tiriPrototype>err, Result:obj = AccessObject(Object:obj, MilliSeconds:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="OBJECTID" name="Object">The unique ID of the target object.</param>
       <param type="INT" name="MilliSeconds">The limit in milliseconds before a timeout occurs.  The maximum limit is <code>60000</code>, and <code>100</code> is recommended.</param>
@@ -88,9 +107,14 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Cancelled">The thread has been requested to stop whilst sleeping.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="LockFailed">Failed to initialise the sleep record for the waiting thread.</error>
       <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="MarkedForDeletion">The object is being removed and cannot be locked.</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NoMatchingObject">No matching object was found for the given object ID</error>
+      <error code="DoesNotExist">The object was removed while waiting for the lock.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -101,6 +125,7 @@
     <comment>This function is responsible for executing action routines.</comment>
     <prototype>ERR Action(AC Action, OBJECTPTR Object, APTR Parameters)</prototype>
     <tiriPrototype>err = Action(Action:num, Object:obj, Parameters:any)</tiriPrototype>
+    <tags>mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="AC" name="Action" lookup="AC">An action or method ID must be specified.</param>
       <param type="OBJECTPTR" name="Object">The target object.</param>
@@ -109,13 +134,13 @@
     <description>
 <p>This function is the key entry point for executing actions and method routines.  An action is a predefined function call that can be called on any object, while a method is a function call that is specific to a class implementation. You can find a complete list of available actions and their associated details in the Kotuku Wiki. The actions and methods supported by any class will be referenced in their auto-generated documentation.</p>
 <p>Here are two examples that demonstrate how to make an action call.  The first performs an activation, which does not require any additional arguments.  The second performs a move operation, which requires three additional arguments to be passed to the Action() function:</p>
-<pre>1. Action(AC::Activate, Picture, nullptr);
+<pre>1. Action(AC::Activate, Image, nullptr);
 
 2. struct acMove move = { 30, 15, 0 };
    Action(AC::Move, Window, &amp;move);
 </pre>
 <p>In all cases, action calls in C++ can be simplified by using their corresponding stub functions:</p>
-<pre>1.  acActivate(Picture);
+<pre>1.  acActivate(Image);
 
 2a. acMove(Window, 30, 15, 0);
 
@@ -126,8 +151,7 @@
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="NoAction">The <code>Action</code> is not supported by the object's supporting class.</error>
-      <error code="IllegalActionID">The <code>Action</code> parameter is invalid.</error>
-      <error code="ObjectCorrupt">The <code>Object</code> state is corrupted.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -138,6 +162,7 @@
     <comment>Returns a pointer to the global action table.</comment>
     <prototype>void ActionList(struct ActionTable ** Actions, INT * Size)</prototype>
     <tiriPrototype>Actions:array, Size:num = ActionList()</tiriPrototype>
+    <tags>static-result, non-null-result, pure-query</tags>
     <input>
       <param type="struct ActionTable **" name="Actions">A pointer to the Core's action table <code>struct ActionTable *</code> is returned. Please note that the first entry in the <code>ActionTable</code> list has all fields driven to <code>NULL</code>, because valid action ID's start from one, not zero.  The final action in the list is also terminated with <code>NULL</code> fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.</param>
       <param type="INT *" name="Size">Total number of elements in the returned list.</param>
@@ -177,6 +202,7 @@ struct FunctionField argsResize[] = {
     <comment>Adds new tags to <st>FileInfo</st> structures.</comment>
     <prototype>ERR AddInfoTag(struct FileInfo * Info, const std::string_view &amp; Name, const std::string_view &amp; Value)</prototype>
     <tiriPrototype>err = AddInfoTag(Info:any, Name:str, Value:str)</tiriPrototype>
+    <tags>mutates-input, copies-input, creates-resource</tags>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
       <param type="const std::string_view &amp;" name="Name">The name of the tag, which must be declared in camel-case.</param>
@@ -188,6 +214,7 @@ struct FunctionField argsResize[] = {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+      <error code="CreateResource">Failed to create a new resource</error>
     </result>
   </function>
 
@@ -197,6 +224,7 @@ struct FunctionField argsResize[] = {
     <comment>Adds a new message handler for processing incoming messages.</comment>
     <prototype>ERR AddMsgHandler(MSGID MsgType, FUNCTION * Routine, struct MsgHandler ** Handle)</prototype>
     <tiriPrototype>err, Handle:any = AddMsgHandler(MsgType:num, Routine:func)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, callback-held, blocking</tags>
     <input>
       <param type="MSGID" name="MsgType" lookup="MSGID">The message type that the handler will intercept.  If zero, all incoming messages are passed to the handler.</param>
       <param type="FUNCTION *" name="Routine">Refers to the function that will handle incoming messages.</param>
@@ -212,6 +240,7 @@ struct FunctionField argsResize[] = {
     </description>
     <result type="ERR">
       <error code="Okay">Message handler successfully processed.</error>
+      <error code="Lock">Failed to lock a required resource</error>
       <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -242,6 +271,7 @@ struct FunctionField argsResize[] = {
     <comment>Allocates a managed memory block on the heap.</comment>
     <prototype>ERR AllocMemory(INT Size, MEM Flags, APTR * Address, MEMORYID * ID)</prototype>
     <tiriPrototype>err, Address:any, ID:num = AllocMemory(Size:num, Flags:num)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="INT" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
       <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behavior and ownership.</param>
@@ -266,7 +296,6 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <result type="ERR">
       <error code="Okay">Memory block successfully allocated.</error>
       <error code="Args">Invalid parameters (size &lt;= 0 or both Address and ID are NULL).</error>
-      <error code="ArrayFull">Memory tracking structures are full, preventing allocation tracking.</error>
       <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
       <error code="AccessMemory">Memory block was allocated but could not be locked when both Address and ID were requested.</error>
       <error code="AllocMemory">Insufficient memory available for the requested allocation.</error>
@@ -295,6 +324,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <comment>Analyses paths to determine their type (file, folder or volume).</comment>
     <prototype>ERR AnalysePath(const std::string_view &amp; Path, LOC * Type)</prototype>
     <tiriPrototype>err, Type:num = AnalysePath(Path:str)</tiriPrototype>
+    <tags>blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The path to analyse.</param>
       <param type="LOC *" name="Type" lookup="LOC">The result will be stored in the variable referred to by this parameter.  The return types are <code>DIRECTORY</code>, <code>FILE</code> and <code>VOLUME</code>.  Set this parameter to <code>NULL</code> if you are only interested in checking if the file exists.</param>
@@ -302,12 +332,13 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <description>
 <p>This function will analyse a path and determine the type of file that the path is referring to.  For instance, a path of <code>user:documents/</code> would indicate a folder reference.  A path of <code>system:</code> would be recognised as a volume. A path of <code>user:documents/copyright.txt</code> would be recognised as a file.</p>
 <p>Ambiguous references are analysed to get the correct type - for example <code>user:documents/helloworld</code> could refer to a folder or file, so the path is analysed to check the file type.  On exceptional occasions where the path could be interpreted as either a folder or a file, preference is given to the folder.</p>
-<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
+<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~images:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
 <p>To check if a volume name is valid, call <function>ResolvePath</function> first and then pass the resulting path to this function.</p>
 <p>If the queried path does not exist, a fail code is returned.  This behaviour makes the AnalysePath() function a good candidate for testing the validity of a path string.</p>
     </description>
     <result type="ERR">
       <error code="Okay">The path was analysed and the result is stored in the <code>Type</code> variable.</error>
+      <error code="NoSupport">Operation not supported</error>
       <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -319,6 +350,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <comment>Submit an action for asynchronous execution against an object.</comment>
     <prototype>ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = AsyncAction(Action:num, Object:obj, Args:any, Callback:func)</tiriPrototype>
+    <tags>copies-input, callback-held, blocking</tags>
     <input>
       <param type="AC" name="Action" lookup="AC">An action or method ID must be specified here.</param>
       <param type="OBJECTPTR" name="Object">The target object to execute the action against.</param>
@@ -337,10 +369,9 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Init">Error in Init()ialising an object</error>
-      <error code="IllegalMethodID">Illegal method ID (outside of valid range)</error>
+      <error code="InvalidData">There is an error in the provided data</error>
+      <error code="MarkedForDeletion">A resource cannot be accessed as it is marked for deletion</error>
       <error code="MissingClass">The class could not be found in the system</error>
-      <error code="NewObject">NewObject() failed to produce a new object</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -351,6 +382,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <comment>Drain the pending queue for listed objects without executing the remaining actions.</comment>
     <prototype>ERR AsyncCancel(OBJECTID * Objects, INT Size)</prototype>
     <tiriPrototype>err = AsyncCancel(Objects:array, Size:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="OBJECTID *" name="Objects">A list of object IDs to cancel.</param>
       <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
@@ -371,6 +403,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <comment>Return the number of queued and in-flight async actions for an object.</comment>
     <prototype>INT AsyncPending(OBJECTID Object)</prototype>
     <tiriPrototype>num = AsyncPending(Object:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Object">The object to query.</param>
     </input>
@@ -387,6 +420,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <comment>Block until all queued async actions for the listed objects have completed.</comment>
     <prototype>ERR AsyncWait(OBJECTID * Objects, INT Size, INT TimeOut)</prototype>
     <tiriPrototype>err = AsyncWait(Objects:array, Size:num, TimeOut:num)</tiriPrototype>
+    <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
       <param type="OBJECTID *" name="Objects">A list of object IDs to wait on.</param>
       <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
@@ -398,9 +432,13 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     </description>
     <result type="ERR">
       <error code="Okay">All async actions completed.</error>
+      <error code="Terminate">Termination requested</error>
       <error code="InUse">Another AsyncWait() call is already active.</error>
       <error code="TimeOut">The timeout expired before all actions completed.</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+      <error code="Recursion">Detected a recursive function call</error>
+      <error code="OutsideMainThread">Operation permitted from the main thread only</error>
     </result>
   </function>
 
@@ -410,6 +448,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <comment>Broadcast an event to all event listeners in the system.</comment>
     <prototype>ERR BroadcastEvent(APTR Event, INT EventSize)</prototype>
     <tiriPrototype>err = BroadcastEvent(Event:any, EventSize:num)</tiriPrototype>
+    <tags>does-not-take-ownership</tags>
     <input>
       <param type="APTR" name="Event">Pointer to an event structure.</param>
       <param type="INT" name="EventSize">The size of the <code>Event</code> structure, in bytes.</param>
@@ -433,6 +472,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Checks objects to see whether or not they support certain actions.</comment>
     <prototype>ERR CheckAction(OBJECTPTR Object, AC Action)</prototype>
     <tiriPrototype>err = CheckAction(Object:obj, Action:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="AC" name="Action" lookup="AC">A registered action or method ID.</param>
@@ -448,6 +488,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <error code="True">The object supports the specified action.</error>
       <error code="False">The action is not supported.</error>
       <error code="LostClass">The object has lost its class reference</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -458,6 +499,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Verifies the existence of a memory block.</comment>
     <prototype>ERR CheckMemoryExists(MEMORYID ID)</prototype>
     <tiriPrototype>err = CheckMemoryExists(ID:num)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="MEMORYID" name="ID">The unique identifier of the memory block to verify.</param>
     </input>
@@ -476,6 +518,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Checks if a particular object is still available in the system.</comment>
     <prototype>ERR CheckObjectExists(OBJECTID Object)</prototype>
     <tiriPrototype>err = CheckObjectExists(Object:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Object">The object identity to verify.</param>
     </input>
@@ -495,6 +538,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Returns an array of all classes known to the system.</comment>
     <prototype>ERR ClassDatabase(struct ClassRecord *** Classes)</prototype>
     <tiriPrototype>err, Classes:array = ClassDatabase()</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="struct ClassRecord ***" name="Classes">A pointer to an array of class records is returned here.</param>
     </input>
@@ -503,6 +547,9 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -512,6 +559,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Checks if two file paths refer to the same physical file.</comment>
     <prototype>ERR CompareFilePaths(const std::string_view &amp; PathA, const std::string_view &amp; PathB)</prototype>
     <tiriPrototype>err = CompareFilePaths(PathA:str, PathB:str)</tiriPrototype>
+    <tags>blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="PathA">File location 1.</param>
       <param type="const std::string_view &amp;" name="PathB">File location 2.</param>
@@ -533,6 +581,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Makes copies of folders and files.</comment>
     <prototype>ERR CopyFile(const std::string_view &amp; Source, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = CopyFile(Source:str, Dest:str, Callback:func)</tiriPrototype>
+    <tags>blocking, callback-inlines</tags>
     <input>
       <param type="const std::string_view &amp;" name="Source">The source location.</param>
       <param type="const std::string_view &amp;" name="Dest">The destination location.</param>
@@ -543,8 +592,8 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>It is important that you are aware that different types of string formatting can give different results.  The following examples illustrate:</p>
 <p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents</code> results in a file called <code>kotuku:documents</code>.</p>
 <p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents/</code> results in a file called <code>kotuku:documents/makefile</code>.</p>
-<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/pictures</code> and includes a copy of all folders and files found within the pictures folder.</p>
-<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the pictures folder).</p>
+<p>Copying <code>kotuku:images/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/images</code> and includes a copy of all folders and files found within the images folder.</p>
+<p>Copying <code>kotuku:images/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the images folder).</p>
 <p>This function will overwrite any destination file(s) that already exist.</p>
 <p>The Source parameter should always clarify the type of location that is being copied.  For example if copying a folder, a forward slash must terminate the string or it will be assumed that a file is the source.</p>
 <p>The Callback parameter can be set with a function that matches this prototype:</p>
@@ -565,6 +614,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Makes new folders.</comment>
     <prototype>ERR CreateFolder(const std::string_view &amp; Path, PERMIT Permissions)</prototype>
     <tiriPrototype>err = CreateFolder(Path:str, Permissions:num)</tiriPrototype>
+    <tags>blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The location of the folder.</param>
       <param type="PERMIT" name="Permissions" lookup="PERMIT">Security permissions to apply to the created Dir(s).  Set to <code>NULL</code> if only the current user should have access.</param>
@@ -575,9 +625,9 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure</error>
       <error code="NoSupport">Virtual file system does not support folder creation.</error>
       <error code="FileExists">An identically named file or folder already exists at the <code>Path</code>.</error>
+      <error code="ResolvePath">A volume could not be resolved</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -588,6 +638,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Creates symbolic links on supported file systems.</comment>
     <prototype>ERR CreateLink(const std::string_view &amp; From, const std::string_view &amp; To)</prototype>
     <tiriPrototype>err = CreateLink(From:str, To:str)</tiriPrototype>
+    <tags>blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="From">The symbolic link will be created at the location specified here.</param>
       <param type="const std::string_view &amp;" name="To">The file that you are linking to is specified here.</param>
@@ -606,6 +657,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <error code="BufferOverflow">One or both of the provided arguments is too long.</error>
       <error code="FileExists">The location referenced at From already exists.</error>
       <error code="ResolvePath">A volume could not be resolved</error>
+      <error code="SystemCall">A call to the host system has failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -616,6 +668,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Returns a pointer to the object that has the current context.</comment>
     <prototype>OBJECTPTR CurrentContext()</prototype>
     <tiriPrototype>obj = CurrentContext()</tiriPrototype>
+    <tags>api-owns-result, nullable-result, pure-query</tags>
     <description>
 <p>This function returns a pointer to the object that has the current context.  Context is primarily used to manage resource allocations.  Manipulating the context is sometimes necessary to ensure that a resource is tracked to the correct object.</p>
 <p>To get the context of the caller (the client), use <function>ParentContext</function>.</p>
@@ -629,6 +682,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Returns the active Task object.</comment>
     <prototype>objTask * CurrentTask()</prototype>
     <tiriPrototype>obj = CurrentTask()</tiriPrototype>
+    <tags>api-owns-result, nullable-result, pure-query</tags>
     <description>
 <p>This function returns the <class name="Task">Task</class> object of the active process.</p>
 <p>If there is a legitimate circumstance where there is no current task (e.g. if this function is called during Core initialisation) then the &quot;system task&quot; may be returned, which has ownership of Core resources.</p>
@@ -642,6 +696,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Deletes files and folders.</comment>
     <prototype>ERR DeleteFile(const std::string_view &amp; Path, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = DeleteFile(Path:str, Callback:func)</tiriPrototype>
+    <tags>blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.</param>
       <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
@@ -655,8 +710,10 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="Okay">The file or folder was deleted successfully.</error>
       <error code="File">The location could not be opened for deletion.</error>
-      <error code="FileNotFound">File not found</error>
       <error code="NoSupport">The filesystem driver does not support deletion.</error>
+      <error code="NoPermission">General security violation</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="ResolvePath">A volume could not be resolved</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -667,6 +724,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Deletes volumes from the system.</comment>
     <prototype>ERR DeleteVolume(const std::string_view &amp; Name)</prototype>
     <tiriPrototype>err = DeleteVolume(Name:str)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="const std::string_view &amp;" name="Name">The name of the volume.</param>
     </input>
@@ -675,8 +733,8 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     </description>
     <result type="ERR">
       <error code="Okay">The volume was removed.</error>
-      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NoPermission">An attempt to delete a system volume was denied.</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -687,6 +745,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Resolves a field ID to its registered name.</comment>
     <prototype>CSTRING FieldName(UINT FieldID)</prototype>
     <tiriPrototype>str = FieldName(FieldID:num)</tiriPrototype>
+    <tags>api-owns-result, null-terminated-result, non-null-result, blocking</tags>
     <input>
       <param type="UINT" name="FieldID">The unique field hash to resolve.</param>
     </input>
@@ -703,6 +762,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Returns the internal MetaClass for a given class ID.</comment>
     <prototype>objMetaClass * FindClass(CLASSID ClassID)</prototype>
     <tiriPrototype>obj = FindClass(ClassID:num)</tiriPrototype>
+    <tags>api-owns-result, nullable-result, blocking</tags>
     <input>
       <param type="CLASSID" name="ClassID">A class ID such as one retrieved from <function>ResolveClassName</function>.</param>
     </input>
@@ -710,7 +770,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function will find a specific class by ID and return its <class name="MetaClass">MetaClass</class>.  If the class is not already loaded, the internal dictionary is checked to discover a module binary registered with that ID.  If this succeeds, the module is loaded into memory and the correct MetaClass will be returned.</p>
 <p>In any event of failure, <code>NULL</code> is returned.</p>
 <p>If the ID of a named class is not known, call <function>ResolveClassName</function> first and pass the resulting ID to this function.</p>
-<p>NOTE: To retrieve a list of all sub-classes associated with a base-class, read the SubClasses field of the <class name="MetaClass">MetaClass</class>.</p>
+<p>NOTE: To retrieve a list of all derived classes associated with a base-class, read the SubClasses field of the <class name="MetaClass">MetaClass</class>.</p>
     </description>
     <result type="objMetaClass *">Returns a pointer to the <class name="MetaClass">MetaClass</class> structure that has been found as a result of the search, or <code>NULL</code> if no matching class was found.</result>
   </function>
@@ -721,6 +781,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Finds field descriptors for any class, by ID.</comment>
     <prototype>struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</prototype>
     <tiriPrototype>any, Target:obj = FindField(Object:obj, FieldID:num)</tiriPrototype>
+    <tags>object-owns-result, nullable-result, pure-query</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="UINT" name="FieldID">The 'FID' number to lookup.</param>
@@ -744,6 +805,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <comment>Searches for objects by name.</comment>
     <prototype>ERR FindObject(const std::string_view &amp; Name, CLASSID ClassID, OBJECTID * ObjectID)</prototype>
     <tiriPrototype>err, ObjectID:obj = FindObject(Name:str, ClassID:num)</tiriPrototype>
+    <tags>blocking, case-insensitive</tags>
     <input>
       <param type="const std::string_view &amp;" name="Name">The name of an object to search for.</param>
       <param type="CLASSID" name="ClassID">Optional.  Set to a class ID to filter the results down to a specific class type.</param>
@@ -760,10 +822,8 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <result type="ERR">
       <error code="Okay">At least one matching object was found and stored in the <code>ObjectID</code>.</error>
       <error code="Search">No objects matching the given name could be found.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="EmptyString">A required string value contains no characters</error>
-      <error code="DoesNotExist">Resource does not exist</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -773,6 +833,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Safely deallocates memory blocks allocated by AllocMemory().</comment>
     <prototype>ERR FreeResource(MEMORYID ID)</prototype>
     <tiriPrototype>err = FreeResource(ID:num)</tiriPrototype>
+    <tags>closes-handle, blocking</tags>
     <input>
       <param type="MEMORYID" name="ID">The unique identifier of the memory block to be freed.</param>
     </input>
@@ -788,7 +849,6 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
       <error code="InvalidData">Memory corruption detected - header or trailer markers are damaged.</error>
       <error code="MemoryDoesNotExist">The specified memory block identifier is not valid or already freed.</error>
       <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
-      <error code="NullArgs">Invalid memory identifier provided.</error>
     </result>
   </function>
 
@@ -798,6 +858,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Generates 32-bit IEEE 802.3 CRC checksum values.</comment>
     <prototype>UINT GenCRC32(UINT CRC, APTR Data, UINT Length)</prototype>
     <tiriPrototype>num = GenCRC32(CRC:num, Data:any, Length:num)</tiriPrototype>
+    <tags>does-not-take-ownership, pure-query</tags>
     <input>
       <param type="UINT" name="CRC">If streaming data to this function, this value must reflect the most recently returned CRC integer.  Otherwise set to zero.</param>
       <param type="APTR" name="Data">The data to generate a CRC value for.</param>
@@ -814,10 +875,15 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <name>GetActionMsg</name>
     <category>Objects</category>
     <comment>Returns a message structure if called from an action that was executed by the message system.</comment>
-    <prototype>struct Message * GetActionMsg()</prototype>
-    <tiriPrototype>any = GetActionMsg()</tiriPrototype>
+    <prototype>struct Message * GetActionMsg(AC Action)</prototype>
+    <tiriPrototype>any = GetActionMsg(Action:num)</tiriPrototype>
+    <tags>volatile-result, nullable-result</tags>
+    <input>
+      <param type="AC" name="Action" lookup="AC">Action identifier represented by the caller.</param>
+    </input>
     <description>
 <p>This function is for use by action and method support routines only.  It will return a <st>Message</st> structure if the action currently under execution has been called directly from the <function>ProcessMessages</function> function.  In all other cases a <code>NULL</code> pointer is returned.</p>
+<p>Only works when called from the main thread, which acts as the message dispatcher.</p>
     </description>
     <result type="struct Message *">A <st>Message</st> structure is returned if the function is called in valid circumstances, otherwise <code>NULL</code>.</result>
   </function>
@@ -828,6 +894,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Returns the class ID of an ID-referenced object.</comment>
     <prototype>CLASSID GetClassID(OBJECTID Object)</prototype>
     <tiriPrototype>num = GetClassID(Object:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Object">The object to be examined.</param>
     </input>
@@ -844,6 +911,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Translates error codes into human readable strings.</comment>
     <prototype>CSTRING GetErrorMsg(ERR Error)</prototype>
     <tiriPrototype>str = GetErrorMsg(Error:num)</tiriPrototype>
+    <tags>api-owns-result, null-terminated-result, non-null-result, pure-query</tags>
     <input>
       <param type="ERR" name="Error">The error code to lookup.</param>
     </input>
@@ -859,6 +927,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Generates unique event ID's suitable for event broadcasting.</comment>
     <prototype>INT64 GetEventID(EVG Group, const std::string_view &amp; SubGroup, const std::string_view &amp; Event)</prototype>
     <tiriPrototype>num = GetEventID(Group:num, SubGroup:str, Event:str)</tiriPrototype>
+    <tags>copies-input, case-sensitive</tags>
     <input>
       <param type="EVG" name="Group" lookup="EVG">The group to which the event belongs.</param>
       <param type="const std::string_view &amp;" name="SubGroup">The sub-group to which the event belongs (case-sensitive).</param>
@@ -879,6 +948,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Returns a direct pointer for any object ID.</comment>
     <prototype>OBJECTPTR GetObjectPtr(OBJECTID Object)</prototype>
     <tiriPrototype>obj = GetObjectPtr(Object:obj)</tiriPrototype>
+    <tags>api-owns-result, nullable-result, blocking</tags>
     <input>
       <param type="OBJECTID" name="Object">The ID of the object to lookup.</param>
     </input>
@@ -894,6 +964,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Returns the unique ID of an object's owner.</comment>
     <prototype>OBJECTID GetOwnerID(OBJECTID Object)</prototype>
     <tiriPrototype>obj = GetOwnerID(Object:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Object">The ID of an object to query.</param>
     </input>
@@ -910,6 +981,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Retrieves miscellaneous resource identifiers.</comment>
     <prototype>INT64 GetResource(RES Resource)</prototype>
     <tiriPrototype>num = GetResource(Resource:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="RES" name="Resource" lookup="RES">The ID of the resource that you want to obtain.</param>
     </input>
@@ -926,6 +998,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Returns miscellaneous data values from the Core.</comment>
     <prototype>const struct SystemState * GetSystemState()</prototype>
     <tiriPrototype>any = GetSystemState()</tiriPrototype>
+    <tags>static-result, non-null-result</tags>
     <description>
 <p>The GetSystemState() function is used to retrieve miscellaneous resource and environment values, such as resource paths, the Core's version number and the name of the host platform.</p>
 <p>The state values in the structure are static and will not change during runtime.</p>
@@ -939,14 +1012,15 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Analyse a file and identify a class that can process it.</comment>
     <prototype>ERR IdentifyFile(const std::string_view &amp; Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)</prototype>
     <tiriPrototype>err, Class:num, SubClass:num = IdentifyFile(Path:str, Filter:num)</tiriPrototype>
+    <tags>blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The location of the object data.</param>
       <param type="CLASSID" name="Filter">Restrict the search to classes in this subset, or use <code>CLASSID::NIL</code> to search all classes.</param>
       <param type="CLASSID *" name="Class">Must refer to a <code>CLASSID</code> variable that will store the resulting class ID.</param>
-      <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).</param>
+      <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).</param>
     </input>
     <description>
-<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Picture">Picture</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
+<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Image">Image</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
 <p>The method involves analysing the <code>Path</code>'s file extension and comparing it to the supported extensions of all available classes.  If a class supports the file extension, the ID of that class will be returned. If the file extension is not listed in the class dictionary or if it is listed more than once, the first 80 bytes of the file's data will be loaded and checked against classes that can match against file header information.  If a match is found, the ID of the matching class will be returned.</p>
 <p>The <code>ERR::Search</code> code is returned if a suitable class does not match the targeted file.</p>
     </description>
@@ -954,8 +1028,8 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
       <error code="Okay">Operation successful.</error>
       <error code="Search">A suitable class could not be found for the data source.</error>
       <error code="FileNotFound">File not found</error>
-      <error code="Args">Invalid arguments passed to function</error>
       <error code="Read">Error reading data</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -965,12 +1039,13 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Initialises an object so that it is ready for use.</comment>
     <prototype>ERR InitObject(OBJECTPTR Object)</prototype>
     <tiriPrototype>err = InitObject(Object:obj)</tiriPrototype>
+    <tags>mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The object to initialise.</param>
     </input>
     <description>
 <p>This function initialises objects so that they can be used for their intended purpose. Initialisation is compulsory, and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to this rule only apply to the <code>GetKey()</code> and <code>SetKey()</code> actions.</p>
-<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <class name="Picture">Picture</class> object attempts to load a JPEG file), the initialiser will search for a sub-class that can handle the data.  If a sub-class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the sub-class.</p>
+<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <class name="Image">Image</class> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
 <p>If an object does not support the data or its configuration, an error code of <code>ERR::NoSupport</code> will be returned. Other appropriate error codes can be returned if initialisation fails.</p>
     </description>
     <result type="ERR">
@@ -987,6 +1062,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Returns a list of all children belonging to an object.</comment>
     <prototype>ERR ListChildren(OBJECTID Object, kt::vector&lt;ChildEntry&gt; * List)</prototype>
     <tiriPrototype>err = ListChildren(Object:obj, List:any)</tiriPrototype>
+    <tags>mutates-input, blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Object">An object to query.</param>
       <param type="kt::vector&lt;ChildEntry&gt; *" name="List">Must refer to an array of <st>ChildEntry</st> structures.</param>
@@ -997,7 +1073,6 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">Zero or more children were found and listed.</error>
-      <error code="Args">Invalid arguments passed to function</error>
       <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1009,6 +1084,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Loads files into a local cache for fast file processing.</comment>
     <prototype>ERR LoadFile(const std::string_view &amp; Path, LDF Flags, struct CacheFile ** Cache)</prototype>
     <tiriPrototype>err, Cache:any = LoadFile(Path:str, Flags:num)</tiriPrototype>
+    <tags>api-owns-result, creates-resource, blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The location of the file to be cached.</param>
       <param type="LDF" name="Flags" lookup="LDF">Optional flags are specified here.</param>
@@ -1023,7 +1099,8 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <result type="ERR">
       <error code="Okay">The file was cached successfully.</error>
       <error code="Search">If <code>CHECK_EXISTS</code> is specified, this failure indicates that the file is not cached.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="Read">Error reading data</error>
+      <error code="CreateObject">A call to CreateObject() failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1034,6 +1111,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Lock an object to prevent contention between threads.</comment>
     <prototype>ERR LockObject(OBJECTPTR Object, INT MilliSeconds)</prototype>
     <tiriPrototype>err = LockObject(Object:obj, MilliSeconds:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The address of the object to lock.</param>
       <param type="INT" name="MilliSeconds">The total number of milliseconds to wait before giving up.  If <code>-1</code>, the function will wait indefinitely.</param>
@@ -1061,6 +1139,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <comment>Returns information on memory ID's.</comment>
     <prototype>ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
     <tiriPrototype>err = MemoryIDInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
+    <tags>mutates-input, blocking, pure-query</tags>
     <input>
       <param type="MEMORYID" name="ID">Pointer to a valid memory ID.</param>
       <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure.</param>
@@ -1090,6 +1169,7 @@ if (MemoryIDInfo(memid, &amp;info) IS ERR::Okay) {
     <comment>Returns information on memory addresses.</comment>
     <prototype>ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo, INT Size)</prototype>
     <tiriPrototype>err = MemoryPtrInfo(Address:any, MemInfo:any, Size:num)</tiriPrototype>
+    <tags>mutates-input, blocking, pure-query</tags>
     <input>
       <param type="APTR" name="Address">Pointer to a valid memory area.</param>
       <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure to be populated.</param>
@@ -1107,7 +1187,9 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="MemoryDoesNotExist">Memory block does not exist</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1118,6 +1200,7 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
     <comment>Moves folders and files to new locations.</comment>
     <prototype>ERR MoveFile(const std::string_view &amp; Source, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = MoveFile(Source:str, Dest:str, Callback:func)</tiriPrototype>
+    <tags>blocking, callback-inlines</tags>
     <input>
       <param type="const std::string_view &amp;" name="Source">The source path.</param>
       <param type="const std::string_view &amp;" name="Dest">The destination path.</param>
@@ -1130,8 +1213,8 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
 <b>Source               Destination          Result</b>
 kotuku:makefile     kotuku:documents    kotuku:documents
 kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
-kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
-kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
+kotuku:images/      kotuku:documents/   kotuku:documents/images
+kotuku:images/      kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </pre>
 <p>This function will overwrite the destination location if it already exists.</p>
 <p>The <code>Source</code> argument should always clarify the type of location that is being copied - e.g. if you are copying a folder, you must specify a forward slash at the end of the string or the function will assume that you are moving a file.</p>
@@ -1153,6 +1236,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Creates new objects.</comment>
     <prototype>ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR * Object)</prototype>
     <tiriPrototype>err, Object:obj = NewObject(ClassID:num, Flags:num)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, blocking, callback-inlines</tags>
     <input>
       <param type="CLASSID" name="ClassID">A class ID from <code>system/register.h</code> or generated by <function>ResolveClassName</function>.</param>
       <param type="NF" name="Flags" lookup="NF">Optional flags.</param>
@@ -1178,6 +1262,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Send a notification event to action subscribers.</comment>
     <prototype>void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error)</prototype>
     <tiriPrototype>NotifySubscribers(Object:obj, Action:num, Args:any, Error:num)</tiriPrototype>
+    <tags>blocking, callback-inlines, does-not-take-ownership</tags>
     <input>
       <param type="OBJECTPTR" name="Object">Pointer to the object that is to receive the notification message.</param>
       <param type="AC" name="Action" lookup="AC">The action ID for notification.</param>
@@ -1209,6 +1294,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Opens a folder for content scanning.</comment>
     <prototype>ERR OpenDir(const std::string_view &amp; Path, RDF Flags, struct DirInfo ** Info)</prototype>
     <tiriPrototype>err, Info:any = OpenDir(Path:str, Flags:num)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, opens-handle, blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The folder location to be scanned.  Using an empty string will scan for volume names.</param>
       <param type="RDF" name="Flags" lookup="RDF">Optional flags.</param>
@@ -1223,6 +1309,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
       <error code="DirEmpty">The folder is empty</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="ResolvePath">A volume could not be resolved</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1233,6 +1320,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Returns the context of the client.</comment>
     <prototype>OBJECTPTR ParentContext()</prototype>
     <tiriPrototype>obj = ParentContext()</tiriPrototype>
+    <tags>api-owns-result, nullable-result, pure-query</tags>
     <description>
 <p>This function is used to return the context of the caller (the client), as opposed to <function>CurrentContext</function>, which returns the operating context.  This feature is commonly used by methods that need to acquire a reference to the client for resource management reasons.</p>
 <p>Note that this function can return <code>NULL</code> if called when running at process-level, although this would never be the case when called from an action or method.</p>
@@ -1246,6 +1334,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Returns the current system time, in microseconds.</comment>
     <prototype>INT64 PreciseTime()</prototype>
     <tiriPrototype>num = PreciseTime()</tiriPrototype>
+    <tags>pure-query</tags>
     <description>
 <p>This function returns the current 'system time' in microseconds (1 millionth of a second).  The value is monotonic if the host platform allows it (typically expressed as the amount of time that has elapsed since the system was switched on).  The benefit of monotonic time is that it is unaffected by changes to the system clock, such as daylight savings adjustments or manual changes by the user.</p>
     </description>
@@ -1258,6 +1347,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Processes system messages that are queued in the task's message buffer.</comment>
     <prototype>ERR ProcessMessages(PMF Flags, INT TimeOut)</prototype>
     <tiriPrototype>err = ProcessMessages(Flags:num, TimeOut:num)</tiriPrototype>
+    <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
       <param type="PMF" name="Flags" lookup="PMF">Optional flags are specified here (clients should set a value of zero).</param>
       <param type="INT" name="TimeOut">A TimeOut value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.</param>
@@ -1272,6 +1362,9 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">Operation successful.</error>
       <error code="Terminate">A <code>MSGID::QUIT</code> message type was found on the message queue.</error>
       <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="Recursion">Detected a recursive function call</error>
+      <error code="OutsideMainThread">Operation permitted from the main thread only</error>
     </result>
   </function>
 
@@ -1281,6 +1374,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Change the access permissions of a memory block.</comment>
     <prototype>ERR ProtectMemory(APTR Address, MEM Flags)</prototype>
     <tiriPrototype>err = ProtectMemory(Address:any, Flags:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="APTR" name="Address">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
       <param type="MEM" name="Flags" lookup="MEM">New access flags (MEM::READ, MEM::WRITE).</param>
@@ -1303,6 +1397,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Delay the execution of an action by adding the call to the message queue.</comment>
     <prototype>ERR QueueAction(AC Action, OBJECTID Object, APTR Args)</prototype>
     <tiriPrototype>err = QueueAction(Action:num, Object:obj, Args:any)</tiriPrototype>
+    <tags>copies-input, blocking</tags>
     <input>
       <param type="AC" name="Action" lookup="AC">The ID of an action or method to execute.</param>
       <param type="OBJECTID" name="Object">The target object.</param>
@@ -1314,9 +1409,8 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure</error>
+      <error code="InvalidData">There is an error in the provided data</error>
       <error code="OutOfRange">The <code>Action</code> ID is invalid.</error>
-      <error code="IllegalMethodID">Illegal method ID (outside of valid range)</error>
       <error code="MissingClass">The class could not be found in the system</error>
       <error code="NoMatchingObject">No matching object was found for the given object ID</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
@@ -1329,6 +1423,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Reads a file into a buffer.</comment>
     <prototype>ERR ReadFileToBuffer(const std::string_view &amp; Path, APTR Buffer, INT BufferSize, INT * Result)</prototype>
     <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:any, BufferSize:num)</tiriPrototype>
+    <tags>mutates-input, blocking, path-resolved</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The path of the file.</param>
       <param type="APTR" name="Buffer">Pointer to a buffer that will receive the file content.</param>
@@ -1337,16 +1432,16 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </input>
     <description>
 <p>This function provides a simple method for reading file content into a <code>Buffer</code>.  In some cases this procedure may be optimised for the host platform, which makes it the fastest way to read file content in simple cases.</p>
-<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
+<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~images:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="File">File error, e.g. file not found</error>
+      <error code="FileNotFound">File not found</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="Read">Error reading data</error>
       <error code="InvalidPath">Invalid file or folder path detected</error>
       <error code="OpenFile">The file could not be opened</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -1356,6 +1451,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Read a named tag from a <st>FileInfo</st> structure.</comment>
     <prototype>ERR ReadInfoTag(struct FileInfo * Info, const std::string_view &amp; Name, CSTRING * Value)</prototype>
     <tiriPrototype>err, Value:str = ReadInfoTag(Info:any, Name:str)</tiriPrototype>
+    <tags>object-owns-result, null-terminated-result, non-null-result, case-sensitive</tags>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
       <param type="const std::string_view &amp;" name="Name">The name of the tag, which must be declared in camel-case as tags are case-sensitive.</param>
@@ -1377,6 +1473,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Reallocates memory blocks.</comment>
     <prototype>ERR ReallocMemory(APTR Memory, UINT Size, APTR * Address, MEMORYID * ID)</prototype>
     <tiriPrototype>err, Address:any, ID:num = ReallocMemory(Memory:any, Size:num)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, closes-handle, blocking</tags>
     <input>
       <param type="APTR" name="Memory">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
       <param type="UINT" name="Size">The size of the new memory block.</param>
@@ -1402,6 +1499,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Registers a file descriptor for monitoring when the task is asleep.</comment>
     <prototype>ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data)</prototype>
     <tiriPrototype>err = RegisterFD(FD:any, Flags:num, Routine:func, Data:any)</tiriPrototype>
+    <tags>callback-held, does-not-take-ownership, non-blocking</tags>
     <input>
       <param type="HOSTHANDLE" name="FD">The file descriptor that is to be watched.</param>
       <param type="RFD" name="Flags" lookup="RFD">Set to at least one of <code>READ</code>, <code>WRITE</code>, <code>EXCEPT</code>, <code>REMOVE</code>.</param>
@@ -1428,6 +1526,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Releases a lock from a memory based resource.</comment>
     <prototype>ERR ReleaseMemory(MEMORYID MemoryID)</prototype>
     <tiriPrototype>err = ReleaseMemory(MemoryID:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="MEMORYID" name="MemoryID">A reference to a memory resource for release.</param>
     </input>
@@ -1437,7 +1536,6 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">A search routine in this function failed</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1448,6 +1546,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Release a locked object.</comment>
     <prototype>void ReleaseObject(OBJECTPTR Object)</prototype>
     <tiriPrototype>ReleaseObject(Object:obj)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="OBJECTPTR" name="Object">Pointer to the object to be released.</param>
     </input>
@@ -1462,6 +1561,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Resolve a valid <code>CLASSID</code> to its name.</comment>
     <prototype>CSTRING ResolveClassID(CLASSID ID)</prototype>
     <tiriPrototype>str = ResolveClassID(ID:num)</tiriPrototype>
+    <tags>api-owns-result, null-terminated-result, nullable-result, pure-query</tags>
     <input>
       <param type="CLASSID" name="ID">The ID of the class that needs to be resolved.</param>
     </input>
@@ -1478,6 +1578,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Resolves any class name to a <code>CLASSID</code> UID.</comment>
     <prototype>CLASSID ResolveClassName(const std::string_view &amp; Name)</prototype>
     <tiriPrototype>num = ResolveClassName(Name:str)</tiriPrototype>
+    <tags>case-insensitive, pure-query</tags>
     <input>
       <param type="const std::string_view &amp;" name="Name">The name of the class that requires resolution.</param>
     </input>
@@ -1493,6 +1594,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Converts a group ID to its corresponding name.</comment>
     <prototype>CSTRING ResolveGroupID(INT Group)</prototype>
     <tiriPrototype>str = ResolveGroupID(Group:num)</tiriPrototype>
+    <tags>api-owns-result, null-terminated-result, nullable-result, blocking</tags>
     <input>
       <param type="INT" name="Group">The group ID.</param>
     </input>
@@ -1508,6 +1610,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Converts volume-based paths into absolute paths applicable to the host platform.</comment>
     <prototype>ERR ResolvePath(const std::string_view &amp; Path, RSF Flags, std::string * Result)</prototype>
     <tiriPrototype>err, Result:str = ResolvePath(Path:str, Flags:num)</tiriPrototype>
+    <tags>blocking, path-resolved, mutates-input</tags>
     <input>
       <param type="const std::string_view &amp;" name="Path">The path to be resolved.</param>
       <param type="RSF" name="Flags" lookup="RSF">Optional flags.</param>
@@ -1525,12 +1628,14 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">The <code>Path</code> was resolved.</error>
+      <error code="InvalidData">Volume resolution returned invalid path data.</error>
       <error code="Search">The given volume does not exist.</error>
       <error code="FileNotFound">The path was resolved, but the referenced file or folder does not exist (use <code>NO_FILE_CHECK</code> to avoid this error code).</error>
       <error code="InvalidPath">The path is malformed.</error>
+      <error code="SystemLocked">The volume registry could not be accessed.</error>
       <error code="VirtualVolume">The path refers to a virtual volume (use <code>CHECK_VIRTUAL</code> to return <code>Okay</code> instead).</error>
       <error code="Loop">The volume refers back to itself.</error>
-      <error code="NullArgs">Invalid parameters were specified.</error>
+      <error code="LoadModule">A volume extension could not be loaded.</error>
     </result>
   </function>
 
@@ -1540,6 +1645,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Converts a user ID to its corresponding name.</comment>
     <prototype>CSTRING ResolveUserID(INT User)</prototype>
     <tiriPrototype>str = ResolveUserID(User:num)</tiriPrototype>
+    <tags>api-owns-result, null-terminated-result, nullable-result, blocking</tags>
     <input>
       <param type="INT" name="User">The user ID.</param>
     </input>
@@ -1555,6 +1661,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <comment>Scans the content of a folder, by item.</comment>
     <prototype>ERR ScanDir(struct DirInfo * Info)</prototype>
     <tiriPrototype>err = ScanDir(Info:any)</tiriPrototype>
+    <tags>mutates-input, updates-seek-index, blocking</tags>
     <input>
       <param type="struct DirInfo *" name="Info">Pointer to a <st>DirInfo</st> structure for storing scan results.</param>
     </input>
@@ -1575,7 +1682,11 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">An item was successfully scanned from the folder.</error>
       <error code="DirEmpty">There are no more items to scan.</error>
+      <error code="InvalidData">There is an error in the provided data</error>
       <error code="Args">Invalid arguments passed to function</error>
+      <error code="NoSupport">Operation not supported</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -1585,6 +1696,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <comment>Scans a message queue for multiple occurrences of a message type.</comment>
     <prototype>ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)</prototype>
     <tiriPrototype>err, Handle:num = ScanMessages(Type:num, Buffer:any, Size:num)</tiriPrototype>
+    <tags>mutates-input, blocking</tags>
     <input>
       <param type="INT *" name="Handle">Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The message type to filter for, or zero to scan all messages in the queue.</param>
@@ -1603,6 +1715,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">No more messages are left on the queue, or no messages that match the given <code>Type</code> are on the queue.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1613,6 +1726,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <comment>Add a message to the local message queue.</comment>
     <prototype>ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)</prototype>
     <tiriPrototype>err = SendMessage(Type:num, Flags:num, Data:any, Size:num)</tiriPrototype>
+    <tags>copies-input, blocking</tags>
     <input>
       <param type="MSGID" name="Type" lookup="MSGID">The message Type/ID being sent.  Unique type ID's can be obtained from <function>AllocateID</function>.</param>
       <param type="MSF" name="Flags" lookup="MSF">Optional flags.</param>
@@ -1651,6 +1765,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <comment>Register a callback for log messages.</comment>
     <prototype>void SetLogCallback(APTR Callback, INT DepthLimit, INT LogLimit)</prototype>
     <tiriPrototype>SetLogCallback(Callback:any, DepthLimit:num, LogLimit:num)</tiriPrototype>
+    <tags>callback-held, does-not-take-ownership, non-blocking</tags>
     <input>
       <param type="APTR" name="Callback">Pointer to the log callback function to register.</param>
       <param type="INT" name="DepthLimit">Maximum branch depth to forward to the callback.</param>
@@ -1671,6 +1786,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <comment>Sets the name of an object.</comment>
     <prototype>ERR SetName(OBJECTPTR Object, const std::string_view &amp; Name)</prototype>
     <tiriPrototype>err = SetName(Object:obj, Name:str)</tiriPrototype>
+    <tags>copies-input, mutates-object, blocking</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="const std::string_view &amp;" name="Name">The new name for the object, or an empty string to clear an existing name.</param>
@@ -1681,7 +1797,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Search">The <code>Object</code> is not recognised by the system - the address may be invalid.</error>
       <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1693,6 +1808,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <comment>Changes object ownership dynamically.</comment>
     <prototype>ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)</prototype>
     <tiriPrototype>err = SetOwner(Object:obj, Owner:obj)</tiriPrototype>
+    <tags>mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The object to modify.</param>
       <param type="OBJECTPTR" name="Owner">The new owner for the <code>Object</code>.</param>
@@ -1708,7 +1824,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
+      <error code="SystemCorrupt">System corruption detected</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="Recursion">Detected a recursive function call</error>
@@ -1743,6 +1859,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <comment>Define a resource manager for a memory block originating from <function>AllocMemory</function>.</comment>
     <prototype>void SetResourceMgr(APTR Address, struct ResourceManager * Manager)</prototype>
     <tiriPrototype>SetResourceMgr(Address:any, Manager:any)</tiriPrototype>
+    <tags>retains-input, does-not-take-ownership</tags>
     <input>
       <param type="APTR" name="Address">The address of a <code>MEM::MANAGED</code> memory block allocated by <function>AllocMemory</function>.</param>
       <param type="struct ResourceManager *" name="Manager">Must refer to an initialised ResourceManager structure.</param>
@@ -1775,6 +1892,7 @@ static ResourceManager glNodeManager = {
     <comment>Redefines the location of a system resource path.</comment>
     <prototype>ERR SetResourcePath(RP PathType, const std::string_view &amp; Path)</prototype>
     <tiriPrototype>err = SetResourcePath(PathType:num, Path:str)</tiriPrototype>
+    <tags>copies-input, path-preserved</tags>
     <input>
       <param type="RP" name="PathType" lookup="RP">The ID of the resource path to set.</param>
       <param type="const std::string_view &amp;" name="Path">The new location to set for the resource path.</param>
@@ -1785,6 +1903,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1795,6 +1914,7 @@ static ResourceManager glNodeManager = {
     <comment>Create or modify a filesystem volume.</comment>
     <prototype>ERR SetVolume(const std::string_view &amp; Name, const std::string_view &amp; Path, const std::string_view &amp; Icon, const std::string_view &amp; Label, const std::string_view &amp; Device, VOLUME Flags)</prototype>
     <tiriPrototype>err = SetVolume(Name:str, Path:str, Icon:str, Label:str, Device:str, Flags:num)</tiriPrototype>
+    <tags>copies-input, blocking</tags>
     <input>
       <param type="const std::string_view &amp;" name="Name">Required.  The name of the volume.</param>
       <param type="const std::string_view &amp;" name="Path">Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.</param>
@@ -1810,7 +1930,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">The volume was successfully added.</error>
-      <error code="LockFailed">Failed to lock a required resource</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">A valid name and path string was not provided.</error>
     </result>
   </function>
@@ -1821,6 +1941,7 @@ static ResourceManager glNodeManager = {
     <comment>Monitor action calls made against an object.</comment>
     <prototype>ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = SubscribeAction(Object:obj, Action:num, Callback:func)</tiriPrototype>
+    <tags>callback-held, does-not-take-ownership, blocking</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="AC" name="Action" lookup="AC">The ID of the action that will be monitored.  Methods are not supported.</param>
@@ -1860,6 +1981,7 @@ static ResourceManager glNodeManager = {
     <comment>Subscribe to a system event.</comment>
     <prototype>ERR SubscribeEvent(INT64 Event, FUNCTION * Callback, APTR * Handle)</prototype>
     <tiriPrototype>err, Handle:any = SubscribeEvent(Event:num, Callback:func)</tiriPrototype>
+    <tags>creates-resource, callback-held, does-not-take-ownership</tags>
     <input>
       <param type="INT64" name="Event">An event identifier.</param>
       <param type="FUNCTION *" name="Callback">The function that will be subscribed to the event.</param>
@@ -1872,6 +1994,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1883,6 +2006,7 @@ static ResourceManager glNodeManager = {
     <comment>Subscribes an object or function to the timer service.</comment>
     <prototype>ERR SubscribeTimer(DOUBLE Interval, FUNCTION * Callback, APTR * Subscription)</prototype>
     <tiriPrototype>err, Subscription:any = SubscribeTimer(Interval:num, Callback:func)</tiriPrototype>
+    <tags>creates-resource, callback-held, blocking</tags>
     <input>
       <param type="DOUBLE" name="Interval">The total number of seconds to wait between timer calls.</param>
       <param type="FUNCTION *" name="Callback">A callback function is required that will be called on each time cycle.</param>
@@ -1898,7 +2022,6 @@ static ResourceManager glNodeManager = {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="ArrayFull">The task's timer array is at capacity - no more subscriptions can be granted.</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="InvalidState">The subscriber is marked for termination.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
@@ -1911,6 +2034,7 @@ static ResourceManager glNodeManager = {
     <comment>Unloads files from the file cache.</comment>
     <prototype>void UnloadFile(struct CacheFile * Cache)</prototype>
     <tiriPrototype>UnloadFile(Cache:any)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="struct CacheFile *" name="Cache">A pointer to a CacheFile structure returned from <function>LoadFile</function>.</param>
     </input>
@@ -1925,6 +2049,7 @@ static ResourceManager glNodeManager = {
     <comment>Terminates action subscriptions.</comment>
     <prototype>ERR UnsubscribeAction(OBJECTPTR Object, AC Action)</prototype>
     <tiriPrototype>err = UnsubscribeAction(Object:obj, Action:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The object that you are unsubscribing from.</param>
       <param type="AC" name="Action" lookup="AC">The ID of the action that will be unsubscribed, or zero for all actions.</param>
@@ -1946,6 +2071,7 @@ static ResourceManager glNodeManager = {
     <comment>Removes an event subscription.</comment>
     <prototype>void UnsubscribeEvent(APTR Handle)</prototype>
     <tiriPrototype>UnsubscribeEvent(Handle:any)</tiriPrototype>
+    <tags>closes-handle</tags>
     <input>
       <param type="APTR" name="Handle">An event handle returned from <function>SubscribeEvent</function></param>
     </input>
@@ -1960,6 +2086,7 @@ static ResourceManager glNodeManager = {
     <comment>Updates the data of any message that is queued.</comment>
     <prototype>ERR UpdateMessage(INT Message, MSGID Type, APTR Data, INT Size)</prototype>
     <tiriPrototype>err = UpdateMessage(Message:num, Type:num, Data:any, Size:num)</tiriPrototype>
+    <tags>copies-input, blocking</tags>
     <input>
       <param type="INT" name="Message">The ID of the message that will be updated.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The type of the message.</param>
@@ -1973,7 +2100,6 @@ static ResourceManager glNodeManager = {
     <result type="ERR">
       <error code="Okay">The message was successfully updated.</error>
       <error code="Search">The supplied <code>Message</code> ID does not refer to a message in the queue.</error>
-      <error code="AccessMemory">Access to a memory block was denied</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1984,6 +2110,7 @@ static ResourceManager glNodeManager = {
     <comment>Modify or remove a subscription created by SubscribeTimer().</comment>
     <prototype>ERR UpdateTimer(APTR Subscription, DOUBLE Interval)</prototype>
     <tiriPrototype>err = UpdateTimer(Subscription:any, Interval:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="APTR" name="Subscription">The timer subscription to modify.</param>
       <param type="DOUBLE" name="Interval">The new interval for the timer (measured in seconds), or zero to remove.</param>
@@ -1993,9 +2120,9 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Search">A search routine in this function failed</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+      <error code="AlreadyLocked">Object or resource has already been locked</error>
     </result>
   </function>
 
@@ -2005,6 +2132,7 @@ static ResourceManager glNodeManager = {
     <comment>Process incoming messages while waiting on objects to complete their activities.</comment>
     <prototype>ERR WaitForObjects(PMF Flags, INT TimeOut, struct ObjectSignal * ObjectSignals)</prototype>
     <tiriPrototype>err = WaitForObjects(Flags:num, TimeOut:num, ObjectSignals:any)</tiriPrototype>
+    <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
       <param type="PMF" name="Flags" lookup="PMF">Optional flags are specified here.</param>
       <param type="INT" name="TimeOut">A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</param>
@@ -2017,10 +2145,12 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure</error>
+      <error code="Terminate">Termination requested</error>
       <error code="TimeOut">Function timed-out before successful completion</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="Recursion">Detected a recursive function call</error>
       <error code="OutsideMainThread">Operation permitted from the main thread only</error>
+      <error code="MessageOperation">A message queue operation has failed</error>
     </result>
   </function>
 
@@ -2030,6 +2160,7 @@ static ResourceManager glNodeManager = {
     <comment>Waits for a specified amount of seconds.</comment>
     <prototype>ERR WaitTime(DOUBLE Seconds)</prototype>
     <tiriPrototype>err = WaitTime(Seconds:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="DOUBLE" name="Seconds">The number of seconds to wait for.  Fractional values are supported for sub-second precision.</param>
     </input>
@@ -2051,6 +2182,7 @@ static ResourceManager glNodeManager = {
     <comment>Interrupt a sleeping thread.</comment>
     <prototype>ERR WakeThread(INT Thread, INT Stop)</prototype>
     <tiriPrototype>err = WakeThread(Thread:num, Stop:num)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetResource(RES::THREAD_ID)</code>.</param>
       <param type="INT" name="Stop">If <code>true</code>, the target thread will be put into a stopping state.</param>
@@ -2304,7 +2436,7 @@ static ResourceManager glNodeManager = {
       <const name="BUFSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</const>
       <const name="BYTE">8 bit integer.</const>
       <const name="CLASS_TYPES">All types that directly contribute to the core definition of a C/C++ type</const>
-      <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>std::vector</code>.</const>
+      <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>kt::vector</code>.</const>
       <const name="CUSTOM"/>
       <const name="DOUBLE">64 bit float.</const>
       <const name="DOUBLERESULT">For actions and methods</const>
@@ -2321,7 +2453,8 @@ static ResourceManager glNodeManager = {
       <const name="INTRESULT">For actions and methods</const>
       <const name="LOCAL">CLASSDEF Pointer to an object that is local to the class</const>
       <const name="LOOKUP">CLASSDEF</const>
-      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</const>
+      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output.</const>
+      <const name="NORMALISED">Supplementary, indicates a normalised float value for multiplicative scaling.</const>
       <const name="OBJECT">Supplementary, can be used with ints (for IDs) or pointers</const>
       <const name="OBJECTID">Synonym for <code>INT | OBJECT</code></const>
       <const name="OBJECTPTR">Synonym for <code>PTR | OBJECT</code></const>
@@ -2334,14 +2467,14 @@ static ResourceManager glNodeManager = {
       <const name="PTR_DOUBLERESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INT64RESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
+      <const name="PURE">Supplementary, indicates that the Getter function for a field is non-mutating and context free (inc. non-logging).</const>
       <const name="R">Synonym for <code>READ</code></const>
       <const name="READ">CLASSDEF</const>
       <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>
       <const name="RESULT">FUNCDEF Overrides <code>READ</code></const>
-      <const name="RGB">Supplementary, if an int type then format is <code>0xAARRGGBB</code>, if pointer then refers to an RGB structure.</const>
       <const name="RI">Synonym for <code>READ | INIT</code></const>
       <const name="RW">Synonym for <code>READ | WRITE</code></const>
-      <const name="SCALED">Supplementary, indicates a float value for multiplicative scaling.</const>
+      <const name="SCALED">Synonym for <code>NORMALISED</code></const>
       <const name="STR">Synonym for <code>STRING</code></const>
       <const name="STRING">Pointer to a string.</const>
       <const name="STRRESULT">Synonym for <code>STR | RESULT</code></const>
@@ -2360,10 +2493,10 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="FDB" comment="Feedback event indicators.">
-      <const name="COMPRESS_FILE"/>
-      <const name="DECOMPRESS_FILE"/>
-      <const name="DECOMPRESS_OBJECT"/>
-      <const name="REMOVE_FILE"/>
+      <const name="COMPRESS_FILE">A file or folder is being added to a compressed stream.</const>
+      <const name="DECOMPRESS_FILE">A file is being decompressed to a filesystem path.</const>
+      <const name="DECOMPRESS_OBJECT">A file is being decompressed into an object.</const>
+      <const name="REMOVE_FILE">A file is being removed from a compressed stream.</const>
     </constants>
 
     <constants lookup="FDL" comment="Options for the File Delete() method.">
@@ -2758,10 +2891,9 @@ static ResourceManager glNodeManager = {
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
-      <const name="MESSAGE">Action has been called against the object through the message system (managed by <function module="Core">ProcessMessages</function>).</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
       <const name="PRIVATE"/>
-      <const name="RECLASSED">The object switched from the base-class to a sub-class during initialisation.</const>
+      <const name="RECLASSED">The object switched from the base-class to a derived class during initialisation.</const>
       <const name="SIGNALLED">The object has been signalled and is awaiting processing.</const>
       <const name="TIMER_SUB">The object is subscribed to a timer interval.</const>
       <const name="UNIQUE">Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, <function module="Core">NewObject</function> will return <code>ERR::ObjectExists</code>.  This flag works in conjunction with the <code>Name</code> parameter.</const>
@@ -2980,23 +3112,23 @@ static ResourceManager glNodeManager = {
 
     <constants lookup="VAS" comment="For use by VirtualVolume()">
       <const name="CASE_SENSITIVE">Set to true if the volume's paths are case-sensitive.</const>
-      <const name="CLOSE_DIR"/>
-      <const name="CREATE_LINK"/>
-      <const name="DELETE"/>
+      <const name="CLOSE_DIR">Register the callback used to close an opened virtual folder.</const>
+      <const name="CREATE_LINK">Register the callback used to create a symbolic link on a virtual volume.</const>
+      <const name="DELETE">Register the callback used to delete a virtual file or folder.</const>
       <const name="DEREGISTER">Remove the virtual volume from the system.</const>
-      <const name="DRIVER_SIZE"/>
-      <const name="GET_DEVICE_INFO"/>
-      <const name="GET_INFO"/>
-      <const name="IDENTIFY_FILE"/>
-      <const name="IGNORE_FILE"/>
-      <const name="MAKE_DIR"/>
-      <const name="OPEN_DIR"/>
-      <const name="READ_LINK"/>
-      <const name="RENAME"/>
-      <const name="SAME_FILE"/>
-      <const name="SCAN_DIR"/>
-      <const name="TEST_PATH"/>
-      <const name="WATCH_PATH"/>
+      <const name="DRIVER_SIZE">Set the size of the driver-specific data attached to folder scans.</const>
+      <const name="GET_DEVICE_INFO">Register the callback used to retrieve storage device information for a virtual path.</const>
+      <const name="GET_INFO">Register the callback used to retrieve information for a virtual file or folder.</const>
+      <const name="IDENTIFY_FILE">Register the callback used to identify the class associated with a virtual file.</const>
+      <const name="IGNORE_FILE">Register the callback used when a virtual file object no longer needs to be watched.</const>
+      <const name="MAKE_DIR">Register the callback used to create a virtual folder.</const>
+      <const name="OPEN_DIR">Register the callback used to open a virtual folder for scanning.</const>
+      <const name="READ_LINK">Register the callback used to read a symbolic link target from a virtual path.</const>
+      <const name="RENAME">Register the callback used to rename or move a virtual path.</const>
+      <const name="SAME_FILE">Register the callback used to determine if two virtual paths refer to the same file.</const>
+      <const name="SCAN_DIR">Register the callback used to retrieve entries from an opened virtual folder.</const>
+      <const name="TEST_PATH">Register the callback used to test and resolve a virtual path.</const>
+      <const name="WATCH_PATH">Register the callback used to watch a virtual path for changes.</const>
     </constants>
 
     <constants lookup="VLF" comment="VlogF flags">
@@ -3046,7 +3178,7 @@ static ResourceManager glNodeManager = {
 
     <struct name="ClassRecord" comment="Meta information for a class, as recorded in the class database.">
       <field name="ClassID" type="CLASSID">Unique class identifier (hash of Name)</field>
-      <field name="ParentID" type="CLASSID">Parent class ID if this is a sub-class</field>
+      <field name="ParentID" type="CLASSID">Parent class ID if this is a derived class</field>
       <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
       <field name="Name" type="std::string">Name of the class</field>
       <field name="Path" type="std::string">Path to the class file</field>
@@ -3153,7 +3285,7 @@ static ResourceManager glNodeManager = {
       <field name="Name" type="CSTRING">The name of the field, e.g. <code>Width</code></field>
       <field name="GetField" type="APTR"><code>void GetField(*Object, APTR Result);</code></field>
       <field name="SetField" type="APTR"><code>ERR SetField(*Object, APTR Value);</code></field>
-      <field name="Arg" type="MAXINT">Can be a pointer or an integer value</field>
+      <field name="Arg" type="INT64">Can be a pointer or an integer value</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
     </struct>
 

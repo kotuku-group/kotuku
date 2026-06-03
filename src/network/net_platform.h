@@ -196,7 +196,7 @@ public:
    virtual int shutdown_socket(SocketHandle Handle, int How) = 0;
 
    virtual ERR build_address(const IPAddress &IP, int Port, bool IPv6, NetworkEndpoint &Endpoint) = 0;
-   ERR prepare_bind_address(CSTRING Address, int Port, bool IPv6, NetworkEndpoint &Endpoint);
+   ERR prepare_bind_address(std::string_view Address, int Port, bool IPv6, NetworkEndpoint &Endpoint);
    virtual ERR connect(SocketHandle Handle, const NetworkEndpoint &Endpoint) = 0;
    virtual ERR begin_connect_wait(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
    virtual ERR complete_connect(SocketHandle Handle) = 0;

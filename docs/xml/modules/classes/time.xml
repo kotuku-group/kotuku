@@ -63,6 +63,7 @@
         <error code="SystemCall">A required host time-zone API call failed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, caller-owns-result</tags>
     </method>
 
     <method>
@@ -73,6 +74,7 @@
       <description>
 <p>This method will apply the time object's values to the BIOS.  Depending on the host platform, this method may only work if the user is logged in as the administrator.</p>
       </description>
+      <tags>blocking</tags>
     </method>
 
   </methods>

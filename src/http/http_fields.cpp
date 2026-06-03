@@ -5,10 +5,10 @@ AuthCallback: Private.  This field is reserved for future use.
 
 *********************************************************************************************************************/
 
-static ERR GET_AuthCallback(extHTTP *Self, FUNCTION **Value)
+static ERR GET_AuthCallback(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->AuthCallback.defined()) {
-      *Value = &Self->AuthCallback;
+      Value = &Self->AuthCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -210,10 +210,10 @@ request will be cancelled.
 
 *********************************************************************************************************************/
 
-static ERR GET_Incoming(extHTTP *Self, FUNCTION **Value)
+static ERR GET_Incoming(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->Incoming.defined()) {
-      *Value = &Self->Incoming;
+      Value = &Self->Incoming;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -443,10 +443,10 @@ a reasonable time frame.  All other error codes apart from `ERR::Okay` indicate 
 
 *********************************************************************************************************************/
 
-static ERR GET_Outgoing(extHTTP *Self, FUNCTION **Value)
+static ERR GET_Outgoing(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->Outgoing.defined()) {
-      *Value = &Self->Outgoing;
+      Value = &Self->Outgoing;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -638,32 +638,17 @@ if no keys are found.
 
 *********************************************************************************************************************/
 
-static ERR GET_ResponseKeys(extHTTP *Self, STRING **Value, int *Elements)
+static ERR GET_ResponseKeys(extHTTP *Self, kt::vector<std::string> **Value, int *Elements)
 {
-   if (Self->ResponseKeys.empty()) {
-      *Value = nullptr;
-      *Elements = 0;
-      return ERR::Okay;
+   Self->ResponseKeys.clear();
+   Self->ResponseKeys.reserve(Self->ResponseHeaders.size());
+
+   for (const auto &response_header : Self->ResponseHeaders) {
+      Self->ResponseKeys.emplace_back(response_header.first);
    }
 
-   const int total_keys = int(Self->ResponseKeys.size());
-   int buffer_size = sizeof(CSTRING) * (total_keys + 1);
-   for (const auto &response_key : Self->ResponseKeys) buffer_size += int(response_key.first.length()) + 1;
-
-   STRING *array;
-   if (AllocMemory(buffer_size, MEM::STRING|MEM::NO_CLEAR, (APTR *)&array, nullptr) IS ERR::Okay) {
-      STRING buffer = (STRING)(array + total_keys + 1);
-      int i = 0;
-      for (const auto &response_key : Self->ResponseKeys) {
-         array[i++] = buffer;
-         buffer += kt::strcopy(response_key.first, buffer, int(response_key.first.length()) + 1) + 1;
-      }
-      array[i] = nullptr;
-   }
-   else return ERR::AllocMemory;
-
-   *Value = array;
-   *Elements = total_keys;
+   *Value = &Self->ResponseKeys;
+   *Elements = Self->ResponseKeys.size();
    return ERR::Okay;
 }
 
@@ -687,10 +672,10 @@ cancelled.
 
 *********************************************************************************************************************/
 
-static ERR GET_StateChanged(extHTTP *Self, FUNCTION **Value)
+static ERR GET_StateChanged(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->StateChanged.defined()) {
-      *Value = &Self->StateChanged;
+      Value = &Self->StateChanged;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;

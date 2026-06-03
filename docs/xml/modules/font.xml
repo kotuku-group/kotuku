@@ -9,9 +9,12 @@
     <version>1</version>
     <copyright>Paul Manias © 1998-2026</copyright>
     <description>
-<p>The Font module is responsible for managing the font database and provides support for client queries.  Fixed size bitmap fonts are supported via the Windows .fon file format, while Truetype fonts are support for scalable fonts.</p>
-<p>Bitmap fonts can be opened and drawn by the <class name="Font">Font</class> class.  Drawing Truetype fonts is not supported by the Font module, but is instead provided by the <fl>Vector</fl> module and <class name="VectorText">VectorText</class> class.</p>
+<p>The Font module maintains the system font database and provides query functions for resolving font family names, styles, file paths and metadata.  Fixed-size bitmap fonts are recognised through the Windows <code>.fon</code> format, while TrueType fonts are scanned as scalable font resources.</p>
+<p>Bitmap fonts can be opened and drawn directly by the <class name="Font">Font</class> class.  Scalable TrueType rendering is handled by the Vector module and <class name="VectorText">VectorText</class> class; the Font module supplies the database information that allows those fonts to be selected.</p>
 <p>For a thorough introduction to typesetting history and terminology as it applies to computing, we recommend visiting Google Fonts Knowledge page: https://fonts.google.com/knowledge</p></description>
+    <source>
+      <file path="src/font/">font.cpp</file>
+    </source>
     <classes>
       <class>Font</class>
     </classes>
@@ -22,15 +25,16 @@
     <comment>Returns the width of a character.</comment>
     <prototype>INT fnt::CharWidth(objFont * Font, UINT Char)</prototype>
     <tiriPrototype>num = CharWidth(Font:obj, Char:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="objFont *" name="Font">The font to use for calculating the character width.</param>
-      <param type="UINT" name="Char">A unicode character.</param>
+      <param type="UINT" name="Char">A Unicode character value.</param>
     </input>
     <description>
-<p>This function will return the pixel width of a bitmap font character.  The character is specified as a unicode value in the Char parameter.</p>
-<p>The font's GlyphSpacing value is not used in calculating the character width.</p>
+<p>Returns the pixel width of a bitmap font character.  <code>Char</code> is interpreted as a Unicode character value.  Bitmap fonts provide a maximum of 256 glyph slots; unsupported characters fall back to the font's default character.</p>
+<p>The font's <fl>GlyphSpacing</fl> value is not included in the returned width.  If <code>Font</code> is <code>NULL</code> or has no character table, the result is <code>0</code>.</p>
     </description>
-    <result type="INT">The pixel width of the character will be returned.</result>
+    <result type="INT">The pixel width of the character, or <code>0</code> if it cannot be measured.</result>
   </function>
 
   <function>
@@ -38,15 +42,18 @@
     <comment>Returns a list of all available system fonts.</comment>
     <prototype>ERR fnt::GetList(struct FontList ** Result)</prototype>
     <tiriPrototype>err, Result:any = GetList()</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="struct FontList **" name="Result">The font list is returned here.</param>
     </input>
     <description>
-<p>This function returns a linked list of all available system fonts.  The list must be terminated once it is no longer required.</p>
+<p>Returns a linked list of available system fonts.  The returned list is allocated as a single resource and must be released with <code>FreeResource()</code> when it is no longer required.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="NoData">No data is available for use</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -56,13 +63,16 @@
     <comment>Refreshes the system font list with up-to-date font information.</comment>
     <prototype>ERR fnt::RefreshFonts()</prototype>
     <tiriPrototype>err = RefreshFonts()</tiriPrototype>
+    <tags>blocking</tags>
     <description>
-<p>This function scans the <code>fonts:</code> volume and refreshes the font database.</p>
-<p>Refreshing fonts can take an extensive amount of time as each font file needs to be completely analysed for information.  The <code>fonts:fonts.cfg</code> file will be re-written on completion to reflect current font settings.</p>
+<p>Scans the <code>fonts:</code> volume and rebuilds the font database.</p>
+<p>Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style, metric and metadata information.  The <code>fonts:fonts.cfg</code> file is rewritten on completion.</p>
     </description>
     <result type="ERR">
-      <error code="Okay">Fonts were successfully refreshed.</error>
+      <error code="Okay">Operation successful.</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
+      <error code="GetField">Failed to read font database entries after scanning.</error>
+      <error code="OpenFile">Failed to open <code>fonts:fonts.cfg</code> for writing.</error>
     </result>
   </function>
 
@@ -71,13 +81,15 @@
     <comment>Convert a CSV family string to a single family name.</comment>
     <prototype>ERR fnt::ResolveFamilyName(const std::string_view &amp; String, CSTRING * Result)</prototype>
     <tiriPrototype>err, Result:str = ResolveFamilyName(String:str)</tiriPrototype>
+    <tags>volatile-result, null-terminated-result, blocking, case-insensitive</tags>
     <input>
       <param type="const std::string_view &amp;" name="String">A CSV family string to resolve.</param>
-      <param type="CSTRING *" name="Result">The nominated family name is returned in this parameter.</param>
+      <param type="CSTRING *" name="Result">The resolved family name is returned in this parameter.</param>
     </input>
     <description>
-<p>Use ResolveFamilyName() to convert complex CSV family strings to a single family name.  The provided String will be parsed in sequence, with priority given from left to right.  If a single asterisk is used to terminate the list, it is guaranteed that the system default will be returned if no valid match is made.</p>
-<p>It is valid for individual names to utilise the common wildcards <code>?</code> and <code>*</code> to make a match.  E.g. <code>Times New *</code> would be able to match to <code>Times New Roman</code> if available.</p>
+<p>Converts a CSV family string to one resolved family name.  <code>String</code> is parsed from left to right, with each family name or wildcard tested against the font database in order.  If a single asterisk is used to terminate the list, the system default is returned when no earlier name matches.</p>
+<p>Individual names may use the common wildcards <code>?</code> and <code>*</code>; for example, <code>Times New *</code> can match <code>Times New Roman</code> if it is available.</p>
+<p>The returned <code>Result</code> is borrowed storage.  Copy it immediately if it needs to survive a later font database refresh.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -93,20 +105,22 @@
     <comment>Searches for a 'best fitting' font file, based on family name and style.</comment>
     <prototype>ERR fnt::SelectFont(const std::string_view &amp; Name, const std::string_view &amp; Style, CSTRING * Path, FMETA * Meta)</prototype>
     <tiriPrototype>err, Path:str, Meta:num = SelectFont(Name:str, Style:str)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, blocking, case-insensitive</tags>
     <input>
       <param type="const std::string_view &amp;" name="Name">The name of a font face to search for (case insensitive).</param>
-      <param type="const std::string_view &amp;" name="Style">The required style, e.g. Bold or Italic.  Using camel-case for each word is compulsory.</param>
+      <param type="const std::string_view &amp;" name="Style">The preferred style, e.g. <code>Bold</code> or <code>Italic</code>.</param>
       <param type="CSTRING *" name="Path">The location of the best-matching font file is returned in this parameter.</param>
       <param type="FMETA *" name="Meta" lookup="FMETA">Optional, returns additional meta information about the font file.</param>
     </input>
     <description>
-<p>This function resolves a font family Name and Style to a font file path.  It works on a best efforts basis; the Name must exist but the Style is a non-mandatory preference.</p>
-<p>The resulting Path must be freed once it is no longer required.</p>
+<p>Resolves a font family <code>Name</code> and preferred <code>Style</code> to a font file path.  The family name must exist in the font database.  If the requested style is unavailable, the function falls back to the face's regular style or first registered style.</p>
+<p>The returned <code>Path</code> is allocated and must be released with <code>FreeResource()</code> when it is no longer required.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">Unable to find a suitable font.</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -116,16 +130,17 @@
     <comment>Returns the pixel width of any given string in relation to a font's settings.</comment>
     <prototype>INT fnt::StringWidth(objFont * Font, const std::string_view &amp; String, INT Chars)</prototype>
     <tiriPrototype>num = StringWidth(Font:obj, String:str, Chars:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="objFont *" name="Font">An initialised font object.</param>
       <param type="const std::string_view &amp;" name="String">The string to be calculated.</param>
-      <param type="INT" name="Chars">The number of characters (not bytes, so consider UTF-8 serialisation) to be used in calculating the string length, or -1 to use the entire string.</param>
+      <param type="INT" name="Chars">The maximum number of characters to measure, or <code>-1</code> to measure the entire string.</param>
     </input>
     <description>
-<p>This function calculates the pixel width of any string in relation to a font's object definition.  The routine takes into account any line feeds that might be specified in the String, so if the String contains 8 lines, then the width of the longest line will be returned.</p>
-<p>Word wrapping will not be taken into account, even if it has been enabled in the font object.</p>
+<p>Calculates the pixel width of <code>String</code> using the supplied Font object's current metrics and spacing settings.  Line feeds are handled by measuring each line independently and returning the width of the longest line.</p>
+<p>Word wrapping is not applied, even if <fl>WrapEdge</fl> has been set on the Font object.</p>
     </description>
-    <result type="INT">The pixel width of the string is returned - this will be zero if there was an error or the string is empty.</result>
+    <result type="INT">The pixel width of the string, or <code>0</code> if <code>Font</code> is <code>NULL</code>, uninitialised or <code>String</code> is empty.</result>
   </function>
 
   <types>

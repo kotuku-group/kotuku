@@ -197,6 +197,9 @@ Compile and Evaluate functions in the XPath module.
 cstr Statement: An XQuery expression to evaluate.
 !&cstr Result: An allocated string from the evaluation is returned here.
 
+-TAGS-
+mutates-object, caller-owns-result, null-terminated-result
+
 -ERRORS-
 Okay
 NullArgs
@@ -219,25 +222,25 @@ static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Statement);
+      xq->set(FID_Statement, std::string_view(Args->Statement));
       if (auto error = xq->init(); error IS ERR::Okay) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
-            CSTRING result;
+            std::string_view result;
             if (xq->get(FID_ResultString, result) IS ERR::Okay) Args->Result = kt::strclone(result);
             FreeResource(xq);
             if (!Args->Result) return log.warning(ERR::AllocMemory);
             return ERR::Okay;
          }
          else {
-            CSTRING str;
-            if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+            std::string_view sv;
+            if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             return error;
          }
       }
       else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+         std::string_view sv;
+         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -261,6 +264,9 @@ tags, parent elements (excluding the direct lineage) and unrelated branches are 
 -INPUT-
 cstr XPath: A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.
 
+-TAGS-
+mutates-object
+
 -ERRORS-
 Okay: The filtering operation completed successfully and the XML structure now contains only the specified subtree.
 NullArgs: The XPath parameter was NULL or empty.
@@ -276,7 +282,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->set(FID_Statement, std::string_view(Args->XPath));
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -296,7 +302,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
                Self->ErrorMsg = "No matching tag found";
             }
             else {
-               CSTRING str;
+               std::string_view str;
                if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
             }
             FreeResource(xq);
@@ -304,8 +310,8 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
          }
       }
       else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+         std::string_view sv;
+         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -341,6 +347,9 @@ cstr Expression: A valid XQuery expression.
 ptr(func) Callback: Optional pointer to a callback function for processing multiple matches.
 &int Result: UID of the first matching tag.  Only valid when Callback is undefined.
 
+-TAGS-
+mutates-object, callback-inlines
+
 -ERRORS-
 Okay: A matching tag was found (or callback processing completed successfully).
 NullArgs: The Expression was NULL or the Result parameter was NULL when no callback was provided.
@@ -361,7 +370,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Expression);
+      xq->set(FID_Statement, std::string_view(Args->Expression));
 
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
@@ -387,16 +396,16 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
             return ERR::Okay;
          }
          else {
-            CSTRING str;
-            if ((xq->get(FID_ErrorMsg, str) IS ERR::Okay) and (str)) Self->ErrorMsg = str;
+            std::string_view sv;
+            if ((xq->get(FID_ErrorMsg, sv) IS ERR::Okay) and (not sv.empty())) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             if ((Args->Callback) and (error IS ERR::Search)) return ERR::Okay;
             else return error;
          }
       }
       else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+         std::string_view sv;
+         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -446,6 +455,9 @@ content should be copied to application-managed memory.
 int Index: The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as #Search().
 cstr Attrib: The name of the attribute to retrieve (case insensitive).  If NULL or empty, the element's tag name is returned instead.
 &cstr Value: Pointer to a string pointer that will receive the attribute value.  Set to NULL if the specified attribute does not exist.
+
+-TAGS-
+pure-query, object-owns-result, null-terminated-result, case-insensitive
 
 -ERRORS-
 Okay: The attribute was successfully found and its value returned.
@@ -520,6 +532,9 @@ int Index: The unique identifier of the XML element from which to extract conten
 buf(str) Buffer: Pointer to a pre-allocated character buffer that will receive the extracted content string.  Must not be NULL.
 bufsize Length: The size of the provided buffer in bytes, including space for null termination.  Must be at least 1.
 
+-TAGS-
+pure-query, null-terminated-result
+
 -ERRORS-
 Okay: The content string was successfully extracted and copied to the buffer.
 NullArgs: Either the Buffer parameter was NULL or other required arguments were missing.
@@ -567,6 +582,9 @@ Entity names are case-sensitive and must match exactly as declared.
 cstr Name: The name of the entity to retrieve.  This must correspond to a parsed entity declaration.
 &cstr Value: Receives the resolved entity value on success.  The returned pointer remains valid while the XML object exists.
 
+-TAGS-
+pure-query, object-owns-result, null-terminated-result, case-sensitive
+
 -ERRORS-
 Okay: The entity was found and its value returned.
 NullArgs: Either the Name or Value parameter was NULL.
@@ -592,56 +610,6 @@ static ERR XML_GetEntity(extXML *Self, struct xml::GetEntity *Args)
 
 /*********************************************************************************************************************
 
--ACTION-
-GetKey: Deprecated.  Use the Evaluate() method instead.
-
-Deprecated.  Use the Evaluate() method instead.
-
--END-
-
-*********************************************************************************************************************/
-
-static ERR XML_GetKey(extXML *Self, struct acGetKey *Args)
-{
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
-   if ((not Args->Key) or (not Args->Value) or (Args->Size < 1)) return log.warning(ERR::NullArgs);
-   if (not Self->initialised()) return log.warning(ERR::NotInitialised);
-
-   Args->Value[0] = 0;
-
-   log.error("GetKey() usage is deprecated in the XML class.  Use Evaluate() instead.");
-
-   objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Key);
-      if (auto error = xq->init(); error IS ERR::Okay) {
-         if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
-            auto result = xq->get<CSTRING>(FID_ResultString);
-            if (result) kt::strcopy(result, Args->Value, Args->Size);
-            FreeResource(xq);
-            return ERR::Okay;
-         }
-         else {
-            CSTRING str;
-            if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
-            FreeResource(xq);
-            return error;
-         }
-      }
-      else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
-         FreeResource(xq);
-         return error;
-      }
-   }
-   else return log.warning(ERR::NewObject);
-}
-
-/*********************************************************************************************************************
-
 -METHOD-
 GetNamespaceURI: Retrieve the namespace URI for a given namespace UID.
 
@@ -650,6 +618,9 @@ This method retrieves the original namespace URI string for a given namespace UI
 -INPUT-
 uint NamespaceID: The UID of the namespace.
 &cstr Result: Pointer to a string pointer that will receive the namespace URI.
+
+-TAGS-
+pure-query, object-owns-result, null-terminated-result
 
 -ERRORS-
 Okay: The namespace URI was successfully retrieved.
@@ -686,6 +657,9 @@ returned as a single string separated by a single space.
 cstr Name: The notation name to look up.
 &cstr Value: Receives the notation descriptor on success.
 
+-TAGS-
+pure-query, object-owns-result, null-terminated-result, case-sensitive
+
 -ERRORS-
 Okay: The notation was found and its descriptor returned.
 NullArgs: Either the Name or Value parameter was NULL.
@@ -721,6 +695,9 @@ prior to retrieval, and an `ERR::OutOfRange` error will be returned if it is inv
 int Index:  The index of the tag that is being retrieved.
 &struct(*XTag) Result: The !XTag is returned in this parameter.
 
+-TAGS-
+pure-query, object-owns-result
+
 -ERRORS-
 Okay
 NullArgs
@@ -744,7 +721,7 @@ static ERR XML_Init(extXML *Self)
 {
    kt::Log log;
 
-   if (Self->isSubClass()) return ERR::Okay; // Break here for sub-classes to perform initialisation
+   if (Self->isDerived()) return ERR::Okay; // Break here for derived classes to perform initialisation
 
    // Statement has precedence over the Path because it's sometimes used in conjunction with the Statement when
    // a base path is required for relative URI resolution.
@@ -798,6 +775,9 @@ int Index: The unique identifier of the target XML element that will serve as th
 int(XMI) Where: Specifies the insertion position relative to the target element.  Use PREV or NEXT for sibling insertion, or CHILD for child content insertion.
 cstr Content: The text content to insert.  Special XML characters will be automatically escaped to ensure document validity.
 &int Result: Pointer to an integer that will receive the unique identifier of the newly created content node.
+
+-TAGS-
+mutates-object, copies-input
 
 -ERRORS-
 Okay: The content was successfully inserted and a new content node was created.
@@ -863,6 +843,9 @@ int Index: The new data will target the tag specified here.
 int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` or `CHILD_END` for a child insert.
 cstr XML: An XML statement to parse.
 &int Result: The resulting tag index.
+
+-TAGS-
+mutates-object, copies-input
 
 -ERRORS-
 Okay: The statement was added successfully.
@@ -948,6 +931,9 @@ int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag
 cstr XML: The statement to process.
 &int Result: The index of the new tag is returned here.
 
+-TAGS-
+mutates-object, copies-input
+
 -ERRORS-
 Okay: The XML statement was successfully inserted at the specified XPath location.
 NullArgs: Required parameters were NULL or not properly specified.
@@ -967,7 +953,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->set(FID_Statement, std::string_view(Args->XPath));
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -985,16 +971,16 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
                Self->ErrorMsg = "XPath did not resolve to a valid location.";
             }
             else {
-               CSTRING str;
-               if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+               std::string_view sv;
+               if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
             }
             FreeResource(xq);
             return error;
          }
       }
       else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+         std::string_view sv;
+         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -1020,6 +1006,9 @@ int Index: Index of the source tag to be moved.
 int Total: The total number of sibling tags (including the targeted tag) to be moved from the source index.  Minimum value of 1.
 int DestIndex: The destination tag index.  If the index exceeds the total number of tags, the value will be automatically limited to the last tag index.
 int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` for a child insert.
+
+-TAGS-
+mutates-object
 
 -ERRORS-
 Okay: Tags were moved successfully.
@@ -1127,6 +1116,9 @@ efficiently throughout the XML document.
 cstr URI: The namespace URI to register. Must not be NULL or empty.
 &uint Result: Pointer to an integer that will receive the UID for the namespace URI.
 
+-TAGS-
+mutates-object, copies-input
+
 -ERRORS-
 Okay: The namespace was successfully registered.
 NullArgs: Required arguments were not specified correctly.
@@ -1167,6 +1159,9 @@ Note: Removing tags will destabilise all cached address pointers that have been 
 -INPUT-
 int Index: Reference to the tag that will be removed.
 int Total: The total number of sibling (neighbouring) tags that should also be deleted.  A value of one or less will remove only the indicated tag and its children.  The total may exceed the number of tags actually available, in which case all tags up to the end of the branch will be affected.
+
+-TAGS-
+mutates-object
 
 -ERRORS-
 Okay: The tag(s) were successfully removed.
@@ -1232,6 +1227,9 @@ This method is volatile and will destabilise any cached address pointers that ha
 cstr XPath: An XML path string.
 int Limit: The maximum number of matching tags to delete.  A value of one or zero will remove only the indicated tag and its children.  A value of -1 removes all matching tags.
 
+-TAGS-
+mutates-object
+
 -ERRORS-
 Okay: The matching tag(s) or attribute(s) were successfully removed.
 NullArgs: Required parameters were NULL or not properly specified.
@@ -1257,7 +1255,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->set(FID_Statement, std::string_view(Args->XPath));
       if (auto error = xq->init(); error IS ERR::Okay) {
          while (limit > 0) {
             matching_tag_opt opt;
@@ -1290,8 +1288,8 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
          }
       }
       else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+         std::string_view sv;
+         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -1333,6 +1331,9 @@ This approach correctly handles nested namespace scopes and prefix redefinitions
 cstr Prefix: The namespace prefix to resolve. Use empty string for default namespace.
 int TagID: The tag ID defining the starting scope for namespace resolution.
 &uint Result: Pointer to an integer that will receive the resolved namespace hash.
+
+-TAGS-
+pure-query
 
 -ERRORS-
 Okay: The prefix was successfully resolved.
@@ -1391,6 +1392,9 @@ is no longer required.
 int Index: Index to a source tag for which serialisation will start.  Set to zero to serialise the entire tree.
 int(XMF) Flags: Use `INCLUDE_SIBLINGS` to include siblings of the tag found at Index.
 !str Result: The resulting string is returned in this parameter.
+
+-TAGS-
+pure-query, caller-owns-result, null-terminated-result
 
 -ERRORS-
 Okay: The XML string was successfully serialised.
@@ -1464,6 +1468,9 @@ int Index: Identifies the tag that is to be updated.
 int(XMS) Attrib: Either the index number of the attribute that is to be updated, or set to `NEW`, `UPDATE` or `UPDATE_ONLY`.
 cstr Name: String containing the new name for the attribute.  If `NULL`, the name will not be changed.  If Attrib is `UPDATE` or `UPDATE_ONLY`, the `Name` is used to find the attribute.
 cstr Value: String containing the new value for the attribute.  If `NULL`, the attribute is removed.
+
+-TAGS-
+mutates-object, copies-input, case-insensitive
 
 -ERRORS-
 Okay
@@ -1561,12 +1568,12 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Key)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Key);
+      xq->set(FID_Statement, std::string_view(Args->Key));
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -1605,19 +1612,19 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
                error = ERR::Search;
             }
             else {
-               CSTRING str;
-               if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+               std::string_view sv;
+               if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
             }
-            log.warning("Failed to find '%s'", Args->Key);
+            log.warning("Failed to find '%.*s'", int(Args->Key.size()), Args->Key.data());
             return error;
          }
       }
       else {
-         CSTRING str;
-         if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+         std::string_view sv;
+         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
-         log.msg("Failed to compile '%s'", Args->Key);
+         log.msg("Failed to compile '%.*s'", int(Args->Key.size()), Args->Key.data());
          return error;
       }
    }
@@ -1634,6 +1641,9 @@ This method assigns a namespace to an XML tag using the namespace's UID.
 -INPUT-
 int TagID: The unique identifier of the XML tag.
 int NamespaceID: The UID of the namespace to assign.
+
+-TAGS-
+mutates-object
 
 -ERRORS-
 Okay: The namespace was successfully assigned to the tag.
@@ -1678,6 +1688,9 @@ cstr XPath: Sort everything under the specified tag, or `NULL` to sort the entir
 cstr Sort: Pointer to a sorting instruction string.
 int(XSF) Flags: Optional flags.
 
+-TAGS-
+mutates-object
+
 -ERRORS-
 Okay: The XML object was successfully sorted.
 NullArgs: Required parameters were NULL or not properly specified.
@@ -1704,13 +1717,13 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
    else {
       objXQuery *xq;
       if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-         xq->set(FID_Statement, Args->XPath);
+         xq->set(FID_Statement, std::string_view(Args->XPath));
          if (auto error = xq->init(); error IS ERR::Okay) {
             matching_tag_opt opt;
             auto callback = C_FUNCTION(save_matching_tag, &opt.tag_id);
             if (error = xq->search((objXML *)Self, callback, 0, XEF::NIL); error != ERR::Terminate) {
-               CSTRING str;
-               if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+               std::string_view sv;
+               if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
                return log.warning(ERR::Search);
             }
@@ -1720,8 +1733,8 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
             branch = &Self->Map[opt.tag_id]->Children;
          }
          else {
-            CSTRING str;
-            if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+            std::string_view sv;
+            if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             return log.warning(error);
          }
@@ -2122,6 +2135,9 @@ schema metadata is available for validation and XQuery evaluation routines that 
 -INPUT-
 cstr Path: File system path to the XML Schema (XSD) document.
 
+-TAGS-
+blocking, mutates-object, creates-resource
+
 -ERRORS-
 Okay: Schema was successfully loaded and parsed.
 NullArgs: The Path argument was not provided.
@@ -2169,6 +2185,9 @@ ValidateDocument: Validate the XML document against the currently loaded schema.
 This method performs structural and simple type validation of the document using
 the loaded XML Schema.  The Result parameter returns `1` when the document
 conforms to the schema, otherwise `0`.
+
+-TAGS-
+mutates-object
 
 -ERRORS-
 Okay: Validation completed successfully.
@@ -2346,11 +2365,11 @@ static const FieldArray clFields[] = {
    { "ParseError",   FDF_INT|FD_PRIVATE|FDF_R },
    { "LineNo",       FDF_INT|FD_PRIVATE|FDF_R },
    // Virtual fields
-   { "ErrorMsg",   FDF_CPPSTRING|FDF_R, GET_ErrorMsg },
-   { "ReadOnly",   FDF_INT|FDF_RI, GET_ReadOnly, SET_ReadOnly },
-   { "Src",        FDF_CPPSTRING|FDF_SYNONYM|FDF_RW, GET_Path, SET_Path },
+   { "ErrorMsg",   FDF_CPPSTRING|FDF_R|FDF_PURE, GET_ErrorMsg },
+   { "ReadOnly",   FDF_INT|FDF_RI|FDF_PURE, GET_ReadOnly, SET_ReadOnly },
+   { "Src",        FDF_CPPSTRING|FDF_SYNONYM|FDF_RW|FDF_PURE, GET_Path, SET_Path },
    { "Statement",  FDF_CPPSTRING|FDF_ALLOC|FDF_RW, GET_Statement, SET_Statement },
-   { "Tags",       FDF_ARRAY|FDF_STRUCT|FDF_R, GET_Tags, nullptr, "XTag" },
+   { "Tags",       FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Tags, nullptr, "XTag" },
    END_FIELD
 };
 

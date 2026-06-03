@@ -690,6 +690,9 @@ Okay:
 Args:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 -END-
 
 *********************************************************************************************************************/
@@ -728,6 +731,9 @@ double Z: Z location for the light source.
 Okay:
 Args:
 NullArgs:
+
+-TAGS-
+mutates-object
 
 -END-
 
@@ -775,6 +781,9 @@ double ConeAngle: A limiting cone which restricts the region where the light is 
 Okay:
 Args:
 NullArgs:
+
+-TAGS-
+mutates-object
 
 -END-
 
@@ -994,16 +1003,20 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, STRING *Value)
+static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
    std::string type(Self->Type IS LT::DIFFUSE ? "feDiffuseLighting" : "feSpecularLighting");
 
    // TODO
-   stream << "<" << type << ">";
-   stream << "</" << type << ">";
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   stream << type;
+
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -1017,14 +1030,14 @@ static const FieldDef clLightingType[] = {
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
-   { "Colour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW,  LIGHTINGFX_GET_Colour, LIGHTINGFX_SET_Colour },
-   { "Constant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_Constant, LIGHTINGFX_SET_Constant },
-   { "Exponent", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_Exponent, LIGHTINGFX_SET_Exponent },
-   { "Scale",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_Scale, LIGHTINGFX_SET_Scale },
-   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingType },
-   { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
-   { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
-   { "XMLDef",   FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, LIGHTINGFX_GET_XMLDef },
+   { "Colour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Colour, LIGHTINGFX_SET_Colour },
+   { "Constant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Constant, LIGHTINGFX_SET_Constant },
+   { "Exponent", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Exponent, LIGHTINGFX_SET_Exponent },
+   { "Scale",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Scale, LIGHTINGFX_SET_Scale },
+   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingType },
+   { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
+   { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };
 

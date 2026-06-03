@@ -1,9 +1,9 @@
 -- $TIRI
 --[[
-Flute tests for Picture PNG decoding.
+Flute tests for Image PNG decoding.
 
 This technique uses pre-computed checksums from PNG images, captured from a 'good' state.  If a checksum doesn't
-match, the test will fail and the decoded image will be saved to "temp:picture_test_results/".  Check the
+match, the test will fail and the decoded image will be saved to "temp:image_test_results/".  Check the
 corresponding image file, if it is acceptable then update the old checksum from the test output in order to pass
 future tests.
 
@@ -41,9 +41,9 @@ n - non-interlaced
 i - interlaced
 --]]
 
-   include 'picture'
+   include 'image'
 
-glResultFolder <const> = 'temp:picture_test_results/'
+glResultFolder <const> = 'temp:image_test_results/'
 
 glValidPNG = array<table> {
    { src='data/basi0g01.png', crc=0xaeb73579 },
@@ -253,10 +253,10 @@ function formatHash(Hash:num)
    return string.format('0x%.8x', Hash)
 end
 
-function saveBitmap(Picture:obj, Name:str)
+function saveBitmap(Image:obj, Name:str)
    try
       file = obj.new('file', { flags=FL_NEW|FL_WRITE, path=glResultFolder .. Name })
-      Picture.acSaveImage(file)
+      Image.acSaveImage(file)
    except ex
       logOutput('Unable to save decoded PNG result for "' .. Name .. '": ' .. ex.message)
    end
@@ -272,7 +272,7 @@ end
       local hash, bmp, pic
 
       try
-         pic = obj.new('picture', { path=glDataFolder .. entry.src })
+         pic = obj.new('image', { path=glDataFolder .. entry.src })
          bmp = pic.bitmap
          hash = mSys.GenCRC32(0, bmp.data, bmp.size)
       except ex
@@ -305,11 +305,11 @@ end
    if (#missing > 0) or (#mismatches > 0) then
       message = ''
       if #missing > 0 then
-         message ..= 'Missing Picture PNG CRC values:\n' .. missing:concat('\n')
+         message ..= 'Missing Image PNG CRC values:\n' .. missing:concat('\n')
       end
       if #mismatches > 0 then
          if #message > 0 then message ..= '\n\n' end
-         message ..= 'Picture PNG CRC mismatches or load failures:\n' .. mismatches:concat('\n')
+         message ..= 'Image PNG CRC mismatches or load failures:\n' .. mismatches:concat('\n')
       end
       error(message)
    end
@@ -322,7 +322,7 @@ end
 
    for entry in values(glInvalidPNG) do
       try
-         obj.new('picture', { path=glDataFolder .. entry })
+         obj.new('image', { path=glDataFolder .. entry })
       success
          failures:push(entry .. ': loaded successfully but should be rejected')
       end

@@ -85,7 +85,6 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static int object_close_handler(lua_State *);
 [[nodiscard]] static int object_with_lock(lua_State *);
 
-[[nodiscard]] static int object_get_rgb(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_array(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_struct(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_string(lua_State *, const obj_read &, GCobject *);
@@ -153,7 +152,7 @@ static int action_draw(lua_State *Lua)
    ERR error = ERR::Okay;
    int8_t argbuffer[sizeof(struct acDraw)+8];
 
-   if ((error = build_args(Lua, glActions[int(AC::Draw)].Args, glActions[int(AC::Draw)].Size, argbuffer, nullptr)) != ERR::Okay) {
+   if ((error = build_args(Lua, "Draw", glActions[int(AC::Draw)].Args, glActions[int(AC::Draw)].Size, argbuffer, nullptr)) != ERR::Okay) {
       luaL_error(Lua, ERR::Args, "Argument build failed for Draw().");
       return 0;
    }
@@ -319,8 +318,7 @@ READ_TABLE * get_read_table(objMetaClass *Class)
          auto hash = field.FieldID;
 
          if (field.Flags & FD_ARRAY) {
-            if (field.Flags & FD_RGB) jmp.push_back(obj_read(hash, object_get_rgb, &field));
-            else jmp.push_back(obj_read(hash, object_get_array, &field));
+            jmp.push_back(obj_read(hash, object_get_array, &field));
          }
          else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, &field));
          else if (field.Flags & FD_STRING) jmp.push_back(obj_read(hash, object_get_string, &field));
@@ -438,7 +436,7 @@ extern int object_newindex(lua_State *Lua)
             release_object(def);
 
             if (error >= ERR::ExceptionThreshold) {
-               luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName, luaL_checkstring(Lua, 2), GetErrorMsg(error));
+               luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(error));
             }
          }
       }
@@ -465,12 +463,12 @@ extern int object_newindex(lua_State *Lua)
    auto func = std::lower_bound(read_table->begin(), read_table->end(), hash_key, read_hash);
    if ((func != read_table->end()) and (func->Hash IS keystr->hash)) {
       auto result = func->Call(Lua, *func, def); // On error, result is 0 and CaughtError is defined.
-      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName, luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
+      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
       return result;
    }
 
    luaL_error(Lua, ERR::NoFieldAccess, "Field does not exist or is unreadable: %s.%s",
-      def->classptr ? def->classptr->ClassName: "?", strdata(keystr));
+      def->classptr ? def->classptr->ClassName.c_str() : "?", strdata(keystr));
 
    return 0; // Not reached
 }
@@ -504,7 +502,7 @@ extern int object_newindex(lua_State *Lua)
             }
          }
       }
-      else log.warning("No methods declared for class %s, cannot call %s()", mc->ClassName, action);
+      else log.warning("No methods declared for class %s, cannot call %s()", mc->ClassName.c_str(), action);
    }
    else luaL_error(Lua, ERR::Search);
 
@@ -675,7 +673,7 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 static int object_state(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    kt::Log log(__FUNCTION__);
    if (auto it = prv->StateMap.find(def->uid); it != prv->StateMap.end()) {
@@ -884,7 +882,7 @@ static int object_subscribe(lua_State *Lua)
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
    if (auto error = SubscribeAction(obj, action_id, &callback); error IS ERR::Okay) {
-      auto prv = (prvTiri *)Lua->script->ChildPrivate;
+      auto prv = (prvTiri *)Lua->script->DerivedPtr;
       auto &acsub = prv->ActionList.emplace_back();
 
       if (not lua_isnil(Lua, 3)) {
@@ -933,7 +931,7 @@ static int object_unsubscribe(lua_State *Lua)
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    std::erase_if(prv->ActionList, [&](auto& item) {
       bool should_remove = (item.ObjectID IS def->uid) and ((action_id IS AC::NIL) or (item.ActionID IS action_id));
       if (should_remove) {

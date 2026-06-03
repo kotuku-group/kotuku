@@ -864,10 +864,14 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, STRING *Value)
+static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, std::string_view &Value)
 {
-   *Value = strclone("feComposite");
-   return ERR::Okay;
+   auto cppstr = std::string("feComposite");
+   if (auto str = strclone(cppstr)) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -902,12 +906,12 @@ static const FieldDef clCompositeOperator[] = {
 };
 
 static const FieldArray clCompositeFXFields[] = {
-   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, COMPOSITEFX_GET_Operator, COMPOSITEFX_SET_Operator, &clCompositeOperator },
-   { "K1",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, COMPOSITEFX_GET_K1, COMPOSITEFX_SET_K1 },
-   { "K2",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, COMPOSITEFX_GET_K2, COMPOSITEFX_SET_K2 },
-   { "K3",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, COMPOSITEFX_GET_K3, COMPOSITEFX_SET_K3 },
-   { "K4",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, COMPOSITEFX_GET_K4, COMPOSITEFX_SET_K4 },
-   { "XMLDef",   FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, COMPOSITEFX_GET_XMLDef },
+   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, COMPOSITEFX_GET_Operator, COMPOSITEFX_SET_Operator, &clCompositeOperator },
+   { "K1",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K1, COMPOSITEFX_SET_K1 },
+   { "K2",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K2, COMPOSITEFX_SET_K2 },
+   { "K3",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K3, COMPOSITEFX_SET_K3 },
+   { "K4",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K4, COMPOSITEFX_SET_K4 },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, COMPOSITEFX_GET_XMLDef },
    END_FIELD
 };
 

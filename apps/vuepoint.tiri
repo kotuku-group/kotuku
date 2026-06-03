@@ -12,9 +12,9 @@ A file viewer for recognised documents like SVG and RIPL
    import 'gui/filedialog'
    import 'options'
    include 'svg'
-   include 'picture'
+   include 'image'
 
-CLASSID_PICTURE <const> = 'Picture':hash()
+CLASSID_IMAGE <const> = 'Image':hash()
 
 glBody = [[<body fill="rgb(68 68 90)" font-fill="white" font-face="Noto Sans" font-size="12pt" margins="2em"/>]]
 
@@ -88,7 +88,7 @@ glIntroduction = [[
    glScript = obj.find('self')
    mSys.SetVolume('vuepoint', glScript.workingPath, 'misc/gallery', 'Vuepoint', nil, VOLUME_HIDDEN)
 
-   picmeta = mSys.FindClass(CLASSID_PICTURE)
+   picmeta = mSys.FindClass(CLASSID_IMAGE)
    file_ext = picmeta.fileExtension
    if file_ext then
       local save_ext
@@ -108,7 +108,7 @@ glIntroduction = [[
    if pic_classes then
       err, class_list = mSys.ClassDatabase()
       for c in values(class_list) do
-         if c.parentID is CLASSID_PICTURE then
+         if c.parentID is CLASSID_IMAGE then
             if c.name is 'RSVG' then continue end
             file_ext = c.extension
             if file_ext then
@@ -201,8 +201,8 @@ function displayImage(Path:str)
    msg(f'displayImage() {Path}')
 
    try
-      pic = glWindow.scene.new('picture', { src=Path, flags='ForceAlpha32' })
-      img = glWindow.scene.new('VectorImage', { picture = pic })
+      pic = glWindow.scene.new('image', { src=Path, flags='ForceAlpha32' })
+      img = glWindow.scene.new('VectorImage', { image = pic })
       glWindow.scene.mtAddDef('Image', img)
 
       window = glViewArea.new('VectorViewport', { x = 0, y = 0, width='100%', height='100%', overflow='hidden' })
@@ -351,7 +351,7 @@ end
                      else
                         bmp = glViewArea.buffer
                         if bmp then
-                           pic = obj.new('picture', {
+                           pic = obj.new('image', {
                               width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
                               flags = PCF_NEW|PCF_FORCE_ALPHA_32
                            })

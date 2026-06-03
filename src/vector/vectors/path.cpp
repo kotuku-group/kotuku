@@ -269,6 +269,9 @@ Calling this method will also result in the path being recomputed for the next r
 buf(struct(*PathCommand)) Commands: Array of commands to add to the path.
 bufsize Size: The size of the `Commands` buffer, in bytes.
 
+-TAGS-
+mutates-object, copies-input
+
 -RESULT-
 Okay
 NullArgs
@@ -307,6 +310,9 @@ for as long as the @VectorPath is not modified.
 int Index: The index of the command to retrieve.
 &struct(*PathCommand) Command: The requested command will be returned in this parameter.
 
+-TAGS-
+pure-query, object-owns-result
+
 -RESULT-
 Okay
 NullArgs
@@ -336,6 +342,9 @@ of commands to remove is indicated by the `Total` parameter.
 -INPUT-
 int Index: The index of the command to remove.
 int Total: The total number of commands to remove, starting from the given Index.
+
+-TAGS-
+mutates-object
 
 -RESULT-
 Okay
@@ -373,6 +382,9 @@ Use SetCommand() to copy one or more commands into an existing path.
 int Index: The index of the command that is to be set.
 buf(struct(*PathCommand)) Command: An array of commands to set in the path.
 bufsize Size: The size of the `Command` buffer, in bytes.
+
+-TAGS-
+mutates-object, copies-input
 
 -RESULT-
 Okay
@@ -412,6 +424,9 @@ NOTE: This method is not compatible with Tiri calls.
 -INPUT-
 buf(ptr) Commands: An array of !PathCommand structures.
 bufsize Size: The byte size of the `Commands` buffer.
+
+-TAGS-
+mutates-object, copies-input
 
 -RESULT-
 Okay
@@ -539,12 +554,12 @@ To terminate a path without joining it to the first coordinate, omit the `Z` fro
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_SET_Sequence(extVectorPath *Self, CSTRING Value)
+static ERR VECTORPATH_SET_Sequence(extVectorPath *Self, const std::string_view &Value)
 {
    Self->Commands.clear();
 
    ERR error = ERR::Okay;
-   if (Value) error = read_path(Self->Commands, Value);
+   if (not Value.empty()) error = read_path(Self->Commands, Value);
    reset_path(Self);
    Self->modified();
    return error;
@@ -577,10 +592,10 @@ static ERR VECTORPATH_SET_TotalCommands(extVectorPath *Self, int Value)
 //********************************************************************************************************************
 
 static const FieldArray clPathFields[] = {
-   { "Sequence",      FDF_VIRTUAL|FDF_STRING|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
-   { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW,   VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },
-   { "PathLength",    FDF_VIRTUAL|FDF_INT|FDF_RW,   VECTORPATH_GET_PathLength, VECTORPATH_SET_PathLength },
-   { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW, VECTORPATH_GET_Commands, VECTORPATH_SET_Commands, "PathCommand" },
+   { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
+   { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,   VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },
+   { "PathLength",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,   VECTORPATH_GET_PathLength, VECTORPATH_SET_PathLength },
+   { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORPATH_GET_Commands, VECTORPATH_SET_Commands, "PathCommand" },
    END_FIELD
 };
 

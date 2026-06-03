@@ -146,6 +146,18 @@ end
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept standard and extended ternary syntax.')
 end
 
+@Test function FStringEscapedBracesUseCurrentParser()
+   doc = makeDoc([=[
+glFunctionPrefix = 'fl'
+proto = f'namespace {glFunctionPrefix} {{\n'
+i = 42
+test_data = f'{{"id":{i},"data":"test_data_{i}"}}'
+]=])
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept escaped braces in f-strings.')
+end
+
 @Test function ParserAnnotationHoverDocumentation()
    doc = makeDoc('value = @SourceFile\n')
    token = getTokenAtPosition(doc, 0, 10)

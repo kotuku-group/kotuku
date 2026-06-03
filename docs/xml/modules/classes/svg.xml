@@ -106,7 +106,7 @@
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
       <description>
 <p>This action will render the SVG document to a bitmap and save the resulting image.  The size of the image is determined by the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> of the <fl>Scene</fl>, or if not defined, the default of 1920x1080 is applied.</p>
@@ -121,7 +121,7 @@
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -141,6 +141,7 @@
 <p>ParseSymbol() enables dynamic instantiation of SVG symbol definitions that were declared within the loaded document. This method provides macro-like functionality, allowing complex graphical elements to be replicated and positioned as needed throughout the application.  This approach promotes efficient memory usage and consistent visual design while enabling dynamic scene graph construction.</p>
 <p>The specified <code>ID</code> must correspond to a symbol element that exists within the current document's definition library. The generated content will be structured within the provided <class name="VectorViewport">VectorViewport</class>, which must be part of an established scene graph.</p>
       </description>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
@@ -162,6 +163,7 @@
 <p>
 <b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may require significant processing time.  Consider using appropriate dimensions that balance quality requirements with performance constraints.</p>
       </description>
+      <tags>blocking, mutates-object, mutates-input</tags>
     </method>
 
   </methods>
@@ -170,8 +172,8 @@
     <field>
       <name>Colour</name>
       <comment>Defines the default fill to use for <code>currentColor</code> references.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>std::string</type>
       <description>
 <p>Set the Colour value to alter the default fill that is used for <code>currentColor</code> references.  Typically a standard RGB painter fill reference should be used for this purpose, e.g. <code>rgb(255,255,255)</code>.  It is however, also acceptable to use URL references to named definitions such as gradients and images.  This will work as long as the named definition is registered in the top-level <class name="VectorScene">VectorScene</class> object.</p>
 <p>
@@ -252,7 +254,7 @@
       <name>Path</name>
       <comment>File system path to the source SVG document.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
 <p>This field specifies the location of the SVG file to be loaded and processed during object initialisation.  The path supports both absolute and relative file references, with relative paths resolved according to the current working directory context.</p>
 <p>The loading process occurs automatically during initialisation when a valid path is specified.  The referenced file must contain well-formed SVG content that conforms to W3C SVG standards for successful parsing.</p>
@@ -280,8 +282,8 @@
     <field>
       <name>Statement</name>
       <comment>String containing complete SVG document markup.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>std::string</type>
       <description>
 <p>SVG data can be loaded from a string by specifying it here prior to initialisation.  If the <fl>Path</fl> field has been defined, it will take precedent and the Statement is ignored.</p>
 <p>For incremental data parsing after initialisation, consider using the <action>DataFeed</action> action instead, which supports progressive document construction from data streams.</p>
@@ -309,10 +311,10 @@
     <field>
       <name>Title</name>
       <comment>The title of the SVG document.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>std::string</type>
       <description>
-<p>The title of an SVG document is declared with a title element that can embedded anywhere in the document.  In cases where a title has been specified, it will be possible to read it from this field.  If no title is in the document then <code>NULL</code> will be returned.</p>
+<p>The title of an SVG document is declared with a title element that can embedded anywhere in the document.  In cases where a title has been specified, it will be possible to read it from this field.</p>
       </description>
     </field>
 

@@ -763,7 +763,7 @@ endif ()
 
 set (TIRI_TESTS
    defer debuglog io object regex struct async async_actions async_wait xml strings math array array_any array_manip
-   array_functional array_typed_syntax bitshift bitwise has_operator approx if_empty presence blank ternary table stress unit_tests
+   array_functional array_typed_syntax bitshift bitwise has_operator approx if_empty if_empty_guard presence blank ternary table stress unit_tests
    jitoptions fstring const import_scope unicode ellipsis safe_nav close type_annotations type_fixing
    type_inference jit pipe pipe_iteration arrow_functions result_filter thunks deferred_expr shadow_assert ranges
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options

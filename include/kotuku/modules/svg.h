@@ -8,6 +8,10 @@
 
 #define MODVERSION_SVG (1)
 
+#ifdef __cplusplus
+#include <string_view>
+#endif
+
 class objSVG;
 
 // SVG flags.
@@ -40,13 +44,14 @@ class objSVG : public Object {
 
    using create = kt::Create<objSVG>;
 
-   OBJECTPTR Target;    // Destination container for the generated SVG scene graph elements.
-   STRING    Path;      // File system path to the source SVG document.
-   STRING    Title;     // The title of the SVG document.
-   STRING    Statement; // String containing complete SVG document markup.
-   int       Frame;     // Constrains rendering to a specific frame number for frame-based display systems.
-   SVF       Flags;     // Configuration flags that modify SVG processing behaviour.
-   int       FrameRate; // Controls the maximum frame rate for SVG animation playback.
+   OBJECTPTR Target;         // Destination container for the generated SVG scene graph elements.
+   std::string Path;         // File system path to the source SVG document.
+   std::string Title;        // The title of the SVG document.
+   std::string Statement;    // String containing complete SVG document markup.
+   std::string Colour;       // Defines the default fill to use for currentColor references.
+   int       Frame;          // Constrains rendering to a specific frame number for frame-based display systems.
+   SVF       Flags;          // Configuration flags that modify SVG processing behaviour.
+   int       FrameRate;      // Controls the maximum frame rate for SVG animation playback.
 
    // Action stubs
 
@@ -74,30 +79,95 @@ class objSVG : public Object {
       return(Action(AC(-2), this, &args));
    }
 
+   // Customised field getting
+
+   inline ERR getTarget(OBJECTPTR &Value) noexcept {
+      Value = this->Target;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getTitle(std::string_view &Value) noexcept {
+      Value = this->Title;
+      return ERR::Okay;
+   }
+
+   inline ERR getStatement(std::string_view &Value) noexcept {
+      Value = this->Statement;
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(std::string_view &Value) noexcept {
+      Value = this->Colour;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrame(int &Value) noexcept {
+      Value = this->Frame;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(SVF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrameRate(int &Value) noexcept {
+      Value = this->FrameRate;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrameCallback(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getScene(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getViewport(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x08000501, Value, 1);
+      return field->WriteValue(this, field, 0x08000501, Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setTitle(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setTitle(const std::string_view &Value) noexcept {
+      this->Title = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setStatement(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setStatement(const std::string_view &Value) noexcept {
+      this->Statement = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setColour(const std::string_view &Value) noexcept {
+      this->Colour = Value;
+      return ERR::Okay;
    }
 
    inline ERR setFrame(const int Value) noexcept {
@@ -111,21 +181,13 @@ class objSVG : public Object {
    }
 
    inline ERR setFrameRate(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   template <class T> inline ERR setColour(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFrameCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };

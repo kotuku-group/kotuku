@@ -78,6 +78,7 @@ if (thread.ok()) thread-&gt;activate();
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>

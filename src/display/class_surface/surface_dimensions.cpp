@@ -635,7 +635,6 @@ When #Width is set, `XOffset` positions the surface from the parent right-hand e
 
 static ERR GET_XOffset(extSurface *Self, Unit *Value)
 {
-   kt::Log log;
    double value;
 
    if (Value->scaled()) {
@@ -653,7 +652,7 @@ static ERR GET_XOffset(extSurface *Self, Unit *Value)
          if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
             value = parent->Width - Self->X - Self->Width;
          }
-         else return log.warning(ERR::AccessObject);
+         else return ERR::AccessObject;
       }
       else value = 0;
    }

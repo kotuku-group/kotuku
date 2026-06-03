@@ -215,7 +215,7 @@
                 <li class="nav-item"><a class="nav-link" href="../../gallery.html">Gallery</a></li>
                 <li class="nav-item"><a class="nav-link" href="../api.html">API</a></li>
                 <li class="nav-item"><a class="nav-link" href="../../wiki/Home.html">Wiki</a></li>
-                <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+                <li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li>
               </ul>
             </div> <!-- nav-collapse -->
           </div>
@@ -334,7 +334,7 @@
                         <li class="api-ref"><a class="rounded" href="display.html">Display</a></li>
                         <li class="api-ref"><a class="rounded" href="document.html">Document</a></li>
                         <li class="api-ref"><a class="rounded" href="font.html">Font</a></li>
-                        <li class="api-ref"><a class="rounded" href="picture.html">Picture</a></li>
+                        <li class="api-ref"><a class="rounded" href="image.html">Image</a></li>
                         <li class="api-ref"><a class="rounded" href="pointer.html">Pointer</a></li>
                         <li class="api-ref"><a class="rounded" href="surface.html">Surface</a></li>
                         <li class="api-ref"><a class="rounded" href="svg.html">SVG</a></li>

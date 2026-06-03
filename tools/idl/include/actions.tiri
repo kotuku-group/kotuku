@@ -1,0 +1,176 @@
+
+global glActionStubs = {
+   -- Hidden actions
+   Free          = '',
+   FreeWarning   = '',
+   NewChild      = '',
+   NewObject     = '',
+   NewOwner      = '',
+   NewPlacement  = '',
+
+   -- Actions without parameters
+   Activate     = '   inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }',
+   Clear        = '   inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }',
+   Deactivate   = '   inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }',
+   Disable      = '   inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }',
+   Enable       = '   inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }',
+   Flush        = '   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }',
+   Focus        = '   inline ERR focus() noexcept { return Action(AC::Focus, this, nullptr); }',
+   Hide         = '   inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }',
+   Init         = '   inline ERR init() noexcept { return InitObject(this); }',
+   Lock         = '   inline ERR lock() noexcept { return Action(AC::Lock, this, nullptr); }',
+   LostFocus    = '   inline ERR lostFocus() noexcept { return Action(AC::LostFocus, this, nullptr); }',
+   MoveToBack   = '   inline ERR moveToBack() noexcept { return Action(AC::MoveToBack, this, nullptr); }',
+   MoveToFront  = '   inline ERR moveToFront() noexcept { return Action(AC::MoveToFront, this, nullptr); }',
+   Next         = '   inline ERR next() noexcept { return Action(AC::Next, this, nullptr); }',
+   Prev         = '   inline ERR prev() noexcept { return Action(AC::Prev, this, nullptr); }',
+   Query        = '   inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }',
+   Refresh      = '   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }',
+   Reset        = '   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }',
+   SaveSettings = '   inline ERR saveSettings() noexcept { return Action(AC::SaveSettings, this, nullptr); }',
+   Show         = '   inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }',
+   Unlock       = '   inline ERR unlock() noexcept { return Action(AC::Unlock, this, nullptr); }',
+
+   CopyData = [[
+   inline ERR copyData(OBJECTPTR Dest) noexcept {
+      struct acCopyData args = { .Dest = Dest };
+      return Action(AC::CopyData, this, &args);
+   }]],
+   DragDrop = [[
+   inline ERR dragDrop(OBJECTPTR Source, int Item, std::string_view Datatype) noexcept {
+      struct acDragDrop args = { .Source = Source, .Item = Item, .Datatype = Datatype };
+      return Action(AC::DragDrop, this, &args);
+   }]],
+   Clipboard = [[
+   inline ERR clipboard(CLIPMODE Mode) noexcept {
+      struct acClipboard args = { Mode };
+      return Action(AC::Clipboard, this, &args);
+   }]],
+   Draw = [[
+   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
+   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
+      struct acDraw args = { X, Y, Width, Height };
+      return Action(AC::Draw, this, &args);
+   }]],
+   DataFeed = [[
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+      return Action(AC::DataFeed, this, &args);
+   }]],
+   Move = [[
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }]],
+   Read = [[
+   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
+      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
+         *Result = static_cast<U>(read.Result);
+         return ERR::Okay;
+      }
+      else { *Result = 0; return error; }
+   }
+   template <class T> ERR read(APTR Buffer, T Size) noexcept {
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      return Action(AC::Read, this, &read);
+   }]],
+   Redo = [[
+   inline ERR redo(int Steps) noexcept {
+      struct acRedo args = { Steps };
+      return Action(AC::Redo, this, &args);
+   }]],
+   Redimension = [[
+   inline ERR redimension(double X, double Y, double Z, double Width, double Height, double Depth) noexcept {
+      struct acRedimension args = { X, Y, Z, Width, Height, Depth };
+      return Action(AC::Redimension, this, &args);
+   }
+   inline ERR redimension(double X, double Y, double Width, double Height) noexcept {
+      struct acRedimension args = { X, Y, 0, Width, Height, 0 };
+      return Action(AC::Redimension, this, &args);
+   }]],
+   Rename = [[
+   inline ERR rename(std::string_view Name) noexcept {
+      struct acRename args = { Name };
+      return Action(AC::Rename, this, &args);
+   }]],
+   Resize = [[
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }]],
+   Undo = [[
+   inline ERR undo(int Steps) noexcept {
+      struct acUndo args = { Steps };
+      return Action(AC::Undo, this, &args);
+   }]],
+   GetKey = [[
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
+      auto error = Action(AC::GetKey, this, &args);
+      if (error != ERR::Okay) Value.clear();
+      return error;
+   }]],
+   MoveToPoint = [[
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }]],
+   SaveImage = [[
+   inline ERR saveImage(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
+      struct acSaveImage args = { Dest, { ClassID } };
+      return Action(AC::SaveImage, this, &args);
+   }]],
+   SaveToObject = [[
+   inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
+      struct acSaveToObject args = { Dest, { ClassID } };
+      return Action(AC::SaveToObject, this, &args);
+   }]],
+   Seek = [[
+   inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {
+      struct acSeek args = { Offset, Position };
+      return Action(AC::Seek, this, &args);
+   }
+   inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
+   inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
+   inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
+   ]],
+   Write = [[
+   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer, Size };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }]],
+   SelectArea = [[
+   inline ERR acSelectArea(double X, double Y, double Width, double Height) noexcept {
+      struct acSelectArea area = { X, Y, Width, Height };
+      return Action(AC::SelectArea, this, &area);
+   }]],
+   SetKey = [[
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
+      struct acSetKey args = { FieldName, Value };
+      return Action(AC::SetKey, this, &args);
+   }]],
+}

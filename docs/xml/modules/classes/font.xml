@@ -15,20 +15,28 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 1998-2026</copyright>
     <description>
-<p>The Font class is provided for the purpose of bitmap font rendering and querying font meta information.  It supports styles such as bold, italic and underlined text, along with extra features such as adjustable spacing and word alignment. Fixed-point bitmap fonts are supported through the Windows .fon file format.  Truetype fonts are not supported (refer to the <class name="VectorText">VectorText</class> class for this feature).</p>
-<p>Bitmap fonts must be stored in the <code>fonts:fixed/</code> directory in order to be recognised.  The process of font installation and file management is managed by functions supplied in the Font module.</p>
-<p>The Font class includes full support for the unicode character set through its support for UTF-8.  This gives you the added benefit of being able to support international character sets with ease, but you must be careful not to use character codes above #127 without being sure that they follow UTF-8 guidelines.  Find out more about UTF-8 at this <a href="http://www.cl.cam.ac.uk/~mgk25/unicode.html">web page</a>.</p>
-<p>Initialisation of a new font object can be as simple as declaring its <fl>Point</fl> size and <fl>Face</fl> name.  Font objects can be difficult to alter post-initialisation, so all style and graphical selections must be defined on creation.  For example, it is not possible to change styling from regular to bold format dynamically.  To support multiple styles of the same font, create a font object for every style that requires support.  Basic settings such as colour, the font string and text positioning are not affected by these limitations.</p>
-<p>To draw a font string to a Bitmap object, start by setting the <fl>Bitmap</fl> and <fl>String</fl> fields.  The <fl>X</fl> and <fl>Y</fl> fields determine string positioning and you can also use the <fl>Align</fl> field to position a string to the right or center of the surface area.</p>
-<p>To clarify the terminology used in this documentation, please note the definitions for the following terms:</p>
+<p>The Font class renders fixed-size bitmap fonts to a <class name="Bitmap">Bitmap</class> and exposes metrics for the selected font face.  It supports bold, italic and underlined text, as well as adjustable glyph spacing, line spacing, tab width and alignment. Bitmap fonts are loaded from Windows <code>.fon</code> files.  Scalable TrueType rendering is provided by <class name="VectorText">VectorText</class> instead.</p>
+<p>Bitmap fonts must be stored in the <code>fonts:fixed/</code> directory to be recognised during font database refreshes.  Use the Font module's query and refresh functions to inspect or rebuild the installed font list.</p>
+<p>Font strings are interpreted as UTF-8, allowing Unicode text to be supplied through the <fl>String</fl> field.  Do not insert arbitrary byte values above <code>127</code> unless they are valid UTF-8 sequences.  Invalid or unsupported glyphs fall back to the font's default character.</p>
+<p>Initialisation of a new Font object can be as simple as declaring its <fl>Point</fl> size and <fl>Face</fl> name.  Font face, size and style selections should be set before initialisation because the loaded bitmap data is cached for that combination. To use multiple styles of the same face, create one Font object for each required style.  Runtime drawing properties such as colour, <fl>String</fl>, <fl>X</fl>, <fl>Y</fl> and alignment can still be changed between draw operations.</p>
+<p>To draw a string, set <fl>Bitmap</fl> and <fl>String</fl>, then call <action>Draw</action>.  The <fl>X</fl> and <fl>Y</fl> fields set the starting position.  Use <fl>Align</fl> together with <fl>AlignWidth</fl> and <fl>AlignHeight</fl> when text needs to be positioned within a larger surface area.</p>
+<p>This documentation uses the following font terminology:</p>
 <list type="bullet">
-<li>'Point' determines the size of a font.  The value is relative only to other point sizes of the same font face, i.e. two faces at the same point size are not necessarily the same height.</li>
-<li>'Height' represents the 'vertical bearing' or point of the font, expressed as a pixel value.  The height does not cover any leading at the top of the font, or the gutter space used for the tails on characters like 'g' and 'y'.</li>
-<li>'Gutter' is the amount of space that a character can descend below the base line.  Characters like 'g' and 'y' are examples of characters that utilise the gutter space.  The gutter is also sometimes known as the 'external leading' or 'descent' of a character.</li>
-<li>'LineSpacing' is the recommended pixel distance between each line that is printed with the font.</li>
-<li>'Glyph' refers to a single font character.</li>
+<li>
+<code>Point</code> is the requested size of the font.  It is relative to other point sizes of the same face; two faces at the
+same point size are not necessarily the same pixel height.</li>
+<li>
+<code>Height</code> is the vertical bearing of the font expressed in pixels.  It excludes top leading and the gutter used by
+descending glyphs.</li>
+<li>
+<code>Gutter</code> is the space below the baseline used by descending glyphs such as <code>g</code> and <code>y</code>.  It is also known as the
+external leading or descent.</li>
+<li>
+<code>LineSpacing</code> is the recommended pixel distance from one baseline to the next.</li>
+<li>
+<code>Glyph</code> is a single rendered character image.</li>
 </list>
-<p>Please note that in the majority of cases the <class name="VectorText">VectorText</class> class should be used for drawing strings because the Font class is not integrated with the display's vector scene graph.</p></description>
+<p>Use <class name="VectorText">VectorText</class> for most display text.  The Font class draws directly to a <class name="Bitmap">Bitmap</class> and is not integrated with the display vector scene graph.</p></description>
     <source>
       <file>class_font.cpp</file>
     </source>
@@ -47,11 +55,11 @@
         <param type="INT" name="Height">The height of the region to be drawn.</param>
       </input>
       <description>
-<p>Draws a font to a target Bitmap, starting at the coordinates of <fl>X</fl> and <fl>Y</fl>, using the characters in the font <fl>String</fl>.</p>
+<p>Draws <fl>String</fl> to the target <fl>Bitmap</fl>, starting at <fl>X</fl> and <fl>Y</fl> after any configured alignment and baseline adjustments have been applied.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="FieldNotSet">The Bitmap and/or String field has not been set.</error>
+        <error code="FieldNotSet">The <fl>Bitmap</fl> field has not been set.</error>
       </result>
     </action>
 
@@ -64,7 +72,7 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="ALIGN">ALIGN</type>
       <description>
-<p>Use this field to set the alignment of a font string within its surface area.  This is an abstract means of positioning in comparison to setting the <fl>X</fl> and <fl>Y</fl> fields directly.</p>
+<p>Sets the alignment of the font string within the <fl>AlignWidth</fl> and <fl>AlignHeight</fl> area.  This is used in addition to the <fl>X</fl> and <fl>Y</fl> drawing coordinates.</p>
 <types lookup="ALIGN"/>
       </description>
     </field>
@@ -75,7 +83,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>If the <code>VERTICAL</code> or <code>TOP</code> alignment options are used in the <fl>Align</fl> field, the AlignHeight should be set so that the alignment of the font string can be correctly calculated.  If the AlignHeight is not defined, the target <fl>Bitmap</fl>'s height will be used when computing alignment.</p>
+<p>Defines the height of the area used for vertical alignment.  If this field is <code>0</code>, the target <fl>Bitmap</fl> height is used.</p>
       </description>
     </field>
 
@@ -85,7 +93,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>If the <code>HORIZONTAL</code> or <code>RIGHT</code> alignment options are used in the <fl>Align</fl> field, the AlignWidth should be set so that the alignment of the font string can be correctly calculated.  If the AlignWidth is not defined, the target <fl>Bitmap</fl>'s width will be used when computing alignment.</p>
+<p>Defines the width of the area used for horizontal alignment.  If this field is <code>0</code>, the target <fl>Bitmap</fl> width is used.</p>
       </description>
     </field>
 
@@ -95,7 +103,7 @@
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>The Ascent value reflects the total number of pixels above the baseline, including the <fl>Leading</fl> value.</p>
+<p>Reflects the total number of pixels above the baseline, including <fl>Leading</fl>.</p>
       </description>
     </field>
 
@@ -112,7 +120,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>Setting the Bold field to <code>true</code> prior to initialisation will enable bold styling.  This field is provided only for convenience - we recommend that you set the Style field for determining font styling where possible.</p>
+<p>Setting this field before initialisation selects the <code>Bold</code> style, or <code>Bold Italic</code> if <fl>Italic</fl> is also set.  Prefer <fl>Style</fl> when setting an exact style name.</p>
       </description>
     </field>
 
@@ -129,7 +137,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>The EndX and <fl>EndY</fl> fields reflect the final coordinate of the font <fl>String</fl>, following the most recent call to the <action>Draw</action> action.</p>
+<p>Reflects the final horizontal coordinate reached by the most recent <action>Draw</action> operation.</p>
       </description>
     </field>
 
@@ -139,7 +147,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>The <fl>EndX</fl> and EndY fields reflect the final coordinate of the font <fl>String</fl>, following the most recent call to the <action>Draw</action> action.</p>
+<p>Reflects the final vertical coordinate reached by the most recent <action>Draw</action> operation.</p>
       </description>
     </field>
 
@@ -147,16 +155,16 @@
       <name>Face</name>
       <comment>The name of a font face that is to be loaded on initialisation.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
-<p>The name of an installed font face must be specified here for initialisation.  If this field is undefined then the initialisation process will use the user's preferred face.  A list of available faces can be obtained from the <function module="Font">GetList</function> function.</p>
-<p>For convenience, the face string can also be extended with extra parameters so that the point size and style are defined at the same time.  Extra parameters are delimited with the colon character and must follow a set order defined as <code>face:pointsize:style:colour</code>.</p>
+<p>The name of an installed font face must be specified before initialisation unless <fl>Path</fl> is set directly.  A list of available faces can be obtained from <function module="Font">GetList</function>.</p>
+<p>The face string can include optional point size, style and colour values in the form <code>face:pointsize:style:colour</code>. Omitted middle values may be left empty.</p>
 <p>Here are some examples:</p>
 <pre>Noto Sans:12:Bold Italic:#ff0000
 Courier:10.6
 Charter:120%::255,128,255
 </pre>
-<p>Multiple font faces can be specified in CSV format, e.g. <code>Sans Serif,Noto Sans</code>, which allows the closest matching font to be selected if the first face is unavailable or unable to match the requested point size.</p>
+<p>Multiple font faces can be specified in CSV format, e.g. <code>Sans Serif,Noto Sans</code>.  Names are resolved from left to right.</p>
       </description>
     </field>
 
@@ -166,7 +174,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>The FixedWidth value imposes a preset pixel width for all glyphs in the font.  It is important to note that if the fixed width value is less than the widest glyph, the glyphs will overlap each other.</p>
+<p>Forces all glyphs to advance by the specified pixel width.  If the value is less than the widest glyph, rendered glyphs can overlap.</p>
       </description>
     </field>
 
@@ -186,7 +194,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
-<p>This field adjusts the horizontal spacing between each glyph, technically known as kerning between each font character.  The value is expressed as a multiplier of the width of each character, and defaults to <code>1.0</code>.</p>
+<p>Adjusts horizontal glyph advance as a multiplier of each glyph's normal width.  The default value is <code>1.0</code>.</p>
 <p>Using negative values is valid, and can lead to text being printed backwards.</p>
       </description>
     </field>
@@ -197,7 +205,7 @@ Charter:120%::255,128,255
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>This field reflects the 'external leading' value (also known as the 'gutter'), measured in pixels.</p>
+<p>Reflects the external leading, or descent area, below the baseline.</p>
       </description>
     </field>
 
@@ -207,7 +215,7 @@ Charter:120%::255,128,255
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>The point size of the font is expressed in this field as a pixel measurement.  It does not not include the leading value (refer to <fl>Ascent</fl> if leading is required).</p>
+<p>Reflects the initialised font height in pixels.  It does not include <fl>Leading</fl>; use <fl>Ascent</fl> when the leading-inclusive distance above the baseline is required.</p>
 <p>The height is calculated on initialisation and can be read at any time.</p>
       </description>
     </field>
@@ -218,7 +226,7 @@ Charter:120%::255,128,255
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>Setting the Italic field to <code>true</code> prior to initialisation will enable italic styling.  This field is provided for convenience only - we recommend that you set the <fl>Style</fl> field for determining font styling where possible.</p>
+<p>Setting this field before initialisation selects the <code>Italic</code> style, or <code>Bold Italic</code> if <fl>Bold</fl> is also set.  Prefer <fl>Style</fl> when setting an exact style name.</p>
       </description>
     </field>
 
@@ -235,7 +243,7 @@ Charter:120%::255,128,255
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>This field indicates the number of lines that are present in a #font's String field.  If word wrapping is enabled, this will be taken into account in the resulting figure.</p>
+<p>Returns the number of lines in <fl>String</fl>.  If <fl>WrapEdge</fl> is set, wrapped lines are included in the count.</p>
       </description>
     </field>
 
@@ -245,8 +253,8 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>This field defines the amount of space between each line that is printed with a font object.  It is set automatically during initialisation to reflect the recommended distance between each line.   The client can increase or decrease this value to make finer adjustments to the line spacing.  If negative, the text will be printed in a reverse vertical direction with each new line.</p>
-<p>If set prior to initialisation, the value will be added to the font's normal line-spacing instead of over-riding it. For instance, setting the LineSpacing to 2 will result in an extra 2 pixels being added to the font's spacing.</p>
+<p>Defines the vertical distance from one line baseline to the next.  It is initialised from the selected font and can be increased or decreased to adjust line spacing.  If negative, later lines are drawn upward.</p>
+<p>If set before initialisation, the value is added to the font's normal line spacing instead of replacing it. For instance, setting the LineSpacing to 2 will result in an extra 2 pixels being added to the font's spacing.</p>
       </description>
     </field>
 
@@ -256,7 +264,7 @@ Charter:120%::255,128,255
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>This field reflects the maximum possible pixel height per character, covering the entire character set at the current point size.</p>
+<p>Reflects the maximum bitmap height for the selected font at the current point size.</p>
       </description>
     </field>
 
@@ -266,7 +274,7 @@ Charter:120%::255,128,255
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>This field determines the translucency level of a font graphic.  The default setting is 100%, which means that the font will not be translucent.  Any other value set here will alter the impact of a font's graphic over the destination <fl>Bitmap</fl>.  High values will retain the boldness of the font, while low values can render it close to invisible.</p>
+<p>Determines the translucency level of the font fill colour.  The default setting is <code>100</code>, meaning fully opaque. Lower values blend the glyphs with the destination <fl>Bitmap</fl>.</p>
 <p>Please note that the use of translucency will always have an impact on the time it normally takes to draw a font.</p>
       </description>
     </field>
@@ -277,7 +285,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>RGB8</type>
       <description>
-<p>An outline can be drawn around a font by setting the Outline field to an <st>RGB8</st> colour.  The outline can be turned off by writing this field with a <code>NULL</code> value or setting the alpha component to zero.  Outlining is currently supported for bitmap fonts only.</p>
+<p>Draws a one-pixel outline around bitmap glyphs when set to an <st>RGB8</st> colour with a non-zero alpha component.  Set the field to <code>NULL</code> or use an alpha value of zero to disable outlining.</p>
       </description>
     </field>
 
@@ -285,9 +293,9 @@ Charter:120%::255,128,255
       <name>Path</name>
       <comment>The path to a font file.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
-<p>This field can be defined prior to initialisation.  It can be used to refer to the exact location of a font data file, in opposition to the normal practice of loading fonts that are installed on the host system.</p>
+<p>Defines the exact font file to load before initialisation.  This bypasses normal face-name resolution through the font database.</p>
 <p>This feature is ideal for use when distributing custom fonts with an application.</p>
       </description>
     </field>
@@ -298,7 +306,7 @@ Charter:120%::255,128,255
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The point size defines the size of a font in point units, at a ratio of 1:72 DPI.</p>
+<p>Defines the requested font size in points.</p>
 <p>When setting the point size of a bitmap font, the system will try and find the closest matching value for the requested point size.  For instance, if you request a fixed font at point 11 and the closest size is point 8, the system will drop the font to point 8.</p>
       </description>
     </field>
@@ -307,9 +315,9 @@ Charter:120%::255,128,255
       <name>String</name>
       <comment>The string to use when drawing a Font.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
-<p>The String field must be defined in order to draw text with a font object.  A string must consist of a valid sequence of UTF-8 characters.  Line feeds are allowed (whenever a line feed is reached, the Draw() action will start printing on the next line).  Drawing will stop when the null termination character is reached.</p>
+<p>The String field must be defined to draw text with a Font object.  It must contain valid UTF-8.  Line feed characters start a new line during <action>Draw</action>.</p>
 <p>If a string contains characters that are not supported by a font, those characters will be printed using a default character from the font.</p>
       </description>
     </field>
@@ -318,9 +326,9 @@ Charter:120%::255,128,255
       <name>Style</name>
       <comment>Determines font styling.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
-<p>The style of a font can be selected by setting the Style field.  This comes into effect only if the font actually supports the specified style as part of its graphics set.  If the style is unsupported, the regular styling of the face will be used on initialisation.</p>
+<p>Selects the preferred style for initialisation.  If the selected face does not provide that style, regular styling or the first registered style is used.</p>
 <p>Bitmap fonts are a special case if a bold or italic style is selected.  In this situation the system can automatically convert the font to that style even if the correct graphics set does not exist.</p>
 <p>Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).</p>
       </description>
@@ -332,8 +340,8 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>The TabSize value controls the interval between tabs, measured in characters.</p>
-<p>The default tab size is 8 and the TabSize only comes into effect when tab characters are used in the font <fl>String</fl>.</p>
+<p>Controls the tab interval, measured in character columns.</p>
+<p>The default tab size is <code>8</code>.  This field only affects tab characters in <fl>String</fl>.</p>
       </description>
     </field>
 
@@ -343,7 +351,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>RGB8</type>
       <description>
-<p>To underline a font string, set the Underline field to the colour that should be used to draw the underline. Underlining can be turned off by writing this field with a <code>NULL</code> value or setting the alpha component to zero.</p>
+<p>Draws an underline using the supplied <st>RGB8</st> colour.  Set the field to <code>NULL</code> or use an alpha value of zero to disable underlining.</p>
       </description>
     </field>
 
@@ -353,7 +361,7 @@ Charter:120%::255,128,255
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>Read this virtual field to obtain the pixel width of a font string.  You must have already set a string in the font for this to work, or a width of zero will be returned.</p>
+<p>Returns the pixel width of <fl>String</fl> using the current font metrics and wrapping settings.  If <fl>String</fl> is empty, the result is <code>0</code>.</p>
       </description>
     </field>
 
@@ -363,7 +371,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>Word wrapping is enabled by setting the WrapEdge field to a value greater than zero.  Wrapping occurs whenever the right-most edge of any word in the font string extends past the coordinate indicated by the WrapEdge.</p>
+<p>Enables word wrapping when set to a value greater than zero.  Wrapping occurs when a word extends beyond this X coordinate.</p>
       </description>
     </field>
 
@@ -373,7 +381,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>When drawing font strings, the X and <fl>Y</fl> fields define the position that the string will be drawn to in the target surface.  The default coordinates are <code>(0, 0)</code>.</p>
+<p>Defines the starting horizontal coordinate for <action>Draw</action>.  The default coordinate is <code>0</code>.</p>
       </description>
     </field>
 
@@ -383,7 +391,7 @@ Charter:120%::255,128,255
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>When drawing font strings, the <fl>X</fl> and Y fields define the position that the string will be drawn to in the target surface.  The default coordinates are <code>(0, 0)</code>.</p>
+<p>Defines the starting vertical coordinate for <action>Draw</action>.  The default coordinate is <code>0</code>.</p>
       </description>
     </field>
 
@@ -393,7 +401,7 @@ Charter:120%::255,128,255
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>Fonts that are aligned vertically (either in the center or bottom edge of the drawing area) will have a vertical offset value.  Reading that value from this field and adding it to the Y field will give you an accurate reading of where the string will be drawn.</p>
+<p>Returns the vertical offset applied by <code>VERTICAL</code> or <code>BOTTOM</code> alignment.  Add this value to <fl>Y</fl> to determine the aligned drawing baseline.</p>
       </description>
     </field>
 

@@ -125,6 +125,9 @@ InvalidState: The NetSocket was not in the state `NTC::DISCONNECTED` or the obje
 HostNotFound: Host name resolution failed.
 TimeOut: Connection attempt timed out.
 Failed: The connect failed for some other reason.
+
+-TAGS-
+non-blocking, mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -184,7 +187,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 
    if ((!Args) or (!Args->Address) or (Args->Port <= 0) or (Args->Port >= 65536)) return log.warning(ERR::Args);
 
-   if (Self->isSubClass()) return ERR::InvalidState; // Server cannot use Connect()
+   if (Self->isDerived()) return ERR::InvalidState; // Server cannot use Connect()
 
    if ((Self->Flags & NSF::UDP) != NSF::NIL) return log.warning(ERR::NoSupport); // UDP is connectionless
 
@@ -204,9 +207,8 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 
    log.branch("Address: %s, Port: %d", Args->Address, Args->Port);
 
-   if (Args->Address != Self->Address) {
-      if (Self->Address) FreeResource(Self->Address);
-      Self->Address = kt::strclone(Args->Address);
+   if (Self->Address != std::string_view(Args->Address)) {
+      Self->Address.assign(Args->Address);
    }
    Self->Port = Args->Port;
 
@@ -225,7 +227,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
       connect_name_resolved(Self, ERR::Okay, "", list);
    }
    else { // Assume address is a domain name, perform name resolution
-      log.msg("Attempting to resolve domain name '%s'...", Self->Address);
+      log.msg("Attempting to resolve domain name '%s'...", Self->Address.c_str());
 
       if (!Self->NetLookup) {
          if (!(Self->NetLookup = extNetLookup::create::local())) return ERR::CreateObject;
@@ -233,7 +235,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 
       ((extNetLookup *)Self->NetLookup)->Callback = C_FUNCTION(connect_name_resolved_nl);
 
-      if (Self->NetLookup->resolveName(Self->Address) != ERR::Okay) {
+      if (Self->NetLookup->resolveName(Self->Address.c_str()) != ERR::Okay) {
          // Cancel timer on DNS failure
          if (Self->TimerHandle) { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
          return log.warning(Self->Error = ERR::HostNotFound);
@@ -445,7 +447,6 @@ static ERR NETSOCKET_Disable(extNetSocket *Self)
 static ERR NETSOCKET_Free(extNetSocket *Self)
 {
    if (Self->TimerHandle)    { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
-   if (Self->Address)        { FreeResource(Self->Address); Self->Address = nullptr; }
    if (Self->NetLookup)      { FreeResource(Self->NetLookup); Self->NetLookup = nullptr; }
 
    if (Self->Feedback.isScript()) UnsubscribeAction(Self->Feedback.Context, AC::Free);
@@ -458,7 +459,8 @@ static ERR NETSOCKET_Free(extNetSocket *Self)
 
    free_socket(Self);
 
-   Self->~extNetSocket();
+   if (Self->classID() IS CLASSID::NETSERVER) ((extNetServer *)Self)->~extNetServer();
+   else Self->~extNetSocket();
    return ERR::Okay;
 }
 
@@ -494,6 +496,9 @@ struct(*IPAddress) Address:  Pointer to an IPAddress structure which will be set
 Okay
 NullArgs
 Failed
+
+-TAGS-
+pure-query, mutates-input
 -END-
 
 *********************************************************************************************************************/
@@ -540,7 +545,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    if (Self->Handle.is_invalid()) return ERR::SystemCall;
    Self->IPV6 = is_ipv6;
 
-   if ((!Self->isSubClass()) and (!is_udp) and ((Self->Flags & NSF::KEEP_ALIVE) != NSF::NIL)) {
+   if ((!Self->isDerived()) and (!is_udp) and ((Self->Flags & NSF::KEEP_ALIVE) != NSF::NIL)) {
       if (auto error = network_platform().enable_keep_alive(Self->Handle); error != ERR::Okay) {
          free_socket(Self);
          return error;
@@ -563,10 +568,10 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
       }
    }
 
-   if (Self->isSubClass()) return ERR::Okay; // Will hand-off to the sub-class
+   if (Self->isDerived()) return ERR::Okay; // Will hand-off to the derived class
 
-   if ((Self->Address) and (Self->Port > 0)) {
-      if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {
+   if ((not Self->Address.empty()) and (Self->Port > 0)) {
+      if ((error = Self->connect(Self->Address.c_str(), Self->Port, 0)) != ERR::Okay) {
          free_socket(Self);
          return error;
       }
@@ -597,6 +602,9 @@ Okay: Successfully joined the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
 Failed: Failed to join multicast group.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -646,6 +654,9 @@ Okay: Successfully left the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
 Failed: Failed to leave multicast group.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -993,6 +1004,9 @@ Okay: Data was received successfully, or no data available.
 Args: Invalid arguments provided.
 NoSupport: Socket is not configured for UDP mode.
 BufferOverflow: Receive buffer is too small for the incoming packet.
+
+-TAGS-
+non-blocking, mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1050,6 +1064,9 @@ NullArgs: Invalid arguments provided.
 OutOfRange: Invalid port number specified.
 InvalidState: Socket is not configured for UDP mode.
 NetworkUnreachable: The destination network is unreachable.
+
+-TAGS-
+non-blocking, consumes-input
 -END-
 
 *********************************************************************************************************************/
@@ -1095,7 +1112,7 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 
 static const FieldArray clSocketFields[] = {
    { "ClientData",     FDF_POINTER|FDF_RW },
-   { "Address",        FDF_STRING|FDF_RI, nullptr, SET_Address },
+   { "Address",        FDF_CPPSTRING|FDF_RI },
    { "State",          FDF_INT|FDF_LOOKUP|FDF_RW, GET_State, SET_State, &clNetSocketState },
    { "Error",          FDF_ERROR|FDF_R },
    { "Port",           FDF_INT|FDF_RI },
@@ -1105,9 +1122,9 @@ static const FieldArray clSocketFields[] = {
    { "MulticastTTL",   FDF_INT|FDF_RI },
    // Virtual fields
    { "Handle",         FDF_VIRTUAL|FDF_POINTER|FDF_RI,     GET_Handle, SET_Handle },
-   { "Feedback",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW, GET_Feedback, SET_Feedback },
-   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW, GET_Incoming, SET_Incoming },
-   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_W,  GET_Outgoing, SET_Outgoing },
+   { "Feedback",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, GET_Feedback, SET_Feedback },
+   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, GET_Incoming, SET_Incoming },
+   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTION|FDF_W,  GET_Outgoing, SET_Outgoing },
    { "OutQueueSize",   FDF_VIRTUAL|FDF_INT|FDF_R,          GET_OutQueueSize },
    END_FIELD
 };

@@ -51,7 +51,7 @@ ParserResult<Token> ParserContext::match(TokenKind kind)
       return ParserResult<Token>::success(current);
    }
 
-   auto prv = (prvTiri *)this->lua_state->script->ChildPrivate;
+   auto prv = (prvTiri *)this->lua_state->script->DerivedPtr;
    if ((prv->JitOptions & JOF::TRACE_EXPECT) != JOF::NIL) {
       std::string expectation = this->format_expected_message(kind);
       ParserDiagnostic diagnostic;
@@ -221,7 +221,7 @@ ParserError ParserContext::make_error(ParserErrorCode code, const Token &token, 
 
 void ParserContext::trace_token_advance(const Token &previous, const Token &current) const
 {
-   auto prv = (prvTiri *)this->lua_state->script->ChildPrivate;
+   auto prv = (prvTiri *)this->lua_state->script->DerivedPtr;
 
    if ((prv->JitOptions & JOF::TRACE_TOKENS) != JOF::NIL) {
       std::string detail = std::string("previous: ") + this->describe_token(previous);
@@ -460,13 +460,13 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
             result = dir + result;
          }
          else { // Use script's working path as fallback
-            auto working_path = this->lua_state->script->get<CSTRING>(FID_WorkingPath);
-            if (working_path) result.insert(0, working_path);
+            auto working_path = this->lua_state->script->get<std::string_view>(FID_WorkingPath);
+            if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
          }
       }
       else { // Use script's working path as fallback
-         auto working_path = this->lua_state->script->get<CSTRING>(FID_WorkingPath);
-         if (working_path) result.insert(0, working_path);
+         auto working_path = this->lua_state->script->get<std::string_view>(FID_WorkingPath);
+         if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
       }
    }
    else result.insert(0, "scripts:");

@@ -69,6 +69,7 @@ ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
 std::shared_mutex glConstantMutex;
+uint64_t glActionsWithResults = 0;
 
 static struct MsgHandler *glMsgThread = nullptr; // Message handler for thread callbacks
 static MsgHandler *glDelayedCallHandle = nullptr;
@@ -189,13 +190,13 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   CSTRING module_name;
+   std::string module_name;
    if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
-      if (auto error = load_include(Lua->script, module_name); error != ERR::Okay) {
-         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name, MetaClass->ClassName);
+      if (auto error = load_include(Lua->script, module_name.c_str()); error != ERR::Okay) {
+         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name.c_str(), MetaClass->ClassName.c_str());
       }
    }
-   else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName, GetErrorMsg(error));
+   else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));
 }
 
 //********************************************************************************************************************
@@ -224,6 +225,20 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    for (int action_id=1; glActions[action_id].Name; action_id++) {
       glActionLookup[glActions[action_id].Name] = AC(action_id);
    }
+
+   // Record actions that have result parameters.
+   uint64_t result_mask = 0;
+   for (int action_id=1; glActions[action_id].Name; action_id++) {
+      if (glActions[action_id].Args) {
+         for (int arg=0; glActions[action_id].Args[arg].Name; arg++) {
+            if (glActions[action_id].Args[arg].Type & FD_RESULT) {
+               result_mask |= uint64_t(1) << action_id;
+               break;
+            }
+         }
+      }
+   }
+   glActionsWithResults = result_mask;
 
    kt::vector<std::string> *pargs;
    auto task = CurrentTask();
@@ -390,7 +405,11 @@ tags Variable: A variable that matches the indicated `Type`.
 Okay: The variable was defined successfully.
 Args:
 FieldTypeMismatch: A valid field type was not specified in the `Type` parameter.
+InvalidState: The script does not have an active Tiri state.
 ObjectCorrupt: Privately maintained memory has become inaccessible.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -405,7 +424,7 @@ ERR SetVariable(objScript *Script, const std::string_view &Name, int Type, ...)
 
    log.branch("Script: %d, Name: %.*s, Type: $%.8x", Script->UID, int(Name.size()), Name.data(), Type);
 
-   if (not (prv = (prvTiri *)Script->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
+   if (not (prv = (prvTiri *)Script->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
    if (not prv->Lua) return log.warning(ERR::InvalidState);
 
    va_start(list, Type);

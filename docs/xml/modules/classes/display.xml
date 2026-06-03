@@ -208,7 +208,7 @@
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
     </action>
 
@@ -267,6 +267,7 @@
         <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query</tags>
     </method>
 
     <method>
@@ -281,6 +282,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -312,6 +314,7 @@
         <error code="Resize">Failure during the resize of an object</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -335,6 +338,7 @@
         <error code="NoSupport">The graphics hardware does not support gamma correction.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -356,6 +360,7 @@
         <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -382,6 +387,7 @@
         <error code="NoPermission">General security violation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -404,6 +410,7 @@
         <error code="NoSupport">The host platform does not support this feature.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -423,6 +430,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -437,6 +445,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">Operation not supported</error>
       </result>
+      <tags>blocking</tags>
     </method>
 
   </methods>
@@ -504,7 +513,7 @@
     </field>
 
     <field>
-      <name>DisplayManufacturer</name>
+      <name>DisplayMfr</name>
       <comment>String describing the display manufacturer.</comment>
       <access read="G">Get</access>
       <type>STRING</type>

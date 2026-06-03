@@ -79,10 +79,10 @@ class objFont : public Object {
    double Point;           // The point size of a font.
    double GlyphSpacing;    // Adjusts the amount of spacing between each character.
    objBitmap * Bitmap;     // The destination Bitmap to use when drawing a font.
-   STRING String;          // The string to use when drawing a Font.
-   STRING Path;            // The path to a font file.
-   STRING Style;           // Determines font styling.
-   STRING Face;            // The name of a font face that is to be loaded on initialisation.
+   std::string String;     // The string to use when drawing a Font.
+   std::string Path;       // The path to a font file.
+   std::string Style;      // Determines font styling.
+   std::string Face;       // The name of a font face that is to be loaded on initialisation.
    struct RGB8 Outline;    // Defines the outline colour around a font.
    struct RGB8 Underline;  // Enables font underlining when set.
    struct RGB8 Colour;     // The font colour in RGB8 format.
@@ -113,12 +113,199 @@ class objFont : public Object {
    }
    inline ERR init() noexcept { return InitObject(this); }
 
+   // Customised field getting
+
+   inline ERR getPoint(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getGlyphSpacing(double &Value) noexcept {
+      Value = this->GlyphSpacing;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
+   }
+
+   inline ERR getString(std::string_view &Value) noexcept {
+      Value = this->String;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getStyle(std::string_view &Value) noexcept {
+      Value = this->Style;
+      return ERR::Okay;
+   }
+
+   inline ERR getFace(std::string_view &Value) noexcept {
+      Value = this->Face;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutline(struct RGB8 * &Value, int &Elements) noexcept {
+      Elements = 4;
+      Value = (struct RGB8 *)(((int8_t *)this) + 240);
+      return ERR::Okay;
+   }
+
+   inline ERR getUnderline(struct RGB8 * &Value, int &Elements) noexcept {
+      Elements = 4;
+      Value = (struct RGB8 *)(((int8_t *)this) + 244);
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(struct RGB8 * &Value, int &Elements) noexcept {
+      Elements = 4;
+      Value = (struct RGB8 *)(((int8_t *)this) + 248);
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(FTF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getGutter(int &Value) noexcept {
+      Value = this->Gutter;
+      return ERR::Okay;
+   }
+
+   inline ERR getLineSpacing(int &Value) noexcept {
+      Value = this->LineSpacing;
+      return ERR::Okay;
+   }
+
+   inline ERR getX(int &Value) noexcept {
+      Value = this->X;
+      return ERR::Okay;
+   }
+
+   inline ERR getY(int &Value) noexcept {
+      Value = this->Y;
+      return ERR::Okay;
+   }
+
+   inline ERR getTabSize(int &Value) noexcept {
+      Value = this->TabSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getWrapEdge(int &Value) noexcept {
+      Value = this->WrapEdge;
+      return ERR::Okay;
+   }
+
+   inline ERR getFixedWidth(int &Value) noexcept {
+      Value = this->FixedWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getHeight(int &Value) noexcept {
+      Value = this->Height;
+      return ERR::Okay;
+   }
+
+   inline ERR getLeading(int &Value) noexcept {
+      Value = this->Leading;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxHeight(int &Value) noexcept {
+      Value = this->MaxHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getAlign(ALIGN &Value) noexcept {
+      Value = this->Align;
+      return ERR::Okay;
+   }
+
+   inline ERR getAlignWidth(int &Value) noexcept {
+      Value = this->AlignWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getAlignHeight(int &Value) noexcept {
+      Value = this->AlignHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getAscent(int &Value) noexcept {
+      Value = this->Ascent;
+      return ERR::Okay;
+   }
+
+   inline ERR getEndX(int &Value) noexcept {
+      Value = this->EndX;
+      return ERR::Okay;
+   }
+
+   inline ERR getEndY(int &Value) noexcept {
+      Value = this->EndY;
+      return ERR::Okay;
+   }
+
+   inline ERR getBold(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getItalic(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLineCount(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getWidth(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[35];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getYOffset(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setPoint(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setGlyphSpacing(const double Value) noexcept {
@@ -131,28 +318,24 @@ class objFont : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setString(T && Value) noexcept {
-      auto target = this;
+   inline ERR setString(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setStyle(T && Value) noexcept {
-      auto target = this;
+   inline ERR setStyle(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
-   template <class T> inline ERR setFace(T && Value) noexcept {
-      auto target = this;
+   inline ERR setFace(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setOutline(const struct RGB8 Value) noexcept {
@@ -171,9 +354,8 @@ class objFont : public Object {
    }
 
    inline ERR setFlags(const FTF Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setGutter(const int Value) noexcept {
@@ -250,21 +432,18 @@ class objFont : public Object {
    }
 
    inline ERR setBold(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setItalic(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[29];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
 };

@@ -13,7 +13,7 @@ end
 function saveBitmap(Bitmap, Name)
    filename = Name .. '.png'
 
-   pic = obj.new('picture', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags=PCF_NEW })
+   pic = obj.new('image', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags=PCF_NEW })
    Bitmap.acCopyData(pic.bitmap)
    fl = obj.new('file', { flags=FL_NEW|FL_WRITE, path=f'temp:doc_test_results/{filename}' })
    pic.acSaveImage(fl)

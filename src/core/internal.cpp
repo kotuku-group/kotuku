@@ -173,15 +173,17 @@ copy_args: Serialise argument structures into sendable messages.
 This function searches an argument structure for pointer and string types.  If it encounters them, it attempts to
 convert them to a format that can be passed to other memory spaces.
 
-A PTR|RESULT followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It is assumed that
-the function will fill the buffer with data, which means that a result set has to be returned to the caller.  Example:
+A PTR|RESULT or PTR|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It
+is assumed that the function will fill the buffer with data, so the caller's initial buffer content is not serialised.
+Example:
 
 <pre>
 Read(Bytes (FD_INT), Buffer (FD_PTRRESULT), BufferSize (FD_PTRSIZE), &BytesRead (FD_INTRESULT));
 </pre>
 
 A standard PTR followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It is assumed
-that this is one-way traffic only, and the function will not fill the buffer with data.  Example:
+that this is one-way traffic only, and the function will not fill the buffer with data if FD_MUTABLE is not set.
+Example:
 
 <pre>
 Write(Bytes (FD_INT, Buffer (FD_PTR), BufferSize (FD_PTRSIZE), &BytesWritten (FD_INTRESULT));
@@ -210,13 +212,17 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
 
       if (Args[i].Type & FD_STR) {
          if (Args[i].Type & FD_CPP) {
-            if (std::string *str = ((std::string **)(Parameters + pos))[0]) size += str->length() + 1;
+            auto view = (std::string_view *)(Parameters + pos);
+            size += view->length() + 1;
+            pos += sizeof(std::string_view);
          }
-         else if (auto str = ((STRING *)(Parameters + pos))[0]) size += strlen(str) + 1;
-         pos += sizeof(APTR);
+         else {
+            if (auto str = ((STRING *)(Parameters + pos))[0]) size += strlen(str) + 1;
+            pos += sizeof(APTR);
+         }
       }
       else if (Args[i].Type & FD_PTR) {
-         if (Args[i].Type & FD_RESULT); // Result will be stored in the parameter buffer.
+         if ((Args[i].Type & FD_RESULT) and (not (Args[i+1].Type & FD_PTRSIZE))); // Stored in parameter buffer.
          else if (Args[i].Type & (FD_INT|FD_PTRSIZE)) { // Pointer to int.
             pos += sizeof(int);
          }
@@ -248,13 +254,12 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       if (Args[i].Type & FD_STR) {
          if (Args[i].Type & FD_CPP) {
             auto insert = (STRING)(Buffer.data() + Buffer.size());
-            if (std::string *str = ((std::string **)(Parameters + pos))[0]) {
-               Buffer.resize(Buffer.size() + str->length() + 1);
-               ((STRING *)param)[0] = insert;
-               copymem(str->c_str(), insert, str->length() + 1);
-            }
-            else ((STRING *)param)[0] = nullptr;
-            pos += sizeof(APTR);
+            auto view = (std::string_view *)(Parameters + pos);
+            Buffer.resize(Buffer.size() + view->length() + 1);
+            ((std::string_view *)param)[0] = std::string_view(insert, view->length());
+            if (not view->empty()) copymem(view->data(), insert, view->length());
+            insert[view->length()] = 0;
+            pos += sizeof(std::string_view);
          }
          else {
             auto insert = (STRING)(Buffer.data() + Buffer.size());
@@ -283,16 +288,19 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          }
          else if (Args[i+1].Type & FD_PTRSIZE) { // Pointer to a buffer
             if (int memsize = ((int *)(Parameters + pos + sizeof(APTR)))[0]; memsize > 0) {
-               if (Args[i].Type & FD_RESULT) { // 'Receive' buffer
+               if (Args[i].Type & (FD_RESULT|FD_MUTABLE)) { // 'Receive' buffer
+                  auto insert = Buffer.data() + Buffer.size();
+                  ((APTR *)param)[0] = insert;
                   Buffer.resize(Buffer.size() + memsize);
                }
                else { // 'Send' buffer
-                  if (int8_t *src = ((int8_t **)param)[0]) { // Get the data source pointer
+                  if (int8_t *src = ((int8_t **)(Parameters + pos))[0]) {
                      auto insert = Buffer.data() + Buffer.size();
                      ((APTR *)param)[0] = insert;
                      Buffer.resize(Buffer.size() + memsize);
                      copymem(src, insert, memsize);
                   }
+                  else ((APTR *)param)[0] = nullptr;
                }
             }
             else ((APTR *)param)[0] = nullptr;

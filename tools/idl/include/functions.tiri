@@ -1,23 +1,27 @@
--- TDL functions such as module(), header(), flags(), c_include(), cpp_include() ...
+-- This file contains the functions that are available for use in TDL files.  If you're looking for internal
+-- functionality, refer to utils.tiri
 
-local rx_high_hex        = <{ regex.new([[^0x[8f][0-9abcdef]+]]) }>
-local rx_angle_bracket   = <{ regex.new([[^<(.+)>$]]) }>
-local rx_kotuku_include  = <{ regex.new([[^<kotuku/(.+)>$]]) }>
-local rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
-local rx_module_section  = <{ regex.new([[-MODULE-(.*?)-END-]], regex.DOT_ALL) }>
-local rx_module_header   = <{ regex.new([[^(\w+):\s+(.*?)\n\n(.+)]], regex.MULTILINE|regex.DOT_ALL) }>
-local rx_key_comment     = <{ regex.new([[^([^:]*):\s+(.+)$]]) }>
-local rx_hex_number      = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
-local rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
-local rx_trailing_space  = <{ regex.new([[^(.*\S)]], regex.DOT_ALL) }>
-local rx_type_name       = <{ regex.new([[^(.+)\s(\S+)$]]) }>
-local rx_non_word        = <{ regex.new('\\W') }>
-local rx_path_chars      = <{ regex.new('[\\/\\.]') }>
-local rx_comment_chars   = <{ regex.new('[`!@#]') }>
+rx_high_hex        = <{ regex.new([[^0x[8f][0-9abcdef]+]]) }>
+rx_angle_bracket   = <{ regex.new([[^<(.+)>$]]) }>
+rx_kotuku_include  = <{ regex.new([[^<kotuku/(.+)>$]]) }>
+rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
+rx_module_section  = <{ regex.new([[-MODULE-(.*?)-END-]], regex.DOT_ALL) }>
+rx_module_header   = <{ regex.new([[^(\w+):\s+(.*?)\n\n(.+)]], regex.MULTILINE|regex.DOT_ALL) }>
+rx_key_comment     = <{ regex.new([[^([^:]*):\s+(.+)$]]) }>
+rx_hex_number      = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
+rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
+rx_trailing_space  = <{ regex.new([[^(.*\S)]], regex.DOT_ALL) }>
+rx_type_name       = <{ r'^(.+)\s(\S+)$' }>
+rx_non_word        = <{ r'\W' }>
+rx_path_chars      = <{ r'[\/\.]' }>
+rx_comment_chars   = <{ r'[`!@#]' }>
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Add C include directives to the generated header
+@input Header paths or angle-bracket include names
+]])
 global function c_include(...)
    for v in values({...}) do
       if v:startsWith('<') and v:endsWith('>') then
@@ -30,8 +34,11 @@ global function c_include(...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Add C++-only include directives to the generated header
+@input Header paths or angle-bracket include names
+]])
 global function cpp_include(...)
    priority('#ifdef __cplusplus')
    for v in values({...}) do
@@ -56,9 +63,11 @@ global function cpp_include(...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
--- Restricts the output of anything declared within the Function.
 
+@Doc(text=[[
+@desc Run a group of TDL declarations with restricted output visibility
+@input Function containing declarations to restrict
+]])
 global function restrict(Function:func)
    status = glRestrict
    global glRestrict = 'ALL'
@@ -68,6 +77,12 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Doc(text=[[
+@desc Build a FieldDef lookup table from a custom type definition
+@input Name suffix for the generated C lookup symbol
+@input Custom type list entries to include in the lookup table
+@result C source text for the lookup table
+]])
 global function outputLookup(Name:str, List):str
    sorted = { }
    for v in values(List) do
@@ -92,8 +107,12 @@ global function outputLookup(Name:str, List):str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Define a module and generate the primary module header
+@input Module options including name, version, timestamp, copyright, and source files
+@input Function containing the module's TDL declarations
+]])
 global function module(Options:table, Function:func)
    if (Options['timestamp'] ?? 0) > glIDLTimestamp then
       -- Do nothing if the timestamp is > than the timestamp on this idl-c release
@@ -138,22 +157,15 @@ global function module(Options:table, Function:func)
       end
    end
 
-   -- Module files used to be taken from the command-line; the src option is now preferred
-
-   if not glModule.src then
-      glModule.src = array<string>
-
-      for i=0, arg('files:size', 0)-1 do
-         glModule.src:push(arg('files(' .. i .. ')'))
-      end
-   end
-
    -- Look for the MODULE header and process it.
+   if glModule.src?? then
+      local content = ''
+      for i, src in ipairs(glModule.src) do
+         err, glModule.src[i] = mSys.ResolvePath(src)
+         check err
+      end
 
-   if glModule.src then
-      local content
-      content = ''
-      for src in values(glModule.src) do
+      for i, src in ipairs(glModule.src) do
          content = io.readAll(src)
          if content:find('-MODULE-') then break end
       end
@@ -184,8 +196,12 @@ global function module(Options:table, Function:func)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Define a standalone generated header
+@input Header options including path and copyright
+@input Function containing declarations for the header
+]])
 global function header(Options:table, Function:func)
    global glHeaderPath = Options['path']
    if glHeaderPath?? then
@@ -193,11 +209,6 @@ global function header(Options:table, Function:func)
       priority()
       priority(f'// Name:      {glHeaderPath:lower()}.h')
    else
-      s = ''
-      for i=1,10 do
-         s = s .. string.char(math.random(65, 90))
-      end
-
       priority('#pragma once')
       priority()
    end
@@ -212,14 +223,13 @@ global function header(Options:table, Function:func)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
---
---  flags('KQ', { comment='Special qualifier flags' },
---    'L_SHIFT: Left Shift is held',
---    'R_SHIFT: Right Shift is held',
---    { SHIFT = 'L_SHIFT|R_SHIFT' }
---  )
 
+@Doc(text=[[
+@desc Define a bit-flag set and register it for generated code and documentation
+@input Prefix used for generated flag names and custom type references
+@input Options such as comment, bits, weak, module, and restrict
+@input Flag names, grouped flag names, or tables of explicit flag values
+]])
 global function flags(Prefix, Options:table, ...)
    verbose(f'Processing {Prefix} flags.')
    if glCustomTypes[Prefix] then print(f'WARN: A "{Prefix}" constant already exists.') end
@@ -265,7 +275,6 @@ global function flags(Prefix, Options:table, ...)
    local flags = {...}
    f = 0
    for a=0, #flags - 1 do
-      local flag_name
       if type(flags[a]) is 'string' then
          local key, comment = rx_key_comment.extract(flags[a])
          key ??= flags[a]
@@ -338,8 +347,11 @@ global function flags(Prefix, Options:table, ...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Mark private type names that should not produce unknown-reference warnings
+@input List of names to treat as private
+]])
 global function privateNames(List)
    for v in values(List) do
       glPrivateNames[v] = true
@@ -347,8 +359,12 @@ global function privateNames(List)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Calculate the field hash used for generated field identifiers
+@input Field name to hash
+@result Numeric field hash
+]])
 global function calcFieldHash(String:str):num
    out = array<char>
    k = 0
@@ -369,6 +385,12 @@ global function calcFieldHash(String:str):num
    return out:getString():hash(true)
 end
 
+@Doc(text=[[
+@desc Generate preprocessor field hash constants
+@input Prefix for generated constant names
+@input String format used to render each hash value
+@input Field names to hash
+]])
 global function fieldHash(Prefix:str, Format:str, ...)
    for v in values({...}) do
       hash_name = rx_non_word.replace(v, '_')
@@ -381,6 +403,12 @@ global function fieldHash(Prefix:str, Format:str, ...)
    output()
 end
 
+@Doc(text=[[
+@desc Generate a strongly typed enum of hashed string identifiers
+@input Enum name and generated identifier prefix
+@input C integer type for the enum storage
+@input Names to hash into enum values
+]])
 global function typedHash(Prefix:str, Type:str, ...)
    Type = cType({ type=Type }, Prefix)
    output(f'enum class {Prefix} : {Type.type} {{')
@@ -395,6 +423,12 @@ global function typedHash(Prefix:str, Type:str, ...)
    output()
 end
 
+@Doc(text=[[
+@desc Generate preprocessor constants from standard string hashes
+@input Prefix for generated constant names
+@input String format used to render each hash value
+@input Names to hash
+]])
 global function hash(Prefix:str, Format:str, ...)
    for v in values({...}) do
       hash_name = rx_non_word.replace(v, '_')
@@ -406,8 +440,13 @@ global function hash(Prefix:str, Format:str, ...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Define named constants and register them for generated code and documentation
+@input Prefix used for generated constant names and custom type references
+@input Options such as comment, type, module, and restrict
+@input Constant names or tables mapping names to values
+]])
 global function constants(Prefix:str, Options:table, ...)
    verbose(f'Processing {Prefix} constants.')
    if glCustomTypes[Prefix] then print(f'WARN: A "{Prefix}" constant already exists.') end
@@ -489,8 +528,13 @@ global function constants(Prefix:str, Options:table, ...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
+@Doc(text=[[
+@desc Define sequential or explicit enum constants
+@input Prefix used for generated enum names and custom type references
+@input Options such as comment, type, start, bits, module, and restrict
+@input Enum names, grouped synonym names, or tables mapping names to numeric values
+]])
 global function enums(Prefix:str, Options:table, ...)
    verbose(f'Processing {Prefix} enum.')
    if glCustomTypes[Prefix] then print(f'WARN: A "{Prefix}" constant already exists.') end
@@ -573,9 +617,13 @@ global function enums(Prefix:str, Options:table, ...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
-global function platform(Platform, Function)
+@Doc(text=[[
+@desc Emit declarations only for a named target platform
+@input Platform name, such as windows, linux, or x11
+@input Function containing platform-specific declarations
+]])
+global function platform(Platform:str, Function:func)
    saveHeader = glHeader
    saveOutput = glOutput
    global glHeader = array<string>
@@ -592,7 +640,7 @@ global function platform(Platform, Function)
       define = '__xwindows__'
       Function()
    --elseif (Platform:lower() is 'osx') then
-   --   define = '__xwindows__'
+   --   define = '__APPLE__'
    --   Function()
    else
       error('Unrecognised platform "' .. Platform .. '"')
@@ -625,10 +673,16 @@ global function platform(Platform, Function)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL function
 
-global function struct(Name, Options:table, Def, Append)
-   verbose('Processing struct ' .. tostring(Name))
+@Doc(text=[[
+@desc Define a C or C++ structure from TDL field declarations
+@input Structure name
+@input Structure options including type, version, comment, module, and restrict
+@input TDL field definition block
+@input Optional raw text to append inside the generated structure
+]])
+global function struct(Name:str, Options:table, Def, Append)
+   verbose(f'Processing struct {Name}')
 
    prevStruct = glCurrentStructure
    global glCurrentStructure = Name
@@ -722,8 +776,13 @@ global function struct(Name, Options:table, Def, Append)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Create a C/C++ field name from the definitions in a Field object.
 
+@Doc(text=[[
+@desc Convert a parsed field definition into its generated C or C++ field name
+@input Parsed field definition
+@input True when generating a C structure field name
+@result Generated field name
+]])
 global function cName(Field, CStruct)
    if Field.isFunctionPtr then return '' end -- Functions have their name embedded in the type.
 
@@ -748,9 +807,16 @@ global function cName(Field, CStruct)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL Function
 -- Refer to outputClassHeader() for output of the class structure.
 
+@Doc(text=[[
+@desc Define an object class and generate its C++ class header metadata
+@input Class name
+@input Class options including source files, base class, output file, version, comment, and references
+@input TDL field specification block
+@input Private class data specification
+@input Optional custom C++ text for the generated class
+]])
 global function klass(Name, Options:table, Spec, Private, Custom)
    verbose('Processing class ' .. tostring(Name))
 
@@ -876,6 +942,16 @@ global function klass(Name, Options:table, Spec, Private, Custom)
       end
    end
 
+   for field in values(cl.fields) do -- Process tags from compiled fields
+      field.tags = getTagsFromField(field, field.tags)
+   end
+
+   for action in values(cl.actions) do -- User defined tags for actions
+      if glActions[action.name] then
+         action.tags = getTagsFromCollection(action.tags, glActions[action.name].params)
+      end
+   end
+
    -- Export method definitions for a class
 
    if cl.methods then
@@ -899,6 +975,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                end
             end
          end
+
+         method.tags = getTagsFromCollection(method.tags, method.params)
 
          -- Generate a modified C method name for the function declaration if the method shares a name with an existing
          -- action.  E.g. 'XML_Sort' will become 'XML_SortXML'
@@ -1053,10 +1131,14 @@ global function klass(Name, Options:table, Spec, Private, Custom)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL Function
 -- This is a shortened version of functions(), where only the names of the functions need to be specified as a list.
 -- Further elaboration on the functions is normally done by embedding -FUNCTION- sections in the module code.
 
+@Doc(text=[[
+@desc Register exported module function names for generated function tables
+@input Function name prefix used for generated client wrappers
+@input Exported function names
+]])
 global function functionNames(Prefix, ...)
    global glFunctionPrefix = Prefix ?? ''
    for fname in values({...}) do
@@ -1083,11 +1165,15 @@ global function functionNames(Prefix, ...)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL Function
--- Register methods for a class.  This must be declared prior to the corresponding class() function call.
 
+@Doc(text=[[
+@desc Register method definitions for a class; must be used before the class declaration is processed
+@input Class name that owns the methods
+@input Prefix used for generated method C symbols
+@input Method definition table
+]])
 global function methods(ClassName:str, Prefix:str, Methods)
-   verbose(<{ 'Processing ' .. #Methods .. ' methods for class ' .. tostring(ClassName) }>)
+   verbose(<{ f'Processing {#Methods} methods for class {ClassName}' }>)
 
    local cl = registerClass(ClassName)
    cl.methodPrefix = Prefix
@@ -1101,8 +1187,11 @@ global function methods(ClassName:str, Prefix:str, Methods)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TDL Function
 
+@Doc(text=[[
+@desc Insert raw C or C++ source text into generated output
+@input Raw source text to insert
+]])
 global function c_insert(Raw)
    if glRestrict then return end
    output(Raw)

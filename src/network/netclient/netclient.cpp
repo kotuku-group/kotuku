@@ -84,7 +84,7 @@ static const FieldArray clNetClientFields[] = {
    { "ClientData",  FDF_POINTER|FDF_RW },
    { "TotalConnections", FDF_INT|FDF_R },
    // Virtual fields
-   { "IP",          FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R, GET_IP, nullptr, "IPAddress" },
+   { "IP",          FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, GET_IP, nullptr, "IPAddress" },
    END_FIELD
 };
 

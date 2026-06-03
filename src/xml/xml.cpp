@@ -184,6 +184,10 @@ ptr(struct(XPathValue)) Value: The XPathValue to convert.
 -ERRORS-
 Okay
 NullArgs
+NoData
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -212,11 +216,16 @@ Note: The integrity of the array is not guaranteed if the original XML document 
 
 -INPUT-
 ptr(struct(XPathValue)) Value: The XPathValue to convert.
-&cpp(array(ptr(struct(XTag)))) Result: The node-set is returned here as an array of !XTag structures.
+^&cpp(array(ptr(struct(XTag)))) Result: The node-set is returned here as an array of !XTag structures.
 
 -ERRORS-
 Okay
 NullArgs
+NoData
+Mismatch
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -241,11 +250,15 @@ Call XValueToString() to convert an XPathValue object into its string representa
 
 -INPUT-
 ptr(cstruct(XPathValue)) Value: The XPathValue to convert.
-&cpp(str) Result: Receives the string representation of the value.
+^&cpp(str) Result: Receives the string representation of the value.
 
 -ERRORS-
 Okay
 NullArgs
+NoData
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/

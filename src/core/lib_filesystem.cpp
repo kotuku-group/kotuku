@@ -209,10 +209,10 @@ extern "C" FFR CALL_FEEDBACK(FUNCTION *Callback, FileFeedback *Feedback)
       }), error) != ERR::Okay) error = ERR::Function;
 
       if (error IS ERR::Okay) {
-         CSTRING *results;
+         kt::vector<std::string> *results;
          int size;
          if ((Callback->Context->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            return FFR(strtol(results[0], nullptr, 0));
+            return FFR(strtol((*results)[0].c_str(), nullptr, 0));
          }
          else return FFR::OKAY;
       }
@@ -376,6 +376,10 @@ cpp(strview) Value: The value to associate with the tag name.  If empty, any exi
 -ERRORS-
 Okay:
 NullArgs:
+CreateResource:
+
+-TAGS-
+mutates-input, copies-input, creates-resource
 
 *********************************************************************************************************************/
 
@@ -407,7 +411,7 @@ Ambiguous references are analysed to get the correct type - for example `user:do
 folder or file, so the path is analysed to check the file type.  On exceptional occasions where the path could be
 interpreted as either a folder or a file, preference is given to the folder.
 
-File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~pictures:photo` could be
+File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~images:photo` could be
 matched to `photo.jpg` in the same folder).
 
 To check if a volume name is valid, call ~ResolvePath() first and then pass the resulting path to this
@@ -424,6 +428,10 @@ cpp(strview) Path: The path to analyse.
 Okay: The path was analysed and the result is stored in the `Type` variable.
 NullArgs:
 DoesNotExist:
+NoSupport:
+
+-TAGS-
+blocking, path-resolved
 
 *********************************************************************************************************************/
 
@@ -500,6 +508,9 @@ cpp(strview) PathB: File location 2.
 Okay: The file paths refer to the same file.
 False: The file paths refer to different files.
 NullArgs
+
+-TAGS-
+blocking, path-resolved
 -END-
 
 *********************************************************************************************************************/
@@ -595,6 +606,9 @@ int Group: The group ID.
 -RESULT-
 cstr: The group name is returned, or `NULL` if the ID cannot be resolved.
 
+-TAGS-
+api-owns-result, null-terminated-result, nullable-result, blocking
+
 *********************************************************************************************************************/
 
 CSTRING ResolveGroupID(int GroupID)
@@ -631,6 +645,9 @@ int User: The user ID.
 
 -RESULT-
 cstr: The user name is returned, or `NULL` if the ID cannot be resolved.
+
+-TAGS-
+api-owns-result, null-terminated-result, nullable-result, blocking
 
 *********************************************************************************************************************/
 
@@ -670,11 +687,11 @@ Copying `kotuku:makefile` to `kotuku:documents` results in a file called `kotuku
 
 Copying `kotuku:makefile` to `kotuku:documents/` results in a file called `kotuku:documents/makefile`.
 
-Copying `kotuku:pictures/` to `kotuku:documents/` results in a folder at `kotuku:documents/pictures` and includes
-a copy of all folders and files found within the pictures folder.
+Copying `kotuku:images/` to `kotuku:documents/` results in a folder at `kotuku:documents/images` and includes
+a copy of all folders and files found within the images folder.
 
-Copying `kotuku:pictures/` to `kotuku:documents` results in a folder at `kotuku:documents` (if the documents folder
-already exists, it receives additional content from the pictures folder).
+Copying `kotuku:images/` to `kotuku:documents` results in a folder at `kotuku:documents` (if the documents folder
+already exists, it receives additional content from the images folder).
 
 This function will overwrite any destination file(s) that already exist.
 
@@ -699,6 +716,9 @@ ptr(func) Callback: Optional callback for receiving feedback during the operatio
 Okay: The source was copied to its destination successfully.
 Args:
 Failed: A failure occurred during the copy process.
+
+-TAGS-
+blocking, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -739,6 +759,10 @@ LowCapacity: There is no room on the device to create the new link.
 Memory:
 BufferOverflow: One or both of the provided arguments is too long.
 FileExists: The location referenced at From already exists.
+SystemCall:
+
+-TAGS-
+blocking, path-resolved
 
 *********************************************************************************************************************/
 
@@ -804,9 +828,14 @@ ptr(func) Callback: Optional callback for receiving feedback during the operatio
 -ERRORS-
 Okay: The file or folder was deleted successfully.
 NullArgs:
-FileNotFound:
 File: The location could not be opened for deletion.
+NoPermission:
 NoSupport: The filesystem driver does not support deletion.
+ResolvePath:
+SystemLocked:
+
+-TAGS-
+blocking, path-resolved
 
 *********************************************************************************************************************/
 
@@ -890,8 +919,12 @@ int(LDF) Flags: Optional flags are specified here.
 -ERRORS-
 Okay: The file was cached successfully.
 NullArgs:
-AllocMemory:
+CreateObject:
+Read:
 Search: If `CHECK_EXISTS` is specified, this failure indicates that the file is not cached.
+
+-TAGS-
+api-owns-result, creates-resource, blocking, path-resolved
 -END-
 
 *********************************************************************************************************************/
@@ -1015,7 +1048,10 @@ Okay:
 NullArgs:
 FileExists: An identically named file or folder already exists at the `Path`.
 NoSupport:  Virtual file system does not support folder creation.
-Failed:
+ResolvePath:
+
+-TAGS-
+blocking, path-resolved
 
 *********************************************************************************************************************/
 
@@ -1056,8 +1092,8 @@ following examples illustrate:
 <b>Source               Destination          Result</b>
 kotuku:makefile     kotuku:documents    kotuku:documents
 kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
-kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
-kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
+kotuku:images/      kotuku:documents/   kotuku:documents/images
+kotuku:images/      kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </>
 
 This function will overwrite the destination location if it already exists.
@@ -1085,6 +1121,9 @@ Okay
 NullArgs
 Failed
 
+-TAGS-
+blocking, callback-inlines
+
 *********************************************************************************************************************/
 
 ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback)
@@ -1105,7 +1144,7 @@ ReadFileToBuffer: Reads a file into a buffer.
 This function provides a simple method for reading file content into a `Buffer`.  In some cases this procedure may be
 optimised for the host platform, which makes it the fastest way to read file content in simple cases.
 
-File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~pictures:photo` could be
+File path approximation is supported if the `Path` is prefixed with a `~` character (e.g. `~images:photo` could be
 matched to `photo.jpg` in the same folder).
 
 -INPUT-
@@ -1117,11 +1156,14 @@ bufsize BufferSize: The byte size of the `Buffer`.
 -ERRORS-
 Okay
 Args
-NullArgs
+FileNotFound
 OpenFile
 InvalidPath
 Read
 File
+
+-TAGS-
+mutates-input, blocking, path-resolved
 -END-
 
 *********************************************************************************************************************/
@@ -1202,6 +1244,9 @@ cpp(strview) Name: The name of the tag, which must be declared in camel-case as 
 Okay:
 NullArgs:
 NotFound:
+
+-TAGS-
+object-owns-result, null-terminated-result, non-null-result, case-sensitive
 
 *********************************************************************************************************************/
 
@@ -1302,6 +1347,9 @@ This function unloads cached files that have been previously loaded with the ~Lo
 
 -INPUT-
 resource(CacheFile) Cache: A pointer to a !CacheFile structure returned from ~LoadFile().
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/

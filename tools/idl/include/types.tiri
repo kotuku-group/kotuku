@@ -3,26 +3,26 @@
 global glActiveRefs = { }
 global glCustomTypes = { }
 
-local rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }>
-local rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
-local rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
-local rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
-local rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
-local rx_resource_type   = <{ regex.new([[^(c?)resource\((.+)\)$]]) }>
-local rx_ext_type        = <{ regex.new([[^ext\((.+)\)$]]) }>
-local rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
-local rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
-local rx_flags_type      = <{ regex.new([[^flags\(([A-Za-z]+)\)]]) }>
-local rx_int_prefix      = <{ regex.new([[^(int|large|char|short|ushort)\(([A-Za-z]+)\)]]) }>
-local rx_char_array      = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
-local rx_int_array       = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
-local rx_double_array    = <{ regex.new([[^double\((.+)\)]]) }>
-local rx_float_array     = <{ regex.new([[^float\((.+)\)]]) }>
-local rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
-local rx_buf_type        = <{ regex.new([[^buf\((.+)\)]]) }>
-local rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
-local rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
-local rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
+rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }>
+rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
+rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
+rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
+rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
+rx_resource_type   = <{ regex.new([[^(c?)resource\((.+)\)$]]) }>
+rx_ext_type        = <{ regex.new([[^ext\((.+)\)$]]) }>
+rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
+rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
+rx_flags_type      = <{ regex.new([[^flags\(([A-Za-z]+)\)]]) }>
+rx_int_prefix      = <{ regex.new([[^(int|large|char|short|ushort)\(([A-Za-z]+)\)]]) }>
+rx_char_array      = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
+rx_int_array       = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
+rx_double_array    = <{ regex.new([[^double\((.+)\)]]) }>
+rx_float_array     = <{ regex.new([[^float\((.+)\)]]) }>
+rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
+rx_buf_type        = <{ regex.new([[^buf\((.+)\)]]) }>
+rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
+rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
+rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Conversion table for TDL types to their C/C++ and Value Definition equivalents.
@@ -34,7 +34,7 @@ global glTypes = {
    char       = { fd='FD_BYTE',               t_type='num', c_type='int8_t', doc_type='INT8' },
    cid        = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='CLASSID' },
    cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *' },
-   cstr       = { fd='FD_STR',                t_type='str', c_type='CSTRING' },
+   cstr       = { fd='FD_STR',                t_type='str', c_type='CSTRING' }, -- Permitted for structs, not Kotuku classes
    double     = { fd='FD_DOUBLE',             t_type='num', c_type='double', doc_type='DOUBLE' },
    eid        = { fd='FD_INT',                t_type='num', c_type='EVENTID' },
    error      = { fd='FD_INT|FD_ERROR',       t_type='num', c_type='ERR' },
@@ -125,8 +125,10 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
             Def.type = 'APTR []'
          elseif Type has FD_STRUCT then
             Def.type = 'STRUCT []'
+         elseif Type has FD_OBJECT then
+            Def.type = 'OBJECTPTR []'
          else
-            Def.type = 'ARRAY'
+            Def.type = 'UNKNOWN_ARRAY_TYPE'
          end
       end
    elseif Type has FD_STRING then
@@ -150,9 +152,6 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       elseif Type has FD_STRING then
          Def.type = 'STRING'
          return
-      elseif Type has FD_RGB then
-         result = 'RGB'
-         ptr++
       elseif Type has FD_FUNCTION then
          result = 'FUNCTION'
          ptr++
@@ -172,8 +171,6 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       else
          Def.type = result
       end
-   elseif Type has FD_RGB then
-      Def.type = 'RGB8'
    elseif Type has FD_INT then
       if Type has FD_OBJECT then
          Def.type = 'OBJECTID'

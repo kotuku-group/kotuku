@@ -10,6 +10,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <unordered_set>
 #include <sstream>
 #include <set>
+#include <string_view>
 #include <unordered_map>
 #include <mutex>
 #include <stack>
@@ -17,7 +18,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
-#include <kotuku/modules/picture.h>
+#include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/strings.hpp>
@@ -80,7 +81,26 @@ class extFilterEffect;
 class extVectorViewport;
 class extVectorClip;
 
-extern ankerl::unordered_dense::map<std::string, std::array<FRGB, 256>> glColourMaps;
+struct ColourMapHash {
+   using is_avalanching = void;
+   using is_transparent = void;
+
+   [[nodiscard]] uint64_t operator()(std::string_view Value) const noexcept {
+      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] uint64_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] uint64_t operator()(CSTRING Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+using ColourMapTable = ankerl::unordered_dense::map<std::string, std::array<FRGB, 256>, ColourMapHash, std::equal_to<>>;
+
+extern ColourMapTable glColourMaps;
 extern objConfig *glFontConfig;
 
 class PIXEL_ORDER {
@@ -338,7 +358,7 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    std::string ColourMap;
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
-   STRING ID;
+   std::string ID;
    int   NumericID;
    double Angle;
    double Length;
@@ -405,8 +425,8 @@ class extVector : public objVector {
    double StrokeWidth;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
-   CSTRING FilterString, StrokeString, FillString;
-   STRING SID;
+   std::string FilterString, StrokeString, FillString;
+   std::string SID;
    void   (*GeneratePath)(extVector *, agg::path_storage &);
    agg::rasterizer_scanline_aa<>     *StrokeRaster;
    agg::rasterizer_scanline_aa<>     *FillRaster;
@@ -1069,7 +1089,7 @@ inline static void save_bitmap(objBitmap *Bitmap, const std::string Name)
 {
    std::string path = "temp:bmp_" + Name + ".png";
 
-   auto pic = objPicture::create {
+   auto pic = objImage::create {
       fl::Width(Bitmap->Clip.Right - Bitmap->Clip.Left),
       fl::Height(Bitmap->Clip.Bottom - Bitmap->Clip.Top),
       fl::BitsPerPixel(32),
@@ -1089,7 +1109,7 @@ inline static void save_bitmap(std::string Name, uint8_t *Data, int Width, int H
 {
    std::string path = "temp:raw_" + Name + ".png";
 
-   auto pic = objPicture::create {
+   auto pic = objImage::create {
       fl::Width(Width),
       fl::Height(Height),
       fl::BitsPerPixel(BPP),

@@ -19,6 +19,9 @@
 <li>Callback-based result processing for custom handling.</li>
 </list>
 <p>Note: Tiri scripts are expected to use the built-in regex functions for better integration as opposed to this module.</p></description>
+    <source>
+      <file path="src/regex/">regex.cpp</file>
+    </source>
   </info>
 
   <function>
@@ -26,6 +29,7 @@
     <comment>Compiles a regex pattern and returns a regex object.</comment>
     <prototype>ERR rx::Compile(const std::string_view &amp; Pattern, REGEX Flags, std::string * ErrorMsg, struct Regex ** Result)</prototype>
     <tiriPrototype>err, ErrorMsg:str, Result:any = Compile(Pattern:str, Flags:num)</tiriPrototype>
+    <tags>caller-owns-result, creates-resource, copies-input, mutates-input</tags>
     <input>
       <param type="const std::string_view &amp;" name="Pattern">A regex pattern string.</param>
       <param type="REGEX" name="Flags" lookup="REGEX">Optional flags.</param>
@@ -39,7 +43,6 @@
       <error code="Okay">Operation successful.</error>
       <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="Syntax">Invalid syntax detected</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -48,6 +51,7 @@
     <comment>Retrieves capture indices for a named group.</comment>
     <prototype>ERR rx::GetCaptureIndex(struct Regex * Regex, const std::string_view &amp; Name, kt::vector&lt;int&gt; * Indices)</prototype>
     <tiriPrototype>err, Indices:array = GetCaptureIndex(Regex:any, Name:str)</tiriPrototype>
+    <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
       <param type="const std::string_view &amp;" name="Name">The capture group name to resolve.</param>
@@ -68,6 +72,7 @@
     <comment>Replaces occurrences of the regex pattern in the input text with a specified replacement string.</comment>
     <prototype>ERR rx::Replace(struct Regex * Regex, const std::string_view &amp; Text, const std::string_view &amp; Replacement, std::string * Output, RMATCH Flags)</prototype>
     <tiriPrototype>err, Output:str = Replace(Regex:any, Text:str, Replacement:str, Flags:num)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
       <param type="const std::string_view &amp;" name="Text">The input text to perform replacements on.</param>
@@ -89,6 +94,7 @@
     <comment>Performs regex matching.</comment>
     <prototype>ERR rx::Search(struct Regex * Regex, const std::string_view &amp; Text, RMATCH Flags, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = Search(Regex:any, Text:str, Flags:num, Callback:func)</tiriPrototype>
+    <tags>callback-inlines, does-not-take-ownership</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
       <param type="const std::string_view &amp;" name="Text">The input text to perform matching on.</param>
@@ -115,6 +121,7 @@
     <comment>Split a string into tokens, using a regex pattern to denote the delimiter.</comment>
     <prototype>ERR rx::Split(struct Regex * Regex, const std::string_view &amp; Text, kt::vector&lt;std::string&gt; * Output, RMATCH Flags)</prototype>
     <tiriPrototype>err, Output:array = Split(Regex:any, Text:str, Flags:num)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
       <param type="const std::string_view &amp;" name="Text">The input text to split.</param>

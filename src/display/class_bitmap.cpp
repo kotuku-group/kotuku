@@ -9,7 +9,7 @@ that is distributed with this package.  Please refer to it for further informati
 Bitmap: Represents a pixel buffer used for drawing, image transfer and display backing.
 
 The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette,
-clipping region and drawing state.  Bitmaps are used directly by @Display and @Picture objects and provide the
+clipping region and drawing state.  Bitmaps are used directly by @Display and @Image objects and provide the
 low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.
 
 To create a bitmap, set #Width and #Height before initialisation.  The pixel format can be selected explicitly with
@@ -22,7 +22,7 @@ Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video
 methods exposed by this class does not normally need to manage locking itself.
 
 Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained
-scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use @Picture when decoding
+scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use @Image when decoding
 or encoding image formats is the main concern.
 
 Raw image bytes can be read and written with #Read() and #Write().  #SaveImage() writes the clipped bitmap image as PCX
@@ -159,11 +159,11 @@ static const FieldDef clDataFlags[] = {
 };
 
 FDEF argsDrawUCPixel[]  = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_INT }, { nullptr, 0 } };
-FDEF argsDrawUCRPixel[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_PTR|FD_RGB }, { nullptr, 0 } };
-FDEF argsReadUCPixel[]  = { { "Value", FD_INT }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_PTR|FD_RESULT|FD_RGB }, { nullptr, 0 } };
-FDEF argsReadUCRPixel[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_PTR|FD_RESULT|FD_RGB }, { nullptr, 0 } };
-FDEF argsDrawUCRIndex[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "Data", FD_PTR }, { "Colour", FD_PTR|FD_RGB }, { nullptr, 0 } };
-FDEF argsReadUCRIndex[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "Data", FD_PTR }, { "Colour", FD_PTR|FD_RGB|FD_RESULT }, { nullptr, 0 } };
+FDEF argsDrawUCRPixel[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_ARRAY|FD_BYTE }, { nullptr, 0 } };
+FDEF argsReadUCPixel[]  = { { "Value", FD_INT }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_ARRAY|FD_BYTE|FD_RESULT }, { nullptr, 0 } };
+FDEF argsReadUCRPixel[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_ARRAY|FD_BYTE|FD_RESULT }, { nullptr, 0 } };
+FDEF argsDrawUCRIndex[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "Data", FD_PTR }, { "Colour", FD_ARRAY|FD_BYTE }, { nullptr, 0 } };
+FDEF argsReadUCRIndex[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "Data", FD_PTR }, { "Colour", FD_ARRAY|FD_BYTE|FD_RESULT }, { nullptr, 0 } };
 
 //********************************************************************************************************************
 // Surface locking routines.  These should only be called on occasions where you need to use the CPU to access graphics
@@ -542,6 +542,9 @@ AllocMemory
 ReallocMemory
 CreateObject: A Compression object could not be created.
 Compression
+
+-TAGS-
+mutates-object, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -624,6 +627,9 @@ Okay
 NothingDone: The Bitmap's content is already in linear RGB format.
 InvalidState: The Bitmap is not in the expected state.
 InvalidDimension: The clipping region is invalid.
+
+-TAGS-
+mutates-object
 -END-
 *********************************************************************************************************************/
 
@@ -700,6 +706,9 @@ Okay
 NothingDone: The bitmap's content is already in sRGB format.
 InvalidState: The bitmap is not in the expected state.
 InvalidDimension: The clipping region is invalid.
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -783,6 +792,9 @@ Okay
 NullArgs
 Mismatch: The target bitmap is not a close enough match to the source bitmap in order to perform the operation.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 static ERR BITMAP_CopyArea(objBitmap *Self, struct bmp::CopyArea *Args)
@@ -809,6 +821,9 @@ int RetainData: Retains the compression data if `true`.
 Okay
 AllocMemory: Insufficient memory in recreating the bitmap data buffer.
 CreateObject: A Compression object could not be created.
+
+-TAGS-
+mutates-object, creates-resource
 
 *********************************************************************************************************************/
 
@@ -914,6 +929,9 @@ NothingDone: The content is already normalised.
 InvalidState: The Bitmap is not in the expected state (32-bit with an alpha channel).
 InvalidDimension: The clipping region is invalid.
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR BITMAP_Demultiply(extBitmap *Self)
@@ -1014,6 +1032,9 @@ int(BAF) Flags:  Supports `FILL` and `BLEND`.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -1119,6 +1140,9 @@ int Alpha:  Alpha component value from 0 - 255.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -1548,6 +1572,9 @@ Okay
 NothingDone: The content is already premultiplied.
 InvalidState: The Bitmap is not in the expected state (32-bit with an alpha channel)
 InvalidDimension: The clipping region is invalid.
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -2218,6 +2245,9 @@ int Bottom:    The exclusive bottom edge of the clip region.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -2955,13 +2985,13 @@ static const FieldArray clBitmapFields[] = {
    { "Opacity",       FDF_INT|FDF_RW },
    { "BlendMode",     FDF_INT|FDF_RW|FDF_LOOKUP, nullptr, nullptr, &clBitmapBlendMode },
    { "DataID",        FDF_INT|FDF_SYSTEM|FDF_R },
-   { "TransColour",   FDF_RGB|FDF_RW, nullptr, SET_Trans },
-   { "Bkgd",          FDF_RGB|FDF_RW, nullptr, SET_Bkgd },
+   { "TransColour",   FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_Trans, 4 },
+   { "Bkgd",          FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_Bkgd, 4 },
    { "BkgdIndex",     FDF_INT|FDF_RW, nullptr, SET_BkgdIndex },
    { "ColourSpace",   FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clBitmapColourSpace },
    // Virtual fields
-   { "Clip",          FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Clip, SET_Clip },
-   { "Handle",        FDF_POINTER|FDF_SYSTEM|FDF_RW, GET_Handle, SET_Handle },
+   { "Clip",          FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GET_Clip, SET_Clip },
+   { "Handle",        FDF_POINTER|FDF_SYSTEM|FDF_RW|FDF_PURE, GET_Handle, SET_Handle },
    END_FIELD
 };
 

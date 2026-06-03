@@ -24,7 +24,7 @@
 
 static inline bool should_trace_operators(FuncState* fs)
 {
-   auto prv = (prvTiri *)fs->L->script->ChildPrivate;
+   auto prv = (prvTiri *)fs->L->script->DerivedPtr;
    return (prv->JitOptions & JOF::TRACE_OPERATORS) != JOF::NIL;
 }
 

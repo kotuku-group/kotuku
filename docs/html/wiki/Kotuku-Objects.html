@@ -29,7 +29,7 @@
         <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
         <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
         <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
-        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li>
       </ul>
     </div>
   </div>
@@ -274,16 +274,16 @@
 <li><a href="#a-closer-look-at-the-object-structure">A Closer Look at the Object Structure</a></li>
 </ol>
 <h2 id="introduction">Introduction</h2>
-<p>Kōtuku objects are run-time instances of class interfaces. They carry state in the form of a C <code>struct</code> and are all backed by a common C++ <code>class</code> definition named <code>Object</code>. Kōtuku&#39;s objects have inherent features that go beyond those typically found in OO languages. This includes:</p>
+<p>Kōtuku objects are run-time instances of class interfaces. Objects are <em>stateful</em> and carry embedded information on their runtime status. Kōtuku&#39;s objects have inherent features that go beyond those typically found in static OO languages. This includes:</p>
 <ul>
-<li>An ownership model - an object is <em>always</em> owned by another object.</li>
+<li>An ownership model that maintains a living object tree at runtime - an object is <em>always</em> owned by another object.</li>
 <li>Locking - any object can be locked to prevent conflict with other threads.</li>
 <li>Identification - all objects have a UID and can optionally be given a name.</li>
 <li>Discoverability - objects can be found using their names.</li>
 <li>Resolvability - the pointer to any object can be resolved through their UID.</li>
 <li>Independent processing - object functions can be run in their own thread, independent from the caller.</li>
 <li>Messaging - non-urgent object functions can be executed via messages.</li>
-<li>Context - all operations are carried out in the context of an object, i.e. the equivalent of <code>this</code> is tracked at all times, and can be referenced in regular functions.</li>
+<li>Context - all operations are carried out in the context of an object, i.e. the equivalent of <code>this</code> or <code>self</code> can be referenced at any time, including within regular functions.</li>
 <li>Resource tracking - the ownership model ensures that an object can never be left dangling as a resource leak.</li>
 </ul>
 <p>The creation of an object can be achieved in numerous ways depending on the programming language, but ultimately all objects are processed through a single Core API function known as <code>NewObject()</code>. For instance:</p>
@@ -398,7 +398,7 @@ public variables and methods is helpful in accelerating development for new user
 <tr>
 <td style="text-align: left;">ChildPrivate</td>
 <td style="text-align: left;"><code>APTR</code></td>
-<td style="text-align: left;">For sub-classes only, allows private storage to be allocated and referenced here.</td>
+<td style="text-align: left;">For derived classes only, allows private storage to be allocated and referenced here.</td>
 </tr>
 <tr>
 <td style="text-align: left;">CreatorMeta</td>
@@ -435,8 +435,8 @@ public variables and methods is helpful in accelerating development for new user
 <td style="text-align: left;">Returns <code>true</code> if any of the <code>NF</code> type <code>Flags</code> are currently defined for this object.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>bool isSubClass()</code></td>
-<td style="text-align: left;">Returns <code>true</code> if the object is the member of a sub-class.</td>
+<td style="text-align: left;"><code>bool isDerived()</code></td>
+<td style="text-align: left;">Returns <code>true</code> if the object is the member of a derived class.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>OBJECTID ownerID()</code></td>
@@ -444,11 +444,11 @@ public variables and methods is helpful in accelerating development for new user
 </tr>
 <tr>
 <td style="text-align: left;"><code>CLASSID classID()</code></td>
-<td style="text-align: left;">Returns the ID of the object&#39;s class (can be a sub-class).</td>
+<td style="text-align: left;">Returns the ID of the object&#39;s class (can be a derived class).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>CLASSID baseClassID()</code></td>
-<td style="text-align: left;">Returns the ID of the object&#39;s base-class (never a sub-class).</td>
+<td style="text-align: left;">Returns the ID of the object&#39;s base-class (never a derived class).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>NF flags()</code></td>

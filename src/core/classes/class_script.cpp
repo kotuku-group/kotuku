@@ -11,7 +11,7 @@ Script: The Script class defines a common interface for script execution.
 The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does
 not include a default parser or execution process of any kind.
 
-To execute a script file, choose a sub-class that matches the language and create the script object.  Set the #Path
+To execute a script file, choose a derived class that matches the language and create the script object.  Set the #Path
 field and then #Activate() the script.  Global input parameters for the script can be defined via the #SetKey()
 action.
 
@@ -24,12 +24,7 @@ Terminating the script will not remove objects that are outside its resource hie
 #define PRV_SCRIPT
 #include "../defs.h"
 #include <kotuku/main.h>
-
-static ERR GET_Results(objScript *, STRING **, int *);
-
-static ERR SET_Procedure(objScript *, std::string_view &);
-static ERR SET_Results(objScript *, CSTRING *, int);
-static ERR SET_String(objScript *, std::string_view &);
+#include <kotuku/vector.hpp>
 
 inline std::string_view check_bom(std::string_view Value)
 {
@@ -63,7 +58,7 @@ DataFeed: Script source code can be passed to the object as XML or text via data
 
 static ERR SCRIPT_DataFeed(objScript *Self, struct acDataFeed *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    if (Args->Datatype IS DATA::XML) {
       Self->setStatement((STRING)Args->Buffer);
@@ -92,6 +87,9 @@ int TotalArgs: The total number of parameters in the Args parameter.
 Okay:
 Args:
 
+-TAGS-
+mutates-object, callback-inlines, private
+
 -END-
 
 *********************************************************************************************************************/
@@ -100,7 +98,7 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 1024)) return log.warning(ERR::Args);
 
    auto save_id      = Self->ProcedureID;
@@ -151,11 +149,14 @@ cstr Options: Options to pass to the underlying language.
 Okay:
 NullArgs:
 
+-TAGS-
+caller-owns-result, null-terminated-result
+
 *********************************************************************************************************************/
 
 static ERR SCRIPT_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 {
-   // It is the responsibility of the sub-class to override this method with something appropriate.
+   // It is the responsibility of the derived class to override this method with something appropriate.
    return ERR::Okay;
 }
 
@@ -178,11 +179,14 @@ ptr(func) Procedure: The procedure to be dereferenced.
 Okay:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR SCRIPT_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 {
-   // It is the responsibility of the sub-class to override this method with something appropriate.
+   // It is the responsibility of the derived class to override this method with something appropriate.
    return ERR::Okay;
 }
 
@@ -236,6 +240,9 @@ int TotalArgs: Total number of `Args` provided.
 Okay: The procedure was executed.
 NullArgs
 Args: The `TotalArgs` value is invalid.
+
+-TAGS-
+mutates-object, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -244,7 +251,7 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 32)) return log.warning(ERR::Args);
 
    auto save_id = Self->ProcedureID;
@@ -273,7 +280,6 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
 
 static ERR SCRIPT_Free(objScript *Self)
 {
-   if (Self->Results)     { FreeResource(Self->Results);     Self->Results = nullptr; }
    Self->~objScript();
    return ERR::Okay;
 }
@@ -302,6 +308,9 @@ cstr Procedure:   The name of the procedure.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -310,7 +319,7 @@ static ERR SCRIPT_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Procedure) or (!Args->Procedure[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Procedure) or (not Args->Procedure[0])) return log.warning(ERR::NullArgs);
    Args->ProcedureID = strihash(Args->Procedure);
    return ERR::Okay;
 }
@@ -323,15 +332,14 @@ GetKey: Script parameters can be retrieved through this action.
 
 static ERR SCRIPT_GetKey(objScript *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Value) or (!Args->Key)) return ERR::NullArgs;
-   if (Args->Size < 2) return ERR::Args;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
    if (auto it = Self->Vars.find(Args->Key); it != Self->Vars.end()) {
-      strcopy(it->second, Args->Value, Args->Size);
+      Args->Value->assign(it->second);
       return ERR::Okay;
    }
    else {
-      Args->Value[0] = 0;
+      Args->Value->clear();
       return ERR::UnsupportedField;
    }
 }
@@ -342,12 +350,12 @@ static ERR SCRIPT_Init(objScript *Self)
 {
    kt::Log log;
 
-   if (!Self->TargetID) { // Define the target if it has not been set already
+   if (not Self->TargetID) { // Define the target if it has not been set already
       log.detail("Target not set, defaulting to owner #%d.", Self->ownerID());
       Self->TargetID = Self->ownerID();
    }
 
-   if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+   if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
    return ERR::NoSupport;
 }
@@ -391,13 +399,17 @@ static ERR SCRIPT_SetKey(objScript *Self, struct acSetKey *Args)
 {
    // It is acceptable to set zero-length string values (this has its uses in some scripts).
 
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return ERR::NullArgs;
-   if (!Args->Key[0]) return ERR::NullArgs;
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
    kt::Log log;
-   log.trace("%s = %s", Args->Key, Args->Value);
+   log.trace("%.*s = %.*s", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
-   Self->Vars[Args->Key] = Args->Value;
+   auto key_it = Self->Vars.lower_bound(Args->Key);
+   if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
+      key_it->second.assign(Args->Value);
+   }
+   else Self->Vars.emplace_hint(key_it, std::string(Args->Key), std::string(Args->Value));
+
    return ERR::Okay;
 }
 
@@ -476,9 +488,9 @@ code for international English.
 
 *********************************************************************************************************************/
 
-static ERR GET_Language(objScript *Self, STRING *Value)
+static ERR GET_Language(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->Language;
+   Value = std::string_view((const char *)&Self->Language, 3);
    return ERR::Okay;
 }
 
@@ -524,13 +536,14 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
       Self->String.clear();
       Self->WorkingPath.clear();
 
-      int i, len;
+      int i;
       if (not Value.empty()) {
-         for (len=0; (len < int(Value.size())) and (Value[len] != ';'); len++);
+         auto len = Value.find(';');
+         if (len IS std::string_view::npos) len = Value.size();
 
          if (Value.substr(0, len).starts_with("STRING:")) {
-            auto statement = Value.substr(7);
-            return SET_String(Self, statement);
+            Self->String.assign(check_bom(Value.substr(7)));
+            return ERR::Okay;
          }
 
          Self->Path.assign(Value, 0, len);
@@ -550,7 +563,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
                   std::string buffer;
                   buffer.append(value, start, end - start);
                   std::string_view procedure(buffer);
-                  SET_Procedure(Self, procedure);
+                  Self->Procedure.assign(procedure);
                }
 
                // Process optional parameters
@@ -607,18 +620,6 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR SET_Name(objScript *Self, CSTRING Name)
-{
-   if (Name) {
-      SetName(Self, Name);
-      struct acSetKey args("Name", Name);
-      return SCRIPT_SetKey(Self, &args);
-   }
-   else return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -657,49 +658,18 @@ For maximum compatibility in type conversion, the results are stored as an array
 
 *********************************************************************************************************************/
 
-static ERR GET_Results(objScript *Self, STRING **Value, int *Elements)
+static ERR GET_Results(objScript *Self, kt::vector<std::string> **Value, int *Elements)
 {
-   if (Self->Results) {
-      *Value = Self->Results;
-      *Elements = Self->ResultsTotal;
-      return ERR::Okay;
-   }
-   else {
-      *Value = nullptr;
-      *Elements = 0;
-      return ERR::FieldNotSet;
-   }
+   *Value = &Self->Results;
+   *Elements = Self->Results.size();
+   return ERR::Okay;
 }
 
-static ERR SET_Results(objScript *Self, CSTRING *Value, int Elements)
+static ERR SET_Results(objScript *Self, const kt::vector<std::string> *Value, int Elements)
 {
-   kt::Log log;
-
-   if (Self->Results) { FreeResource(Self->Results); Self->Results = 0; }
-
-   Self->ResultsTotal = 0;
-
-   if (Value) {
-      int len = 0;
-      for (int i=0; i < Elements; i++) {
-         if (!Value[i]) return log.warning(ERR::SetValueNotString);
-         len += strlen(Value[i]) + 1;
-      }
-      Self->ResultsTotal = Elements;
-
-      if (AllocMemory((sizeof(CSTRING) * (Elements+1)) + len, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Self->Results, nullptr) IS ERR::Okay) {
-         STRING str = (STRING)(Self->Results + Elements + 1);
-         int i;
-         for (i=0; Value[i]; i++) {
-            Self->Results[i] = str;
-            str += strcopy(Value[i], str) + 1;
-         }
-         Self->Results[i] = nullptr;
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if (Value) Self->Results = *Value;
+   else Self->Results.clear();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -789,13 +759,8 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 
       bool path = false;
       if (Self->Path[0] IS '/') path = true;
-      else {
-        for (int j=0; (j < int(Self->Path.size())) and (Self->Path[j] != '/') and (Self->Path[j] != '\\'); j++) {
-            if (Self->Path[j] IS ':') {
-               path = true;
-               break;
-            }
-         }
+      else if (auto j = Self->Path.find_first_of(":/\\"); (j != std::string::npos) and (Self->Path[j] IS ':')) {
+         path = true;
       }
 
       auto j = Self->Path.find_last_of(":/\\");
@@ -845,20 +810,19 @@ static const FieldArray clScriptFields[] = {
    { "CurrentLine", FDF_INT|FDF_R },
    { "LineOffset",  FDF_INT|FDF_RW },
    // Virtual Fields
-   { "CacheFile",    FDF_CPPSTRING|FDF_RW,           GET_CacheFile, SET_CacheFile },
-   { "ErrorMessage", FDF_CPPSTRING|FDF_RW,           GET_ErrorMessage, SET_ErrorMessage },
-   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,           GET_WorkingPath, SET_WorkingPath },
-   { "Language",     FDF_STRING|FDF_R,               GET_Language, nullptr },
-   { "Location",     FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
-   { "Procedure",    FDF_CPPSTRING|FDF_RW,           GET_Procedure, SET_Procedure },
-   { "Name",         FDF_STRING|FDF_SYSTEM|FDF_RW,   nullptr, SET_Name },
-   { "Path",         FDF_CPPSTRING|FDF_RI,           GET_Path, SET_Path },
-   { "Results",      FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
-   { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
-   { "Statement",    FDF_CPPSTRING|FDF_RW,           GET_String, SET_String },
-   { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_String, SET_String },
-   { "TotalArgs",    FDF_INT|FDF_R,                  GET_TotalArgs, nullptr },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R,   GET_Variables, nullptr },
+   { "CacheFile",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_CacheFile, SET_CacheFile },
+   { "ErrorMessage", FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_ErrorMessage, SET_ErrorMessage },
+   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,             GET_WorkingPath, SET_WorkingPath },
+   { "Language",     FDF_CPPSTRING|FDF_R|FDF_PURE,              GET_Language },
+   { "Location",     FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
+   { "Procedure",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_Procedure, SET_Procedure },
+   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE,             GET_Path, SET_Path },
+   { "Results",      FDF_ARRAY|FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Results, SET_Results },
+   { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
+   { "Statement",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_String, SET_String },
+   { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_String, SET_String },
+   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs, nullptr },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables, nullptr },
    END_FIELD
 };
 

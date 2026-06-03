@@ -28,6 +28,7 @@
       <description>
 <p>This routine may block temporarily if there are unresolved requests awaiting completion in separate threads.</p>
       </description>
+      <tags>blocking, mutates-object</tags>
     </action>
 
   </actions>
@@ -47,10 +48,15 @@
       </description>
       <result>
         <error code="Okay">The IP address was resolved successfully.</error>
-        <error code="Failed">The address could not be resolved</error>
+        <error code="Retry">Retry the operation (could not succeed at this time)</error>
+        <error code="Failed">The address could not be resolved.</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="Memory">General memory error</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
@@ -67,10 +73,14 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Retry">Retry the operation (could not succeed at this time)</error>
         <error code="Failed">General failure</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="Memory">General memory error</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
@@ -88,9 +98,10 @@
       <result>
         <error code="Okay">The IP address was resolved successfully.</error>
         <error code="Failed">The address could not be resolved</error>
-        <error code="Args">Invalid arguments passed to function</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, copies-input, callback-inlines</tags>
     </method>
 
     <method>
@@ -107,10 +118,9 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, copies-input, callback-inlines</tags>
     </method>
 
   </methods>
@@ -124,6 +134,7 @@
       <description>
 <p>A list of the most recently resolved IP addresses can be read from this field.</p>
       </description>
+      <tags>object-owns-result, volatile-result</tags>
     </field>
 
     <field>
@@ -135,6 +146,7 @@
 <p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
 <p>The Tiri prototype is as follows, with results readable from the <fl>HostName</fl> and <fl>Addresses</fl> fields: <code>function(NetLookup, Error)</code>.</p>
       </description>
+      <tags>object-owns-result, callback-held</tags>
     </field>
 
     <field>
@@ -162,6 +174,7 @@
       <description>
 <p>The name of the most recently resolved host is readable from this field.</p>
       </description>
+      <tags>object-owns-result, volatile-result, null-terminated-result</tags>
     </field>
 
   </fields>

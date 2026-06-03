@@ -5,7 +5,7 @@
 static void notify_input_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   auto str = Vector->get<CSTRING>(FID_String);
+   auto str = Vector->get<std::string>(FID_String);
 
    Self->Vars[Vector->Name].assign(str);
 
@@ -21,7 +21,7 @@ static void notify_input_onchange(objVectorText *Vector)
 static void notify_combo_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   auto str = Vector->get<CSTRING>(FID_String);
+   auto str = Vector->get<std::string>(FID_String);
 
    Self->Vars[Vector->Name].assign(str);
 
@@ -53,7 +53,7 @@ static ERR combo_feedback(objVectorViewport *Viewport, FM Event, OBJECTPTR Event
       }
    }
    else if ((Event IS FM::HAS_FOCUS) or (Event IS FM::CHILD_HAS_FOCUS)) {
-      combo->last_good_input = combo->input->get<CSTRING>(FID_String);
+      combo->last_good_input = combo->input->get<std::string>(FID_String);
       if (!combo->name.empty()) {
          Self->Vars[combo->name] = combo->last_good_input;
          if ((Self->EventMask & DEF::WIDGET_STATE) != DEF::NIL) {
@@ -423,10 +423,10 @@ static void error_dialog(const std::string Title, const std::string Message)
       acSetKey(dialog, "message", Message.c_str());
 
       if ((InitObject(dialog) IS ERR::Okay) and (acActivate(dialog) IS ERR::Okay)) {
-         CSTRING *results;
+         kt::vector<std::string> *results;
          int size;
          if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            new_dialog_id = strtol(results[0], nullptr, 0);
+            new_dialog_id = strtol((*results)[0].c_str(), nullptr, 0);
          }
       }
    }

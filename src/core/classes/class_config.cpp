@@ -238,6 +238,9 @@ cstr Key: The name of the targeted key.
 Okay
 NullArgs
 Search
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -273,6 +276,9 @@ cstr Group: The name of the group that will be deleted.
 -ERRORS-
 Okay: The group was deleted or does not exist.
 NullArgs
+
+-TAGS-
+mutates-object, idempotent
 -END-
 
 *********************************************************************************************************************/
@@ -342,6 +348,9 @@ Args
 OutOfRange: The index number is out of range of the available groups.
 NoData: There is no data loaded into the config object.
 
+-TAGS-
+pure-query, object-owns-result, null-terminated-result
+
 *********************************************************************************************************************/
 
 static ERR CONFIG_GetGroupFromIndex(extConfig *Self, struct cfg::GetGroupFromIndex *Args)
@@ -393,6 +402,9 @@ obj Source: The Config object to be merged.
 Okay
 NullArgs
 AccessObject: The source configuration object could not be accessed.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -423,6 +435,9 @@ cstr Path: The location of the configuration file that you want to merge.
 Okay
 NullArgs
 File: Failed to load the source file.
+
+-TAGS-
+blocking, mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -475,6 +490,9 @@ cstr Key: The name of a key to retrieve (case sensitive).
 Okay
 NullArgs
 Search: The requested configuration entry does not exist.
+
+-TAGS-
+pure-query, object-owns-result, null-terminated-result
 -END-
 
 *********************************************************************************************************************/
@@ -585,6 +603,9 @@ cstr Data: The data that will be added to the given group/key.
 Okay
 NullArgs
 Search: The referred group does not exist.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -618,6 +639,9 @@ int Descending: Set to true if a descending sort is required.
 -ERRORS-
 Okay
 NoData
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -667,6 +691,9 @@ Okay
 NullArgs
 Args
 AllocMemory: The additional memory required for the new entry could not be allocated.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -1099,13 +1126,13 @@ static ConfigGroup * find_group_wild(extConfig *Self, std::string_view Group)
 
 static const FieldArray clFields[] = {
    { "Path",        FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
-   { "KeyFilter",   FDF_CPPSTRING|FDF_RW, GET_KeyFilter, SET_KeyFilter },
-   { "GroupFilter", FDF_CPPSTRING|FDF_RW, GET_GroupFilter, SET_GroupFilter },
+   { "KeyFilter",   FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_KeyFilter, SET_KeyFilter },
+   { "GroupFilter", FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_GroupFilter, SET_GroupFilter },
    { "Flags",       FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clConfigFlags },
    // Virtual fields
-   { "Data",        FDF_POINTER|FDF_R, GET_Data },
-   { "TotalGroups", FDF_INT|FDF_R, GET_TotalGroups },
-   { "TotalKeys",   FDF_INT|FDF_R, GET_TotalKeys },
+   { "Data",        FDF_POINTER|FDF_R|FDF_PURE, GET_Data },
+   { "TotalGroups", FDF_INT|FDF_R|FDF_PURE, GET_TotalGroups },
+   { "TotalKeys",   FDF_INT|FDF_R|FDF_PURE, GET_TotalKeys },
    END_FIELD
 };
 

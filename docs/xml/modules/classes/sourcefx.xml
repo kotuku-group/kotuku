@@ -50,7 +50,7 @@
     <field>
       <name>Source</name>
       <comment>The source <class name="Vector">Vector</class> that will be rendered.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>The Source field must refer to a <class name="Vector">Vector</class> that will be rendered in the filter pipeline.  The vector must be under the ownership of the same <class name="VectorScene">VectorScene</class> that the filter pipeline belongs.</p>
@@ -73,6 +73,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

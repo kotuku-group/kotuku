@@ -167,13 +167,12 @@ static const struct {
 
 static ERR GET_AllowTabs(extScintilla *, int *);
 static ERR GET_AutoIndent(extScintilla *, int *);
-static ERR GET_FileDrop(extScintilla *, FUNCTION **);
+static ERR GET_FileDrop(extScintilla *, FUNCTION * &);
 static ERR GET_FoldingMarkers(extScintilla *, int *);
 static ERR GET_LineCount(extScintilla *, int *);
 static ERR GET_LineNumbers(extScintilla *, int *);
-static ERR GET_Path(extScintilla *, CSTRING *);
 static ERR GET_ShowWhitespace(extScintilla *, int *);
-static ERR GET_EventCallback(extScintilla *, FUNCTION **);
+static ERR GET_EventCallback(extScintilla *, FUNCTION * &);
 static ERR GET_String(extScintilla *, STRING *);
 static ERR GET_Symbols(extScintilla *, int *);
 static ERR GET_TabWidth(extScintilla *, int *);
@@ -189,15 +188,15 @@ static ERR SET_LeftMargin(extScintilla *, int);
 static ERR SET_Lexer(extScintilla *, SCLEX);
 static ERR SET_LineHighlight(extScintilla *, RGB8 *);
 static ERR SET_LineNumbers(extScintilla *, int);
-static ERR SET_Path(extScintilla *, CSTRING);
+static ERR SET_Path(extScintilla *, const std::string_view &);
 static ERR SET_Modified(extScintilla *, int);
-static ERR SET_Origin(extScintilla *, CSTRING);
+static ERR SET_Origin(extScintilla *, const std::string_view &);
 static ERR SET_RightMargin(extScintilla *, int);
 static ERR SET_ShowWhitespace(extScintilla *, int);
 static ERR SET_EventCallback(extScintilla *, FUNCTION *);
 static ERR SET_SelectBkgd(extScintilla *, RGB8 *);
 static ERR SET_SelectFore(extScintilla *, RGB8 *);
-static ERR SET_String(extScintilla *, CSTRING);
+static ERR SET_String(extScintilla *, const std::string_view &);
 static ERR SET_Symbols(extScintilla *, int);
 static ERR SET_TabWidth(extScintilla *, int);
 static ERR SET_TextColour(extScintilla *, RGB8 *);
@@ -243,8 +242,8 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    OBJECTID id;
    if (FindObject("glStyle", CLASSID::XML, &id) IS ERR::Okay) {
-      char buffer[40];
-      if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer, sizeof(buffer)) IS ERR::Okay) {
+      std::string buffer;
+      if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer) IS ERR::Okay) {
          read_rgb8(buffer, &glHighlight);
       }
    }
@@ -648,7 +647,6 @@ static ERR SCINTILLA_Free(extScintilla *Self, APTR)
 
    if (Self->prvKeyEvent)  { UnsubscribeEvent(Self->prvKeyEvent); Self->prvKeyEvent = nullptr; }
    if (Self->FileStream)   { FreeResource(Self->FileStream); Self->FileStream = nullptr; }
-   if (Self->Path)         { FreeResource(Self->Path);  Self->Path = nullptr; }
    if (Self->StringBuffer) { FreeResource(Self->StringBuffer); Self->StringBuffer = nullptr; }
    if (Self->Font)         { FreeResource(Self->Font);       Self->Font = nullptr; }
    if (Self->BoldFont)     { FreeResource(Self->BoldFont);   Self->BoldFont = nullptr; }
@@ -657,6 +655,7 @@ static ERR SCINTILLA_Free(extScintilla *Self, APTR)
 
    gfx::UnsubscribeInput(Self->InputHandle);
 
+   ~extScintilla(Self);
    return ERR::Okay;
 }
 
@@ -835,7 +834,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    // Load a text file if required
 
-   if (Self->Path) {
+   if (not Self->Path.empty()) {
       if (load_file(Self, Self->Path) != ERR::Okay) {
          return ERR::File;
       }
@@ -1546,10 +1545,10 @@ If multiple files are dropped, the callback will be repeatedly called until all 
 
 *********************************************************************************************************************/
 
-static ERR GET_FileDrop(extScintilla *Self, FUNCTION **Value)
+static ERR GET_FileDrop(extScintilla *Self, FUNCTION * &Value)
 {
    if (Self->FileDrop.defined()) {
-      *Value = &Self->FileDrop;
+      Value = &Self->FileDrop;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1714,6 +1713,22 @@ static ERR SET_LineNumbers(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Origin: Sets the #Path field without loading the document.
+
+Setting the Origin will update #Path without updating the content of the Scintilla object.  Use for situations such as
+changing the document location or name.
+
+*********************************************************************************************************************/
+
+static ERR SET_Origin(extScintilla *Self, const std::string_view &Value)
+{
+   Self->Path = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Path: Identifies the location of a text file to load.
 
 To load data from a text file into a scintilla object, set the Path field.
@@ -1724,51 +1739,17 @@ that you specify.  To change the path without automatically loading from the sou
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extScintilla *Self, CSTRING *Value)
-{
-   *Value = Self->Path;
-   return ERR::Okay;
-}
-
-static ERR SET_Path(extScintilla *Self, CSTRING Value)
+static ERR SET_Path(extScintilla *Self, const std::string_view &Value)
 {
    kt::Log log;
 
-   log.branch("%s", Value);
+   log.branch("%.*s", int(Value.size()), Value.data());
 
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if ((Self->Path = strclone(Value))) {
-         if (Self->initialised()) {
-            if (load_file(Self, Self->Path) != ERR::Okay) {
-               return ERR::File;
-            }
-         }
+   Self->Path = Value;
+   if (Self->initialised()) {
+      if (load_file(Self, Self->Path) != ERR::Okay) {
+         return ERR::File;
       }
-      else return ERR::AllocMemory;
-   }
-
-   return ERR::Okay;
-}
-
-/****************************************************************************
-
--FIELD-
-Origin: Similar to the Path field, but does not automatically load content if set.
-
-This field is identical to the #Path field, with the exception that it does not update the content of a
-scintilla object if it is set after initialisation.  This may be useful if the origin of the currently loaded content
-needs to be changed without causing a load operation.
-
-****************************************************************************/
-
-static ERR SET_Origin(extScintilla *Self, CSTRING Value)
-{
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if (!(Self->Path = strclone(Value))) return ERR::AllocMemory;
    }
 
    return ERR::Okay;
@@ -1865,10 +1846,10 @@ supported events and additional details.
 
 *********************************************************************************************************************/
 
-static ERR GET_EventCallback(extScintilla *Self, FUNCTION **Value)
+static ERR GET_EventCallback(extScintilla *Self, FUNCTION * &Value)
 {
    if (Self->EventCallback.defined()) {
-      *Value = &Self->EventCallback;
+      Value = &Self->EventCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1950,7 +1931,7 @@ method as the preferred alternative, as it is much more efficient with memory us
 
 *********************************************************************************************************************/
 
-static ERR GET_String(extScintilla *Self, STRING *Value)
+static ERR GET_String(extScintilla *Self, std::string_view &Value)
 {
    int len = SCICALL(SCI_GETLENGTH);
 
@@ -1958,16 +1939,16 @@ static ERR GET_String(extScintilla *Self, STRING *Value)
 
    if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &Self->StringBuffer) IS ERR::Okay) {
       SCICALL(SCI_GETTEXT, len+1, (const char *)Self->StringBuffer);
-      *Value = Self->StringBuffer;
+      Value = std::string_view(Self->StringBuffer, len);
       return ERR::Okay;
    }
    else return ERR::AllocMemory;
 }
 
-static ERR SET_String(extScintilla *Self, CSTRING Value)
+static ERR SET_String(extScintilla *Self, const std::string_view &Value)
 {
    if (Self->initialised()) {
-      if ((Value) and (*Value)) SCICALL(SCI_SETTEXT, 0UL, (const char *)Value);
+      if (not Value.empty()) SCICALL(SCI_SETTEXT, 0UL, (const char *)Value.data());
       else acClear(Self);
    }
    else return ERR::NotInitialised;
@@ -2181,10 +2162,10 @@ static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
       else acSetKey(dialog, "message", Message);
 
       if ((InitObject(dialog) IS ERR::Okay) and (acActivate(dialog) IS ERR::Okay)) {
-         CSTRING *results;
+         kt::vector<std::string> *results;
          int size;
          if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            dialog_id = strtol(results[0], nullptr, 0);
+            dialog_id = strtol((*results)[0].c_str(), nullptr, 0);
          }
       }
    }
@@ -2451,7 +2432,7 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 
 static const FieldArray clFields[] = {
    { "Font",           FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::FONT },
-   { "Path",           FDF_STRING|FDF_RW, nullptr, SET_Path },
+   { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "EventFlags",     FDF_INT|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clScintillaEventFlags },
    { "Surface",        FDF_OBJECTID|FDF_RI, nullptr, nullptr, CLASSID::SURFACE },
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScintillaFlags },
@@ -2459,31 +2440,31 @@ static const FieldArray clFields[] = {
    { "Visible",        FDF_INT|FDF_RI },
    { "LeftMargin",     FDF_INT|FDF_RW, nullptr, SET_LeftMargin },
    { "RightMargin",    FDF_INT|FDF_RW, nullptr, SET_RightMargin },
-   { "LineHighlight",  FDF_RGB|FDF_RW, nullptr, SET_LineHighlight },
-   { "SelectFore",     FDF_RGB|FDF_RI, nullptr, SET_SelectFore },
-   { "SelectBkgd",     FDF_RGB|FDF_RI, nullptr, SET_SelectBkgd },
-   { "BkgdColour",     FDF_RGB|FDF_RW, nullptr, SET_BkgdColour },
-   { "CursorColour",   FDF_RGB|FDF_RW, nullptr, SET_CursorColour },
-   { "TextColour",     FDF_RGB|FDF_RW, nullptr, SET_TextColour },
+   { "LineHighlight",  FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_LineHighlight, 4 },
+   { "SelectFore",     FDF_ARRAY|FD_BYTE|FDF_RI, nullptr, SET_SelectFore, 4 },
+   { "SelectBkgd",     FDF_ARRAY|FD_BYTE|FDF_RI, nullptr, SET_SelectBkgd, 4 },
+   { "BkgdColour",     FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_BkgdColour, 4 },
+   { "CursorColour",   FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_CursorColour, 4 },
+   { "TextColour",     FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_TextColour, 4 },
    { "CursorRow",      FDF_INT|FDF_RW },
    { "CursorCol",      FDF_INT|FDF_RW },
    { "Lexer",          FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, SET_Lexer, &clScintillaLexer },
    { "Modified",       FDF_INT|FDF_RW, nullptr, SET_Modified },
 
    // Virtual fields
-   { "AllowTabs",      FDF_INT|FDF_RW,   GET_AllowTabs, SET_AllowTabs },
-   { "AutoIndent",     FDF_INT|FDF_RW,   GET_AutoIndent, SET_AutoIndent },
-   { "FileDrop",       FDF_FUNCTIONPTR|FDF_RW, GET_FileDrop, SET_FileDrop },
-   { "FoldingMarkers", FDF_INT|FDF_RW,   GET_FoldingMarkers, SET_FoldingMarkers },
+   { "AllowTabs",      FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
+   { "AutoIndent",     FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },
+   { "FileDrop",       FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FileDrop, SET_FileDrop },
+   { "FoldingMarkers", FDF_INT|FDF_RW|FDF_PURE,   GET_FoldingMarkers, SET_FoldingMarkers },
    { "LineCount",      FDF_INT|FDF_R,    GET_LineCount },
-   { "LineNumbers",    FDF_INT|FDF_RW,   GET_LineNumbers, SET_LineNumbers },
-   { "Origin",         FDF_STRING|FDF_RW, GET_Path, SET_Origin },
-   { "ShowWhitespace", FDF_INT|FDF_RW,   GET_ShowWhitespace, SET_ShowWhitespace },
-   { "EventCallback",  FDF_FUNCTIONPTR|FDF_RW, GET_EventCallback, SET_EventCallback },
-   { "String",         FDF_STRING|FDF_RW, GET_String, SET_String },
-   { "Symbols",        FDF_INT|FDF_RW,   GET_Symbols, SET_Symbols },
-   { "TabWidth",       FDF_INT|FDF_RW,   GET_TabWidth, SET_TabWidth },
-   { "Wordwrap",       FDF_INT|FDF_RW,   GET_Wordwrap, SET_Wordwrap },
+   { "LineNumbers",    FDF_INT|FDF_RW|FDF_PURE,   GET_LineNumbers, SET_LineNumbers },
+   { "Origin",         FDF_CPPSTRING|FDF_W, nullptr, SET_Origin },
+   { "ShowWhitespace", FDF_INT|FDF_RW|FDF_PURE,   GET_ShowWhitespace, SET_ShowWhitespace },
+   { "EventCallback",  FDF_FUNCTION|FDF_RW|FDF_PURE, GET_EventCallback, SET_EventCallback },
+   { "String",         FDF_CPPSTRING|FDF_RW, GET_String, SET_String },
+   { "Symbols",        FDF_INT|FDF_RW|FDF_PURE,   GET_Symbols, SET_Symbols },
+   { "TabWidth",       FDF_INT|FDF_RW|FDF_PURE,   GET_TabWidth, SET_TabWidth },
+   { "Wordwrap",       FDF_INT|FDF_RW|FDF_PURE,   GET_Wordwrap, SET_Wordwrap },
    END_FIELD
 };
 

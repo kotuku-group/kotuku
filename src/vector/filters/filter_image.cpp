@@ -9,13 +9,13 @@ that is distributed with this package.  Please refer to it for further informati
 ImageFX: Renders a bitmap image in the effect pipeline.
 
 The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The
-client has the option of providing a pre-allocated @Bitmap or the path to a @Picture file as the source.
+client has the option of providing a pre-allocated @Bitmap or the path to a @Image file as the source.
 
 If a pre-allocated @Bitmap is to be used, it must be created under the ownership of the ImageFX object, and this must
 be configured prior to initialisation.  It is required that the bitmap uses 32 bits per pixel and that the alpha
 channel is enabled.
 
-If a source picture file is referenced, it will be upscaled to meet the requirements automatically as needed.
+If a source image file is referenced, it will be upscaled to meet the requirements automatically as needed.
 
 Technically the ImageFX object is represented by a new viewport, the bounds of which are defined by attributes `X`,
 `Y`, `Width` and `Height`.  The placement and scaling of the referenced image is controlled by the #AspectRatio field.
@@ -31,7 +31,7 @@ class extImageFX : public extFilterEffect {
    using create = kt::Create<extImageFX>;
 
    objBitmap *Bitmap;    // Bitmap containing source image data.
-   objPicture *Picture;  // Origin picture if loading a source file.
+   objImage *Image;      // Origin image if loading a source file.
    ARF  AspectRatio;     // Aspect ratio flags.
    VSM ResampleMethod;   // Resample method.
 };
@@ -52,7 +52,7 @@ static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
 
 static ERR IMAGEFX_Free(extImageFX *Self)
 {
-   if (Self->Picture) { FreeResource(Self->Picture); Self->Picture = nullptr; }
+   if (Self->Image) { FreeResource(Self->Image); Self->Image = nullptr; }
    return ERR::Okay;
 }
 
@@ -123,7 +123,7 @@ Bitmap: The @Bitmap being used as the image source.
 Reading the Bitmap field will return the @Bitmap that is being used as the image source.  Note that if a custom
 Bitmap is to be used, the correct way to do this as to assign it to the ImageFX object via ownership rules.
 
-If a picture image has been processed by setting the #Path, the Bitmap will refer to the content that has been
+If an image has been processed by setting the #Path, the Bitmap will refer to the content that has been
 processed.
 
 *********************************************************************************************************************/
@@ -137,23 +137,23 @@ static ERR IMAGEFX_GET_Bitmap(extImageFX *Self, objBitmap **Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Path: Path to an image file supported by the @Picture class.
+Path: Path to an image file supported by the @Image class.
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_Path(extImageFX *Self, CSTRING *Value)
+static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
 {
-   if (Self->Picture) return Self->Picture->get(FID_Path, *Value);
-   else *Value = nullptr;
+   if (Self->Image) return Self->Image->get(FID_Path, Value);
+   else Value = std::string_view{};
    return ERR::Okay;
 }
 
-static ERR IMAGEFX_SET_Path(extImageFX *Self, CSTRING Value)
+static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
 {
-   if ((Self->Bitmap) or (Self->Picture)) return ERR::Immutable;
+   if ((Self->Bitmap) or (Self->Image)) return ERR::Immutable;
 
-   if ((Self->Picture = objPicture::create::local(fl::Path(Value), fl::BitsPerPixel(32), fl::Flags(PCF::FORCE_ALPHA_32)))) {
-      Self->Bitmap = Self->Picture->Bitmap;
+   if ((Self->Image = objImage::create::local(fl::Path(Value), fl::BitsPerPixel(32), fl::Flags(PCF::FORCE_ALPHA_32)))) {
+      Self->Bitmap = Self->Image->Bitmap;
       return ERR::Okay;
    }
    else return ERR::CreateObject;
@@ -188,10 +188,18 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, STRING *Value)
+static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string_view &Value)
 {
-   *Value = strclone("feImage");
-   return ERR::Okay;
+   std::stringstream stream;
+
+   stream << "feImage";
+
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -216,11 +224,11 @@ static const FieldDef clResampleMethod[] = {
 #include "filter_image_def.c"
 
 static const FieldArray clImageFXFields[] = {
-   { "Bitmap",         FDF_VIRTUAL|FDF_OBJECT|FDF_R, IMAGEFX_GET_Bitmap, nullptr, CLASSID::BITMAP },
-   { "Path",           FDF_VIRTUAL|FDF_STRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
-   { "XMLDef",         FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
-   { "AspectRatio",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, IMAGEFX_GET_AspectRatio, IMAGEFX_SET_AspectRatio, &clAspectRatio },
-   { "ResampleMethod", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, IMAGEFX_GET_ResampleMethod, IMAGEFX_SET_ResampleMethod, &clResampleMethod },
+   { "Bitmap",         FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, IMAGEFX_GET_Bitmap, nullptr, CLASSID::BITMAP },
+   { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
+   { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
+   { "AspectRatio",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_AspectRatio, IMAGEFX_SET_AspectRatio, &clAspectRatio },
+   { "ResampleMethod", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_ResampleMethod, IMAGEFX_SET_ResampleMethod, &clResampleMethod },
    END_FIELD
 };
 

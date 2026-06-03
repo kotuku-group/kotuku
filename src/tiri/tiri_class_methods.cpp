@@ -411,6 +411,9 @@ Options marked with [L] are only available when calling DebugLog() from inside t
 
 The resulting log information is returned as a string, which needs to be deallocated once no longer required.
 
+-TAGS-
+caller-owns-result, null-terminated-result
+
 *********************************************************************************************************************/
 
 static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
@@ -419,7 +422,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 
    if (not Args) return log.warning(ERR::NullArgs);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv->Lua) return log.warning(ERR::NotInitialised);
 
    log.branch("Options: %s", Args->Options ? Args->Options : "(none)");
@@ -684,7 +687,7 @@ static ERR TIRI_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 
    if ((Args->Procedure) and (Args->Procedure->isScript())) {
       if (Args->Procedure->Context IS Self) { // Verification of ownership
-         auto prv = (prvTiri *)Self->ChildPrivate;
+         auto prv = (prvTiri *)Self->DerivedPtr;
          if (not prv) {
             if (Self->terminating()) return ERR::Okay;
             else return log.warning(ERR::ObjectCorrupt);
@@ -711,7 +714,7 @@ static ERR TIRI_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
 
    if ((not Args) or (not Args->Procedure) or (not Args->Procedure[0])) return log.warning(ERR::NullArgs);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
 
    if ((not prv->Lua) or (not Self->ActivationCount)) {

@@ -157,8 +157,8 @@ static const FieldArray clFields[] = {
    { "BytesFree",   FDF_INT64|FDF_R },
    { "BytesUsed",   FDF_INT64|FDF_R },
    // Virtual fields
-   { "DeviceID",    FDF_CPPSTRING|FDF_R, GET_DeviceID },
-   { "Volume",      FDF_CPPSTRING|FDF_RI, GET_Volume, SET_Volume },
+   { "DeviceID",    FDF_CPPSTRING|FDF_R|FDF_PURE, GET_DeviceID },
+   { "Volume",      FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Volume, SET_Volume },
     END_FIELD
 };
 

@@ -109,6 +109,9 @@ ptr Callback: Pointer to the log callback function to register.
 int DepthLimit: Maximum branch depth to forward to the callback.
 int LogLimit: Maximum message log level to forward to the callback.
 
+-TAGS-
+callback-held, does-not-take-ownership, non-blocking
+
 -END-
 
 *********************************************************************************************************************/
@@ -381,7 +384,7 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
          }
 
          if (obj->Class) {
-            name = obj->Name[0] ? obj->Name : obj->Class->ClassName;
+            name = obj->Name[0] ? obj->Name : obj->Class->ClassName.c_str();
 
             if (level > 5) {
                if (ctx.field) {
@@ -496,7 +499,7 @@ ERR FuncError(CSTRING Header, ERR Code)
       fmsg(Header, msgheader, MS_MSG, 2);
 
       if (obj->Class) {
-         CSTRING name = obj->Name[0] ? obj->Name : obj->Class->ClassName;
+         CSTRING name = obj->Name[0] ? obj->Name : obj->Class->ClassName.c_str();
 
          if (ctx.field) {
             fprintf(fd, "%s%s[%s:%d:%s] %s%s\n", histart, msgheader, name, obj->UID, ctx.field->Name, glMessages[int(Code)], hiend);

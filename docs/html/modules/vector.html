@@ -4,7 +4,7 @@
 	   function gtag(){dataLayer.push(arguments);}
 	   gtag('js', new Date());
       gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../css/bootstrap.min.css" rel="stylesheet"></link><link href="../css/module-template.css" rel="stylesheet"></link></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
-<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul>
+<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li></ul>
 </div></div></nav>
 <div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow"><ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#func-collapse" aria-expanded="true">Vector API</button><div class="collapse show" id="func-collapse">
 <ul class="btn-toggle-nav list-unstyled fw-normal">
@@ -143,6 +143,7 @@ Z: Close Path
 <tr><th class="col-md-1">Search</th><td>A search routine in this function failed</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
 <tr><th class="col-md-1">CreateObject</th><td>A call to CreateObject() failed</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
@@ -237,8 +238,10 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 <p>A <a data-toggle="tooltip" title="" href="?page=struct-VectorPainter">VectorPainter</a> structure must be provided by the client and will be used to store the final result.  All pointers that are returned will remain valid as long as the provided Scene exists with its registered painter definitions.  An optional <code>Result</code> string can store a reference to the character position up to which the IRI was parsed.</p>
 <p>Note: To ensure that colour values are never clipped, values stored in the Colour field are unclamped from the sRGB colour space (colours may be negative or exceed 1.0).  Clients must clamp colours as necessary when converting to their target colour space.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">NotFound</th><td>A search routine in this function failed</td></tr>
+<tr><th class="col-md-1">Syntax</th><td>Invalid syntax detected</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+<tr><th class="col-md-1">InvalidObject</th><td>An object is not of the required type</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="ResetMatrix"><h2>ResetMatrix()</h2><p class="lead">Resets a transformation matrix to the identity transform.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR vec::ResetMatrix(struct VectorMatrix * Matrix)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Matrix</td><td>The target transformation matrix.</td></tr>
 </tbody></table></div></div>

@@ -714,15 +714,33 @@ struct CompiledXQuery {
    ankerl::unordered_dense::map<URI_STR, extXML *> XMLCache;
 
    CompiledXQuery() = default;
-   CompiledXQuery(CompiledXQuery &&) = default;
-   CompiledXQuery &operator=(CompiledXQuery &&) = default;
+   CompiledXQuery(CompiledXQuery &&Source) noexcept { *this = std::move(Source); }
+   CompiledXQuery &operator=(CompiledXQuery &&Source) noexcept {
+      if (this IS &Source) return *this;
+
+      clear_xml_cache();
+
+      expression   = std::move(Source.expression);
+      prolog       = std::move(Source.prolog);
+      module_cache = std::move(Source.module_cache);
+      error_msg    = std::move(Source.error_msg);
+      XMLCache     = std::move(Source.XMLCache);
+      Source.XMLCache.clear();
+
+      return *this;
+   }
    CompiledXQuery(const CompiledXQuery &) = delete;
    CompiledXQuery &operator=(const CompiledXQuery &) = delete;
 
    ~CompiledXQuery() {
+      clear_xml_cache();
+   }
+
+   void clear_xml_cache() {
       for (auto &entry : XMLCache) {
          if (entry.second) FreeResource(entry.second);
       }
+      XMLCache.clear();
    }
 
    XQF feature_flags() const;
@@ -952,14 +970,22 @@ class XPathParser {
 
 //*********************************************************************************************************************
 
+struct fi_hash {
+   using is_transparent = void;
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
+};
+
+struct fi_equal {
+   using is_transparent = void;
+   [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
+};
+
 class extXQuery : public objXQuery {
 public:
-   ankerl::unordered_dense::map<std::string, std::string> Variables; // XPath variable references
+   ankerl::unordered_dense::map<std::string, std::string, fi_hash, fi_equal> Variables; // XPath variable references
    ankerl::unordered_dense::map<std::string, FUNCTION> RegisteredFunctions;
    FUNCTION Callback;
    FUNCTION ResolveVariable;
-   std::string Statement;
-   std::string ErrorMsg;
    CompiledXQuery ParseResult; // Result of parsing the query.
    std::shared_ptr<XQueryModuleCache> ModuleCache; // Strong reference; ParseResult.module_cache is weak to break cycles
    XPathVal Result; // Result of the last execution.
@@ -967,7 +993,6 @@ public:
    kt::vector<std::string> ListVariables; // List of variable names.
    kt::vector<std::string> ListFunctions; // List of function names.
    std::string ResultString; // Cached string representation of the result.
-   std::string Path; // Base path for resolving relative URIs.
    size_t MemUsage; // Total bytes allocated during the most recent evaluation or compilation.
    extXML *XML; // During query execution, the context XML document.
    bool StaleBuild = true; // If true, the compiled query needs to be rebuilt.

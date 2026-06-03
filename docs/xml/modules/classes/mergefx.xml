@@ -40,7 +40,7 @@
     <field>
       <name>SourceList</name>
       <comment>A list of source types to be processed in the merge.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>STRUCT []</type>
       <description>
 <p>The list of sources is built as a simple array of MergeSource structures.</p>
@@ -53,6 +53,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

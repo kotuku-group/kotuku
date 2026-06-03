@@ -63,7 +63,7 @@ static ERR test_path(std::string &, RSF, LOC *);
 
 static void reset_state(extFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (prv->Inflating) { inflateEnd(&prv->Stream); prv->Inflating = false; }
 
@@ -76,7 +76,7 @@ static void reset_state(extFile *Self)
 
 static ERR seek_to_item(extFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
    if (prv->InvalidState) return ERR::InvalidState;
 
    auto &item = prv->Info;
@@ -154,7 +154,7 @@ static ERR ARCHIVE_Activate(extFile *Self)
 {
    Log log;
 
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (!prv->Archive) return log.warning(ERR::SystemCorrupt);
 
@@ -178,7 +178,7 @@ static ERR ARCHIVE_Activate(extFile *Self)
 
 static ERR ARCHIVE_Free(extFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (prv) {
       if (prv->FileStream) { FreeResource(prv->FileStream); prv->FileStream = nullptr; }
@@ -202,8 +202,8 @@ static ERR ARCHIVE_Init(extFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->ChildPrivate, nullptr) IS ERR::Okay) {
-      auto prv = (prvFileArchive *)Self->ChildPrivate;
+   if (AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr, nullptr) IS ERR::Okay) {
+      auto prv = (prvFileArchive *)Self->DerivedPtr;
       new (prv) prvFileArchive;
 
       if (Self->Path.ends_with(':')) { // Nothing is referenced
@@ -241,8 +241,8 @@ static ERR ARCHIVE_Init(extFile *Self)
 
       if (error != ERR::Okay) {
          prv->~prvFileArchive();
-         FreeResource(Self->ChildPrivate);
-         Self->ChildPrivate = nullptr;
+         FreeResource(Self->DerivedPtr);
+         Self->DerivedPtr = nullptr;
       }
    }
    else error = ERR::AllocMemory;
@@ -254,7 +254,7 @@ static ERR ARCHIVE_Init(extFile *Self)
 
 static ERR ARCHIVE_Query(extFile *Self)
 {
-   auto prv = (prvFileArchive *)(Self->ChildPrivate);
+   auto prv = (prvFileArchive *)(Self->DerivedPtr);
 
    // Activate the source if this hasn't been done already.
 
@@ -297,7 +297,7 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
    else if (Args->Length IS 0) return ERR::Okay;
    else if (Args->Length < 0) return ERR::OutOfRange;
 
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (prv->InvalidState) return ERR::InvalidState;
 
@@ -432,7 +432,7 @@ static ERR ARCHIVE_Write(extFile *Self, struct acWrite *Args)
 
 static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
 {
-   if (auto prv = (prvFileArchive *)Self->ChildPrivate) {
+   if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       *Value = prv->Info.OriginalSize;
       return ERR::Okay;
    }
@@ -443,7 +443,7 @@ static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
 
 static ERR ARCHIVE_GET_Timestamp(extFile *Self, int64_t *Value)
 {
-   if (auto prv = (prvFileArchive *)Self->ChildPrivate) {
+   if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       if (prv->Info.Timestamp) {
          *Value = prv->Info.Timestamp;
          return ERR::Okay;
@@ -688,7 +688,7 @@ static const MethodEntry clArchiveMethods[] = {
 };
 
 static const struct FieldArray clArchiveFields[] = {
-   { "Size", FDF_INT64|FDF_R, ARCHIVE_GET_Size },
+   { "Size", FDF_INT64|FDF_R|FDF_PURE, ARCHIVE_GET_Size },
    { "Timestamp", FDF_INT64|FDF_R, ARCHIVE_GET_Timestamp },
    END_FIELD
 };

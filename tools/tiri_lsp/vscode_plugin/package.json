@@ -6,7 +6,7 @@
    "publisher": "kotuku",
    "repository": {
       "type": "git",
-      "url": "https://github.com/parasol-framework/kotuku.git",
+      "url": "https://github.com/kotuku-group/kotuku.git",
       "directory": "tools/tiri_lsp/vscode_plugin"
    },
    "icon": "images/tiri.png",

@@ -54,7 +54,7 @@ This is an example of a simple client application written in Tiri.  It loads an 
       center = true,
       width  = arg('width', 800),
       height = arg('height', 600),
-      title  = 'Picture Viewer',
+      title  = 'Image Viewer',
       icon   = 'icons:programs/pictureviewer',
       minHeight = 200,
       minWidth  = 400
@@ -75,12 +75,12 @@ This is an example of a simple client application written in Tiri.  It loads an 
 
 ## 2. Checkout
 
-Release builds can be [downloaded directly](https://github.com/parasol-framework/kotuku/releases/latest) from GitHub so that you don't need to compile the framework yourself.  If you're happy with using a release build then you can skip the rest of this readme and head to the [main website](https://www.kotuku.dev) for further information on usage.
+Release builds can be [downloaded directly](https://github.com/kotuku-group/kotuku/releases/latest) from GitHub so that you don't need to compile the framework yourself.  If you're happy with using a release build then you can skip the rest of this readme and head to the [main website](https://www.kotuku.dev) for further information on usage.
 
 To build your own framework, checkout the source code from the `release` branch of our GitHub repository:
 
 ```
-git clone -b release https://github.com/parasol-framework/kotuku.git kotuku
+git clone -b release https://github.com/kotuku-group/kotuku.git kotuku
 ```
 
 Alternatively the `master` branch is generally stable and updated often, but be aware that minor build issues can occasionally surface.  Anything under `test` is under active development and unlikely to compile.
@@ -89,17 +89,17 @@ Alternatively the `master` branch is generally stable and updated often, but be 
 
 Please refer to the following Wiki pages for information on how to build Kōtuku on our supported platforms:
 
-* [Linux Builds](https://github.com/parasol-framework/kotuku/wiki/Linux-Builds)
-* [Windows Builds](https://github.com/parasol-framework/kotuku/wiki/Windows-Builds)
+* [Linux Builds](https://github.com/kotuku-group/kotuku/wiki/Linux-Builds)
+* [Windows Builds](https://github.com/kotuku-group/kotuku/wiki/Windows-Builds)
 
-A successful build and installation will create a `origo` command tool, which is [documented here](https://github.com/parasol-framework/kotuku/wiki/Origo).
+A successful build and installation will create a `origo` command tool, which is [documented here](https://github.com/kotuku-group/kotuku/wiki/Origo).
 
 > [!TIP]
-> Please refer to our [customisation wiki page](https://github.com/parasol-framework/kotuku/wiki/Customising-Your-Build) for information on customising your build.
+> Please refer to our [customisation wiki page](https://github.com/kotuku-group/kotuku/wiki/Customising-Your-Build) for information on customising your build.
 
 ## 4. Next Steps
 
-The [Wiki](https://github.com/parasol-framework/kotuku/wiki) provides up-to-date documentation on most facets of the framework.
+The [Wiki](https://github.com/kotuku-group/kotuku/wiki) provides up-to-date documentation on most facets of the framework.
 
 Detailed technical documentation for the Kōtuku APIs is available online at the [main website](https://www.kotuku.dev).
 

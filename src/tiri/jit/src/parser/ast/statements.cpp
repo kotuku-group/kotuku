@@ -1386,14 +1386,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
             check_path = current_file.substr(0, last_sep + 1) + std::string(string_value);
          }
          else {
-            auto working_path = this->ctx.lua().script->get<CSTRING>(FID_WorkingPath);
-            if (working_path) check_path = std::string(working_path) + std::string(string_value);
+            auto working_path = this->ctx.lua().script->get<std::string_view>(FID_WorkingPath);
+            if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
             else check_path = std::string(string_value);
          }
       }
       else {
-         auto working_path = this->ctx.lua().script->get<CSTRING>(FID_WorkingPath);
-         if (working_path) check_path = std::string(working_path) + std::string(string_value);
+         auto working_path = this->ctx.lua().script->get<std::string_view>(FID_WorkingPath);
+         if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
          else check_path = std::string(string_value);
       }
 

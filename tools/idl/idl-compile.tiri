@@ -31,6 +31,7 @@ global function functionNames(Prefix:str, ...) end
 global function methods(ClassName:str, Prefix:str, Methods:table) end
 global function c_insert(Raw:str) end
 global function privateNames(List:table) end
+global function hash(Prefix:str, Format:str, ...) end
 
    import './include/utils'
 
@@ -207,17 +208,6 @@ global function constants(Prefix, Options:table, ...)
       end
    end
    glConstants[Prefix] = list
-end
-
-----------------------------------------------------------------------------------------------------------------------
-
-global function hash(Prefix:str, Format:str, ...)
-   for hash_def in values({...}) do
-      hash_name = rx_non_word.replace(hash_def, '_')
-      hash_id = string.format('%08x', hash_name:hash()):sub(-8)
-      output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
-   end
-   output()
 end
 
 ----------------------------------------------------------------------------------------------------------------------

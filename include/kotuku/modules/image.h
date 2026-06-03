@@ -1,18 +1,18 @@
 #pragma once
 
-// Name:      picture.h
+// Name:      image.h
 // Copyright: Paul Manias © 2001-2026
 // Generator: idl-c
 
 #include <kotuku/main.h>
 
-#define MODVERSION_PICTURE (1)
+#define MODVERSION_IMAGE (1)
 
 #include <kotuku/modules/display.h>
 
-class objPicture;
+class objImage;
 
-// Flags for the Picture class.
+// Flags for the Image class.
 
 enum class PCF : uint32_t {
    NIL = 0,
@@ -27,24 +27,24 @@ enum class PCF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(PCF)
 
-// Picture class definition
+// Image class definition
 
-#define VER_PICTURE (1.000000)
+#define VER_IMAGE (1.000000)
 
-class objPicture : public Object {
+class objImage : public Object {
    public:
-   static constexpr CLASSID CLASS_ID = CLASSID::PICTURE;
-   static constexpr CSTRING CLASS_NAME = "Picture";
+   static constexpr CLASSID CLASS_ID = CLASSID::IMAGE;
+   static constexpr CSTRING CLASS_NAME = "Image";
 
-   using create = kt::Create<objPicture>;
+   using create = kt::Create<objImage>;
 
-   objBitmap * Bitmap;    // Represents a picture's image data.
+   objBitmap * Bitmap;    // Represents image data.
    objBitmap * Mask;      // Refers to a Bitmap that imposes a mask on the image.
    PCF Flags;             // Optional initialisation flags.
    int DisplayHeight;     // The preferred height to use when displaying the image.
    int DisplayWidth;      // The preferred width to use when displaying the image.
    int Quality;           // Defines the quality level to use when saving the image.
-   int FrameRate;         // Refresh & redraw the picture X times per second.  Used by pictures that have an animation refresh rate
+   int FrameRate;         // Refresh & redraw the image X times per second.  Used by images that have an animation refresh rate
 
    // Action stubs
 
@@ -106,11 +106,94 @@ class objPicture : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
+
+   // Customised field getting
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
    }
+
+   inline ERR getMask(objBitmap * &Value) noexcept {
+      Value = this->Mask;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(PCF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplayHeight(int &Value) noexcept {
+      Value = this->DisplayHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplayWidth(int &Value) noexcept {
+      Value = this->DisplayWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getQuality(int &Value) noexcept {
+      Value = this->Quality;
+      return ERR::Okay;
+   }
+
+   inline ERR getAuthor(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getCopyright(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getDescription(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getDisclaimer(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getHeader(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getSoftware(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getTitle(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -135,52 +218,44 @@ class objPicture : public Object {
    }
 
    inline ERR setAuthor(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setCopyright(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setDescription(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setDisclaimer(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setHeader(APTR Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08000500, Value, 1);
+      return field->WriteValue(this, field, 0x08100500, Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
    inline ERR setSoftware(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setTitle(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
 };

@@ -180,7 +180,7 @@ void ControlFlowGraph::finalize() const
 
 void ControlFlowGraph::trace_edge_creation(ControlFlowEdgeKind Kind, BCPos Head, size_t Index) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->ChildPrivate;
+   auto prv = (prvTiri *)this->func_state->L->script->DerivedPtr;
    if ((prv->JitOptions & JOF::TRACE_CFG) != JOF::NIL) {
       CSTRING kind_name = "unknown";
       switch (Kind) {
@@ -198,7 +198,7 @@ void ControlFlowGraph::trace_edge_creation(ControlFlowEdgeKind Kind, BCPos Head,
 
 void ControlFlowGraph::trace_edge_patch(size_t Index, BCPos Target) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->ChildPrivate;
+   auto prv = (prvTiri *)this->func_state->L->script->DerivedPtr;
    if ((prv->JitOptions & JOF::TRACE_CFG) != JOF::NIL) {
       kt::Log("Parser").msg("[%d] cfg: patch edge #%" PRId64 " to target=%d", this->func_state->ls->linenumber.lineNumber(), Index, int(Target.raw()));
    }
@@ -208,7 +208,7 @@ void ControlFlowGraph::trace_edge_patch(size_t Index, BCPos Target) const
 
 void ControlFlowGraph::trace_edge_append(size_t Index, BCPos Head) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->ChildPrivate;
+   auto prv = (prvTiri *)this->func_state->L->script->DerivedPtr;
    if ((prv->JitOptions & JOF::TRACE_CFG) != JOF::NIL) {
       kt::Log("Parser").msg("[%d] cfg: append to edge #%" PRId64 " head=%d", this->func_state->ls->linenumber.lineNumber(), Index, int(Head.raw()));
    }

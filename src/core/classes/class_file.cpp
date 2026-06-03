@@ -312,6 +312,9 @@ Okay: The file content was successfully buffered.
 AllocMemory:
 Read: Failed to read the file content.
 
+-TAGS-
+blocking, mutates-object, creates-resource, updates-seek-index
+
 *********************************************************************************************************************/
 
 static ERR FILE_BufferContent(extFile *Self)
@@ -431,6 +434,9 @@ ResolvePath:
 Loop: Performing the copy would cause infinite recursion.
 AllocMemory:
 
+-TAGS-
+blocking, updates-seek-index, callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR FILE_Copy(extFile *Self, struct fl::Copy *Args)
@@ -459,6 +465,9 @@ NoPermission: The user does not have the necessary permissions to delete the fil
 ReadOnly: The file is on a read-only filesystem.
 Locked: The file is in use.
 BufferOverflow: The file path string is too long.
+
+-TAGS-
+blocking, mutates-object, closes-handle, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -749,7 +758,7 @@ retrydir:
    }
 
    // Use RSF::CHECK_VIRTUAL to cause failure if the volume name is reserved by a support class.  By doing this we can
-   // return ERR::UseSubClass and a support class can then initialise the file instead.
+   // return ERR::UseDerived and a support class can then initialise the file instead.
 
    auto resolveflags = RSF::NIL;
    if ((Self->Flags & FL::NEW) != FL::NIL) resolveflags |= RSF::NO_FILE_CHECK;
@@ -759,14 +768,14 @@ retrydir:
    if (auto error = ResolvePath(Self->Path, resolveflags|RSF::CHECK_VIRTUAL, &Self->prvResolvedPath); error != ERR::Okay) {
       if (error IS ERR::VirtualVolume) {
          // For virtual volumes, update the path to ensure that the volume name is referenced in the path string.
-         // Then return ERR::UseSubClass to have support delegated to the correct File sub-class.
+         // Then return ERR::UseDerived to have support delegated to the correct File derived class.
          Self->Flags |= FL::VIRTUAL;
          if (not iequals(Self->Path, Self->prvResolvedPath)) {
             auto sv = std::string_view(Self->prvResolvedPath);
             SET_Path(Self, sv);
          }
-         log.trace("ResolvePath() reports virtual volume, will delegate to sub-class...");
-         return ERR::UseSubClass;
+         log.trace("ResolvePath() reports virtual volume, will delegate to derived class...");
+         return ERR::UseDerived;
       }
       else {
          // The file may path may actually be a folder.  Add a / and retest to see if this is the case.
@@ -879,6 +888,9 @@ Args
 FieldNotSet: The #Path field has not been set in the file object.
 InvalidPath: Attempted to move a volume.
 
+-TAGS-
+blocking, mutates-object, updates-seek-index, callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
@@ -964,6 +976,9 @@ Okay
 Args
 NullArgs
 DirEmpty: The index has reached the end of the file list.
+
+-TAGS-
+blocking, updates-seek-index, caller-owns-result
 
 *********************************************************************************************************************/
 
@@ -1141,6 +1156,9 @@ ObjectCorrupt: The internal file handle is missing.
 BufferOverflow: The line is too long for the read routine (4096 byte limit).
 NoData: There is no more data left to read.
 
+-TAGS-
+blocking, updates-seek-index, object-owns-result, null-terminated-result
+
 *********************************************************************************************************************/
 
 static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
@@ -1207,12 +1225,12 @@ static ERR FILE_Rename(extFile *Self, struct acRename *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name) or (not Args->Name[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
 
-   log.branch("%s to %s", Self->Path.c_str(), Args->Name);
+   log.branch("%s to %.*s", Self->Path.c_str(), int(Args->Name.size()), Args->Name.data());
 
-   auto name = std::string_view(Args->Name, strlen(Args->Name));
+   auto name = Args->Name;
 
    if ((Self->isFolder) or ((Self->Flags & FL::FOLDER) != FL::NIL)) {
       if (Self->Path.ends_with(':')) { // Renaming a volume
@@ -1348,6 +1366,9 @@ ResolvePath
 SystemCall
 NoSupport: The platform does not support file date setting.
 
+-TAGS-
+blocking, mutates-object
+
 *********************************************************************************************************************/
 
 static ERR FILE_SetDate(extFile *Self, struct fl::SetDate *Args)
@@ -1448,6 +1469,9 @@ Okay
 Args
 NoSupport: The file is not streamed.
 
+-TAGS-
+non-blocking, mutates-object, callback-held
+
 *********************************************************************************************************************/
 
 static ERR FILE_StartStream(extFile *Self, struct fl::StartStream *Args)
@@ -1473,6 +1497,9 @@ related to the streaming process will be deallocated.
 Okay
 Args
 NoSupport: The file is not streamed.
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -1512,6 +1539,9 @@ int(MFF) Flags: Filter events to those indicated in these flags.
 Okay
 Args
 NullArgs
+
+-TAGS-
+non-blocking, mutates-object, callback-held
 
 *********************************************************************************************************************/
 
@@ -2078,10 +2108,10 @@ static ERR GET_Icon(extFile *Self, std::string_view &Value)
    if (icon.empty()) {
       // Use IdentifyFile() to see if this file can be associated with a class
 
-      CLASSID class_id, subclass_id;
-      if (IdentifyFile(Self->Path, CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
-         if (glClassDB.contains(subclass_id)) {
-            auto &record = glClassDB[subclass_id];
+      CLASSID class_id, derived_id;
+      if (IdentifyFile(Self->Path, CLASSID::NIL, &class_id, &derived_id) IS ERR::Okay) {
+         if (glClassDB.contains(derived_id)) {
+            auto &record = glClassDB[derived_id];
             if (not record.Icon.empty()) icon = record.Icon;
          }
 
@@ -2721,13 +2751,13 @@ static const FieldDef PermissionFlags[] = {
 static const FieldArray FileFields[] = {
    { "Position",     FDF_INT64|FDF_RW, nullptr, SET_Position },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
-   { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R, GET_Buffer },
+   { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    // Virtual fields
    { "Date",         FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Date, SET_Date, "DateTime" },
    { "Created",      FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Created, nullptr, "DateTime" },
-   { "Handle",       FDF_INT64|FDF_R,      GET_Handle },
+   { "Handle",       FDF_INT64|FDF_R|FDF_PURE,      GET_Handle },
    { "Icon",         FDF_CPPSTRING|FDF_R,  GET_Icon },
-   { "Path",         FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
+   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &PermissionFlags },
    { "ResolvedPath", FDF_CPPSTRING|FDF_R,  GET_ResolvedPath },
    { "Size",         FDF_INT64|FDF_RW,     GET_Size, SET_Size },
@@ -2736,8 +2766,8 @@ static const FieldArray FileFields[] = {
    { "User",         FDF_INT|FDF_RW,       GET_User, SET_User },
    { "Group",        FDF_INT|FDF_RW,       GET_Group, SET_Group },
    // Synonyms
-   { "Src",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RI, GET_Path, SET_Path },
-   { "Location",  FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path }, // Deprecated
+   { "Src",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RI|FDF_PURE, GET_Path, SET_Path },
+   { "Location",  FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path }, // Deprecated
    { "TimeStamp", FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_INT64|FDF_R,   GET_Timestamp }, // Deprecated
    END_FIELD
 };

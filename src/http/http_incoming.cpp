@@ -243,7 +243,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                log.warning("Sequential MovedPermanently messages are not supported.");
             }
             else {
-               if (auto it = Self->ResponseKeys.find("location"); it != Self->ResponseKeys.end()) {
+               if (auto it = Self->ResponseHeaders.find("location"); it != Self->ResponseHeaders.end()) {
                   auto &location = it->second;
                   ERR redirect_error;
 
@@ -313,7 +313,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                }
             }
 
-            if (auto auth_it = Self->ResponseKeys.find("www-authenticate"); auth_it != Self->ResponseKeys.end()) {
+            if (auto auth_it = Self->ResponseHeaders.find("www-authenticate"); auth_it != Self->ResponseHeaders.end()) {
                auto &authenticate = auth_it->second;
                if (kt::startswith("Digest", authenticate)) {
                   log.trace("Digest authentication mode.");
@@ -698,7 +698,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
 {
    kt::Log log(__FUNCTION__);
 
-   Self->ResponseKeys.clear();
+   Self->ResponseHeaders.clear();
 
    log.detail("HTTP RESPONSE HEADER\n%.*s", int(Response.size()), Response.data());
 
@@ -748,10 +748,10 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       field_key.reserve(field_name.size());
       ranges::transform(field_name, std::back_inserter(field_key), [](char c) { return char(std::tolower(c)); });
 
-      Self->ResponseKeys[field_key] = std::string(field_value);
+      Self->ResponseHeaders[field_key] = std::string(field_value);
    }
 
-   if (auto it = Self->ResponseKeys.find("content-length"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("content-length"); it != Self->ResponseHeaders.end()) {
       auto &value = it->second;
       Self->ContentLength = 0;
       int64_t temp_length = 0;
@@ -767,7 +767,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       }
    }
 
-   if (auto it = Self->ResponseKeys.find("transfer-encoding"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("transfer-encoding"); it != Self->ResponseHeaders.end()) {
       auto &value = it->second;
       if (header_contains_token(value, "chunked")) {
          if ((Self->Flags & HTF::RAW) IS HTF::NIL) Self->Chunked = true;
@@ -780,7 +780,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    if (Self->ResponseVersion >= 0x11) Self->KeepAlive = true;
    else Self->KeepAlive = false;
 
-   if (auto it = Self->ResponseKeys.find("connection"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("connection"); it != Self->ResponseHeaders.end()) {
       // HTTP/1.0 if keep-alive is not specified then the connection is closed by default.
       // HTTP/1.1 if keep-alive is not specified then the connection is persistent
       //

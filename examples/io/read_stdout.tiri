@@ -1,11 +1,10 @@
---[[
-Demonstrates how to launch a sub-process and intercept the data that it prints to stderr and stdout.
---]]
+
+   glTask = mSys.CurrentTask()
 
    try
-      current_task = mSys.CurrentTask()
       task = obj.new("task", {
-         location = current_task.processPath .. 'origo',
+         location = glTask.processPath .. 'origo',
+         flags  = TSF_SHELL,
          args   = "--help",
          outputCallback = function(Task, Data)
             io.write(Data:getString())
@@ -21,6 +20,7 @@ Demonstrates how to launch a sub-process and intercept the data that it prints t
 
       print(f'Running {task.location}')
       print("Press CTRL-C to exit or wait for program to finish.  Received output is printed to stdout.")
+
       task.acActivate()
       processing.sleep()
    except ex

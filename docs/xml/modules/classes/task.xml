@@ -48,23 +48,22 @@
     <action>
       <name>GetKey</name>
       <comment>Retrieves custom key values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Variable fields are supported for the general storage of program variables.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
       <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 
@@ -101,6 +100,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -114,6 +114,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>

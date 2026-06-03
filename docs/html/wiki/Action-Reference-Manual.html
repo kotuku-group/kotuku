@@ -29,7 +29,7 @@
         <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
         <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
         <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
-        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li>
       </ul>
     </div>
   </div>
@@ -621,7 +621,7 @@ ERR acDraw(Object)</code></pre>
 </div>
 <h3 id="implementation-details-10">Implementation Details</h3>
 <p><code>Free</code> support is essential for all classes that allocate resources. It is correctly implemented by removing all resources that were created during an object&#39;s life-cycle.</p>
-<p>Sub-classes need to support this action if their code tracks resources seperately to the base class. To prevent allocations between a base-class and sub-class from being confused, the fields that reference resources should be driven to <code>NULL</code> after their termination. If your sub-class requires its own private data area for resource management, the <code>ChildPrivate</code> field is available for this purpose.</p>
+<p>Derived classes need to support this action if their code tracks resources seperately to the base class. To prevent allocations between a base class and derived class from being confused, the fields that reference resources should be driven to <code>NULL</code> after their termination. If your derived class requires its own private data area for resource management, the <code>DerivedPtr</code> field is available for this purpose.</p>
 <h2 id="freewarning-">FreeWarning <!-- Private --></h2>
 <p>This is an internal action that is used for receiving a warning prior to an object being freed. It should never be called from client code.</p>
 <h3 id="implementation-details-11">Implementation Details</h3>
@@ -675,12 +675,12 @@ ERR acDraw(Object)</code></pre>
 <h2 id="init">Init</h2>
 <p><code>ERR acInit(Object)</code></p>
 <p>This action initialises objects so that they can be used for their intended purpose. The process of initialisation is compulsory, and <em>you may not use any other actions on an object until it has been initialised</em>. Exceptions to this rule only apply to the <a href="#Free"><code>Free</code></a>, <a href="#GetKey"><code>GetKey</code></a> and <a href="#SetKey"><code>SetKey</code></a> actions.</p>
-<p>If the initialisation of an object fails due to a support problem (for example, if you ask a <code>Picture</code> object to load a TIFF image when it only supports PNG), the <code>Init</code> action can look for a sub-class that handles the data. If a supporting sub-class exists, a partial transfer of ownership will occur and the object&#39;s management will be shared between both the base-class and the sub-class.</p>
+<p>If the initialisation of an object fails due to a support problem (for example, if you ask a <code>Picture</code> object to load a TIFF image when it only supports PNG), the <code>Init</code> action can look for a derived class that handles the data. If a supporting derived class exists, a partial transfer of ownership will occur and the object&#39;s management will be shared between both the base class and the derived class.</p>
 <p>Part of the initialisation process is to check a client&#39;s configuration settings up-front, and a suitable error code will be returned if these checks are failed.</p>
 <p>C++ users can check the initialisation state of an object by calling its <code>initialised()</code> method.</p>
 <h3 id="implementation-details-14">Implementation Details</h3>
 <p>This action is called when a program initialises an object that belongs to your class. The purpose of this action is to prepare the object for the necessary handling for other actions such as <code>Draw</code>, <code>Activate</code>, <code>Show</code> etc.</p>
-<p>Data-centric classes that fail to recognise the source data should always return <code>ERR::NoSupport</code> (e.g. a PNG class cannot process a JPEG file). Your code should also strive to keep the object state untarnished. The initialisation manager will look for a sub-class that can support the object correctly. If your class supports the data but initialisation fails due to a system error or similar, return any error-code other than <code>ERR::NoSupport</code> and <code>ERR::Okay</code>. This will cause the initialisation process to fail immediately and return to the program.</p>
+<p>Data-centric classes that fail to recognise the source data should always return <code>ERR::NoSupport</code> (e.g. a PNG class cannot process a JPEG file). Your code should also strive to keep the object state untarnished. The initialisation manager will look for a derived class that can support the object correctly. If your class supports the data but initialisation fails due to a system error or similar, return any error-code other than <code>ERR::NoSupport</code> and <code>ERR::Okay</code>. This will cause the initialisation process to fail immediately and return to the program.</p>
 <p>It is a requirement that the object state is sufficiently validated when <code>Init</code> is called. Do not assume that the object is configured correctly by the client.</p>
 <p>Never free an object from inside its own initialisation routine; this is a matter for the client.</p>
 <h2 id="lock">Lock</h2>
@@ -969,7 +969,7 @@ ERR acDraw(Object)</code></pre>
 </tr>
 </tbody>
 </table>
-<p><code>SaveImage</code> is used to save an object&#39;s graphics to a storage object of your choosing. The process of saving the image will leverage the <code>Picture</code> class, which by default saves images in PNG format. If an alternative image format provided by a <code>Picture</code> sub-class is desired, it can be referenced in the <code>ClassID</code> parameter. For instance, specifying <code>ID_JPEG</code> in <code>ClassID</code> is sufficient to save an image in JPEG format.</p>
+<p><code>SaveImage</code> is used to save an object&#39;s graphics to a storage object of your choosing. The process of saving the image will leverage the <code>Picture</code> class, which by default saves images in PNG format. If an alternative image format provided by a <code>Picture</code> derived class is desired, it can be referenced in the <code>ClassID</code> parameter. For instance, specifying <code>ID_JPEG</code> in <code>ClassID</code> is sufficient to save an image in JPEG format.</p>
 <p>The object referenced in <code>Dest</code> must be from a class that supports the <a href="#Write"><code>Write</code></a> action. Typically this would be a <code>File</code> object, but this is not imposed as a restriction.</p>
 <p>In some cases, the <code>SaveImage</code> and <a href="#SaveToObject"><code>SaveToObject</code></a> actions will both save image information (for example the <code>Picture</code> and <code>Bitmap</code> classes will do this) but objects that can be represented as an image and in a native data format will make a clear distinction between the two.</p>
 <h3 id="implementation-details-28">Implementation Details</h3>
@@ -997,13 +997,13 @@ ERR acDraw(Object)</code></pre>
 <tr>
 <td style="text-align: left;">ClassID</td>
 <td style="text-align: left;">CLASSID</td>
-<td style="text-align: left;">Can refer to a sub-class that should be used when encoding the data.</td>
+<td style="text-align: left;">Can refer to a derived class that should be used when encoding the data.</td>
 </tr>
 </tbody>
 </table>
 <p>This action will save an object&#39;s data to a storage object of your choosing. The data will be saved in a file format that can be reloaded at a later time using the same class.</p>
 <p>The object referenced in <code>Dest</code> must be from a class that supports the <a href="#Write"><code>Write</code></a> action. Typically this would be a <code>File</code> object, but this is not imposed as a restriction.</p>
-<p>The <code>ClassID</code> is optional, and can be used to specify a sub-class that is preferred for encoding the object data. For example, the <code>Sound</code> class supports WAV data by default, but we could save audio in MP3 format if the <code>MP3</code> class was referenced here.</p>
+<p>The <code>ClassID</code> is optional, and can be used to specify a derived class that is preferred for encoding the object data. For example, the <code>Sound</code> class supports WAV data by default, but we could save audio in MP3 format if the <code>MP3</code> class was referenced here.</p>
 <h3 id="implementation-details-29">Implementation Details</h3>
 <p>By supporting the <code>SaveToObject</code> action, you can make it possible to save an object&#39;s data to a <code>File</code> or similar data storage object.</p>
 <p>It is a requirement that the data being saved can be loaded by the class at a later time.</p>

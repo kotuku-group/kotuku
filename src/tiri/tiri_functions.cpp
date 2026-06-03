@@ -32,6 +32,29 @@ static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 }
 
 //********************************************************************************************************************
+// Attempts to return the path of the caller's script, if available.  The resulting path is fully qualified.
+
+static bool get_caller_src_folder(lua_State *Lua, std::string &Folder)
+{
+   lua_Debug ar;
+   for (int level=1; lua_getstack(Lua, level, &ar); level++) {
+      if ((not lua_getinfo(Lua, "S", &ar)) or (not ar.source) or (not ar.source[0])) continue;
+
+      std::string_view source(ar.source);
+      if (source[0] IS '@') source.remove_prefix(1);
+      else if (source[0] IS '=') continue;
+
+      auto pos = source.find_last_of("/\\:");
+      if (pos != std::string_view::npos) {
+         Folder.assign(source.substr(0, pos + 1));
+         return true;
+      }
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
 // lua_load() failures are handled here.  At least one parser diagnostic is expected - failure to produce a
 // diagnostic requires further investigation and a fix to the parser code.
 
@@ -63,7 +86,7 @@ static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 {
    auto Script = (objScript *)CurrentContext();
-   auto prv = (prvTiri *)Script->ChildPrivate;
+   auto prv = (prvTiri *)Script->DerivedPtr;
    if (not prv) return;
 
    kt::Log log(__FUNCTION__);
@@ -88,7 +111,7 @@ static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 
 int fcmd_unsubscribe_event(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv) return 0;
 
    if (auto handle = lua_touserdata(Lua, 1)) {
@@ -193,7 +216,7 @@ int fcmd_subscribe_event(lua_State *Lua)
       lua_settop(Lua, 2);
       auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
       if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); error IS ERR::Okay) {
-         auto prv = (prvTiri *)Lua->script->ChildPrivate;
+         auto prv = (prvTiri *)Lua->script->DerivedPtr;
          prv->EventList.emplace_back(client_function, event_id, handle);
          lua_pushinteger(Lua, int(error)); // 1: Error code
          lua_pushlightuserdata(Lua, handle); // 2: Handle
@@ -310,51 +333,73 @@ int fcmd_include(lua_State *Lua)
 //
 // Loads a Tiri language file from any location and executes it.  Any return values from the script will be returned
 // as-is.  Any error that occurs will be thrown with a descriptive string.
+//
+// If the Path is preceded by "./" or "../" then the path of the script that called this function is prepended to
+// the location.  If a path is not available for the running script, the current working directory will be prepended
+// as a fallback.
 
 int fcmd_loadfile(lua_State *Lua)
 {
-   CSTRING error_msg = nullptr;
+   std::string_view error_msg;
    int results = 0;
    ERR error = ERR::Okay;
 
-   if (auto path = lua_tostring(Lua, 1)) {
+   if (auto path = lua_tostringview(Lua, 1); not path.empty()) {
       kt::Log log("loadfile");
 
-      log.branch("%s", path);
+      log.branch("%.*s", int(path.size()), path.data());
 
       bool recompile = false;
-      CSTRING src = path;
+      bool inject_working_path = false;
+      if (path.starts_with("./")) {
+         path.remove_prefix(2);
+         inject_working_path = true;
+      }
+      else if (path.starts_with("../")) {
+         // Maintain the prefix to access the parent folder - ResolvePath() takes care of it.
+         inject_working_path = true;
+      }
+      std::string src(path);
+
+      if (inject_working_path) {
+         std::string directory;
+         if (get_caller_src_folder(Lua, directory)) {
+            src.insert(0, directory);
+         }
+         else {
+            std::string_view wp;
+            if (Lua->script->get(FID_WorkingPath, wp) IS ERR::Okay) src.insert(0, wp);
+         }
+      }
 
       #if 0
-      int pathlen = strlen(path);
-      char fbpath[pathlen+6];
-      if (iequals(".tiri", path + pathlen - 6)) {
-         // File is a .tiri.  Let's check if a .fb exists and is date-stamped for the same date as the .tiri version.
-         // Note: The developer can also delete the .tiri file in favour of a .fb that is already present (for
+      if (src.ends_with(".tiri")) {
+         // File is a text script.  Let's check if a .tbc exists and is date-stamped for the same date as the .tiri version.
+         // Note: The developer can also delete the .tiri file in favour of a .tbc that is already present (for
          // production releases)
 
-         StrCopy(path, fbpath, pathlen - 5);
-         StrCopy(".fb", fbpath + pathlen - 6);
+         std::string tbcpath(src.substr(0, src.size() - 5));
+         tbcpath.append(".tbc");
 
-         log.msg("Checking for a compiled Tiri file: %s", fbpath);
+         log.msg("Checking for a compiled Tiri file: %s", tbcpath.c_str());
 
-         objFile::create fb_file = { fl::Path(fbpath) };
-         if (fb_file.ok()) { // A compiled version exists.  Compare datestamps
-            objFile::create src_file = { fl::Path(path) };
+         objFile::create tbc_file = { fl::Path(tbcpath) };
+         if (tbc_file.ok()) { // A compiled version exists.  Compare datestamps
+            objFile::create src_file = { fl::Path(src) };
             if (src_file.ok()) {
-               int64_t fb_ts, src_ts;
-               fb_file->get(FID_Timestamp, &fb_ts);
+               int64_t tbc_ts, src_ts;
+               tbc_file->get(FID_Timestamp, &tbc_ts);
                src_file->get(FID_Timestamp, &src_ts);
 
-               if (fb_ts != src_ts) {
+               if (tbc_ts != src_ts) {
                   log.msg("Timestamp mismatch, will recompile the cached version.");
                   recompile = true;
                   error = ERR::Failed;
                }
-               else src = fbpath;
+               else src = tbcpath;
             }
             else if (error IS ERR::FileNotFound) {
-               src = fbpath; // Use the .fb if the developer removed the .tiri (typically done for production releases)
+               src = tbcpath; // Use the .tbc if the developer removed the .tiri (typically done for production releases)
             }
          }
       }
@@ -381,32 +426,22 @@ int fcmd_loadfile(lua_State *Lua)
             file->setPosition(i);
          }
 
-#ifdef SHORT_TIRI_PATHS
-         int i;
-         for (i=strlen(path); i > 0; i--) { // Get the file name from the path
-            if ((path[i-1] IS '\\') or (path[i-1] IS '/') or (path[i-1] IS ':')) break;
-         }
-
-         // Prefix chunk name with '@' (Lua convention for file-based chunks) for better debug output
-         std::string chunk_name = std::string("@") + (path + i);
-#else
          // Resolve the full path for the chunk name (needed for import statement path resolution)
          std::string resolved_path;
-         if (ResolvePath(path, RSF::NIL, &resolved_path) IS ERR::Okay) {
+         if (ResolvePath(src, RSF::NIL, &resolved_path) IS ERR::Okay) {
             // Use resolved path for chunk name
          }
-         else resolved_path = path;  // Fall back to original if resolution fails
+         else resolved_path = src;  // Fall back to original if resolution fails
 
          // Prefix chunk name with '@' (Lua convention for file-based chunks) for better debug output
          std::string chunk_name = std::string("@") + resolved_path;
-#endif
 
          if (not lua_load(Lua, *file, chunk_name.c_str())) {
             // TODO Code compilation not currently supported
-         /*
+/*
             if (recompile) {
                objFile::create cachefile = {
-                  fl::Path(fbpath),
+                  fl::Path(tbcpath),
                   fl::Flags(FL::NEW|FL::WRITE),
                   fl::Permissions(PERMIT::USER_READ|PERMIT::USER_WRITE)
                };
@@ -421,21 +456,21 @@ int fcmd_loadfile(lua_State *Lua)
                   }
                }
             }
-            */
+*/
 
             int result_top = lua_gettop(Lua);
 
             if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
                results = lua_gettop(Lua) - result_top + 1;
             }
-            else error_msg = lua_tostring(Lua, -1);
+            else error_msg = lua_tostringview(Lua, -1);
          }
          else { lua_load_failed(Lua); return 0; }
       }
       else error = ERR::DoesNotExist;
 
-      if ((not error_msg) and (error != ERR::Okay)) error_msg = GetErrorMsg(error);
-      if (error_msg) luaL_error(Lua, "Failed to load/parse file '%s', error: %s", path, error_msg);
+      if ((error_msg.empty()) and (error != ERR::Okay)) error_msg = GetErrorMsg(error);
+      if (not error_msg.empty()) luaL_error(Lua, "Failed to load/parse file '%.*s', error: %.*s", int(path.size()), path.data(), int(error_msg.size()), error_msg.data());
    }
    else luaL_argerror(Lua, 1, "File path required.");
 

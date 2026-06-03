@@ -89,7 +89,7 @@ print('The Action class is located at ' .. str)
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -111,6 +111,7 @@ print('The Action class is located at ' .. str)
         <error code="Okay">The group was deleted or does not exist.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, idempotent</tags>
     </method>
 
     <method>
@@ -130,6 +131,7 @@ print('The Action class is located at ' .. str)
         <error code="Search">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -150,6 +152,7 @@ print('The Action class is located at ' .. str)
         <error code="NoData">There is no data loaded into the config object.</error>
         <error code="OutOfRange">The index number is out of range of the available groups.</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -168,6 +171,7 @@ print('The Action class is located at ' .. str)
         <error code="AccessObject">The source configuration object could not be accessed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -186,6 +190,7 @@ print('The Action class is located at ' .. str)
         <error code="File">Failed to load the source file.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -207,6 +212,7 @@ print('The Action class is located at ' .. str)
         <error code="Search">The requested configuration entry does not exist.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
@@ -227,6 +233,7 @@ print('The Action class is located at ' .. str)
         <error code="Search">The referred group does not exist.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -245,6 +252,7 @@ print('The Action class is located at ' .. str)
         <error code="Okay">Operation successful.</error>
         <error code="NoData">No data is available for use</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -266,6 +274,7 @@ print('The Action class is located at ' .. str)
         <error code="AllocMemory">The additional memory required for the new entry could not be allocated.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>

@@ -170,12 +170,15 @@ global function registerClass(Name:str):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Extract information from a compiled class' field definition.
+-- Extract information from a compiled class' field definition (the blueprint as provided by the client).
 
 global function getMetaFieldDefinition(Field)
    fl = {
       name  = Field.name,
-      flags = Field.flags
+      flags = Field.flags,
+      arg   = Field.arg,
+      index = Field.index,
+      offset = Field.offset
    }
 
    getFieldType(fl, Field.flags, Field.name, Field.arg)

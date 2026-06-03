@@ -232,6 +232,9 @@ At the time of writing, the provided object must belong to one of the following 
 cstr Name: The unique name to associate with the definition.
 obj Def: Reference to the definition object.
 
+-TAGS-
+mutates-object, retains-input
+
 -ERRORS-
 Okay
 NullArgs
@@ -273,7 +276,7 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
    // If the resource does not belong to the Scene object, this can lead to invalid pointer references
 
    if (!def->hasOwner(Self->UID)) {
-      log.warning("The %s must belong to VectorScene #%d, but is owned by object #%d.", def->Class->ClassName, Self->UID, def->ownerID());
+      log.warning("The %s must belong to VectorScene #%d, but is owned by object #%d.", def->Class->ClassName.c_str(), Self->UID, def->ownerID());
       return ERR::UnsupportedOwner;
    }
 
@@ -282,7 +285,7 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
       return ERR::ResourceExists;
    }
 
-   log.detail("Adding definition '%s' referencing %s #%d", Args->Name, def->Class->ClassName, def->UID);
+   log.detail("Adding definition '%s' referencing %s #%d", Args->Name, def->Class->ClassName.c_str(), def->UID);
 
    SubscribeAction(def, AC::Free, C_FUNCTION(notify_def_free));
 
@@ -296,6 +299,9 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
 Debug: Internal functionality for debugging.
 
 This internal method prints comprehensive information that describes the scene graph to the log.
+
+-TAGS-
+private
 
 -ERRORS-
 Okay:
@@ -312,7 +318,7 @@ static ERR VECTORSCENE_Debug(extVectorScene *Self)
       for (auto &rec : list) {
          auto obj = GetObjectPtr(rec.ObjectID);
          if (obj IS Self->Viewport) continue;
-         log.msg(" #%d %s %s", rec.ObjectID, obj->Class->ClassName, obj->Name);
+         log.msg(" #%d %s %s", rec.ObjectID, obj->Class->ClassName.c_str(), obj->Name);
       }
    }
 
@@ -366,6 +372,9 @@ Definitions are created with the #AddDef() method.
 -INPUT-
 cstr Name: The name of the definition.
 &obj Def: A pointer to the definition object is returned here if discovered.
+
+-TAGS-
+pure-query, object-owns-result
 
 -ERRORS-
 Okay
@@ -593,6 +602,9 @@ with `strhash()` and using that as the ID.
 -INPUT-
 int ID: The ID to search for.
 &obj Result: This parameter will be updated with the discovered vector, or `NULL` if not found.
+
+-TAGS-
+pure-query, object-owns-result
 
 -ERRORS-
 Okay
@@ -1005,7 +1017,7 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
 #include "scene_def.c"
 
 static const FieldArray clSceneFields[] = {
-   { "RenderTime",   FDF_INT64|FDF_R, GET_RenderTime },
+   { "RenderTime",   FDF_INT64|FDF_R|FDF_PURE, GET_RenderTime },
    { "Gamma",        FDF_DOUBLE|FDF_RW },
    { "HostScene",    FDF_OBJECT|FDF_RI,    nullptr, nullptr, CLASSID::VECTORSCENE },
    { "Viewport",     FDF_OBJECT|FD_R,      nullptr, nullptr, CLASSID::VECTORVIEWPORT },
@@ -1016,7 +1028,7 @@ static const FieldArray clSceneFields[] = {
    { "PageHeight",   FDF_INT|FDF_RW,      nullptr, SET_PageHeight },
    { "SampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_SampleMethod, &clVectorSceneSampleMethod },
    // Virtual fields
-   { "Defs",         FDF_PTR|FDF_SYSTEM|FDF_R, GET_Defs, nullptr },
+   { "Defs",         FDF_PTR|FDF_SYSTEM|FDF_R|FDF_PURE, GET_Defs, nullptr },
    END_FIELD
 };
 

@@ -69,8 +69,8 @@ static ERR tls_setup_server(extNetServer *Self)
       return ERR::Failed;
    }
 
-   if (Self->SSLCertificate) {
-      log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
+   if (not Self->SSLCertificate.empty()) {
+      log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate.c_str());
 
       ssl_certificate_paths paths;
       if (auto error = resolve_ssl_certificate_paths(Self, paths); error != ERR::Okay) {
@@ -258,9 +258,9 @@ template <class T> ERR tls_connect(T *Self)
 
    log.traceBranch("Attempting SSL handshake.");
 
-   if (!Self->TLS.Handle) return ERR::FieldNotSet;
+   if (not Self->TLS.Handle) return ERR::FieldNotSet;
 
-   std::string hostname = Self->Address ? Self->Address : "";
+   std::string hostname = Self->Address;
    auto result = ssl_connect(Self->TLS.Handle, (void *)(size_t)Self->Handle.socket(), hostname);
    auto flush_error = tls_flush_output(Self);
    if ((flush_error != ERR::Okay) and (flush_error != ERR::BufferOverflow)) return flush_error;

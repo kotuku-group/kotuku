@@ -109,6 +109,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="InvalidObject">The definition is not an accepted object class.</error>
       </result>
+      <tags>mutates-object, retains-input</tags>
     </method>
 
     <method>
@@ -122,6 +123,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>private</tags>
     </method>
 
     <method>
@@ -142,6 +144,7 @@
         <error code="Search">A definition with the given Name was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
     <method>
@@ -162,6 +165,7 @@
         <error code="Search">A vector with a matching ID was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
   </methods>

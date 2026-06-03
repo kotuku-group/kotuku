@@ -50,6 +50,9 @@ bufsize OutputSize: Size of the destination buffer.  Must be at least `(InputSiz
 -RESULT-
 int: The total number of bytes output is returned.
 
+-TAGS-
+mutates-input
+
 **********************************************************************************************************************/
 
 int Base64Encode(BASE64ENCODE *State, const void *Input, int InputSize, STRING Output, int OutputSize)
@@ -189,6 +192,14 @@ cstr Input: A base 64 input string.  The pointer will be updated when the functi
 bufsize InputSize: The size of the `Input` string.
 ^buf(ptr) Output:  The output buffer.  The size of the buffer must be greater or equal to the size of Input.
 &int Written: The total number of bytes written to `Output` is returned here.
+
+-ERRORS-
+Okay
+NullArgs
+Args
+
+-TAGS-
+mutates-input
 
 -END-
 

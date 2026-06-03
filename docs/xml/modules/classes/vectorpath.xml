@@ -50,6 +50,7 @@
 <p>This method will add a series of commands to the end of a Vector's existing path sequence.  The commands must be provided as a sequential array.  No checks will be performed to confirm the validity of the sequence.</p>
 <p>Calling this method will also result in the path being recomputed for the next redraw.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -64,6 +65,7 @@
       <description>
 <p>Calling GetCommand() will return a direct pointer to the command identified at <code>Index</code>.  The pointer will remain valid for as long as the <class name="VectorPath">VectorPath</class> is not modified.</p>
       </description>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
     <method>
@@ -78,6 +80,7 @@
       <description>
 <p>This method will remove a series of commands from the current path, starting at the given <code>Index</code>.  The total number of commands to remove is indicated by the <code>Total</code> parameter.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -93,6 +96,7 @@
       <description>
 <p>Use SetCommand() to copy one or more commands into an existing path.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -108,6 +112,7 @@
 <p>Use SetCommandList() to copy a series of path commands to a <class name="VectorPath">VectorPath</class> object.  All existing commands will be cleared as a result of this process.</p>
 <p>NOTE: This method is not compatible with Tiri calls.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>

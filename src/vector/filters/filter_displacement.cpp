@@ -233,14 +233,18 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, STRING *Value)
+static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
-   stream << "<feDisplacement/>";
+   stream << "feDisplacement";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -256,10 +260,10 @@ static const FieldDef clChannel[] = {
 };
 
 static const FieldArray clDisplacementFXFields[] = {
-   { "Scale",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, DISPLACEMENTFX_GET_Scale, DISPLACEMENTFX_SET_Scale },
-   { "XChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, DISPLACEMENTFX_GET_XChannel, DISPLACEMENTFX_SET_XChannel, &clChannel },
-   { "YChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, DISPLACEMENTFX_GET_YChannel, DISPLACEMENTFX_SET_YChannel, &clChannel },
-   { "XMLDef",    FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, DISPLACEMENTFX_GET_XMLDef },
+   { "Scale",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_Scale, DISPLACEMENTFX_SET_Scale },
+   { "XChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_XChannel, DISPLACEMENTFX_SET_XChannel, &clChannel },
+   { "YChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_YChannel, DISPLACEMENTFX_SET_YChannel, &clChannel },
+   { "XMLDef",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, DISPLACEMENTFX_GET_XMLDef },
    END_FIELD
 };
 

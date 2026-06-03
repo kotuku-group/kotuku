@@ -13,10 +13,10 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2003-2026</copyright>
     <description>
-<p>The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette, clipping region and drawing state.  Bitmaps are used directly by <class name="Display">Display</class> and <class name="Picture">Picture</class> objects and provide the low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.</p>
+<p>The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette, clipping region and drawing state.  Bitmaps are used directly by <class name="Display">Display</class> and <class name="Image">Image</class> objects and provide the low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.</p>
 <p>To create a bitmap, set <fl>Width</fl> and <fl>Height</fl> before initialisation.  The pixel format can be selected explicitly with <fl>BitsPerPixel</fl>, <fl>BytesPerPixel</fl>, <fl>AmtColours</fl> and <fl>Type</fl>, or left for <action>Query</action> and <action>Init</action> to derive from the current display environment.  <fl>DataFlags</fl> controls whether the bitmap uses regular CPU-accessible memory or a platform-specific video or texture resource where supported.</p>
 <p>Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video or texture resources may require <action>Lock</action> before reading or writing <fl>Data</fl>, and <action>Unlock</action> after direct access is complete.  Code that uses the drawing methods exposed by this class does not normally need to manage locking itself.</p>
-<p>Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use <class name="Picture">Picture</class> when decoding or encoding image formats is the main concern.</p>
+<p>Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use <class name="Image">Image</class> when decoding or encoding image formats is the main concern.</p>
 <p>Raw image bytes can be read and written with <action>Read</action> and <action>Write</action>.  <action>SaveImage</action> writes the clipped bitmap image as PCX data to a destination object that supports writing.</p></description>
     <source>
       <file>class_bitmap.cpp</file>
@@ -193,7 +193,7 @@
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
       <description>
 <p>SaveImage writes the current clipping region to <code>Dest</code> as PCX image data.  Paletted bitmaps are written with a palette; true-colour bitmaps are written as three colour planes.  If <fl>ColourSpace</fl> is <code>CS::LINEAR_RGB</code>, RGB values are converted to sRGB while the image is written.</p>
@@ -286,6 +286,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Compression">Unspecified failure during compression of a data stream</error>
       </result>
+      <tags>mutates-object, creates-resource</tags>
     </method>
 
     <method>
@@ -305,6 +306,7 @@
         <error code="InvalidDimension">The clipping region is invalid.</error>
         <error code="InvalidState">The Bitmap is not in the expected state.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -324,6 +326,7 @@
         <error code="InvalidDimension">The clipping region is invalid.</error>
         <error code="InvalidState">The bitmap is not in the expected state.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -350,6 +353,7 @@
         <error code="Mismatch">The target bitmap is not a close enough match to the source bitmap in order to perform the operation.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
@@ -369,6 +373,7 @@
         <error code="AllocMemory">Insufficient memory in recreating the bitmap data buffer.</error>
         <error code="CreateObject">A Compression object could not be created.</error>
       </result>
+      <tags>mutates-object, creates-resource</tags>
     </method>
 
     <method>
@@ -386,6 +391,7 @@
         <error code="InvalidDimension">The clipping region is invalid.</error>
         <error code="InvalidState">The Bitmap is not in the expected state (32-bit with an alpha channel).</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -409,6 +415,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -430,6 +437,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query</tags>
     </method>
 
     <method>
@@ -448,6 +456,7 @@
         <error code="InvalidDimension">The clipping region is invalid.</error>
         <error code="InvalidState">The Bitmap is not in the expected state (32-bit with an alpha channel)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -469,6 +478,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>

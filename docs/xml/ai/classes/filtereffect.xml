@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="FilterEffect" mod="Vector" c="FilterEffect is a support class for managing effects hosted by the VectorFilter class." cat="Graphics" id="79e93e58" v="1">
+<ai:cl xmlns:ai="http://kotuku-group.org/ai-docs" n="FilterEffect" mod="Vector" c="FilterEffect is a support class for managing effects hosted by the VectorFilter class." cat="Graphics" id="79e93e58" v="1">
   <ai:a n="MoveToBack" c="Move an effect to the front of the VectorFilter's list order." p="ERR acMoveToBack(*Object)"/>
   <ai:a n="MoveToFront" c="Move an object to the front of its current location." p="ERR acMoveToFront(*Object)"/>
   <ai:f n="Dimensions" c="Dimension flags are stored here." t="DMF" a="R"/>

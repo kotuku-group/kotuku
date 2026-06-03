@@ -45,6 +45,9 @@ int Size:  Byte size of the destination buffer.
 -RESULT-
 int: Returns the total amount of <i>bytes</i> that were copied, not including the null byte at the end.
 
+-TAGS-
+mutates-input, null-terminated-result
+
 *********************************************************************************************************************/
 
 int UTF8Copy(CSTRING String, STRING Dest, int Chars, int Size)
@@ -103,6 +106,9 @@ cstr String: Pointer to a character in a UTF-8 string that you want to convert.
 
 -RESULT-
 uint: Returns the extracted unicode value.  If a failure occurs (the encoding is invalid) then a value of zero is returned. Zero can also be returned if the String parameter is NULL or begins with a null character.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -223,6 +229,9 @@ cstr Encoding: The encoding that should be tried for invalid UTF-8 characters.  
 
 -RESULT-
 cstr: Returns the original string pointer if it is already valid, otherwise a converted string is returned.  The converted string remains valid up until the next call to UTF8ValidEncoding().  A return of NULL is possible if an internal error occurs during the conversion process (e.g. invalid encoding type).
+
+-TAGS-
+api-owns-result, null-terminated-result, nullable-result, blocking
 
 *********************************************************************************************************************/
 #if 0
@@ -397,6 +406,9 @@ bufsize Size:   The size of the destination string buffer (does not need to be a
 
 -RESULT-
 int: Returns the total amount of characters written to the string buffer.
+
+-TAGS-
+mutates-input
 
 -END-
 

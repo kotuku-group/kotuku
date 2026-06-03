@@ -4,7 +4,7 @@
 	   function gtag(){dataLayer.push(arguments);}
 	   gtag('js', new Date());
       gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../css/bootstrap.min.css" rel="stylesheet"></link><link href="../css/module-template.css" rel="stylesheet"></link></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
-<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul>
+<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li></ul>
 </div></div></nav>
 <div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow"><ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#func-collapse" aria-expanded="true">Audio API</button><div class="collapse show" id="func-collapse">
 <ul class="btn-toggle-nav list-unstyled fw-normal">
@@ -83,6 +83,8 @@
 </tbody></table></div></div>
 <p>Use this function to set the playback rate of a mixer channel.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Audio module documentation © Paul Manias © 2002-2026</div></div>
 <div class="docs-content" style="display:none;" id="MixMute"><h2>MixMute()</h2><p class="lead">Mutes the audio of a channel.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR snd::MixMute(objAudio * Audio, INT Handle, INT Mute)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Audio</td><td>The target Audio object.</td></tr>
@@ -91,6 +93,7 @@
 </tbody></table></div></div>
 <p>Use this function to mute the audio of a mixer channel.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Audio module documentation © Paul Manias © 2002-2026</div></div>
 <div class="docs-content" style="display:none;" id="MixPan"><h2>MixPan()</h2><p class="lead">Sets a channel's panning value.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR snd::MixPan(objAudio * Audio, INT Handle, DOUBLE Pan)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Audio</td><td>The target Audio object.</td></tr>
@@ -117,6 +120,7 @@
 </tbody></table></div></div>
 <p>This function will set a new update rate for all channels, measured in milliseconds.  The default update rate is 125, which is equivalent to 5000Hz.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Audio module documentation © Paul Manias © 2002-2026</div></div>
 <div class="docs-content" style="display:none;" id="MixSample"><h2>MixSample()</h2><p class="lead">Associate a sound sample with a mixer channel.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR snd::MixSample(objAudio * Audio, INT Handle, INT Sample)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Audio</td><td>The target Audio object.</td></tr>
@@ -126,6 +130,8 @@
 <p>This function will associate a sound sample with the channel identified by Handle.  The client should follow this by setting configuration details (e.g. volume and pan values).</p>
 <p>The referenced Sample must have been added to the audio server via the <a href="classes/audio.html#tm-AddSample">Audio⇒AddSample()</a> or <a href="classes/audio.html#tm-AddStream">Audio⇒AddStream()</a> methods.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Audio module documentation © Paul Manias © 2002-2026</div></div>
 <div class="docs-content" style="display:none;" id="MixStartSequence"><h2>MixStartSequence()</h2><p class="lead">Initiates buffering of mix commands.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR snd::MixStartSequence(objAudio * Audio, INT Handle)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Audio</td><td>The target Audio object.</td></tr>

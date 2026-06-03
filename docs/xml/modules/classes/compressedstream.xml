@@ -215,10 +215,9 @@
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
-      <const name="MESSAGE">Action has been called against the object through the message system (managed by <function module="Core">ProcessMessages</function>).</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
       <const name="PRIVATE"/>
-      <const name="RECLASSED">The object switched from the base-class to a sub-class during initialisation.</const>
+      <const name="RECLASSED">The object switched from the base-class to a derived class during initialisation.</const>
       <const name="SIGNALLED">The object has been signalled and is awaiting processing.</const>
       <const name="TIMER_SUB">The object is subscribed to a timer interval.</const>
       <const name="UNIQUE">Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, <function module="Core">NewObject</function> will return <code>ERR::ObjectExists</code>.  This flag works in conjunction with the <code>Name</code> parameter.</const>
@@ -369,7 +368,7 @@
 
     <struct name="ClassRecord" comment="Meta information for a class, as recorded in the class database.">
       <field name="ClassID" type="CLASSID">Unique class identifier (hash of Name)</field>
-      <field name="ParentID" type="CLASSID">Parent class ID if this is a sub-class</field>
+      <field name="ParentID" type="CLASSID">Parent class ID if this is a derived class</field>
       <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
       <field name="Name" type="std::string">Name of the class</field>
       <field name="Path" type="std::string">Path to the class file</field>

@@ -118,6 +118,10 @@
       "string-escapes": {
          "patterns": [
             {
+               "name": "constant.character.escape.brace.tiri",
+               "match": "(\\{\\{|\\}\\})"
+            },
+            {
                "name": "constant.character.escape.tiri",
                "match": "\\\\."
             }

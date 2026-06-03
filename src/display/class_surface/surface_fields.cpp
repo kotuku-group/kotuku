@@ -181,6 +181,14 @@ This field affects #Move() only.  Direct writes to coordinate fields bypass the 
 
 *********************************************************************************************************************/
 
+static ERR GET_Movement(extSurface *Self, int *Value)
+{
+   *Value = 0;
+   if ((Self->Flags & RNF::NO_HORIZONTAL) IS RNF::NIL) *Value |= MOVE_HORIZONTAL;
+   if ((Self->Flags & RNF::NO_VERTICAL) IS RNF::NIL) *Value |= MOVE_VERTICAL;
+   return ERR::Okay;
+}
+
 static ERR SET_Movement(extSurface *Self, int Flags)
 {
    if (Flags IS MOVE_HORIZONTAL) Self->Flags = (Self->Flags & RNF::NO_HORIZONTAL) | RNF::NO_VERTICAL;

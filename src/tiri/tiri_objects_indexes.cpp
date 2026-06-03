@@ -2,6 +2,25 @@
 
 //********************************************************************************************************************
 
+static ERR lua_string_view(lua_State *Lua, int ValueIndex, std::string_view &Value)
+{
+   size_t size = 0;
+   if (auto cstr = lua_tolstring(Lua, ValueIndex, &size)) {
+      Value = std::string_view{cstr, size};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
+}
+
+static ERR object_set_string(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+{
+   std::string_view value;
+   if (auto error = lua_string_view(Lua, ValueIndex, value); error != ERR::Okay) return error;
+   return Object->set(Field->FieldID, value);
+}
+
+//********************************************************************************************************************
+
 static ERR set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int Values, int total)
 {
    if (Field->Flags & FD_INT) {
@@ -66,7 +85,7 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int 
    auto type = lua_type(Lua, ValueIndex);
 
    if (type IS LUA_TSTRING) { // Treat the source as a CSV field
-      return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+      return object_set_string(Lua, Object, Field, ValueIndex);
    }
    else if (type IS LUA_TTABLE) {
       lua_settop(Lua, ValueIndex);
@@ -119,11 +138,11 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
    auto type = lua_type(Lua, ValueIndex);
 
    if (type IS LUA_TSTRING) {
-      return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+      return object_set_string(Lua, Object, Field, ValueIndex);
    }
    else if (type IS LUA_TNUMBER) {
       if (Field->Flags & FD_STRING) {
-         return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+         return object_set_string(Lua, Object, Field, ValueIndex);
       }
       else if (lua_tointeger(Lua, ValueIndex) IS 0) {
          // Setting pointer fields with numbers is only allowed if that number evaluates to zero (NULL)
@@ -149,7 +168,7 @@ static ERR object_set_cppstring(lua_State *Lua, OBJECTPTR Object, Field *Field, 
    auto type = lua_type(Lua, ValueIndex);
 
    if (type IS LUA_TSTRING) {
-      return Object->set(Field->FieldID, lua_tostringview(Lua, ValueIndex));
+      return object_set_string(Lua, Object, Field, ValueIndex);
    }
    else if (type IS LUA_TNUMBER) {
       return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
@@ -167,7 +186,7 @@ static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int
          return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
 
       case LUA_TSTRING: // Allow internal string parsing to do its thing - important if the field is variable
-         return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+         return object_set_string(Lua, Object, Field, ValueIndex);
 
       case LUA_TNIL: // Setting a numeric with nil does nothing.  Use zero to be explicit.
          return ERR::Okay;
@@ -181,7 +200,7 @@ static ERR object_set_lookup(lua_State *Lua, OBJECTPTR Object, Field *Field, int
 {
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TNUMBER: return Object->set(Field->FieldID, (int)lua_tointeger(Lua, ValueIndex));
-      case LUA_TSTRING: return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+      case LUA_TSTRING: return object_set_string(Lua, Object, Field, ValueIndex);
       default: return ERR::SetValueNotLookup;
    }
 }
@@ -200,12 +219,13 @@ static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
 
       case LUA_TSTRING: {
          OBJECTID id;
-         if (FindObject(lua_tostring(Lua, ValueIndex), CLASSID::NIL, &id) IS ERR::Okay) {
+         std::string_view name;
+         if (auto error = lua_string_view(Lua, ValueIndex, name); error != ERR::Okay) return error;
+         if (FindObject(name, CLASSID::NIL, &id) IS ERR::Okay) {
             return Object->set(Field->FieldID, id);
          }
          else {
-            kt::Log log;
-            log.warning("Object \"%s\" could not be found.", lua_tostring(Lua, ValueIndex));
+            kt::Log().warning("Object \"%.*s\" could not be found.", int(name.size()), name.data());
             return ERR::Search;
          }
       }
@@ -224,7 +244,7 @@ static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, Field *Field, int
          return Object->set(Field->FieldID, (int64_t)lua_tointeger(Lua, ValueIndex));
 
       case LUA_TSTRING: // Allow internal string parsing to do its thing - important if the field is variable
-         return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+         return object_set_string(Lua, Object, Field, ValueIndex);
 
       case LUA_TNIL: // Setting a numeric with nil does nothing.  Use zero to be explicit.
          return ERR::Okay;
@@ -243,7 +263,8 @@ static int object_get(lua_State *Lua)
 {
    kt::Log log("obj.get");
 
-   if (auto fieldname = luaL_checkstring(Lua, 1)) {
+   std::string_view fieldname;
+   if (luaL_checkstring(Lua, 1, fieldname)) {
       auto def = object_context(Lua);
 
       auto obj = access_object(def);
@@ -253,9 +274,10 @@ static int object_get(lua_State *Lua)
       }
 
       OBJECTPTR target;
-      if (fieldname[0] IS '$') { // Get field as a string, good for CSV arrays, flags and lookups
+      if (fieldname.starts_with('$')) { // Get field as a string, good for CSV arrays, flags and lookups
+         fieldname.remove_prefix(1);
          std::string buffer;
-         if (obj->get(fieldhash(fieldname+1), buffer) IS ERR::Okay) lua_pushlstring(Lua, buffer.c_str(), buffer.size());
+         if (obj->get(fieldhash(fieldname), buffer) IS ERR::Okay) lua_pushlstring(Lua, buffer.c_str(), buffer.size());
          else lua_pushvalue(Lua, 2); // Push the client's default value
          release_object(def);
          return 1;
@@ -263,8 +285,7 @@ static int object_get(lua_State *Lua)
       else if (auto field = FindField(obj, fieldhash(fieldname), &target)) {
          int result = 0;
          if (field->Flags & FD_ARRAY) {
-            if (field->Flags & FD_RGB) result = object_get_rgb(Lua, obj_read(0, nullptr, field), def);
-            else result = object_get_array(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_array(Lua, obj_read(0, nullptr, field), def);
          }
          else if (field->Flags & FD_STRUCT) {
             result = object_get_struct(Lua, obj_read(0, nullptr, field), def);
@@ -292,13 +313,13 @@ static int object_get(lua_State *Lua)
          }
 
          release_object(def);
-         if (!result) lua_pushvalue(Lua, 2); // An error occurred if no result.  Push the client's default value
+         if (not result) lua_pushvalue(Lua, 2); // An error occurred if no result.  Push the client's default value
          return 1;
       }
       else { // Revert to getKey() if the class supports it failed
-         char buffer[8192];
+         std::string buffer;
 
-         if ((acGetKey(obj, fieldname, buffer, sizeof(buffer)) IS ERR::Okay) and (buffer[0])) {
+         if ((acGetKey(obj, fieldname, buffer) IS ERR::Okay) and (not buffer.empty())) {
             lua_pushstring(Lua, buffer);
          }
          else lua_pushvalue(Lua, 2); // Push the client's default value
@@ -317,12 +338,13 @@ static int object_get(lua_State *Lua)
 
 static int object_getkey(lua_State *Lua)
 {
-   if (auto fieldname = luaL_checkstring(Lua, 1)) {
+   std::string_view fieldname;
+   if (luaL_checkstring(Lua, 1, fieldname)) {
       auto def = object_context(Lua);
       ERR error;
       if (auto obj = access_object(def)) {
-         char buffer[8192];
-         if ((error = acGetKey(obj, fieldname, buffer, sizeof(buffer))) IS ERR::Okay) {
+         std::string buffer;
+         if ((error = acGetKey(obj, fieldname, buffer)) IS ERR::Okay) {
             lua_pushstring(Lua, buffer);
          }
          release_object(def);
@@ -346,8 +368,8 @@ static int object_set(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   CSTRING fieldname;
-   if (!(fieldname = luaL_checkstring(Lua, 1))) return 0;
+   std::string_view fieldname;
+   if (not luaL_checkstring(Lua, 1, fieldname)) return 0;
 
    if (auto obj = access_object(def)) {
       int type = lua_type(Lua, 2);
@@ -376,7 +398,8 @@ static int object_set(lua_State *Lua)
 static int object_setkey(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   if (auto fieldname = luaL_checkstring(Lua, 1)) {
+   std::string_view fieldname;
+   if (luaL_checkstring(Lua, 1, fieldname)) {
       auto value = luaL_optstring(Lua, 2, nullptr);
       if (auto obj = access_object(def)) {
          ERR error = acSetKey(obj, fieldname, value);
@@ -485,21 +508,6 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
    return error != ERR::Okay ? 0 : 1;
 }
 
-static int object_get_rgb(lua_State *Lua, const obj_read &Handle, GCobject *Def)
-{
-   ERR error;
-   if (auto obj = access_object(Def)) {
-      auto field = (Field *)(Handle.Data);
-      CSTRING rgb;
-      if (((error = obj->get(field->FieldID, rgb)) IS ERR::Okay) and (rgb)) lua_pushstring(Lua, rgb);
-      release_object(Def);
-   }
-   else error = ERR::AccessObject;
-
-   Lua->CaughtError = error;
-   return error != ERR::Okay ? 0 : 1;
-}
-
 static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *Def)
 {
    ERR error;
@@ -518,7 +526,7 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
          }
       }
       else {
-         kt::Log(__FUNCTION__).warning("No struct name reference for field %s in class %s.", field->Name, obj->Class->ClassName);
+         kt::Log(__FUNCTION__).warning("No struct name reference for field %s in class %s.", field->Name, obj->Class->ClassName.c_str());
          error = ERR::Failed;
       }
       release_object(Def);

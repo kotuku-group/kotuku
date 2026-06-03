@@ -74,16 +74,21 @@ virtual driver does not support this check.  This is common when working with ne
 -INPUT-
 cpp(strview) Path: The path to be resolved.
 int(RSF) Flags: Optional flags.
-&cpp(str) Result: Must point to a `std::string` variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
+^&cpp(str) Result: Must point to a `std::string` variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
 
 -ERRORS-
 Okay:        The `Path` was resolved.
-NullArgs:    Invalid parameters were specified.
 Search:       The given volume does not exist.
 FileNotFound: The path was resolved, but the referenced file or folder does not exist (use `NO_FILE_CHECK` to avoid this error code).
 Loop:         The volume refers back to itself.
 VirtualVolume: The path refers to a virtual volume (use `CHECK_VIRTUAL` to return `Okay` instead).
 InvalidPath:  The path is malformed.
+InvalidData:  Volume resolution returned invalid path data.
+LoadModule:   A volume extension could not be loaded.
+SystemLocked: The volume registry could not be accessed.
+
+-TAGS-
+blocking, path-resolved
 
 -END-
 

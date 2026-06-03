@@ -4,9 +4,9 @@ Priority: optional
 Maintainer: Kotuku Open Group <team@kotuku.dev>
 Build-Depends: debhelper (>= 9), cmake (>= 3.15), build-essential, libfreetype6-dev, zlib1g-dev, libasound2-dev, libx11-dev, libxext-dev, libxrandr-dev
 Standards-Version: 4.6.2
-Homepage: https://github.com/parasol-framework/kotuku
-Vcs-Git: https://github.com/parasol-framework/kotuku.git
-Vcs-Browser: https://github.com/parasol-framework/kotuku
+Homepage: https://github.com/kotuku-group/kotuku
+Vcs-Git: https://github.com/kotuku-group/kotuku.git
+Vcs-Browser: https://github.com/kotuku-group/kotuku
 
 Package: kotuku
 Architecture: @DEBIAN_ARCH@

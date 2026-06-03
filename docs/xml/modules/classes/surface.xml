@@ -204,19 +204,19 @@ the surface area first).</li>
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
-        <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
+        <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
       <description>
 <p>SaveImage() renders the visible content of a surface into an image and writes it to the destination object supplied in the action arguments.  Visible child surfaces in the captured region are included in the resulting image.</p>
-<p>The image format is selected with the <code>ClassID</code> argument.  Supported values are <class name="Picture">Picture</class>-compatible image classes such as <code>CLASSID::JPEG</code> and <code>CLASSID::PICTURE</code> (PNG).  If <code>ClassID</code> is <code>CLASSID::NIL</code>, the default <class name="Picture">Picture</class> implementation is used.</p>
+<p>The image format is selected with the <code>ClassID</code> argument.  Supported values are <class name="Image">Image</class>-compatible image classes such as <code>CLASSID::JPEG</code> and <code>CLASSID::IMAGE</code> (PNG).  If <code>ClassID</code> is <code>CLASSID::NIL</code>, the default <class name="Image">Image</class> implementation is used.</p>
 <p>Errors returned while copying individual child surfaces can be propagated from <function>CopySurface</function>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">The intermediate picture object could not be initialised or saved.</error>
+        <error code="Failed">The intermediate image object could not be initialised or saved.</error>
         <error code="Search">A search routine in this function failed</error>
         <error code="AccessObject">Attempting to lock an object failed</error>
-        <error code="NewObject">The intermediate picture object could not be created.</error>
+        <error code="NewObject">The intermediate image object could not be created.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </action>
@@ -255,6 +255,7 @@ the surface area first).</li>
         <error code="AllocMemory">The callback list could not be expanded.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-held</tags>
     </method>
 
     <method>
@@ -275,6 +276,7 @@ the surface area first).</li>
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -297,6 +299,7 @@ the surface area first).</li>
         <error code="Okay">Operation successful.</error>
         <error code="AccessMemory">Failed to access the internal surface list.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -308,6 +311,7 @@ the surface area first).</li>
 <p>If a surface is hosted in a desktop window, calling Minimise() performs the host platform's default minimise action on that window.  On Microsoft Windows, this normally minimises the window to the taskbar.</p>
 <p>Calling Minimise() on a surface that is already in the minimised state may result in the host window being restored to the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the host platform.</p>
       </description>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -326,6 +330,7 @@ the surface area first).</li>
         <error code="Okay">Operation successful.</error>
         <error code="Search">The requested callback was not found.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -351,6 +356,7 @@ the surface area first).</li>
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -371,6 +377,7 @@ the surface area first).</li>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">General failure</error>
       </result>
+      <tags>non-blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -399,6 +406,7 @@ the surface area first).</li>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="InvalidState">The surface is not a top-level surface object.</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -418,6 +426,7 @@ the surface area first).</li>
         <error code="NoSupport">The surface does not own the bitmap buffer required for independent opacity.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object</tags>
     </method>
 
   </methods>
@@ -638,7 +647,7 @@ the surface area first).</li>
     <field>
       <name>Movement</name>
       <comment>Limits the movement of a surface object to vertical or horizontal shifts.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type lookup="MOVE">INT</type>
       <description>
 <p>Set <code>Movement</code> to limit movement performed by <action>Move</action> to horizontal movement, vertical movement, both axes or neither axis.  By default, surfaces can move horizontally and vertically.</p>

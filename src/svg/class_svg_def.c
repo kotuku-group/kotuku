@@ -22,6 +22,7 @@ static const struct ActionArray clSVGActions[] = {
    { AC::Deactivate, SVG_Deactivate },
    { AC::Free, SVG_Free },
    { AC::Init, SVG_Init },
+   { AC::NewObject, SVG_NewObject },
    { AC::NewPlacement, SVG_NewPlacement },
    { AC::SaveImage, SVG_SaveImage },
    { AC::SaveToObject, SVG_SaveToObject },

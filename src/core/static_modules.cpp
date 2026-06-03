@@ -12,7 +12,7 @@ extern "C" ModHeader * register_jpeg_module();
 extern "C" ModHeader * register_json_module();
 extern "C" ModHeader * register_mp3_module();
 extern "C" ModHeader * register_network_module();
-extern "C" ModHeader * register_picture_module();
+extern "C" ModHeader * register_image_module();
 extern "C" ModHeader * register_regex_module();
 extern "C" ModHeader * register_scintilla_module();
 extern "C" ModHeader * register_svg_module();
@@ -69,8 +69,8 @@ static void register_static_modules(void)
    glStaticModules["network"] = register_network_module();
    #endif
 
-   #ifdef INC_MOD_PICTURE
-   glStaticModules["picture"] = register_picture_module();
+   #ifdef INC_MOD_IMAGE
+   glStaticModules["image"] = register_image_module();
    #endif
 
    #ifdef INC_MOD_REGEX

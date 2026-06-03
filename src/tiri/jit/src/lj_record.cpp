@@ -2090,6 +2090,11 @@ static void rec_varg(jit_State *J, BCREG dst, ptrdiff_t nresults)
       }
       else if (dst + nresults > slots.maxslot()) slots.set_maxslot(dst + (BCREG)nresults);
 
+      // Abort the trace before writing any slots if the expanded result set would exceed the slot
+      // limit.  The writes below index slots[dst + i] directly, so the overflow must be detected
+      // here rather than after the loop, otherwise the recorder runs past the slot region.
+      if (J->baseslot + dst + (BCREG)nresults >= LJ_MAX_JSLOTS) lj_trace_err(J, LJ_TRERR_STACKOV);
+
       for (i = 0; i < nresults; i++) slots[dst + i] = i < nvararg ? getslot(J, i - nvararg + FRC::FUNC_SLOT_OFFSET) : TREF_NIL;
    }
    else {  // Unknown number of varargs passed to trace.
@@ -2097,6 +2102,8 @@ static void rec_varg(jit_State *J, BCREG dst, ptrdiff_t nresults)
       int32_t frofs = 8 * (FRC::HEADER_SIZE + numparams) + FRAME_VARG;
       if (nresults >= 0) {  // Known fixed number of results.
          ptrdiff_t i;
+         // Abort the trace before writing any slots if the result set would exceed the slot limit.
+         if (J->baseslot + dst + (BCREG)nresults >= LJ_MAX_JSLOTS) lj_trace_err(J, LJ_TRERR_STACKOV);
          if (nvararg > 0) {
             ptrdiff_t nload = nvararg >= nresults ? nresults : nvararg;
             TRef vbase;
@@ -3179,7 +3186,7 @@ void lj_record_ins(jit_State *J)
          // If array was empty when recorded, guard that it stays empty
          // If array was non-empty when recorded, guard that it stays non-empty
          emitir(IRTG(is_empty ? IR_EQ : IR_NE, IRT_INT), arrlen, zero);
-         rec_comp_fixup(J, J->pc, is_empty);
+         rec_comp_fixup(J, J->pc, !is_empty);
       }
       // For non-arrays, no additional guard needed - type specialisation handles it
       break;

@@ -473,7 +473,7 @@ int SurfacePan::Descent(Scintilla::Font &font_)
 
 int SurfacePan::InternalLeading(Scintilla::Font &font_)
 {
-   OBJECTPTR font = GetFont(font_);//reinterpret_cast<OBJECTPTR>(font_.GetID());
+   OBJECTPTR font = GetFont(font_);//OBJECTPTR(font_.GetID());
 
    if (font) return GetFontLeading(font);
    else return 0;
@@ -484,7 +484,7 @@ int SurfacePan::InternalLeading(Scintilla::Font &font_)
 int SurfacePan::ExternalLeading(Scintilla::Font &font_)
 {
    /* NOTE: this right? */
-   OBJECTPTR font = GetFont(font_);//reinterpret_cast<OBJECTPTR>(font_.GetID());
+   OBJECTPTR font = GetFont(font_);//OBJECTPTR(font_.GetID());
 
    if (font) return GetFontGutter(font);
    else return 0;

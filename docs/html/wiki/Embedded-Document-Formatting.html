@@ -29,7 +29,7 @@
         <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
         <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
         <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
-        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li>
       </ul>
     </div>
   </div>
@@ -631,7 +631,7 @@ Path: Location of the file.
 Returns the resolved path associated with the file object.
 
 -TAGS-
-null-terminated-result, borrowed-result, valid-until-object-change
+null-terminated-result, object-owns-result
 -END-</code></pre>
 <p>Tags should describe concrete API contracts, not implementation details. Do not use tags to repeat information already
 expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.</p>
@@ -646,87 +646,82 @@ expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.<
 <tbody>
 <tr>
 <td style="text-align: left;">Result lifetime</td>
-<td style="text-align: left;"><code>borrowed-result</code></td>
-<td style="text-align: left;">The returned pointer or view references storage owned elsewhere and must not be freed by the caller (this is the default position).</td>
-</tr>
-<tr>
-<td style="text-align: left;">Result lifetime</td>
 <td style="text-align: left;"><code>caller-owns-result</code></td>
-<td style="text-align: left;">The caller is responsible for releasing the returned value with the documented release mechanism.</td>
+<td style="text-align: left;">The caller is responsible for releasing the returned value with FreeResource().</td>
 </tr>
 <tr>
 <td style="text-align: left;">Result lifetime</td>
 <td style="text-align: left;"><code>object-owns-result</code></td>
-<td style="text-align: left;">The returned pointer or view references storage owned by the object that supplied it.</td>
+<td style="text-align: left;">The result references storage owned by the object that supplied it, and resource lifetime is linked to the object.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Result lifetime</td>
 <td style="text-align: left;"><code>static-result</code></td>
-<td style="text-align: left;">The returned pointer or view references static storage that remains valid for the process lifetime.</td>
+<td style="text-align: left;">The result references static storage that remains valid for the process lifetime.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Result lifetime</td>
-<td style="text-align: left;"><code>volatile</code></td>
-<td style="text-align: left;">The returned pointer or view is short-lived and must be consumed immediately.</td>
+<td style="text-align: left;"><code>volatile-result</code></td>
+<td style="text-align: left;">The result is short-lived and must be consumed immediately.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Result lifetime</td>
-<td style="text-align: left;"><code>temp-access</code></td>
-<td style="text-align: left;">The returned pointer or view remains valid only until the next call to the same API or subsystem, or the owning object is modified or destroyed.</td>
+<td style="text-align: left;"><code>api-owns-result</code></td>
+<td style="text-align: left;">The result lifetime is linked to the API call, becoming invalid at the next call to the same API, or the owning object is destroyed.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Result shape</td>
 <td style="text-align: left;"><code>null-terminated-result</code></td>
-<td style="text-align: left;">The returned string view or pointer references storage that includes a terminating <code>NUL</code> byte.</td>
+<td style="text-align: left;">The resulting string view is guaranteed to be NULL terminated (can be assumed for C string pointers).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Nullability</td>
 <td style="text-align: left;"><code>non-null-result</code></td>
-<td style="text-align: left;">A successful call always returns a non-<code>NULL</code> result pointer or view.</td>
+<td style="text-align: left;">A successful call always returns a non-<code>NULL</code> pointer.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Nullability</td>
 <td style="text-align: left;"><code>nullable-result</code></td>
-<td style="text-align: left;">A successful call may return <code>NULL</code> or an empty view as a meaningful result.</td>
+<td style="text-align: left;">A successful call may return <code>NULL</code> as a meaningful result.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Input lifetime</td>
 <td style="text-align: left;"><code>copies-input</code></td>
-<td style="text-align: left;">The callee copies the supplied input before returning and does not retain the caller&#39;s buffer.</td>
+<td style="text-align: left;">The API copies the supplied input before returning and does not retain the caller&#39;s buffer.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Input lifetime</td>
 <td style="text-align: left;"><code>retains-input</code></td>
-<td style="text-align: left;">The callee may retain a reference to the supplied input after returning.</td>
+<td style="text-align: left;">The API may retain a reference to the supplied input after returning.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Ownership</td>
 <td style="text-align: left;"><code>does-not-take-ownership</code></td>
-<td style="text-align: left;">The callee observes the supplied pointer or handle without assuming responsibility for releasing it.</td>
+<td style="text-align: left;">The API observes the supplied pointer or handle without assuming responsibility for releasing it.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Ownership</td>
 <td style="text-align: left;"><code>takes-ownership</code></td>
-<td style="text-align: left;">The callee assumes responsibility for releasing the supplied pointer, handle or resource.</td>
+<td style="text-align: left;">The API assumes responsibility for releasing the supplied pointer, handle or resource.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Mutation</td>
 <td style="text-align: left;"><code>consumes-input</code></td>
-<td style="text-align: left;">The callee reads from the supplied input and advances, drains or otherwise consumes it.</td>
+<td style="text-align: left;">The API reads from the supplied input and advances, drains or otherwise consumes it.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Mutation</td>
 <td style="text-align: left;"><code>mutates-input</code></td>
-<td style="text-align: left;">The callee may modify a supplied pointer, buffer, structure or object parameter.</td>
+<td style="text-align: left;">The API may modify a supplied pointer, buffer, structure or object parameter.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Mutation</td>
 <td style="text-align: left;"><code>mutates-object</code></td>
-<td style="text-align: left;">The call changes the receiving object even if the result type appears query-like.</td>
+<td style="text-align: left;">The called object&#39;s state can be mutated even if the result type appears query-like.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Mutation</td>
-<td style="text-align: left;"><code>updates-file-position</code></td>
+<td style="text-align: left;"><code>updates-seek-index</code></td>
 <td style="text-align: left;">The call changes the current file or stream position as a side effect.</td>
 </tr>
 <tr>
@@ -742,7 +737,7 @@ expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.<
 <tr>
 <td style="text-align: left;">Resource effects</td>
 <td style="text-align: left;"><code>opens-handle</code></td>
-<td style="text-align: left;">The call opens a host handle or framework handle.</td>
+<td style="text-align: left;">The call opens a host handle or framework handle that remains open after returning.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Execution</td>
@@ -776,12 +771,12 @@ expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.<
 </tr>
 <tr>
 <td style="text-align: left;">Callback behaviour</td>
-<td style="text-align: left;"><code>callback-may-run-async</code></td>
-<td style="text-align: left;">A callback supplied to the API may run after the initiating call returns.</td>
+<td style="text-align: left;"><code>callback-held</code></td>
+<td style="text-align: left;">The callback supplied to the API will be recorded and may run at any time after the initiating call returns.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Callback behaviour</td>
-<td style="text-align: left;"><code>callback-may-run-inline</code></td>
+<td style="text-align: left;"><code>callback-inlines</code></td>
 <td style="text-align: left;">A callback supplied to the API may run before the initiating call returns.</td>
 </tr>
 <tr>
@@ -796,13 +791,13 @@ expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.<
 </tr>
 <tr>
 <td style="text-align: left;">Path behaviour</td>
-<td style="text-align: left;"><code>path-normalised</code></td>
-<td style="text-align: left;">Path text returned or stored by the API is normalised to the framework&#39;s canonical format.</td>
+<td style="text-align: left;"><code>path-resolved</code></td>
+<td style="text-align: left;">Path results are normalised to the host platform&#39;s canonical format.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Path behaviour</td>
 <td style="text-align: left;"><code>path-preserved</code></td>
-<td style="text-align: left;">Path text returned or stored by the API preserves the caller-supplied spelling where possible.</td>
+<td style="text-align: left;">Path text returned or stored by the API preserves the originally supplied string.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Semantic contract</td>
@@ -813,6 +808,16 @@ expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.<
 <td style="text-align: left;">Semantic contract</td>
 <td style="text-align: left;"><code>pure-query</code></td>
 <td style="text-align: left;">The call reads state only and has no observable side effects.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Metadata</td>
+<td style="text-align: left;"><code>deprecated</code></td>
+<td style="text-align: left;">The API or variable is deprecated.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Metadata</td>
+<td style="text-align: left;"><code>private</code></td>
+<td style="text-align: left;">The API or variable is not intended for client use.</td>
 </tr>
 </tbody>
 </table>

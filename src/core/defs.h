@@ -252,6 +252,8 @@ extern std::mutex glmThreadRegistry;
 extern std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
 extern thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
+extern ActionMessage *glCurrentActionMsg;
+
 //********************************************************************************************************************
 
 inline std::string_view get_volume(std::string_view Path)
@@ -281,16 +283,30 @@ struct CaseInsensitiveMap {
 };
 
 struct CaseInsensitiveHash {
-   std::size_t operator()(const std::string& s) const noexcept {
-      std::string lower = s;
-      std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-      return std::hash<std::string>{}(lower);
+   using is_transparent = void;
+
+   std::size_t operator()(std::string_view Value) const noexcept {
+      std::size_t hash = 5381;
+      for (auto ch : Value) {
+         hash = ((hash << 5) + hash) + std::tolower(uint8_t(ch));
+      }
+      return hash;
    }
 };
 
 struct CaseInsensitiveEqual {
-   bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+   using is_transparent = void;
+
+   bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      if (Lhs.size() != Rhs.size()) return false;
+
+      for (size_t i=0; i < Lhs.size(); i++) {
+         auto lhs = std::tolower(uint8_t(Lhs[i]));
+         auto rhs = std::tolower(uint8_t(Rhs[i]));
+         if (lhs != rhs) return false;
+      }
+
+      return true;
    }
 };
 
@@ -383,14 +399,14 @@ enum {
 class extMetaClass : public objMetaClass {
    public:
    using create = kt::Create<extMetaClass>;
-   class extMetaClass *Base;            // Reference to the base class if this is a sub-class
+   class extMetaClass *Base;            // Reference to the base class if this is a derived class
    std::vector<Field> FieldLookup;      // Field dictionary for base-class fields
    std::vector<MethodEntry> Methods;    // Original method array supplied by the module.
-   std::vector<extMetaClass *> SubClasses; // List of all associated sub-classes
-   const struct FieldArray *SubFields;  // Extra fields defined by the sub-class
+   std::vector<extMetaClass *> SubClasses; // List of all associated derived classes
+   const struct FieldArray *SubFields;  // Extra fields defined by the derived class
    class RootModule *Root;              // Root module that owns this class, if any.
    uint8_t Local[8];                    // Local object references (by field indexes), in order
-   STRING Location;                     // Location of the class binary, this field exists purely for caching the location string if the client reads it
+   std::string Location;                // Location of the class binary, this field exists purely for caching the location string if the client reads it
    ActionEntry ActionTable[int(AC::END)];
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
@@ -537,12 +553,12 @@ struct extClassRecord : public ClassRecord {
       Name.assign(pClass->ClassName);
 
       if (pPath.has_value()) Path.assign(pPath.value());
-      else if (pClass->Path) Path.assign(pClass->Path);
+      else if (not pClass->Path.empty()) Path.assign(pClass->Path);
 
-      if (pClass->FileExtension) Extension.assign(pClass->FileExtension);
-      if (pClass->FileHeader) Header.assign(pClass->FileHeader);
-      if (pClass->Icon) Icon.assign(pClass->Icon);
-      if (pClass->FileDescription) Description.assign(pClass->FileDescription);
+      if (not pClass->FileExtension.empty()) Extension.assign(pClass->FileExtension);
+      if (not pClass->FileHeader.empty()) Header.assign(pClass->FileHeader);
+      if (not pClass->Icon.empty()) Icon.assign(pClass->Icon);
+      if (not pClass->FileDescription.empty()) Description.assign(pClass->FileDescription);
    }
 
    inline extClassRecord(CLASSID pClassID, std::string pName, CSTRING pExtension = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr, CSTRING pDescription = nullptr) {

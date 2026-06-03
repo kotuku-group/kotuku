@@ -86,12 +86,12 @@ typedef int SOCKET_HANDLE;
   })
 
   klass("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
-    str NetworkFilter
-    str GatewayFilter
-    str Username
-    str Password
-    str ProxyName
-    str Server
+    cpp(str) NetworkFilter
+    cpp(str) GatewayFilter
+    cpp(str) Username
+    cpp(str) Password
+    cpp(str) ProxyName
+    cpp(str) Server
     int Port
     int ServerPort
     int Enabled
@@ -130,7 +130,7 @@ typedef int SOCKET_HANDLE;
       output="netsocket/netsocket_def.c"
   }, [[
     ptr ClientData         # Pointer to user data that can be used during events
-    str Address            # NetSocket: connect to this remote address; NetServer: bind to this local address
+    cpp(str) Address       # NetSocket: connect to this remote address; NetServer: bind to this local address
     int(NTC) State         # Connection state
     error Error            # The last NetSocket error can be read from this field
     int Port               # NetSocket: remote port to connect to; NetServer: local port to bind

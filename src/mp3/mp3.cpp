@@ -143,7 +143,7 @@ static bool parse_id3v1(objSound *Self)
 {
    kt::Log log(__FUNCTION__);
 
-   auto prv = (prvMP3 *)Self->ChildPrivate;
+   auto prv = (prvMP3 *)Self->DerivedPtr;
    bool processed = false;
 
    id3tag id3;
@@ -218,7 +218,7 @@ static int check_xing(objSound *Self, const uint8_t *Frame)
 {
    kt::Log log;
 
-   auto prv = (prvMP3 *)Self->ChildPrivate;
+   auto prv = (prvMP3 *)Self->DerivedPtr;
 
    if (prv->XingChecked) return 1;
    else prv->XingChecked = true;
@@ -300,7 +300,7 @@ static int check_xing(objSound *Self, const uint8_t *Frame)
 static ERR MP3_Free(objSound *Self)
 {
    prvMP3 *prv;
-   if (!(prv = (prvMP3 *)Self->ChildPrivate)) return ERR::Okay;
+   if (!(prv = (prvMP3 *)Self->DerivedPtr)) return ERR::Okay;
 
    if (prv->File) { FreeResource(prv->File); prv->File = nullptr; }
 
@@ -314,10 +314,10 @@ static ERR MP3_Init(objSound *Self)
 {
    kt::Log log;
 
-   CSTRING location = nullptr;
+   std::string_view location;
    Self->get(FID_Path, location);
 
-   if ((!location) or ((Self->Flags & SDF::NEW) != SDF::NIL)) {
+   if (location.empty() or ((Self->Flags & SDF::NEW) != SDF::NIL)) {
       // If no location has been specified, assume that the sound is being
       // created from scratch (e.g. to record an mp3 file to disk).
 
@@ -325,8 +325,8 @@ static ERR MP3_Init(objSound *Self)
    }
 
    prvMP3 *prv;
-   if (AllocMemory(sizeof(prvMP3), MEM::DATA, &Self->ChildPrivate) IS ERR::Okay) {
-      prv = (prvMP3 *)Self->ChildPrivate;
+   if (AllocMemory(sizeof(prvMP3), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+      prv = (prvMP3 *)Self->DerivedPtr;
       new (prv) prvMP3;
    }
    else return ERR::AllocMemory;
@@ -372,7 +372,7 @@ static ERR MP3_Init(objSound *Self)
       }
    }
    else {
-      FreeResource(Self->ChildPrivate); Self->ChildPrivate = nullptr;
+      FreeResource(Self->DerivedPtr); Self->DerivedPtr = nullptr;
       return ERR::NoSupport;
    }
 
@@ -408,7 +408,7 @@ static ERR MP3_Read(objSound *Self, struct acRead *Args)
    Args->Result = 0;
    if (Args->Length <= 0) return ERR::Okay;
 
-   auto prv = (prvMP3 *)Self->ChildPrivate;
+   auto prv = (prvMP3 *)Self->DerivedPtr;
 
    // Keep decoding until we exhaust space in the output buffer.  Setting the EOF to true indicates that everything
    // has been output, or an error has occurred.
@@ -550,7 +550,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
    if (!Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   auto prv = (prvMP3 *)Self->ChildPrivate;
+   auto prv = (prvMP3 *)Self->DerivedPtr;
 
    int64_t offset;
    if (Args->Position IS SEEK::START)         offset = int(Args->Offset);
@@ -660,7 +660,7 @@ static int64_t calc_length(objSound *Self, int ReduceEnd)
 
    log.branch();
 
-   auto prv = (prvMP3 *)Self->ChildPrivate;
+   auto prv = (prvMP3 *)Self->DerivedPtr;
 
    avg.fill(0);
 
@@ -804,7 +804,7 @@ static int find_frame(objSound *Self, uint8_t *Buffer, int BufferSize)
 {
    kt::Log log(__FUNCTION__);
    int bitrate, frame_size;
-   auto prv = (prvMP3 *)Self->ChildPrivate;
+   auto prv = (prvMP3 *)Self->DerivedPtr;
 
    log.traceBranch("Buffer Size: %d", BufferSize);
 

@@ -128,6 +128,9 @@ Core initialisation) then the "system task" may be returned, which has ownership
 -RESULT-
 obj(Task): Returns a pointer to the current Task object or NULL if failure.
 
+-TAGS-
+api-owns-result, nullable-result, pure-query
+
 *********************************************************************************************************************/
 
 objTask * CurrentTask(void)
@@ -149,6 +152,9 @@ error Error: The error code to lookup.
 
 -RESULT-
 cstr: A human readable string for the error code is returned.  By default error codes are returned in English, however if a translation table exists for the user's own language, the string will be translated.
+
+-TAGS-
+api-owns-result, null-terminated-result, non-null-result, pure-query
 
 *********************************************************************************************************************/
 
@@ -179,6 +185,9 @@ uint Length: The length of the `Data` buffer.
 
 -RESULT-
 uint: Returns the computed 32 bit CRC value for the given data.
+
+-TAGS-
+does-not-take-ownership, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -358,6 +367,9 @@ int(RES) Resource: The ID of the resource that you want to obtain.
 
 -RESULT-
 large: Returns the value of the resource that you have requested.  If the resource ID is not known by the Core, `NULL` is returned.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
@@ -482,6 +494,9 @@ The state values in the structure are static and will not change during runtime.
 -RESULT-
 cstruct(*SystemState): A read-only !SystemState structure is returned.
 
+-TAGS-
+static-result, non-null-result
+
 *********************************************************************************************************************/
 
 const SystemState * GetSystemState(void)
@@ -544,6 +559,9 @@ savings adjustments or manual changes by the user.
 -RESULT-
 large: Returns the system time in microseconds.  Could return zero in the extremely unlikely event of an error.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 int64_t PreciseTime(void)
@@ -587,6 +605,9 @@ ptr Data: User specific data pointer that will be passed to the `Routine`.  Sepa
 Okay: The `FD` was successfully registered.
 Args: The `FD` was set to a value of `-1`.
 NoSupport: The host platform does not support the provided `FD`.
+
+-TAGS-
+callback-held, does-not-take-ownership, non-blocking
 -END-
 
 *********************************************************************************************************************/
@@ -666,6 +687,10 @@ cpp(strview) Path: The new location to set for the resource path.
 -ERRORS-
 Okay:
 NullArgs:
+Args:
+
+-TAGS-
+copies-input, path-preserved
 
 *********************************************************************************************************************/
 
@@ -837,9 +862,11 @@ ptr(func) Callback: A callback function is required that will be called on each 
 Okay:
 NullArgs:
 Args:
-ArrayFull: The task's timer array is at capacity - no more subscriptions can be granted.
 InvalidState: The subscriber is marked for termination.
 SystemLocked:
+
+-TAGS-
+creates-resource, callback-held, blocking
 
 *********************************************************************************************************************/
 
@@ -902,8 +929,11 @@ double Interval: The new interval for the timer (measured in seconds), or zero t
 -ERRORS-
 Okay:
 NullArgs:
+AlreadyLocked:
 SystemLocked:
-Search:
+
+-TAGS-
+blocking
 
 *********************************************************************************************************************/
 
@@ -990,6 +1020,9 @@ double Seconds: The number of seconds to wait for.  Fractional values are suppor
 Okay:
 Cancelled: The thread has been requested to stop and cannot pause.
 
+-TAGS-
+blocking
+
 -END-
 
 *********************************************************************************************************************/
@@ -1061,6 +1094,9 @@ int Stop: If `true`, the target thread will be put into a stopping state.
 -ERRORS-
 Okay: The thread was successfully interrupted.
 Search: No thread with the given ID was found in the registry.
+
+-TAGS-
+blocking
 
 -END-
 

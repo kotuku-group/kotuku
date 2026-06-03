@@ -205,13 +205,12 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
 static CSTRING folder(extSVG *Self)
 {
    if (!Self->Folder.empty()) return Self->Folder.c_str();
-   if (!Self->Path) return nullptr;
+   if (Self->Path.empty()) return nullptr;
 
    // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
 
    if (ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder) IS ERR::Okay) {
-      auto last = Self->Folder.find_last_of("/\\");
-      if (last != std::string::npos) {
+      if (auto last = Self->Folder.find_last_of("/\\"); last != std::string::npos) {
          Self->Folder.resize(last + 1);
          return Self->Folder.c_str();
       }
@@ -325,8 +324,6 @@ static double read_time(const std::string_view Value)
 
 static double read_unit(std::string_view &Value, int64_t *FieldID)
 {
-   if (FieldID) *FieldID |= TDOUBLE;
-
    const double dpi = 96.0; // TODO: Needs to be derived from the display
 
    std::size_t i = 0;
@@ -341,7 +338,6 @@ static double read_unit(std::string_view &Value, int64_t *FieldID)
 
       if (Value.starts_with('%')) {
          Value.remove_prefix(1);
-         if (FieldID) *FieldID |= TSCALE;
          return fv * 0.01;
       }
       else if (Value.starts_with("em")) { Value.remove_prefix(2); return fv * 12.0 * (4.0 / 3.0); } // Multiply the current font's pixel height by the provided em value

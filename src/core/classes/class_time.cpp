@@ -783,6 +783,9 @@ AllocMemory:
 Search: An explicit zone ID could not be resolved.
 SystemCall: A required host time-zone API call failed.
 
+-TAGS-
+blocking, caller-owns-result
+
 -END-
 
 *********************************************************************************************************************/
@@ -839,6 +842,9 @@ SetTime: Apply the time to the system clock.
 
 This method will apply the time object's values to the BIOS.  Depending on the host platform, this method may only
 work if the user is logged in as the administrator.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
@@ -994,7 +1000,7 @@ static const FieldArray clFields[] = {
    { "MilliSecond",  FDF_INT|FDF_RW },
    { "MicroSecond",  FDF_INT|FDF_RW },
    // Virtual fields
-   { "Timestamp",    FDF_INT64|FDF_R, GET_Timestamp },
+   { "Timestamp",    FDF_INT64|FDF_R|FDF_PURE, GET_Timestamp },
    END_FIELD
 };
 

@@ -193,7 +193,7 @@
                 <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
                 <li class="nav-item"><a class="nav-link" href="api.html">API</a></li>
                 <li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li>
-                <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+                <li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li>
               </ul><xsl:text>&#xa;</xsl:text>
             </div> <!-- nav-collapse -->
           </div>

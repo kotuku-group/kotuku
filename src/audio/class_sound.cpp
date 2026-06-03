@@ -646,11 +646,11 @@ The following custom key values are formally recognised and may be defined autom
 
 static ERR SOUND_GetKey(extSound *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Key)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
    std::string name(Args->Key);
    if (Self->Tags.contains(name)) {
-      strcopy(Self->Tags[name], Args->Value, Args->Size);
+      Args->Value->assign(Self->Tags[name]);
       return ERR::Okay;
    }
    else return ERR::UnsupportedField;
@@ -960,7 +960,7 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
-   // Divert this call if the developer is trying to save the sound data as a specific subclass type.
+   // Divert this call if the developer is trying to save the sound data as a specific derived type.
 
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SOUND)) {
       auto mclass = (objMetaClass *)FindClass(Args->ClassID);
@@ -1041,7 +1041,7 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 {
    kt::Log log;
 
-   // NB: Sub-classes may divert their functionality to this routine if the sample is fully buffered.
+   // NB: Derived -classes may divert their functionality to this routine if the sample is fully buffered.
 
    if (!Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
@@ -1063,7 +1063,7 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
-      if ((Self->File) and (!Self->isSubClass())) {
+      if ((Self->File) and (!Self->isDerived())) {
          Self->File->seekStart(Self->DataOffset + Self->Position);
       }
 
@@ -1103,7 +1103,7 @@ SetKey: Define custom tags that will be saved with the sample data.
 
 static ERR SOUND_SetKey(extSound *Self, struct acSetKey *Args)
 {
-   if ((!Args) or (!Args->Key) or (!Args->Key[0])) return ERR::NullArgs;
+   if ((!Args) or (Args->Key.empty())) return ERR::NullArgs;
 
    Self->Tags[std::string(Args->Key)] = Args->Value;
    return ERR::Okay;
@@ -1458,10 +1458,10 @@ in most cases.
 
 *********************************************************************************************************************/
 
-static ERR SOUND_GET_OnStop(extSound *Self, FUNCTION **Value)
+static ERR SOUND_GET_OnStop(extSound *Self, FUNCTION * &Value)
 {
    if (Self->OnStop.defined()) {
-      *Value = &Self->OnStop;
+      Value = &Self->OnStop;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1749,11 +1749,11 @@ static const FieldArray clFields[] = {
    { "ChannelIndex",   FDF_INT|FDF_R },
    // Virtual fields
    { "Active",   FDF_INT|FDF_R,            SOUND_GET_Active },
-   { "Duration", FDF_DOUBLE|FDF_R,         SOUND_GET_Duration },
-   { "Header",   FDF_BYTE|FDF_ARRAY|FDF_R, SOUND_GET_Header },
-   { "OnStop",   FDF_FUNCTIONPTR|FDF_RW,   SOUND_GET_OnStop, SOUND_SET_OnStop },
-   { "Path",     FDF_CPPSTRING|FDF_RI,     SOUND_GET_Path, SOUND_SET_Path },
-   { "Src",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, SOUND_GET_Path, SOUND_SET_Path },
+   { "Duration", FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
+   { "Header",   FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
+   { "OnStop",   FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
+   { "Path",     FDF_CPPSTRING|FDF_RI|FDF_PURE,     SOUND_GET_Path, SOUND_SET_Path },
+   { "Src",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, SOUND_GET_Path, SOUND_SET_Path },
    { "Note",     FDF_CPPSTRING|FDF_RW,     SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };

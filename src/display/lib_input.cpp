@@ -27,6 +27,9 @@ int(JET) Type: JET type integer.
 -RESULT-
 cstr: A string describing the input `Type` is returned, or `NULL` if the `Type` is invalid.
 
+-TAGS-
+static-result, null-terminated-result, nullable-result, pure-query
+
 *********************************************************************************************************************/
 
 CSTRING GetInputTypeName(JET Type)
@@ -89,6 +92,9 @@ oid DeviceFilter: Optional.  Only the input messages that match the given device
 Okay:
 NullArgs:
 
+-TAGS-
+callback-held, does-not-take-ownership, blocking
+
 *********************************************************************************************************************/
 
 ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE InputMask, OBJECTID DeviceFilter, int *Handle)
@@ -129,6 +135,9 @@ int Handle: Reference to a handle returned by ~SubscribeInput().
 Okay
 NullArgs
 NotFound
+
+-TAGS-
+closes-handle, blocking
 -END-
 
 *********************************************************************************************************************/

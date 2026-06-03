@@ -477,20 +477,6 @@ static int lex_peek_longstring_sep_from(LexState *State, size_t StartOffset)
    return (State->peek(offset) IS '[') ? count : -1;
 }
 
-static int lex_peek_longstring_sep(LexState *State)
-{
-   if (State->c != '[') return -1;
-
-   int count = 0;
-   size_t offset = 0;
-   while (State->peek(offset) IS '=') {
-      count++;
-      offset++;
-   }
-
-   return (State->peek(offset) IS '[') ? count : -1;
-}
-
 //********************************************************************************************************************
 // F-string interpolation support
 
@@ -1518,8 +1504,8 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
    JOF tip_options = glJitOptions;
-   if (L and L->script and L->script->ChildPrivate) {
-      auto *prv = (prvTiri *)L->script->ChildPrivate;
+   if (L and L->script and L->script->DerivedPtr) {
+      auto *prv = (prvTiri *)L->script->DerivedPtr;
       tip_options |= prv->JitOptions;
    }
    this->tip_level = compute_tip_level(tip_options);
