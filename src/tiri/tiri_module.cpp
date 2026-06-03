@@ -337,7 +337,7 @@ void new_module(lua_State *Lua, objModule *Module)
 static int module_test(lua_State *Lua)
 {
    if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      auto options = lua_tostring(Lua, 2);
+      auto options = lua_tostringview(Lua, 2);
       int passed = 0, total = 0;
       ((objModule *)mod->Module)->test(options, &passed, &total);
       lua_pushinteger(Lua, passed);
