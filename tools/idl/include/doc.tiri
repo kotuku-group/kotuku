@@ -175,7 +175,7 @@ setAction('Free', {
 setAction('GetKey', {
    comment   = 'Retrieves custom key values that are not defined by an object\'s structure.',
    prototype = 'ERR acGetKey(*Object, std::string_view Key, std::string &Value)',
-   tiriPrototype = 'err = Object.acGetKey(Key:str, Value:str)',
+   tiriPrototype = 'err, str = Object.acGetKey(Key:str)',
    params    = {
       { name='Key', type='STRVIEW', comment='The name of a key value.' },
       { name='Value', type='STRING', comment='Pointer to a buffer space large enough to hold the retrieved value.' }

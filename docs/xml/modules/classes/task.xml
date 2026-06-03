@@ -49,7 +49,7 @@
       <name>GetKey</name>
       <comment>Retrieves custom key values.</comment>
       <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str)</tiriPrototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
