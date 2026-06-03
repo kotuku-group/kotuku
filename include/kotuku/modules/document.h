@@ -94,18 +94,18 @@ DEFINE_ENUM_FLAG_OPERATORS(FSO)
 // Document methods
 
 namespace doc {
-struct FeedParser { CSTRING String; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectLink { int Index; CSTRING Name; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct FindIndex { CSTRING Name; int Start; int End; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct InsertXML { CSTRING XML; int Index; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FeedParser { std::string_view String; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectLink { int Index; std::string_view Name; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FindIndex { std::string_view Name; int Start; int End; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InsertXML { std::string_view XML; int Index; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveContent { int Start; int End; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct InsertText { CSTRING Text; int Index; int Char; int Preformat; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CallFunction { CSTRING Function; struct ScriptArg * Args; int TotalArgs; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InsertText { std::string_view Text; int Index; int Char; int Preformat; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CallFunction { std::string_view Function; struct ScriptArg * Args; int TotalArgs; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddListener { DRT Trigger; FUNCTION * Function; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveListener { int Trigger; FUNCTION * Function; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ShowIndex { CSTRING Name; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct HideIndex { CSTRING Name; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Edit { CSTRING Name; int Flags; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ShowIndex { std::string_view Name; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct HideIndex { std::string_view Name; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Edit { std::string_view Name; int Flags; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ReadContent { DATA Format; int Start; int End; STRING Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -168,22 +168,22 @@ class objDocument : public Object {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR feedParser(CSTRING String) noexcept {
+   inline ERR feedParser(const std::string_view & String) noexcept {
       struct doc::FeedParser args = { String };
       return(Action(AC(-1), this, &args));
    }
-   inline ERR selectLink(int Index, CSTRING Name) noexcept {
+   inline ERR selectLink(int Index, const std::string_view & Name) noexcept {
       struct doc::SelectLink args = { Index, Name };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR findIndex(CSTRING Name, int * Start, int * End) noexcept {
+   inline ERR findIndex(const std::string_view & Name, int * Start, int * End) noexcept {
       struct doc::FindIndex args = { Name, (int)0, (int)0 };
       ERR error = Action(AC(-4), this, &args);
       if (Start) *Start = args.Start;
       if (End) *End = args.End;
       return(error);
    }
-   inline ERR insertXML(CSTRING XML, int Index) noexcept {
+   inline ERR insertXML(const std::string_view & XML, int Index) noexcept {
       struct doc::InsertXML args = { XML, Index };
       return(Action(AC(-5), this, &args));
    }
@@ -191,11 +191,11 @@ class objDocument : public Object {
       struct doc::RemoveContent args = { Start, End };
       return(Action(AC(-6), this, &args));
    }
-   inline ERR insertText(CSTRING Text, int Index, int Char, int Preformat) noexcept {
+   inline ERR insertText(const std::string_view & Text, int Index, int Char, int Preformat) noexcept {
       struct doc::InsertText args = { Text, Index, Char, Preformat };
       return(Action(AC(-7), this, &args));
    }
-   inline ERR callFunction(CSTRING Function, struct ScriptArg * Args, int TotalArgs) noexcept {
+   inline ERR callFunction(const std::string_view & Function, struct ScriptArg * Args, int TotalArgs) noexcept {
       struct doc::CallFunction args = { Function, Args, TotalArgs };
       return(Action(AC(-8), this, &args));
    }
@@ -207,15 +207,15 @@ class objDocument : public Object {
       struct doc::RemoveListener args = { Trigger, &Function };
       return(Action(AC(-10), this, &args));
    }
-   inline ERR showIndex(CSTRING Name) noexcept {
+   inline ERR showIndex(const std::string_view & Name) noexcept {
       struct doc::ShowIndex args = { Name };
       return(Action(AC(-11), this, &args));
    }
-   inline ERR hideIndex(CSTRING Name) noexcept {
+   inline ERR hideIndex(const std::string_view & Name) noexcept {
       struct doc::HideIndex args = { Name };
       return(Action(AC(-12), this, &args));
    }
-   inline ERR edit(CSTRING Name, int Flags) noexcept {
+   inline ERR edit(const std::string_view & Name, int Flags) noexcept {
       struct doc::Edit args = { Name, Flags };
       return(Action(AC(-13), this, &args));
    }
@@ -415,4 +415,3 @@ constexpr FieldValue EventMask(DEF Value) { return FieldValue(FID_EventMask, int
 constexpr FieldValue Flags(DCF Value) { return FieldValue(FID_Flags, int(Value)); }
 
 }
-

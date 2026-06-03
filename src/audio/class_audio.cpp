@@ -899,7 +899,7 @@ Optional flags may be set as follows:
 
 -INPUT-
 int Index: The index of the mixer that you want to set.
-cstr Name: If the correct index number is unknown, the name of the mixer may be set here.
+cpp(strview) Name: If the correct index number is unknown, the name of the mixer may be set here.
 int(SVF) Flags: Optional flags.
 int Channel: A specific channel to modify (e.g. `0` for left, `1` for right).  If `-1`, all channels are affected.
 double Volume: The volume to set for the mixer, from 0 to 1.0.  If `-1`, the current volume values are retained.
@@ -936,7 +936,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
    // Determine what mixer we are going to adjust
 
-   if (Args->Name) {
+   if (not Args->Name.empty()) {
       for (index=0; index < std::ssize(Self->Volumes); index++) {
          if (iequals(Args->Name, Self->Volumes[index].Name)) break;
       }
@@ -1053,7 +1053,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
    // Determine what mixer we are going to adjust
 
-   if (Args->Name) {
+   if (not Args->Name.empty()) {
       for (index=0; index < (int)Self->Volumes.size(); index++) {
          if (iequals(Args->Name, Self->Volumes[index].Name)) break;
       }

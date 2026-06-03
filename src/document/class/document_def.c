@@ -22,18 +22,18 @@ static const struct FieldDef clDocumentFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maFeedParser[] = { { "String", FD_STR }, { 0, 0 } };
-FDEF maSelectLink[] = { { "Index", FD_INT }, { "Name", FD_STR }, { 0, 0 } };
-FDEF maFindIndex[] = { { "Name", FD_STR }, { "Start", FD_INT|FD_RESULT }, { "End", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maInsertXML[] = { { "XML", FD_STR }, { "Index", FD_INT }, { 0, 0 } };
+FDEF maFeedParser[] = { { "String", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maSelectLink[] = { { "Index", FD_INT }, { "Name", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maFindIndex[] = { { "Name", FD_CPP|FD_STR }, { "Start", FD_INT|FD_RESULT }, { "End", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maInsertXML[] = { { "XML", FD_CPP|FD_STR }, { "Index", FD_INT }, { 0, 0 } };
 FDEF maRemoveContent[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
-FDEF maInsertText[] = { { "Text", FD_STR }, { "Index", FD_INT }, { "Char", FD_INT }, { "Preformat", FD_INT }, { 0, 0 } };
-FDEF maCallFunction[] = { { "Function", FD_STR }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
+FDEF maInsertText[] = { { "Text", FD_CPP|FD_STR }, { "Index", FD_INT }, { "Char", FD_INT }, { "Preformat", FD_INT }, { 0, 0 } };
+FDEF maCallFunction[] = { { "Function", FD_CPP|FD_STR }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
 FDEF maAddListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maRemoveListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maShowIndex[] = { { "Name", FD_STR }, { 0, 0 } };
-FDEF maHideIndex[] = { { "Name", FD_STR }, { 0, 0 } };
-FDEF maEdit[] = { { "Name", FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maShowIndex[] = { { "Name", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maHideIndex[] = { { "Name", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maEdit[] = { { "Name", FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maReadContent[] = { { "Format", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Result", FD_STR|FD_ALLOC|FD_RESULT }, { 0, 0 } };
 
 static const struct MethodEntry clDocumentMethods[] = {
@@ -72,4 +72,3 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::SetKey, DOCUMENT_SetKey },
    { AC::NIL, nullptr }
 };
-

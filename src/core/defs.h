@@ -472,11 +472,6 @@ class extTask : public objTask {
    kt::vector<std::string> Parameters; // Arguments (string array)
    uint64_t AffinityMask;  // CPU affinity mask for process/thread binding
    MEMORYID MessageMID;
-   std::string LaunchPath;
-   std::string Path;
-   std::string ProcessPath;
-   std::string Location;      // Where to load the task from (string)
-   std::string Name;          // Name of the task, if specified (string)
    bool     ReturnCodeSet;    // TRUE if the ReturnCode has been set
    bool     QuitCalled;       // TRUE if TASK_Quit has been called before
    FUNCTION ErrorCallback;

@@ -193,10 +193,10 @@
     <method>
       <name>CallFunction</name>
       <comment>Executes any registered function in the currently open document.</comment>
-      <prototype>ERR doc::CallFunction(OBJECTPTR Object, CSTRING Function, struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <prototype>ERR doc::CallFunction(OBJECTPTR Object, const std::string_view &amp; Function, struct ScriptArg * Args, INT TotalArgs)</prototype>
       <tiriPrototype>err = CallFunction(Function:str, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Function">The name of the function that will be called.</param>
+        <param type="STRVIEW" name="Function">The name of the function that will be called.</param>
         <param type="struct ScriptArg *" name="Args">Pointer to an optional list of parameters to pass to the procedure.</param>
         <param type="INT" name="TotalArgs">The total number of entries in the <code>Args</code> array.</param>
       </input>
@@ -214,10 +214,10 @@
     <method>
       <name>Edit</name>
       <comment>Activates a user editing section within a document.</comment>
-      <prototype>ERR doc::Edit(OBJECTPTR Object, CSTRING Name, INT Flags)</prototype>
+      <prototype>ERR doc::Edit(OBJECTPTR Object, const std::string_view &amp; Name, INT Flags)</prototype>
       <tiriPrototype>err = Edit(Name:str, Flags:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the edit cell that will be activated.</param>
+        <param type="STRVIEW" name="Name">The name of the edit cell that will be activated.  If empty, the current edit cell is deactivated.</param>
         <param type="INT" name="Flags">Optional flags.</param>
       </input>
       <description>
@@ -235,10 +235,10 @@
     <method>
       <name>FindIndex</name>
       <comment>Searches the document stream for an index, returning the start and end points if found.</comment>
-      <prototype>ERR doc::FindIndex(OBJECTPTR Object, CSTRING Name, INT * Start, INT * End)</prototype>
+      <prototype>ERR doc::FindIndex(OBJECTPTR Object, const std::string_view &amp; Name, INT * Start, INT * End)</prototype>
       <tiriPrototype>err, Start:num, End:num = FindIndex(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the index to search for.</param>
+        <param type="STRVIEW" name="Name">The name of the index to search for.</param>
         <param type="INT *" name="Start">The byte position of the index is returned in this parameter.</param>
         <param type="INT *" name="End">The byte position at which the index ends is returned in this parameter.</param>
       </input>
@@ -257,10 +257,10 @@
     <method>
       <name>HideIndex</name>
       <comment>Hides the content held within a named index.</comment>
-      <prototype>ERR doc::HideIndex(OBJECTPTR Object, CSTRING Name)</prototype>
+      <prototype>ERR doc::HideIndex(OBJECTPTR Object, const std::string_view &amp; Name)</prototype>
       <tiriPrototype>err = HideIndex(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the index.</param>
+        <param type="STRVIEW" name="Name">The name of the index.</param>
       </input>
       <description>
 <p>The HideIndex() and <method>ShowIndex</method> methods allow the display of document content to be controlled at code level.  To control content visibility, start by encapsulating the content in the source document with an <code>&lt;index&gt;</code> tag and ensure that it is named.  Then make calls to HideIndex() and <method>ShowIndex</method> with the index name to manipulate visibility.</p>
@@ -277,10 +277,10 @@
     <method>
       <name>InsertText</name>
       <comment>Inserts new content into a loaded document (raw text format).</comment>
-      <prototype>ERR doc::InsertText(OBJECTPTR Object, CSTRING Text, INT Index, INT Char, INT Preformat)</prototype>
+      <prototype>ERR doc::InsertText(OBJECTPTR Object, const std::string_view &amp; Text, INT Index, INT Char, INT Preformat)</prototype>
       <tiriPrototype>err = InsertText(Text:str, Index:num, Char:num, Preformat:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Text">A UTF-8 text string.</param>
+        <param type="STRVIEW" name="Text">A UTF-8 text string.</param>
         <param type="INT" name="Index">Reference to a <code>TEXT</code> control code that will receive the content.  If <code>-1</code>, the text will be inserted at the end of the document stream.</param>
         <param type="INT" name="Char">A character offset within the <code>TEXT</code> control code that will be injected with content.  If <code>-1</code>, the text will be injected at the end of the target string.</param>
         <param type="INT" name="Preformat">If <code>true</code>, the text will be treated as pre-formatted (all whitespace, including consecutive whitespace will be recognised).</param>
@@ -302,10 +302,10 @@
     <method>
       <name>InsertXML</name>
       <comment>Inserts new content into a loaded document (XML format).</comment>
-      <prototype>ERR doc::InsertXML(OBJECTPTR Object, CSTRING XML, INT Index)</prototype>
+      <prototype>ERR doc::InsertXML(OBJECTPTR Object, const std::string_view &amp; XML, INT Index)</prototype>
       <tiriPrototype>err = InsertXML(XML:str, Index:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="XML">An XML string in RIPL format.</param>
+        <param type="STRVIEW" name="XML">An XML string in RIPL format.</param>
         <param type="INT" name="Index">The byte position at which to insert the new content.</param>
       </input>
       <description>
@@ -392,11 +392,11 @@
     <method>
       <name>SelectLink</name>
       <comment>Selects links in the document.</comment>
-      <prototype>ERR doc::SelectLink(OBJECTPTR Object, INT Index, CSTRING Name)</prototype>
+      <prototype>ERR doc::SelectLink(OBJECTPTR Object, INT Index, const std::string_view &amp; Name)</prototype>
       <tiriPrototype>err = SelectLink(Index:num, Name:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Index to a link (links are in the order in which they are created in the document, zero being the first link).  Ignored if the <code>Name</code> parameter is set.</param>
-        <param type="CSTRING" name="Name">The name of the link to select (set to <code>NULL</code> if an <code>Index</code> is defined).</param>
+        <param type="STRVIEW" name="Name">The name of the link to select.  Leave empty if an <code>Index</code> is defined.</param>
       </input>
       <description>
 <p>This method will select a link in the document.  Selecting a link will mean that the link in question will take on a different appearance (e.g. if a text link, the text will change colour).  If the user presses the enter key when a hyperlink is selected, that link will be activated.</p>
@@ -414,10 +414,10 @@
     <method>
       <name>ShowIndex</name>
       <comment>Shows the content held within a named index.</comment>
-      <prototype>ERR doc::ShowIndex(OBJECTPTR Object, CSTRING Name)</prototype>
+      <prototype>ERR doc::ShowIndex(OBJECTPTR Object, const std::string_view &amp; Name)</prototype>
       <tiriPrototype>err = ShowIndex(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the index.</param>
+        <param type="STRVIEW" name="Name">The name of the index.</param>
       </input>
       <description>
 <p>The <method>HideIndex</method> and ShowIndex() methods allow the display of document content to be controlled at code level.  To control content visibility, start by encapsulating the content in the source document with an <code>&lt;index&gt;</code> tag and ensure that it is named.  Then make calls to <method>HideIndex</method> and ShowIndex() with the index name to manipulate visibility.</p>

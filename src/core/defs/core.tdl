@@ -1498,6 +1498,11 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
   })
 
   klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
+    cpp(str) LaunchPath
+    cpp(str) Name
+    cpp(str) Location
+    cpp(str) Path
+    cpp(str) ProcessPath
     double TimeOut
     int(TSF) Flags
     int ReturnCode
