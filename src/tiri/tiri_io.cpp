@@ -367,9 +367,9 @@ static int lines_iterator(lua_State *Lua)
 
    if (not file) return 0; // End iteration
 
-   struct fl::ReadLine args;
-   if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-      lua_pushstring(Lua, args.Result);
+   std::string line;
+   if (file->readLine(line) IS ERR::Okay) {
+      lua_pushstring(Lua, line);
       return 1;
    }
    else { // End of file or error - close if we own it
@@ -500,9 +500,9 @@ static int file_read(lua_State *Lua)
 
       // Default to reading a line if no arguments
       if (nargs IS 1) {
-         struct fl::ReadLine args;
-         if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-            lua_pushstring(Lua, args.Result);
+         std::string line;
+         if (file->readLine(line) IS ERR::Okay) {
+            lua_pushstring(Lua, line);
             return 1;
          }
          else {
@@ -514,14 +514,14 @@ static int file_read(lua_State *Lua)
       // Process read format arguments
       for (int i = 2; i <= nargs; i++) {
          if (lua_type(Lua, i) IS LUA_TSTRING) {
-            auto format = lua_tostring(Lua, i);
+            auto format = lua_tostringview(Lua, i);
 
-            if (format[0] IS '*') {
+            if ((format.starts_with('*')) and (format.size() > 1)) {
                switch (format[1]) {
                   case 'n': { // Read a number
-                     struct fl::ReadLine args;
-                     if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-                        lua_pushnumber(Lua, std::strtod(args.Result, nullptr));
+                     std::string line;
+                     if (file->readLine(line) IS ERR::Okay) {
+                        lua_pushnumber(Lua, std::strtod(line.c_str(), nullptr));
                      }
                      else lua_pushnil(Lua);
                      break;
@@ -548,10 +548,8 @@ static int file_read(lua_State *Lua)
                   }
 
                   case 'l': { // Read a line (default behavior)
-                     struct fl::ReadLine args;
-                     if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-                        lua_pushstring(Lua, args.Result);
-                     }
+                     std::string line;
+                     if (file->readLine(line) IS ERR::Okay) lua_pushstring(Lua, line);
                      else lua_pushnil(Lua);
                      break;
                   }

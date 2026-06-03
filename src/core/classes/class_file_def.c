@@ -25,7 +25,7 @@ FDEF maDelete[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maMove[] = { { "Dest", FD_CPP|FD_STR }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maCopy[] = { { "Dest", FD_CPP|FD_STR }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maSetDate[] = { { "Year", FD_INT }, { "Month", FD_INT }, { "Day", FD_INT }, { "Hour", FD_INT }, { "Minute", FD_INT }, { "Second", FD_INT }, { "Type", FD_INT }, { 0, 0 } };
-FDEF maReadLine[] = { { "Result", FD_STR|FD_RESULT }, { 0, 0 } };
+FDEF maReadLine[] = { { "Result", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
 FDEF maNext[] = { { "File", FD_OBJECTPTR|FD_ALLOC|FD_RESULT }, { 0, 0 } };
 FDEF maWatch[] = { { "Callback", FD_FUNCTIONPTR }, { "Flags", FD_INT }, { 0, 0 } };
 

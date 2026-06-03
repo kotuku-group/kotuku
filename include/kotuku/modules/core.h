@@ -2846,7 +2846,7 @@ struct Delete { FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJEC
 struct Move { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Copy { std::string_view Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDate { int Year; int Month; int Day; int Hour; int Minute; int Second; FDT Type; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ReadLine { STRING Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadLine { std::string *Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct BufferContent { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Next { objFile * File; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Watch { FUNCTION * Callback; MFF Flags; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -2864,10 +2864,11 @@ class objFile : public Object {
    FL       Flags;      // File flags and options.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
    public:
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
    }
 
    // Action stubs
@@ -2953,10 +2954,9 @@ class objFile : public Object {
       struct fl::SetDate args = { Year, Month, Day, Hour, Minute, Second, Type };
       return(Action(AC(-6), this, &args));
    }
-   inline ERR readLine(STRING * Result) noexcept {
-      struct fl::ReadLine args = { (STRING)0 };
+   inline ERR readLine(std::string &Result) noexcept {
+      struct fl::ReadLine args = { &Result };
       ERR error = Action(AC(-7), this, &args);
-      if (Result) *Result = args.Result;
       return(error);
    }
    inline ERR bufferContent() noexcept {

@@ -276,14 +276,15 @@
     <method>
       <name>ReadLine</name>
       <comment>Reads the next line from the file.</comment>
-      <prototype>ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)</prototype>
+      <prototype>ERR fl::ReadLine(OBJECTPTR Object, std::string * Result)</prototype>
       <tiriPrototype>err, Result:str = ReadLine()</tiriPrototype>
       <input>
-        <param type="STRING *" name="Result">The resulting string is returned in this parameter.</param>
+        <param type="std::string *" name="Result">The string provided in this parameter will be updated with the line read from the file.</param>
       </input>
       <description>
-<p>Reads one line from the file into an internal buffer, which is returned in the Result argument.  Reading a line will increase the <fl>Position</fl> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <fl>Flags</fl> field when you initialised the file, or the call will fail.</p>
-<p>The line buffer is managed internally, so there is no need to free the <code>Result</code> string.  <code>ERR::NoData</code> is returned once all lines have been read.</p>
+<p>Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line will increase the <fl>Position</fl> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <fl>Flags</fl> field when you initialised the file, or the call will fail.</p>
+<p>
+<code>ERR::NoData</code> is returned once all lines have been read.</p>
       </description>
       <result>
         <error code="Okay">The file information was read into the buffer.</error>
@@ -294,7 +295,7 @@
         <error code="ObjectCorrupt">The internal file handle is missing.</error>
         <error code="BufferOverflow">The line is too long for the read routine (4096 byte limit).</error>
       </result>
-      <tags>blocking, updates-seek-index, object-owns-result, null-terminated-result</tags>
+      <tags>blocking, updates-seek-index, object-owns-result, null-terminated-result, mutates-input</tags>
     </method>
 
     <method>

@@ -1343,10 +1343,11 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   ]],
   nil,
   [[
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
    }
   ]])
 
