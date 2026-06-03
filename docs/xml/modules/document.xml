@@ -202,7 +202,7 @@
       <const name="INTRESULT">For actions and methods</const>
       <const name="LOCAL">CLASSDEF Pointer to an object that is local to the class</const>
       <const name="LOOKUP">CLASSDEF</const>
-      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</const>
+      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output.</const>
       <const name="NORMALISED">Supplementary, indicates a normalised float value for multiplicative scaling.</const>
       <const name="OBJECT">Supplementary, can be used with ints (for IDs) or pointers</const>
       <const name="OBJECTID">Synonym for <code>INT | OBJECT</code></const>

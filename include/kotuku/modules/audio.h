@@ -406,10 +406,10 @@ class objSound : public Object {
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
-   inline ERR getKey(std::string_view Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
       auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
+      if (error != ERR::Okay) Value.clear();
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }

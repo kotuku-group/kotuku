@@ -194,9 +194,9 @@ static double global_point_size(void)
       if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
          kt::ScopedObjectLock<objXML> style(style_id, 3000);
          if (style.granted()) {
-            char pointsize[20];
-            if (acGetKey(style.obj, "/interface/@fontsize", pointsize, sizeof(pointsize)) IS ERR::Okay) {
-               glDefaultPoint = strtod(pointsize, nullptr);
+            std::string pointsize;
+            if (acGetKey(style.obj, "/interface/@fontsize", pointsize) IS ERR::Okay) {
+               glDefaultPoint = strtod(pointsize.c_str(), nullptr);
                if (glDefaultPoint < 6) glDefaultPoint = 6;
                else if (glDefaultPoint > 80) glDefaultPoint = 80;
                log.msg("Global font size is %.1f.", glDefaultPoint);

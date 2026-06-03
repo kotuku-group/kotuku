@@ -417,14 +417,13 @@ GetKey: Read XQuery variable values.
 static ERR XQUERY_GetKey(extXQuery *Self, struct acGetKey *Args)
 {
    if ((not Args) or (not Args->Value) or (Args->Key.empty())) return ERR::NullArgs;
-   if (Args->Size < 2) return ERR::Args;
 
    if (auto it = Self->Variables.find(Args->Key); it != Self->Variables.end()) {
-      kt::strcopy(it->second.c_str(), Args->Value, Args->Size);
+      Args->Value->assign(it->second);
       return ERR::Okay;
    }
    else {
-      Args->Value[0] = 0;
+      Args->Value->clear();
       return ERR::UnsupportedField;
    }
 }

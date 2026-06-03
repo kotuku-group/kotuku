@@ -2187,9 +2187,9 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
    if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
-         char strdpi[32];
-         if (acGetKey(style.obj, "/interface/@dpi", strdpi, sizeof(strdpi)) IS ERR::Okay) {
-            *Value = strtol(strdpi, NULL, 0);
+         std::string strdpi;
+         if (acGetKey(style.obj, "/interface/@dpi", strdpi) IS ERR::Okay) {
+            *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->HDensity = *Value; // Store for future use.
             if (not Self->VDensity) Self->VDensity = Self->HDensity;
          }
@@ -2257,9 +2257,9 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
    if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
-         char strdpi[32];
-         if (acGetKey(style.obj, "/interface/@dpi", strdpi, sizeof(strdpi)) IS ERR::Okay) {
-            *Value = strtol(strdpi, NULL, 0);
+         std::string strdpi;
+         if (acGetKey(style.obj, "/interface/@dpi", strdpi) IS ERR::Okay) {
+            *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->VDensity = *Value;
             if (not Self->HDensity) Self->HDensity = Self->VDensity;
          }

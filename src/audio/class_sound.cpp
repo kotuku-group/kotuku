@@ -646,11 +646,11 @@ The following custom key values are formally recognised and may be defined autom
 
 static ERR SOUND_GetKey(extSound *Self, struct acGetKey *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
    std::string name(Args->Key);
    if (Self->Tags.contains(name)) {
-      strcopy(Self->Tags[name], Args->Value, Args->Size);
+      Args->Value->assign(Self->Tags[name]);
       return ERR::Okay;
    }
    else return ERR::UnsupportedField;

@@ -694,18 +694,18 @@ key-value will be given the same name as that specified in the widget's element.
 
 static ERR DOCUMENT_GetKey(extDocument *Self, struct acGetKey *Args)
 {
-   if ((not Args) or (not Args->Value) or (Args->Size < 2)) return ERR::Args;
+   if ((not Args) or (not Args->Value)) return ERR::Args;
 
    if (auto key_it = Self->Vars.find(Args->Key); key_it != Self->Vars.end()) {
-      strcopy(key_it->second, Args->Value, Args->Size);
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
    else if (auto key_it = Self->Params.find(Args->Key); key_it != Self->Params.end()) {
-      strcopy(key_it->second, Args->Value, Args->Size);
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
-   Args->Value[0] = 0;
+   Args->Value->clear();
    return ERR::UnsupportedField;
 }
 

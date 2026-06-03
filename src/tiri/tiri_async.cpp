@@ -40,6 +40,14 @@ struct ThreadMsg {
    double    Key;       // Client-provided key value forwarded to the callback
 };
 
+static bool has_results(const FunctionField *Args)
+{
+   for (int i=0; Args[i].Name; i++) {
+      if (Args[i].Type & FD_RESULT) return true;
+   }
+   return false;
+}
+
 //********************************************************************************************************************
 // Callback following execution (executed by the main thread, not the child)
 // Must follow the signature declared in AsyncAction() documentation.
@@ -205,13 +213,18 @@ static int async_action(lua_State *Lua)
 
    ERR error = ERR::Okay;
    if (arg_size > 0) {
+      if ((uint64_t(1) << int(action_id)) & glActionsWithResults) {
+         abort();
+         luaL_error(Lua, "Actions that return results are not yet supported.");
+      }
+
       auto arg_buffer = std::make_unique<int8_t[]>(arg_size+8); // +8 for overflow protection in build_args()
       int result_count;
 
       // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
       lua_rotate(Lua, 1, -4);
       lua_pop(Lua, 4);
-      if ((error = build_args(Lua, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
+      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
          if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
@@ -306,14 +319,19 @@ static int async_method(lua_State *Lua)
 
          ERR error = ERR::Okay;
          if (argsize > 0) {
+            if (has_results(args)) {
+               abort();
+               luaL_error(Lua, "Methods that return results are not yet supported.");
+            }
+
             auto argbuffer = std::make_unique<int8_t[]>(argsize+8); // +8 for overflow protection in build_args()
-            int resultcount;
+            int result_count;
 
             // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
             lua_rotate(Lua, 1, -4);
             lua_pop(Lua, 4);
-            if ((error = build_args(Lua, args, argsize, argbuffer.get(), &resultcount)) IS ERR::Okay) {
-               if (not resultcount) {
+            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count)) IS ERR::Okay) {
+               if (not result_count) {
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }
                else {

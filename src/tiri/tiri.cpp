@@ -69,6 +69,7 @@ ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
 std::shared_mutex glConstantMutex;
+uint64_t glActionsWithResults = 0;
 
 static struct MsgHandler *glMsgThread = nullptr; // Message handler for thread callbacks
 static MsgHandler *glDelayedCallHandle = nullptr;
@@ -224,6 +225,20 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    for (int action_id=1; glActions[action_id].Name; action_id++) {
       glActionLookup[glActions[action_id].Name] = AC(action_id);
    }
+
+   // Record actions that have result parameters.
+   uint64_t result_mask = 0;
+   for (int action_id=1; glActions[action_id].Name; action_id++) {
+      if (glActions[action_id].Args) {
+         for (int arg=0; glActions[action_id].Args[arg].Name; arg++) {
+            if (glActions[action_id].Args[arg].Type & FD_RESULT) {
+               result_mask |= uint64_t(1) << action_id;
+               break;
+            }
+         }
+      }
+   }
+   glActionsWithResults = result_mask;
 
    kt::vector<std::string> *pargs;
    auto task = CurrentTask();

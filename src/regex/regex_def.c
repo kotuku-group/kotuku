@@ -12,11 +12,11 @@ extern ERR GetCaptureIndex(struct Regex * Regex, const std::string_view & Name, 
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsCompile[] = { { "Error", FD_INT|FD_ERROR }, { "Pattern", FD_CPP|FD_STR }, { "Flags", FD_INT }, { "ErrorMsg", FD_CPP|FD_STR|FD_RESULT }, { "Result", FD_PTR|FD_ALLOC|FD_RESULT }, { 0, 0 } };
-FDEF argsGetCaptureIndex[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Name", FD_CPP|FD_STR }, { "Indices", FD_CPP|FD_ARRAY|FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF argsReplace[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Text", FD_CPP|FD_STR }, { "Replacement", FD_CPP|FD_STR }, { "Output", FD_CPP|FD_STR|FD_RESULT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF argsCompile[] = { { "Error", FD_INT|FD_ERROR }, { "Pattern", FD_CPP|FD_STR }, { "Flags", FD_INT }, { "ErrorMsg", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { "Result", FD_PTR|FD_ALLOC|FD_RESULT }, { 0, 0 } };
+FDEF argsGetCaptureIndex[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Name", FD_CPP|FD_STR }, { "Indices", FD_CPP|FD_ARRAY|FD_INT|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
+FDEF argsReplace[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Text", FD_CPP|FD_STR }, { "Replacement", FD_CPP|FD_STR }, { "Output", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsSearch[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Text", FD_CPP|FD_STR }, { "Flags", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF argsSplit[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Text", FD_CPP|FD_STR }, { "Output", FD_CPP|FD_ARRAY|FD_CPP|FD_STR|FD_RESULT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF argsSplit[] = { { "Error", FD_INT|FD_ERROR }, { "Regex", FD_PTR }, { "Text", FD_CPP|FD_STR }, { "Output", FD_CPP|FD_ARRAY|FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { "Flags", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)rx::Compile, "Compile", argsCompile },

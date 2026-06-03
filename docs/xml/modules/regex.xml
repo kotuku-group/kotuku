@@ -29,7 +29,7 @@
     <comment>Compiles a regex pattern and returns a regex object.</comment>
     <prototype>ERR rx::Compile(const std::string_view &amp; Pattern, REGEX Flags, std::string * ErrorMsg, struct Regex ** Result)</prototype>
     <tiriPrototype>err, ErrorMsg:str, Result:any = Compile(Pattern:str, Flags:num)</tiriPrototype>
-    <tags>caller-owns-result, creates-resource, copies-input</tags>
+    <tags>caller-owns-result, creates-resource, copies-input, mutates-input</tags>
     <input>
       <param type="const std::string_view &amp;" name="Pattern">A regex pattern string.</param>
       <param type="REGEX" name="Flags" lookup="REGEX">Optional flags.</param>

@@ -184,7 +184,7 @@ removed with ~Core:FreeResource() when no longer needed to avoid memory leaks.
 -INPUT-
 cpp(strview) Pattern: A regex pattern string.
 flags(REGEX) Flags:  Optional flags.
-&cpp(str) ErrorMsg: Optional reference for storing custom error messages.
+^&cpp(str) ErrorMsg: Optional reference for storing custom error messages.
 !ptr(struct(Regex)) Result: Pointer to store the created regex object.
 
 -ERRORS-
@@ -254,7 +254,7 @@ If no capture groups match the provided name, `ERR::Search` is returned.
 -INPUT-
 ptr(struct(Regex)) Regex: The compiled regex object.
 cpp(strview) Name: The capture group name to resolve.
-&cpp(array(int)) Indices: Receives the resulting capture indices.
+^&cpp(array(int)) Indices: Receives the resulting capture indices.
 
 -ERRORS-
 Okay: The name was resolved and Indices populated.
@@ -295,7 +295,7 @@ string can include back-references like `\1`, `\2`, etc., to refer to captured g
 ptr(struct(Regex)) Regex: The compiled regex object.
 cpp(strview) Text: The input text to perform replacements on.
 cpp(strview) Replacement: The replacement string, which can include back-references like `\1`, `\2`, etc.
-&cpp(str) Output: Receives the resulting string after replacements.
+^&cpp(str) Output: Receives the resulting string after replacements.
 int(RMATCH) Flags: Optional flags to modify the replacement behavior.
 
 -ERRORS-
@@ -603,7 +603,7 @@ If no matches are found, the entire input text is returned as a single token.
 -INPUT-
 ptr(struct(Regex)) Regex: The compiled regex object.
 cpp(strview) Text: The input text to split.
-&cpp(array(cpp(str))) Output: Receives the resulting string tokens.
+^&cpp(array(cpp(str))) Output: Receives the resulting string tokens.
 int(RMATCH) Flags: Optional flags to modify the splitting behavior.
 
 -ERRORS-

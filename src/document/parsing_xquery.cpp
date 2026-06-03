@@ -624,19 +624,11 @@ static ERR xq_get_object_key(OBJECTPTR Object, std::string_view Key, std::string
    if (CheckAction(Object, AC::GetKey) != ERR::Okay) return ERR::Search;
 
    auto key = std::string(Key);
-   std::string buffer(4096, 0);
-   while (true) {
-      buffer.back() = 0;
-      struct acGetKey var = { key.c_str(), buffer.data(), int(buffer.size()) };
-      if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
-      if (buffer.back()) {
-         buffer.resize(buffer.size() * 2);
-         continue;
-      }
-
-      Result.assign(buffer.c_str());
-      return ERR::Okay;
-   }
+   std::string buffer;
+   struct acGetKey var = { key, &buffer };
+   if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
+   Result.assign(buffer);
+   return ERR::Okay;
 }
 
 static ERR xq_get_object_field(OBJECTID ObjectID, std::string_view FieldName, std::string &Result)

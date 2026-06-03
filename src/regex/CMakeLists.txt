@@ -7,6 +7,7 @@ idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    ARGS  "output-defs=regex_def.c" "output-proto=regex_def.c"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp"
    APPEND_IDL "${MOD}_def.c")
 
 add_library (${MOD})
