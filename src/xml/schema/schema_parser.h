@@ -32,10 +32,10 @@ namespace xml::schema
       std::string target_namespace;
       std::string schema_prefix;
       std::string target_namespace_prefix;
-      ankerl::unordered_dense::map<std::string, std::string> namespace_bindings;
-      ankerl::unordered_dense::map<std::string, std::shared_ptr<SchemaTypeDescriptor>> types;
-      ankerl::unordered_dense::map<std::string, std::shared_ptr<ElementDescriptor>> complex_types;
-      ankerl::unordered_dense::map<std::string, std::shared_ptr<ElementDescriptor>> elements;
+      SchemaStringMap<std::string> namespace_bindings;
+      SchemaStringMap<std::shared_ptr<SchemaTypeDescriptor>> types;
+      SchemaStringMap<std::shared_ptr<ElementDescriptor>> complex_types;
+      SchemaStringMap<std::shared_ptr<ElementDescriptor>> elements;
    };
 
    struct SchemaDocument
@@ -46,7 +46,7 @@ namespace xml::schema
       std::string target_namespace;
       std::string schema_prefix;
       std::string target_namespace_prefix;
-      ankerl::unordered_dense::map<std::string, std::string> namespace_bindings;
+      SchemaStringMap<std::string> namespace_bindings;
       std::vector<std::shared_ptr<SchemaTypeDescriptor>> declared_types;
 
       void merge_types();

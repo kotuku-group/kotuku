@@ -125,7 +125,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
    template <class T> inline ERR insertStatement(int Index, XMI Where, T Statement, XTag **Result) {
       int index_result;
       XTag *tag_result;
-      if (auto error = insertXML(Index, Where, to_cstring(Statement), &index_result); error IS ERR::Okay) {
+      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); error IS ERR::Okay) {
          error = getTag(index_result, &tag_result);
          *Result = tag_result;
          return error;
@@ -133,16 +133,14 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
       else return error;
    }
 
-   template <class T> inline ERR setAttribValue(int Tag, int Flags, T &&Attrib, int Value) {
-      auto attrib = to_cstring(Attrib);
+   template <class T> inline ERR setAttribValue(int Tag, XMS AttribID, T &&Attrib, int Value) {
       auto buffer = std::to_string(Value);
-      return setAttrib(Tag, Flags, attrib, buffer.c_str());
+      return setAttrib(Tag, AttribID, std::string_view(Attrib), buffer);
    }
 
-   template <class T> inline ERR setAttribValue(int Tag, int Flags, T &&Attrib, double Value) {
-      auto attrib = to_cstring(Attrib);
+   template <class T> inline ERR setAttribValue(int Tag, XMS AttribID, T &&Attrib, double Value) {
       auto buffer = std::to_string(Value);
-      return setAttrib(Tag, Flags, attrib, buffer.c_str());
+      return setAttrib(Tag, AttribID, std::string_view(Attrib), buffer);
    }
   ]])
 

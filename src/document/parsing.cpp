@@ -1749,10 +1749,9 @@ void parser::tag_combobox(const tag_view &Tag)
             // Client is overriding the decorator: A custom SVG background is expected, defs and body
             // adjustments may also be provided.
             if (scan.hasContent()) {
-               STRING xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, &xml_ser) IS ERR::Okay) {
+               std::string xml_ser;
+               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser) IS ERR::Okay) {
                   widget.style = xml_ser;
-                  FreeResource(xml_ser);
                }
             }
          }
@@ -1760,10 +1759,9 @@ void parser::tag_combobox(const tag_view &Tag)
             std::string value;
 
             if (not scan.Children.empty()) {
-               STRING xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, &xml_ser) IS ERR::Okay) {
+               std::string xml_ser;
+               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser) IS ERR::Okay) {
                   value = xml_ser;
-                  FreeResource(xml_ser);
                }
             }
 
@@ -2476,15 +2474,14 @@ void parser::tag_template(const tag_view &Tag)
       return;
    }
 
-   STRING strxml;
-   if (m_xml->serialise(Tag.ID, XMF::NIL, &strxml) IS ERR::Okay) {
+   std::string strxml;
+   if (m_xml->serialise(Tag.ID, XMF::NIL, strxml) IS ERR::Okay) {
       // Remove any existing tag that uses the same name.
       if (Self->TemplateIndex.contains(strhash(Tag.Attribs[n].Value))) {
          Self->Templates->removeTag(Tag.ID, 1);
       }
 
       Self->Templates->insertXML(Self->Templates->Tags[0].ID, XMI::END, strxml, 0);
-      FreeResource(strxml);
 
       Self->RefreshTemplates = true; // Force a refresh of the TemplateIndex because the pointers will be changed
    }
