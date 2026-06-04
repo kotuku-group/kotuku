@@ -270,6 +270,30 @@
 <li>Agents will make mistakes. Enforce testing and code reviews as an essential part of the process. This will create a feedback loop between what the agent has written and what it expects as a result. You are also the last arbiter of correctness, and stepping in to make adjustments is a normal part of the process.</li>
 <li>As of October 2025 our best results have been observed when using Codex, however we use both Claude Code and Codex interchangeably. Avoid relying on only one agent; learning the strengths and weaknesses of multiple agents is key to unlocking higher productivity.</li>
 </ul>
+<h2 id="skills">Skills</h2>
+<p>The repository ships a set of reusable <em>skills</em> in the <code>.agents/skills/</code> folder, which are specially adapted for work on this project.</p>
+<p>In Claude Code, a skill can be invoked directly as a slash command (e.g. <code>/flute-testing</code>), and the agent will also reach for the relevant skill automatically when a task matches its description. Codex can directly invoke skills with the <code>$</code> prefix.</p>
+<p><strong>Tiri scripting and testing</strong></p>
+<ul>
+<li><code>tiri-programming</code> — Use before writing, editing, reviewing, or testing any Tiri code, <code>.tiri</code> files, <code>scripts/gui</code> modules, examples, or Tiri-facing APIs.</li>
+<li><code>flute-testing</code> — Use when writing, running, extending, or planning coverage for Flute tests, including creating <code>test_*.tiri</code> files, adding <code>flute_test()</code> CMake registrations, and debugging Flute failures.</li>
+</ul>
+<p><strong>Code review and quality</strong></p>
+<ul>
+<li><code>code-quality-reviewer</code> — Reviews code changes for correctness, maintainability, compile risk, and the project&#39;s strict coding standards. Use after implementing or modifying code and before committing.</li>
+<li><code>bug-sweep &lt;sub-project-name&gt;</code> — Scans a module or sub-project for bugs using parallel agents and compiles a prioritised report.</li>
+<li><code>code-cleanup-auditor &lt;module-or-file-path&gt;</code> — Audits C++ modules and their TDL/CMake integration for maintainability cleanups: dead functions, stale helpers, duplicated patterns, and structural anti-patterns. This is for cleanup, not primary bug hunting.</li>
+</ul>
+<p><strong>Documentation</strong></p>
+<ul>
+<li><code>doc-enhancer</code> — Improves, rewrites, or reviews technical documentation, including the embedded C++ API sections, and markdown guides.</li>
+<li><code>doc-reviewer</code> — Reviews documentation for developer usability, clarity, completeness, and technical accuracy, ensuring a developer can implement functionality without reverse-engineering the source.</li>
+</ul>
+<p><strong>Workflow</strong></p>
+<ul>
+<li><code>commit</code> — Commits to the repository using the project&#39;s required commit message format.</li>
+</ul>
+<p>When you start a task that one of these skills covers, mentioning the skill by name (or letting the agent auto-select it) ensures the project&#39;s conventions are applied consistently.</p>
 <h2 id="effective-prompting-for-kōtuku">Effective Prompting for Kōtuku</h2>
 <p>When starting a new task, you may need to explicitly remind the agent about Kōtuku-specific requirements:</p>
 <p><strong>For any coding task:</strong></p>
@@ -278,7 +302,7 @@
 </ul>
 <p><strong>When asking for Tiri code:</strong></p>
 <ul>
-<li>&quot;Read at least 3 examples from <code>examples/</code> or <code>src/[module]/tests/</code> before writing code&quot; - This will improve code quality.</li>
+<li>&quot;Read at least 3 examples from <code>examples/</code> or <code>src/[module]/tests/</code> before writing code&quot; - This will improve code quality. The Tiri skill automatically does this for you.</li>
 <li>Point the agent to specific example files most relevant to your task (e.g., <code>examples/widgets.tiri</code> for GUI work).</li>
 </ul>
 <p><strong>When asking for tests:</strong></p>

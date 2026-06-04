@@ -185,13 +185,13 @@
 </tbody></table></div></div>
 <p>This function is the key entry point for executing actions and method routines.  An action is a predefined function call that can be called on any object, while a method is a function call that is specific to a class implementation. You can find a complete list of available actions and their associated details in the Kotuku Wiki. The actions and methods supported by any class will be referenced in their auto-generated documentation.</p>
 <p>Here are two examples that demonstrate how to make an action call.  The first performs an activation, which does not require any additional arguments.  The second performs a move operation, which requires three additional arguments to be passed to the Action() function:</p>
-<pre>1. Action(AC::Activate, Picture, nullptr);
+<pre>1. Action(AC::Activate, Image, nullptr);
 
 2. struct acMove move = { 30, 15, 0 };
    Action(AC::Move, Window, &amp;move);
 </pre>
 <p>In all cases, action calls in C++ can be simplified by using their corresponding stub functions:</p>
-<pre>1.  acActivate(Picture);
+<pre>1.  acActivate(Image);
 
 2a. acMove(Window, 30, 15, 0);
 
@@ -316,7 +316,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
 </tbody></table></div></div>
 <p>This function will analyse a path and determine the type of file that the path is referring to.  For instance, a path of <code>user:documents/</code> would indicate a folder reference.  A path of <code>system:</code> would be recognised as a volume. A path of <code>user:documents/copyright.txt</code> would be recognised as a file.</p>
 <p>Ambiguous references are analysed to get the correct type - for example <code>user:documents/helloworld</code> could refer to a folder or file, so the path is analysed to check the file type.  On exceptional occasions where the path could be interpreted as either a folder or a file, preference is given to the folder.</p>
-<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
+<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~images:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
 <p>To check if a volume name is valid, call <a href="?page=ResolvePath">ResolvePath()</a> first and then pass the resulting path to this function.</p>
 <p>If the queried path does not exist, a fail code is returned.  This behaviour makes the AnalysePath() function a good candidate for testing the validity of a path string.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The path was analysed and the result is stored in the <code>Type</code> variable.</td></tr>
@@ -434,8 +434,8 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>It is important that you are aware that different types of string formatting can give different results.  The following examples illustrate:</p>
 <p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents</code> results in a file called <code>kotuku:documents</code>.</p>
 <p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents/</code> results in a file called <code>kotuku:documents/makefile</code>.</p>
-<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/pictures</code> and includes a copy of all folders and files found within the pictures folder.</p>
-<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the pictures folder).</p>
+<p>Copying <code>kotuku:images/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/images</code> and includes a copy of all folders and files found within the images folder.</p>
+<p>Copying <code>kotuku:images/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the images folder).</p>
 <p>This function will overwrite any destination file(s) that already exist.</p>
 <p>The Source parameter should always clarify the type of location that is being copied.  For example if copying a folder, a forward slash must terminate the string or it will be assumed that a file is the source.</p>
 <p>The Callback parameter can be set with a function that matches this prototype:</p>
@@ -622,7 +622,7 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <tr><td>Class</td><td>Must refer to a <code>CLASSID</code> variable that will store the resulting class ID.</td></tr>
 <tr><td>SubClass</td><td>Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).</td></tr>
 </tbody></table></div></div>
-<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <a href="classes/picture.html">Picture</a> class.  An MP3 file would be identified as a datatype of the <a href="classes/sound.html">Sound</a> class.</p>
+<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <a href="classes/image.html">Image</a> class.  An MP3 file would be identified as a datatype of the <a href="classes/sound.html">Sound</a> class.</p>
 <p>The method involves analysing the <code>Path</code>'s file extension and comparing it to the supported extensions of all available classes.  If a class supports the file extension, the ID of that class will be returned. If the file extension is not listed in the class dictionary or if it is listed more than once, the first 80 bytes of the file's data will be loaded and checked against classes that can match against file header information.  If a match is found, the ID of the matching class will be returned.</p>
 <p>The <code>ERR::Search</code> code is returned if a suitable class does not match the targeted file.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
@@ -634,7 +634,7 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <div class="docs-content" style="display:none;" id="InitObject"><h2>InitObject()</h2><p class="lead">Initialises an object so that it is ready for use.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR InitObject(OBJECTPTR Object)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The object to initialise.</td></tr>
 </tbody></table></div></div>
 <p>This function initialises objects so that they can be used for their intended purpose. Initialisation is compulsory, and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to this rule only apply to the <code>GetKey()</code> and <code>SetKey()</code> actions.</p>
-<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <a href="classes/picture.html">Picture</a> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
+<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <a href="classes/image.html">Image</a> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
 <p>If an object does not support the data or its configuration, an error code of <code>ERR::NoSupport</code> will be returned. Other appropriate error codes can be returned if initialisation fails.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The object was initialised.</td></tr>
 <tr><th class="col-md-1">LostClass</th><td>The object has lost its class reference</td></tr>
@@ -724,8 +724,8 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
 <b>Source               Destination          Result</b>
 kotuku:makefile     kotuku:documents    kotuku:documents
 kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
-kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
-kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
+kotuku:images/      kotuku:documents/   kotuku:documents/images
+kotuku:images/      kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </pre>
 <p>This function will overwrite the destination location if it already exists.</p>
 <p>The <code>Source</code> argument should always clarify the type of location that is being copied - e.g. if you are copying a folder, you must specify a forward slash at the end of the string or the function will assume that you are moving a file.</p>
@@ -834,7 +834,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
 <tr><td>Result</td><td>The total number of bytes read into the <code>Buffer</code> will be returned here (optional).</td></tr>
 </tbody></table></div></div>
 <p>This function provides a simple method for reading file content into a <code>Buffer</code>.  In some cases this procedure may be optimised for the host platform, which makes it the fastest way to read file content in simple cases.</p>
-<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~pictures:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
+<p>File path approximation is supported if the <code>Path</code> is prefixed with a <code>~</code> character (e.g. <code>~images:photo</code> could be matched to <code>photo.jpg</code> in the same folder).</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">File</th><td>File error, e.g. file not found</td></tr>
 <tr><th class="col-md-1">FileNotFound</th><td>File not found</td></tr>
@@ -1311,7 +1311,7 @@ static ResourceManager glNodeManager = {
 <tr><th>DATA::CONTENT</th><td>Document content (between XML tags) - sent by document objects only</td></tr>
 <tr><th>DATA::DEVICE_INPUT</th><td>Device activity</td></tr>
 <tr><th>DATA::FILE</th><td>File location (the data will reflect the complete file path)</td></tr>
-<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Picture class</td></tr>
+<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Image class</td></tr>
 <tr><th>DATA::INPUT_READY</th><td>Device input that has been transformed into user input</td></tr>
 <tr><th>DATA::RAW</th><td>Raw unprocessed data</td></tr>
 <tr><th>DATA::RECEIPT</th><td>Receipt for item data, in response to an earlier request</td></tr>
@@ -1429,7 +1429,7 @@ static ResourceManager glNodeManager = {
 <tr><th>FD::INTRESULT</th><td>For actions and methods</td></tr>
 <tr><th>FD::LOCAL</th><td>CLASSDEF Pointer to an object that is local to the class</td></tr>
 <tr><th>FD::LOOKUP</th><td>CLASSDEF</td></tr>
-<tr><th>FD::MUTABLE</th><td>FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</td></tr>
+<tr><th>FD::MUTABLE</th><td>FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output.</td></tr>
 <tr><th>FD::NORMALISED</th><td>Supplementary, indicates a normalised float value for multiplicative scaling.</td></tr>
 <tr><th>FD::OBJECT</th><td>Supplementary, can be used with ints (for IDs) or pointers</td></tr>
 <tr><th>FD::OBJECTID</th><td>Synonym for <code>INT | OBJECT</code></td></tr>
@@ -1467,10 +1467,10 @@ static ResourceManager glNodeManager = {
 <tr><th>FD::WORD</th><td>16 bit integer.</td></tr>
 <tr><th>FD::WRITE</th><td>CLASSDEF</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="FDB"><h1>FDB Type</h1><p class="lead">Feedback event indicators.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDB::COMPRESS_FILE</th><td></td></tr>
-<tr><th>FDB::DECOMPRESS_FILE</th><td></td></tr>
-<tr><th>FDB::DECOMPRESS_OBJECT</th><td></td></tr>
-<tr><th>FDB::REMOVE_FILE</th><td></td></tr>
+<div class="docs-content" style="display:none;" id="FDB"><h1>FDB Type</h1><p class="lead">Feedback event indicators.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDB::COMPRESS_FILE</th><td>A file or folder is being added to a compressed stream.</td></tr>
+<tr><th>FDB::DECOMPRESS_FILE</th><td>A file is being decompressed to a filesystem path.</td></tr>
+<tr><th>FDB::DECOMPRESS_OBJECT</th><td>A file is being decompressed into an object.</td></tr>
+<tr><th>FDB::REMOVE_FILE</th><td>A file is being removed from a compressed stream.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="FDL"><h1>FDL Type</h1><p class="lead">Options for the File Delete() method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDL::FEEDBACK</th><td>Automatically manage user feedback for deleting files by presenting dialog boxes.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -2006,23 +2006,23 @@ static ResourceManager glNodeManager = {
 <tr><th>TSTATE::TERMINATED</th><td>The process has closed.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="VAS"><h1>VAS Type</h1><p class="lead">For use by VirtualVolume()</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VAS::CASE_SENSITIVE</th><td>Set to true if the volume's paths are case-sensitive.</td></tr>
-<tr><th>VAS::CLOSE_DIR</th><td></td></tr>
-<tr><th>VAS::CREATE_LINK</th><td></td></tr>
-<tr><th>VAS::DELETE</th><td></td></tr>
+<tr><th>VAS::CLOSE_DIR</th><td>Register the callback used to close an opened virtual folder.</td></tr>
+<tr><th>VAS::CREATE_LINK</th><td>Register the callback used to create a symbolic link on a virtual volume.</td></tr>
+<tr><th>VAS::DELETE</th><td>Register the callback used to delete a virtual file or folder.</td></tr>
 <tr><th>VAS::DEREGISTER</th><td>Remove the virtual volume from the system.</td></tr>
-<tr><th>VAS::DRIVER_SIZE</th><td></td></tr>
-<tr><th>VAS::GET_DEVICE_INFO</th><td></td></tr>
-<tr><th>VAS::GET_INFO</th><td></td></tr>
-<tr><th>VAS::IDENTIFY_FILE</th><td></td></tr>
-<tr><th>VAS::IGNORE_FILE</th><td></td></tr>
-<tr><th>VAS::MAKE_DIR</th><td></td></tr>
-<tr><th>VAS::OPEN_DIR</th><td></td></tr>
-<tr><th>VAS::READ_LINK</th><td></td></tr>
-<tr><th>VAS::RENAME</th><td></td></tr>
-<tr><th>VAS::SAME_FILE</th><td></td></tr>
-<tr><th>VAS::SCAN_DIR</th><td></td></tr>
-<tr><th>VAS::TEST_PATH</th><td></td></tr>
-<tr><th>VAS::WATCH_PATH</th><td></td></tr>
+<tr><th>VAS::DRIVER_SIZE</th><td>Set the size of the driver-specific data attached to folder scans.</td></tr>
+<tr><th>VAS::GET_DEVICE_INFO</th><td>Register the callback used to retrieve storage device information for a virtual path.</td></tr>
+<tr><th>VAS::GET_INFO</th><td>Register the callback used to retrieve information for a virtual file or folder.</td></tr>
+<tr><th>VAS::IDENTIFY_FILE</th><td>Register the callback used to identify the class associated with a virtual file.</td></tr>
+<tr><th>VAS::IGNORE_FILE</th><td>Register the callback used when a virtual file object no longer needs to be watched.</td></tr>
+<tr><th>VAS::MAKE_DIR</th><td>Register the callback used to create a virtual folder.</td></tr>
+<tr><th>VAS::OPEN_DIR</th><td>Register the callback used to open a virtual folder for scanning.</td></tr>
+<tr><th>VAS::READ_LINK</th><td>Register the callback used to read a symbolic link target from a virtual path.</td></tr>
+<tr><th>VAS::RENAME</th><td>Register the callback used to rename or move a virtual path.</td></tr>
+<tr><th>VAS::SAME_FILE</th><td>Register the callback used to determine if two virtual paths refer to the same file.</td></tr>
+<tr><th>VAS::SCAN_DIR</th><td>Register the callback used to retrieve entries from an opened virtual folder.</td></tr>
+<tr><th>VAS::TEST_PATH</th><td>Register the callback used to test and resolve a virtual path.</td></tr>
+<tr><th>VAS::WATCH_PATH</th><td>Register the callback used to watch a virtual path for changes.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="VLF"><h1>VLF Type</h1><p class="lead">VlogF flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VLF::API</th><td></td></tr>
 <tr><th>VLF::BRANCH</th><td></td></tr>

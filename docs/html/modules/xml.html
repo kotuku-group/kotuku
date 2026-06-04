@@ -67,6 +67,7 @@
 <tr><th>XMF::PARSE_ENTITY</th><td>Enables parsing of DOCTYPE entities.</td></tr>
 <tr><th>XMF::PARSE_HTML</th><td>Automatically parse HTML escape codes.</td></tr>
 <tr><th>XMF::READABLE</th><td>Indent the output of serialised XML to improve readability.</td></tr>
+<tr><th>XMF::READ_ONLY</th><td>Edits to the document are not permitted.</td></tr>
 <tr><th>XMF::STANDALONE</th><td>Automatically defined when the XML declaration specifies standalone="yes".</td></tr>
 <tr><th>XMF::STRIP_CDATA</th><td>Do not serialise <code>CDATA</code> sections.  Note that this option is used as a parameter, not an object flag.</td></tr>
 <tr><th>XMF::STRIP_CONTENT</th><td>Strip all content from incoming XML data.</td></tr>
@@ -79,6 +80,7 @@
 <tr><th>XMI::PREV</th><td>Insert as the previous tag of the target.</td></tr>
 </tbody></table><div class="footer copyright text-right">XML module documentation © Paul Manias © 2001-2026</div></div>
 <div class="docs-content" style="display:none;" id="XMS"><h1>XMS Type</h1><p class="lead">For SetAttrib()</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XMS::NEW</th><td>Adds a new attribute.  Note that if the attribute already exists, this will result in at least two attributes of the same name in the tag.</td></tr>
+<tr><th>XMS::REMOVE</th><td>Removes the named attribute, or clears element content if the name is empty.</td></tr>
 <tr><th>XMS::UPDATE</th><td>As for <code>UPDATE_ONLY</code>, but if the attribute does not exist, it will be created.</td></tr>
 <tr><th>XMS::UPDATE_ONLY</th><td>SetAttrib will find the target attribute and update it.  It is not possible to rename the attribute when using this technique.  <code>ERR::Search</code> is returned if the attribute cannot be found.</td></tr>
 </tbody></table><div class="footer copyright text-right">XML module documentation © Paul Manias © 2001-2026</div></div>

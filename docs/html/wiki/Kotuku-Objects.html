@@ -536,7 +536,7 @@ public variables and methods is helpful in accelerating development for new user
 </table>
 <h3 id="auto-generated-interfaces-for-objects">Auto-Generated Interfaces for Objects</h3>
 <p>During Kōtuku&#39;s build process, C++ interfaces are automatically generated for classes so that our framework is more closely integrated with the C++ language itself. These interfaces are not directly documented, but they are intended to be browsed via your IDE, e.g. via the <code>CTRL + SPACE</code> convention.</p>
-<p>All actions and methods listed for a class get their own C++ stub. For instance, the <code>GetKey</code> action is supported with a stub of <code>ERR getKey(CSTRING Key, STRING Value, int Size)</code>. The parameters will always match those documented for the given action or method.</p>
+<p>All actions and methods listed for a class get their own C++ stub. For instance, the <code>GetKey</code> action is supported with a stub of <code>ERR getKey(std::string_view Key, std::string &amp;Value)</code>. The parameters will always match those documented for the given action or method.</p>
 <p>Stubs are also generated for setting fields. The use of these stubs is encouraged as they are type-checked and eliminate the question of whether to set a field virtually or through a direct write. Additionally, if the field is virtual then the stub will use an approach that eliminates much of the overhead that result from setting a field by its identifier. The template generated for each field will be in the format <code>ERR setName(T Value)</code>.</p>
 </div></div></div></div>
 

@@ -81,7 +81,7 @@
 <tr><th>DATA::CONTENT</th><td>Document content (between XML tags) - sent by document objects only</td></tr>
 <tr><th>DATA::DEVICE_INPUT</th><td>Device activity</td></tr>
 <tr><th>DATA::FILE</th><td>File location (the data will reflect the complete file path)</td></tr>
-<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Picture class</td></tr>
+<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Image class</td></tr>
 <tr><th>DATA::INPUT_READY</th><td>Device input that has been transformed into user input</td></tr>
 <tr><th>DATA::RAW</th><td>Raw unprocessed data</td></tr>
 <tr><th>DATA::RECEIPT</th><td>Receipt for item data, in response to an earlier request</td></tr>
@@ -177,7 +177,7 @@
 <tr><th>FD::INTRESULT</th><td>For actions and methods</td></tr>
 <tr><th>FD::LOCAL</th><td>CLASSDEF Pointer to an object that is local to the class</td></tr>
 <tr><th>FD::LOOKUP</th><td>CLASSDEF</td></tr>
-<tr><th>FD::MUTABLE</th><td>FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</td></tr>
+<tr><th>FD::MUTABLE</th><td>FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output.</td></tr>
 <tr><th>FD::NORMALISED</th><td>Supplementary, indicates a normalised float value for multiplicative scaling.</td></tr>
 <tr><th>FD::OBJECT</th><td>Supplementary, can be used with ints (for IDs) or pointers</td></tr>
 <tr><th>FD::OBJECTID</th><td>Synonym for <code>INT | OBJECT</code></td></tr>
