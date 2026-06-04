@@ -5,10 +5,10 @@ static const struct FieldDef clNetLookupFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maResolveName[] = { { "HostName", FD_STR }, { 0, 0 } };
-FDEF maResolveAddress[] = { { "Address", FD_STR }, { 0, 0 } };
-FDEF maBlockingResolveName[] = { { "HostName", FD_STR }, { 0, 0 } };
-FDEF maBlockingResolveAddress[] = { { "Address", FD_STR }, { 0, 0 } };
+FDEF maResolveName[] = { { "HostName", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maResolveAddress[] = { { "Address", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maBlockingResolveName[] = { { "HostName", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maBlockingResolveAddress[] = { { "Address", FD_CPP|FD_STR }, { 0, 0 } };
 
 static const struct MethodEntry clNetLookupMethods[] = {
    { AC(-1), (APTR)NETLOOKUP_ResolveName, "ResolveName", maResolveName, sizeof(struct nl::ResolveName) },

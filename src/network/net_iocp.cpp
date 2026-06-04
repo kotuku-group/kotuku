@@ -409,19 +409,22 @@ public:
       return iocp_set_multicast_ttl(Handle.socket(), TTL, IPv6);
    }
 
-   ERR parse_multicast_group(CSTRING Group, bool &IPv6) override
+   ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      return iocp_parse_multicast_group(Group, IPv6);
+      if (Group.empty()) return ERR::Args;
+
+      std::string group(Group);
+      if (auto error = iocp_parse_multicast_group(group.c_str(), IPv6); error != ERR::Okay) return error;
+      return iocp_join_multicast_group(Handle.socket(), group.c_str(), IPv6);
    }
 
-   ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
+   ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      return iocp_join_multicast_group(Handle.socket(), Group, IPv6);
-   }
+      if (Group.empty()) return ERR::Args;
 
-   ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
-   {
-      return iocp_leave_multicast_group(Handle.socket(), Group, IPv6);
+      std::string group(Group);
+      if (auto error = iocp_parse_multicast_group(group.c_str(), IPv6); error != ERR::Okay) return error;
+      return iocp_leave_multicast_group(Handle.socket(), group.c_str(), IPv6);
    }
 
    ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) override

@@ -447,10 +447,10 @@ class objProxy : public Object {
 // NetLookup methods
 
 namespace nl {
-struct ResolveName { CSTRING HostName; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ResolveAddress { CSTRING Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct BlockingResolveName { CSTRING HostName; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct BlockingResolveAddress { CSTRING Address; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResolveName { std::string_view HostName; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResolveAddress { std::string_view Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct BlockingResolveName { std::string_view HostName; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct BlockingResolveAddress { std::string_view Address; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -467,19 +467,19 @@ class objNetLookup : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR resolveName(CSTRING HostName) noexcept {
+   inline ERR resolveName(const std::string_view & HostName) noexcept {
       struct nl::ResolveName args = { HostName };
       return(Action(AC(-1), this, &args));
    }
-   inline ERR resolveAddress(CSTRING Address) noexcept {
+   inline ERR resolveAddress(const std::string_view & Address) noexcept {
       struct nl::ResolveAddress args = { Address };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR blockingResolveName(CSTRING HostName) noexcept {
+   inline ERR blockingResolveName(const std::string_view & HostName) noexcept {
       struct nl::BlockingResolveName args = { HostName };
       return(Action(AC(-3), this, &args));
    }
-   inline ERR blockingResolveAddress(CSTRING Address) noexcept {
+   inline ERR blockingResolveAddress(const std::string_view & Address) noexcept {
       struct nl::BlockingResolveAddress args = { Address };
       return(Action(AC(-4), this, &args));
    }
@@ -544,12 +544,12 @@ class objNetLookup : public Object {
 // NetSocket methods
 
 namespace ns {
-struct Connect { CSTRING Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Connect { std::string_view Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetLocalIPAddress { struct IPAddress * Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SendTo { struct IPAddress * Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RecvFrom { struct IPAddress * Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct JoinMulticastGroup { CSTRING Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct LeaveMulticastGroup { CSTRING Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct JoinMulticastGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct LeaveMulticastGroup { std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -617,7 +617,7 @@ class objNetSocket : public Object {
          return error;
       }
    }
-   inline ERR connect(CSTRING Address, int Port, double Timeout) noexcept {
+   inline ERR connect(const std::string_view & Address, int Port, double Timeout) noexcept {
       struct ns::Connect args = { Address, Port, Timeout };
       return(Action(AC(-1), this, &args));
    }
@@ -637,11 +637,11 @@ class objNetSocket : public Object {
       if (BytesRead) *BytesRead = args.BytesRead;
       return(error);
    }
-   inline ERR joinMulticastGroup(CSTRING Group) noexcept {
+   inline ERR joinMulticastGroup(const std::string_view & Group) noexcept {
       struct ns::JoinMulticastGroup args = { Group };
       return(Action(AC(-5), this, &args));
    }
-   inline ERR leaveMulticastGroup(CSTRING Group) noexcept {
+   inline ERR leaveMulticastGroup(const std::string_view & Group) noexcept {
       struct ns::LeaveMulticastGroup args = { Group };
       return(Action(AC(-6), this, &args));
    }

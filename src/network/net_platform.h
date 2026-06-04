@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <kotuku/main.h>
@@ -219,9 +220,8 @@ public:
    virtual ERR enable_keep_alive(SocketHandle Handle) = 0;
    virtual ERR enable_broadcast(SocketHandle Handle) = 0;
    virtual ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) = 0;
-   virtual ERR parse_multicast_group(CSTRING Group, bool &IPv6) = 0;
-   virtual ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) = 0;
-   virtual ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) = 0;
+   virtual ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) = 0;
+   virtual ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) = 0;
 
    virtual ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) = 0;
    virtual ERR append_receive(SocketHandle Handle, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received) = 0;
