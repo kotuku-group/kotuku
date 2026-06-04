@@ -238,33 +238,33 @@ static void parse_transform(objVector *Vector, const std::string Value, int Tag)
 
 //********************************************************************************************************************
 
-static const std::string uri_name(const std::string Ref)
+static std::string_view uri_name(const std::string_view Ref)
 {
    std::size_t skip = 0;
    while ((skip < Ref.size()) and (Ref[skip] <= 0x20)) skip++;
-   if (skip >= Ref.size()) return std::string("");
+   if (skip >= Ref.size()) return {};
 
    if (Ref[skip] IS '#') {
-      return Ref.substr(skip+1);
+      return Ref.substr(skip + 1);
    }
-   else if (startswith("url(#", Ref.c_str() + skip)) {
+   else if (Ref.substr(skip).starts_with("url(#")) {
       std::size_t i;
       skip += 5;
       for (i=0; ((skip + i) < Ref.size()) and (Ref[skip+i] != ')'); i++);
       return Ref.substr(skip, i);
    }
    else return Ref.substr(skip);
-
-   return std::string("");
 }
 
 //********************************************************************************************************************
 
-static XTag * find_href_tag(extSVG *Self, std::string Ref)
+static XTag * find_href_tag(extSVG *Self, std::string_view Ref)
 {
    auto ref = uri_name(Ref);
-   if ((!ref.empty()) and (Self->IDs.contains(ref))) {
-      return Self->IDs[ref];
+   if (not ref.empty()) {
+      if (auto tag = Self->IDs.find(ref); tag != Self->IDs.end()) {
+         return tag->second;
+      }
    }
    return nullptr;
 }

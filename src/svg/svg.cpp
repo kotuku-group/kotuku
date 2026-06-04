@@ -67,6 +67,26 @@ struct svgID { // All elements using the 'id' attribute will be registered with 
    svgID() { TagIndex = -1; }
 };
 
+struct SVGStringHash {
+   using is_avalanching = void;
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] size_t operator()(CSTRING Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+template<typename Value> using SVGStringLookupMap =
+   ankerl::unordered_dense::map<std::string, Value, SVGStringHash, std::equal_to<>>;
+
 struct svgAnimState {
    VectorMatrix *matrix = nullptr;
    std::vector<class anim_transform *> transforms;
@@ -84,7 +104,7 @@ struct svgState;
 class extSVG : public objSVG {
    public:
    FUNCTION FrameCallback;
-   ankerl::unordered_dense::map<std::string, XTag *> IDs;
+   SVGStringLookupMap<XTag *> IDs;
    ankerl::unordered_dense::map<std::string, objFilterEffect *> Effects; // All effects, registered by their SVG identifier.
    double SVGVersion;
    double AnimEpoch;  // Epoch time for the animations.

@@ -143,7 +143,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
+<p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, std::string_view HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
 <p>The Tiri prototype is as follows, with results readable from the <fl>HostName</fl> and <fl>Addresses</fl> fields: <code>function(NetLookup, Error)</code>.</p>
       </description>
       <tags>object-owns-result, callback-held</tags>

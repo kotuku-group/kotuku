@@ -167,12 +167,12 @@ if (query.ok()) {
     <method>
       <name>InspectFunctions</name>
       <comment>Returns information about compiled XQuery functions.</comment>
-      <prototype>ERR xq::InspectFunctions(OBJECTPTR Object, CSTRING Name, XIF ResultFlags, CSTRING * Result)</prototype>
+      <prototype>ERR xq::InspectFunctions(OBJECTPTR Object, const std::string_view &amp; Name, XIF ResultFlags, std::string * Result)</prototype>
       <tiriPrototype>err, Result:str = InspectFunctions(Name:str, ResultFlags:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the function or functions to inspect (supports wildcards).</param>
+        <param type="const std::string_view &amp;" name="Name">The name of the function or functions to inspect (supports wildcards).</param>
         <param type="XIF" name="ResultFlags" lookup="XIF">Bitmask controlling the returned information.</param>
-        <param type="CSTRING *" name="Result">Receives a serialised XML document describing the function(s).</param>
+        <param type="std::string *" name="Result">Receives a serialised XML document describing the function(s).</param>
       </input>
       <description>
 <p>Use InspectFunctions to retrieve metadata about user-defined or standard XQuery functions available in the compiled XQuery object.  The function name can include wildcards to match multiple functions.</p>
@@ -199,16 +199,16 @@ if (query.ok()) {
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>mutates-object, caller-owns-result, null-terminated-result</tags>
+      <tags>mutates-object, caller-owns-result, null-terminated-result, mutates-input</tags>
     </method>
 
     <method>
       <name>RegisterFunction</name>
       <comment>Register a custom XQuery function.</comment>
-      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, CSTRING FunctionName, FUNCTION * Callback)</prototype>
+      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, const std::string_view &amp; FunctionName, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = RegisterFunction(FunctionName:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
+        <param type="const std::string_view &amp;" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
         <param type="FUNCTION *" name="Callback">The callback function to register for FunctionName.</param>
       </input>
       <description>
