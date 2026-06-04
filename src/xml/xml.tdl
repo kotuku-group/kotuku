@@ -55,7 +55,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
       for (unsigned a=1; a < Attribs.size(); a++) {
          if (kt::iequals(Attribs[a].Name, Name)) return &Attribs[a].Value;
       }
-      return NULL;
+      return nullptr;
    }
 
    inline std::string getContent() const {
@@ -111,6 +111,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
     cpp(str) DocType  # Root element name from DOCTYPE declaration
     cpp(str) PublicID # Public identifier for external DTD
     cpp(str) SystemID # System identifier for external DTD
+    cpp(str) ErrorMsg # The most recent error message from an activity
     obj Source        # Alternative data source to specifying a `Path`
     int(XMF) Flags    # Optional user flags
     int Modified      # Modification timestamp

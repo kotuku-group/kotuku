@@ -324,9 +324,8 @@ static ERR SET_Pretext(extDocument *Self, const std::string_view &Value)
    }
    else {
       if ((Self->PretextXML = objXML::create::local({
-            fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED),
-            fl::Statement(Value),
-            fl::ReadOnly(true)
+            fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED|XMF::READ_ONLY),
+            fl::Statement(Value)
          }))) {
 
          return ERR::Okay;

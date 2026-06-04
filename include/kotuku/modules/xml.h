@@ -62,6 +62,7 @@ enum class XMF : uint32_t {
    NAMESPACE_AWARE = 0x00004000,
    HAS_SCHEMA = 0x00008000,
    STANDALONE = 0x00010000,
+   READ_ONLY = 0x00020000,
    INCLUDE_SIBLINGS = 0x80000000,
 };
 
@@ -150,7 +151,7 @@ typedef struct XTag {
       for (unsigned a=1; a < Attribs.size(); a++) {
          if (kt::iequals(Attribs[a].Name, Name)) return &Attribs[a].Value;
       }
-      return NULL;
+      return nullptr;
    }
 
    inline std::string getContent() const {
@@ -219,6 +220,7 @@ class objXML : public Object {
    std::string DocType;    // Root element name from a parsed DOCTYPE declaration.
    std::string PublicID;   // Public identifier from a parsed DOCTYPE declaration.
    std::string SystemID;   // System identifier from a parsed DOCTYPE declaration.
+   std::string ErrorMsg;   // A textual description of the last parse error.
    OBJECTPTR Source;       // Set this field if the XML data is to be sourced from another object.
    XMF       Flags;        // Controls XML parsing behaviour and processing options.
    int       Modified;     // A timestamp of when the XML data was last modified.
@@ -401,6 +403,11 @@ class objXML : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getErrorMsg(std::string_view &Value) noexcept {
+      Value = this->ErrorMsg;
+      return ERR::Okay;
+   }
+
    inline ERR getSource(OBJECTPTR &Value) noexcept {
       Value = this->Source;
       return ERR::Okay;
@@ -416,21 +423,8 @@ class objXML : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getErrorMsg(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getReadOnly(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      auto error = field->GetValue(this, &Value);
-      return error;
-   }
-
    inline ERR getStatement(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -444,7 +438,7 @@ class objXML : public Object {
    }
 
    inline ERR getTags(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
       return error;
@@ -459,18 +453,18 @@ class objXML : public Object {
    }
 
    inline ERR setDocType(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      this->DocType = Value;
+      return ERR::Okay;
    }
 
    inline ERR setPublic(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      this->PublicID = Value;
+      return ERR::Okay;
    }
 
    inline ERR setSystem(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      this->SystemID = Value;
+      return ERR::Okay;
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
@@ -484,13 +478,8 @@ class objXML : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setReadOnly(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
-   }
-
    inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x00804320, &Value, 1);
    }
 

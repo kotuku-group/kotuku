@@ -8,7 +8,7 @@
     <module>XML</module>
     <comment>Parses, queries and updates XML document structures.</comment>
     <fileExtension>xml</fileExtension>
-    <fileDescription>Extendable Markup Language (XML)</fileDescription>
+    <fileDescription>eXtensible Markup Language (XML)</fileDescription>
     <version>1</version>
     <id>6293d85f</id>
     <idstring>XML</idstring>
@@ -54,7 +54,7 @@
       </input>
       <description>
 <p>DataFeed accepts XML or text data and parses it into the object's tag hierarchy.  If the object has no existing tags, the parsed data becomes the document structure.  If tags already exist, the new data is parsed into a temporary hierarchy and appended to the root-level tag list.</p>
-<p>The action is rejected when <fl>ReadOnly</fl> is enabled.  Parse failures are returned to the caller; when appending to an existing document, the existing tag hierarchy is left unchanged if the new data cannot be parsed.</p>
+<p>The action is rejected when <code>XMF::READ_ONLY</code> is enabled.  Parse failures are returned to the caller; when appending to an existing document, the existing tag hierarchy is left unchanged if the new data cannot be parsed.</p>
 <p>Example:</p>
 <code>
 local xml = obj.new('xml')
@@ -668,15 +668,15 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <field>
       <name>DocType</name>
       <comment>Root element name from a parsed DOCTYPE declaration.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
     </field>
 
     <field>
       <name>ErrorMsg</name>
       <comment>A textual description of the last parse error.</comment>
-      <access read="G">Get</access>
-      <type>STRING</type>
+      <access read="R">Read</access>
+      <type>std::string</type>
       <description>
 <p>This field may provide a textual description of the last parse error that occurred, in conjunction with the most recently received error code.  Issues parsing malformed XPath expressions may also be reported here.</p>
       </description>
@@ -717,18 +717,8 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <field>
       <name>PublicID</name>
       <comment>Public identifier from a parsed DOCTYPE declaration.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
-    </field>
-
-    <field>
-      <name>ReadOnly</name>
-      <comment>Prevents modifications and enables caching for a loaded XML data source.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>This field can be set to <code>true</code> prior to initialisation of an XML object that will use an existing data source.  It prevents modifications to the XML object.  If the data originates from a file path, the data may be cached to optimise parsing where the same data is used across multiple XML objects.</p>
-      </description>
     </field>
 
     <field>
@@ -759,7 +749,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <field>
       <name>SystemID</name>
       <comment>System identifier from a parsed DOCTYPE declaration.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
     </field>
 
@@ -793,6 +783,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <const name="PARSE_ENTITY">Enables parsing of DOCTYPE entities.</const>
       <const name="PARSE_HTML">Automatically parse HTML escape codes.</const>
       <const name="READABLE">Indent the output of serialised XML to improve readability.</const>
+      <const name="READ_ONLY">Edits to the document are not permitted.</const>
       <const name="STANDALONE">Automatically defined when the XML declaration specifies standalone="yes".</const>
       <const name="STRIP_CDATA">Do not serialise <code>CDATA</code> sections.  Note that this option is used as a parameter, not an object flag.</const>
       <const name="STRIP_CONTENT">Strip all content from incoming XML data.</const>

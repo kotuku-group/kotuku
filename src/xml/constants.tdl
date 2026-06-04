@@ -28,6 +28,7 @@ flags("XMF", { comment="Standard flags for the XML class." },
   "NAMESPACE_AWARE: Enable namespace processing during parsing.",
   "HAS_SCHEMA: Automatically defined when a schema has been loaded into the XML object.",
   "STANDALONE: Automatically defined when the XML declaration specifies standalone=\"yes\".",
+  "READ_ONLY: Edits to the document are not permitted.",
   { INCLUDE_SIBLINGS = "0x80000000: Include siblings when building an XML string (#GetXMLString() only)" })
 
 enums("XMI", { type="int", start=0, comment="Tag insertion options." },
