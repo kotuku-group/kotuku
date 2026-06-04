@@ -51,15 +51,44 @@ static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Store
 [[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
 
 static int module_call(lua_State *);
+static ERR module_call_inner(lua_State *, std::string &, int &);
 static int process_results(prvTiri *, APTR, const FunctionField *);
 
 //********************************************************************************************************************
 // Support for mutable array results
 
 struct cpp_array_result {
-   APTR Data;
-   void (*Delete)(APTR);
-   ~cpp_array_result() { Delete(Data); }
+   APTR Data = nullptr;
+   void (*Delete)(APTR) = nullptr;
+
+   cpp_array_result() = default;
+   cpp_array_result(const cpp_array_result &) = delete;
+   cpp_array_result & operator=(const cpp_array_result &) = delete;
+
+   cpp_array_result(cpp_array_result &&Other) noexcept:
+      Data(Other.Data),
+      Delete(Other.Delete)
+   {
+      Other.Data = nullptr;
+      Other.Delete = nullptr;
+   }
+
+   cpp_array_result & operator=(cpp_array_result &&Other) noexcept
+   {
+      if (this != &Other) {
+         if ((Data) and (Delete)) Delete(Data);
+         Data = Other.Data;
+         Delete = Other.Delete;
+         Other.Data = nullptr;
+         Other.Delete = nullptr;
+      }
+      return *this;
+   }
+
+   ~cpp_array_result()
+   {
+      if ((Data) and (Delete)) Delete(Data);
+   }
 };
 
 template <class T> static void delete_cpp_array_result(APTR Result)
@@ -519,7 +548,7 @@ static int module_call(lua_State *Lua)
 
    auto err = module_call_inner(Lua, error_msg, results);
    if (err != ERR::Okay) {
-      if (error_msg.empty()) error_msg = GetErrorMessage(err);
+      if (error_msg.empty()) error_msg = GetErrorMsg(err);
       luaL_error(Lua, err, "%s", error_msg.c_str());
    }
    return results;
@@ -573,8 +602,16 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv) return ERR::ObjectCorrupt;
 
+   auto value_string = [](lua_State *Lua, int Index) -> CSTRING {
+      if (auto string = lua_tostring(Lua, Index)) return string;
+      else return "";
+   };
+
    auto mod = (module *)get_meta(Lua, lua_upvalueindex(1), "Tiri.mod");
-   if (not mod) luaL_error(Lua, ERR::Args, "module_call() expected module in upvalue.");
+   if (not mod) {
+      ErrorMsg = "module_call() expected module in upvalue.";
+      return ERR::Args;
+   }
 
    if (not mod->Functions) return ERR::UnknownProperty;
 
@@ -627,7 +664,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             cpp_array_result result_ref = { };
             if (auto error = make_cpp_array_result(argtype, &result_ref); error IS ERR::Okay) {
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
-               cpp_arrays.push_back(result_ref);
+               cpp_arrays.push_back(std::move(result_ref));
                arg_values[in]  = buffer + j;
                arg_types[in++] = &ffi_type_pointer;
                j += sizeof(APTR);
@@ -678,7 +715,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             else if (lua_type(Lua, i) IS LUA_TSTRING) {
                GCstr *string = string_arg(Lua, i);
                if (not lj_str_ismutable(string)) {
-                  luaL_argerror(Lua, i, "Mutable buffer required.");
+                  ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+                  return ERR::InvalidType;
                }
 
                ((APTR *)(buffer + j))[0] = strdatawr(string);
@@ -704,11 +742,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   else log.warning("Integer type unspecified for BUFSIZE argument in %s()", mod->Functions[index].Name);
                }
                else {
-                  luaL_error(Lua, ERR::InvalidType, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
+                  ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
+                  return ERR::InvalidType;
                }
             }
             else {
-               luaL_error(Lua, ERR::Args, "A memory buffer is required in arg #%d.", i);
+               ErrorMsg = std::format("A memory buffer is required in arg #{}.", i);
+               return ERR::Args;
             }
          }
          else if (argtype & FD_STR) { // FD_RESULT
@@ -766,14 +806,14 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             j += sizeof(APTR);
          }
          else {
-            luaL_error(Lua, ERR::InvalidType, "Unrecognised arg %d type %d", i, argtype);
-            return 0;
+            ErrorMsg = std::format("Unrecognised arg {} type {}", i, argtype);
+            return ERR::InvalidType;
          }
       }
       else if (argtype & FD_FUNCTION) {
          if (func.defined()) { // Is the function reserve already used?
-            luaL_error(Lua, ERR::Args, "Multiple function arguments are not supported.");
-            return 0;
+            ErrorMsg = "Multiple function arguments are not supported.";
+            return ERR::Args;
          }
 
          switch(lua_type(Lua, i)) {
@@ -797,8 +837,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                break;
 
             default:
-               luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected function, got %s '%s'.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)), lua_tostring(Lua, i));
-               return 0;
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected function, got {} '{}'.", i, args[i].Name,
+                  lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+               return ERR::InvalidType;
          }
 
          arg_values[in]  = buffer + j;
@@ -812,12 +853,14 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          if (argtype & FD_MUTABLE) {
             // The client is expected to provide a mutable string with preallocated size, which can be acquired from string.alloc()
             if (type != LUA_TSTRING) {
-               luaL_argerror(Lua, i, "Mutable buffer required.");
+               ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+               return ERR::InvalidType;
             }
 
             GCstr *string = string_arg(Lua, i);
             if (not lj_str_ismutable(string)) {
-               luaL_argerror(Lua, i, "Mutable buffer required.");
+               ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+               return ERR::InvalidType;
             }
 
             if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
@@ -844,10 +887,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((CSTRING *)(buffer + j))[0] = nullptr;
          }
          else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
-            luaL_error(Lua, ERR::InvalidType, "Arg #%d (%s) requires a string and not untyped pointer.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)), lua_tostring(Lua, i));
+            ErrorMsg = std::format("Arg #{} ({}) requires a string and not untyped pointer.", i, args[i].Name);
+            return ERR::InvalidType;
          }
          else {
-            luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected string, got %s '%s'.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)), lua_tostring(Lua, i));
+            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected string, got {} '{}'.", i, args[i].Name,
+               lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+            return ERR::InvalidType;
          }
 
          arg_values[in] = buffer + j;
@@ -856,7 +902,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
       else if (argtype & FD_ARRAY) { // Pass array data pointer
          if (argtype & FD_CPP) {
-            luaL_error(Lua, ERR::NoSupport, "No support for calls utilising C++ arrays.");
+            ErrorMsg = "No support for calls utilising C++ arrays.";
+            return ERR::NoSupport;
          }
 
          if (lua_type(Lua, i) IS LUA_TARRAY) {
@@ -887,7 +934,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                      i++;
                   }
                   else {
-                     luaL_error(Lua, ERR::NoSupport, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
+                     ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
+                     return ERR::NoSupport;
                   }
                }
                else {
@@ -906,16 +954,20 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                      i++;
                   }
                   else {
-                     luaL_error(Lua, ERR::NoSupport, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
+                     ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
+                     return ERR::NoSupport;
                   }
                }
             }
             else {
-               luaL_error(Lua, ERR::NoSupport, "Function '%s' is not compatible with Tiri.", mod->Functions[index].Name);
+               ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
+               return ERR::NoSupport;
             }
          }
          else {
-            luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected array, got '%s'.", i, args[i].Name, lua_typename(Lua, lua_type(Lua, i)));
+            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected array, got '{}'.", i, args[i].Name,
+               lua_typename(Lua, lua_type(Lua, i)));
+            return ERR::InvalidType;
          }
       }
       else if (argtype & FD_PTR) {
@@ -924,8 +976,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             // Lua strings need to be converted to C strings
             auto string = string_arg(Lua, i);
             if ((argtype & FD_MUTABLE) and (not lj_str_ismutable(string))) {
-               luaL_argerror(Lua, i, "Mutable buffer required.");
-               return 0;
+               ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+               return ERR::InvalidType;
             }
 
             size_t strlen = string->len;
@@ -1033,11 +1085,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   j += sizeof(APTR);
                }
                else {
-                  luaL_error(Lua, ERR::Failed, "Failed to convert table to struct for arg #%d (%s).", i, args[i].Name);
+                  ErrorMsg = std::format("Failed to convert table to struct for arg #{} ({}).", i, args[i].Name);
+                  return ERR::Failed;
                }
             }
             else {
-               luaL_error(Lua, ERR::InvalidType, "Type mismatch, arg #%d (%s) expected pointer, got table.", i, args[i].Name);
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected pointer, got table.", i, args[i].Name);
+               return ERR::InvalidType;
             }
          }
          else {
@@ -1079,10 +1133,12 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          j += sizeof(int);
       }
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
-         luaL_error(Lua, ERR::NoSupport, "Functions using tags are not supported.");
+         ErrorMsg = "Functions using tags are not supported.";
+         return ERR::NoSupport;
       }
       else {
-         luaL_error(Lua, ERR::NoSupport, "%s() unsupported arg '%s', flags $%.8x, aborting now.", mod->Functions[index].Name, args[i].Name, argtype);
+         ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", mod->Functions[index].Name, args[i].Name, argtype);
+         return ERR::NoSupport;
       }
    }
 
@@ -1112,7 +1168,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, total_args, return_type, arg_types) IS FFI_OK) {
       ffi_call(&cif, (void (*)())function, &rc, arg_values);
       copy_mutable_cpp_strings();
-      if (not ErrorMsg.empty()) return 0;
+      if (not ErrorMsg.empty()) return ERR::BufferOverflow;
 
       // Process the result based on the return type
       if (restype & FD_STR) {
@@ -1141,8 +1197,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                      lua_pushlightuserdata(Lua, (APTR)structptr);
                   }
                   else {
-                     luaL_error(Lua, ERR::Search, "Failed to resolve struct %s, error: %s", args->Name, GetErrorMsg(error));
-                     return 0;
+                     ErrorMsg = std::format("Failed to resolve struct {}, error: {}", args->Name, GetErrorMsg(error));
+                     return ERR::Search;
                   }
                }
             }
@@ -1161,7 +1217,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             lua_pushinteger(Lua, (int)rc.Arg);
             if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and in_try_immediate_scope(Lua)) {
                // Scope isolation: Only throw exceptions for direct calls within the try block.
-               raise_checked_call_error(Lua, ERR(rc.Arg), mod->Functions[index].Name);
+               auto error = ERR(rc.Arg);
+               ErrorMsg = std::format("{}() failed: {}", mod->Functions[index].Name ? mod->Functions[index].Name : "Function",
+                  GetErrorMsg(error));
+               return error;
             }
          }
       }
@@ -1175,7 +1234,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    }
    else lua_pushnil(Lua);
 
-   results = process_results(prv, buffer, args) + result;
+   Results = process_results(prv, buffer, args) + result;
    return ERR::Okay;
 }
 
