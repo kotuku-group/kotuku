@@ -100,26 +100,43 @@ struct ParseState {
 using TAGS = objXML::TAGS;
 using CURSOR = kt::vector<XTag>::iterator;
 
+struct XMLStringHash {
+   using is_avalanching = void;
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] size_t operator()(CSTRING Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+using XMLStringMap = ankerl::unordered_dense::map<std::string, std::string, XMLStringHash, std::equal_to<>>;
+
 //********************************************************************************************************************
 // Generic lookup templates with concepts
 
 template<typename Key>
 concept MapKey = std::equality_comparable<Key> and std::default_initializable<Key>;
 
-template<MapKey Key, typename Value>
-[[nodiscard]] inline auto find_in_map(const ankerl::unordered_dense::map<Key, Value> &Map,
-   const Key& SearchKey) noexcept -> const Value *
+template<typename Map, typename SearchKey>
+[[nodiscard]] inline auto find_in_map(const Map &SourceMap, const SearchKey &Key) noexcept -> const typename Map::mapped_type *
 {
-   auto it = Map.find(SearchKey);
-   return (it != Map.end()) ? &it->second : nullptr;
+   auto it = SourceMap.find(Key);
+   return (it != SourceMap.end()) ? &it->second : nullptr;
 }
 
-template<MapKey Key, typename Value>
-[[nodiscard]] inline auto find_in_map(ankerl::unordered_dense::map<Key, Value> &Map,
-   const Key& SearchKey) noexcept -> Value *
+template<typename Map, typename SearchKey>
+[[nodiscard]] inline auto find_in_map(Map &SourceMap, const SearchKey &Key) noexcept -> typename Map::mapped_type *
 {
-   auto it = Map.find(SearchKey);
-   return (it != Map.end()) ? &it->second : nullptr;
+   auto it = SourceMap.find(Key);
+   return (it != SourceMap.end()) ? &it->second : nullptr;
 }
 
 //********************************************************************************************************************
@@ -137,9 +154,9 @@ class extXML : public objXML {
    bool   StaleMap;         // True if map requires a rebuild
 
    std::shared_ptr<xml::schema::SchemaContext> SchemaContext;
-   ankerl::unordered_dense::map<std::string, std::string> Entities; // For general entities
-   ankerl::unordered_dense::map<std::string, std::string> ParameterEntities; // For parameter entities
-   ankerl::unordered_dense::map<std::string, std::string> Notations; // For notation declarations
+   XMLStringMap Entities; // For general entities
+   XMLStringMap ParameterEntities; // For parameter entities
+   XMLStringMap Notations; // For notation declarations
 
    // Namespace registry using kt::strhash() values, this allows us to store URIs in compact form in XTag structures.
    ankerl::unordered_dense::map<uint32_t, std::string> NSRegistry; // hash(URI) -> URI

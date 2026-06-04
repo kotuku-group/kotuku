@@ -575,8 +575,7 @@ static ERR XML_GetEntity(extXML *Self, struct xml::GetEntity *Args)
    if ((not Args) or Args->Name.empty() or (not Args->Value)) return log.warning(ERR::NullArgs);
    Args->Value->clear();
 
-   auto key = std::string(Args->Name);
-   auto it = Self->Entities.find(key);
+   auto it = Self->Entities.find(Args->Name);
    if (it IS Self->Entities.end()) return log.warning(ERR::Search);
 
    Args->Value->assign(it->second);
@@ -652,8 +651,7 @@ static ERR XML_GetNotation(extXML *Self, struct xml::GetNotation *Args)
    if ((not Args) or Args->Name.empty() or (not Args->Value)) return log.warning(ERR::NullArgs);
    Args->Value->clear();
 
-   auto key = std::string(Args->Name);
-   auto it = Self->Notations.find(key);
+   auto it = Self->Notations.find(Args->Name);
    if (it IS Self->Notations.end()) return log.warning(ERR::Search);
 
    Args->Value->assign(it->second);
