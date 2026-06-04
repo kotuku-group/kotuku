@@ -362,7 +362,7 @@ uint32_t XQueryProlog::resolve_prefix(std::string_view prefix, const extXML *doc
    }
 
    if (document) {
-      auto doc_entry = document->Prefixes.find(std::string(prefix));
+      auto doc_entry = document->Prefixes.find(prefix);
       if (doc_entry != document->Prefixes.end()) return doc_entry->second;
    }
 

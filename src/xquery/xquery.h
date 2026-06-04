@@ -261,18 +261,42 @@ struct XQueryFunction {
 //********************************************************************************************************************
 // String interning pool for common identifiers (QNames, namespace URIs, etc.).
 
+struct StringInternerHash {
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return std::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] size_t operator()(const char *Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+struct StringInternerEqual {
+   using is_transparent = void;
+
+   [[nodiscard]] bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      return Lhs IS Rhs;
+   }
+};
+
 class StringInterner {
    private:
-   std::unordered_set<std::string> pool;
+   std::unordered_set<std::string, StringInternerHash, StringInternerEqual> pool;
    mutable std::mutex mutex;
 
    public:
-   std::string_view intern(std::string_view str) {
+   std::string_view intern(std::string_view Str) {
       std::lock_guard<std::mutex> lock(mutex);
-      auto it = pool.find(std::string(str));
+      auto it = pool.find(Str);
       if (it != pool.end()) return *it;
-      auto [it2, inserted] = pool.emplace(std::string(str));
-      return *it2;
+      auto result = pool.emplace(Str.data(), Str.size());
+      return *result.first;
    }
 };
 

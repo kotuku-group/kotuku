@@ -181,7 +181,7 @@ namespace xml::schema
 
    std::shared_ptr<SchemaTypeDescriptor> SchemaTypeRegistry::find_descriptor(std::string_view Name) const
    {
-      auto Iter = descriptors_by_name.find(std::string(Name));
+      auto Iter = descriptors_by_name.find(Name);
       if (Iter != descriptors_by_name.end()) return Iter->second;
       return nullptr;
    }

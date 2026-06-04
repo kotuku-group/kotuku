@@ -438,15 +438,14 @@ namespace xml::schema
    {
       if (Name.empty()) return registry_ref->find_descriptor(SchemaType::XSAnyType);
 
-      auto lookup_name = std::string(Name);
       auto &types = Document.context->types;
-      auto iter = types.find(lookup_name);
+      auto iter = types.find(Name);
       if (iter != types.end()) return iter->second;
 
       auto descriptor = registry_ref->find_descriptor(Name);
       if (descriptor) return descriptor;
 
-      auto local_name = std::string(extract_local_name(Name));
+      auto local_name = extract_local_name(Name);
       iter = types.find(local_name);
       if (iter != types.end()) return iter->second;
 

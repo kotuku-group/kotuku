@@ -144,10 +144,10 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
 
    auto &context = *Document->SchemaContext;
 
-   auto lookup = context.elements.find(std::string(Name));
+   auto lookup = context.elements.find(Name);
    if (lookup != context.elements.end()) return lookup->second;
 
-   auto local = std::string(xml::schema::extract_local_name(Name));
+   auto local = xml::schema::extract_local_name(Name);
    lookup = context.elements.find(local);
    if (lookup != context.elements.end()) return lookup->second;
 
@@ -172,7 +172,7 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
       auto iter = types.find(TypeName);
       if (iter != types.end()) return iter->second;
 
-      auto local = std::string(xml::schema::extract_local_name(TypeName));
+      auto local = xml::schema::extract_local_name(TypeName);
       iter = types.find(local);
       if (iter != types.end()) return iter->second;
    }
@@ -181,7 +181,7 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
 
    if (auto descriptor = Context.schema_registry->find_descriptor(TypeName)) return descriptor;
 
-   auto local = std::string(xml::schema::extract_local_name(TypeName));
+   auto local = xml::schema::extract_local_name(TypeName);
    return Context.schema_registry->find_descriptor(local);
 }
 

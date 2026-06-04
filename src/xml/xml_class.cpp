@@ -2255,10 +2255,10 @@ static ERR XML_ValidateDocument(extXML *Self, void *Args)
    auto find_descriptor = [&](std::string_view Name) ->
       std::shared_ptr<xml::schema::ElementDescriptor>
    {
-      auto iter = context.elements.find(std::string(Name));
+      auto iter = context.elements.find(Name);
       if (iter != context.elements.end()) return iter->second;
 
-      auto local = std::string(xml::schema::extract_local_name(Name));
+      auto local = xml::schema::extract_local_name(Name);
       iter = context.elements.find(local);
       if (iter != context.elements.end()) return iter->second;
 

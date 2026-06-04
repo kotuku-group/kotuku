@@ -40,12 +40,32 @@ constexpr std::array<const char*, 256> xml_escape_table = []() {
    return table;
 }();
 
+struct XMLStringHash {
+   using is_avalanching = void;
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] size_t operator()(CSTRING Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+template<typename Value> using XMLStringLookupMap = ankerl::unordered_dense::map<std::string, Value, XMLStringHash, std::equal_to<>>;
+using XMLStringMap = XMLStringLookupMap<std::string>;
+
 struct ParseState {
    std::string_view cursor;
    int   Balance;  // Indicates that the tag structure is correctly balanced if zero
 
    // Namespace context for this parsing scope
-   ankerl::unordered_dense::map<std::string, uint32_t> PrefixMap;  // Prefix -> namespace URI hash
+   XMLStringLookupMap<uint32_t> PrefixMap;  // Prefix -> namespace URI hash
    uint32_t DefaultNamespace;                  // Default namespace URI hash
    std::string CurrentBase;
    inline char current() const { return cursor.empty() ? '\0' : cursor.front(); }
@@ -100,25 +120,6 @@ struct ParseState {
 using TAGS = objXML::TAGS;
 using CURSOR = kt::vector<XTag>::iterator;
 
-struct XMLStringHash {
-   using is_avalanching = void;
-   using is_transparent = void;
-
-   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
-      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
-   }
-
-   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
-      return (*this)(std::string_view(Value));
-   }
-
-   [[nodiscard]] size_t operator()(CSTRING Value) const noexcept {
-      return (*this)(std::string_view(Value));
-   }
-};
-
-using XMLStringMap = ankerl::unordered_dense::map<std::string, std::string, XMLStringHash, std::equal_to<>>;
-
 //********************************************************************************************************************
 // Generic lookup templates with concepts
 
@@ -164,7 +165,7 @@ class extXML : public objXML {
    // Link prefixes to namespace URIs
    // WARNING: If the XML document overwrites namespace URIs on the same prefix name (legal!)
    // then this lookup table returns the most recently assigned URI.
-   ankerl::unordered_dense::map<PREFIX, uint32_t> Prefixes; // hash(Prefix) -> hash(URI)
+   XMLStringLookupMap<uint32_t> Prefixes; // hash(Prefix) -> hash(URI)
 
    extXML() : ReadOnly(false), StaleMap(true) { }
 
