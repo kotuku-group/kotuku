@@ -356,9 +356,9 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
       objClipboard::create clipboard = { };
       if (clipboard.ok()) {
-         CSTRING *files;
-         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr); error IS ERR::Okay) {
-            if (not files) return ERR::NoData;
+         kt::vector<std::string> files;
+         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr); error IS ERR::Okay) {
+            if (files.empty()) return ERR::NoData;
 
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {

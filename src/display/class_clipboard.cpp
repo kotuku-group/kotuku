@@ -108,7 +108,7 @@ static std::u16string utf8_to_utf16(std::string_view String, bool SurrogatePairs
 void clean_clipboard(void)
 {
    auto time = objTime::create { };
-   if (!time.ok()) return;
+   if (not time.ok()) return;
 
    time->query();
    int64_t now = time->get<int64_t>(FID_Timestamp) / 1000000LL;
@@ -256,7 +256,7 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (Args->Path.empty()) return log.warning(ERR::MissingPath);
 
    std::string path(Args->Path);
@@ -309,7 +309,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Objects) or (!Args->Objects[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Objects) or (not Args->Objects[0])) return log.warning(ERR::NullArgs);
 
    log.branch();
 
@@ -379,7 +379,7 @@ static ERR CLIPBOARD_AddText(objClipboard *Self, struct clip::AddText *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (Args->String.empty()) return ERR::Okay;
 
    if (add_text_to_host(Self, Args->String) IS ERR::Okay) {
@@ -440,12 +440,12 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (Args->Datatype IS DATA::TEXT) {
       log.msg("Copying text to the clipboard.");
 
-      if (!Args->Buffer) return log.warning(ERR::NullArgs);
+      if (not Args->Buffer) return log.warning(ERR::NullArgs);
       if (auto error = add_text_to_host(Self, std::string_view((CSTRING)Args->Buffer, size_t(Args->Size)));
             (error != ERR::Okay) and (error != ERR::NoSupport)) {
          return log.warning(error);
@@ -463,7 +463,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       else return log.warning(error);
    }
    else if ((Args->Datatype IS DATA::REQUEST) and ((Self->Flags & CPF::DRAG_DROP) != CPF::NIL))  {
-      if ((!Args->Buffer) or (!Args->Object)) return log.warning(ERR::NullArgs);
+      if ((not Args->Buffer) or (not Args->Object)) return log.warning(ERR::NullArgs);
 
       auto request = (struct dcRequest *)Args->Buffer;
       log.branch("Data request from #%d received for item %d, datatype %d", Args->Object->UID, request->Item, request->Preference[0]);
@@ -511,16 +511,16 @@ static ERR CLIPBOARD_Free(objClipboard *Self)
 -METHOD-
 GetFiles: Retrieve the most recently clipped data as a list of files.
 
-GetFiles() returns clipboard entries as a `NULL`-terminated list of readable file paths.  The caller can request a
-specific set of datatypes through `Filter`, or pass `CLIPTYPE::NIL` to accept any datatype.
+GetFiles() returns clipboard entries as readable file paths.  The caller can request a specific set of datatypes through
+`Filter`, or pass `CLIPTYPE::NIL` to accept any datatype.
 
 Without history buffering, only the most recent clip group is available.  With history buffering enabled, pass
 `CLIPTYPE::NIL` as `Filter` and increment `Index` to scan retained history from newest to oldest until
 `ERR::OutOfRange` is returned.
 
-On success, `Datatype` reports the datatype of the returned clip and `Files` receives the generated file list.  How the
+On success, `Datatype` reports the datatype of the returned clip and `Files` receives the matching file paths.  How the
 caller reads each file depends on `Datatype`; ~Core.IdentifyFile() can also be used to find a class that supports the
-data.  The returned `Files` array is allocated for the caller and must be released with ~Core.FreeResource().
+data.  `Files` must refer to an empty caller-owned array and remains owned by the caller after the method returns.
 
 If `CEF::DELETE` is returned in `Flags`, the caller must delete the source files after successfully copying the data in
 order to complete a cut operation.  When cutting and pasting files within the same file system, ~Core.MoveFile() is
@@ -530,7 +530,7 @@ usually the most efficient way to consume those entries.
 int(CLIPTYPE) Filter: Datatype filter.  Set to zero to accept any datatype.
 int Index: History index to read when Filter is zero.  Zero is the most recent clip group.
 &int(CLIPTYPE) Datatype: Datatype of the returned clip group.
-!array(cstr) Files: `NULL`-terminated list of returned clip file paths.  Release the array with ~Core.FreeResource().
+^&cpp(array(str)) Files: An empty `kt::vector<std::string>` array is required to receive the file list.
 &int(CEF) Flags: Result flags.  If the delete flag is set, delete the files after use to complete a cut operation.
 
 -ERRORS-
@@ -538,10 +538,9 @@ Okay: A matching clip was found and returned.
 NullArgs
 OutOfRange: The specified `Index` is out of the range of the available clip items.
 NoData: No clip was available that matched the requested data type.
-AllocMemory
 
 -TAGS-
-caller-owns-result
+mutates-input
 -END-
 
 *********************************************************************************************************************/
@@ -550,11 +549,9 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Files)) return log.warning(ERR::NullArgs);
 
    log.branch("Datatype: $%.8x", int(Args->Datatype));
-
-   Args->Files = nullptr;
 
    if ((Self->Flags & CPF::HISTORY_BUFFER) IS CPF::NIL) {
 #ifdef _WIN32
@@ -586,7 +583,7 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
             }
          }
 
-         if (!found) {
+         if (not found) {
             log.warning("No clips available for datatype $%x", int(Args->Filter));
             return ERR::NoData;
          }
@@ -596,25 +593,14 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
       if ((clip->Datatype & Args->Filter) IS CLIPTYPE::NIL) return ERR::NoData;
    }
 
-   CSTRING *list = nullptr;
-   int str_len = 0;
-   for (auto &item : clip->Items) str_len += item.Path.size() + 1;
-   if (AllocMemory(((clip->Items.size()+1) * sizeof(STRING)) + str_len, MEM::NO_CLEAR|MEM::CALLER, &list) IS ERR::Okay) {
-      Args->Files    = list;
-      Args->Flags    = clip->Flags;
-      Args->Datatype = clip->Datatype;
+   auto &list = *Args->Files;
+   Args->Flags    = clip->Flags;
+   Args->Datatype = clip->Datatype;
 
-      auto dest = (char *)list + ((clip->Items.size() + 1) * sizeof(STRING));
-      for (auto &item : clip->Items) {
-         *list++ = dest;
-         copymem(item.Path.c_str(), dest, item.Path.size() + 1);
-         dest += item.Path.size() + 1;
-      }
-      *list = nullptr;
-
-      return ERR::Okay;
+   for (auto &item : clip->Items) {
+      list.push_back(item.Path);
    }
-   else return ERR::AllocMemory;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -662,7 +648,7 @@ static ERR CLIPBOARD_Remove(objClipboard *Self, struct clip::Remove *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (Args->Datatype IS CLIPTYPE::NIL)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Datatype IS CLIPTYPE::NIL)) return log.warning(ERR::NullArgs);
 
    log.branch("Datatype: $%x", int(Args->Datatype));
 

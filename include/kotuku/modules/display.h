@@ -1467,7 +1467,7 @@ class objDisplay : public Object {
 namespace clip {
 struct AddFile { CLIPTYPE Datatype; std::string_view Path; CEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddObjects { CLIPTYPE Datatype; OBJECTID * Objects; CEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; CSTRING * Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; kt::vector<std::string> *Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddText { std::string_view String; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Remove { CLIPTYPE Datatype; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -1502,11 +1502,10 @@ class objClipboard : public Object {
       struct clip::AddObjects args = { Datatype, Objects, Flags };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, CSTRING ** Files, CEF * Flags) noexcept {
-      struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, (CSTRING *)0, (CEF)0 };
+   inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, kt::vector<std::string> &Files, CEF * Flags) noexcept {
+      struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, &Files, (CEF)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Datatype) *Datatype = args.Datatype;
-      if (Files) *Files = args.Files;
       if (Flags) *Flags = args.Flags;
       return(error);
    }

@@ -138,29 +138,28 @@
     <method>
       <name>GetFiles</name>
       <comment>Retrieve the most recently clipped data as a list of files.</comment>
-      <prototype>ERR clip::GetFiles(OBJECTPTR Object, CLIPTYPE Filter, INT Index, CLIPTYPE * Datatype, CSTRING ** Files, CEF * Flags)</prototype>
+      <prototype>ERR clip::GetFiles(OBJECTPTR Object, CLIPTYPE Filter, INT Index, CLIPTYPE * Datatype, kt::vector&lt;std::string&gt; * Files, CEF * Flags)</prototype>
       <tiriPrototype>err, Datatype:num, Files:array, Flags:num = GetFiles(Filter:num, Index:num)</tiriPrototype>
       <input>
         <param type="CLIPTYPE" name="Filter" lookup="CLIPTYPE">Datatype filter.  Set to zero to accept any datatype.</param>
         <param type="INT" name="Index">History index to read when Filter is zero.  Zero is the most recent clip group.</param>
         <param type="CLIPTYPE *" name="Datatype" lookup="CLIPTYPE">Datatype of the returned clip group.</param>
-        <param type="CSTRING **" name="Files"><code>NULL</code>-terminated list of returned clip file paths.  Release the array with <function module="Core">FreeResource</function>.</param>
+        <param type="kt::vector&lt;std::string&gt; *" name="Files">An empty <code>kt::vector&lt;std::string&gt;</code> array is required to receive the file list.</param>
         <param type="CEF *" name="Flags" lookup="CEF">Result flags.  If the delete flag is set, delete the files after use to complete a cut operation.</param>
       </input>
       <description>
-<p>GetFiles() returns clipboard entries as a <code>NULL</code>-terminated list of readable file paths.  The caller can request a specific set of datatypes through <code>Filter</code>, or pass <code>CLIPTYPE::NIL</code> to accept any datatype.</p>
+<p>GetFiles() returns clipboard entries as readable file paths.  The caller can request a specific set of datatypes through <code>Filter</code>, or pass <code>CLIPTYPE::NIL</code> to accept any datatype.</p>
 <p>Without history buffering, only the most recent clip group is available.  With history buffering enabled, pass <code>CLIPTYPE::NIL</code> as <code>Filter</code> and increment <code>Index</code> to scan retained history from newest to oldest until <code>ERR::OutOfRange</code> is returned.</p>
-<p>On success, <code>Datatype</code> reports the datatype of the returned clip and <code>Files</code> receives the generated file list.  How the caller reads each file depends on <code>Datatype</code>; <function module="Core">IdentifyFile</function> can also be used to find a class that supports the data.  The returned <code>Files</code> array is allocated for the caller and must be released with <function module="Core">FreeResource</function>.</p>
+<p>On success, <code>Datatype</code> reports the datatype of the returned clip and <code>Files</code> receives the matching file paths.  How the caller reads each file depends on <code>Datatype</code>; <function module="Core">IdentifyFile</function> can also be used to find a class that supports the data.  <code>Files</code> must refer to an empty caller-owned array and remains owned by the caller after the method returns.</p>
 <p>If <code>CEF::DELETE</code> is returned in <code>Flags</code>, the caller must delete the source files after successfully copying the data in order to complete a cut operation.  When cutting and pasting files within the same file system, <function module="Core">MoveFile</function> is usually the most efficient way to consume those entries.</p>
       </description>
       <result>
         <error code="Okay">A matching clip was found and returned.</error>
         <error code="NoData">No clip was available that matched the requested data type.</error>
         <error code="OutOfRange">The specified <code>Index</code> is out of the range of the available clip items.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>caller-owns-result</tags>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
