@@ -229,7 +229,7 @@ At the time of writing, the provided object must belong to one of the following 
 @VectorClip.
 
 -INPUT-
-cstr Name: The unique name to associate with the definition.
+cpp(strview) Name: The unique name to associate with the definition.
 obj Def: Reference to the definition object.
 
 -TAGS-
@@ -248,13 +248,14 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Name) or (!Args->Def)) return log.warning(ERR::NullArgs);
+   if ((!Args) or (!Args->Def)) return log.warning(ERR::NullArgs);
 
    if (Self->HostScene) { // Forward all definitions if a hosting scene is active.
       return Self->HostScene->addDef(Args->Name, Args->Def);
    }
 
    OBJECTPTR def = Args->Def;
+   std::string name(Args->Name);
 
    switch(def->classID()) {
       case CLASSID::VECTORGRADIENT:   ((extVectorGradient*)def)->HostScene = Self; break;
@@ -280,16 +281,16 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
       return ERR::UnsupportedOwner;
    }
 
-   if (Self->Defs.contains(Args->Name)) { // Check that the definition name is unique.
-      log.detail("The vector definition name '%s' is already in use.", Args->Name);
+   if (Self->Defs.contains(name)) { // Check that the definition name is unique.
+      log.detail("The vector definition name '%s' is already in use.", name.c_str());
       return ERR::ResourceExists;
    }
 
-   log.detail("Adding definition '%s' referencing %s #%d", Args->Name, def->Class->ClassName.c_str(), def->UID);
+   log.detail("Adding definition '%s' referencing %s #%d", name.c_str(), def->Class->ClassName.c_str(), def->UID);
 
    SubscribeAction(def, AC::Free, C_FUNCTION(notify_def_free));
 
-   Self->Defs[Args->Name] = def;
+   Self->Defs[name] = def;
    return ERR::Okay;
 }
 
@@ -370,7 +371,7 @@ the search is successful.
 Definitions are created with the #AddDef() method.
 
 -INPUT-
-cstr Name: The name of the definition.
+cpp(strview) Name: The name of the definition.
 &obj Def: A pointer to the definition object is returned here if discovered.
 
 -TAGS-
@@ -388,18 +389,17 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if (!Args) return log.warning(ERR::NullArgs);
 
    if (Self->HostScene) return Self->HostScene->findDef(Args->Name, &Args->Def);
 
-   CSTRING name = Args->Name;
+   std::string_view name = Args->Name;
 
-   if (*name IS '#') name = name + 1;
-   else if (startswith("url(#", name)) {
-      int i;
-      for (i=5; (name[i] != ')') and name[i]; i++);
-      std::string lookup;
-      lookup.assign(name, 5, i-5);
+   if ((!name.empty()) and (name.front() IS '#')) name.remove_prefix(1);
+   else if (name.starts_with("url(#")) {
+      auto end = name.find(')', 5);
+      if (end IS std::string_view::npos) end = name.size();
+      std::string lookup(name.substr(5, end - 5));
 
       if (auto def = Self->Defs.find(lookup); def != Self->Defs.end()) {
          Args->Def = def->second;
@@ -408,7 +408,8 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
       else return ERR::Search;
    }
 
-   if (auto def = Self->Defs.find(name); def != Self->Defs.end()) {
+   std::string lookup(name);
+   if (auto def = Self->Defs.find(lookup); def != Self->Defs.end()) {
       Args->Def = def->second;
       return ERR::Okay;
    }

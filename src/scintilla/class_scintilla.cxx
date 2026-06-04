@@ -943,7 +943,7 @@ positions are also supported as an alternative - a value of -1 inserts the text 
 value of -2 replaces currently selected text.
 
 -INPUT-
-cstr String: A text string to add.
+cpp(strview) String: A text string to add.
 int Pos: -1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.
 
 -RESULT-
@@ -958,9 +958,9 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    kt::Log log;
    int pos;
 
-   if ((!Args) or (!Args->String)) return log.warning(ERR::NullArgs);
+   if ((!Args) or (Args->String.empty())) return log.warning(ERR::NullArgs);
 
-   log.branch("Pos: %d, Text: %.10s", Args->Pos, Args->String);
+   log.branch("Pos: %d, Text: %.*s", Args->Pos, std::min<int>(Args->String.size(), 10), Args->String.data());
 
    pos = Args->Pos;
    if (pos IS -1) {
@@ -1069,7 +1069,7 @@ source string by setting the Length parameter.  To insert all characters from th
 
 -INPUT-
 int Line: Index of the line being targeted.
-cstr String: The new string that will replace the line.
+cpp(strview) String: The new string that will replace the line.
 int Length: The number of characters to replace the target with, or -1 for the entire source string.
 
 -RESULT-
@@ -1111,8 +1111,8 @@ given Start and End point.  The `STF::CASE`, `STF::SCAN_SELECTION` and `STF::EXP
 this method (see FindText for details).
 
 -INPUT-
-cstr Find: The keyword string to find.
-cstr Replace: The string that will replace the keyword.
+cpp(strview) Find: The keyword string to find.
+cpp(strview) Replace: The string that will replace the keyword.
 int(STF) Flags: Optional flags.
 int Start: The start of the search - set to zero if covering the entire document.  If -1, starts from the current cursor position.
 int End: The end of the search - set to -1 if covering the entire document.
@@ -1129,7 +1129,7 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
    kt::Log log;
    int start, end;
 
-   if ((!Args) or (!Args->Find) or (!*Args->Find)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Find.empty())) return log.warning(ERR::NullArgs);
 
    log.branch("Text: '%.10s'... Between: %d - %d, Flags: $%.8x", Args->Find, Args->Start, Args->End, int(Args->Flags));
 
@@ -1149,15 +1149,13 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
       if (start IS end) return ERR::Search;
    }
 
-   CSTRING replace;
-   if (!Args->Replace) replace = "";
-   else replace = Args->Replace;
+   std::string_view replace = Args->Replace;
 
    SCICALL(SCI_SETTARGETSTART, start);
    SCICALL(SCI_SETTARGETEND, end);
 
-   int findlen = strlen(Args->Find);
-   int replacelen = strlen(replace);
+   int findlen = Args->Find.size();
+   int replacelen = Args->Replace.size();
 
    int flags = (((Args->Flags & STF::CASE) != STF::NIL) ? SCFIND_MATCHCASE : 0) |
                 (((Args->Flags & STF::EXPRESSION) != STF::NIL) ? SCFIND_REGEXP : 0);
@@ -1256,7 +1254,7 @@ details.
 If the new face is invalid or fails to load, the current font will remain unchanged.
 
 -INPUT-
-cstr Face: The name of the new font face.
+cpp(strview) Face: The name of the new font face.
 
 -RESULT-
 Okay:
@@ -1270,9 +1268,9 @@ static ERR SCINTILLA_SetFont(extScintilla *Self, struct sci::SetFont *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Face)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Face.empty()) return log.warning(ERR::NullArgs);
 
-   log.branch("%s", Args->Face);
+   log.branch("%.*s", int(Args->Face.size()), Args->Face.data());
 
    if ((Self->Font = objFont::create::local(fl::Face(Args->Face)))) {
       create_styled_fonts(Self);

@@ -690,9 +690,9 @@ class objVectorTransition : public Object {
 // VectorScene methods
 
 namespace sc {
-struct AddDef { CSTRING Name; OBJECTPTR Def; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddDef { std::string_view Name; OBJECTPTR Def; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SearchByID { int ID; OBJECTPTR Result; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct FindDef { CSTRING Name; OBJECTPTR Def; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FindDef { std::string_view Name; OBJECTPTR Def; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Debug { static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -737,7 +737,7 @@ class objVectorScene : public Object {
       struct acResize args = { Width, Height, Depth };
       return Action(AC::Resize, this, &args);
    }
-   inline ERR addDef(CSTRING Name, OBJECTPTR Def) noexcept {
+   inline ERR addDef(const std::string_view & Name, OBJECTPTR Def) noexcept {
       struct sc::AddDef args = { Name, Def };
       return(Action(AC(-1), this, &args));
    }
@@ -747,7 +747,7 @@ class objVectorScene : public Object {
       if (Result) *Result = args.Result;
       return(error);
    }
-   inline ERR findDef(CSTRING Name, OBJECTPTR * Def) noexcept {
+   inline ERR findDef(const std::string_view & Name, OBJECTPTR * Def) noexcept {
       struct sc::FindDef args = { Name, (OBJECTPTR)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Def) *Def = args.Def;
@@ -5646,4 +5646,3 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
-
