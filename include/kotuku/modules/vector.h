@@ -5646,3 +5646,4 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
+

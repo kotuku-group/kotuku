@@ -330,7 +330,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
          objClipboard::create clipboard = { };
          if (clipboard.ok()) {
-            if (auto error = clipboard->addText(buffer.c_str()); error IS ERR::Okay) {
+            if (auto error = clipboard->addText(buffer); error IS ERR::Okay) {
                // Delete the highlighted document if the CUT mode was used
                if (Args->Mode IS CLIPMODE::CUT) {
                   //delete_selection(Self);

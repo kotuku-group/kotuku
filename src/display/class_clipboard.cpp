@@ -62,27 +62,27 @@ static int glLastClipID = -1;
 
 static std::string get_datatype(CLIPTYPE);
 static ERR add_clip(CLIPTYPE, const std::vector<ClipItem> &, CEF = CEF::NIL);
-static ERR add_clip(CSTRING);
+static ERR add_clip(std::string_view);
 static ERR CLIPBOARD_AddObjects(objClipboard *, struct clip::AddObjects *);
 
 #ifdef _WIN32
-static std::u16string utf8_to_utf16(CSTRING String, int Length, bool SurrogatePairs)
+static std::u16string utf8_to_utf16(std::string_view String, bool SurrogatePairs)
 {
    std::u16string result;
-   if (!String) return result;
+   if (String.empty()) return result;
 
-   auto str = String;
+   auto str = String.data();
    int chars, bytes = 0;
-   for (chars=0; (bytes < Length) and (str[bytes]); chars++) {
-      for (++bytes; (bytes < Length) and ((str[bytes] & 0xc0) IS 0x80); bytes++);
+   for (chars=0; bytes < std::ssize(String); chars++) {
+      for (++bytes; (bytes < std::ssize(String)) and ((str[bytes] & 0xc0) IS 0x80); bytes++);
    }
 
    result.reserve(size_t(chars));
 
    int pos = 0;
-   while (pos < bytes) {
+   while (pos < std::ssize(String)) {
       int len = UTF8CharLength(str);
-      if ((len IS 0) or (pos + len > bytes)) break;
+      if ((len IS 0) or (pos + len > std::ssize(String))) break;
 
       uint32_t codepoint;
       if (SurrogatePairs and (len IS 1)) codepoint = *str;
@@ -180,7 +180,7 @@ static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Ite
    for (auto &item : Items) {
       std::string path;
       if (ResolvePath(item.Path, RSF::NIL, &path) IS ERR::Okay) {
-         list << utf8_to_utf16(path.c_str(), 0x7fffffff, true) << char16_t(0);
+         list << utf8_to_utf16(path, true) << char16_t(0);
       }
    }
    list << char16_t(0); // An extra null byte is required to terminate the list for Windows HDROP
@@ -196,7 +196,7 @@ static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Ite
 
 //********************************************************************************************************************
 
-static ERR add_text_to_host(objClipboard *Self, CSTRING String, int Length = 0x7fffffff)
+static ERR add_text_to_host(objClipboard *Self, std::string_view String)
 {
    kt::Log log(__FUNCTION__);
 
@@ -205,7 +205,7 @@ static ERR add_text_to_host(objClipboard *Self, CSTRING String, int Length = 0x7
 #ifdef _WIN32
    // Copy text to the Windows clipboard.  This requires a conversion from UTF-8 to UTF-16.
 
-   auto utf16 = utf8_to_utf16(String, Length, false);
+   auto utf16 = utf8_to_utf16(String, false);
    utf16.push_back(0);
 
    auto error = (ERR)winAddClip(int(CLIPTYPE::TEXT), utf16.data(), utf16.size() * sizeof(char16_t), false);
@@ -238,7 +238,7 @@ Optional flags that may be passed to this method are as follows:
 
 -INPUT-
 int(CLIPTYPE) Datatype: Identifies the type of data represented by the file.
-cstr Path: Path of the file to add.
+cpp(strview) Path: Path of the file to add.
 int(CEF) Flags: Optional flags.
 
 -ERRORS-
@@ -257,11 +257,12 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
-   if ((!Args->Path) or (!Args->Path[0])) return log.warning(ERR::MissingPath);
+   if (Args->Path.empty()) return log.warning(ERR::MissingPath);
 
-   log.branch("Path: %s", Args->Path);
+   std::string path(Args->Path);
+   log.branch("Path: %s", path.c_str());
 
-   std::vector<ClipItem> items = { std::string(Args->Path) };
+   std::vector<ClipItem> items = { path };
    if (add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false) IS ERR::Okay) {
       if (glHistoryLimit <= 1) return ERR::Okay;
    }
@@ -361,7 +362,7 @@ On Windows, the text is also published to the host clipboard when supported.  If
 host clipboard accepts the text, no local cache file is created.
 
 -INPUT-
-cstr String: UTF-8 text to add to the clipboard.
+cpp(strview) String: UTF-8 text to add to the clipboard.
 
 -ERRORS-
 Okay
@@ -378,8 +379,8 @@ static ERR CLIPBOARD_AddText(objClipboard *Self, struct clip::AddText *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->String)) return log.warning(ERR::NullArgs);
-   if (!Args->String[0]) return ERR::Okay;
+   if (!Args) return log.warning(ERR::NullArgs);
+   if (Args->String.empty()) return ERR::Okay;
 
    if (add_text_to_host(Self, Args->String) IS ERR::Okay) {
       if (glHistoryLimit <= 1) return ERR::Okay;
@@ -445,7 +446,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       log.msg("Copying text to the clipboard.");
 
       if (!Args->Buffer) return log.warning(ERR::NullArgs);
-      if (auto error = add_text_to_host(Self, (CSTRING)Args->Buffer, Args->Size);
+      if (auto error = add_text_to_host(Self, std::string_view((CSTRING)Args->Buffer, size_t(Args->Size)));
             (error != ERR::Okay) and (error != ERR::NoSupport)) {
          return log.warning(error);
       }
@@ -772,7 +773,7 @@ static ERR add_clip(CLIPTYPE Datatype, const std::vector<ClipItem> &Items, CEF F
 
 //********************************************************************************************************************
 
-static ERR add_clip(CSTRING String)
+static ERR add_clip(std::string_view String)
 {
    kt::Log log(__FUNCTION__);
    log.branch();
@@ -781,7 +782,7 @@ static ERR add_clip(CSTRING String)
    if (auto error = add_clip(CLIPTYPE::TEXT, items); error IS ERR::Okay) {
       kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
       if (file.ok()) {
-         if (auto error = file->write(String, strlen(String), 0); error != ERR::Okay) return log.warning(error);
+         if (auto error = file->write(String.data(), int(String.size()), 0); error != ERR::Okay) return log.warning(error);
          return ERR::Okay;
       }
       else return log.warning(ERR::CreateFile);
@@ -907,7 +908,7 @@ extern "C" void report_windows_clip_utf16(uint16_t *String)
       }
    }
 
-   add_clip(buffer.str().c_str());
+   add_clip(buffer.str());
    glLastClipID = winCurrentClipboardID();
 }
 

@@ -1822,7 +1822,7 @@ This method does not work on hosted platforms.  All parameters passed to this me
 if it should not be changed).
 
 -INPUT-
-cstr Name: The name of the display.
+cpp(strview) Name: The name of the display.
 int MinH: The minimum horizontal scan rate.  Usually set to 31.
 int MaxH: The maximum horizontal scan rate.
 int MinV: The minimum vertical scan rate.  Usually set to 50.
@@ -1856,13 +1856,14 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
       return ERR::NoPermission;
    }
 
-   log.branch("%s", Args->Name);
+   std::string name(Args->Name);
+   log.branch("%s", name.c_str());
 
    glSixBitDisplay = ((Args->Flags & MON::BIT_6) != MON::NIL);
    if (glSixBitDisplay) Self->Flags |= SCR::BIT_6;
    else Self->Flags &= ~SCR::BIT_6;
 
-   if (Args->Name) StrCopy(Args->Name, Self->Display, sizeof(Self->Display));
+   if (not Args->Name.empty()) StrCopy(name.c_str(), Self->Display, sizeof(Self->Display));
 
    // Get the current monitor record, then set the new scan rates against it.
 

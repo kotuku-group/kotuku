@@ -49,3 +49,4 @@ static const struct ActionArray clVectorSceneActions[] = {
    { AC::Resize, VECTORSCENE_Resize },
    { AC::NIL, nullptr }
 };
+

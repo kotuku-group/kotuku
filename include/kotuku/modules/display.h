@@ -1048,7 +1048,7 @@ struct SetDisplay { int X; int Y; int Width; int Height; int InsideWidth; int In
 struct SizeHints { int MinWidth; int MinHeight; int MaxWidth; int MaxHeight; int EnforceAspect; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetGamma { double Red; double Green; double Blue; GMF Flags; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetGammaLinear { double Red; double Green; double Blue; GMF Flags; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetMonitor { CSTRING Name; int MinH; int MaxH; int MinV; int MaxV; MON Flags; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetMonitor { std::string_view Name; int MinH; int MaxH; int MinV; int MaxV; MON Flags; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Minimise { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CheckXWindow { static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetFrame { int Left; int Top; int Right; int Bottom; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -1155,7 +1155,7 @@ class objDisplay : public Object {
       struct gfx::SetGammaLinear args = { Red, Green, Blue, Flags };
       return(Action(AC(-6), this, &args));
    }
-   inline ERR setMonitor(CSTRING Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
+   inline ERR setMonitor(const std::string_view & Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
       struct gfx::SetMonitor args = { Name, MinH, MaxH, MinV, MaxV, Flags };
       return(Action(AC(-7), this, &args));
    }
@@ -1465,10 +1465,10 @@ class objDisplay : public Object {
 // Clipboard methods
 
 namespace clip {
-struct AddFile { CLIPTYPE Datatype; CSTRING Path; CEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddFile { CLIPTYPE Datatype; std::string_view Path; CEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddObjects { CLIPTYPE Datatype; OBJECTID * Objects; CEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; CSTRING * Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddText { CSTRING String; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddText { std::string_view String; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Remove { CLIPTYPE Datatype; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -1494,7 +1494,7 @@ class objClipboard : public Object {
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR addFile(CLIPTYPE Datatype, CSTRING Path, CEF Flags) noexcept {
+   inline ERR addFile(CLIPTYPE Datatype, const std::string_view & Path, CEF Flags) noexcept {
       struct clip::AddFile args = { Datatype, Path, Flags };
       return(Action(AC(-1), this, &args));
    }
@@ -1510,7 +1510,7 @@ class objClipboard : public Object {
       if (Flags) *Flags = args.Flags;
       return(error);
    }
-   inline ERR addText(CSTRING String) noexcept {
+   inline ERR addText(const std::string_view & String) noexcept {
       struct clip::AddText args = { String };
       return(Action(AC(-4), this, &args));
    }
