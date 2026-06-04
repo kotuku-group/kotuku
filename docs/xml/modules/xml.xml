@@ -111,6 +111,7 @@
       <const name="PARSE_ENTITY">Enables parsing of DOCTYPE entities.</const>
       <const name="PARSE_HTML">Automatically parse HTML escape codes.</const>
       <const name="READABLE">Indent the output of serialised XML to improve readability.</const>
+      <const name="READ_ONLY">Edits to the document are not permitted.</const>
       <const name="STANDALONE">Automatically defined when the XML declaration specifies standalone="yes".</const>
       <const name="STRIP_CDATA">Do not serialise <code>CDATA</code> sections.  Note that this option is used as a parameter, not an object flag.</const>
       <const name="STRIP_CONTENT">Strip all content from incoming XML data.</const>

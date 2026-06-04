@@ -111,7 +111,7 @@ DataFeed accepts XML or text data and parses it into the object's tag hierarchy.
 the parsed data becomes the document structure.  If tags already exist, the new data is parsed into a temporary
 hierarchy and appended to the root-level tag list.
 
-The action is rejected when #ReadOnly is enabled.  Parse failures are returned to the caller; when appending to an
+The action is rejected when `XMF::READ_ONLY` is enabled.  Parse failures are returned to the caller; when appending to an
 existing document, the existing tag hierarchy is left unchanged if the new data cannot be parsed.
 
 Example:
@@ -144,7 +144,7 @@ static ERR XML_DataFeed(extXML *Self, struct acDataFeed *Args)
    if (not Args) return log.warning(ERR::NullArgs);
 
    if ((Args->Datatype IS DATA::XML) or (Args->Datatype IS DATA::TEXT)) {
-      if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+      if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
       if (Self->Tags.empty()) {
          if (auto error = txt_to_xml(Self, Self->Tags, std::string_view((char *)Args->Buffer, Args->Size)); error != ERR::Okay) {
@@ -772,7 +772,7 @@ static ERR XML_InsertContent(extXML *Self, struct xml::InsertContent *Args)
    kt::Log log;
 
    if ((not Args) or Args->Content.empty()) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
    if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) log.branch("Index: %d, Insert: %d", Args->Index, int(Args->Where));
 
    auto src = Self->getTag(Args->Index);
@@ -846,7 +846,7 @@ static ERR XML_InsertXML(extXML *Self, struct xml::InsertXML *Args)
    kt::Log log;
 
    if ((not Args) or Args->XML.empty()) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
    if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) {
       log.branch("Index: %d, Where: %d, XML: %.*s", Args->Index, int(Args->Where),
          std::min(40, int(Args->XML.size())), Args->XML.data());
@@ -910,8 +910,7 @@ The InsertXPath method is used to translate and insert a new set of XML tags int
 standard XML statement must be provided in the XML parameter and the target insertion point is referenced as a valid
 `XPath` location string.  An insertion point relative to the `XPath` target must be specified in the `Where`
 parameter.  The new tags can be inserted as a child of the target by using a `Where` value of `XMI::CHILD` or
-`XMI::CHILD_END`.  To
-insert behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
+`XMI::CHILD_END`.  To insert behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
 
 -INPUT-
 cpp(strview) XPath: An XPath string that refers to the target insertion point.
@@ -945,7 +944,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
    kt::Log log;
 
    if ((not Args) or Args->XPath.empty() or Args->XML.empty()) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    log.branch("Insert: %d, XPath: %.*s", int(Args->Where), int(Args->XPath.size()), Args->XPath.data());
 
@@ -1024,7 +1023,7 @@ static ERR XML_MoveTags(extXML *Self, struct xml::MoveTags *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
    if (Args->Total < 1) return log.warning(ERR::Args);
    if (Args->Index IS Args->DestIndex) return ERR::Okay;
 
@@ -1174,7 +1173,7 @@ static ERR XML_RemoveTag(extXML *Self, struct xml::RemoveTag *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
    if ((Self->Flags & XMF::LOCK_REMOVE) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    int count = Args->Total;
@@ -1244,7 +1243,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
    if ((not Args) or Args->XPath.empty()) return ERR::NullArgs;
 
    if (Self->Tags.empty()) return ERR::NoData;
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
    if ((Self->Flags & XMF::LOCK_REMOVE) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    auto limit = Args->Limit;
@@ -1484,7 +1483,7 @@ static ERR XML_SetAttrib(extXML *Self, struct xml::SetAttrib *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    log.trace("Tag: %d, Attrib: $%.8x, %.*s = '%.*s'", Args->Index, int(Args->Attrib),
       int(Args->Name.size()), Args->Name.data(), int(Args->Value.size()), Args->Value.data());
@@ -1594,7 +1593,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
@@ -1731,7 +1730,7 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
    kt::Log log;
 
    if ((not Args) or Args->Sort.empty()) return log.warning(ERR::NullArgs);
-   if (Self->ReadOnly) return log.warning(ERR::ReadOnly);
+   if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    CURSOR tag;
    TAGS *branch;
@@ -1880,32 +1879,11 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
 -FIELD-
 DocType: Root element name from a parsed DOCTYPE declaration.
 
-*********************************************************************************************************************/
-
-static ERR SET_DocType(extXML *Self, const std::string_view &Value)
-{
-   if (not Value.empty()) Self->DocType = Value;
-   else Self->DocType.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 ErrorMsg: A textual description of the last parse error.
 
 This field may provide a textual description of the last parse error that occurred, in conjunction with the most
 recently received error code.  Issues parsing malformed XPath expressions may also be reported here.
-
-*********************************************************************************************************************/
-
-static ERR GET_ErrorMsg(extXML *Self, std::string_view &Value)
-{
-   Value = Self->ErrorMsg;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Flags: Controls XML parsing behaviour and processing options.
@@ -1967,53 +1945,8 @@ difference.
 -FIELD-
 PublicID: Public identifier from a parsed DOCTYPE declaration.
 
-*********************************************************************************************************************/
-
-static ERR SET_PublicID(extXML *Self, const std::string_view &Value)
-{
-   if (not Value.empty()) Self->PublicID = Value;
-   else Self->PublicID.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 SystemID: System identifier from a parsed DOCTYPE declaration.
-
-*********************************************************************************************************************/
-
-static ERR SET_SystemID(extXML *Self, const std::string_view &Value)
-{
-   if (not Value.empty()) Self->SystemID = Value;
-   else Self->SystemID.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-ReadOnly: Prevents modifications and enables caching for a loaded XML data source.
-
-This field can be set to `true` prior to initialisation of an XML object that will use an existing data source.  It
-prevents modifications to the XML object.  If the data originates from a file path, the data may be cached to optimise
-parsing where the same data is used across multiple XML objects.
-
-*********************************************************************************************************************/
-
-static ERR GET_ReadOnly(extXML *Self, int *Value)
-{
-   *Value = Self->ReadOnly;
-   return ERR::Okay;
-}
-
-static ERR SET_ReadOnly(extXML *Self, int Value)
-{
-   Self->ReadOnly = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Source: Set this field if the XML data is to be sourced from another object.
@@ -2116,10 +2049,10 @@ static ERR SET_Statement(extXML *Self, const std::string_view &Value)
    }
    else {
       if (Self->initialised()) {
-         auto temp = Self->ReadOnly;
-         Self->ReadOnly = false;
+         bool ro = (Self->Flags & XMF::READ_ONLY) != XMF::NIL;
+         Self->Flags &= ~XMF::READ_ONLY;
          acClear(Self);
-         Self->ReadOnly = temp;
+         if (ro) Self->Flags |= XMF::READ_ONLY;
       }
       return ERR::Okay;
    }
@@ -2387,17 +2320,16 @@ static ERR XML_ValidateDocument(extXML *Self, void *Args)
 
 static const FieldArray clFields[] = {
    { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
-   { "DocType",      FDF_CPPSTRING|FDF_RW, nullptr, SET_DocType },
-   { "PublicID",     FDF_CPPSTRING|FDF_RW, nullptr, SET_PublicID },
-   { "SystemID",     FDF_CPPSTRING|FDF_RW, nullptr, SET_SystemID },
+   { "DocType",      FDF_CPPSTRING|FDF_RW },
+   { "PublicID",     FDF_CPPSTRING|FDF_RW },
+   { "SystemID",     FDF_CPPSTRING|FDF_RW },
+   { "ErrorMsg",     FDF_CPPSTRING|FDF_R },
    { "Source",       FDF_OBJECT|FDF_RI },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clXMLFlags },
    { "Modified",     FDF_INT|FDF_R },
    { "ParseError",   FDF_INT|FD_PRIVATE|FDF_R },
    { "LineNo",       FDF_INT|FD_PRIVATE|FDF_R },
    // Virtual fields
-   { "ErrorMsg",   FDF_CPPSTRING|FDF_R|FDF_PURE, GET_ErrorMsg },
-   { "ReadOnly",   FDF_INT|FDF_RI|FDF_PURE, GET_ReadOnly, SET_ReadOnly },
    { "Src",        FDF_CPPSTRING|FDF_SYNONYM|FDF_RW|FDF_PURE, GET_Path, SET_Path },
    { "Statement",  FDF_CPPSTRING|FDF_ALLOC|FDF_RW, GET_Statement, SET_Statement },
    { "Tags",       FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Tags, nullptr, "XTag" },
@@ -2411,7 +2343,7 @@ static ERR add_xml_class(void)
       fl::ClassVersion(VER_XML),
       fl::Name("XML"),
       fl::FileExtension("xml"),
-      fl::FileDescription("Extendable Markup Language (XML)"),
+      fl::FileDescription("eXtensible Markup Language (XML)"),
       fl::Icon("filetypes/xml"),
       fl::Category(CCF::DATA),
       fl::Actions(clXMLActions),

@@ -430,9 +430,8 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
       if (Self->Processing) return log.warning(ERR::Recursion);
 
       objXML::create xml = {
-         fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED),
-         fl::Statement(CSTRING(Args->Buffer)),
-         fl::ReadOnly(true)
+         fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED|XMF::READ_ONLY),
+         fl::Statement(CSTRING(Args->Buffer))
       };
 
       if (xml.ok()) {

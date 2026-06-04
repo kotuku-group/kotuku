@@ -149,9 +149,7 @@ class extXML : public objXML {
    public:
    ankerl::unordered_dense::map<int, XTag *> Map; // Lookup for any indexed tag.
    ankerl::unordered_dense::map<int, std::string> BaseURIMap;
-   std::string ErrorMsg;    // The most recent error message for an activity, e.g. XPath parsing error
    std::string Statement;
-   bool   ReadOnly;
    bool   StaleMap;         // True if map requires a rebuild
 
    std::shared_ptr<xml::schema::SchemaContext> SchemaContext;
@@ -167,7 +165,7 @@ class extXML : public objXML {
    // then this lookup table returns the most recently assigned URI.
    XMLStringLookupMap<uint32_t> Prefixes; // hash(Prefix) -> hash(URI)
 
-   extXML() : ReadOnly(false), StaleMap(true) { }
+   extXML() : StaleMap(true) { }
 
    ~extXML() {
    }
