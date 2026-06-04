@@ -705,7 +705,7 @@ static ERR XML_Init(extXML *Self)
 
    if (not Self->Statement.empty()) {
       Self->LineNo = 1;
-      if ((Self->ParseError = txt_to_xml(Self, Self->Tags, Self->Statement.c_str())) != ERR::Okay) {
+      if ((Self->ParseError = txt_to_xml(Self, Self->Tags, Self->Statement)) != ERR::Okay) {
          // Return NoSupport to defer parsing to other data handlers
          if (Self->ParseError IS ERR::InvalidData) return ERR::NoSupport;
 
