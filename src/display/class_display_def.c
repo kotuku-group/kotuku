@@ -49,7 +49,7 @@ FDEF maSetDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, {
 FDEF maSizeHints[] = { { "MinWidth", FD_INT }, { "MinHeight", FD_INT }, { "MaxWidth", FD_INT }, { "MaxHeight", FD_INT }, { "EnforceAspect", FD_INT }, { 0, 0 } };
 FDEF maSetGamma[] = { { "Red", FD_DOUBLE }, { "Green", FD_DOUBLE }, { "Blue", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetGammaLinear[] = { { "Red", FD_DOUBLE }, { "Green", FD_DOUBLE }, { "Blue", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maSetMonitor[] = { { "Name", FD_STR }, { "MinH", FD_INT }, { "MaxH", FD_INT }, { "MinV", FD_INT }, { "MaxV", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maSetMonitor[] = { { "Name", FD_CPP|FD_STR }, { "MinH", FD_INT }, { "MaxH", FD_INT }, { "MinV", FD_INT }, { "MaxV", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maGetFrame[] = { { "Left", FD_INT|FD_RESULT }, { "Top", FD_INT|FD_RESULT }, { "Right", FD_INT|FD_RESULT }, { "Bottom", FD_INT|FD_RESULT }, { 0, 0 } };
 
 static const struct MethodEntry clDisplayMethods[] = {

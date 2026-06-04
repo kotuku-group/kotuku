@@ -131,10 +131,10 @@
     <method>
       <name>ParseSymbol</name>
       <comment>Instantiates an SVG symbol definition within a target viewport.</comment>
-      <prototype>ERR svg::ParseSymbol(OBJECTPTR Object, CSTRING ID, objVectorViewport * Viewport)</prototype>
+      <prototype>ERR svg::ParseSymbol(OBJECTPTR Object, const std::string_view &amp; ID, objVectorViewport * Viewport)</prototype>
       <tiriPrototype>err = ParseSymbol(ID:str, Viewport:obj)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="ID">Name of the symbol to parse.</param>
+        <param type="const std::string_view &amp;" name="ID">Name of the symbol to parse.</param>
         <param type="objVectorViewport *" name="Viewport">The target viewport.</param>
       </input>
       <description>

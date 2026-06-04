@@ -276,8 +276,8 @@ void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
    log.traceBranch();
 
    auto clipboard = objClipboard::create { };
-   if (clipboard.ok()) {
-      if (clipboard->addText(selectedText.s) IS ERR::Okay) {
+   if ((clipboard.ok()) and (selectedText.s) and (selectedText.len > 0)) {
+      if (clipboard->addText(std::string_view(selectedText.s, size_t(selectedText.len - 1))) IS ERR::Okay) {
 
       }
    }

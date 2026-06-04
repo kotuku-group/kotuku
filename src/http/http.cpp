@@ -882,7 +882,8 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    if (acWrite(Self->Socket, cstr.c_str(), cstr.length()) IS ERR::Okay) {
       if (Self->Socket->State IS NTC::DISCONNECTED) {
-         CSTRING server_host = Self->ProxyServer.empty() ? Self->Host.c_str() : Self->ProxyServer.c_str();
+         const auto server_host = Self->ProxyServer.empty() ? std::string_view(Self->Host) :
+            std::string_view(Self->ProxyServer);
          const int server_port = Self->ProxyServer.empty() ? Self->Port : Self->ProxyPort;
          if (auto result = Self->Socket->connect(server_host, server_port, 5.0); result IS ERR::Okay) {
             Self->Connecting = true;

@@ -11,16 +11,16 @@ ERR svgState::set_paint_server(objVector *Vector, FIELD Field, const std::string
          std::string lookup;
          lookup.assign(Value, 5, i-5);
 
-         if (Self->Scene->findDef(lookup.c_str(), nullptr) != ERR::Okay) {
-            if (Self->IDs.contains(lookup)) {
-               auto tag = Self->IDs[lookup];
+         if (Self->Scene->findDef(lookup, nullptr) != ERR::Okay) {
+            if (auto tag = Self->IDs.find(lookup); tag != Self->IDs.end()) {
+               auto tagref = tag->second;
 
-               switch(svg_tag_hash(*tag)) {
-                  case SVF_contourGradient:  proc_contourgradient(*tag); break;
-                  case SVF_radialGradient:   proc_radialgradient(*tag); break;
-                  case SVF_diamondGradient:  proc_diamondgradient(*tag); break;
-                  case SVF_conicGradient:    proc_conicgradient(*tag); break;
-                  case SVF_linearGradient:   proc_lineargradient(*tag); break;
+               switch(svg_tag_hash(*tagref)) {
+                  case SVF_contourGradient:  proc_contourgradient(*tagref); break;
+                  case SVF_radialGradient:   proc_radialgradient(*tagref); break;
+                  case SVF_diamondGradient:  proc_diamondgradient(*tagref); break;
+                  case SVF_conicGradient:    proc_conicgradient(*tagref); break;
+                  case SVF_linearGradient:   proc_lineargradient(*tagref); break;
                }
             }
          }
@@ -2425,7 +2425,8 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
       return;
    }
 
-   if (!Self->IDs.contains(uri)) {
+   auto tag = Self->IDs.find(uri);
+   if (tag IS Self->IDs.end()) {
       log.warning("Unable to find element '%s' referenced at line %d", ref.c_str(), Tag.LineNo);
       return;
    }
@@ -2438,7 +2439,7 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
       }
    }
 
-   auto tagref = Self->IDs[uri];
+   auto tagref = tag->second;
 
    auto class_id = CLASSID::NIL;
    switch (svg_tag_hash(*tagref)) {
@@ -2466,7 +2467,7 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
       Parent->set(FID_Morph, shape);
       if (transvector) Parent->set(FID_Transition, transvector);
       Parent->set(FID_MorphFlags, int(flags));
-      if (!Self->Cloning) Self->Scene->addDef(uri.c_str(), shape);
+      if (!Self->Cloning) Self->Scene->addDef(uri, shape);
    }
 }
 
@@ -2935,7 +2936,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          case SVF_mask: {
             OBJECTPTR clip;
             auto ref = uri_name(val);
-            if (Self->Scene->findDef(ref.c_str(), &clip) IS ERR::Okay) viewport->set(FID_Mask, clip);
+            if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) viewport->set(FID_Mask, clip);
             else log.warning("Unable to find mask '%s'", val.c_str());
             break;
          }
@@ -2943,7 +2944,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          case SVF_clip_path: {
             OBJECTPTR clip;
             auto ref = uri_name(val);
-            if (Self->Scene->findDef(ref.c_str(), &clip) IS ERR::Okay) viewport->set(FID_Mask, clip);
+            if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) viewport->set(FID_Mask, clip);
             else log.warning("Unable to find clip-path '%s'", val.c_str());
             break;
          }
@@ -3837,7 +3838,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_mask: {
          OBJECTPTR clip;
          auto ref = uri_name(StrValue);
-         if (Self->Scene->findDef(ref.c_str(), &clip) IS ERR::Okay) {
+         if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) {
             Vector->set(FID_Mask, clip);
          }
          else {
@@ -3850,7 +3851,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_clip_path: {
          OBJECTPTR clip;
          auto ref = uri_name(StrValue);
-         if (Self->Scene->findDef(ref.c_str(), &clip) IS ERR::Okay) {
+         if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) {
             Vector->set(FID_Mask, clip);
          }
          else {

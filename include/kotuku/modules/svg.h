@@ -33,7 +33,7 @@ DEFINE_ENUM_FLAG_OPERATORS(SVF)
 
 namespace svg {
 struct Render { objBitmap * Bitmap; int X; int Y; int Width; int Height; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ParseSymbol { CSTRING ID; objVectorViewport * Viewport; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ParseSymbol { std::string_view ID; objVectorViewport * Viewport; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -74,7 +74,7 @@ class objSVG : public Object {
       struct svg::Render args = { Bitmap, X, Y, Width, Height };
       return(Action(AC(-1), this, &args));
    }
-   inline ERR parseSymbol(CSTRING ID, objVectorViewport * Viewport) noexcept {
+   inline ERR parseSymbol(const std::string_view & ID, objVectorViewport * Viewport) noexcept {
       struct svg::ParseSymbol args = { ID, Viewport };
       return(Action(AC(-2), this, &args));
    }

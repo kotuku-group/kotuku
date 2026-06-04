@@ -25,9 +25,9 @@ static const struct FieldDef clVectorSceneSampleMethod[] = {
    { nullptr, 0 }
 };
 
-FDEF maAddDef[] = { { "Name", FD_STR }, { "Def", FD_OBJECTPTR }, { 0, 0 } };
+FDEF maAddDef[] = { { "Name", FD_CPP|FD_STR }, { "Def", FD_OBJECTPTR }, { 0, 0 } };
 FDEF maSearchByID[] = { { "ID", FD_INT }, { "Result", FD_OBJECTPTR|FD_RESULT }, { 0, 0 } };
-FDEF maFindDef[] = { { "Name", FD_STR }, { "Def", FD_OBJECTPTR|FD_RESULT }, { 0, 0 } };
+FDEF maFindDef[] = { { "Name", FD_CPP|FD_STR }, { "Def", FD_OBJECTPTR|FD_RESULT }, { 0, 0 } };
 
 static const struct MethodEntry clVectorSceneMethods[] = {
    { AC(-1), (APTR)VECTORSCENE_AddDef, "AddDef", maAddDef, sizeof(struct sc::AddDef) },
