@@ -132,8 +132,8 @@ non-blocking, mutates-object, copies-input
 
 *********************************************************************************************************************/
 
-static void connect_name_resolved_nl(objNetLookup *, ERR, const std::string &, const std::vector<IPAddress> &);
-static void connect_name_resolved(extNetSocket *, ERR, const std::string &, const std::vector<IPAddress> &);
+static void connect_name_resolved_nl(objNetLookup *, ERR, std::string_view, const std::vector<IPAddress> &);
+static void connect_name_resolved(extNetSocket *, ERR, std::string_view, const std::vector<IPAddress> &);
 static ERR connect_timeout_handler(OBJECTPTR, int64_t, int64_t);
 
 static void clear_connect_timer(extNetSocket *Socket)
@@ -248,7 +248,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 //********************************************************************************************************************
 // This function is called on completion of nlResolveName().
 
-static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const std::string &HostName,
+static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, std::string_view HostName,
    const std::vector<IPAddress> &IPs)
 {
    connect_name_resolved((extNetSocket *)CurrentContext(), Error, HostName, IPs);
@@ -291,7 +291,7 @@ static ERR start_platform_connect(extNetSocket *Socket, const NetworkEndpoint &E
    return ERR::Okay;
 }
 
-static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::string &HostName,
+static void connect_name_resolved(extNetSocket *Socket, ERR Error, std::string_view HostName,
    const std::vector<IPAddress> &IPs)
 {
    kt::Log log(__FUNCTION__);
@@ -306,7 +306,7 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
    log.msg("Received callback on DNS resolution.  Handle: %d", Socket->Handle.int_value());
 
    if (IPs.empty()) {
-      log.warning("No IP addresses resolved for %s", HostName.c_str());
+      log.warning("No IP addresses resolved for %.*s", int(HostName.size()), HostName.data());
       Socket->Error = ERR::HostNotFound;
       Socket->setState(NTC::DISCONNECTED);
       return;

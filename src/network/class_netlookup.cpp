@@ -63,7 +63,7 @@ static ERR cache_host(HOSTMAP &, std::string_view, const HostLookupResult &, DNS
 
 static std::vector<IPAddress> glNoAddresses;
 
-static void resolve_callback(extNetLookup *, ERR, const std::string & = "", std::vector<IPAddress> & = glNoAddresses);
+static void resolve_callback(extNetLookup *, ERR, std::string_view, std::vector<IPAddress> & = glNoAddresses);
 
 //********************************************************************************************************************
 // Used for receiving asynchronous execution results (sent as a message).
@@ -93,7 +93,7 @@ static ERR resolve_name_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Mes
          nl->Info = cached;
          resolve_callback(*nl, ERR::Okay, nl->Info.HostName, nl->Info.Addresses);
       }
-      else resolve_callback(*nl, ERR::Failed);
+      else resolve_callback(*nl, ERR::Failed, "");
    }
    return ERR::Okay;
 }
@@ -124,7 +124,7 @@ static ERR resolve_addr_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Mes
          nl->Info = cached;
          resolve_callback(*nl, ERR::Okay, nl->Info.HostName, nl->Info.Addresses);
       }
-      else resolve_callback(*nl, ERR::Failed);
+      else resolve_callback(*nl, ERR::Failed, "");
    }
    return ERR::Okay;
 }
@@ -182,7 +182,7 @@ static ERR NETLOOKUP_BlockingResolveAddress(extNetLookup *Self, struct nl::Block
          return ERR::Okay;
       }
       else {
-         resolve_callback(Self, error);
+         resolve_callback(Self, error, "");
          return error;
       }
    }
@@ -232,8 +232,7 @@ static ERR NETLOOKUP_BlockingResolveName(extNetLookup *Self, struct nl::Blocking
       return ERR::Okay;
    }
    else {
-      std::string host_name(Args->HostName);
-      resolve_callback(Self, error, host_name);
+      resolve_callback(Self, error, Args->HostName);
       return error;
    }
 }
@@ -445,8 +444,7 @@ static ERR GET_Addresses(extNetLookup *Self, int8_t **Value, int *Elements)
 Callback: This function will be called on the completion of any name or address resolution.
 
 The function referenced here will receive the results of the most recently resolved name or address.  The C++
-prototype is
-`Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)`.
+prototype is `Function(*NetLookup, ERR Error, std::string_view HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)`.
 
 The Tiri prototype is as follows, with results readable from the #HostName and #Addresses fields:
 `function(NetLookup, Error)`.
@@ -566,14 +564,16 @@ static ERR resolve_name(std::string_view HostName, DNSEntry &Info)
 
 //********************************************************************************************************************
 
-static void resolve_callback(extNetLookup *Self, ERR Error, const std::string &HostName, std::vector<IPAddress> &Addresses)
+static void resolve_callback(extNetLookup *Self, ERR Error, std::string_view HostName,
+   std::vector<IPAddress> &Addresses)
 {
    kt::Log log(__FUNCTION__);
-   log.traceBranch("Host: %s", HostName.c_str());
+   log.traceBranch("Host: %.*s", int(HostName.size()), HostName.data());
 
    if (Self->Callback.isC()) {
       kt::SwitchContext context(Self->Callback.Context);
-      auto routine = (ERR (*)(extNetLookup *, ERR, const std::string &, const std::vector<IPAddress> &, APTR))(Self->Callback.Routine);
+      auto routine = (ERR (*)(extNetLookup *, ERR, std::string_view, const std::vector<IPAddress> &, APTR))(
+         Self->Callback.Routine);
       routine(Self, Error, HostName, Addresses, Self->Callback.Meta);
    }
    else if (Self->Callback.isScript()) {
