@@ -1,9 +1,12 @@
 
 #include <kotuku/vector.hpp>
 #include <array>
+#include <cstdint>
 #include <forward_list>
 #include <iostream>
+#include <iterator>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -117,6 +120,8 @@ void test_basic_accessors(TestContext &Context) {
    kt::vector<int> numbers;
    Context.expect_true(numbers.empty(), "Default vector starts empty");
    Context.expect_equal(numbers.size(), std::size_t(0), "Default size is zero");
+   Context.expect_equal(numbers.capacity(), std::size_t(0), "Default capacity is zero");
+   Context.expect_true(not numbers.data(), "Default data pointer is null");
    numbers.push_back(7);
    Context.expect_true(not numbers.empty(), "Vector is not empty after push_back");
    Context.expect_equal(numbers.size(), std::size_t(1), "Size increments after push_back");
@@ -130,8 +135,10 @@ void test_basic_accessors(TestContext &Context) {
 
 void test_zero_capacity_growth(TestContext &Context) {
    kt::vector<int> values(0);
+   Context.expect_equal(values.capacity(), std::size_t(0), "Explicit zero-capacity construction stays lazy");
    values.push_back(1);
    Context.expect_equal(values.size(), std::size_t(1), "push_back succeeds after zero-capacity construction");
+   Context.expect_equal(values.capacity(), std::size_t(8), "First push grows to minimum capacity");
    Context.expect_equal(values.front(), 1, "push_back stores value in zero-capacity regression");
 }
 
@@ -156,8 +163,16 @@ void test_range_and_initializer_construction(TestContext &Context) {
    Context.expect_equal(from_forward.front(), 8, "Forward iterator constructor keeps first element");
    Context.expect_equal(from_forward.back(), 10, "Forward iterator constructor keeps last element");
 
+   std::istringstream input_stream("11 12 13");
+   kt::vector<int> from_input{std::istream_iterator<int>(input_stream), std::istream_iterator<int>()};
+   Context.expect_equal(from_input.size(), std::size_t(3), "Input iterator constructor copies all elements");
+   Context.expect_equal(from_input.front(), 11, "Input iterator constructor keeps first element");
+   Context.expect_equal(from_input.back(), 13, "Input iterator constructor keeps last element");
+
    kt::vector<int> reserved(32);
    Context.expect_equal(reserved.size(), std::size_t(0), "Explicit capacity constructor starts empty");
+   Context.expect_equal(reserved.capacity(), std::size_t(32),
+      "Explicit capacity constructor preserves requested capacity");
    reserved.push_back(42);
    Context.expect_equal(reserved.back(), 42, "Explicit capacity constructor allows pushes");
 }
@@ -260,6 +275,28 @@ void test_modifiers(TestContext &Context) {
       Context.expect_equal(value, int(index), "reserve keeps element order intact");
       index += 1;
    }
+
+   kt::vector<int> alias_insert{10, 30};
+   alias_insert.insert(alias_insert.begin() + 1, alias_insert[0]);
+   Context.expect_equal(alias_insert.size(), std::size_t(3), "Aliased element insert increases size");
+   Context.expect_equal(alias_insert[0], 10, "Aliased element insert keeps first element");
+   Context.expect_equal(alias_insert[1], 10, "Aliased element insert copies referenced element");
+   Context.expect_equal(alias_insert[2], 30, "Aliased element insert keeps trailing element");
+
+   kt::vector<int> self_range{1, 4, 5};
+   self_range.insert(self_range.begin() + 1, self_range.begin() + 1, self_range.end());
+   Context.expect_equal(self_range.size(), std::size_t(5), "Self range insert increases size");
+   Context.expect_equal(self_range[0], 1, "Self range insert keeps prefix");
+   Context.expect_equal(self_range[1], 4, "Self range insert copies first overlapping source");
+   Context.expect_equal(self_range[2], 5, "Self range insert copies second overlapping source");
+   Context.expect_equal(self_range[3], 4, "Self range insert preserves original first source");
+   Context.expect_equal(self_range[4], 5, "Self range insert preserves original second source");
+
+   kt::vector<bool> flags;
+   flags.push_back(true);
+   bool *raw_flags = flags.data();
+   raw_flags[0] = false;
+   Context.expect_true(not flags[0], "kt::vector<bool> exposes contiguous bool storage");
 }
 
 void test_comparisons(TestContext &Context) {
@@ -303,7 +340,8 @@ void test_sfinae_paths(TestContext &Context) {
       int destruction_before = NoThrowMover::destructions;
       values.clear();
       int destruction_after = NoThrowMover::destructions;
-      Context.expect_equal(destruction_after - destruction_before, 2, "clear calls destructor for each element when non-trivial");
+      Context.expect_equal(destruction_after - destruction_before, 2,
+         "clear calls destructor for each element when non-trivial");
    }
 }
 
@@ -358,6 +396,13 @@ struct LifecycleTracker {
    }
 };
 
+struct alignas(64) OverAlignedValue {
+   int value{0};
+
+   OverAlignedValue(int InValue = 0) : value(InValue) {
+   }
+};
+
 void test_insertion_lifecycle_management(TestContext &Context) {
    // Test single element insertion at various positions
    LifecycleTracker::reset();
@@ -395,12 +440,15 @@ void test_insertion_lifecycle_management(TestContext &Context) {
       int destructions_after = LifecycleTracker::total_destructions;
 
       // Verify we haven't leaked any objects during insertion operations
-      Context.expect_true((constructions_after - constructions_before) >= 3, "At least 3 new constructions for inserted objects");
-      Context.expect_true((destructions_after - destructions_before) >= 0, "No unexpected destructions during insertion");
+      Context.expect_true((constructions_after - constructions_before) >= 3,
+         "At least 3 new constructions for inserted objects");
+      Context.expect_true((destructions_after - destructions_before) >= 0,
+         "No unexpected destructions during insertion");
    }
 
    // After vector destruction, verify all objects are properly cleaned up
-   Context.expect_true(LifecycleTracker::is_balanced(), "All constructed objects are destroyed after vector destruction");
+   Context.expect_true(LifecycleTracker::is_balanced(),
+      "All constructed objects are destroyed after vector destruction");
 
    // Test range insertion lifecycle management
    LifecycleTracker::reset();
@@ -431,7 +479,8 @@ void test_insertion_lifecycle_management(TestContext &Context) {
       int constructions_after = LifecycleTracker::total_constructions;
 
       // Verify reasonable construction count (exact count depends on implementation details)
-      Context.expect_true((constructions_after - constructions_before) >= 4, "Range insertion creates appropriate number of objects");
+      Context.expect_true((constructions_after - constructions_before) >= 4,
+         "Range insertion creates appropriate number of objects");
    }
 
    Context.expect_true(LifecycleTracker::is_balanced(), "All objects properly destroyed after range insertion test");
@@ -454,10 +503,31 @@ void test_insertion_lifecycle_management(TestContext &Context) {
       int constructions_after = LifecycleTracker::total_constructions;
 
       // During expansion, elements get copied/moved to new buffer
-      Context.expect_true((constructions_after - constructions_before) >= 1, "Capacity expansion properly manages object lifecycle");
+      Context.expect_true((constructions_after - constructions_before) >= 1,
+         "Capacity expansion properly manages object lifecycle");
    }
 
    Context.expect_true(LifecycleTracker::is_balanced(), "All objects properly destroyed after capacity expansion test");
+}
+
+void test_alignment_and_resize_lifecycle(TestContext &Context) {
+   kt::vector<OverAlignedValue> aligned;
+   aligned.emplace_back(123);
+   auto address = std::uintptr_t(aligned.data());
+   Context.expect_true((address % alignof(OverAlignedValue)) IS 0, "Over-aligned vector storage is correctly aligned");
+   Context.expect_equal(aligned.front().value, 123, "Over-aligned value is preserved");
+
+   LifecycleTracker::reset();
+   {
+      kt::vector<LifecycleTracker> values;
+      values.resize(4);
+      Context.expect_equal(values.size(), std::size_t(4), "Resize default-constructs requested elements");
+      values.resize(1);
+      Context.expect_equal(values.size(), std::size_t(1), "Resize shrink keeps requested element count");
+      values.erase(values.begin(), values.end());
+      Context.expect_true(values.empty(), "Erase all leaves vector empty");
+   }
+   Context.expect_true(LifecycleTracker::is_balanced(), "Resize and erase lifecycle remains balanced");
 }
 
 int main() {
@@ -471,6 +541,7 @@ int main() {
    test_comparisons(test_context);
    test_sfinae_paths(test_context);
    test_insertion_lifecycle_management(test_context);
+   test_alignment_and_resize_lifecycle(test_context);
    test_context.summary();
    return test_context.failed_checks IS 0 ? 0 : 1;
 }
