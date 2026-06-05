@@ -27,13 +27,13 @@
   <function>
     <name>Compile</name>
     <comment>Compiles a regex pattern and returns a regex object.</comment>
-    <prototype>ERR rx::Compile(const std::string_view &amp; Pattern, REGEX Flags, std::string * ErrorMsg, struct Regex ** Result)</prototype>
+    <prototype>ERR rx::Compile(STRVIEW Pattern, REGEX Flags, STRING * ErrorMsg, struct Regex ** Result)</prototype>
     <tiriPrototype>err, ErrorMsg:str, Result:any = Compile(Pattern:str, Flags:num)</tiriPrototype>
     <tags>caller-owns-result, creates-resource, copies-input, mutates-input</tags>
     <input>
-      <param type="const std::string_view &amp;" name="Pattern">A regex pattern string.</param>
+      <param type="STRVIEW" name="Pattern">A regex pattern string.</param>
       <param type="REGEX" name="Flags" lookup="REGEX">Optional flags.</param>
-      <param type="std::string *" name="ErrorMsg">Optional reference for storing custom error messages.</param>
+      <param type="STRING *" name="ErrorMsg">Optional reference for storing custom error messages.</param>
       <param type="struct Regex **" name="Result">Pointer to store the created regex object.</param>
     </input>
     <description>
@@ -49,12 +49,12 @@
   <function>
     <name>GetCaptureIndex</name>
     <comment>Retrieves capture indices for a named group.</comment>
-    <prototype>ERR rx::GetCaptureIndex(struct Regex * Regex, const std::string_view &amp; Name, kt::vector&lt;int&gt; * Indices)</prototype>
+    <prototype>ERR rx::GetCaptureIndex(struct Regex * Regex, STRVIEW Name, kt::vector&lt;int&gt; * Indices)</prototype>
     <tiriPrototype>err, Indices:array = GetCaptureIndex(Regex:any, Name:str)</tiriPrototype>
     <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
-      <param type="const std::string_view &amp;" name="Name">The capture group name to resolve.</param>
+      <param type="STRVIEW" name="Name">The capture group name to resolve.</param>
       <param type="kt::vector&lt;int&gt; *" name="Indices">Receives the resulting capture indices.</param>
     </input>
     <description>
@@ -70,14 +70,14 @@
   <function>
     <name>Replace</name>
     <comment>Replaces occurrences of the regex pattern in the input text with a specified replacement string.</comment>
-    <prototype>ERR rx::Replace(struct Regex * Regex, const std::string_view &amp; Text, const std::string_view &amp; Replacement, std::string * Output, RMATCH Flags)</prototype>
+    <prototype>ERR rx::Replace(struct Regex * Regex, STRVIEW Text, STRVIEW Replacement, STRING * Output, RMATCH Flags)</prototype>
     <tiriPrototype>err, Output:str = Replace(Regex:any, Text:str, Replacement:str, Flags:num)</tiriPrototype>
     <tags>mutates-input</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
-      <param type="const std::string_view &amp;" name="Text">The input text to perform replacements on.</param>
-      <param type="const std::string_view &amp;" name="Replacement">The replacement string, which can include back-references like <code>\1</code>, <code>\2</code>, etc.</param>
-      <param type="std::string *" name="Output">Receives the resulting string after replacements.</param>
+      <param type="STRVIEW" name="Text">The input text to perform replacements on.</param>
+      <param type="STRVIEW" name="Replacement">The replacement string, which can include back-references like <code>\1</code>, <code>\2</code>, etc.</param>
+      <param type="STRING *" name="Output">Receives the resulting string after replacements.</param>
       <param type="RMATCH" name="Flags" lookup="RMATCH">Optional flags to modify the replacement behavior.</param>
     </input>
     <description>
@@ -92,12 +92,12 @@
   <function>
     <name>Search</name>
     <comment>Performs regex matching.</comment>
-    <prototype>ERR rx::Search(struct Regex * Regex, const std::string_view &amp; Text, RMATCH Flags, FUNCTION * Callback)</prototype>
+    <prototype>ERR rx::Search(struct Regex * Regex, STRVIEW Text, RMATCH Flags, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = Search(Regex:any, Text:str, Flags:num, Callback:func)</tiriPrototype>
     <tags>callback-inlines, does-not-take-ownership</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
-      <param type="const std::string_view &amp;" name="Text">The input text to perform matching on.</param>
+      <param type="STRVIEW" name="Text">The input text to perform matching on.</param>
       <param type="RMATCH" name="Flags" lookup="RMATCH">Optional flags to modify the matching behavior.</param>
       <param type="FUNCTION *" name="Callback">Receives the match results.</param>
     </input>
@@ -119,12 +119,12 @@
   <function>
     <name>Split</name>
     <comment>Split a string into tokens, using a regex pattern to denote the delimiter.</comment>
-    <prototype>ERR rx::Split(struct Regex * Regex, const std::string_view &amp; Text, kt::vector&lt;std::string&gt; * Output, RMATCH Flags)</prototype>
+    <prototype>ERR rx::Split(struct Regex * Regex, STRVIEW Text, kt::vector&lt;std::string&gt; * Output, RMATCH Flags)</prototype>
     <tiriPrototype>err, Output:array = Split(Regex:any, Text:str, Flags:num)</tiriPrototype>
     <tags>mutates-input</tags>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
-      <param type="const std::string_view &amp;" name="Text">The input text to split.</param>
+      <param type="STRVIEW" name="Text">The input text to split.</param>
       <param type="kt::vector&lt;std::string&gt; *" name="Output">Receives the resulting string tokens.</param>
       <param type="RMATCH" name="Flags" lookup="RMATCH">Optional flags to modify the splitting behavior.</param>
     </input>
@@ -162,7 +162,7 @@
   </types>
   <structs>
     <struct name="Regex" comment="Compiled regex structure.">
-      <field name="Pattern" type="std::string">Original pattern string</field>
+      <field name="Pattern" type="STRING">Original pattern string</field>
       <field name="Flags" type="REGEX" lookup="REGEX">Compilation flags</field>
     </struct>
 

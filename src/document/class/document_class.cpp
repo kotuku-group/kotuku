@@ -254,7 +254,7 @@ formatted - please refer to the @Script class' Exec method for more information 
 parameters.
 
 -INPUT-
-cpp(strview) Function: The name of the function that will be called.
+strview Function: The name of the function that will be called.
 struct(*ScriptArg) Args: Pointer to an optional list of parameters to pass to the procedure.
 int TotalArgs: The total number of entries in the `Args` array.
 
@@ -500,7 +500,7 @@ If the editable section is associated with an `OnEnter` trigger, the trigger wil
 invoked.
 
 -INPUT-
-cpp(strview) Name: The name of the edit cell that will be activated.  If empty, the current edit cell is deactivated.
+strview Name: The name of the edit cell that will be activated.  If empty, the current edit cell is deactivated.
 int Flags: Optional flags.
 
 -ERRORS-
@@ -549,7 +549,7 @@ FeedParser: Private. Inserts content into a document during the parsing stage.
 Private
 
 -INPUT-
-cpp(strview) String: Content to insert
+strview String: Content to insert
 
 -ERRORS-
 Okay
@@ -590,7 +590,7 @@ will be returned as byte indexes in the document stream.  The starting byte will
 the end byte will refer to an `SCODE::INDEX_END` code.
 
 -INPUT-
-cpp(strview) Name: The name of the index to search for.
+strview Name: The name of the index to search for.
 &int Start: The byte position of the index is returned in this parameter.
 &int End:   The byte position at which the index ends is returned in this parameter.
 
@@ -720,7 +720,7 @@ it is named.  Then make calls to HideIndex() and #ShowIndex() with the index nam
 The document layout is automatically updated and pushed to the display when this method is called.
 
 -INPUT-
-cpp(strview) Name: The name of the index.
+strview Name: The name of the index.
 
 -ERRORS-
 Okay
@@ -922,7 +922,7 @@ The document view will not be automatically redrawn by this method.  This must b
 to the document are complete.
 
 -INPUT-
-cpp(strview) XML: An XML string in RIPL format.
+strview XML: An XML string in RIPL format.
 int Index: The byte position at which to insert the new content.
 
 -ERRORS-
@@ -979,7 +979,7 @@ The document view will not be automatically redrawn by this method.  This must b
 to the document are complete.
 
 -INPUT-
-cpp(strview) Text: A UTF-8 text string.
+strview Text: A UTF-8 text string.
 int Index: Reference to a `TEXT` control code that will receive the content.  If `-1`, the text will be inserted at the end of the document stream.
 int Char: A character offset within the `TEXT` control code that will be injected with content.  If `-1`, the text will be injected at the end of the target string.
 int Preformat: If `true`, the text will be treated as pre-formatted (all whitespace, including consecutive whitespace will be recognised).
@@ -1949,7 +1949,7 @@ selectable links due to the nature of their functionality.
 
 -INPUT-
 int Index: Index to a link (links are in the order in which they are created in the document, zero being the first link).  Ignored if the `Name` parameter is set.
-cpp(strview) Name: The name of the link to select.  Leave empty if an `Index` is defined.
+strview Name: The name of the link to select.  Leave empty if an `Index` is defined.
 
 -ERRORS-
 Okay
@@ -2027,7 +2027,7 @@ it is named.  Then make calls to #HideIndex() and ShowIndex() with the index nam
 The document layout is automatically updated and pushed to the display when this method is called.
 
 -INPUT-
-cpp(strview) Name: The name of the index.
+strview Name: The name of the index.
 
 -ERRORS-
 Okay

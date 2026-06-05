@@ -3,16 +3,16 @@
 namespace xml {
 extern ERR XValueToNumber(struct XPathValue * Value, double * Result);
 extern ERR XValueToString(const struct XPathValue * Value, std::string * Result);
-extern ERR XValueNodes(struct XPathValue * Value, kt::vector<struct XTag *> * Result);
+extern ERR XValueNodes(struct XPathValue * Value, kt::vector<XTag *> * Result);
 
 } // namespace
 #ifndef FDEF
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsXValueNodes[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_ARRAY|FD_PTR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
-FDEF argsXValueToNumber[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_DOUBLE|FD_RESULT }, { 0, 0 } };
-FDEF argsXValueToString[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
+FDEF argsXValueNodes[] = { { "Error", FD_INT|FD_ERROR }, { "XPathValue:Value", FD_PTR|FD_STRUCT }, { "XTag:Result", FD_RESULT|FD_CPP|FD_ARRAY|FD_MUTABLE|FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsXValueToNumber[] = { { "Error", FD_INT|FD_ERROR }, { "XPathValue:Value", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
+FDEF argsXValueToString[] = { { "Error", FD_INT|FD_ERROR }, { "XPathValue:Value", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)xml::XValueToNumber, "XValueToNumber", argsXValueToNumber },

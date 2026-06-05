@@ -396,7 +396,7 @@ program's control until ~RestoreCursor() is called.
 oid Surface: Refers to the surface object that the pointer should anchor itself to, if the `RESTRICT` flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.
 int(CRF) Flags:  Optional flags that affect the cursor.
 int(PTC) Cursor: The ID of the cursor image that is to be set.
-cpp(strview) Name: The name of the cursor image that is to be set (if `Cursor` is zero).
+strview Name: The name of the cursor image that is to be set (if `Cursor` is zero).
 oid Owner: The object nominated as the owner of the anchor, and/or owner of the cursor image setting.
 
 -ERRORS-
@@ -704,7 +704,7 @@ resulting data is then passed to the requesting object with a DragDropResult on 
 -INPUT-
 oid Source:  Refers to an object that is managing the source data.
 int Item:    A custom number that represents the item being dragged from the source.
-cpp(strview) Datatypes: A character array that lists the datatypes supported by the source item, in order of conversion preference.
+strview Datatypes: A character array that lists the datatypes supported by the source item, in order of conversion preference.
 oid Surface: A 32-bit composite surface that represents the item being dragged.
 
 -ERRORS-

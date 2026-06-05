@@ -36,12 +36,12 @@
   <function>
     <name>XValueNodes</name>
     <comment>For node-set XPathValue objects, returns the node-set as an array.</comment>
-    <prototype>ERR xml::XValueNodes(struct XPathValue * Value, kt::vector&lt;struct XTag *&gt; * Result)</prototype>
+    <prototype>ERR xml::XValueNodes(struct XPathValue * Value, kt::vector&lt;XTag *&gt; * Result)</prototype>
     <tiriPrototype>err, Result:array = XValueNodes(Value:any)</tiriPrototype>
     <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct XPathValue *" name="Value">The XPathValue to convert.</param>
-      <param type="kt::vector&lt;struct XTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XTag</st> structures.</param>
+      <param type="kt::vector&lt;XTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XTag</st> structures.</param>
     </input>
     <description>
 <p>If an XPathValue represents a node-set (type <code>XPVT::NODE_SET</code>) then XValueToNodes() will return a direct pointer to the node-set array.</p>
@@ -78,12 +78,12 @@
   <function>
     <name>XValueToString</name>
     <comment>Converts an XPathValue to its string representation.</comment>
-    <prototype>ERR xml::XValueToString(const struct XPathValue * Value, std::string * Result)</prototype>
+    <prototype>ERR xml::XValueToString(const struct XPathValue * Value, STRING * Result)</prototype>
     <tiriPrototype>err, Result:str = XValueToString(Value:any)</tiriPrototype>
     <tags>mutates-input, pure-query</tags>
     <input>
       <param type="const struct XPathValue *" name="Value">The XPathValue to convert.</param>
-      <param type="std::string *" name="Result">Receives the string representation of the value.</param>
+      <param type="STRING *" name="Result">Receives the string representation of the value.</param>
     </input>
     <description>
 <p>Call XValueToString() to convert an XPathValue object into its string representation.</p>
@@ -160,14 +160,14 @@
   </types>
   <structs>
     <struct name="XMLAttrib" typeName="XMLATTRIB">
-      <field name="Name" type="std::string">Name of the attribute</field>
-      <field name="Value" type="std::string">Value of the attribute</field>
+      <field name="Name" type="STRING">Name of the attribute</field>
+      <field name="Value" type="STRING">Value of the attribute</field>
     </struct>
 
     <struct name="XPathValue" typeName="XPATHVALUE">
       <field name="Type" type="XPVT" lookup="XPVT">Identifies the type of value stored</field>
       <field name="NumberValue" type="DOUBLE">Defined if the type is Number or Boolean</field>
-      <field name="StringValue" type="std::string">Defined if the type is String</field>
+      <field name="StringValue" type="STRING">Defined if the type is String</field>
     </struct>
 
     <struct name="XTag" typeName="XTAG">

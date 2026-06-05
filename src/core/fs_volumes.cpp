@@ -15,7 +15,7 @@ This function deletes volume names from the system.  Once a volume is deleted, a
 in errors unless the volume is recreated.
 
 -INPUT-
-cpp(strview) Name: The name of the volume.
+strview Name: The name of the volume.
 
 -ERRORS-
 Okay: The volume was removed.
@@ -110,11 +110,11 @@ Flags that may be passed are as follows:
 <types lookup="VOLUME"/>
 
 -INPUT-
-cpp(strview) Name: Required.  The name of the volume.
-cpp(strview) Path: Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.
-cpp(strview) Icon: An icon can be associated with the volume so that it has graphical representation when viewed in the UI.  The required icon string format is `category/name`.
-cpp(strview) Label: An optional label or short comment may be applied to the volume.  This may be useful if the volume name has little meaning to the user (e.g. `drive1`, `drive2` ...).
-cpp(strview) Device: If the volume references the root of a device, specify a device name of `portable`, `fixed`, `cd`, `network` or `usb`.
+strview Name: Required.  The name of the volume.
+strview Path: Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.
+strview Icon: An icon can be associated with the volume so that it has graphical representation when viewed in the UI.  The required icon string format is `category/name`.
+strview Label: An optional label or short comment may be applied to the volume.  This may be useful if the volume name has little meaning to the user (e.g. `drive1`, `drive2` ...).
+strview Device: If the volume references the root of a device, specify a device name of `portable`, `fixed`, `cd`, `network` or `usb`.
 int(VOLUME) Flags: Optional flags.
 
 -ERRORS-
@@ -183,7 +183,7 @@ Status: private
 Private
 
 -INPUT-
-cpp(strview) Name: The name of the volume.
+strview Name: The name of the volume.
 tags Tags: Options to apply to the volume.
 
 -ERRORS-

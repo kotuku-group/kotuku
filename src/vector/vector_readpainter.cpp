@@ -609,7 +609,7 @@ target colour space.
 
 -INPUT-
 obj(VectorScene) Scene: Optional.  Required if `url()` references are to be resolved.
-cpp(strview) IRI: The IRI string to be translated.
+strview IRI: The IRI string to be translated.
 struct(*VectorPainter) Painter: This !VectorPainter structure will store the deserialised result.
 &cstr Result: Optional pointer for storing the end of the parsed IRI string.  `NULL` is returned if there is no further content to parse or an error occurred.
 

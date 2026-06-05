@@ -601,7 +601,7 @@ Word wrapping is not applied, even if #WrapEdge has been set on the Font object.
 
 -INPUT-
 obj(Font) Font: An initialised font object.
-cpp(strview) String: The string to be calculated.
+strview String: The string to be calculated.
 int Chars: The maximum number of characters to measure, or `-1` to measure the entire string.
 
 -RESULT-
@@ -673,8 +673,8 @@ registered style.
 The returned `Path` is allocated and must be released with `FreeResource()` when it is no longer required.
 
 -INPUT-
-cpp(strview) Name:  The name of a font face to search for (case insensitive).
-cpp(strview) Style: The preferred style, e.g. `Bold` or `Italic`.
+strview Name:  The name of a font face to search for (case insensitive).
+strview Style: The preferred style, e.g. `Bold` or `Italic`.
 &!cstr Path: The location of the best-matching font file is returned in this parameter.
 &int(FMETA) Meta: Optional, returns additional meta information about the font file.
 
@@ -854,7 +854,7 @@ it is available.
 The returned `Result` is borrowed storage.  Copy it immediately if it needs to survive a later font database refresh.
 
 -INPUT-
-cpp(strview) String: A CSV family string to resolve.
+strview String: A CSV family string to resolve.
 &cstr Result: The resolved family name is returned in this parameter.
 
 -ERRORS-

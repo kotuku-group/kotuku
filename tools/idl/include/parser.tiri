@@ -323,7 +323,7 @@ global function parseMethod(Class:table, Extract:str)
       for content in values(input:split('\n')) do
          local param = parseParameterString(content)
          if param then
-            cType(param, name)
+            cType(param, f'Method:{name}')
             table.insert(method.params, param)
          elseif content:trim()?? then
             error("Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'")
@@ -538,7 +538,7 @@ global function parseFunction(Extract:str)
    assert(description??, "Failed to extract a description from -FUNCTION- definition of '" .. name .. "'")
 
    if glFeedback is "verbose" then
-      print("Processing function " .. name .. "()")
+      print(f"Processing function {name}()")
    end
 
    local def = {
@@ -550,7 +550,7 @@ global function parseFunction(Extract:str)
    local errors = rx_errors_section.extract(Extract)
    if errors?? then
       local error_list = glCoreConstants['ERR']
-      def.result = cType({ type="error", values={ }, isFunction=true }, "Function " .. name)
+      def.result = cType({ type="error", values={ }, isFunction=true }, f'Function:{name}')
 
       for line in values(errors:split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
@@ -559,7 +559,7 @@ global function parseFunction(Extract:str)
          if ecode then
             local code_value = error_list[ecode]
             if not code_value then
-               print('Error code "' .. ecode .. '" referenced in function ' .. name .. '() is invalid.')
+               print(f'Error code "{ecode}" referenced in function {name}() is invalid.')
             else
                table.insert(def.result.values, { code = code_value, codeName = ecode, msg = emsg })
             end
@@ -568,7 +568,7 @@ global function parseFunction(Extract:str)
             if ecode then
                local code_value = error_list[ecode]
                if not code_value then
-                  print('Error code "' .. ecode .. '" referenced in function ' .. name .. '() is invalid.')
+                  print(f'Error code "{ecode}" referenced in function {name}() is invalid.')
                else
                   table.insert(def.result.values, { code = code_value, codeName = ecode, msg = mSys.GetErrorMsg(code_value) })
                end
@@ -581,8 +581,8 @@ global function parseFunction(Extract:str)
       local result = rx_result_section.extract(Extract)
       if result?? then
          local ext_type, res_comment = rx_result_type.extract(result)
-         assert(ext_type, "Incorrectly defined result section in function '" .. name .. "'")
-         def.result = cType({ type=ext_type, comment=res_comment:trim(), isFunction=true, isResponse=true }, "Function " .. name)
+         assert(ext_type, f"Incorrectly defined result section in function '{name}'")
+         def.result = cType({ type=ext_type, comment=res_comment:trim(), isFunction=true, isReturn=true }, f'Function:{name}')
       end
    end
 

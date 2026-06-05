@@ -66,6 +66,7 @@ rx_colon_comment   = <{ regex.new([[^.+:\s*(.+)$]]) }>
 rx_colon_content   = <{ regex.new([[^(.+):\s*.+$]]) }>
 rx_type_name       = <{ regex.new([[^\s*(.+)\s+(\S+)\s*$]]) }>
 rx_field_extract   = <{ regex.new([[^(.+?)[:#]\s*(.+)$]]) }> -- "type FieldName # Comment", also accepts ":"
+rx_string_type     = <{ regex.new([[^(str|cstr|string|strview)$]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- TDL function
@@ -258,6 +259,7 @@ global glTypes = {
    cid     = 'ul',
    obj     = 'o',
    str     = 's',
+   string  = 'zs',
    cstr    = 's',
    func    = 'r',
    float   = 'f',

@@ -15,10 +15,10 @@ module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestam
 
   klass("SVG", { src="class_svg.cpp", output="class_svg_def.c" }, [[
     obj Target         # Refers to the target of the generated SVG scene.
-    cpp(str) Path      # A path referring to an SVG file.
-    cpp(str) Title     # Automatically defined if the title element is used in the SVG source document.
-    cpp(str) Statement # A string containing SVG data.
-    cpp(str) Colour    # Defines the default fill to use for `currentColor` references.
+    string Path        # A path referring to an SVG file.
+    string Title       # Automatically defined if the title element is used in the SVG source document.
+    string Statement   # A string containing SVG data.
+    string Colour      # Defines the default fill to use for `currentColor` references.
     int Frame          # Draw the SVG only when this frame number is a match to the target surface frame number.
     int(SVF) Flags     # Optional flags.
     int FrameRate      # Maximum frame rate to use for animation.

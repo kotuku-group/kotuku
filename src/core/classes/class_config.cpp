@@ -231,8 +231,8 @@ DeleteKey: Deletes single key entries.
 This method deletes a single key from the Config object.
 
 -INPUT-
-cpp(strview) Group: The name of the targeted group.
-cpp(strview) Key: The name of the targeted key.
+strview Group: The name of the targeted group.
+strview Key: The name of the targeted key.
 
 -ERRORS-
 Okay
@@ -272,7 +272,7 @@ DeleteGroup: Deletes entire groups of configuration data.
 This method will delete an entire group of key-values from a config object if a matching group name is provided.
 
 -INPUT-
-cpp(strview) Group: The name of the group that will be deleted.
+strview Group: The name of the group that will be deleted.
 
 -ERRORS-
 Okay: The group was deleted or does not exist.
@@ -341,7 +341,7 @@ Use GetGroupFromIndex() to convert a group index number to its matching name.
 
 -INPUT-
 int Index: The group index that you want to identify.
-&cstr Group: Points to the group string that matches the index number.
+&strview Group: Refers to the group string that matches the index number.
 
 -ERRORS-
 Okay
@@ -361,7 +361,7 @@ static ERR CONFIG_GetGroupFromIndex(extConfig *Self, struct cfg::GetGroupFromInd
    if ((not Args) or (Args->Index < 0)) return log.warning(ERR::Args);
 
    if ((Args->Index >= 0) and (Args->Index < (int)Self->Groups.size())) {
-      Args->Group = Self->Groups[Args->Index].first.c_str();
+      Args->Group = std::string_view(Self->Groups[Args->Index].first);
       return ERR::Okay;
    }
    else return log.warning(ERR::OutOfRange);
@@ -430,7 +430,7 @@ The path to the configuration file is all that is required.  Existing data in th
 source in cases where there matching set of group keys.
 
 -INPUT-
-cpp(strview) Path: The location of the configuration file that you want to merge.
+strview Path: The location of the configuration file that you want to merge.
 
 -ERRORS-
 Okay
@@ -483,8 +483,8 @@ If the `Key` parameter is empty then the first key in the requested group is ret
 then the first known key value will be returned.
 
 -INPUT-
-cpp(strview) Group: The name of a group to examine for a key.  If empty, all groups are scanned.
-cpp(strview) Key: The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.
+strview Group: The name of a group to examine for a key.  If empty, all groups are scanned.
+strview Key: The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.
 &cstr Data: The key value will be stored in this parameter on returning.
 
 -ERRORS-
@@ -597,9 +597,9 @@ config object.  The error code `ERR::Search` is returned if this is the case.  P
 information on the behaviour of this function.
 
 -INPUT-
-cpp(strview) Group: The name of the group.  Wildcards are supported.
-cpp(strview) Key:  The name of the key.
-cpp(strview) Data: The data that will be added to the given group/key.
+strview Group: The name of the group.  Wildcards are supported.
+strview Key:  The name of the key.
+strview Data: The data that will be added to the given group/key.
 
 -ERRORS-
 Okay
@@ -636,7 +636,7 @@ The SortByKey() method sorts the groups of a config object by key values (the na
 every group).
 
 -INPUT-
-cpp(strview) Key: The name of the key to sort on.
+strview Key: The name of the key to sort on.
 int Descending: Set to true if a descending sort is required.
 
 -ERRORS-
@@ -685,9 +685,9 @@ value are required.  If the `Group` and `Key` arguments match an existing entry 
 that entry will be replaced with the new Data value.
 
 -INPUT-
-cpp(strview) Group: The name of the group.
-cpp(strview) Key:   The name of the key.
-cpp(strview) Data:  The data that will be added to the given group/key.
+strview Group: The name of the group.
+strview Key:   The name of the key.
+strview Data:  The data that will be added to the given group/key.
 
 -ERRORS-
 Okay

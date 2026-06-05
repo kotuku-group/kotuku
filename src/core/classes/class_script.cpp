@@ -142,7 +142,7 @@ implementation.
 The resulting log information is returned as a string, which needs to be deallocated once no longer required.
 
 -INPUT-
-cpp(strview) Options: Options to pass to the underlying language.
+strview Options: Options to pass to the underlying language.
 &!cstr Result: Resulting log information.
 
 -ERRORS-
@@ -232,7 +232,7 @@ if the `Int` field is defined then an `FD_INT` `Type` must be used.  Supplementa
 documented in detail in the Kotuku Wiki.
 
 -INPUT-
-cpp(strview) Procedure: The name of the procedure to execute, or leave empty for the default entry point.
+strview Procedure: The name of the procedure to execute, or leave empty for the default entry point.
 cstruct(*ScriptArg) Args: Optional parameters to pass to the procedure.
 int TotalArgs: Total number of `Args` provided.
 
@@ -301,7 +301,7 @@ reference, call #DerefProcedure() once access to the procedure is no longer requ
 destroying the script will also dereference all procedures.
 
 -INPUT-
-cpp(strview) Procedure:   The name of the procedure.
+strview Procedure:   The name of the procedure.
 &large ProcedureID: The computed ID will be returned in this parameter.
 
 -ERRORS-

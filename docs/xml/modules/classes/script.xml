@@ -85,10 +85,10 @@
     <method>
       <name>DebugLog</name>
       <comment>Acquire a debug log from a compiled Script.</comment>
-      <prototype>ERR sc::DebugLog(OBJECTPTR Object, const std::string_view &amp; Options, CSTRING * Result)</prototype>
+      <prototype>ERR sc::DebugLog(OBJECTPTR Object, STRVIEW Options, CSTRING * Result)</prototype>
       <tiriPrototype>err, Result:str = DebugLog(Options:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Options">Options to pass to the underlying language.</param>
+        <param type="STRVIEW" name="Options">Options to pass to the underlying language.</param>
         <param type="CSTRING *" name="Result">Resulting log information.</param>
       </input>
       <description>
@@ -124,10 +124,10 @@
     <method>
       <name>Exec</name>
       <comment>Executes a procedure in the script.</comment>
-      <prototype>ERR sc::Exec(OBJECTPTR Object, const std::string_view &amp; Procedure, const struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <prototype>ERR sc::Exec(OBJECTPTR Object, STRVIEW Procedure, const struct ScriptArg * Args, INT TotalArgs)</prototype>
       <tiriPrototype>err = Exec(Procedure:str, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Procedure">The name of the procedure to execute, or leave empty for the default entry point.</param>
+        <param type="STRVIEW" name="Procedure">The name of the procedure to execute, or leave empty for the default entry point.</param>
         <param type="const struct ScriptArg *" name="Args">Optional parameters to pass to the procedure.</param>
         <param type="INT" name="TotalArgs">Total number of <code>Args</code> provided.</param>
       </input>
@@ -168,10 +168,10 @@ struct ScriptArg {
     <method>
       <name>GetProcedureID</name>
       <comment>Converts a procedure name to an ID.</comment>
-      <prototype>ERR sc::GetProcedureID(OBJECTPTR Object, const std::string_view &amp; Procedure, INT64 * ProcedureID)</prototype>
+      <prototype>ERR sc::GetProcedureID(OBJECTPTR Object, STRVIEW Procedure, INT64 * ProcedureID)</prototype>
       <tiriPrototype>err, ProcedureID:num = GetProcedureID(Procedure:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Procedure">The name of the procedure.</param>
+        <param type="STRVIEW" name="Procedure">The name of the procedure.</param>
         <param type="INT64 *" name="ProcedureID">The computed ID will be returned in this parameter.</param>
       </input>
       <description>
@@ -227,7 +227,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <name>ErrorMessage</name>
       <comment>A human readable error string may be declared here following a script execution failure.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
     </field>
 
     <field>
@@ -254,7 +254,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <name>Path</name>
       <comment>The location of a script file to be loaded.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>A script file can be loaded by setting the Path to its location.  The path must be defined prior to the initialisation process, or alternatively the client can define the <fl>Statement</fl> field.</p>
 <p>Optional parameters can also be passed to the script via the Path string.  The name of a function is passed first, surrounded by semicolons.  Arguments can be passed to the function by appending them as a CSV list.  The following string illustrates the format used: <code>dir:location;procedure;arg1=val1,arg2,arg3=val2</code></p>
@@ -266,7 +266,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <name>Procedure</name>
       <comment>Specifies a procedure name to be executed.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>Sometimes scripts are split into several procedures or functions that can be executed independently from the 'main' area of the script.  If a loaded script contains procedures, the client can set the Procedure field to execute a specific routine whenever the script is activated with the <action>Activate</action> action.</p>
 <p>If this field is not set, the first procedure in the script, or the 'main' procedure (as defined by the script type) is executed by default.</p>

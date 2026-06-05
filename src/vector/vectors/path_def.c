@@ -3,7 +3,7 @@
 FDEF maAddCommand[] = { { "PathCommand:Commands", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 FDEF maRemoveCommand[] = { { "Index", FD_INT }, { "Total", FD_INT }, { 0, 0 } };
 FDEF maSetCommand[] = { { "Index", FD_INT }, { "PathCommand:Command", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF maGetCommand[] = { { "Index", FD_INT }, { "PathCommand:Command", FD_PTR|FD_STRUCT|FD_RESULT }, { 0, 0 } };
+FDEF maGetCommand[] = { { "Index", FD_INT }, { "PathCommand:Command", FD_RESULT|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF maSetCommandList[] = { { "Commands", FD_BUFFER|FD_PTR }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 
 static const struct MethodEntry clVectorPathMethods[] = {

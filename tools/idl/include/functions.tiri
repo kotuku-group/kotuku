@@ -952,31 +952,37 @@ global function klass(Name, Options:table, Spec, Private, Custom)
       end
    end
 
-   -- Export method definitions for a class
+   -- Return the type to use for a given action/method parameter in its struct
 
-   function actionMethodStorageType(Param:table):str
+   function actionStorageType(Param:table):str
       local param_type = Param.basicType
-      local reference = false
 
-      if param_type:endsWith('&') then
-         param_type = param_type:sub(0, -2):trim()
-         reference = true
-      end
-
-      if reference and param_type:startsWith('const ') then
-         param_type = param_type:sub(6):trim()
-      end
-
-      if Param.resultValue and Param.mutable then
-         param_type ..= ' *'
+      if Param.isComplex then
+         -- std::string is not embeddable, convert to `std::string *`
+         param_type = param_type .. ' *'
       end
 
       return param_type
    end
 
-   function actionMethodParameterType(Param:table):str
-      if Param.resultValue and Param.mutable then
-         return Param.basicType .. ' &'
+   -- Return the type to use for a given action parameter in its inline helper call
+
+   function actionParamType(Param:table):str
+      if Param.type is 'FUNCTION *' then
+         return 'FUNCTION '
+      elseif Param.type is 'std::string_view' then
+         Param.byRef = true
+         return 'const std::string_view &'
+      elseif Param.resultValue and (not Param.mutable) and Param.basicType is 'std::string' then
+         Param.byRef = true
+         return Param.type .. ' &'
+      elseif Param.resultValue and Param.mutable then
+         if Param.type:endsWith('*') then
+            Param.byRef = true
+            return Param.type:sub(0,-2) .. '&'
+         else
+            return Param.type .. ' '
+         end
       else
          return Param.type .. ' '
       end
@@ -1030,31 +1036,38 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          params = ''
          if method.params then
             for param in values(method.params) do
-               local storage_type = actionMethodStorageType(param)
-               if param.resultValue and param.mutable then
-                  struct_params ..= storage_type .. pName(param) .. '; '
-               else
-                  struct_params ..= storage_type .. ' ' .. pName(param) .. '; '
+               local storage_type = actionStorageType(param)
+               struct_params ..= storage_type
+               if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
+                  struct_params ..= ' '
                end
+               struct_params ..= pName(param) .. '; '
 
                if params?? then params ..= ', ' end
 
                if param.type is 'FUNCTION *' then
                   params ..= 'FUNCTION ' .. pName(param)
                   if v?? then v ..= ', ' end
-                  v ..= '&' .. pName(param)
+                  v ..= f'&{pName(param)}'
                else
-                  params ..= actionMethodParameterType(param) .. pName(param)
-                  if v?? then v ..= ', ' end
+                  params ..= actionParamType(param) .. pName(param)
 
-                  if param.resultValue and param.mutable then
-                     v ..= '&' .. pName(param)
-                     results = true
-                  elseif param.resultValue then
-                     v ..= '(' .. actionMethodStorageType(param) .. ')0'
+                  if param.resultValue and param.basicType is 'std::string_view' then
+                     -- Do not embed a default value for string views
                      results = true
                   else
-                     v ..= pName(param)
+                     if v?? then v ..= ', ' end
+
+                     if param.resultValue and param.mutable then
+                        -- Client must provide an empty collection, e.g. std::string or kt::vector
+                        v ..= f'&{pName(param)}'
+                        results = true
+                     elseif param.resultValue then
+                        v ..= f'({actionStorageType(param)})0'
+                        results = true
+                     else
+                        v ..= pName(param)
+                     end
                   end
                end
             end
@@ -1078,12 +1091,16 @@ global function klass(Name, Options:table, Spec, Private, Custom)
             args = '&args'
          end
 
-         if (results) then
+         if results then
             inline ..= f'      ERR error = Action(AC(-{method.id}), this, {args});\n'
             for p in values(method.params) do
                if p.resultValue then
                   if not p.mutable then
-                     inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                     if p.byRef then
+                        inline ..= f'      if ({p.name}) {p.name} = args.{p.name};\n'
+                     else
+                        inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                     end
                   end
                end
             end

@@ -66,11 +66,11 @@
     <method>
       <name>AddFile</name>
       <comment>Adds a file reference to the clipboard.</comment>
-      <prototype>ERR clip::AddFile(OBJECTPTR Object, CLIPTYPE Datatype, const std::string_view &amp; Path, CEF Flags)</prototype>
+      <prototype>ERR clip::AddFile(OBJECTPTR Object, CLIPTYPE Datatype, STRVIEW Path, CEF Flags)</prototype>
       <tiriPrototype>err = AddFile(Datatype:num, Path:str, Flags:num)</tiriPrototype>
       <input>
         <param type="CLIPTYPE" name="Datatype" lookup="CLIPTYPE">Identifies the type of data represented by the file.</param>
-        <param type="const std::string_view &amp;" name="Path">Path of the file to add.</param>
+        <param type="STRVIEW" name="Path">Path of the file to add.</param>
         <param type="CEF" name="Flags" lookup="CEF">Optional flags.</param>
       </input>
       <description>
@@ -118,10 +118,10 @@
     <method>
       <name>AddText</name>
       <comment>Adds a block of text to the clipboard.</comment>
-      <prototype>ERR clip::AddText(OBJECTPTR Object, const std::string_view &amp; String)</prototype>
+      <prototype>ERR clip::AddText(OBJECTPTR Object, STRVIEW String)</prototype>
       <tiriPrototype>err = AddText(String:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="String">UTF-8 text to add to the clipboard.</param>
+        <param type="STRVIEW" name="String">UTF-8 text to add to the clipboard.</param>
       </input>
       <description>
 <p>Use AddText() to place plain UTF-8 text on the clipboard.  Empty strings are ignored and return <code>ERR::Okay</code>.</p>
@@ -144,7 +144,7 @@
         <param type="CLIPTYPE" name="Filter" lookup="CLIPTYPE">Datatype filter.  Set to zero to accept any datatype.</param>
         <param type="INT" name="Index">History index to read when Filter is zero.  Zero is the most recent clip group.</param>
         <param type="CLIPTYPE *" name="Datatype" lookup="CLIPTYPE">Datatype of the returned clip group.</param>
-        <param type="kt::vector&lt;std::string&gt; *" name="Files">An empty <code>kt::vector&lt;std::string&gt;</code> array is required to receive the file list.</param>
+        <param type="kt::vector&lt;std::string&gt; *" name="Files">An empty string array is required to receive the file list.</param>
         <param type="CEF *" name="Flags" lookup="CEF">Result flags.  If the delete flag is set, delete the files after use to complete a cut operation.</param>
       </input>
       <description>

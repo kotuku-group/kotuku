@@ -73,7 +73,7 @@ static ERR MODExpunge(void)
    return ERR::Okay;
 }
 
-static void MODTest(const std::string_view &Options, int *Passed, int *Total)
+static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef ENABLE_UNIT_TESTS
    run_unit_tests(Options, *Passed, *Total);

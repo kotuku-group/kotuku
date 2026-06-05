@@ -651,10 +651,10 @@ class FloatRect {
   ]])
 
   struct('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
-     cpp(str) Name        # Program name
-     cpp(str) SystemPath  # Path to system files
-     cpp(str) ModulePath  # Path to module files
-     cpp(str) RootPath    # Kotuku root directory
+     string Name          # Program name
+     string SystemPath    # Path to system files
+     string ModulePath    # Path to module files
+     string RootPath      # Kotuku root directory
      cstr *Args           # Command-line arguments
      cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list.
      int(OPF) Flags       # Client flags indicating the values that have been defined in this structure.
@@ -688,7 +688,7 @@ using ModClose   = void (*)(OBJECTPTR);
 using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
 using ModOpen    = ERR (*)(OBJECTPTR);
 using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(const std::string_view &, int *, int *);
+using ModTest    = void (*)(std::string_view, int *, int *);
 
   ]])
 
@@ -699,7 +699,7 @@ using ModTest    = void (*)(const std::string_view &, int *, int *);
     fptr(void obj) Close           # A function that will be called each time the module is closed.
     fptr(error obj) Open           # A function that will be called each time the module is opened.
     fptr(error) Expunge            # Reference to an expunge function to terminate the module.
-    fptr(void cpp(strview) &int &int) Test # A function that can run embedded unit tests in development builds.
+    fptr(void strview &int &int) Test # A function that can run embedded unit tests in development builds.
     cstr Name                      # Name of the module
     cstr Namespace                 # A reserved system-wide namespace for function names.
   ]],
@@ -745,28 +745,28 @@ using ModTest    = void (*)(const std::string_view &, int *, int *);
   ]])
 
   struct("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
-     large Instant          # Unix epoch microseconds at which the transition occurs.
-     cpp(str) Abbreviation  # Short name where available, e.g. GMT, BST, PST.
-     int OffsetBefore       # UTC offset in seconds before the transition.
-     int OffsetAfter        # UTC offset in seconds after the transition.
-     int DaylightSaving     # 1 if the resulting period observes daylight-saving time.
+     large Instant        # Unix epoch microseconds at which the transition occurs.
+     string Abbreviation  # Short name where available, e.g. GMT, BST, PST.
+     int OffsetBefore     # UTC offset in seconds before the transition.
+     int OffsetAfter      # UTC offset in seconds after the transition.
+     int DaylightSaving   # 1 if the resulting period observes daylight-saving time.
   ]],
   [[
    TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
   ]])
 
   struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
-     cpp(str) ZoneID        # Preferred public ID, e.g. Europe/London or UTC.
-     cpp(str) NativeID      # Host-native ID, e.g. GMT Standard Time on Windows.
-     cpp(str) Source        # "tzif", "win32", or "utc".
-     cpp(str) DataPath      # TZif path on Linux, otherwise empty.
-     cpp(str) Version       # TZDB/source version if available, otherwise empty.
+     string ZoneID      # Preferred public ID, e.g. Europe/London or UTC.
+     string NativeID    # Host-native ID, e.g. GMT Standard Time on Windows.
+     string Source      # "tzif", "win32", or "utc".
+     string DataPath    # TZif path on Linux, otherwise empty.
+     string Version     # TZDB/source version if available, otherwise empty.
      cpp(array(struct(TimeZoneTransition))) Transitions # Transitions available for the requested range.
-     int BaseOffset         # Standard UTC offset in seconds.
-     short StartYear        # Inclusive requested start year.
-     short EndYear          # Inclusive requested end year.
-     char IsLocal           # 1 if ZoneID requested the local system zone.
-     char IsFallback        # 1 if UTC fallback was used.
+     int BaseOffset     # Standard UTC offset in seconds.
+     short StartYear    # Inclusive requested start year.
+     short EndYear      # Inclusive requested end year.
+     char IsLocal       # 1 if ZoneID requested the local system zone.
+     char IsFallback    # 1 if UTC fallback was used.
   ]],
   [[
    TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
@@ -921,7 +921,7 @@ using ModTest    = void (*)(const std::string_view &, int *, int *);
     large Size                 # The size of the file's content.
     large Timestamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
     struct(*FileInfo) Next     # Next structure in the list, or `NULL`.
-    cpp(str) Name              # The name of the file.
+    string Name                # The name of the file.
     int(RDF) Flags             # Additional flags to describe the file.
     int(PERMIT) Permissions    # Standard permission flags.
     int UserID                 # User  ID (Unix systems only).
@@ -1005,15 +1005,15 @@ using ModTest    = void (*)(const std::string_view &, int *, int *);
   ]]) -- [32/52]
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
-    cid ClassID          # Unique class identifier (hash of Name)
-    cid ParentID         # Parent class ID if this is a derived class
-    int(CCF) Category    # Assigned category
-    cpp(str) Name        # Name of the class
-    cpp(str) Path        # Path to the class file
-    cpp(str) Extension   # Wildcards for matching by file extension, e.g. `jpeg|jpg`
-    cpp(str) Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
-    cpp(str) Icon        # Icon reference in `group/name` format
-    cpp(str) Description # File description
+    cid ClassID        # Unique class identifier (hash of Name)
+    cid ParentID       # Parent class ID if this is a derived class
+    int(CCF) Category  # Assigned category
+    string Name        # Name of the class
+    string Path        # Path to the class file
+    string Extension   # Wildcards for matching by file extension, e.g. `jpeg|jpg`
+    string Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
+    string Icon        # Icon reference in `group/name` format
+    string Description # File description
   ]])
 
   c_insert([[
@@ -1291,12 +1291,12 @@ typedef std::vector<obj_write> WRITE_TABLE;
     double ClassVersion    # Version of the class
     cstruct(*FieldArray) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
-    cpp(str) ClassName         # Name of the class
-    cpp(str) FileExtension     # File extension(s) supported by this class
-    cpp(str) FileDescription   # File description
-    cpp(str) FileHeader        # Internal file header for identifying the file
-    cpp(str) Path              # Module path to the class
-    cpp(str) Icon              # An icon that can be used to represent class data
+    string ClassName       # Name of the class
+    string FileExtension   # File extension(s) supported by this class
+    string FileDescription # File description
+    string FileHeader      # Internal file header for identifying the file
+    string Path            # Module path to the class
+    string Icon            # An icon that can be used to represent class data
     int Size               # Byte-size of the class when produced as an object
     int(CLF) Flags         # Special flags
     cid ClassID            # ID of this class
@@ -1364,10 +1364,10 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   })
 
   klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c" }, [[
-    cpp(str) Path          # The location pointer
-    cpp(str) KeyFilter     # Enables key filtering, removing any unwanted keys on load.
-    cpp(str) GroupFilter   # Enables group filtering, removing any unwanted groups on load.
-    int(CNF) Flags         # Optional flags
+    string Path          # The location pointer
+    string KeyFilter     # Enables key filtering, removing any unwanted keys on load.
+    string GroupFilter   # Enables group filtering, removing any unwanted groups on load.
+    int(CNF) Flags       # Optional flags
   ]],
   nil,
   [[
@@ -1435,14 +1435,14 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   })
 
   klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
-    cpp(str) Path         # Location of the script
-    cpp(str) Procedure    # Specifies a procedure name to be executed
-    cpp(str) ErrorMessage # Human readable error string defined on failure
-    oid Target            # The object that script objects must be initialised to, e.g. for obj.new()
-    int(SCF) Flags        # Optional flags
-    error Error           # If an error occurred, this field will indicate the error number
-    int CurrentLine       # Current line being executed, or failed line if script execution terminated
-    int LineOffset        # An optional offset to use when reporting line numbers
+    string Path         # Location of the script
+    string Procedure    # Specifies a procedure name to be executed
+    string ErrorMessage # Human readable error string defined on failure
+    oid Target          # The object that script objects must be initialised to, e.g. for obj.new()
+    int(SCF) Flags      # Optional flags
+    error Error         # If an error occurred, this field will indicate the error number
+    int CurrentLine     # Current line being executed, or failed line if script execution terminated
+    int LineOffset      # An optional offset to use when reporting line numbers
   ]],
   [[
    int64_t  ProcedureID;          // For callbacks
@@ -1498,11 +1498,11 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
   })
 
   klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
-    cpp(str) LaunchPath
-    cpp(str) Name
-    cpp(str) Location
-    cpp(str) Path
-    cpp(str) ProcessPath
+    string LaunchPath
+    string Name
+    string Location
+    string Path
+    string ProcessPath
     double TimeOut
     int(TSF) Flags
     int ReturnCode

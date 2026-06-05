@@ -6,8 +6,8 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
   loadFile('./constants.tdl')
 
   struct("XMLAttrib", { type="XMLAttrib" }, [[
-   cpp(str) Name   # Name of the attribute
-   cpp(str) Value  # Value of the attribute
+   string Name   # Name of the attribute
+   string Value  # Value of the attribute
   ]],
   [[
    inline bool isContent() const { return Name.empty(); }
@@ -107,11 +107,11 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
   })
 
   klass("XML", { src="xml_class.cpp", output="xml_class_def.c" }, [[
-    cpp(str) Path     # Location of the XML data file
-    cpp(str) DocType  # Root element name from DOCTYPE declaration
-    cpp(str) PublicID # Public identifier for external DTD
-    cpp(str) SystemID # System identifier for external DTD
-    cpp(str) ErrorMsg # The most recent error message from an activity
+    string Path       # Location of the XML data file
+    string DocType    # Root element name from DOCTYPE declaration
+    string PublicID   # Public identifier for external DTD
+    string SystemID   # System identifier for external DTD
+    string ErrorMsg   # The most recent error message from an activity
     obj Source        # Alternative data source to specifying a `Path`
     int(XMF) Flags    # Optional user flags
     int Modified      # Modification timestamp
@@ -153,7 +153,7 @@ struct XPathArrayStorage;]])
   struct("XPathValue", { type="XPathValue" }, [[
     int(XPVT) Type         # Identifies the type of value stored
     double    NumberValue  # Defined if the type is Number or Boolean
-    cpp(str)  StringValue  # Defined if the type is String
+    string  StringValue  # Defined if the type is String
   ]],
   [[
    kt::vector<XTag *> node_set; // Defined if the type is NodeSet

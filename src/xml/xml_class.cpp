@@ -179,8 +179,8 @@ step, returning the result as a string.  For more complex scenarios or repeated 
 Compile and Evaluate functions in the XPath module.
 
 -INPUT-
-cpp(strview) Statement: An XQuery expression to evaluate.
-^&cpp(str) Result: The evaluation result is returned here.
+strview Statement: An XQuery expression to evaluate.
+^&string Result: The evaluation result is returned here.
 
 -TAGS-
 mutates-object
@@ -245,7 +245,7 @@ then replaced by a new root-level structure containing that tag and its descenda
 unrelated branches are discarded.
 
 -INPUT-
-cpp(strview) XPath: XPath/XQuery expression that identifies the target tag to retain.
+strview XPath: XPath/XQuery expression that identifies the target tag to retain.
 
 -TAGS-
 mutates-object
@@ -328,7 +328,7 @@ Other callback errors are returned to the caller.
 Note: If an error occurs, check the #ErrorMsg field for a custom error message containing further details.
 
 -INPUT-
-cpp(strview) Expression: A valid XQuery expression.
+strview Expression: A valid XQuery expression.
 ptr(func) Callback: Optional pointer to a callback function for processing multiple matches.
 &int Result: UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.
 
@@ -435,8 +435,8 @@ attributes per element.  For elements with many attributes, caching frequently a
 
 -INPUT-
 int Index: The unique identifier of the XML tag to search.
-cpp(strview) Attrib: The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.
-^&cpp(str) Value: Receives the attribute value.  It is cleared if the specified attribute does not exist.
+strview Attrib: The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.
+^&string Value: Receives the attribute value.  It is cleared if the specified attribute does not exist.
 
 -TAGS-
 pure-query, case-insensitive
@@ -507,7 +507,7 @@ It is recommended that C++ programs bypass this method and access the !XMLAttrib
 
 -INPUT-
 int Index: The unique identifier of the XML element from which to extract content.
-^&cpp(str) Buffer: Receives the extracted content string.
+^&string Buffer: Receives the extracted content string.
 
 -TAGS-
 pure-query
@@ -553,8 +553,8 @@ This method returns the expanded value associated with a general entity parsed f
 Entity names are case-sensitive and must match exactly as declared.
 
 -INPUT-
-cpp(strview) Name: The name of the entity to retrieve.  This must correspond to a parsed entity declaration.
-^&cpp(str) Value: Receives the resolved entity value on success.
+strview Name: The name of the entity to retrieve.  This must correspond to a parsed entity declaration.
+^&string Value: Receives the resolved entity value on success.
 
 -TAGS-
 pure-query, case-sensitive
@@ -591,7 +591,7 @@ This method retrieves the original namespace URI string for a given namespace UI
 
 -INPUT-
 uint NamespaceID: The UID of the namespace.
-^&cpp(str) Result: Receives the namespace URI.
+^&string Result: Receives the namespace URI.
 
 -TAGS-
 pure-query
@@ -629,8 +629,8 @@ document type definition.  If both public and system identifiers were provided t
 returned as a single string separated by a single space.
 
 -INPUT-
-cpp(strview) Name: The notation name to look up.
-^&cpp(str) Value: Receives the notation descriptor on success.
+strview Name: The notation name to look up.
+^&string Value: Receives the notation descriptor on success.
 
 -TAGS-
 pure-query, case-sensitive
@@ -750,7 +750,7 @@ To modify existing content, call #SetAttrib() instead.
 -INPUT-
 int Index: The unique identifier of the target XML element that will serve as the reference point for insertion.
 int(XMI) Where: Specifies the insertion position relative to the target element.  Use `PREV` or `NEXT` for sibling insertion, or `CHILD` for child content insertion.
-cpp(strview) Content: The text content to insert.  Special XML characters will be automatically escaped.
+strview Content: The text content to insert.  Special XML characters will be automatically escaped.
 &int Result: Pointer to an integer that will receive the unique identifier of the newly created content node.
 
 -TAGS-
@@ -819,7 +819,7 @@ the end of the child list.  To insert behind or after the target, use `XMI::PREV
 -INPUT-
 int Index: The new data will target the tag specified here.
 int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` or `CHILD_END` for a child insert.
-cpp(strview) XML: An XML statement to parse.
+strview XML: An XML statement to parse.
 &int Result: The resulting tag index.
 
 -TAGS-
@@ -913,9 +913,9 @@ parameter.  The new tags can be inserted as a child of the target by using a `Wh
 `XMI::CHILD_END`.  To insert behind or after the target, use `XMI::PREV` or `XMI::NEXT`.
 
 -INPUT-
-cpp(strview) XPath: An XPath string that refers to the target insertion point.
+strview XPath: An XPath string that refers to the target insertion point.
 int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` for a child insert.
-cpp(strview) XML: XML statement to parse and insert.
+strview XML: XML statement to parse and insert.
 &int Result: The index of the new tag is returned here.
 
 -TAGS-
@@ -1110,7 +1110,7 @@ This method registers a namespace URI and returns a UID that can be used to iden
 efficiently throughout the XML document.
 
 -INPUT-
-cpp(strview) URI: The namespace URI to register. Must not be empty.
+strview URI: The namespace URI to register. Must not be empty.
 &uint Result: Pointer to an integer that will receive the UID for the namespace URI.
 
 -TAGS-
@@ -1221,7 +1221,7 @@ reported as `ERR::Okay`.
 This method is volatile and will destabilise any cached address pointers that have been acquired from the XML object.
 
 -INPUT-
-cpp(strview) XPath: An XML path string.
+strview XPath: An XML path string.
 int Limit: The maximum number of matching tags to delete.  A value of one or zero removes only the indicated tag and its children.  A value of -1 removes all matching tags.
 
 -TAGS-
@@ -1325,7 +1325,7 @@ within the specified tag's hierarchical scope.  The resolution process:
 This approach correctly handles nested namespace scopes and prefix redefinitions.
 
 -INPUT-
-cpp(strview) Prefix: The namespace prefix to resolve.  Use an empty string for the default namespace.
+strview Prefix: The namespace prefix to resolve.  Use an empty string for the default namespace.
 int TagID: The tag ID defining the starting scope for namespace resolution.
 &uint Result: Receives the resolved namespace URI hash.
 
@@ -1385,7 +1385,7 @@ The string will be copied into the caller-provided Result parameter.
 -INPUT-
 int Index: Index to a source tag for which serialisation will start.  Set to zero to serialise the entire tree.
 int(XMF) Flags: Use `INCLUDE_SIBLINGS` to include siblings of the tag found at Index.
-^&cpp(str) Result: The resulting string is returned in this parameter.
+^&string Result: The resulting string is returned in this parameter.
 
 -TAGS-
 pure-query
@@ -1461,8 +1461,8 @@ declaration.  However, if the tag represents content within its parent, then the
 -INPUT-
 int Index: Identifies the tag that is to be updated.
 int(XMS) Attrib: Attribute index to update, or `NEW`, `UPDATE`, `UPDATE_ONLY` or `REMOVE`.
-cpp(strview) Name: New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is `UPDATE`, `UPDATE_ONLY` or `REMOVE`, this name is used to find the attribute.
-cpp(strview) Value: String containing the new value for the attribute.
+strview Name: New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is `UPDATE`, `UPDATE_ONLY` or `REMOVE`, this name is used to find the attribute.
+strview Value: String containing the new value for the attribute.
 
 -TAGS-
 mutates-object, copies-input, case-insensitive
@@ -1708,8 +1708,8 @@ tag at the requested `XPath` level.  The optional `Attrib` value names the attri
 sort on content, do not define an `Attrib` value (use the format `Tag,Tag,...`).
 
 -INPUT-
-cpp(strview) XPath: Sort everything under the specified tag, or empty to sort the entire top level.
-cpp(strview) Sort: A sorting instruction string.
+strview XPath: Sort everything under the specified tag, or empty to sort the entire top level.
+strview Sort: A sorting instruction string.
 int(XSF) Flags: Optional flags.
 
 -TAGS-
@@ -2094,7 +2094,7 @@ This method parses an XML Schema document and attaches its schema context to the
 schema metadata is available for validation and XQuery evaluation routines that utilise schema-aware behaviour.
 
 -INPUT-
-cpp(strview) Path: File system path to the XML Schema (XSD) document.
+strview Path: File system path to the XML Schema (XSD) document.
 
 -TAGS-
 blocking, mutates-object, creates-resource

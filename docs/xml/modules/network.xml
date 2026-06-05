@@ -88,13 +88,13 @@
   <function>
     <name>SetSSL</name>
     <comment>Alters SSL settings on an initialised NetSocket client object.</comment>
-    <prototype>ERR net::SetSSL(objNetSocket * NetSocket, const std::string_view &amp; Command, const std::string_view &amp; Value)</prototype>
+    <prototype>ERR net::SetSSL(objNetSocket * NetSocket, STRVIEW Command, STRVIEW Value)</prototype>
     <tiriPrototype>err = SetSSL(NetSocket:obj, Command:str, Value:str)</tiriPrototype>
     <tags>mutates-object, blocking, case-sensitive</tags>
     <input>
       <param type="objNetSocket *" name="NetSocket">The target NetSocket object.</param>
-      <param type="const std::string_view &amp;" name="Command">Name of a command or option to set (case-sensitive, camel-case).</param>
-      <param type="const std::string_view &amp;" name="Value">Value to set for the command or option.</param>
+      <param type="STRVIEW" name="Command">Name of a command or option to set (case-sensitive, camel-case).</param>
+      <param type="STRVIEW" name="Value">Value to set for the command or option.</param>
     </input>
     <description>
 <p>Use the SetSSL() function to adjust the SSL capabilities of a NetSocket client object.  Server-side SSL is configured on <class name="NetServer">NetServer</class> before initialisation with the <code>SSL</code> flag and certificate fields.  The following commands are currently available:</p>
@@ -141,11 +141,11 @@ in SSL mode.</li>
   <function>
     <name>StrToAddress</name>
     <comment>Converts an IP Address in string form to an <st>IPAddress</st> structure.</comment>
-    <prototype>ERR net::StrToAddress(const std::string_view &amp; String, struct IPAddress * Address)</prototype>
+    <prototype>ERR net::StrToAddress(STRVIEW String, struct IPAddress * Address)</prototype>
     <tiriPrototype>err = StrToAddress(String:str, Address:any)</tiriPrototype>
     <tags>mutates-input</tags>
     <input>
-      <param type="const std::string_view &amp;" name="String">A null-terminated string containing the IP Address in dotted format.</param>
+      <param type="STRVIEW" name="String">A null-terminated string containing the IP Address in dotted format.</param>
       <param type="struct IPAddress *" name="Address">Must point to an <st>IPAddress</st> structure that will be filled in.</param>
     </input>
     <description>

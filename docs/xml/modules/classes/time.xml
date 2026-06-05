@@ -41,10 +41,10 @@
     <method>
       <name>GetTimeZoneInfo</name>
       <comment>Returns time-zone metadata and transition records.</comment>
-      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, const std::string_view &amp; ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo ** Info)</prototype>
+      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, STRVIEW ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo ** Info)</prototype>
       <tiriPrototype>err, Info:any = GetTimeZoneInfo(ZoneID:str, StartYear:num, EndYear:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="ZoneID">Zone identifier, or an empty string to request the local system zone.</param>
+        <param type="STRVIEW" name="ZoneID">Zone identifier, or an empty string to request the local system zone.</param>
         <param type="INT" name="StartYear">Inclusive first year.  Must be in the supported 1601-9999 range.</param>
         <param type="INT" name="EndYear">Inclusive final year.  Must be &gt;= StartYear, no later than 9999 and within 400 years of <code>StartYear</code>.</param>
         <param type="struct TimeZoneInfo **" name="Info">Receives the allocated metadata and transition resource.  Release with <function module="Core">FreeResource</function> when no longer required.</param>
@@ -167,11 +167,11 @@
   </fields>
   <structs>
     <struct name="TimeZoneInfo" comment="Time zone information returned from GetTimeZoneInfo()">
-      <field name="ZoneID" type="std::string">Preferred public ID, e.g. Europe/London or UTC.</field>
-      <field name="NativeID" type="std::string">Host-native ID, e.g. GMT Standard Time on Windows.</field>
-      <field name="Source" type="std::string">"tzif", "win32", or "utc".</field>
-      <field name="DataPath" type="std::string">TZif path on Linux, otherwise empty.</field>
-      <field name="Version" type="std::string">TZDB/source version if available, otherwise empty.</field>
+      <field name="ZoneID" type="STRING">Preferred public ID, e.g. Europe/London or UTC.</field>
+      <field name="NativeID" type="STRING">Host-native ID, e.g. GMT Standard Time on Windows.</field>
+      <field name="Source" type="STRING">"tzif", "win32", or "utc".</field>
+      <field name="DataPath" type="STRING">TZif path on Linux, otherwise empty.</field>
+      <field name="Version" type="STRING">TZDB/source version if available, otherwise empty.</field>
       <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>
       <field name="BaseOffset" type="INT">Standard UTC offset in seconds.</field>
       <field name="StartYear" type="INT16">Inclusive requested start year.</field>

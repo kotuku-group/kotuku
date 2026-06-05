@@ -108,10 +108,10 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <method>
       <name>Connect</name>
       <comment>Connects a NetSocket to an address.</comment>
-      <prototype>ERR ns::Connect(OBJECTPTR Object, const std::string_view &amp; Address, INT Port, DOUBLE Timeout)</prototype>
+      <prototype>ERR ns::Connect(OBJECTPTR Object, STRVIEW Address, INT Port, DOUBLE Timeout)</prototype>
       <tiriPrototype>err = Connect(Address:str, Port:num, Timeout:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Address">String containing either a domain name (e.g. <code>www.google.com</code>) or an IP address (e.g. <code>123.123.123.123</code>)</param>
+        <param type="STRVIEW" name="Address">String containing either a domain name (e.g. <code>www.google.com</code>) or an IP address (e.g. <code>123.123.123.123</code>)</param>
         <param type="INT" name="Port">Remote port to connect to.</param>
         <param type="DOUBLE" name="Timeout">Connection timeout in seconds (0 = no timeout).</param>
       </input>
@@ -154,10 +154,10 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <method>
       <name>JoinMulticastGroup</name>
       <comment>Join a multicast group for receiving multicast packets (UDP only).</comment>
-      <prototype>ERR ns::JoinMulticastGroup(OBJECTPTR Object, const std::string_view &amp; Group)</prototype>
+      <prototype>ERR ns::JoinMulticastGroup(OBJECTPTR Object, STRVIEW Group)</prototype>
       <tiriPrototype>err = JoinMulticastGroup(Group:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The multicast group address to join (e.g. <code>224.1.1.1</code>).</param>
+        <param type="STRVIEW" name="Group">The multicast group address to join (e.g. <code>224.1.1.1</code>).</param>
       </input>
       <description>
 <p>This method joins a multicast group, allowing the socket to receive packets sent to the specified multicast address. This is only available for UDP sockets.</p>
@@ -175,10 +175,10 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <method>
       <name>LeaveMulticastGroup</name>
       <comment>Leave a multicast group (UDP only).</comment>
-      <prototype>ERR ns::LeaveMulticastGroup(OBJECTPTR Object, const std::string_view &amp; Group)</prototype>
+      <prototype>ERR ns::LeaveMulticastGroup(OBJECTPTR Object, STRVIEW Group)</prototype>
       <tiriPrototype>err = LeaveMulticastGroup(Group:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The multicast group address to leave.</param>
+        <param type="STRVIEW" name="Group">The multicast group address to leave.</param>
       </input>
       <description>
 <p>This method leaves a previously joined multicast group, stopping the reception of packets sent to the specified multicast address.</p>
@@ -252,7 +252,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <name>Address</name>
       <comment>An IP address or domain name to connect to.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>For NetSocket clients, if this field is set with an IP address or domain name prior to initialisation, an attempt to connect to that location will be made when the object is initialised.  Post-initialisation this field cannot be set by the client, however calls to <method>Connect</method> will result in it being updated so that it always reflects the named address of the current connection.</p>
 <p>For <class name="NetServer">NetServer</class> listeners, this inherited field identifies the local address to bind before initialisation.  Use <code>localhost</code>, <code>*</code>, an IPv4 address or an IPv6 address.</p>

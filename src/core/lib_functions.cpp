@@ -682,7 +682,7 @@ To read a resource path, use the ~GetSystemState() function.
 
 -INPUT-
 int(RP) PathType: The ID of the resource path to set.
-cpp(strview) Path: The new location to set for the resource path.
+strview Path: The new location to set for the resource path.
 
 -ERRORS-
 Okay:

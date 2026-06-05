@@ -669,7 +669,7 @@ if (StrToAddress("127.0.0.1", &addr) IS ERR::Okay) {
 </pre>
 
 -INPUT-
-cpp(strview) String:  A null-terminated string containing the IP Address in dotted format.
+strview String:  A null-terminated string containing the IP Address in dotted format.
 struct(IPAddress) Address: Must point to an !IPAddress structure that will be filled in.
 
 -ERRORS-
@@ -830,8 +830,8 @@ be the return value if all other arguments are `NULL`.
 
 -INPUT-
 obj(NetSocket) NetSocket: The target NetSocket object.
-cpp(strview) Command: Name of a command or option to set (case-sensitive, camel-case).
-cpp(strview) Value: Value to set for the command or option.
+strview Command: Name of a command or option to set (case-sensitive, camel-case).
+strview Value: Value to set for the command or option.
 
 -ERRORS-
 Okay:

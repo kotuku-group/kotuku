@@ -24,8 +24,8 @@ static const struct FieldDef clNetSocketFlags[] = {
 
 FDEF maConnect[] = { { "Address", FD_CPP|FD_STR }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
 FDEF maGetLocalIPAddress[] = { { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
-FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "BytesSent", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FD_BUFFER|FD_PTR|FD_MUTABLE }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "BytesRead", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "BytesSent", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "BytesRead", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maJoinMulticastGroup[] = { { "Group", FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maLeaveMulticastGroup[] = { { "Group", FD_CPP|FD_STR }, { 0, 0 } };
 

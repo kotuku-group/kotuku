@@ -593,8 +593,8 @@ to suit the target path.  If the `Path` starts with a forward slash and the sour
 folder will be used in the target path for the compressed files and folders.
 
 -INPUT-
-cpp(strview) Location: The location of the file(s) to add.
-cpp(strview) Path:     The path that is prefixed to the file name when added to the compression object.  May be empty for no path.
+strview Location: The location of the file(s) to add.
+strview Path:     The path that is prefixed to the file name when added to the compression object.  May be empty for no path.
 
 -ERRORS-
 Okay: The file was added to the compression object.
@@ -1278,8 +1278,8 @@ This method sends feedback at regular intervals during decompression.  For furth
 please refer to the #Feedback field.
 
 -INPUT-
-cpp(strview) Path: The full path name of the file to extract from the archive.
-cpp(strview) Dest: The destination to extract the file to.
+strview Path: The full path name of the file to extract from the archive.
+strview Dest: The destination to extract the file to.
 int Flags:        Optional flags.  Currently unused.
 
 -ERRORS-
@@ -1488,7 +1488,7 @@ Note that if decompressing to a @File object, the seek position will point to th
 method returns.  Reset the seek position to zero if the decompressed data needs to be read back.
 
 -INPUT-
-cpp(strview) Path: The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.
+strview Path: The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.
 obj Object:       The target object for the decompressed source data.
 
 -ERRORS-
@@ -1581,7 +1581,7 @@ values will be discarded on the next call to this method.  If persistent values 
 structure immediately after the call.
 
 -INPUT-
-cpp(strview) Path: Search for a specific item or items, using wildcards.
+strview Path: Search for a specific item or items, using wildcards.
 int CaseSensitive:  Set to `true` if `Path` comparisons are case-sensitive.
 int Wildcard:       Set to `true` if `Path` uses wildcards.
 &struct(*CompressedItem) Item: The discovered item is returned in this parameter, or `NULL` if the search failed.
@@ -1835,7 +1835,7 @@ Depending on internal optimisation techniques, the compressed file may not shrin
 object is closed or the #Flush() action is called.
 
 -INPUT-
-cpp(strview) Path: The full path name of the file to delete from the archive.
+strview Path: The full path name of the file to delete from the archive.
 
 -ERRORS-
 Okay: The file was successfully deleted.
@@ -1896,8 +1896,8 @@ The !CompressedItem structure consists of the following fields:
 To search for a single item with a path and name already known, use the #Find() method instead.
 
 -INPUT-
-cpp(strview) Folder: Only items within the specified folder are returned.  Use an empty string for files in the root folder.
-cpp(strview) Filter: Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.
+strview Folder: Only items within the specified folder are returned.  Use an empty string for files in the root folder.
+strview Filter: Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.
 ptr(func) Callback: This callback function will be called with a pointer to a !CompressedItem structure.
 
 -ERRORS-

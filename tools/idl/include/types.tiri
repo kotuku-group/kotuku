@@ -3,7 +3,7 @@
 global glActiveRefs = { }
 global glCustomTypes = { }
 
-rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }>
+rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }> -- Alloc !, Result &, Mutable ^ symbols
 rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
 rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
 rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
@@ -23,18 +23,24 @@ rx_buf_type        = <{ regex.new([[^buf\((.+)\)]]) }>
 rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
 rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
 rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
+rx_string_type     = <{ regex.new([[^(str|cstr|string|strview)$]]) }>
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Conversion table for TDL types to their C/C++ and Value Definition equivalents.
 -- Use cType() to perform conversion and don't access glTypes directly.
 
 global glTypes = {
+   -- fd: FD flags
+   -- t_type: Tiri type
+   -- c_type: C99 type
+   -- cpp_type: C++ type if cpp() is used
+   -- doc_type: Simplified type for documentation
    arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   t_type='num', c_type='int', doc_type='INT' },
    bufsize    = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
    char       = { fd='FD_BYTE',               t_type='num', c_type='int8_t', doc_type='INT8' },
    cid        = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='CLASSID' },
-   cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *' },
-   cstr       = { fd='FD_STR',                t_type='str', c_type='CSTRING' }, -- Permitted for structs, not Kotuku classes
+   cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *', doc_type='PTR' },
+   cstr       = { fd='FD_STR',                t_type='str', c_type='CSTRING', doc_type='CSTRING' }, -- Permitted for structs, not Kotuku classes
    double     = { fd='FD_DOUBLE',             t_type='num', c_type='double', doc_type='DOUBLE' },
    eid        = { fd='FD_INT',                t_type='num', c_type='EVENTID' },
    error      = { fd='FD_INT|FD_ERROR',       t_type='num', c_type='ERR' },
@@ -55,8 +61,9 @@ global glTypes = {
    ptr        = { fd='FD_PTR',                t_type='any', c_type='APTR' },
    resource   = { fd='FD_STRUCT|FD_RESOURCE', t_type='any', c_type='APTR' },
    short      = { fd='FD_WORD',               t_type='num', c_type='int16_t', doc_type='INT16' },
-   strview    = { fd='FD_STR',                t_type='str', c_type='std::string_view &', cpp_type='const std::string_view &' }, -- For API calls only
-   str        = { fd='FD_STR',                t_type='str', c_type='STRING', cpp_type='std::string' },
+   strview    = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string_view', cpp_type='std::string_view', doc_type='STRVIEW' }, -- For API calls only
+   string     = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string', cpp_type='std::string', doc_type='STRING' },
+   str        = { fd='FD_STR',                t_type='str', c_type='STRING', cpp_type='std::string', doc_type='STRING' },
    struct     = { fd='FD_STRUCT',             t_type='any', c_type='APTR' },
    structsize = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
    tags       = { fd='FD_TAGS',               t_type=nil, c_type='...' },
@@ -67,6 +74,14 @@ global glTypes = {
    void       = { fd='FD_VOID',               t_type=nil, c_type='void' },
    vtags      = { fd='FD_VARTAGS',            t_type=nil, c_type='...' }
 }
+
+function copyOf(Type:str)
+   result = { }
+   for k, v in pairs(glTypes[Type]) do
+      result[k] = v
+   end
+   return result
+end
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Convert FD flags into a printable C type.  Used by getMetaFieldDefinition() for classes.
@@ -197,9 +212,11 @@ end
 -- Returns { cpp, type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
 
 global function cType(Value:table, Origin:str):table
-   assert(Value.type, "Value definition incorrect, missing 'type' value for '" .. tostring(Origin) .. "'")
+   assert(Value.type, f"Value definition incorrect, missing 'type' value for '{Origin}'")
 
    Value.defType = Value.type -- Save the original type name
+   if Origin:startsWith('Function:') then Value.isFunction = true end
+   if Origin:startsWith('Method:') then Value.isMethod = true end
 
    -- A ! symbol indicates that the value is a result that is allocated and can be removed with FreeResource()
    -- A & symbol indicates that the value is a pointer to a reserved area that will store a result value, e.g. INT *
@@ -224,12 +241,12 @@ global function cType(Value:table, Origin:str):table
    -- This defer() section performs final mutations of the Value prior to returning.
 
    defer()
-      Value.basicType = Value.type
+      Value.basicType = Value.type -- Record type string before any amendments are made
 
       if result_value then -- If the type is a result value, append a '*'
          Value.resultValue = true
 
-         if Value.isResponse then
+         if Value.isReturn then
             -- Do nothing
          elseif Value.type:endsWith('*') then
             Value.type ..= '*'
@@ -246,6 +263,14 @@ global function cType(Value:table, Origin:str):table
          else
             Value.docType = Value.type
          end
+      end
+
+      if Value.mutable and not Value.fullType.fd:find('FD_MUTABLE') then
+         Value.fullType.fd = 'FD_MUTABLE|' .. Value.fullType.fd
+      end
+
+      if Value.resultValue and not Value.fullType.fd:find('FD_RESULT') then
+         Value.fullType.fd = 'FD_RESULT|' .. Value.fullType.fd
       end
 
       local count = #Value.type:split('*') - 1
@@ -265,8 +290,11 @@ global function cType(Value:table, Origin:str):table
          Value.cpp  = true
          Value.type = cpp_inner
          Value = cType(Value, Origin)
+         if not Value.fullType.fd:find('FD_CPP') then
+            Value.fullType.fd = 'FD_CPP|' .. Value.fullType.fd
+         end
          Value.fullType = {
-            fd       = 'FD_CPP|' .. Value.fullType.fd,
+            fd       = Value.fullType.fd,
             c_type   = Value.fullType.c_type,
             doc_type = Value.fullType.doc_type,
             t_type   = Value.fullType.t_type
@@ -275,7 +303,7 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do
+   do -- class(Name) and struct(Name); Name can be prefixed with '*'
       local const, struct = rx_class_type.extract(Value.type)
       if struct then
          Value.isClass = true
@@ -284,7 +312,7 @@ global function cType(Value:table, Origin:str):table
       end
 
       if struct then
-         local ptr_struct = rx_ptr_extract.extract(struct)
+         local ptr_struct = rx_ptr_extract.extract(struct) -- Check '*' prefix
          if ptr_struct then struct = ptr_struct end
 
          Value.struct = struct
@@ -303,13 +331,14 @@ global function cType(Value:table, Origin:str):table
          end
 
          if ptr_struct then
-            Value.type = Value.type .. ' *'
+            Value.type ..= ' *'
+            Value.isPointer = true -- Explicit pointer
             Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
          elseif Value.isFunction then
             if Value.isArray then
                Value.fullType = { fd='FD_STRUCT', c_type='APTR', t_type='any' }
             else
-               Value.type = Value.type .. ' *'
+               Value.type ..= ' *'
                Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
             end
          else
@@ -324,7 +353,7 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do -- Resources are structs, but with an FD_RESOURCE marker.
+   do -- resource() types are structs, but with an FD_RESOURCE marker.
       local const, struct = rx_resource_type.extract(Value.type)
       if struct then
          local ptr_struct = rx_ptr_extract.extract(struct)
@@ -343,6 +372,7 @@ global function cType(Value:table, Origin:str):table
 
          if ptr_struct then
             Value.type ..= ' *'
+            Value.isPointer = true -- Explicit pointer
             Value.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
          elseif Value.isFunction then
             if Value.isArray then
@@ -363,7 +393,7 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do
+   do -- obj() object references
       local ref_obj
       local extended = false
       ref_obj = rx_ext_type.extract(Value.type)
@@ -384,17 +414,17 @@ global function cType(Value:table, Origin:str):table
             if extended then Value.extType = f'ext{ref_obj} *' end
             Value.className = ref_obj
          end
-         Value.fullType = glTypes.obj
+         Value.fullType = copyOf('obj')
          return Value
       end
    end
 
-   do -- Example: bit(int)
+   do -- bit(int)
       local bitType = rx_bit_type.extract(Value.type)
       if bitType then
          Value.type     = cType({ type=bitType, name='' }, Origin).type
          Value.name     = Value.name
-         Value.fullType = glTypes[bitType]
+         Value.fullType = copyOf(bitType)
          Value.bits     = 1
          return Value
       end
@@ -404,7 +434,7 @@ global function cType(Value:table, Origin:str):table
       local prefix = rx_flags_type.extract(Value.type)
       if prefix then
          Value.type     = prefix
-         Value.fullType = glTypes.int
+         Value.fullType = copyOf('int')
          Value.ref      = glCustomTypes[prefix]
          Value.lookup   = prefix
 
@@ -417,24 +447,24 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do -- Integer/Char/Large type reference
+   do -- Primitive number reference like 'int Value'
       local t, prefix = rx_int_prefix.extract(Value.type)
       if t then
          if t is 'char' then
             Value.type     = 'char'
-            Value.fullType = glTypes.char
+            Value.fullType = copyOf('char')
          elseif t is 'int' then
             Value.type     = 'int'
-            Value.fullType = glTypes.int
+            Value.fullType = copyOf('int')
          elseif t is 'large' then
             Value.type     = 'INT64'
-            Value.fullType = glTypes.large
+            Value.fullType = copyOf('large')
          elseif t is 'short' then
             Value.type = 'int16_t'
-            Value.fullType = glTypes.short
+            Value.fullType = copyOf('short')
          elseif t is 'ushort' then
             Value.type = 'uint16_t'
-            Value.fullType = glTypes.ushort
+            Value.fullType = copyOf('ushort')
          else
             error('Invalid type "' .. t .. '"')
          end
@@ -454,7 +484,7 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do -- Char arrays
+   do -- Char arrays like 'char(4) Value'
       local unsigned, count = rx_char_array.extract(Value.type)
       if count then
          if unsigned?? then
@@ -463,8 +493,8 @@ global function cType(Value:table, Origin:str):table
             Value.type = 'char'
          end
          Value.arraySize = tonumber(count)
-         Value.fullType  = { fd=glTypes.char.fd, c_type=glTypes.char.c_type, doc_type=glTypes.char.doc_type,
-            t_type='array' }
+         Value.fullType  = copyOf('char')
+         Value.fullType.t_type = 'array'
          return Value
       end
    end
@@ -478,8 +508,8 @@ global function cType(Value:table, Origin:str):table
             Value.type = 'int'
          end
          Value.arraySize = tonumber(count)
-         Value.fullType  = { fd=glTypes.int.fd, c_type=glTypes.int.c_type, doc_type=glTypes.int.doc_type,
-            t_type='array' }
+         Value.fullType  = copyOf('int')
+         Value.fullType.t_type = 'array'
          return Value
       end
    end
@@ -489,8 +519,8 @@ global function cType(Value:table, Origin:str):table
       if count then
          Value.type      = 'double'
          Value.arraySize = tonumber(count)
-         Value.fullType  = { fd=glTypes.double.fd, c_type=glTypes.double.c_type, doc_type=glTypes.double.doc_type,
-            t_type='array' }
+         Value.fullType  = copyOf('double')
+         Value.fullType.t_type = 'array'
          return Value
       end
    end
@@ -500,18 +530,19 @@ global function cType(Value:table, Origin:str):table
       if count then
          Value.type      = 'float'
          Value.arraySize = tonumber(count)
-         Value.fullType  = { fd=glTypes.float.fd, c_type=glTypes.float.c_type, doc_type=glTypes.float.doc_type,
-            t_type='array' }
+         Value.fullType  = copyOf('float')
+         Value.fullType.t_type = 'array'
          return Value
       end
    end
 
-   do
+   do -- Pointer to a type; can embed any other type
       local const, ptr_type = rx_ptr_type.extract(Value.type)
       if ptr_type then
          local ptr_ctype = cType({ type=ptr_type }, Origin)
 
          Value.type = ptr_ctype.type .. ' *'
+         Value.isPointer = true
 
          if const?? then
             Value.type =  'const ' .. Value.type
@@ -546,17 +577,18 @@ global function cType(Value:table, Origin:str):table
    -- To describe a pointer to a null-terminated array, use 'array(type,0)'
    -- To describe complex embedded types of fixed size, use 'array(type,n)' such as 'array(struct(RGB8),256)'
 
-   do
+   do -- Array (pre-sized)
       local array_type, array_size = rx_array_sized.extract(Value.type)
       if array_size then
          array_size = tonumber(array_size)
+         Value.isArray = true
          if array_size is 0 then
-            Value.isArray = true
             Value.type = array_type
             Value.arraySize = 0
             Value = cType(Value, Origin)
             if Value.cpp then
                Value.type = 'kt::vector<' .. (Value.struct ?? Value.type) .. '>'
+               Value.isComplex = true
             else
                Value.type ..= ' *'
             end
@@ -566,20 +598,25 @@ global function cType(Value:table, Origin:str):table
             Value.type = array_type
             Value = cType(Value, Origin)
             Value.arraySize = array_size
-            Value.fullType  = glTypes.ptr
+            Value.fullType  = copyOf('ptr')
          end
          return Value
       end
    end
 
-   do
+   do -- Array (unsized)
+      -- Note that the pointer flag always applies to the array's inner type, not the array itself.  Whether or
+      -- not the array is a pointer depends entirely on the context of its use.
       local array_type = rx_array_unsized.extract(Value.type)
       if array_type then
          Value.isArray = true
          Value.type    = array_type
          Value = cType(Value, Origin)
          if Value.cpp then
-            Value.type = 'kt::vector<' .. (Value.struct ?? Value.type) .. '>'
+            itype = (Value.struct ?? Value.type)
+            if Value.isPointer then itype ..= ' *' end
+            Value.type = f'kt::vector<{itype}>'
+            Value.isComplex = true
          else
             Value.type ..= ' *'
          end
@@ -589,14 +626,14 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do
+   do -- Function
       local fptr_args = rx_fptr_type.extract(Value.type)
       if fptr_args then
          local arglist = fptr_args:split(' ')
 
          -- Process function result type
 
-         Value.type = ((#arglist is 0) ? 'void' :> (glTypes[arglist[0]].c_type ?? arglist[0])) .. ' (*' .. Value.name .. ')'
+         Value.type = ((#arglist is 0) ? 'void' :> (glTypes[arglist[0]].c_type ?? arglist[0])) .. f' (*{Value.name})'
 
          -- Process function parameters
 
@@ -608,20 +645,49 @@ global function cType(Value:table, Origin:str):table
                if params?? then params ..= ', ' end
                params ..=  cType({ type=arglist[i], name='' }, Origin).type
             end
-            Value.type ..= '(' .. params .. ')'
+            Value.type ..= f'({params})'
          end
 
          Value.isFunctionPtr = true
-         Value.fullType = { fd=glTypes.ptr.fd, c_type=glTypes.ptr.c_type, t_type='func' }
+         Value.fullType = copyOf('ptr')
+         Value.fullType.t_type = 'func'
+         return Value
+      end
+   end
+
+   do -- String
+      -- MUTABLE|RESULT - Client supplies an empty std::string *, Tiri returns as a result
+      -- MUTABLE        - User supplies a std::string *, contents are mutated in-place
+      -- RESULT         - No input required, a std::string * is returned in the struct
+      local string = rx_string_type.extract(Value.type)
+      if string then
+         if string is 'strview' then
+            Value.type = 'std::string_view'
+            Value.isComplex = false -- std::string_view is embeddable
+            Value.fullType = copyOf('strview')
+         elseif Value.cpp or (string is 'string') then
+            Value.type = 'std::string'
+            Value.isComplex = true
+            Value.fullType = copyOf('string')
+         elseif string is 'cstr' then
+            Value.type = 'CSTRING'
+            Value.fullType = copyOf('cstr')
+         else
+            Value.type = 'STRING'
+            Value.fullType = copyOf('str')
+         end
          return Value
       end
    end
 
    if not glTypes[Value.type] then
-      error("No handling for field type '" .. Value.type .. "' from " .. tostring(Origin))
+      error(f"No handling for field type '{Value.type}' from {Origin}")
    end
 
-   Value.fullType = glTypes[Value.type]
+   -- No special handling, lookup the type table directly
+
+   Value.fullType = copyOf(Value.type)
+
    if Value.cpp then
       Value.type = glTypes[Value.type].cpp_type ?? Value.type
    else

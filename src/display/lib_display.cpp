@@ -109,7 +109,7 @@ while (scrScanDisplayModes("depth=32", &info) IS ERR::Okay) {
 </pre>
 
 -INPUT-
-cpp(strview) Filter: The filter to apply to the resolution database.  May be NULL for no filter.
+strview Filter: The filter to apply to the resolution database.  May be NULL for no filter.
 struct(*DisplayInfo) Info: A pointer to a !DisplayInfo structure must be referenced here.  The structure will be filled with information when the function returns.
 
 -ERRORS-

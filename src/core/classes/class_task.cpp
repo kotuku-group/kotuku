@@ -1189,7 +1189,7 @@ This method will add a new argument to the end of the #Parameters field array.  
 they will be removed automatically.
 
 -INPUT-
-cpp(strview) Argument: The new argument string.
+strview Argument: The new argument string.
 
 -ERRORS-
 Okay
@@ -1309,8 +1309,8 @@ NOTE: If your programming language uses backslash as an escape character, rememb
 `Name` string.
 
 -INPUT-
-cpp(strview) Name: The name of the environment variable to retrieve.
-^&cpp(str) Value: The value of the environment variable is returned in this parameter.
+strview Name: The name of the environment variable to retrieve.
+^&string Value: The value of the environment variable is returned in this parameter.
 
 -ERRORS-
 Okay
@@ -1669,8 +1669,8 @@ the existing key value is a number such as `DWORD` or `QWORD`, then the Value wi
 key is set.
 
 -INPUT-
-cpp(strview) Name:  The name of the environment variable to set.
-cpp(strview) Value: The value to assign to the environment variable.  If empty, the variable is removed.
+strview Name:  The name of the environment variable to set.
+strview Value: The value to assign to the environment variable.  If empty, the variable is removed.
 
 -ERRORS-
 Okay

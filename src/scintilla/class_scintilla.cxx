@@ -943,7 +943,7 @@ positions are also supported as an alternative - a value of -1 inserts the text 
 value of -2 replaces currently selected text.
 
 -INPUT-
-cpp(strview) String: A text string to add.
+strview String: A text string to add.
 int Pos: -1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.
 
 -RESULT-
@@ -1069,7 +1069,7 @@ source string by setting the Length parameter.  To insert all characters from th
 
 -INPUT-
 int Line: Index of the line being targeted.
-cpp(strview) String: The new string that will replace the line.
+strview String: The new string that will replace the line.
 int Length: The number of characters to replace the target with, or -1 for the entire source string.
 
 -RESULT-
@@ -1111,8 +1111,8 @@ given Start and End point.  The `STF::CASE`, `STF::SCAN_SELECTION` and `STF::EXP
 this method (see FindText for details).
 
 -INPUT-
-cpp(strview) Find: The keyword string to find.
-cpp(strview) Replace: The string that will replace the keyword.
+strview Find: The keyword string to find.
+strview Replace: The string that will replace the keyword.
 int(STF) Flags: Optional flags.
 int Start: The start of the search - set to zero if covering the entire document.  If -1, starts from the current cursor position.
 int End: The end of the search - set to -1 if covering the entire document.
@@ -1254,7 +1254,7 @@ details.
 If the new face is invalid or fails to load, the current font will remain unchanged.
 
 -INPUT-
-cpp(strview) Face: The name of the new font face.
+strview Face: The name of the new font face.
 
 -RESULT-
 Okay:

@@ -731,7 +731,7 @@ If `Sequence` is empty, an empty path resource will be generated.  This path can
 ~MoveTo() and ~LineTo().
 
 -INPUT-
-cpp(strview) Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
+strview Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
 &ptr Path: A pointer variable that will receive the resulting path.
 
 -ERRORS-
@@ -784,8 +784,8 @@ functions.
 The handle is deterministic and permanent, remaining valid for the lifetime of the program.
 
 -INPUT-
-cpp(strview) Family: The name of the font family to access.
-cpp(strview) Style: The preferred style to choose from the family.  Use `Regular` or `NULL` for the default.
+strview Family: The name of the font family to access.
+strview Style: The preferred style to choose from the family.  Use `Regular` or `NULL` for the default.
 int Weight: Equivalent to CSS font-weight; a value of 400 or 0 will equate to normal.
 int Size: The font-size, measured in pixels @ 72 DPI.
 &ptr Handle: The resulting font handle is returned here.
@@ -1073,7 +1073,7 @@ be retained, parse into a separate matrix and use ~MultiplyMatrix() to combine t
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
-cpp(strview) Transform: The transform to apply, expressed as a string instruction.
+strview Transform: The transform to apply, expressed as a string instruction.
 
 -ERRORS-
 Okay
@@ -1425,7 +1425,7 @@ For scalable fonts, kerning is included when computing the distance between glyp
 
 -INPUT-
 ptr FontHandle: A font handle obtained from ~GetFontHandle().
-cpp(strview) String: Pointer to a null-terminated string.
+strview String: Pointer to a null-terminated string.
 int Chars: Maximum number of bytes to process from `String`.  Set to `-1` for the full string.
 
 -RESULT-

@@ -127,7 +127,7 @@ the scanner will return file and folder names only.  Only a subset of the availa
 specifically `SIZE`, `DATE`, `PERMISSIONS`, `FILE`, `FOLDER`, `QUALIFY`, `TAGS`.
 
 -INPUT-
-cpp(strview) Path: The folder location to be scanned.  Using an empty string will scan for volume names.
+strview Path: The folder location to be scanned.  Using an empty string will scan for volume names.
 int(RDF) Flags: Optional flags.
 !resource(DirInfo) Info: A !DirInfo structure will be returned in the pointer referenced here.
 

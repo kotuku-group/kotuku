@@ -899,7 +899,7 @@ Optional flags may be set as follows:
 
 -INPUT-
 int Index: The index of the mixer that you want to set.
-cpp(strview) Name: If the correct index number is unknown, the name of the mixer may be set here.
+strview Name: If the correct index number is unknown, the name of the mixer may be set here.
 int(SVF) Flags: Optional flags.
 int Channel: A specific channel to modify (e.g. `0` for left, `1` for right).  If `-1`, all channels are affected.
 double Volume: The volume to set for the mixer, from 0 to 1.0.  If `-1`, the current volume values are retained.

@@ -366,10 +366,10 @@
     <method>
       <name>SetMonitor</name>
       <comment>Changes the default monitor settings.</comment>
-      <prototype>ERR gfx::SetMonitor(OBJECTPTR Object, const std::string_view &amp; Name, INT MinH, INT MaxH, INT MinV, INT MaxV, MON Flags)</prototype>
+      <prototype>ERR gfx::SetMonitor(OBJECTPTR Object, STRVIEW Name, INT MinH, INT MaxH, INT MinV, INT MaxV, MON Flags)</prototype>
       <tiriPrototype>err = SetMonitor(Name:str, MinH:num, MaxH:num, MinV:num, MaxV:num, Flags:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Name">The name of the display.</param>
+        <param type="STRVIEW" name="Name">The name of the display.</param>
         <param type="INT" name="MinH">The minimum horizontal scan rate.  Usually set to 31.</param>
         <param type="INT" name="MaxH">The maximum horizontal scan rate.</param>
         <param type="INT" name="MinV">The minimum vertical scan rate.  Usually set to 50.</param>

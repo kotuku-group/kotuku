@@ -72,11 +72,11 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
   })
 
   klass("Document", { src={ "../class/document_class.cpp", "../class/fields.cpp" }, output="../class/document_def.c" }, [[
-    cpp(str) Description # A description assigned by the author of the document
-    cpp(str) Title       # The title of the document
-    cpp(str) Author      # The author of the document
-    cpp(str) Copyright   # Copyright information for the document
-    cpp(str) Keywords    # Keywords for the document
+    string Description # A description assigned by the author of the document
+    string Title       # The title of the document
+    string Author      # The author of the document
+    string Copyright   # Copyright information for the document
+    string Keywords    # Keywords for the document
     obj(VectorViewport) Viewport  # The viewport that will host the document
     obj(VectorViewport) Focus     # Monitor this viewport for focus events
     obj(VectorViewport) View      # An internally created viewport that hosts the Page

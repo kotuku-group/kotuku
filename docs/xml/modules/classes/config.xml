@@ -99,10 +99,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>DeleteGroup</name>
       <comment>Deletes entire groups of configuration data.</comment>
-      <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, const std::string_view &amp; Group)</prototype>
+      <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, STRVIEW Group)</prototype>
       <tiriPrototype>err = DeleteGroup(Group:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The name of the group that will be deleted.</param>
+        <param type="STRVIEW" name="Group">The name of the group that will be deleted.</param>
       </input>
       <description>
 <p>This method will delete an entire group of key-values from a config object if a matching group name is provided.</p>
@@ -117,11 +117,11 @@ print('The Action class is located at ' .. str)
     <method>
       <name>DeleteKey</name>
       <comment>Deletes single key entries.</comment>
-      <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key)</prototype>
+      <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, STRVIEW Group, STRVIEW Key)</prototype>
       <tiriPrototype>err = DeleteKey(Group:str, Key:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The name of the targeted group.</param>
-        <param type="const std::string_view &amp;" name="Key">The name of the targeted key.</param>
+        <param type="STRVIEW" name="Group">The name of the targeted group.</param>
+        <param type="STRVIEW" name="Key">The name of the targeted key.</param>
       </input>
       <description>
 <p>This method deletes a single key from the Config object.</p>
@@ -137,11 +137,11 @@ print('The Action class is located at ' .. str)
     <method>
       <name>GetGroupFromIndex</name>
       <comment>Converts an index number into its matching group string.</comment>
-      <prototype>ERR cfg::GetGroupFromIndex(OBJECTPTR Object, INT Index, CSTRING * Group)</prototype>
+      <prototype>ERR cfg::GetGroupFromIndex(OBJECTPTR Object, INT Index, STRVIEW * Group)</prototype>
       <tiriPrototype>err, Group:str = GetGroupFromIndex(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The group index that you want to identify.</param>
-        <param type="CSTRING *" name="Group">Points to the group string that matches the index number.</param>
+        <param type="STRVIEW *" name="Group">Refers to the group string that matches the index number.</param>
       </input>
       <description>
 <p>Use GetGroupFromIndex() to convert a group index number to its matching name.</p>
@@ -177,10 +177,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>MergeFile</name>
       <comment>Merges a configuration file into existing configuration data.</comment>
-      <prototype>ERR cfg::MergeFile(OBJECTPTR Object, const std::string_view &amp; Path)</prototype>
+      <prototype>ERR cfg::MergeFile(OBJECTPTR Object, STRVIEW Path)</prototype>
       <tiriPrototype>err = MergeFile(Path:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Path">The location of the configuration file that you want to merge.</param>
+        <param type="STRVIEW" name="Path">The location of the configuration file that you want to merge.</param>
       </input>
       <description>
 <p>The MergeFile() method is used to pull configuration data from a file and merge it into the target config object. The path to the configuration file is all that is required.  Existing data in the target will be overwritten by the source in cases where there matching set of group keys.</p>
@@ -196,11 +196,11 @@ print('The Action class is located at ' .. str)
     <method>
       <name>ReadValue</name>
       <comment>Reads a key-value string.</comment>
-      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key, CSTRING * Data)</prototype>
+      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, CSTRING * Data)</prototype>
       <tiriPrototype>err, Data:str = ReadValue(Group:str, Key:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The name of a group to examine for a key.  If empty, all groups are scanned.</param>
-        <param type="const std::string_view &amp;" name="Key">The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.</param>
+        <param type="STRVIEW" name="Group">The name of a group to examine for a key.  If empty, all groups are scanned.</param>
+        <param type="STRVIEW" name="Key">The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.</param>
         <param type="CSTRING *" name="Data">The key value will be stored in this parameter on returning.</param>
       </input>
       <description>
@@ -218,12 +218,12 @@ print('The Action class is located at ' .. str)
     <method>
       <name>Set</name>
       <comment>Sets keys in existing config groups (aborts if the group does not exist).</comment>
-      <prototype>ERR cfg::Set(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key, const std::string_view &amp; Data)</prototype>
+      <prototype>ERR cfg::Set(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, STRVIEW Data)</prototype>
       <tiriPrototype>err = Set(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The name of the group.  Wildcards are supported.</param>
-        <param type="const std::string_view &amp;" name="Key">The name of the key.</param>
-        <param type="const std::string_view &amp;" name="Data">The data that will be added to the given group/key.</param>
+        <param type="STRVIEW" name="Group">The name of the group.  Wildcards are supported.</param>
+        <param type="STRVIEW" name="Key">The name of the key.</param>
+        <param type="STRVIEW" name="Data">The data that will be added to the given group/key.</param>
       </input>
       <description>
 <p>This method is identical to <method>WriteValue</method> except it will abort if the name of the referred group does not exist in the config object.  The error code <code>ERR::Search</code> is returned if this is the case.  Please refer to <method>WriteValue</method> for further information on the behaviour of this function.</p>
@@ -239,10 +239,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>SortByKey</name>
       <comment>Sorts config data using a sequence of sort instructions.</comment>
-      <prototype>ERR cfg::SortByKey(OBJECTPTR Object, const std::string_view &amp; Key, INT Descending)</prototype>
+      <prototype>ERR cfg::SortByKey(OBJECTPTR Object, STRVIEW Key, INT Descending)</prototype>
       <tiriPrototype>err = SortByKey(Key:str, Descending:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Key">The name of the key to sort on.</param>
+        <param type="STRVIEW" name="Key">The name of the key to sort on.</param>
         <param type="INT" name="Descending">Set to true if a descending sort is required.</param>
       </input>
       <description>
@@ -258,12 +258,12 @@ print('The Action class is located at ' .. str)
     <method>
       <name>WriteValue</name>
       <comment>Adds new entries to config objects.</comment>
-      <prototype>ERR cfg::WriteValue(OBJECTPTR Object, const std::string_view &amp; Group, const std::string_view &amp; Key, const std::string_view &amp; Data)</prototype>
+      <prototype>ERR cfg::WriteValue(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, STRVIEW Data)</prototype>
       <tiriPrototype>err = WriteValue(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Group">The name of the group.</param>
-        <param type="const std::string_view &amp;" name="Key">The name of the key.</param>
-        <param type="const std::string_view &amp;" name="Data">The data that will be added to the given group/key.</param>
+        <param type="STRVIEW" name="Group">The name of the group.</param>
+        <param type="STRVIEW" name="Key">The name of the key.</param>
+        <param type="STRVIEW" name="Data">The data that will be added to the given group/key.</param>
       </input>
       <description>
 <p>Use the WriteValue() method to add or update information in a config object.  A <code>Group</code> name, <code>Key</code> name, and <code>Data</code> value are required.  If the <code>Group</code> and <code>Key</code> arguments match an existing entry in the config object, the data of that entry will be replaced with the new Data value.</p>
@@ -304,7 +304,7 @@ print('The Action class is located at ' .. str)
       <name>GroupFilter</name>
       <comment>Set this field to enable group filtering.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>When dealing with large configuration files, filtering out unrelated data may be useful.  By setting the GroupFilter field, it is possible to filter out entire groups that don't match the criteria.</p>
 <p>Group filters are created in CSV format, i.e. <code>GroupA, GroupB, GroupC, ...</code>.</p>
@@ -317,7 +317,7 @@ print('The Action class is located at ' .. str)
       <name>KeyFilter</name>
       <comment>Set this field to enable key filtering.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>When dealing with large configuration files it may be useful to filter out groups of key-values that are not needed. The KeyFilter field allows simple filters to be defined that will perform this task for you.  It is recommended that it is set prior to parsing new data for best performance, but can be set or changed at any time to apply a new filter.</p>
 <p>Key filters are created in the format <code>[Key] = [Data1], [Data2], ...</code>.  For example:</p>
@@ -334,7 +334,7 @@ Name = Kōtuku
       <name>Path</name>
       <comment>Set this field to the location of the source configuration file.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
     </field>
 
     <field>

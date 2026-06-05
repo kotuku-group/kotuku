@@ -8,12 +8,12 @@ static const struct FieldDef clConfigFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maReadValue[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_STR|FD_RESULT }, { 0, 0 } };
+FDEF maReadValue[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_RESULT|FD_STR }, { 0, 0 } };
 FDEF maSet[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maWriteValue[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maDeleteKey[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maDeleteGroup[] = { { "Group", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maGetGroupFromIndex[] = { { "Index", FD_INT }, { "Group", FD_STR|FD_RESULT }, { 0, 0 } };
+FDEF maGetGroupFromIndex[] = { { "Index", FD_INT }, { "Group", FD_RESULT|FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maSortByKey[] = { { "Key", FD_CPP|FD_STR }, { "Descending", FD_INT }, { 0, 0 } };
 FDEF maMergeFile[] = { { "Path", FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maMerge[] = { { "Source", FD_OBJECTPTR }, { 0, 0 } };

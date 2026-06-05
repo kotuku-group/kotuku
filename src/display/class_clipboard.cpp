@@ -238,7 +238,7 @@ Optional flags that may be passed to this method are as follows:
 
 -INPUT-
 int(CLIPTYPE) Datatype: Identifies the type of data represented by the file.
-cpp(strview) Path: Path of the file to add.
+strview Path: Path of the file to add.
 int(CEF) Flags: Optional flags.
 
 -ERRORS-
@@ -362,7 +362,7 @@ On Windows, the text is also published to the host clipboard when supported.  If
 host clipboard accepts the text, no local cache file is created.
 
 -INPUT-
-cpp(strview) String: UTF-8 text to add to the clipboard.
+strview String: UTF-8 text to add to the clipboard.
 
 -ERRORS-
 Okay
@@ -530,7 +530,7 @@ usually the most efficient way to consume those entries.
 int(CLIPTYPE) Filter: Datatype filter.  Set to zero to accept any datatype.
 int Index: History index to read when Filter is zero.  Zero is the most recent clip group.
 &int(CLIPTYPE) Datatype: Datatype of the returned clip group.
-^&cpp(array(str)) Files: An empty `kt::vector<std::string>` array is required to receive the file list.
+^&cpp(array(str)) Files: An empty string array is required to receive the file list.
 &int(CEF) Flags: Result flags.  If the delete flag is set, delete the files after use to complete a cut operation.
 
 -ERRORS-

@@ -1415,7 +1415,7 @@ FindObject("SystemPointer", CLASSID::POINTER, &id);
 If FindObject() cannot find any matching objects then it will return an error code.
 
 -INPUT-
-cpp(strview) Name: The name of an object to search for.
+strview Name: The name of an object to search for.
 cid ClassID:   Optional.  Set to a class ID to filter the results down to a specific class type.
 &oid ObjectID: An object id variable for storing the result.
 
@@ -2131,7 +2131,7 @@ This function will resolve a class `Name` to its `CLASSID` UID and verifies that
 names are case insensitive.
 
 -INPUT-
-cpp(strview) Name: The name of the class that requires resolution.
+strview Name: The name of the class that requires resolution.
 
 -RESULT-
 cid: Returns the class ID identified from the class name, or `NULL` if the class could not be found.
@@ -2292,7 +2292,7 @@ This function does not acquire an object lock, that is the responsibility of the
 
 -INPUT-
 obj Object: Object to host the current context.  If NULL, the current context is popped.
-ptr(struct(Field)) Field: Active field, if any.
+struct(Field) Field: Active field, if any.
 int(AC) ActionID: Active action, if any.
 
 *********************************************************************************************************************/
@@ -2317,7 +2317,7 @@ an underscore.
 
 -INPUT-
 obj Object: The target object.
-cpp(strview) Name: The new name for the object, or an empty string to clear an existing name.
+strview Name: The new name for the object, or an empty string to clear an existing name.
 
 -ERRORS-
 Okay:
