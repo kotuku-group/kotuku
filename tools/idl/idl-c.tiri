@@ -209,6 +209,8 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
                local p_type
                if param.type is 'std::string_view' then
                   p_type = 'const std::string_view &'
+               elseif param.isComplex and not (param.type:endsWith('&') or param.type:endsWith('*')) then
+                  p_type = param.type .. ' &'
                else
                   p_type = param.type
                end

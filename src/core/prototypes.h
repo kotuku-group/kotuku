@@ -91,7 +91,7 @@ extern "C" ERR CreateLink(const std::string_view & From, const std::string_view 
 extern "C" OBJECTPTR ParentContext();
 extern "C" void SetResourceMgr(APTR Address, struct ResourceManager * Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);
-extern "C" ERR AsyncCancel(OBJECTID * Objects, int Size);
+extern "C" ERR AsyncCancel(kt::vector<OBJECTID> & Objects);
 extern "C" int AsyncPending(OBJECTID Object);
-extern "C" ERR AsyncWait(OBJECTID * Objects, int Size, int TimeOut);
-extern "C" ERR ClassDatabase(struct ClassRecord * ** Classes);
+extern "C" ERR AsyncWait(kt::vector<OBJECTID> & Objects, int TimeOut);
+extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> * Classes);
