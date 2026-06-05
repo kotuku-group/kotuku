@@ -11,12 +11,12 @@ static const struct FieldDef clAudioFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maOpenChannels[] = { { "Total", FD_INT }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maOpenChannels[] = { { "Total", FD_INT }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maCloseChannels[] = { { "Handle", FD_INT }, { 0, 0 } };
-FDEF maAddSample[] = { { "OnStop", FD_FUNCTION }, { "SampleFormat", FD_INT }, { "Data", FD_BUFFER|FD_PTR }, { "DataSize", FD_INT|FD_BUFSIZE }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "LoopSize", FD_INT|FD_BUFSIZE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maAddSample[] = { { "OnStop", FD_FUNCTION }, { "SampleFormat", FD_INT }, { "Data", FD_BUFFER|FD_PTR }, { "DataSize", FD_INT|FD_BUFSIZE }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "LoopSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maRemoveSample[] = { { "Handle", FD_INT }, { 0, 0 } };
 FDEF maSetSampleLength[] = { { "Sample", FD_INT }, { "Length", FD_INT64 }, { 0, 0 } };
-FDEF maAddStream[] = { { "Callback", FD_FUNCTION }, { "OnStop", FD_FUNCTION }, { "SampleFormat", FD_INT }, { "SampleLength", FD_INT }, { "PlayOffset", FD_INT }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "LoopSize", FD_INT|FD_BUFSIZE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maAddStream[] = { { "Callback", FD_FUNCTION }, { "OnStop", FD_FUNCTION }, { "SampleFormat", FD_INT }, { "SampleLength", FD_INT }, { "PlayOffset", FD_INT }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "LoopSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maBeep[] = { { "Pitch", FD_INT }, { "Duration", FD_INT }, { "Volume", FD_INT }, { 0, 0 } };
 FDEF maSetVolume[] = { { "Index", FD_INT }, { "Name", FD_CPP|FD_STR }, { "Flags", FD_INT }, { "Channel", FD_INT }, { "Volume", FD_DOUBLE }, { 0, 0 } };
 

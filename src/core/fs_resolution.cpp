@@ -72,9 +72,9 @@ If the path resolves to a virtual drive, it may not be possible to confirm wheth
 virtual driver does not support this check.  This is common when working with network drives.
 
 -INPUT-
-cpp(strview) Path: The path to be resolved.
+strview Path: The path to be resolved.
 int(RSF) Flags: Optional flags.
-^&cpp(str) Result: Must point to a `std::string` variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
+^&string Result: Must point to a `std::string` variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
 
 -ERRORS-
 Okay:        The `Path` was resolved.

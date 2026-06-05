@@ -177,10 +177,10 @@
     <method>
       <name>Copy</name>
       <comment>Copies the data of a file to another location.</comment>
-      <prototype>ERR fl::Copy(OBJECTPTR Object, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Copy(OBJECTPTR Object, STRVIEW Dest, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = Copy(Dest:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Dest">The destination file path for the copy operation.</param>
+        <param type="STRVIEW" name="Dest">The destination file path for the copy operation.</param>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
@@ -230,10 +230,10 @@
     <method>
       <name>Move</name>
       <comment>Moves a file to a new location.</comment>
-      <prototype>ERR fl::Move(OBJECTPTR Object, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Move(OBJECTPTR Object, STRVIEW Dest, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = Move(Dest:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Dest">The desired path for the file.</param>
+        <param type="STRVIEW" name="Dest">The desired path for the file.</param>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
@@ -276,10 +276,10 @@
     <method>
       <name>ReadLine</name>
       <comment>Reads the next line from the file.</comment>
-      <prototype>ERR fl::ReadLine(OBJECTPTR Object, std::string * Result)</prototype>
+      <prototype>ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)</prototype>
       <tiriPrototype>err, Result:str = ReadLine()</tiriPrototype>
       <input>
-        <param type="std::string *" name="Result">The string provided in this parameter will be updated with the line read from the file.</param>
+        <param type="STRING *" name="Result">The string provided in this parameter will be updated with the line read from the file.</param>
       </input>
       <description>
 <p>Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line will increase the <fl>Position</fl> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <fl>Flags</fl> field when you initialised the file, or the call will fail.</p>

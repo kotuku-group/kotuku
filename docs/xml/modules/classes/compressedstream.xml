@@ -370,12 +370,12 @@
       <field name="ClassID" type="CLASSID">Unique class identifier (hash of Name)</field>
       <field name="ParentID" type="CLASSID">Parent class ID if this is a derived class</field>
       <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
-      <field name="Name" type="std::string">Name of the class</field>
-      <field name="Path" type="std::string">Path to the class file</field>
-      <field name="Extension" type="std::string">Wildcards for matching by file extension, e.g. <code>jpeg|jpg</code></field>
-      <field name="Header" type="std::string">File identification instruction, e.g. <code>[0:$89504e470d0a1a0a]</code></field>
-      <field name="Icon" type="std::string">Icon reference in <code>group/name</code> format</field>
-      <field name="Description" type="std::string">File description</field>
+      <field name="Name" type="STRING">Name of the class</field>
+      <field name="Path" type="STRING">Path to the class file</field>
+      <field name="Extension" type="STRING">Wildcards for matching by file extension, e.g. <code>jpeg|jpg</code></field>
+      <field name="Header" type="STRING">File identification instruction, e.g. <code>[0:$89504e470d0a1a0a]</code></field>
+      <field name="Icon" type="STRING">Icon reference in <code>group/name</code> format</field>
+      <field name="Description" type="STRING">File description</field>
     </struct>
 
     <struct name="DirInfo" comment="Used by OpenDir() only">
@@ -398,7 +398,7 @@
       <field name="Size" type="INT64">The size of the file's content.</field>
       <field name="Timestamp" type="INT64">64-bit time stamp - usable only for comparison (e.g. sorting).</field>
       <field name="Next" type="struct FileInfo *">Next structure in the list, or <code>NULL</code>.</field>
-      <field name="Name" type="std::string">The name of the file.</field>
+      <field name="Name" type="STRING">The name of the file.</field>
       <field name="Flags" type="RDF" lookup="RDF">Additional flags to describe the file.</field>
       <field name="Permissions" type="PERMIT" lookup="PERMIT">Standard permission flags.</field>
       <field name="UserID" type="INT">User  ID (Unix systems only).</field>

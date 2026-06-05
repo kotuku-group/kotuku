@@ -79,11 +79,11 @@
   <function>
     <name>ResolveFamilyName</name>
     <comment>Convert a CSV family string to a single family name.</comment>
-    <prototype>ERR fnt::ResolveFamilyName(const std::string_view &amp; String, CSTRING * Result)</prototype>
+    <prototype>ERR fnt::ResolveFamilyName(STRVIEW String, CSTRING * Result)</prototype>
     <tiriPrototype>err, Result:str = ResolveFamilyName(String:str)</tiriPrototype>
     <tags>volatile-result, null-terminated-result, blocking, case-insensitive</tags>
     <input>
-      <param type="const std::string_view &amp;" name="String">A CSV family string to resolve.</param>
+      <param type="STRVIEW" name="String">A CSV family string to resolve.</param>
       <param type="CSTRING *" name="Result">The resolved family name is returned in this parameter.</param>
     </input>
     <description>
@@ -103,12 +103,12 @@
   <function>
     <name>SelectFont</name>
     <comment>Searches for a 'best fitting' font file, based on family name and style.</comment>
-    <prototype>ERR fnt::SelectFont(const std::string_view &amp; Name, const std::string_view &amp; Style, CSTRING * Path, FMETA * Meta)</prototype>
+    <prototype>ERR fnt::SelectFont(STRVIEW Name, STRVIEW Style, CSTRING * Path, FMETA * Meta)</prototype>
     <tiriPrototype>err, Path:str, Meta:num = SelectFont(Name:str, Style:str)</tiriPrototype>
     <tags>caller-owns-result, creates-resource, blocking, case-insensitive</tags>
     <input>
-      <param type="const std::string_view &amp;" name="Name">The name of a font face to search for (case insensitive).</param>
-      <param type="const std::string_view &amp;" name="Style">The preferred style, e.g. <code>Bold</code> or <code>Italic</code>.</param>
+      <param type="STRVIEW" name="Name">The name of a font face to search for (case insensitive).</param>
+      <param type="STRVIEW" name="Style">The preferred style, e.g. <code>Bold</code> or <code>Italic</code>.</param>
       <param type="CSTRING *" name="Path">The location of the best-matching font file is returned in this parameter.</param>
       <param type="FMETA *" name="Meta" lookup="FMETA">Optional, returns additional meta information about the font file.</param>
     </input>
@@ -128,12 +128,12 @@
   <function>
     <name>StringWidth</name>
     <comment>Returns the pixel width of any given string in relation to a font's settings.</comment>
-    <prototype>INT fnt::StringWidth(objFont * Font, const std::string_view &amp; String, INT Chars)</prototype>
+    <prototype>INT fnt::StringWidth(objFont * Font, STRVIEW String, INT Chars)</prototype>
     <tiriPrototype>num = StringWidth(Font:obj, String:str, Chars:num)</tiriPrototype>
     <tags>pure-query</tags>
     <input>
       <param type="objFont *" name="Font">An initialised font object.</param>
-      <param type="const std::string_view &amp;" name="String">The string to be calculated.</param>
+      <param type="STRVIEW" name="String">The string to be calculated.</param>
       <param type="INT" name="Chars">The maximum number of characters to measure, or <code>-1</code> to measure the entire string.</param>
     </input>
     <description>

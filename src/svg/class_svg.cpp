@@ -218,7 +218,7 @@ The generated content will be structured within the provided @VectorViewport, wh
 scene graph.
 
 -INPUT-
-cpp(strview) ID: Name of the symbol to parse.
+strview ID: Name of the symbol to parse.
 obj(VectorViewport) Viewport: The target viewport.
 
 -RESULT-

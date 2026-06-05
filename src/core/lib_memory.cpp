@@ -737,7 +737,7 @@ static ResourceManager glNodeManager = {
 
 -INPUT-
 ptr Address: The address of a `MEM::MANAGED` memory block allocated by ~AllocMemory().
-ptr(struct(ResourceManager)) Manager: Must refer to an initialised ResourceManager structure.
+struct(ResourceManager) Manager: Must refer to an initialised ResourceManager structure.
 
 -TAGS-
 retains-input, does-not-take-ownership

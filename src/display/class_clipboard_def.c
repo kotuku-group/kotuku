@@ -9,7 +9,7 @@ static const struct FieldDef clClipboardFlags[] = {
 
 FDEF maAddFile[] = { { "Datatype", FD_INT }, { "Path", FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maAddObjects[] = { { "Datatype", FD_INT }, { "Objects", FD_PTR }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maGetFiles[] = { { "Filter", FD_INT }, { "Index", FD_INT }, { "Datatype", FD_INT|FD_RESULT }, { "Files", FD_ARRAY|FD_STR|FD_ALLOC|FD_RESULT }, { "Flags", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maGetFiles[] = { { "Filter", FD_INT }, { "Index", FD_INT }, { "Datatype", FD_RESULT|FD_INT }, { "Files", FD_RESULT|FD_ARRAY|FD_MUTABLE|FD_CPP|FD_STR }, { "Flags", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maAddText[] = { { "String", FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maRemove[] = { { "Datatype", FD_INT }, { 0, 0 } };
 

@@ -770,7 +770,7 @@ Transition `Instant` values are UTC Unix epoch timestamps in microseconds.  `Off
 daylight-saving period.
 
 -INPUT-
-cpp(strview) ZoneID: Zone identifier, or an empty string to request the local system zone.
+strview ZoneID: Zone identifier, or an empty string to request the local system zone.
 int StartYear: Inclusive first year.  Must be in the supported 1601-9999 range.
 int EndYear: Inclusive final year.  Must be >= StartYear, no later than 9999 and within 400 years of `StartYear`.
 !struct(*TimeZoneInfo) Info: Receives the allocated metadata and transition resource.  Release with ~Core.FreeResource() when no longer required.

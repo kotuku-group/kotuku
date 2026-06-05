@@ -529,7 +529,7 @@ typedef struct BitmapSurface {
 // Bitmap methods
 
 namespace bmp {
-struct CopyArea { objBitmap * DestBitmap; BAF Flags; int X; int Y; int Width; int Height; int XDest; int YDest; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CopyArea { objBitmap *DestBitmap; BAF Flags; int X; int Y; int Width; int Height; int XDest; int YDest; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Compress { int Level; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Decompress { int RetainData; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DrawRectangle { int X; int Y; int Width; int Height; uint32_t Colour; BAF Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -1043,7 +1043,7 @@ class objBitmap : public Object {
 
 namespace gfx {
 struct WaitVBL { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct UpdatePalette { struct RGBPalette * NewPalette; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct UpdatePalette { struct RGBPalette *NewPalette; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDisplay { int X; int Y; int Width; int Height; int InsideWidth; int InsideHeight; int BitsPerPixel; double RefreshRate; int Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SizeHints { int MinWidth; int MinHeight; int MaxWidth; int MaxHeight; int EnforceAspect; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetGamma { double Red; double Green; double Blue; GMF Flags; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -1155,7 +1155,7 @@ class objDisplay : public Object {
       struct gfx::SetGammaLinear args = { Red, Green, Blue, Flags };
       return(Action(AC(-6), this, &args));
    }
-   inline ERR setMonitor(const std::string_view & Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
+   inline ERR setMonitor(const std::string_view &Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
       struct gfx::SetMonitor args = { Name, MinH, MaxH, MinV, MaxV, Flags };
       return(Action(AC(-7), this, &args));
    }
@@ -1466,8 +1466,8 @@ class objDisplay : public Object {
 
 namespace clip {
 struct AddFile { CLIPTYPE Datatype; std::string_view Path; CEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddObjects { CLIPTYPE Datatype; OBJECTID * Objects; CEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; CSTRING * Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddObjects { CLIPTYPE Datatype; OBJECTID *Objects; CEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; kt::vector<std::string> *Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddText { std::string_view String; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Remove { CLIPTYPE Datatype; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -1494,7 +1494,7 @@ class objClipboard : public Object {
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR addFile(CLIPTYPE Datatype, const std::string_view & Path, CEF Flags) noexcept {
+   inline ERR addFile(CLIPTYPE Datatype, const std::string_view &Path, CEF Flags) noexcept {
       struct clip::AddFile args = { Datatype, Path, Flags };
       return(Action(AC(-1), this, &args));
    }
@@ -1502,15 +1502,14 @@ class objClipboard : public Object {
       struct clip::AddObjects args = { Datatype, Objects, Flags };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, CSTRING ** Files, CEF * Flags) noexcept {
-      struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, (CSTRING *)0, (CEF)0 };
+   inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, kt::vector<std::string> &Files, CEF * Flags) noexcept {
+      struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, &Files, (CEF)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Datatype) *Datatype = args.Datatype;
-      if (Files) *Files = args.Files;
       if (Flags) *Flags = args.Flags;
       return(error);
    }
-   inline ERR addText(const std::string_view & String) noexcept {
+   inline ERR addText(const std::string_view &String) noexcept {
       struct clip::AddText args = { String };
       return(Action(AC(-4), this, &args));
    }
@@ -1888,10 +1887,10 @@ struct ExposeToDisplay { int X; int Y; int Width; int Height; EXF Flags; static 
 struct InvalidateRegion { int X; int Y; int Width; int Height; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDisplay { int X; int Y; int Width; int Height; int InsideWidth; int InsideHeight; int BitsPerPixel; double RefreshRate; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetOpacity { double Value; double Adjustment; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddCallback { FUNCTION * Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddCallback { FUNCTION *Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Minimise { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ResetDimensions { double X; double Y; double XOffset; double YOffset; double Width; double Height; DMF Dimensions; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveCallback { FUNCTION * Callback; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveCallback { FUNCTION *Callback; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ScheduleRedraw { int RefreshRate; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -2455,14 +2454,14 @@ struct DisplayBase {
    ERR (*_Resample)(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
    ERR (*_RestoreCursor)(PTC Cursor, OBJECTID Owner);
    double (*_ScaleToDPI)(double Value);
-   ERR (*_ScanDisplayModes)(const std::string_view & Filter, struct DisplayInfo *Info);
+   ERR (*_ScanDisplayModes)(const std::string_view &Filter, struct DisplayInfo *Info);
    void (*_SetClipRegion)(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
-   ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner);
+   ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &Name, OBJECTID Owner);
    ERR (*_SetCursorPos)(double X, double Y);
    ERR (*_SetCustomCursor)(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner);
    ERR (*_SetHostOption)(HOST Option, int64_t Value);
    OBJECTID (*_SetModalSurface)(OBJECTID Surface);
-   ERR (*_StartCursorDrag)(OBJECTID Source, int Item, const std::string_view & Datatypes, OBJECTID Surface);
+   ERR (*_StartCursorDrag)(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface);
    ERR (*_SubscribeInput)(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, int *Handle);
    void (*_Sync)(objBitmap *Bitmap);
    ERR (*_UnlockCursor)(OBJECTID Surface);
@@ -2502,14 +2501,14 @@ inline void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB) { r
 inline ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat) { return DisplayBase->_Resample(Bitmap,ColourFormat); }
 inline ERR RestoreCursor(PTC Cursor, OBJECTID Owner) { return DisplayBase->_RestoreCursor(Cursor,Owner); }
 inline double ScaleToDPI(double Value) { return DisplayBase->_ScaleToDPI(Value); }
-inline ERR ScanDisplayModes(const std::string_view & Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
+inline ERR ScanDisplayModes(const std::string_view &Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
 inline void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom) { return DisplayBase->_SetClipRegion(Bitmap,Left,Top,Right,Bottom); }
-inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
+inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
 inline ERR SetCursorPos(double X, double Y) { return DisplayBase->_SetCursorPos(X,Y); }
 inline ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner) { return DisplayBase->_SetCustomCursor(Surface,Flags,Bitmap,HotX,HotY,Owner); }
 inline ERR SetHostOption(HOST Option, int64_t Value) { return DisplayBase->_SetHostOption(Option,Value); }
 inline OBJECTID SetModalSurface(OBJECTID Surface) { return DisplayBase->_SetModalSurface(Surface); }
-inline ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view & Datatypes, OBJECTID Surface) { return DisplayBase->_StartCursorDrag(Source,Item,Datatypes,Surface); }
+inline ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface) { return DisplayBase->_StartCursorDrag(Source,Item,Datatypes,Surface); }
 inline ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, int *Handle) { return DisplayBase->_SubscribeInput(Callback,SurfaceFilter,Mask,DeviceFilter,Handle); }
 inline void Sync(objBitmap *Bitmap) { return DisplayBase->_Sync(Bitmap); }
 inline ERR UnlockCursor(OBJECTID Surface) { return DisplayBase->_UnlockCursor(Surface); }
@@ -2546,14 +2545,14 @@ extern void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB);
 extern ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
-extern ERR ScanDisplayModes(const std::string_view & Filter, struct DisplayInfo *Info);
+extern ERR ScanDisplayModes(const std::string_view &Filter, struct DisplayInfo *Info);
 extern void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
-extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner);
+extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);
 extern ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner);
 extern ERR SetHostOption(HOST Option, int64_t Value);
 extern OBJECTID SetModalSurface(OBJECTID Surface);
-extern ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view & Datatypes, OBJECTID Surface);
+extern ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface);
 extern ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, int *Handle);
 extern void Sync(objBitmap *Bitmap);
 extern ERR UnlockCursor(OBJECTID Surface);

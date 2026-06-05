@@ -131,10 +131,10 @@
     <method>
       <name>ParseSymbol</name>
       <comment>Instantiates an SVG symbol definition within a target viewport.</comment>
-      <prototype>ERR svg::ParseSymbol(OBJECTPTR Object, const std::string_view &amp; ID, objVectorViewport * Viewport)</prototype>
+      <prototype>ERR svg::ParseSymbol(OBJECTPTR Object, STRVIEW ID, objVectorViewport * Viewport)</prototype>
       <tiriPrototype>err = ParseSymbol(ID:str, Viewport:obj)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="ID">Name of the symbol to parse.</param>
+        <param type="STRVIEW" name="ID">Name of the symbol to parse.</param>
         <param type="objVectorViewport *" name="Viewport">The target viewport.</param>
       </input>
       <description>
@@ -173,7 +173,7 @@
       <name>Colour</name>
       <comment>Defines the default fill to use for <code>currentColor</code> references.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>Set the Colour value to alter the default fill that is used for <code>currentColor</code> references.  Typically a standard RGB painter fill reference should be used for this purpose, e.g. <code>rgb(255,255,255)</code>.  It is however, also acceptable to use URL references to named definitions such as gradients and images.  This will work as long as the named definition is registered in the top-level <class name="VectorScene">VectorScene</class> object.</p>
 <p>
@@ -254,7 +254,7 @@
       <name>Path</name>
       <comment>File system path to the source SVG document.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>This field specifies the location of the SVG file to be loaded and processed during object initialisation.  The path supports both absolute and relative file references, with relative paths resolved according to the current working directory context.</p>
 <p>The loading process occurs automatically during initialisation when a valid path is specified.  The referenced file must contain well-formed SVG content that conforms to W3C SVG standards for successful parsing.</p>
@@ -283,7 +283,7 @@
       <name>Statement</name>
       <comment>String containing complete SVG document markup.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>SVG data can be loaded from a string by specifying it here prior to initialisation.  If the <fl>Path</fl> field has been defined, it will take precedent and the Statement is ignored.</p>
 <p>For incremental data parsing after initialisation, consider using the <action>DataFeed</action> action instead, which supports progressive document construction from data streams.</p>
@@ -312,7 +312,7 @@
       <name>Title</name>
       <comment>The title of the SVG document.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The title of an SVG document is declared with a title element that can embedded anywhere in the document.  In cases where a title has been specified, it will be possible to read it from this field.</p>
       </description>

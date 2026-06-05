@@ -114,7 +114,7 @@ Pre-Condition: Must be in a connection state of `NTC::DISCONNECTED`
 Post-Condition: If this method returns `ERR::Okay`, will be in state `NTC::CONNECTING`.
 
 -INPUT-
-cpp(strview) Address: String containing either a domain name (e.g. `www.google.com`) or an IP address (e.g. `123.123.123.123`)
+strview Address: String containing either a domain name (e.g. `www.google.com`) or an IP address (e.g. `123.123.123.123`)
 int Port: Remote port to connect to.
 double Timeout: Connection timeout in seconds (0 = no timeout).
 
@@ -595,7 +595,7 @@ This is only available for UDP sockets.
 The socket must be bound to a local address before joining a multicast group.
 
 -INPUT-
-cpp(strview) Group: The multicast group address to join (e.g. `224.1.1.1`).
+strview Group: The multicast group address to join (e.g. `224.1.1.1`).
 
 -ERRORS-
 Okay: Successfully joined the multicast group.
@@ -648,7 +648,7 @@ This method leaves a previously joined multicast group, stopping the reception o
 multicast address.
 
 -INPUT-
-cpp(strview) Group: The multicast group address to leave.
+strview Group: The multicast group address to leave.
 
 -ERRORS-
 Okay: Successfully left the multicast group.

@@ -481,7 +481,7 @@ static int get_results(lua_State *Lua, const FunctionField *args, const int8_t *
             // RESULT|CPP|STR = std::string_view = Function manipulates an embedded std::string_view that references an internal buffer
             //                  Can be combined with ALLOC, in which case the client must free the referenced data pointer.
             // RESULT|MUTABLE|CPP|STR = std::string * = Function manipulates the std::string reference directly
-            // RESULT|STR = CSTRING * = Function returns a direct pointer string, either internal or allocated
+            // RESULT|STR = CSTRING * = Function returns a char pointer, either internal or allocated
             if (type & FD_CPP) {
                if (type & FD_MUTABLE) { // std::string *
                   if (auto str_result = ((std::string **)(ArgBuf + of))[0]; str_result) {

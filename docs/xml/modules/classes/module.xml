@@ -37,10 +37,10 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
     <method>
       <name>ResolveSymbol</name>
       <comment>Resolves library symbol names to their address pointers.</comment>
-      <prototype>ERR mod::ResolveSymbol(OBJECTPTR Object, const std::string_view &amp; Name, APTR * Address)</prototype>
+      <prototype>ERR mod::ResolveSymbol(OBJECTPTR Object, STRVIEW Name, APTR * Address)</prototype>
       <tiriPrototype>err, Address:any = ResolveSymbol(Name:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Name">The name of the symbol to resolve.</param>
+        <param type="STRVIEW" name="Name">The name of the symbol to resolve.</param>
         <param type="APTR *" name="Address">The address of the symbol will be returned in this parameter.</param>
       </input>
       <description>
@@ -59,10 +59,10 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
     <method>
       <name>Test</name>
       <comment>Run unit tests for the module, if present.</comment>
-      <prototype>ERR mod::Test(OBJECTPTR Object, const std::string_view &amp; Options, INT * Passed, INT * Total)</prototype>
+      <prototype>ERR mod::Test(OBJECTPTR Object, STRVIEW Options, INT * Passed, INT * Total)</prototype>
       <tiriPrototype>err, Passed:num, Total:num = Test(Options:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Options">Optional CSV list of testing options.</param>
+        <param type="STRVIEW" name="Options">Optional CSV list of testing options.</param>
         <param type="INT *" name="Passed">The number of tests that passed will be returned in this parameter.</param>
         <param type="INT *" name="Total">The total number of tests that were executed will be returned in this parameter.</param>
       </input>

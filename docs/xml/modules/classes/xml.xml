@@ -122,11 +122,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Evaluate</name>
       <comment>Run an XQuery expression against the XML data.</comment>
-      <prototype>ERR xml::Evaluate(OBJECTPTR Object, const std::string_view &amp; Statement, std::string * Result)</prototype>
+      <prototype>ERR xml::Evaluate(OBJECTPTR Object, STRVIEW Statement, STRING * Result)</prototype>
       <tiriPrototype>err, Result:str = Evaluate(Statement:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Statement">An XQuery expression to evaluate.</param>
-        <param type="std::string *" name="Result">The evaluation result is returned here.</param>
+        <param type="STRVIEW" name="Statement">An XQuery expression to evaluate.</param>
+        <param type="STRING *" name="Result">The evaluation result is returned here.</param>
       </input>
       <description>
 <p>The Evaluate method allows the execution of XPath 2.0+ and XQuery 1.0+ expressions against the data contained within the XML object.  This is a lazy execution method that compiles and evaluates the provided expression in a single step, returning the result as a string.  For more complex scenarios or repeated evaluations, consider using the Compile and Evaluate functions in the XPath module.</p>
@@ -143,10 +143,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Filter</name>
       <comment>Filters the XML data structure to retain only a specific tag and its descendants.</comment>
-      <prototype>ERR xml::Filter(OBJECTPTR Object, const std::string_view &amp; XPath)</prototype>
+      <prototype>ERR xml::Filter(OBJECTPTR Object, STRVIEW XPath)</prototype>
       <tiriPrototype>err = Filter(XPath:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="XPath">XPath/XQuery expression that identifies the target tag to retain.</param>
+        <param type="STRVIEW" name="XPath">XPath/XQuery expression that identifies the target tag to retain.</param>
       </input>
       <description>
 <p>The Filter method provides a mechanism for reducing large XML documents to a specific subtree, permanently removing all content that exists outside the targeted element and its children.  This operation is particularly valuable for performance optimisation when working with large documents where only a specific section is relevant.</p>
@@ -164,12 +164,12 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>GetAttrib</name>
       <comment>Retrieves the value of a specific XML attribute from a tagged element.</comment>
-      <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, const std::string_view &amp; Attrib, std::string * Value)</prototype>
+      <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, STRVIEW Attrib, STRING * Value)</prototype>
       <tiriPrototype>err, Value:str = GetAttrib(Index:num, Attrib:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the XML tag to search.</param>
-        <param type="const std::string_view &amp;" name="Attrib">The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.</param>
-        <param type="std::string *" name="Value">Receives the attribute value.  It is cleared if the specified attribute does not exist.</param>
+        <param type="STRVIEW" name="Attrib">The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.</param>
+        <param type="STRING *" name="Value">Receives the attribute value.  It is cleared if the specified attribute does not exist.</param>
       </input>
       <description>
 <p>The GetAttrib method provides efficient access to individual attribute values within XML elements.  Given a tag identifier and attribute name, the method performs a case-insensitive search through the element's attribute collection and returns the corresponding value.</p>
@@ -189,11 +189,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>GetContent</name>
       <comment>Extracts the immediate text content of an XML element, excluding nested tags.</comment>
-      <prototype>ERR xml::GetContent(OBJECTPTR Object, INT Index, std::string * Buffer)</prototype>
+      <prototype>ERR xml::GetContent(OBJECTPTR Object, INT Index, STRING * Buffer)</prototype>
       <tiriPrototype>err, Buffer:str = GetContent(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the XML element from which to extract content.</param>
-        <param type="std::string *" name="Buffer">Receives the extracted content string.</param>
+        <param type="STRING *" name="Buffer">Receives the extracted content string.</param>
       </input>
       <description>
 <p>The GetContent method extracts only the immediate content-node children of the specified element.  Text contained inside nested elements is not included.</p>
@@ -219,11 +219,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>GetEntity</name>
       <comment>Retrieves the value of a parsed entity declaration.</comment>
-      <prototype>ERR xml::GetEntity(OBJECTPTR Object, const std::string_view &amp; Name, std::string * Value)</prototype>
+      <prototype>ERR xml::GetEntity(OBJECTPTR Object, STRVIEW Name, STRING * Value)</prototype>
       <tiriPrototype>err, Value:str = GetEntity(Name:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Name">The name of the entity to retrieve.  This must correspond to a parsed entity declaration.</param>
-        <param type="std::string *" name="Value">Receives the resolved entity value on success.</param>
+        <param type="STRVIEW" name="Name">The name of the entity to retrieve.  This must correspond to a parsed entity declaration.</param>
+        <param type="STRING *" name="Value">Receives the resolved entity value on success.</param>
       </input>
       <description>
 <p>This method returns the expanded value associated with a general entity parsed from the document's DOCTYPE declaration. Entity names are case-sensitive and must match exactly as declared.</p>
@@ -239,11 +239,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>GetNamespaceURI</name>
       <comment>Retrieve the namespace URI for a given namespace UID.</comment>
-      <prototype>ERR xml::GetNamespaceURI(OBJECTPTR Object, UINT NamespaceID, std::string * Result)</prototype>
+      <prototype>ERR xml::GetNamespaceURI(OBJECTPTR Object, UINT NamespaceID, STRING * Result)</prototype>
       <tiriPrototype>err, Result:str = GetNamespaceURI(NamespaceID:num)</tiriPrototype>
       <input>
         <param type="UINT" name="NamespaceID">The UID of the namespace.</param>
-        <param type="std::string *" name="Result">Receives the namespace URI.</param>
+        <param type="STRING *" name="Result">Receives the namespace URI.</param>
       </input>
       <description>
 <p>This method retrieves the original namespace URI string for a given namespace UID.</p>
@@ -259,11 +259,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>GetNotation</name>
       <comment>Retrieves information about a parsed notation declaration.</comment>
-      <prototype>ERR xml::GetNotation(OBJECTPTR Object, const std::string_view &amp; Name, std::string * Value)</prototype>
+      <prototype>ERR xml::GetNotation(OBJECTPTR Object, STRVIEW Name, STRING * Value)</prototype>
       <tiriPrototype>err, Value:str = GetNotation(Name:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Name">The notation name to look up.</param>
-        <param type="std::string *" name="Value">Receives the notation descriptor on success.</param>
+        <param type="STRVIEW" name="Name">The notation name to look up.</param>
+        <param type="STRING *" name="Value">Receives the notation descriptor on success.</param>
       </input>
       <description>
 <p>Returns the system or public identifier captured for a notation declaration inside the document type definition.  If both public and system identifiers were provided they are returned as a single string separated by a single space.</p>
@@ -299,12 +299,12 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>InsertContent</name>
       <comment>Inserts text content into the XML document structure at specified positions.</comment>
-      <prototype>ERR xml::InsertContent(OBJECTPTR Object, INT Index, XMI Where, const std::string_view &amp; Content, INT * Result)</prototype>
+      <prototype>ERR xml::InsertContent(OBJECTPTR Object, INT Index, XMI Where, STRVIEW Content, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = InsertContent(Index:num, Where:num, Content:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the target XML element that will serve as the reference point for insertion.</param>
         <param type="XMI" name="Where" lookup="XMI">Specifies the insertion position relative to the target element.  Use <code>PREV</code> or <code>NEXT</code> for sibling insertion, or <code>CHILD</code> for child content insertion.</param>
-        <param type="const std::string_view &amp;" name="Content">The text content to insert.  Special XML characters will be automatically escaped.</param>
+        <param type="STRVIEW" name="Content">The text content to insert.  Special XML characters will be automatically escaped.</param>
         <param type="INT *" name="Result">Pointer to an integer that will receive the unique identifier of the newly created content node.</param>
       </input>
       <description>
@@ -324,12 +324,12 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>InsertXML</name>
       <comment>Parse an XML string and insert it in the XML tree.</comment>
-      <prototype>ERR xml::InsertXML(OBJECTPTR Object, INT Index, XMI Where, const std::string_view &amp; XML, INT * Result)</prototype>
+      <prototype>ERR xml::InsertXML(OBJECTPTR Object, INT Index, XMI Where, STRVIEW XML, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = InsertXML(Index:num, Where:num, XML:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The new data will target the tag specified here.</param>
         <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> or <code>CHILD_END</code> for a child insert.</param>
-        <param type="const std::string_view &amp;" name="XML">An XML statement to parse.</param>
+        <param type="STRVIEW" name="XML">An XML statement to parse.</param>
         <param type="INT *" name="Result">The resulting tag index.</param>
       </input>
       <description>
@@ -353,12 +353,12 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>InsertXPath</name>
       <comment>Inserts an XML statement in an XML tree.</comment>
-      <prototype>ERR xml::InsertXPath(OBJECTPTR Object, const std::string_view &amp; XPath, XMI Where, const std::string_view &amp; XML, INT * Result)</prototype>
+      <prototype>ERR xml::InsertXPath(OBJECTPTR Object, STRVIEW XPath, XMI Where, STRVIEW XML, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = InsertXPath(XPath:str, Where:num, XML:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="XPath">An XPath string that refers to the target insertion point.</param>
+        <param type="STRVIEW" name="XPath">An XPath string that refers to the target insertion point.</param>
         <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> for a child insert.</param>
-        <param type="const std::string_view &amp;" name="XML">XML statement to parse and insert.</param>
+        <param type="STRVIEW" name="XML">XML statement to parse and insert.</param>
         <param type="INT *" name="Result">The index of the new tag is returned here.</param>
       </input>
       <description>
@@ -384,10 +384,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>LoadSchema</name>
       <comment>Load an XML Schema definition to enable schema-aware validation.</comment>
-      <prototype>ERR xml::LoadSchema(OBJECTPTR Object, const std::string_view &amp; Path)</prototype>
+      <prototype>ERR xml::LoadSchema(OBJECTPTR Object, STRVIEW Path)</prototype>
       <tiriPrototype>err = LoadSchema(Path:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Path">File system path to the XML Schema (XSD) document.</param>
+        <param type="STRVIEW" name="Path">File system path to the XML Schema (XSD) document.</param>
       </input>
       <description>
 <p>This method parses an XML Schema document and attaches its schema context to the current XML object.  Once loaded, schema metadata is available for validation and XQuery evaluation routines that utilise schema-aware behaviour.</p>
@@ -431,10 +431,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>RegisterNamespace</name>
       <comment>Register a namespace URI and return its UID.</comment>
-      <prototype>ERR xml::RegisterNamespace(OBJECTPTR Object, const std::string_view &amp; URI, UINT * Result)</prototype>
+      <prototype>ERR xml::RegisterNamespace(OBJECTPTR Object, STRVIEW URI, UINT * Result)</prototype>
       <tiriPrototype>err, Result:num = RegisterNamespace(URI:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="URI">The namespace URI to register. Must not be empty.</param>
+        <param type="STRVIEW" name="URI">The namespace URI to register. Must not be empty.</param>
         <param type="UINT *" name="Result">Pointer to an integer that will receive the UID for the namespace URI.</param>
       </input>
       <description>
@@ -474,10 +474,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>RemoveXPath</name>
       <comment>Removes tag(s) from the XML structure using an XPath lookup.</comment>
-      <prototype>ERR xml::RemoveXPath(OBJECTPTR Object, const std::string_view &amp; XPath, INT Limit)</prototype>
+      <prototype>ERR xml::RemoveXPath(OBJECTPTR Object, STRVIEW XPath, INT Limit)</prototype>
       <tiriPrototype>err = RemoveXPath(XPath:str, Limit:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="XPath">An XML path string.</param>
+        <param type="STRVIEW" name="XPath">An XML path string.</param>
         <param type="INT" name="Limit">The maximum number of matching tags to delete.  A value of one or zero removes only the indicated tag and its children.  A value of -1 removes all matching tags.</param>
       </input>
       <description>
@@ -498,10 +498,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>ResolvePrefix</name>
       <comment>Resolve a namespace prefix to the UID of its namespace URI within a tag's scope.</comment>
-      <prototype>ERR xml::ResolvePrefix(OBJECTPTR Object, const std::string_view &amp; Prefix, INT TagID, UINT * Result)</prototype>
+      <prototype>ERR xml::ResolvePrefix(OBJECTPTR Object, STRVIEW Prefix, INT TagID, UINT * Result)</prototype>
       <tiriPrototype>err, Result:num = ResolvePrefix(Prefix:str, TagID:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Prefix">The namespace prefix to resolve.  Use an empty string for the default namespace.</param>
+        <param type="STRVIEW" name="Prefix">The namespace prefix to resolve.  Use an empty string for the default namespace.</param>
         <param type="INT" name="TagID">The tag ID defining the starting scope for namespace resolution.</param>
         <param type="UINT *" name="Result">Receives the resolved namespace URI hash.</param>
       </input>
@@ -525,10 +525,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Search</name>
       <comment>Searches for XML elements using XPath and XQuery expressions with optional callback processing.</comment>
-      <prototype>ERR xml::Search(OBJECTPTR Object, const std::string_view &amp; Expression, FUNCTION * Callback, INT * Result)</prototype>
+      <prototype>ERR xml::Search(OBJECTPTR Object, STRVIEW Expression, FUNCTION * Callback, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = Search(Expression:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Expression">A valid XQuery expression.</param>
+        <param type="STRVIEW" name="Expression">A valid XQuery expression.</param>
         <param type="FUNCTION *" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
         <param type="INT *" name="Result">UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.</param>
       </input>
@@ -553,12 +553,12 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Serialise</name>
       <comment>Serialise part of the XML tree to an XML string.</comment>
-      <prototype>ERR xml::Serialise(OBJECTPTR Object, INT Index, XMF Flags, std::string * Result)</prototype>
+      <prototype>ERR xml::Serialise(OBJECTPTR Object, INT Index, XMF Flags, STRING * Result)</prototype>
       <tiriPrototype>err, Result:str = Serialise(Index:num, Flags:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Index to a source tag for which serialisation will start.  Set to zero to serialise the entire tree.</param>
         <param type="XMF" name="Flags" lookup="XMF">Use <code>INCLUDE_SIBLINGS</code> to include siblings of the tag found at Index.</param>
-        <param type="std::string *" name="Result">The resulting string is returned in this parameter.</param>
+        <param type="STRING *" name="Result">The resulting string is returned in this parameter.</param>
       </input>
       <description>
 <p>The Serialise() method will serialise all or part of the XML data tree to a string.</p>
@@ -576,13 +576,13 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>SetAttrib</name>
       <comment>Adds, updates and removes XML attributes.</comment>
-      <prototype>ERR xml::SetAttrib(OBJECTPTR Object, INT Index, XMS Attrib, const std::string_view &amp; Name, const std::string_view &amp; Value)</prototype>
+      <prototype>ERR xml::SetAttrib(OBJECTPTR Object, INT Index, XMS Attrib, STRVIEW Name, STRVIEW Value)</prototype>
       <tiriPrototype>err = SetAttrib(Index:num, Attrib:num, Name:str, Value:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Identifies the tag that is to be updated.</param>
         <param type="XMS" name="Attrib" lookup="XMS">Attribute index to update, or <code>NEW</code>, <code>UPDATE</code>, <code>UPDATE_ONLY</code> or <code>REMOVE</code>.</param>
-        <param type="const std::string_view &amp;" name="Name">New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is <code>UPDATE</code>, <code>UPDATE_ONLY</code> or <code>REMOVE</code>, this name is used to find the attribute.</param>
-        <param type="const std::string_view &amp;" name="Value">String containing the new value for the attribute.</param>
+        <param type="STRVIEW" name="Name">New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is <code>UPDATE</code>, <code>UPDATE_ONLY</code> or <code>REMOVE</code>, this name is used to find the attribute.</param>
+        <param type="STRVIEW" name="Value">String containing the new value for the attribute.</param>
       </input>
       <description>
 <p>This method updates existing XML tag attributes, creates new attributes and clears content.</p>
@@ -623,11 +623,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <method>
       <name>Sort</name>
       <comment>Sorts XML tags to your specifications.</comment>
-      <prototype>ERR xml::Sort(OBJECTPTR Object, const std::string_view &amp; XPath, const std::string_view &amp; Sort, XSF Flags)</prototype>
+      <prototype>ERR xml::Sort(OBJECTPTR Object, STRVIEW XPath, STRVIEW Sort, XSF Flags)</prototype>
       <tiriPrototype>err = Sort(XPath:str, Sort:str, Flags:num)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="XPath">Sort everything under the specified tag, or empty to sort the entire top level.</param>
-        <param type="const std::string_view &amp;" name="Sort">A sorting instruction string.</param>
+        <param type="STRVIEW" name="XPath">Sort everything under the specified tag, or empty to sort the entire top level.</param>
+        <param type="STRVIEW" name="Sort">A sorting instruction string.</param>
         <param type="XSF" name="Flags" lookup="XSF">Optional flags.</param>
       </input>
       <description>
@@ -669,14 +669,14 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>DocType</name>
       <comment>Root element name from a parsed DOCTYPE declaration.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
     </field>
 
     <field>
       <name>ErrorMsg</name>
       <comment>A textual description of the last parse error.</comment>
       <access read="R">Read</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>This field may provide a textual description of the last parse error that occurred, in conjunction with the most recently received error code.  Issues parsing malformed XPath expressions may also be reported here.</p>
       </description>
@@ -706,7 +706,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Path</name>
       <comment>Set this field if the XML document originates from a file source.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>XML documents can be loaded from the file system by specifying a file path in this field.  If set post-initialisation, all currently loaded data will be cleared and the file will be parsed automatically.</p>
 <p>The XML class supports <function module="Core">LoadFile</function>, so an XML file can be pre-cached by the program if it is frequently used during a program's life cycle.</p>
@@ -718,7 +718,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>PublicID</name>
       <comment>Public identifier from a parsed DOCTYPE declaration.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
     </field>
 
     <field>
@@ -750,7 +750,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>SystemID</name>
       <comment>System identifier from a parsed DOCTYPE declaration.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
     </field>
 
     <field>
@@ -825,14 +825,14 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
   </types>
   <structs>
     <struct name="XMLAttrib" typeName="XMLATTRIB">
-      <field name="Name" type="std::string">Name of the attribute</field>
-      <field name="Value" type="std::string">Value of the attribute</field>
+      <field name="Name" type="STRING">Name of the attribute</field>
+      <field name="Value" type="STRING">Value of the attribute</field>
     </struct>
 
     <struct name="XPathValue" typeName="XPATHVALUE">
       <field name="Type" type="XPVT" lookup="XPVT">Identifies the type of value stored</field>
       <field name="NumberValue" type="DOUBLE">Defined if the type is Number or Boolean</field>
-      <field name="StringValue" type="std::string">Defined if the type is String</field>
+      <field name="StringValue" type="STRING">Defined if the type is String</field>
     </struct>
 
     <struct name="XTag" typeName="XTAG">

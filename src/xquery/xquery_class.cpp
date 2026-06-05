@@ -489,9 +489,9 @@ The structure of the returned XML document is as follows, with each matching fun
  ```
 
 -INPUT-
-cpp(strview) Name: The name of the function or functions to inspect (supports wildcards).
+strview Name: The name of the function or functions to inspect (supports wildcards).
 int(XIF) ResultFlags: Bitmask controlling the returned information.
-^&cpp(str) Result: Receives a serialised XML document describing the function(s).
+^&string Result: Receives a serialised XML document describing the function(s).
 
 -TAGS-
 mutates-object, caller-owns-result, null-terminated-result
@@ -622,7 +622,7 @@ The C++ function prototype is `ERR (*XQuery, std::string_view FunctionName, cons
 Script callbacks are not currently supported.
 
 -INPUT-
-cpp(strview) FunctionName: The name of the function to register (e.g., "custom-function").
+strview FunctionName: The name of the function to register (e.g., "custom-function").
 ptr(func) Callback: The callback function to register for FunctionName.
 
 -TAGS-

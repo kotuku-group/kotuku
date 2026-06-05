@@ -37,10 +37,10 @@
     <method>
       <name>BlockingResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
-      <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, const std::string_view &amp; Address)</prototype>
+      <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = BlockingResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
       </input>
       <description>
 <p>BlockingResolveAddress() performs an IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process requires contact with a DNS server and this will cause the routine to block until a response is received.</p>
@@ -62,10 +62,10 @@
     <method>
       <name>BlockingResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
-      <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, const std::string_view &amp; HostName)</prototype>
+      <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, STRVIEW HostName)</prototype>
       <tiriPrototype>err = BlockingResolveName(HostName:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="HostName">The host name to be resolved.</param>
+        <param type="STRVIEW" name="HostName">The host name to be resolved.</param>
       </input>
       <description>
 <p>BlockingResolveName() performs a domain name resolution, converting a domain name to its official host name and IP addresses.  The resolution process requires contact with a DNS server and the function will block until a response is received or a timeout occurs.</p>
@@ -86,10 +86,10 @@
     <method>
       <name>ResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
-      <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, const std::string_view &amp; Address)</prototype>
+      <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = ResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
       </input>
       <description>
 <p>ResolveAddress() performs a IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>
@@ -107,10 +107,10 @@
     <method>
       <name>ResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
-      <prototype>ERR nl::ResolveName(OBJECTPTR Object, const std::string_view &amp; HostName)</prototype>
+      <prototype>ERR nl::ResolveName(OBJECTPTR Object, STRVIEW HostName)</prototype>
       <tiriPrototype>err = ResolveName(HostName:str)</tiriPrototype>
       <input>
-        <param type="const std::string_view &amp;" name="HostName">The host name to be resolved.</param>
+        <param type="STRVIEW" name="HostName">The host name to be resolved.</param>
       </input>
       <description>
 <p>ResolveName() performs a domain name resolution, converting a domain name to an official host name and IP addresses. The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>

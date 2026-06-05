@@ -229,7 +229,7 @@ At the time of writing, the provided object must belong to one of the following 
 @VectorClip.
 
 -INPUT-
-cpp(strview) Name: The unique name to associate with the definition.
+strview Name: The unique name to associate with the definition.
 obj Def: Reference to the definition object.
 
 -TAGS-
@@ -371,7 +371,7 @@ the search is successful.
 Definitions are created with the #AddDef() method.
 
 -INPUT-
-cpp(strview) Name: The name of the definition.
+strview Name: The name of the definition.
 &obj Def: A pointer to the definition object is returned here if discovered.
 
 -TAGS-

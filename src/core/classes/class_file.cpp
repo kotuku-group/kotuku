@@ -419,7 +419,7 @@ copied to the new location.  If an error occurs when copying a sub-folder or fil
 and an error code will be returned.
 
 -INPUT-
-cpp(strview) Dest: The destination file path for the copy operation.
+strview Dest: The destination file path for the copy operation.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -878,7 +878,7 @@ destination path then it will be over-written with the new data.
 The #Position field will be reset as a result of calling this method.
 
 -INPUT-
-cpp(strview) Dest: The desired path for the file.
+strview Dest: The desired path for the file.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -1144,7 +1144,7 @@ the #Flags field when you initialised the file, or the call will fail.
 `ERR::NoData` is returned once all lines have been read.
 
 -INPUT-
-^&cpp(str) Result: The string provided in this parameter will be updated with the line read from the file.
+^&string Result: The string provided in this parameter will be updated with the line read from the file.
 
 -ERRORS-
 Okay: The file information was read into the buffer.

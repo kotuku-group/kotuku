@@ -148,7 +148,7 @@ a response is received.
 The results can be read from the #HostName field or received via the #Callback function.
 
 -INPUT-
-cpp(strview) Address: IP address to be resolved, e.g. 123.111.94.82.
+strview Address: IP address to be resolved, e.g. 123.111.94.82.
 
 -ERRORS-
 Okay: The IP address was resolved successfully.
@@ -201,7 +201,7 @@ response is received or a timeout occurs.
 The results can be read from the #Addresses field or received via the #Callback function.
 
 -INPUT-
-cpp(strview) HostName: The host name to be resolved.
+strview HostName: The host name to be resolved.
 
 -ERRORS-
 Okay
@@ -290,7 +290,7 @@ process.
 If synchronous (blocking) operation is desired then use the #BlockingResolveAddress() method.
 
 -INPUT-
-cpp(strview) Address: IP address to be resolved, e.g. "123.111.94.82".
+strview Address: IP address to be resolved, e.g. "123.111.94.82".
 
 -ERRORS-
 Okay: The IP address was resolved successfully.
@@ -363,7 +363,7 @@ that the function can return immediately.  The #Callback function will be called
 If synchronous (blocking) operation is desired then use the #BlockingResolveName() method.
 
 -INPUT-
-cpp(strview) HostName: The host name to be resolved.
+strview HostName: The host name to be resolved.
 
 -ERRORS-
 Okay

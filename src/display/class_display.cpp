@@ -1822,7 +1822,7 @@ This method does not work on hosted platforms.  All parameters passed to this me
 if it should not be changed).
 
 -INPUT-
-cpp(strview) Name: The name of the display.
+strview Name: The name of the display.
 int MinH: The minimum horizontal scan rate.  Usually set to 31.
 int MaxH: The maximum horizontal scan rate.
 int MinV: The minimum vertical scan rate.  Usually set to 50.

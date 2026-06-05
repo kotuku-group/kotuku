@@ -326,8 +326,8 @@ void ScintillaKTK::Paste()
 
    objClipboard::create clipboard = { };
    if (clipboard.ok()) {
-      CSTRING *files;
-      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr) IS ERR::Okay) {
+      kt::vector<std::string> files;
+      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr) IS ERR::Okay) {
          objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
          if (file.ok()) {
             int len, size;

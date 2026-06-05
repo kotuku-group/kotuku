@@ -14,7 +14,7 @@ extern ERR SetSSL(objNetSocket * NetSocket, const std::string_view & Command, co
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsAddressToStr[] = { { "Result", FD_STR|FD_ALLOC }, { "IPAddress:IPAddress", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsAddressToStr[] = { { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { "IPAddress:IPAddress", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsHostToLong[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsHostToShort[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsLongToHost[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };

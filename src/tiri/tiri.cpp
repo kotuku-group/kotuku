@@ -335,7 +335,7 @@ extern void allocator_unit_tests(int &, int &);
 extern void bulk_unit_tests(int &, int &);
 #endif
 
-static void MODTest(const std::string_view &Options, int *Passed, int *Total)
+static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef ENABLE_UNIT_TESTS
    {
@@ -397,7 +397,7 @@ script.  If the script is cached, the variable settings will be available on the
 
 -INPUT-
 obj(Script) Script: Pointer to a Tiri script.
-cpp(strview) Name: The name of the variable to set.
+strview Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
 

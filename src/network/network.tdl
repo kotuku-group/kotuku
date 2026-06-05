@@ -86,12 +86,12 @@ typedef int SOCKET_HANDLE;
   })
 
   klass("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
-    cpp(str) NetworkFilter
-    cpp(str) GatewayFilter
-    cpp(str) Username
-    cpp(str) Password
-    cpp(str) ProxyName
-    cpp(str) Server
+    string NetworkFilter
+    string GatewayFilter
+    string Username
+    string Password
+    string ProxyName
+    string Server
     int Port
     int ServerPort
     int Enabled
@@ -129,15 +129,15 @@ typedef int SOCKET_HANDLE;
       src={ "netsocket/netsocket.cpp", "netsocket/netsocket_fields.cpp" },
       output="netsocket/netsocket_def.c"
   }, [[
-    ptr ClientData         # Pointer to user data that can be used during events
-    cpp(str) Address       # NetSocket: connect to this remote address; NetServer: bind to this local address
-    int(NTC) State         # Connection state
-    error Error            # The last NetSocket error can be read from this field
-    int Port               # NetSocket: remote port to connect to; NetServer: local port to bind
-    int(NSF) Flags         # Optional flags
-    int MsgLimit           # Limits the size of messages, in bytes.
-    int MaxPacketSize      # Maximum size for UDP packets (default 65507 bytes)
-    int MulticastTTL       # Time-to-live for multicast packets (UDP only)
+    ptr ClientData    # Pointer to user data that can be used during events
+    string Address    # NetSocket: connect to this remote address; NetServer: bind to this local address
+    int(NTC) State    # Connection state
+    error Error       # The last NetSocket error can be read from this field
+    int Port          # NetSocket: remote port to connect to; NetServer: local port to bind
+    int(NSF) Flags    # Optional flags
+    int MsgLimit      # Limits the size of messages, in bytes.
+    int MaxPacketSize # Maximum size for UDP packets (default 65507 bytes)
+    int MulticastTTL  # Time-to-live for multicast packets (UDP only)
   ]])
 
   klass("NetServer", {

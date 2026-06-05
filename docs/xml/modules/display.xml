@@ -649,14 +649,14 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>SetCursor</name>
     <category>Cursor</category>
     <comment>Sets the cursor image and can anchor the pointer to any surface.</comment>
-    <prototype>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &amp; Name, OBJECTID Owner)</prototype>
+    <prototype>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, STRVIEW Name, OBJECTID Owner)</prototype>
     <tiriPrototype>err = SetCursor(Surface:obj, Flags:num, Cursor:num, Name:str, Owner:obj)</tiriPrototype>
     <tags>mutates-object, blocking, case-insensitive</tags>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object that the pointer should anchor itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</param>
       <param type="CRF" name="Flags" lookup="CRF">Optional flags that affect the cursor.</param>
       <param type="PTC" name="Cursor" lookup="PTC">The ID of the cursor image that is to be set.</param>
-      <param type="const std::string_view &amp;" name="Name">The name of the cursor image that is to be set (if <code>Cursor</code> is zero).</param>
+      <param type="STRVIEW" name="Name">The name of the cursor image that is to be set (if <code>Cursor</code> is zero).</param>
       <param type="OBJECTID" name="Owner">The object nominated as the owner of the anchor, and/or owner of the cursor image setting.</param>
     </input>
     <description>
@@ -779,13 +779,13 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>StartCursorDrag</name>
     <category>Cursor</category>
     <comment>Attaches an item to the cursor for the purpose of drag and drop.</comment>
-    <prototype>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, const std::string_view &amp; Datatypes, OBJECTID Surface)</prototype>
+    <prototype>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, STRVIEW Datatypes, OBJECTID Surface)</prototype>
     <tiriPrototype>err = StartCursorDrag(Source:obj, Item:num, Datatypes:str, Surface:obj)</tiriPrototype>
     <tags>copies-input, mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="OBJECTID" name="Source">Refers to an object that is managing the source data.</param>
       <param type="INT" name="Item">A custom number that represents the item being dragged from the source.</param>
-      <param type="const std::string_view &amp;" name="Datatypes">A character array that lists the datatypes supported by the source item, in order of conversion preference.</param>
+      <param type="STRVIEW" name="Datatypes">A character array that lists the datatypes supported by the source item, in order of conversion preference.</param>
       <param type="OBJECTID" name="Surface">A 32-bit composite surface that represents the item being dragged.</param>
     </input>
     <description>

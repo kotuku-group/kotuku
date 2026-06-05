@@ -467,19 +467,19 @@ class objNetLookup : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR resolveName(const std::string_view & HostName) noexcept {
+   inline ERR resolveName(const std::string_view &HostName) noexcept {
       struct nl::ResolveName args = { HostName };
       return(Action(AC(-1), this, &args));
    }
-   inline ERR resolveAddress(const std::string_view & Address) noexcept {
+   inline ERR resolveAddress(const std::string_view &Address) noexcept {
       struct nl::ResolveAddress args = { Address };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR blockingResolveName(const std::string_view & HostName) noexcept {
+   inline ERR blockingResolveName(const std::string_view &HostName) noexcept {
       struct nl::BlockingResolveName args = { HostName };
       return(Action(AC(-3), this, &args));
    }
-   inline ERR blockingResolveAddress(const std::string_view & Address) noexcept {
+   inline ERR blockingResolveAddress(const std::string_view &Address) noexcept {
       struct nl::BlockingResolveAddress args = { Address };
       return(Action(AC(-4), this, &args));
    }
@@ -545,9 +545,9 @@ class objNetLookup : public Object {
 
 namespace ns {
 struct Connect { std::string_view Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetLocalIPAddress { struct IPAddress * Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SendTo { struct IPAddress * Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RecvFrom { struct IPAddress * Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetLocalIPAddress { struct IPAddress *Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SendTo { struct IPAddress *Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RecvFrom { struct IPAddress *Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct JoinMulticastGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct LeaveMulticastGroup { std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -617,7 +617,7 @@ class objNetSocket : public Object {
          return error;
       }
    }
-   inline ERR connect(const std::string_view & Address, int Port, double Timeout) noexcept {
+   inline ERR connect(const std::string_view &Address, int Port, double Timeout) noexcept {
       struct ns::Connect args = { Address, Port, Timeout };
       return(Action(AC(-1), this, &args));
    }
@@ -637,11 +637,11 @@ class objNetSocket : public Object {
       if (BytesRead) *BytesRead = args.BytesRead;
       return(error);
    }
-   inline ERR joinMulticastGroup(const std::string_view & Group) noexcept {
+   inline ERR joinMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::JoinMulticastGroup args = { Group };
       return(Action(AC(-5), this, &args));
    }
-   inline ERR leaveMulticastGroup(const std::string_view & Group) noexcept {
+   inline ERR leaveMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::LeaveMulticastGroup args = { Group };
       return(Action(AC(-6), this, &args));
    }
@@ -816,8 +816,8 @@ class objNetSocket : public Object {
 // NetServer methods
 
 namespace ns {
-struct DisconnectClient { objNetClient * Client; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DisconnectSocket { objClientSocket * Socket; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DisconnectClient { objNetClient *Client; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DisconnectSocket { objClientSocket *Socket; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -972,36 +972,36 @@ inline ERR nsCreate(objNetSocket **NewNetSocketOut, OBJECTID ListenerID, APTR Cl
 
 struct NetworkBase {
 #ifndef KOTUKU_STATIC
-   ERR (*_StrToAddress)(const std::string_view & String, struct IPAddress *Address);
+   ERR (*_StrToAddress)(const std::string_view &String, struct IPAddress *Address);
    CSTRING (*_AddressToStr)(struct IPAddress *IPAddress);
    uint32_t (*_HostToShort)(uint32_t Value);
    uint32_t (*_HostToLong)(uint32_t Value);
    uint32_t (*_ShortToHost)(uint32_t Value);
    uint32_t (*_LongToHost)(uint32_t Value);
-   ERR (*_SetSSL)(objNetSocket *NetSocket, const std::string_view & Command, const std::string_view & Value);
+   ERR (*_SetSSL)(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value);
 #endif // KOTUKU_STATIC
 };
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_NETWORK_MODULE)
 extern struct NetworkBase *NetworkBase;
 namespace net {
-inline ERR StrToAddress(const std::string_view & String, struct IPAddress *Address) { return NetworkBase->_StrToAddress(String,Address); }
+inline ERR StrToAddress(const std::string_view &String, struct IPAddress *Address) { return NetworkBase->_StrToAddress(String,Address); }
 inline CSTRING AddressToStr(struct IPAddress *IPAddress) { return NetworkBase->_AddressToStr(IPAddress); }
 inline uint32_t HostToShort(uint32_t Value) { return NetworkBase->_HostToShort(Value); }
 inline uint32_t HostToLong(uint32_t Value) { return NetworkBase->_HostToLong(Value); }
 inline uint32_t ShortToHost(uint32_t Value) { return NetworkBase->_ShortToHost(Value); }
 inline uint32_t LongToHost(uint32_t Value) { return NetworkBase->_LongToHost(Value); }
-inline ERR SetSSL(objNetSocket *NetSocket, const std::string_view & Command, const std::string_view & Value) { return NetworkBase->_SetSSL(NetSocket,Command,Value); }
+inline ERR SetSSL(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value) { return NetworkBase->_SetSSL(NetSocket,Command,Value); }
 } // namespace
 #else
 namespace net {
-extern ERR StrToAddress(const std::string_view & String, struct IPAddress *Address);
+extern ERR StrToAddress(const std::string_view &String, struct IPAddress *Address);
 extern CSTRING AddressToStr(struct IPAddress *IPAddress);
 extern uint32_t HostToShort(uint32_t Value);
 extern uint32_t HostToLong(uint32_t Value);
 extern uint32_t ShortToHost(uint32_t Value);
 extern uint32_t LongToHost(uint32_t Value);
-extern ERR SetSSL(objNetSocket *NetSocket, const std::string_view & Command, const std::string_view & Value);
+extern ERR SetSSL(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value);
 } // namespace
 #endif // KOTUKU_STATIC
 

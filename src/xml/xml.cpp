@@ -178,7 +178,7 @@ Call XValueToNumber() to convert an XPathValue object to a 64-bit floating point
 also includes cover support for boolean types, converting true to 1.0 and false to 0.
 
 -INPUT-
-ptr(struct(XPathValue)) Value: The XPathValue to convert.
+struct(XPathValue) Value: The XPathValue to convert.
 &double Result: The numeric representation of the value is returned here.
 
 -ERRORS-
@@ -215,8 +215,8 @@ the node-set array.
 Note: The integrity of the array is not guaranteed if the original XML document is modified or freed.
 
 -INPUT-
-ptr(struct(XPathValue)) Value: The XPathValue to convert.
-^&cpp(array(ptr(struct(XTag)))) Result: The node-set is returned here as an array of !XTag structures.
+struct(XPathValue) Value: The XPathValue to convert.
+^&cpp(array(struct(*XTag))) Result: The node-set is returned here as an array of !XTag structures.
 
 -ERRORS-
 Okay
@@ -237,7 +237,7 @@ ERR XValueNodes(XPathValue *Value, kt::vector<XTag *> *Result)
    if (Value->Type IS XPVT::NIL) return log.warning(ERR::NoData);
    if (Value->Type != XPVT::NodeSet) return log.warning(ERR::Mismatch);
    auto val = (XPathVal *)Value;
-   *Result = val->to_node_set();
+   *Result = val->to_node_set(); // kt::vector<XTag *>
    return ERR::Okay;
 }
 
@@ -249,8 +249,8 @@ XValueToString: Converts an XPathValue to its string representation.
 Call XValueToString() to convert an XPathValue object into its string representation.
 
 -INPUT-
-ptr(cstruct(XPathValue)) Value: The XPathValue to convert.
-^&cpp(str) Result: Receives the string representation of the value.
+cstruct(XPathValue) Value: The XPathValue to convert.
+^&string Result: Receives the string representation of the value.
 
 -ERRORS-
 Okay

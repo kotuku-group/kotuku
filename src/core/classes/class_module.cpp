@@ -501,7 +501,7 @@ loaded into memory or an `ERR::FieldNotSet` error will be returned.  If the symb
 returned.
 
 -INPUT-
-cpp(strview) Name: The name of the symbol to resolve.
+strview Name: The name of the symbol to resolve.
 &ptr Address: The address of the symbol will be returned in this parameter.
 
 -ERRORS-
@@ -566,7 +566,7 @@ for what the unit tests should do, but it is typically expected that test result
 Unit tests should never be compiled into production releases of the code.
 
 -INPUT-
-cpp(strview) Options: Optional CSV list of testing options.
+strview Options: Optional CSV list of testing options.
 &int Passed: The number of tests that passed will be returned in this parameter.
 &int Total: The total number of tests that were executed will be returned in this parameter.
 

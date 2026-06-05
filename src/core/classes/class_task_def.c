@@ -14,7 +14,7 @@ static const struct FieldDef clTaskFlags[] = {
 };
 
 FDEF maAddArgument[] = { { "Argument", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maGetEnv[] = { { "Name", FD_CPP|FD_STR }, { "Value", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
+FDEF maGetEnv[] = { { "Name", FD_CPP|FD_STR }, { "Value", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
 FDEF maSetEnv[] = { { "Name", FD_CPP|FD_STR }, { "Value", FD_CPP|FD_STR }, { 0, 0 } };
 
 static const struct MethodEntry clTaskMethods[] = {

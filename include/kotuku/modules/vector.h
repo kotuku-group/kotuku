@@ -737,7 +737,7 @@ class objVectorScene : public Object {
       struct acResize args = { Width, Height, Depth };
       return Action(AC::Resize, this, &args);
    }
-   inline ERR addDef(const std::string_view & Name, OBJECTPTR Def) noexcept {
+   inline ERR addDef(const std::string_view &Name, OBJECTPTR Def) noexcept {
       struct sc::AddDef args = { Name, Def };
       return(Action(AC(-1), this, &args));
    }
@@ -747,7 +747,7 @@ class objVectorScene : public Object {
       if (Result) *Result = args.Result;
       return(error);
    }
-   inline ERR findDef(const std::string_view & Name, OBJECTPTR * Def) noexcept {
+   inline ERR findDef(const std::string_view &Name, OBJECTPTR * Def) noexcept {
       struct sc::FindDef args = { Name, (OBJECTPTR)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Def) *Def = args.Def;
@@ -2638,10 +2638,10 @@ class objOffsetFX : public objFilterEffect {
 
 namespace rf {
 struct SelectGamma { CMP Component; double Amplitude; double Offset; double Exponent; static const AC id = AC(-20); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectTable { CMP Component; double * Values; int Size; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectTable { CMP Component; double *Values; int Size; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectLinear { CMP Component; double Slope; double Intercept; static const AC id = AC(-22); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectIdentity { CMP Component; static const AC id = AC(-23); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectDiscrete { CMP Component; double * Values; int Size; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectDiscrete { CMP Component; double *Values; int Size; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectInvert { CMP Component; static const AC id = AC(-25); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectMask { CMP Component; int Mask; static const AC id = AC(-26); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -3206,15 +3206,15 @@ class objVectorFilter : public Object {
 
 namespace vec {
 struct Push { int Position; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Trace { FUNCTION * Callback; double Scale; int Transform; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Trace { FUNCTION *Callback; double Scale; int Transform; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetBoundary { VBF Flags; double X; double Y; double Width; double Height; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct PointInPath { double X; double Y; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeInput { JTYPE Mask; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeKeyboard { FUNCTION * Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeFeedback { FM Mask; FUNCTION * Callback; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeInput { JTYPE Mask; FUNCTION *Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeKeyboard { FUNCTION *Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeFeedback { FM Mask; FUNCTION *Callback; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Debug { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct NewMatrix { struct VectorMatrix * Transform; int End; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct FreeMatrix { struct VectorMatrix * Matrix; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct NewMatrix { struct VectorMatrix *Transform; int End; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FreeMatrix { struct VectorMatrix *Matrix; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3731,10 +3731,10 @@ class objVector : public Object {
 // VectorPath methods
 
 namespace vp {
-struct AddCommand { struct PathCommand * Commands; int Size; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddCommand { struct PathCommand *Commands; int Size; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveCommand { int Index; int Total; static const AC id = AC(-31); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetCommand { int Index; struct PathCommand * Command; int Size; static const AC id = AC(-32); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetCommand { int Index; struct PathCommand * Command; static const AC id = AC(-33); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetCommand { int Index; struct PathCommand *Command; int Size; static const AC id = AC(-32); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetCommand { int Index; struct PathCommand *Command; static const AC id = AC(-33); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetCommandList { APTR Commands; int Size; static const AC id = AC(-34); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -5475,9 +5475,9 @@ struct VectorBase {
 #ifndef KOTUKU_STATIC
    ERR (*_DrawPath)(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle);
    ERR (*_GenerateEllipse)(double CX, double CY, double RX, double RY, int Vertices, APTR *Path);
-   ERR (*_GeneratePath)(const std::string_view & Sequence, APTR *Path);
+   ERR (*_GeneratePath)(const std::string_view &Sequence, APTR *Path);
    ERR (*_GenerateRectangle)(double X, double Y, double Width, double Height, APTR *Path);
-   ERR (*_ReadPainter)(objVectorScene *Scene, const std::string_view & IRI, struct VectorPainter *Painter, CSTRING *Result);
+   ERR (*_ReadPainter)(objVectorScene *Scene, const std::string_view &IRI, struct VectorPainter *Painter, CSTRING *Result);
    void (*_TranslatePath)(APTR Path, double X, double Y);
    void (*_MoveTo)(APTR Path, double X, double Y);
    void (*_LineTo)(APTR Path, double X, double Y);
@@ -5496,12 +5496,12 @@ struct VectorBase {
    ERR (*_Multiply)(struct VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);
    ERR (*_MultiplyMatrix)(struct VectorMatrix *Target, struct VectorMatrix *Source);
    ERR (*_Scale)(struct VectorMatrix *Matrix, double X, double Y);
-   ERR (*_ParseTransform)(struct VectorMatrix *Matrix, const std::string_view & Transform);
+   ERR (*_ParseTransform)(struct VectorMatrix *Matrix, const std::string_view &Transform);
    ERR (*_ResetMatrix)(struct VectorMatrix *Matrix);
-   ERR (*_GetFontHandle)(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle);
+   ERR (*_GetFontHandle)(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle);
    ERR (*_GetFontMetrics)(APTR Handle, struct FontMetrics *Info);
    double (*_CharWidth)(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning);
-   double (*_StringWidth)(APTR FontHandle, const std::string_view & String, int Chars);
+   double (*_StringWidth)(APTR FontHandle, const std::string_view &String, int Chars);
    ERR (*_FlushMatrix)(struct VectorMatrix *Matrix);
    ERR (*_TracePath)(APTR Path, FUNCTION *Callback, double Scale);
 #endif // KOTUKU_STATIC
@@ -5512,9 +5512,9 @@ extern struct VectorBase *VectorBase;
 namespace vec {
 inline ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle) { return VectorBase->_DrawPath(Bitmap,Path,StrokeWidth,StrokeStyle,FillStyle); }
 inline ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, APTR *Path) { return VectorBase->_GenerateEllipse(CX,CY,RX,RY,Vertices,Path); }
-inline ERR GeneratePath(const std::string_view & Sequence, APTR *Path) { return VectorBase->_GeneratePath(Sequence,Path); }
+inline ERR GeneratePath(const std::string_view &Sequence, APTR *Path) { return VectorBase->_GeneratePath(Sequence,Path); }
 inline ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Path) { return VectorBase->_GenerateRectangle(X,Y,Width,Height,Path); }
-inline ERR ReadPainter(objVectorScene *Scene, const std::string_view & IRI, struct VectorPainter *Painter, CSTRING *Result) { return VectorBase->_ReadPainter(Scene,IRI,Painter,Result); }
+inline ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, struct VectorPainter *Painter, CSTRING *Result) { return VectorBase->_ReadPainter(Scene,IRI,Painter,Result); }
 inline void TranslatePath(APTR Path, double X, double Y) { return VectorBase->_TranslatePath(Path,X,Y); }
 inline void MoveTo(APTR Path, double X, double Y) { return VectorBase->_MoveTo(Path,X,Y); }
 inline void LineTo(APTR Path, double X, double Y) { return VectorBase->_LineTo(Path,X,Y); }
@@ -5533,12 +5533,12 @@ inline ERR Skew(struct VectorMatrix *Matrix, double X, double Y) { return Vector
 inline ERR Multiply(struct VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY) { return VectorBase->_Multiply(Matrix,ScaleX,ShearY,ShearX,ScaleY,TranslateX,TranslateY); }
 inline ERR MultiplyMatrix(struct VectorMatrix *Target, struct VectorMatrix *Source) { return VectorBase->_MultiplyMatrix(Target,Source); }
 inline ERR Scale(struct VectorMatrix *Matrix, double X, double Y) { return VectorBase->_Scale(Matrix,X,Y); }
-inline ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view & Transform) { return VectorBase->_ParseTransform(Matrix,Transform); }
+inline ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view &Transform) { return VectorBase->_ParseTransform(Matrix,Transform); }
 inline ERR ResetMatrix(struct VectorMatrix *Matrix) { return VectorBase->_ResetMatrix(Matrix); }
-inline ERR GetFontHandle(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle) { return VectorBase->_GetFontHandle(Family,Style,Weight,Size,Handle); }
+inline ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle) { return VectorBase->_GetFontHandle(Family,Style,Weight,Size,Handle); }
 inline ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info) { return VectorBase->_GetFontMetrics(Handle,Info); }
 inline double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning) { return VectorBase->_CharWidth(FontHandle,Char,KChar,Kerning); }
-inline double StringWidth(APTR FontHandle, const std::string_view & String, int Chars) { return VectorBase->_StringWidth(FontHandle,String,Chars); }
+inline double StringWidth(APTR FontHandle, const std::string_view &String, int Chars) { return VectorBase->_StringWidth(FontHandle,String,Chars); }
 inline ERR FlushMatrix(struct VectorMatrix *Matrix) { return VectorBase->_FlushMatrix(Matrix); }
 inline ERR TracePath(APTR Path, FUNCTION *Callback, double Scale) { return VectorBase->_TracePath(Path,Callback,Scale); }
 } // namespace
@@ -5546,9 +5546,9 @@ inline ERR TracePath(APTR Path, FUNCTION *Callback, double Scale) { return Vecto
 namespace vec {
 extern ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle);
 extern ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, APTR *Path);
-extern ERR GeneratePath(const std::string_view & Sequence, APTR *Path);
+extern ERR GeneratePath(const std::string_view &Sequence, APTR *Path);
 extern ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Path);
-extern ERR ReadPainter(objVectorScene *Scene, const std::string_view & IRI, struct VectorPainter *Painter, CSTRING *Result);
+extern ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, struct VectorPainter *Painter, CSTRING *Result);
 extern void TranslatePath(APTR Path, double X, double Y);
 extern void MoveTo(APTR Path, double X, double Y);
 extern void LineTo(APTR Path, double X, double Y);
@@ -5567,12 +5567,12 @@ extern ERR Skew(struct VectorMatrix *Matrix, double X, double Y);
 extern ERR Multiply(struct VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);
 extern ERR MultiplyMatrix(struct VectorMatrix *Target, struct VectorMatrix *Source);
 extern ERR Scale(struct VectorMatrix *Matrix, double X, double Y);
-extern ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view & Transform);
+extern ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view &Transform);
 extern ERR ResetMatrix(struct VectorMatrix *Matrix);
-extern ERR GetFontHandle(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle);
+extern ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle);
 extern ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info);
 extern double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning);
-extern double StringWidth(APTR FontHandle, const std::string_view & String, int Chars);
+extern double StringWidth(APTR FontHandle, const std::string_view &String, int Chars);
 extern ERR FlushMatrix(struct VectorMatrix *Matrix);
 extern ERR TracePath(APTR Path, FUNCTION *Callback, double Scale);
 } // namespace
