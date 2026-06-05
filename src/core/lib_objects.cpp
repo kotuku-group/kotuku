@@ -949,8 +949,7 @@ drained without execution.
 Callbacks for queued actions will receive `ERR::DoesNotExist` to indicate cancellation.
 
 -INPUT-
-array(oid) Objects: A list of object IDs to cancel.
-arraysize Size: Total number of elements in the `Objects` list.
+vector(oid) Objects: A list of object IDs to cancel.
 
 -ERRORS-
 Okay
@@ -961,15 +960,11 @@ blocking
 
 *********************************************************************************************************************/
 
-ERR AsyncCancel(OBJECTID *Objects, int Size)
+ERR AsyncCancel(kt::vector<OBJECTID> &Objects)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Objects) return ERR::NullArgs;
-
-   for (auto i = 0; i < Size; i++) {
-      auto object_id = Objects[i];
-
+   for (auto object_id : Objects) {
       log.traceBranch("Cancelling async actions for object #%d", object_id);
 
       // Wake the thread with Stop=true to interrupt any active async operation.
@@ -1039,8 +1034,7 @@ Only one AsyncWait() call may be active at any time.  If a second call is made w
 `ERR::InUse` is returned.
 
 -INPUT-
-array(oid) Objects: A list of object IDs to wait on.
-arraysize Size: Total number of elements in the `Objects` list.
+vector(oid) Objects: A list of object IDs to wait on.
 int TimeOut: Maximum time to wait in milliseconds, or `-1` for an indefinite wait.
 
 -ERRORS-
@@ -1059,11 +1053,9 @@ main-thread-only, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut)
+ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut)
 {
    kt::Log log(__FUNCTION__);
-
-   if (not Objects) return log.warning(ERR::NullArgs);
 
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
@@ -1084,8 +1076,7 @@ ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut)
    {
       std::lock_guard<std::mutex> ql(glmActionQueue);
       std::lock_guard<std::mutex> wl(glmAsyncWait);
-      for (int i=0; i < Size; i++) {
-         auto id = Objects[i];
+      for (auto id : Objects) {
          if (glAsyncWaitTargets.insert(id).second and glActiveAsyncObjects.contains(id)) {
             glAsyncWaitCounter.fetch_add(1, std::memory_order_relaxed);
          }
@@ -1249,12 +1240,11 @@ ClassDatabase: Returns an array of all classes known to the system.
 Call ClassDatabase() to obtain an array of all classes known to the system.
 
 -INPUT-
-!array(struct(*ClassRecord)) Classes: A pointer to an array of class records is returned here.
+^&vector(struct(*ClassRecord)) Classes: A pointer to an array of class records is returned here.
 
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
 SystemLocked
 
 -TAGS-
@@ -1262,25 +1252,16 @@ caller-owns-result, creates-resource, blocking
 
 *********************************************************************************************************************/
 
-ERR ClassDatabase(ClassRecord ***Classes)
+ERR ClassDatabase(kt::vector<ClassRecord *> *Classes)
 {
-   kt::Log log(__FUNCTION__);
+   if (not Classes) return ERR::NullArgs;
 
-   if (not Classes) return log.warning(ERR::NullArgs);
-
-   *Classes = nullptr;
+   Classes->clear();
    if (auto lock = std::unique_lock{glmClassDB, 3s}) {
-      ClassRecord **array = nullptr;
-      if (AllocMemory(sizeof(struct ClassRecord *) * (glClassDB.size() + 1), MEM::DATA|MEM::NO_CLEAR, &array) IS ERR::Okay) {
-         int i = 0;
-         for (auto &entry : glClassDB) array[i++] = &entry.second;
-         array[i++] = nullptr;
-         *Classes = array;
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::AllocMemory);
+      for (auto &entry : glClassDB) Classes->push_back(&entry.second);
+      return ERR::Okay;
    }
-   else return log.warning(ERR::SystemLocked);
+   else return kt::Log().warning(ERR::SystemLocked);
 }
 
 /*********************************************************************************************************************

@@ -2131,10 +2131,10 @@ struct CoreBase {
    OBJECTPTR (*_ParentContext)(void);
    void (*_SetResourceMgr)(APTR Address, struct ResourceManager *Manager);
    ERR (*_WakeThread)(int Thread, int Stop);
-   ERR (*_AsyncCancel)(OBJECTID *Objects, int Size);
+   ERR (*_AsyncCancel)(kt::vector<OBJECTID> &Objects);
    int (*_AsyncPending)(OBJECTID Object);
-   ERR (*_AsyncWait)(OBJECTID *Objects, int Size, int TimeOut);
-   ERR (*_ClassDatabase)(struct ClassRecord * **Classes);
+   ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
+   ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
 #endif // KOTUKU_STATIC
 };
 
@@ -2231,10 +2231,10 @@ inline ERR CreateLink(const std::string_view &From, const std::string_view &To) 
 inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
 inline void SetResourceMgr(APTR Address, struct ResourceManager *Manager) { return CoreBase->_SetResourceMgr(Address,Manager); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
-inline ERR AsyncCancel(OBJECTID *Objects, int Size) { return CoreBase->_AsyncCancel(Objects,Size); }
+inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncCancel(Objects); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
-inline ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut) { return CoreBase->_AsyncWait(Objects,Size,TimeOut); }
-inline ERR ClassDatabase(struct ClassRecord * **Classes) { return CoreBase->_ClassDatabase(Classes); }
+inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
+inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 #else
 extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
@@ -2326,10 +2326,10 @@ extern "C" ERR CreateLink(const std::string_view &From, const std::string_view &
 extern "C" OBJECTPTR ParentContext(void);
 extern "C" void SetResourceMgr(APTR Address, struct ResourceManager *Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);
-extern "C" ERR AsyncCancel(OBJECTID *Objects, int Size);
+extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
-extern "C" ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut);
-extern "C" ERR ClassDatabase(struct ClassRecord * **Classes);
+extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
+extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 #endif // KOTUKU_STATIC
 
 

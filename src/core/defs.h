@@ -180,11 +180,11 @@ struct rkWatchPath {
 };
 
 #include <kotuku/vector.hpp>
-#include "prototypes.h"
 
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
 #include <kotuku/system/internals.h>
+#include "prototypes.h"
 
 using namespace kt;
 

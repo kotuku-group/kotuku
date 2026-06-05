@@ -380,12 +380,11 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <name>AsyncCancel</name>
     <category>Objects</category>
     <comment>Drain the pending queue for listed objects without executing the remaining actions.</comment>
-    <prototype>ERR AsyncCancel(OBJECTID * Objects, INT Size)</prototype>
-    <tiriPrototype>err = AsyncCancel(Objects:array, Size:num)</tiriPrototype>
+    <prototype>ERR AsyncCancel(kt::vector&lt;OBJECTID&gt; Objects)</prototype>
+    <tiriPrototype>err = AsyncCancel(Objects:array)</tiriPrototype>
     <tags>blocking</tags>
     <input>
-      <param type="OBJECTID *" name="Objects">A list of object IDs to cancel.</param>
-      <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
+      <param type="kt::vector&lt;OBJECTID&gt;" name="Objects">A list of object IDs to cancel.</param>
     </input>
     <description>
 <p>Call AsyncCancel() to cancel all pending asynchronous actions for the listed objects.  Each object's currently active async thread (if any) is interrupted via <function>WakeThread</function> with Stop set to true, and the remaining action queue is drained without execution.</p>
@@ -418,12 +417,11 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
     <name>AsyncWait</name>
     <category>Objects</category>
     <comment>Block until all queued async actions for the listed objects have completed.</comment>
-    <prototype>ERR AsyncWait(OBJECTID * Objects, INT Size, INT TimeOut)</prototype>
-    <tiriPrototype>err = AsyncWait(Objects:array, Size:num, TimeOut:num)</tiriPrototype>
+    <prototype>ERR AsyncWait(kt::vector&lt;OBJECTID&gt; Objects, INT TimeOut)</prototype>
+    <tiriPrototype>err = AsyncWait(Objects:array, TimeOut:num)</tiriPrototype>
     <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
-      <param type="OBJECTID *" name="Objects">A list of object IDs to wait on.</param>
-      <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
+      <param type="kt::vector&lt;OBJECTID&gt;" name="Objects">A list of object IDs to wait on.</param>
       <param type="INT" name="TimeOut">Maximum time to wait in milliseconds, or <code>-1</code> for an indefinite wait.</param>
     </input>
     <description>
@@ -536,11 +534,11 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>ClassDatabase</name>
     <category>Objects</category>
     <comment>Returns an array of all classes known to the system.</comment>
-    <prototype>ERR ClassDatabase(struct ClassRecord *** Classes)</prototype>
+    <prototype>ERR ClassDatabase(kt::vector&lt;ClassRecord *&gt; * Classes)</prototype>
     <tiriPrototype>err, Classes:array = ClassDatabase()</tiriPrototype>
-    <tags>caller-owns-result, creates-resource, blocking</tags>
+    <tags>caller-owns-result, creates-resource, blocking, mutates-input</tags>
     <input>
-      <param type="struct ClassRecord ***" name="Classes">A pointer to an array of class records is returned here.</param>
+      <param type="kt::vector&lt;ClassRecord *&gt; *" name="Classes">A pointer to an array of class records is returned here.</param>
     </input>
     <description>
 <p>Call ClassDatabase() to obtain an array of all classes known to the system.</p>
@@ -548,7 +546,6 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

@@ -374,7 +374,7 @@ static int async_wait(lua_State *Lua)
 
    // Collect object IDs from argument 1 into a zero-terminated array.
 
-   std::vector<OBJECTID> ids;
+   kt::vector<OBJECTID> ids;
 
    auto type = lua_type(Lua, 1);
    if (type IS LUA_TOBJECT) {
@@ -407,7 +407,7 @@ static int async_wait(lua_State *Lua)
          if (timeout_ms < 0) timeout_ms = -1;
       }
 
-      error = AsyncWait(ids.data(), ids.size(), timeout_ms);
+      error = AsyncWait(ids, timeout_ms);
 
       if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
    }
@@ -437,7 +437,7 @@ static int async_pending(lua_State *Lua)
 
 static int async_cancel(lua_State *Lua)
 {
-   std::vector<OBJECTID> ids;
+   kt::vector<OBJECTID> ids;
 
    auto type = lua_type(Lua, 1);
    if (type IS LUA_TOBJECT) {
@@ -462,7 +462,7 @@ static int async_cancel(lua_State *Lua)
 
    ERR error = ERR::Okay;
    if (not ids.empty()) {
-      error = AsyncCancel(ids.data(), int(ids.size()));
+      error = AsyncCancel(ids);
       if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
    }
 
