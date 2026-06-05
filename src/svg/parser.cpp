@@ -1125,7 +1125,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
          uint32_t type = 0;
          int mask = 0xff;
          double amp = 1.0, offset = 0, exp = 1.0, slope = 1.0, intercept = 0.0;
-         std::vector<double> values;
+         kt::vector<double> values;
          for (int a=1; a < std::ssize(child.Attribs); a++) {
             switch(strhash(child.Attribs[a].Name)) {
                case SVF_type:        type = strhash(child.Attribs[a].Value); break;
@@ -1144,10 +1144,10 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
          }
 
          switch(type) {
-            case SVF_table:    fx->selectTable(cmp, values.data(), values.size()); break;
+            case SVF_table:    fx->selectTable(cmp, values); break;
             case SVF_linear:   fx->selectLinear(cmp, slope, intercept);  break;
             case SVF_gamma:    fx->selectGamma(cmp, amp, offset, exp);  break;
-            case SVF_discrete: fx->selectDiscrete(cmp, values.data(), values.size());  break;
+            case SVF_discrete: fx->selectDiscrete(cmp, values);  break;
             case SVF_identity: fx->selectIdentity(cmp); break;
             // The following additions are specific to Kotuku and not SVG compatible.
             case SVF_invert:   fx->selectInvert(cmp); break;

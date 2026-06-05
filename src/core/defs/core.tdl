@@ -761,7 +761,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
      string Source      # "tzif", "win32", or "utc".
      string DataPath    # TZif path on Linux, otherwise empty.
      string Version     # TZDB/source version if available, otherwise empty.
-     cpp(array(struct(TimeZoneTransition))) Transitions # Transitions available for the requested range.
+     vector(struct(TimeZoneTransition)) Transitions # Transitions available for the requested range.
      int BaseOffset     # Standard UTC offset in seconds.
      short StartYear    # Inclusive requested start year.
      short EndYear      # Inclusive requested end year.

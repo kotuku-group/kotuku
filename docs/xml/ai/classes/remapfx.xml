@@ -6,10 +6,9 @@
     <ai:i n="Width" t="INT" c="The width of the region to be drawn."/>
     <ai:i n="Height" t="INT" c="The height of the region to be drawn."/>
   </ai:a>
-  <ai:m n="SelectDiscrete" c="Apply the discrete function to a pixel component." p="ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)">
+  <ai:m n="SelectDiscrete" c="Apply the discrete function to a pixel component." p="ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, kt::vector&lt;double&gt; Values)">
     <ai:i n="Component" t="CMP" c="The pixel component to which the discrete function must be applied."/>
-    <ai:i n="Values" t="DOUBLE *" c="A list of values for the discrete function."/>
-    <ai:i n="Size" t="INT" c="Total number of elements in the Values list."/>
+    <ai:i n="Values" t="kt::vector&lt;double&gt;" c="A list of values for the discrete function."/>
   </ai:m>
   <ai:m n="SelectGamma" c="Apply the gamma function to a pixel component." p="ERR rf::SelectGamma(OBJECTPTR Object, CMP Component, DOUBLE Amplitude, DOUBLE Offset, DOUBLE Exponent)">
     <ai:i n="Component" t="CMP" c="The pixel component to which the gamma function must be applied."/>
@@ -32,10 +31,9 @@
     <ai:i n="Component" t="CMP" c="The pixel component to which the function must be applied."/>
     <ai:i n="Mask" t="INT" c="The bit mask to be AND'd with each value."/>
   </ai:m>
-  <ai:m n="SelectTable" c="Apply the table function to a pixel component." p="ERR rf::SelectTable(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)">
+  <ai:m n="SelectTable" c="Apply the table function to a pixel component." p="ERR rf::SelectTable(OBJECTPTR Object, CMP Component, kt::vector&lt;double&gt; Values)">
     <ai:i n="Component" t="CMP" c="The pixel component to which the table function must be applied."/>
-    <ai:i n="Values" t="DOUBLE *" c="A list of values for the table function."/>
-    <ai:i n="Size" t="INT" c="Total number of elements in the value list."/>
+    <ai:i n="Values" t="kt::vector&lt;double&gt;" c="A list of values for the table function."/>
   </ai:m>
   <ai:f n="XMLDef" c="Returns an SVG compliant XML string that describes the filter." t="STRING" a="G"/>
 </ai:cl>

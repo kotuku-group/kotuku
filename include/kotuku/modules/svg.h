@@ -72,11 +72,11 @@ class objSVG : public Object {
    }
    inline ERR render(objBitmap * Bitmap, int X, int Y, int Width, int Height) noexcept {
       struct svg::Render args = { Bitmap, X, Y, Width, Height };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR parseSymbol(const std::string_view &ID, objVectorViewport * Viewport) noexcept {
       struct svg::ParseSymbol args = { ID, Viewport };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
 
    // Customised field getting

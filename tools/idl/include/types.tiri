@@ -4,7 +4,6 @@ global glActiveRefs = { }
 global glCustomTypes = { }
 
 rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }> -- Alloc !, Result &, Mutable ^ symbols
-rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
 rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
 rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
 rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
@@ -22,6 +21,7 @@ rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
 rx_buf_type        = <{ regex.new([[^buf\((.+)\)]]) }>
 rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
 rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
+rx_vector          = <{ regex.new([[^vector\((.+)\)$]]) }>
 rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
 rx_string_type     = <{ regex.new([[^(str|cstr|string|strview)$]]) }>
 
@@ -33,7 +33,6 @@ global glTypes = {
    -- fd: FD flags
    -- t_type: Tiri type
    -- c_type: C99 type
-   -- cpp_type: C++ type if cpp() is used
    -- doc_type: Simplified type for documentation
    arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   t_type='num', c_type='int', doc_type='INT' },
    bufsize    = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
@@ -61,9 +60,9 @@ global glTypes = {
    ptr        = { fd='FD_PTR',                t_type='any', c_type='APTR' },
    resource   = { fd='FD_STRUCT|FD_RESOURCE', t_type='any', c_type='APTR' },
    short      = { fd='FD_WORD',               t_type='num', c_type='int16_t', doc_type='INT16' },
-   strview    = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string_view', cpp_type='std::string_view', doc_type='STRVIEW' }, -- For API calls only
-   string     = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string', cpp_type='std::string', doc_type='STRING' },
-   str        = { fd='FD_STR',                t_type='str', c_type='STRING', cpp_type='std::string', doc_type='STRING' },
+   strview    = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string_view', doc_type='STRVIEW' }, -- For API calls only
+   string     = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string', doc_type='STRING' },
+   str        = { fd='FD_STR',                t_type='str', c_type='STRING', doc_type='STRING' },
    struct     = { fd='FD_STRUCT',             t_type='any', c_type='APTR' },
    structsize = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
    tags       = { fd='FD_TAGS',               t_type=nil, c_type='...' },
@@ -209,7 +208,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Returns { cpp, type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
+-- Returns { type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
 
 global function cType(Value:table, Origin:str):table
    assert(Value.type, f"Value definition incorrect, missing 'type' value for '{Origin}'")
@@ -277,29 +276,6 @@ global function cType(Value:table, Origin:str):table
       local b_count = #Value.docType:split('*') - 1
       if count > 0 and b_count is 0 then
          Value.docType = Value.docType .. ' ' .. string.rep('*', count)
-      end
-
-      if Value.cpp then Value.docType = Value.type end
-   end
-
-   -- The use of cpp() converts the encapsulated type to its C++ variant.  E.g. 'str' becomes a std::string
-
-   do
-      local cpp_inner = rx_cpp_type.extract(Value.type)
-      if cpp_inner then
-         Value.cpp  = true
-         Value.type = cpp_inner
-         Value = cType(Value, Origin)
-         if not Value.fullType.fd:find('FD_CPP') then
-            Value.fullType.fd = 'FD_CPP|' .. Value.fullType.fd
-         end
-         Value.fullType = {
-            fd       = Value.fullType.fd,
-            c_type   = Value.fullType.c_type,
-            doc_type = Value.fullType.doc_type,
-            t_type   = Value.fullType.t_type
-         }
-         return Value
       end
    end
 
@@ -564,8 +540,8 @@ global function cType(Value:table, Origin:str):table
    do
       local buf_type = rx_buf_type.extract(Value.type)
       if buf_type then
-         Value.type = buf_type
-         Value = cType(Value, Origin)
+         Value.type     = buf_type
+         Value          = cType(Value, Origin)
          Value.fullType = { fd='FD_BUFFER|' .. Value.fullType.fd, c_type='APTR', t_type='any' }
          return Value
       end
@@ -583,20 +559,19 @@ global function cType(Value:table, Origin:str):table
          array_size = tonumber(array_size)
          Value.isArray = true
          if array_size is 0 then
-            Value.type = array_type
+            Value.type      = array_type
             Value.arraySize = 0
-            Value = cType(Value, Origin)
-            if Value.cpp then
-               Value.type = 'kt::vector<' .. (Value.struct ?? Value.type) .. '>'
-               Value.isComplex = true
-            else
-               Value.type ..= ' *'
-            end
-            Value.fullType = { fd='FD_ARRAY|' .. Value.fullType.fd, c_type=Value.fullType.c_type,
-               doc_type=Value.fullType.doc_type, t_type='array' }
+            Value           = cType(Value, Origin)
+            Value.type    ..= ' *'
+            Value.fullType = {
+               fd       = 'FD_ARRAY|' .. Value.fullType.fd,
+               c_type   = Value.fullType.c_type,
+               doc_type = Value.fullType.doc_type,
+               t_type   = 'array'
+            }
          else
-            Value.type = array_type
-            Value = cType(Value, Origin)
+            Value.type      = array_type
+            Value           = cType(Value, Origin)
             Value.arraySize = array_size
             Value.fullType  = copyOf('ptr')
          end
@@ -611,17 +586,40 @@ global function cType(Value:table, Origin:str):table
       if array_type then
          Value.isArray = true
          Value.type    = array_type
-         Value = cType(Value, Origin)
-         if Value.cpp then
-            itype = (Value.struct ?? Value.type)
-            if Value.isPointer then itype ..= ' *' end
-            Value.type = f'kt::vector<{itype}>'
-            Value.isComplex = true
-         else
-            Value.type ..= ' *'
-         end
-         Value.fullType = { fd='FD_ARRAY|' .. Value.fullType.fd, c_type=Value.fullType.c_type,
-            doc_type=Value.fullType.doc_type, t_type='array' }
+         Value         = cType(Value, Origin)
+         Value.type  ..= ' *'
+         Value.fullType = {
+            fd       = 'FD_ARRAY|' .. Value.fullType.fd,
+            c_type   = Value.fullType.c_type,
+            doc_type = Value.fullType.doc_type,
+            t_type   = 'array'
+         }
+         return Value
+      end
+   end
+
+   do -- Vector (C++)
+      -- Note that the pointer flag always applies to the array's inner type, not the array itself.  Whether or
+      -- not the array is a pointer depends entirely on the context of its use.
+      local array_of_type = rx_vector.extract(Value.type)
+      if array_of_type then
+         Value.isArray = true
+         Value.type    = array_of_type
+         Value         = cType(Value, Origin)
+         inner_type = Value.struct ?? Value.type
+         if Value.isPointer then inner_type ..= ' *' end
+         Value.type = f'kt::vector<{inner_type}>'
+         Value.isComplex = true
+         Value.isCompound = true
+         Value.docType = Value.type
+
+         Value.fullType = {
+            fd       = 'FD_ARRAY|' .. Value.fullType.fd,
+            c_type   = Value.fullType.c_type,
+            t_type   = 'array'
+         }
+
+         if not Value.fullType.fd:find('FD_CPP') then Value.fullType.fd = 'FD_CPP|' .. Value.fullType.fd end
          return Value
       end
    end
@@ -665,7 +663,7 @@ global function cType(Value:table, Origin:str):table
             Value.type = 'std::string_view'
             Value.isComplex = false -- std::string_view is embeddable
             Value.fullType = copyOf('strview')
-         elseif Value.cpp or (string is 'string') then
+         elseif string is 'string' then
             Value.type = 'std::string'
             Value.isComplex = true
             Value.fullType = copyOf('string')
@@ -687,12 +685,7 @@ global function cType(Value:table, Origin:str):table
    -- No special handling, lookup the type table directly
 
    Value.fullType = copyOf(Value.type)
-
-   if Value.cpp then
-      Value.type = glTypes[Value.type].cpp_type ?? Value.type
-   else
-      Value.type = glTypes[Value.type].c_type ?? Value.type
-   end
+   Value.type = glTypes[Value.type].c_type ?? Value.type
 
    return Value
 end

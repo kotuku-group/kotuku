@@ -323,14 +323,14 @@ class objProxy : public Object {
    inline ERR saveSettings() noexcept { return Action(AC::SaveSettings, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR deleteRecord() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
    inline ERR find(int Port, int Enabled) noexcept {
       struct prx::Find args = { Port, Enabled };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR findNext() noexcept {
-      return(Action(AC(-3), this, nullptr));
+      return Action(AC(-3), this, nullptr);
    }
 
    // Customised field getting
@@ -469,19 +469,19 @@ class objNetLookup : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR resolveName(const std::string_view &HostName) noexcept {
       struct nl::ResolveName args = { HostName };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR resolveAddress(const std::string_view &Address) noexcept {
       struct nl::ResolveAddress args = { Address };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR blockingResolveName(const std::string_view &HostName) noexcept {
       struct nl::BlockingResolveName args = { HostName };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR blockingResolveAddress(const std::string_view &Address) noexcept {
       struct nl::BlockingResolveAddress args = { Address };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
 
    // Customised field getting
@@ -619,31 +619,31 @@ class objNetSocket : public Object {
    }
    inline ERR connect(const std::string_view &Address, int Port, double Timeout) noexcept {
       struct ns::Connect args = { Address, Port, Timeout };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR getLocalIPAddress(struct IPAddress * Address) noexcept {
       struct ns::GetLocalIPAddress args = { Address };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR sendTo(struct IPAddress * Dest, APTR Data, int Length, int * BytesSent) noexcept {
       struct ns::SendTo args = { Dest, Data, Length, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (BytesSent) *BytesSent = args.BytesSent;
-      return(error);
+      return error;
    }
    inline ERR recvFrom(struct IPAddress * Source, APTR Buffer, int BufferSize, int * BytesRead) noexcept {
       struct ns::RecvFrom args = { Source, Buffer, BufferSize, (int)0 };
       ERR error = Action(AC(-4), this, &args);
       if (BytesRead) *BytesRead = args.BytesRead;
-      return(error);
+      return error;
    }
    inline ERR joinMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::JoinMulticastGroup args = { Group };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR leaveMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::LeaveMulticastGroup args = { Group };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
 
    // Customised field getting
@@ -872,11 +872,11 @@ class objNetServer : public objNetSocket {
    }
    inline ERR disconnectClient(objNetClient * Client) noexcept {
       struct ns::DisconnectClient args = { Client };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR disconnectSocket(objClientSocket * Socket) noexcept {
       struct ns::DisconnectSocket args = { Socket };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-8), this, &args);
    }
 
    // Customised field getting

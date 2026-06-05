@@ -40,12 +40,11 @@
     <method>
       <name>SelectDiscrete</name>
       <comment>Apply the discrete function to a pixel component.</comment>
-      <prototype>ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)</prototype>
-      <tiriPrototype>err = SelectDiscrete(Component:num, Values:array, Size:num)</tiriPrototype>
+      <prototype>ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, kt::vector&lt;double&gt; Values)</prototype>
+      <tiriPrototype>err = SelectDiscrete(Component:num, Values:array)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the discrete function must be applied.</param>
-        <param type="DOUBLE *" name="Values">A list of values for the discrete function.</param>
-        <param type="INT" name="Size">Total number of elements in the <code>Values</code> list.</param>
+        <param type="kt::vector&lt;double&gt;" name="Values">A list of values for the discrete function.</param>
       </input>
       <description>
 <p>This method will apply the table function to a selected RGBA pixel component.  A list of values is required with a minimum size of 1.</p>
@@ -134,12 +133,11 @@
     <method>
       <name>SelectTable</name>
       <comment>Apply the table function to a pixel component.</comment>
-      <prototype>ERR rf::SelectTable(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)</prototype>
-      <tiriPrototype>err = SelectTable(Component:num, Values:array, Size:num)</tiriPrototype>
+      <prototype>ERR rf::SelectTable(OBJECTPTR Object, CMP Component, kt::vector&lt;double&gt; Values)</prototype>
+      <tiriPrototype>err = SelectTable(Component:num, Values:array)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the table function must be applied.</param>
-        <param type="DOUBLE *" name="Values">A list of values for the table function.</param>
-        <param type="INT" name="Size">Total number of elements in the value list.</param>
+        <param type="kt::vector&lt;double&gt;" name="Values">A list of values for the table function.</param>
       </input>
       <description>
 <p>This method will apply the table function to a selected RGBA pixel component.  A list of values is required with a minimum size of 1.</p>

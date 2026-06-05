@@ -216,7 +216,7 @@ Note: The integrity of the array is not guaranteed if the original XML document 
 
 -INPUT-
 struct(XPathValue) Value: The XPathValue to convert.
-^&cpp(array(struct(*XTag))) Result: The node-set is returned here as an array of !XTag structures.
+^&vector(struct(*XTag)) Result: The node-set is returned here as an array of !XTag structures.
 
 -ERRORS-
 Okay

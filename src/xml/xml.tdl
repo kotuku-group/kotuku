@@ -25,8 +25,8 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
     int(XTF) Flags   # Optional flags
     uint NamespaceID # Hash of namespace URI or 0 for no namespace
     int Reserved     # Private
-    cpp(array(struct(XMLAttrib))) Attribs # Array of attributes for this tag
-    cpp(array(struct(XTag))) Children   # Array of child tags
+    vector(struct(XMLAttrib)) Attribs # Array of attributes for this tag
+    vector(struct(XTag)) Children   # Array of child tags
   ]],
   [[
    XTag(int pID, int pLine = 0) :

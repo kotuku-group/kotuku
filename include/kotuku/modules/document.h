@@ -170,60 +170,60 @@ class objDocument : public Object {
    }
    inline ERR feedParser(const std::string_view &String) noexcept {
       struct doc::FeedParser args = { String };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR selectLink(int Index, const std::string_view &Name) noexcept {
       struct doc::SelectLink args = { Index, Name };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR findIndex(const std::string_view &Name, int * Start, int * End) noexcept {
       struct doc::FindIndex args = { Name, (int)0, (int)0 };
       ERR error = Action(AC(-4), this, &args);
       if (Start) *Start = args.Start;
       if (End) *End = args.End;
-      return(error);
+      return error;
    }
    inline ERR insertXML(const std::string_view &XML, int Index) noexcept {
       struct doc::InsertXML args = { XML, Index };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR removeContent(int Start, int End) noexcept {
       struct doc::RemoveContent args = { Start, End };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR insertText(const std::string_view &Text, int Index, int Char, int Preformat) noexcept {
       struct doc::InsertText args = { Text, Index, Char, Preformat };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR callFunction(const std::string_view &Function, struct ScriptArg * Args, int TotalArgs) noexcept {
       struct doc::CallFunction args = { Function, Args, TotalArgs };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-8), this, &args);
    }
    inline ERR addListener(DRT Trigger, FUNCTION Function) noexcept {
       struct doc::AddListener args = { Trigger, &Function };
-      return(Action(AC(-9), this, &args));
+      return Action(AC(-9), this, &args);
    }
    inline ERR removeListener(int Trigger, FUNCTION Function) noexcept {
       struct doc::RemoveListener args = { Trigger, &Function };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
    inline ERR showIndex(const std::string_view &Name) noexcept {
       struct doc::ShowIndex args = { Name };
-      return(Action(AC(-11), this, &args));
+      return Action(AC(-11), this, &args);
    }
    inline ERR hideIndex(const std::string_view &Name) noexcept {
       struct doc::HideIndex args = { Name };
-      return(Action(AC(-12), this, &args));
+      return Action(AC(-12), this, &args);
    }
    inline ERR edit(const std::string_view &Name, int Flags) noexcept {
       struct doc::Edit args = { Name, Flags };
-      return(Action(AC(-13), this, &args));
+      return Action(AC(-13), this, &args);
    }
    inline ERR readContent(DATA Format, int Start, int End, STRING * Result) noexcept {
       struct doc::ReadContent args = { Format, Start, End, (STRING)0 };
       ERR error = Action(AC(-14), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
 
    // Customised field getting
