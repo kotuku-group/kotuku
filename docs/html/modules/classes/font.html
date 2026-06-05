@@ -101,7 +101,7 @@ external leading or descent.</li>
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Face" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Face"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Face</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The name of a font face that is to be loaded on initialisation.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Face" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Face</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The name of a font face that is to be loaded on initialisation.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Face" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The name of an installed font face must be specified before initialisation unless <a data-bs-toggle="tooltip" title="The path to a font file." href="#tf-Path">Path</a> is set directly.  A list of available faces can be obtained from <a href="font.html?page=GetList">GetList()</a>.</p>
 <p>The face string can include optional point size, style and colour values in the form <code>face:pointsize:style:colour</code>. Omitted middle values may be left empty.</p>
 <p>Here are some examples:</p>
@@ -191,7 +191,7 @@ Charter:120%::255,128,255
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The path to a font file.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The path to a font file.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Defines the exact font file to load before initialisation.  This bypasses normal face-name resolution through the font database.</p>
 <p>This feature is ideal for use when distributing custom fonts with an application.</p>
       
@@ -205,14 +205,14 @@ Charter:120%::255,128,255
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-String" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-String"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">String</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The string to use when drawing a Font.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-String" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">String</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The string to use when drawing a Font.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-String" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The String field must be defined to draw text with a Font object.  It must contain valid UTF-8.  Line feed characters start a new line during <a data-bs-toggle="tooltip" title="Draws a font to a Bitmap." href="#ta-Draw">Draw()</a>.</p>
 <p>If a string contains characters that are not supported by a font, those characters will be printed using a default character from the font.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Style" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Style"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Style</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Determines font styling.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Style" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Style</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Determines font styling.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Style" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Selects the preferred style for initialisation.  If the selected face does not provide that style, regular styling or the first registered style is used.</p>
 <p>Bitmap fonts are a special case if a bold or italic style is selected.  In this situation the system can automatically convert the font to that style even if the correct graphics set does not exist.</p>
 <p>Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).</p>

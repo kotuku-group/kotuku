@@ -31,7 +31,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-GatewayFilter" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-GatewayFilter"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">GatewayFilter</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The IP address of the gateway that the proxy is limited to.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-GatewayFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">GatewayFilter</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The IP address of the gateway that the proxy is limited to.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-GatewayFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The GatewayFilter defines the IP address of the gateway that this proxy is limited to. It is intended to limit the results of searches performed by the <a data-bs-toggle="tooltip" title="Search for a proxy that matches a set of filters." href="#tm-Find">Find()</a> method.</p>
 <p>Gateway matching is not currently implemented.  Records that define this field are skipped by <a data-bs-toggle="tooltip" title="Search for a proxy that matches a set of filters." href="#tm-Find">Find()</a>.</p>
       
@@ -44,7 +44,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-NetworkFilter" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-NetworkFilter"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">NetworkFilter</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The name of the network that the proxy is limited to.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-NetworkFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">NetworkFilter</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The name of the network that the proxy is limited to.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-NetworkFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The NetworkFilter defines the name of the network that this proxy is limited to. It is intended to limit the results of searches performed by the <a data-bs-toggle="tooltip" title="Search for a proxy that matches a set of filters." href="#tm-Find">Find()</a> method.</p>
 <p>This filter must not be set if the proxy needs to work on an unnamed network.</p>
 <p>Network matching is not currently implemented.  Records that define this field are skipped by <a data-bs-toggle="tooltip" title="Search for a proxy that matches a set of filters." href="#tm-Find">Find()</a>.</p>
@@ -52,7 +52,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Password" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Password"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Password</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The password to use when authenticating against the proxy server.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Password" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Password</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The password to use when authenticating against the proxy server.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Password" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>If the proxy requires authentication, the user password may be set here to enable an automated authentication process. If the password is not set, a dialog will need to be used to prompt the user for the password before communicating with the proxy.</p>
       
 </div></div></td></tr>
@@ -64,7 +64,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-ProxyName" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ProxyName"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">ProxyName</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>A human readable name for the proxy server entry.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ProxyName" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">ProxyName</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>A human readable name for the proxy server entry.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ProxyName" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>A proxy can be given a human readable name by setting this field.</p>
       
 </div></div></td></tr>
@@ -77,7 +77,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Server" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Server"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Server</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The destination address of the proxy server - may be an IP address or resolvable domain name.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Server" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Server</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The destination address of the proxy server - may be an IP address or resolvable domain name.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Server" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The domain name or IP address of the proxy server must be defined here.</p>
       
 </div></div></td></tr>
@@ -89,7 +89,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Username" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Username"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Username</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The username to use when authenticating against the proxy server.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Username" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Username</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The username to use when authenticating against the proxy server.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Username" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>If the proxy requires authentication, the user name may be set here to enable an automated authentication process. If the username is not set, a dialog will be required to prompt the user for the user name before communicating with the proxy server.</p>
       
 </div></div></td></tr>

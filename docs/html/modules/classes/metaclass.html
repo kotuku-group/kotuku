@@ -86,7 +86,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-ClassName" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ClassName"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ClassName</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The name of the represented class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ClassName" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ClassName</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The name of the represented class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ClassName" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field specifies the name of the represented class.  Characters should be limited to those in the range of A-Z and written in camel case, e.g. <code>KeyValue</code> and not <code>Keyvalue</code> or <code>KEYVALUE</code>.  Setting this field value is compulsory prior to initialisation.</p>
       
 </div></div></td></tr>
@@ -112,20 +112,20 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FileDescription" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FileDescription"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileDescription</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Describes the file type represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileDescription" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileDescription</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Describes the file type represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileDescription" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Image</code> would be appropriate.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FileExtension" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FileExtension"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileExtension</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Describes the file extension represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileExtension" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileExtension</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Describes the file extension represented by the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileExtension" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field describes the file extension/s that the class will recognise.  For example: <code>*.wav|*.wave|*.snd</code>.</p>
 <p>Use of the vertical bar allows more than one file extension to be supported by the class. The file extension that is preferred for saving data must come first.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FileHeader" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FileHeader"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileHeader</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Defines a string expression that will allow relevant file data to be matched to the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileHeader" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">FileHeader</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Defines a string expression that will allow relevant file data to be matched to the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FileHeader" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>If a class supports file data, then the FileHeader field is used to identify the types of data that the class supports. This feature is used by routines that need to analyse files and determine which classes support them.</p>
 <p>For example, the JPEG class supports files that start with a 32-bit token to identify them as JPEG.  Declaring a FileHeader expression to match these tokens will allow the FileView feature to detect JPEG files and display an appropriate icon for each JPEG entry in the file list.</p>
 <p>The expression format is <code>[Offset:Value]...</code></p>
@@ -143,7 +143,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Icon" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Icon"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Icon</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Associates an icon with the file data for this class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Icon" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Icon</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Associates an icon with the file data for this class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Icon" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Files that belong to a class can be associated with an icon that is declared in this field.  The icon string format is <code>folder/icon</code>.  Valid icons are available in the icon database.</p>
       
 </div></div></td></tr>
@@ -178,7 +178,7 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>The path to the module binary that represents the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The path to the module binary that represents the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The Path field must be set on initialisation and refers to the default location of the class' module binary, for example <code>modules:display</code>. For reasons of platform portability, the file extension must not be specified at the end of the file name.</p>
       
 </div></div></td></tr>
