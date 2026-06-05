@@ -2668,7 +2668,8 @@ class objRemapFX : public objFilterEffect {
    }
    inline ERR selectTable(CMP Component, kt::vector<double> &Values) noexcept {
       struct rf::SelectTable args = { Component, &Values };
-      return Action(AC(-21), this, &args);
+      ERR error = Action(AC(-21), this, &args);
+      return error;
    }
    inline ERR selectLinear(CMP Component, double Slope, double Intercept) noexcept {
       struct rf::SelectLinear args = { Component, Slope, Intercept };
@@ -5647,3 +5648,4 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
+
