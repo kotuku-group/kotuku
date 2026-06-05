@@ -967,25 +967,21 @@ global function klass(Name, Options:table, Spec, Private, Custom)
 
    -- Return the type to use for a given action parameter in its inline helper call
 
-   function actionParamType(Param:table):str
+   function inlineParamType(Param:table):str
       if Param.type is 'FUNCTION *' then
          return 'FUNCTION '
       elseif Param.type is 'std::string_view' then
          Param.byRef = true
          return 'const std::string_view &'
-      elseif Param.resultValue and (not Param.mutable) and Param.basicType is 'std::string' then
+      elseif Param.resultValue and Param.mutable and Param.type:endsWith('*') then
+         Param.byRef = true
+         return Param.type:sub(0,-2) .. '&'
+      elseif Param.isComplex then
          Param.byRef = true
          return Param.type .. ' &'
-      elseif Param.resultValue and Param.mutable then
-         if Param.type:endsWith('*') then
-            Param.byRef = true
-            return Param.type:sub(0,-2) .. '&'
-         else
-            return Param.type .. ' '
-         end
-      else
-         return Param.type .. ' '
       end
+
+      return Param.type .. ' '
    end
 
    if cl.methods then
@@ -1036,7 +1032,11 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          params = ''
          if method.params then
             for param in values(method.params) do
-               local storage_type = actionStorageType(param)
+               local storage_type = param.basicType
+               if param.isComplex then -- Complex types are not embeddable in structs
+                  storage_type ..= ' *'
+               end
+
                struct_params ..= storage_type
                if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
                   struct_params ..= ' '
@@ -1050,7 +1050,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                   if v?? then v ..= ', ' end
                   v ..= f'&{pName(param)}'
                else
-                  params ..= actionParamType(param) .. pName(param)
+                  params ..= inlineParamType(param) .. pName(param)
 
                   if param.resultValue and param.basicType is 'std::string_view' then
                      -- Do not embed a default value for string views
@@ -1058,7 +1058,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                   else
                      if v?? then v ..= ', ' end
 
-                     if param.resultValue and param.mutable then
+                     if (param.resultValue and param.mutable) or param.isComplex then
                         -- Client must provide an empty collection, e.g. std::string or kt::vector
                         v ..= f'&{pName(param)}'
                         results = true
@@ -1104,9 +1104,9 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                   end
                end
             end
-            inline ..= '      return(error);\n'
+            inline ..= '      return error;\n'
          else
-            inline ..= f'      return(Action(AC(-{method.id}), this, {args}));\n'
+            inline ..= f'      return Action(AC(-{method.id}), this, {args});\n'
          end
 
          inline ..= '   }'

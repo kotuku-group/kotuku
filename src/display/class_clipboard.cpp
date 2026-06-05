@@ -530,7 +530,7 @@ usually the most efficient way to consume those entries.
 int(CLIPTYPE) Filter: Datatype filter.  Set to zero to accept any datatype.
 int Index: History index to read when Filter is zero.  Zero is the most recent clip group.
 &int(CLIPTYPE) Datatype: Datatype of the returned clip group.
-^&cpp(array(str)) Files: An empty string array is required to receive the file list.
+^&vector(string) Files: An empty string array is required to receive the file list.
 &int(CEF) Flags: Result flags.  If the delete flag is set, delete the files after use to complete a cut operation.
 
 -ERRORS-

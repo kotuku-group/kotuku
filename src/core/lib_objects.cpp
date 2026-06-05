@@ -1760,7 +1760,7 @@ targeted object.
 
 -INPUT-
 oid Object: An object to query.
-ptr(cpp(array(resource(ChildEntry)))) List: Must refer to an array of !ChildEntry structures.
+ptr(vector(resource(ChildEntry))) List: Must refer to an array of !ChildEntry structures.
 
 -ERRORS-
 Okay: Zero or more children were found and listed.

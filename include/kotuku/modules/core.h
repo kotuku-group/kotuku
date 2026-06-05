@@ -2525,7 +2525,7 @@ class objMetaClass : public Object {
       ERR error = Action(AC(-1), this, &args);
       if (Field) *Field = args.Field;
       if (Source) *Source = args.Source;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -2933,44 +2933,44 @@ class objFile : public Object {
    }
    inline ERR startStream(OBJECTID SubscriberID, FL Flags, int Length) noexcept {
       struct fl::StartStream args = { SubscriberID, Flags, Length };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR stopStream() noexcept {
-      return(Action(AC(-2), this, nullptr));
+      return Action(AC(-2), this, nullptr);
    }
    inline ERR del(FUNCTION Callback) noexcept {
       struct fl::Delete args = { &Callback };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR move(const std::string_view &Dest, FUNCTION Callback) noexcept {
       struct fl::Move args = { Dest, &Callback };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR copy(const std::string_view &Dest, FUNCTION Callback) noexcept {
       struct fl::Copy args = { Dest, &Callback };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR setDate(int Year, int Month, int Day, int Hour, int Minute, int Second, FDT Type) noexcept {
       struct fl::SetDate args = { Year, Month, Day, Hour, Minute, Second, Type };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR readLine(std::string &Result) noexcept {
       struct fl::ReadLine args = { &Result };
       ERR error = Action(AC(-7), this, &args);
-      return(error);
+      return error;
    }
    inline ERR bufferContent() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR next(objFile ** File) noexcept {
       struct fl::Next args = { (objFile *)0 };
       ERR error = Action(AC(-9), this, &args);
       if (File) *File = args.File;
-      return(error);
+      return error;
    }
    inline ERR watch(FUNCTION Callback, MFF Flags) noexcept {
       struct fl::Watch args = { &Callback, Flags };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
 
    // Customised field getting
@@ -3246,41 +3246,41 @@ class objConfig : public Object {
       struct cfg::ReadValue args = { Group, Key, (CSTRING)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Data) *Data = args.Data;
-      return(error);
+      return error;
    }
    inline ERR set(const std::string_view &Group, const std::string_view &Key, const std::string_view &Data) noexcept {
       struct cfg::Set args = { Group, Key, Data };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR writeValue(const std::string_view &Group, const std::string_view &Key, const std::string_view &Data) noexcept {
       struct cfg::WriteValue args = { Group, Key, Data };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR deleteKey(const std::string_view &Group, const std::string_view &Key) noexcept {
       struct cfg::DeleteKey args = { Group, Key };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR deleteGroup(const std::string_view &Group) noexcept {
       struct cfg::DeleteGroup args = { Group };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR getGroupFromIndex(int Index, std::string_view * Group) noexcept {
       struct cfg::GetGroupFromIndex args = { Index };
       ERR error = Action(AC(-6), this, &args);
       if (Group) *Group = args.Group;
-      return(error);
+      return error;
    }
    inline ERR sortByKey(const std::string_view &Key, int Descending) noexcept {
       struct cfg::SortByKey args = { Key, Descending };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR mergeFile(const std::string_view &Path) noexcept {
       struct cfg::MergeFile args = { Path };
-      return(Action(AC(-9), this, &args));
+      return Action(AC(-9), this, &args);
    }
    inline ERR merge(OBJECTPTR Source) noexcept {
       struct cfg::Merge args = { Source };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
 
    // Customised field getting
@@ -3417,29 +3417,29 @@ class objScript : public Object {
    }
    inline ERR exec(const std::string_view &Procedure, const struct ScriptArg * Args, int TotalArgs) noexcept {
       struct sc::Exec args = { Procedure, Args, TotalArgs };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR derefProcedure(FUNCTION Procedure) noexcept {
       struct sc::DerefProcedure args = { &Procedure };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR callback(int64_t ProcedureID, const struct ScriptArg * Args, int TotalArgs, ERR * Error) noexcept {
       struct sc::Callback args = { ProcedureID, Args, TotalArgs, (ERR)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Error) *Error = args.Error;
-      return(error);
+      return error;
    }
    inline ERR getProcedureID(const std::string_view &Procedure, int64_t * ProcedureID) noexcept {
       struct sc::GetProcedureID args = { Procedure, (int64_t)0 };
       ERR error = Action(AC(-4), this, &args);
       if (ProcedureID) *ProcedureID = args.ProcedureID;
-      return(error);
+      return error;
    }
    inline ERR debugLog(const std::string_view &Options, CSTRING * Result) noexcept {
       struct sc::DebugLog args = { Options, (CSTRING)0 };
       ERR error = Action(AC(-5), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -3674,23 +3674,23 @@ class objTask : public Object {
       }
    }
    inline ERR expunge() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
    inline ERR addArgument(const std::string_view &Argument) noexcept {
       struct task::AddArgument args = { Argument };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR quit() noexcept {
-      return(Action(AC(-3), this, nullptr));
+      return Action(AC(-3), this, nullptr);
    }
    inline ERR getEnv(const std::string_view &Name, std::string &Value) noexcept {
       struct task::GetEnv args = { Name, &Value };
       ERR error = Action(AC(-4), this, &args);
-      return(error);
+      return error;
    }
    inline ERR setEnv(const std::string_view &Name, const std::string_view &Value) noexcept {
       struct task::SetEnv args = { Name, Value };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
 
    // Customised field getting
@@ -3917,7 +3917,7 @@ class objThread : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR setData(APTR Data, int Size) noexcept {
       struct th::SetData args = { Data, Size };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
 
    // Customised field getting
@@ -4030,14 +4030,14 @@ class objModule : public Object {
       struct mod::ResolveSymbol args = { Name, (APTR)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Address) *Address = args.Address;
-      return(error);
+      return error;
    }
    inline ERR test(const std::string_view &Options, int * Passed, int * Total) noexcept {
       struct mod::Test args = { Options, (int)0, (int)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Passed) *Passed = args.Passed;
       if (Total) *Total = args.Total;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -4134,13 +4134,13 @@ class objTime : public Object {
    inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR setTime() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
    inline ERR getTimeZoneInfo(const std::string_view &ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
       struct pt::GetTimeZoneInfo args = { ZoneID, StartYear, EndYear, (struct TimeZoneInfo *)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Info) *Info = args.Info;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -4309,61 +4309,61 @@ class objCompression : public Object {
       struct cmp::CompressBuffer args = { Input, InputSize, Output, OutputSize, (int)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR compressFile(const std::string_view &Location, const std::string_view &Path) noexcept {
       struct cmp::CompressFile args = { Location, Path };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR decompressBuffer(APTR Input, APTR Output, int OutputSize, int * Result) noexcept {
       struct cmp::DecompressBuffer args = { Input, Output, OutputSize, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR decompressFile(const std::string_view &Path, const std::string_view &Dest, int Flags) noexcept {
       struct cmp::DecompressFile args = { Path, Dest, Flags };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR removeFile(const std::string_view &Path) noexcept {
       struct cmp::RemoveFile args = { Path };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR compressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
       struct cmp::CompressStream args = { Input, Length, &Callback, Output, OutputSize };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR decompressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
       struct cmp::DecompressStream args = { Input, Length, &Callback, Output, OutputSize };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR compressStreamStart() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR compressStreamEnd(FUNCTION Callback, APTR Output, int OutputSize) noexcept {
       struct cmp::CompressStreamEnd args = { &Callback, Output, OutputSize };
-      return(Action(AC(-9), this, &args));
+      return Action(AC(-9), this, &args);
    }
    inline ERR decompressStreamEnd(FUNCTION Callback) noexcept {
       struct cmp::DecompressStreamEnd args = { &Callback };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
    inline ERR decompressStreamStart() noexcept {
-      return(Action(AC(-11), this, nullptr));
+      return Action(AC(-11), this, nullptr);
    }
    inline ERR decompressObject(const std::string_view &Path, OBJECTPTR Object) noexcept {
       struct cmp::DecompressObject args = { Path, Object };
-      return(Action(AC(-12), this, &args));
+      return Action(AC(-12), this, &args);
    }
    inline ERR scan(const std::string_view &Folder, const std::string_view &Filter, FUNCTION Callback) noexcept {
       struct cmp::Scan args = { Folder, Filter, &Callback };
-      return(Action(AC(-13), this, &args));
+      return Action(AC(-13), this, &args);
    }
    inline ERR find(const std::string_view &Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {
       struct cmp::Find args = { Path, CaseSensitive, Wildcard, (struct CompressedItem *)0 };
       ERR error = Action(AC(-14), this, &args);
       if (Item) *Item = args.Item;
-      return(error);
+      return error;
    }
 
    // Customised field getting

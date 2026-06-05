@@ -173,20 +173,20 @@ class objXQuery : public Object {
    }
    inline ERR evaluate(objXML * XML, int Index, XEF Flags) noexcept {
       struct xq::Evaluate args = { XML, Index, Flags };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR search(objXML * XML, FUNCTION Callback, int Index, XEF Flags) noexcept {
       struct xq::Search args = { XML, &Callback, Index, Flags };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR registerFunction(const std::string_view &FunctionName, FUNCTION Callback) noexcept {
       struct xq::RegisterFunction args = { FunctionName, &Callback };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR inspectFunctions(const std::string_view &Name, XIF ResultFlags, std::string &Result) noexcept {
       struct xq::InspectFunctions args = { Name, ResultFlags, &Result };
       ERR error = Action(AC(-4), this, &args);
-      return(error);
+      return error;
    }
 
    // Customised field getting

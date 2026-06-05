@@ -270,115 +270,115 @@ class objXML : public Object {
    }
    inline ERR setAttrib(int Index, XMS Attrib, const std::string_view &Name, const std::string_view &Value) noexcept {
       struct xml::SetAttrib args = { Index, Attrib, Name, Value };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR serialise(int Index, XMF Flags, std::string &Result) noexcept {
       struct xml::Serialise args = { Index, Flags, &Result };
       ERR error = Action(AC(-2), this, &args);
-      return(error);
+      return error;
    }
    inline ERR insertXML(int Index, XMI Where, const std::string_view &XML, int * Result) noexcept {
       struct xml::InsertXML args = { Index, Where, XML, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR getContent(int Index, std::string &Buffer) noexcept {
       struct xml::GetContent args = { Index, &Buffer };
       ERR error = Action(AC(-4), this, &args);
-      return(error);
+      return error;
    }
    inline ERR sort(const std::string_view &XPath, const std::string_view &Sort, XSF Flags) noexcept {
       struct xml::Sort args = { XPath, Sort, Flags };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR removeTag(int Index, int Total) noexcept {
       struct xml::RemoveTag args = { Index, Total };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR moveTags(int Index, int Total, int DestIndex, XMI Where) noexcept {
       struct xml::MoveTags args = { Index, Total, DestIndex, Where };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR getAttrib(int Index, const std::string_view &Attrib, std::string &Value) noexcept {
       struct xml::GetAttrib args = { Index, Attrib, &Value };
       ERR error = Action(AC(-8), this, &args);
-      return(error);
+      return error;
    }
    inline ERR insertXPath(const std::string_view &XPath, XMI Where, const std::string_view &XML, int * Result) noexcept {
       struct xml::InsertXPath args = { XPath, Where, XML, (int)0 };
       ERR error = Action(AC(-9), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR search(const std::string_view &Expression, FUNCTION Callback, int * Result) noexcept {
       struct xml::Search args = { Expression, &Callback, (int)0 };
       ERR error = Action(AC(-10), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR filter(const std::string_view &XPath) noexcept {
       struct xml::Filter args = { XPath };
-      return(Action(AC(-11), this, &args));
+      return Action(AC(-11), this, &args);
    }
    inline ERR evaluate(const std::string_view &Statement, std::string &Result) noexcept {
       struct xml::Evaluate args = { Statement, &Result };
       ERR error = Action(AC(-12), this, &args);
-      return(error);
+      return error;
    }
    inline ERR validateDocument() noexcept {
-      return(Action(AC(-13), this, nullptr));
+      return Action(AC(-13), this, nullptr);
    }
    inline ERR insertContent(int Index, XMI Where, const std::string_view &Content, int * Result) noexcept {
       struct xml::InsertContent args = { Index, Where, Content, (int)0 };
       ERR error = Action(AC(-14), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR removeXPath(const std::string_view &XPath, int Limit) noexcept {
       struct xml::RemoveXPath args = { XPath, Limit };
-      return(Action(AC(-15), this, &args));
+      return Action(AC(-15), this, &args);
    }
    inline ERR getTag(int Index, struct XTag ** Result) noexcept {
       struct xml::GetTag args = { Index, (struct XTag *)0 };
       ERR error = Action(AC(-16), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR registerNamespace(const std::string_view &URI, uint32_t * Result) noexcept {
       struct xml::RegisterNamespace args = { URI, (uint32_t)0 };
       ERR error = Action(AC(-17), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR getNamespaceURI(uint32_t NamespaceID, std::string &Result) noexcept {
       struct xml::GetNamespaceURI args = { NamespaceID, &Result };
       ERR error = Action(AC(-18), this, &args);
-      return(error);
+      return error;
    }
    inline ERR setTagNamespace(int TagID, int NamespaceID) noexcept {
       struct xml::SetTagNamespace args = { TagID, NamespaceID };
-      return(Action(AC(-19), this, &args));
+      return Action(AC(-19), this, &args);
    }
    inline ERR resolvePrefix(const std::string_view &Prefix, int TagID, uint32_t * Result) noexcept {
       struct xml::ResolvePrefix args = { Prefix, TagID, (uint32_t)0 };
       ERR error = Action(AC(-20), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR getEntity(const std::string_view &Name, std::string &Value) noexcept {
       struct xml::GetEntity args = { Name, &Value };
       ERR error = Action(AC(-21), this, &args);
-      return(error);
+      return error;
    }
    inline ERR getNotation(const std::string_view &Name, std::string &Value) noexcept {
       struct xml::GetNotation args = { Name, &Value };
       ERR error = Action(AC(-22), this, &args);
-      return(error);
+      return error;
    }
    inline ERR loadSchema(const std::string_view &Path) noexcept {
       struct xml::LoadSchema args = { Path };
-      return(Action(AC(-23), this, &args));
+      return Action(AC(-23), this, &args);
    }
 
    // Customised field getting

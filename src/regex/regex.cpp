@@ -254,7 +254,7 @@ If no capture groups match the provided name, `ERR::Search` is returned.
 -INPUT-
 struct(Regex) Regex: The compiled regex object.
 strview Name: The capture group name to resolve.
-^&cpp(array(int)) Indices: Receives the resulting capture indices.
+^&vector(int) Indices: Receives the resulting capture indices.
 
 -ERRORS-
 Okay: The name was resolved and Indices populated.
@@ -603,7 +603,7 @@ If no matches are found, the entire input text is returned as a single token.
 -INPUT-
 struct(Regex) Regex: The compiled regex object.
 strview Text: The input text to split.
-^&cpp(array(string)) Output: Receives the resulting string tokens.
+^&vector(string) Output: Receives the resulting string tokens.
 int(RMATCH) Flags: Optional flags to modify the splitting behavior.
 
 -ERRORS-

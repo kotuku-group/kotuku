@@ -725,41 +725,41 @@ class objBitmap : public Object {
    }
    inline ERR copyArea(objBitmap * DestBitmap, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) noexcept {
       struct bmp::CopyArea args = { DestBitmap, Flags, X, Y, Width, Height, XDest, YDest };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR compress(int Level) noexcept {
       struct bmp::Compress args = { Level };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR decompress(int RetainData) noexcept {
       struct bmp::Decompress args = { RetainData };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR drawRectangle(int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags) noexcept {
       struct bmp::DrawRectangle args = { X, Y, Width, Height, Colour, Flags };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setClipRegion(int Left, int Top, int Right, int Bottom) noexcept {
       struct bmp::SetClipRegion args = { Left, Top, Right, Bottom };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR getColour(int Red, int Green, int Blue, int Alpha, uint32_t * Colour) noexcept {
       struct bmp::GetColour args = { Red, Green, Blue, Alpha, (uint32_t)0 };
       ERR error = Action(AC(-6), this, &args);
       if (Colour) *Colour = args.Colour;
-      return(error);
+      return error;
    }
    inline ERR premultiply() noexcept {
-      return(Action(AC(-7), this, nullptr));
+      return Action(AC(-7), this, nullptr);
    }
    inline ERR demultiply() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR convertToLinear() noexcept {
-      return(Action(AC(-9), this, nullptr));
+      return Action(AC(-9), this, nullptr);
    }
    inline ERR convertToRGB() noexcept {
-      return(Action(AC(-10), this, nullptr));
+      return Action(AC(-10), this, nullptr);
    }
 
    // Customised field getting
@@ -1133,37 +1133,37 @@ class objDisplay : public Object {
    inline ERR saveSettings() noexcept { return Action(AC::SaveSettings, this, nullptr); }
    inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
    inline ERR waitVBL() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
    inline ERR updatePalette(struct RGBPalette * NewPalette) noexcept {
       struct gfx::UpdatePalette args = { NewPalette };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR setDisplay(int X, int Y, int Width, int Height, int InsideWidth, int InsideHeight, int BitsPerPixel, double RefreshRate, int Flags) noexcept {
       struct gfx::SetDisplay args = { X, Y, Width, Height, InsideWidth, InsideHeight, BitsPerPixel, RefreshRate, Flags };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR sizeHints(int MinWidth, int MinHeight, int MaxWidth, int MaxHeight, int EnforceAspect) noexcept {
       struct gfx::SizeHints args = { MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setGamma(double Red, double Green, double Blue, GMF Flags) noexcept {
       struct gfx::SetGamma args = { Red, Green, Blue, Flags };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR setGammaLinear(double Red, double Green, double Blue, GMF Flags) noexcept {
       struct gfx::SetGammaLinear args = { Red, Green, Blue, Flags };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR setMonitor(const std::string_view &Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
       struct gfx::SetMonitor args = { Name, MinH, MaxH, MinV, MaxV, Flags };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR minimise() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR checkXWindow() noexcept {
-      return(Action(AC(-9), this, nullptr));
+      return Action(AC(-9), this, nullptr);
    }
    inline ERR getFrame(int * Left, int * Top, int * Right, int * Bottom) noexcept {
       struct gfx::GetFrame args = { (int)0, (int)0, (int)0, (int)0 };
@@ -1172,7 +1172,7 @@ class objDisplay : public Object {
       if (Top) *Top = args.Top;
       if (Right) *Right = args.Right;
       if (Bottom) *Bottom = args.Bottom;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -1496,26 +1496,26 @@ class objClipboard : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR addFile(CLIPTYPE Datatype, const std::string_view &Path, CEF Flags) noexcept {
       struct clip::AddFile args = { Datatype, Path, Flags };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR addObjects(CLIPTYPE Datatype, OBJECTID * Objects, CEF Flags) noexcept {
       struct clip::AddObjects args = { Datatype, Objects, Flags };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, kt::vector<std::string> &Files, CEF * Flags) noexcept {
       struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, &Files, (CEF)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Datatype) *Datatype = args.Datatype;
       if (Flags) *Flags = args.Flags;
-      return(error);
+      return error;
    }
    inline ERR addText(const std::string_view &String) noexcept {
       struct clip::AddText args = { String };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR remove(CLIPTYPE Datatype) noexcept {
       struct clip::Remove args = { Datatype };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
 
    // Customised field getting
@@ -1979,42 +1979,42 @@ class objSurface : public Object {
    inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
    inline ERR inheritedFocus(OBJECTID FocusID, RNF Flags) noexcept {
       struct drw::InheritedFocus args = { FocusID, Flags };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR exposeToDisplay(int X, int Y, int Width, int Height, EXF Flags) noexcept {
       struct drw::ExposeToDisplay args = { X, Y, Width, Height, Flags };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR invalidateRegion(int X, int Y, int Width, int Height) noexcept {
       struct drw::InvalidateRegion args = { X, Y, Width, Height };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR setDisplay(int X, int Y, int Width, int Height, int InsideWidth, int InsideHeight, int BitsPerPixel, double RefreshRate, int Flags) noexcept {
       struct drw::SetDisplay args = { X, Y, Width, Height, InsideWidth, InsideHeight, BitsPerPixel, RefreshRate, Flags };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setOpacity(double Value, double Adjustment) noexcept {
       struct drw::SetOpacity args = { Value, Adjustment };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR addCallback(FUNCTION Callback) noexcept {
       struct drw::AddCallback args = { &Callback };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR minimise() noexcept {
-      return(Action(AC(-7), this, nullptr));
+      return Action(AC(-7), this, nullptr);
    }
    inline ERR resetDimensions(double X, double Y, double XOffset, double YOffset, double Width, double Height, DMF Dimensions) noexcept {
       struct drw::ResetDimensions args = { X, Y, XOffset, YOffset, Width, Height, Dimensions };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-8), this, &args);
    }
    inline ERR removeCallback(FUNCTION Callback) noexcept {
       struct drw::RemoveCallback args = { &Callback };
-      return(Action(AC(-9), this, &args));
+      return Action(AC(-9), this, &args);
    }
    inline ERR scheduleRedraw(int RefreshRate) noexcept {
       struct drw::ScheduleRedraw args = { RefreshRate };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
 
    // Customised field getting

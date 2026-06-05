@@ -59,6 +59,7 @@ rx_float_count     = <{ regex.new([[^float\((.+)\)]]) }>
 rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
 rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
 rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
+rx_vector          = <{ regex.new([[^vector\((.+)\)$]]) }>
 rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
 rx_hash_comment    = <{ regex.new([[^.+#\s*(.+)$]]) }>
 rx_hash_content    = <{ regex.new([[^(.+)#\s*.+$]]) }>
@@ -405,6 +406,17 @@ global function cType(Field:table, Origin:str):table
          Field.type = f
          Field      = cType(Field, Origin)
          Field.name ..= '[]'
+         return Field
+      end
+   end
+
+   do
+      f = rx_vector.extract(Field.type)
+      if f then
+         Field.type = f
+         Field      = cType(Field, Origin)
+         Field.name ..= '[]'
+         Field.type = 'z' .. Field.type
          return Field
       end
    end

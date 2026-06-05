@@ -739,22 +739,22 @@ class objVectorScene : public Object {
    }
    inline ERR addDef(const std::string_view &Name, OBJECTPTR Def) noexcept {
       struct sc::AddDef args = { Name, Def };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR searchByID(int ID, OBJECTPTR * Result) noexcept {
       struct sc::SearchByID args = { ID, (OBJECTPTR)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR findDef(const std::string_view &Name, OBJECTPTR * Def) noexcept {
       struct sc::FindDef args = { Name, (OBJECTPTR)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Def) *Def = args.Def;
-      return(error);
+      return error;
    }
    inline ERR debug() noexcept {
-      return(Action(AC(-4), this, nullptr));
+      return Action(AC(-4), this, nullptr);
    }
 
    // Customised field getting
@@ -2330,15 +2330,15 @@ class objLightingFX : public objFilterEffect {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR setDistantLight(double Azimuth, double Elevation) noexcept {
       struct lt::SetDistantLight args = { Azimuth, Elevation };
-      return(Action(AC(-20), this, &args));
+      return Action(AC(-20), this, &args);
    }
    inline ERR setPointLight(double X, double Y, double Z) noexcept {
       struct lt::SetPointLight args = { X, Y, Z };
-      return(Action(AC(-22), this, &args));
+      return Action(AC(-22), this, &args);
    }
    inline ERR setSpotLight(double X, double Y, double Z, double PX, double PY, double PZ, double Exponent, double ConeAngle) noexcept {
       struct lt::SetSpotLight args = { X, Y, Z, PX, PY, PZ, Exponent, ConeAngle };
-      return(Action(AC(-21), this, &args));
+      return Action(AC(-21), this, &args);
    }
 
    // Customised field getting
@@ -2638,10 +2638,10 @@ class objOffsetFX : public objFilterEffect {
 
 namespace rf {
 struct SelectGamma { CMP Component; double Amplitude; double Offset; double Exponent; static const AC id = AC(-20); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectTable { CMP Component; double *Values; int Size; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectTable { CMP Component; kt::vector<double> *Values; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectLinear { CMP Component; double Slope; double Intercept; static const AC id = AC(-22); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectIdentity { CMP Component; static const AC id = AC(-23); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectDiscrete { CMP Component; double *Values; int Size; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectDiscrete { CMP Component; kt::vector<double> *Values; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectInvert { CMP Component; static const AC id = AC(-25); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectMask { CMP Component; int Mask; static const AC id = AC(-26); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -2664,31 +2664,32 @@ class objRemapFX : public objFilterEffect {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR selectGamma(CMP Component, double Amplitude, double Offset, double Exponent) noexcept {
       struct rf::SelectGamma args = { Component, Amplitude, Offset, Exponent };
-      return(Action(AC(-20), this, &args));
+      return Action(AC(-20), this, &args);
    }
-   inline ERR selectTable(CMP Component, double * Values, int Size) noexcept {
-      struct rf::SelectTable args = { Component, Values, Size };
-      return(Action(AC(-21), this, &args));
+   inline ERR selectTable(CMP Component, kt::vector<double> &Values) noexcept {
+      struct rf::SelectTable args = { Component, &Values };
+      return Action(AC(-21), this, &args);
    }
    inline ERR selectLinear(CMP Component, double Slope, double Intercept) noexcept {
       struct rf::SelectLinear args = { Component, Slope, Intercept };
-      return(Action(AC(-22), this, &args));
+      return Action(AC(-22), this, &args);
    }
    inline ERR selectIdentity(CMP Component) noexcept {
       struct rf::SelectIdentity args = { Component };
-      return(Action(AC(-23), this, &args));
+      return Action(AC(-23), this, &args);
    }
-   inline ERR selectDiscrete(CMP Component, double * Values, int Size) noexcept {
-      struct rf::SelectDiscrete args = { Component, Values, Size };
-      return(Action(AC(-24), this, &args));
+   inline ERR selectDiscrete(CMP Component, kt::vector<double> &Values) noexcept {
+      struct rf::SelectDiscrete args = { Component, &Values };
+      ERR error = Action(AC(-24), this, &args);
+      return error;
    }
    inline ERR selectInvert(CMP Component) noexcept {
       struct rf::SelectInvert args = { Component };
-      return(Action(AC(-25), this, &args));
+      return Action(AC(-25), this, &args);
    }
    inline ERR selectMask(CMP Component, int Mask) noexcept {
       struct rf::SelectMask args = { Component, Mask };
-      return(Action(AC(-26), this, &args));
+      return Action(AC(-26), this, &args);
    }
 
    // Customised field getting
@@ -3260,11 +3261,11 @@ class objVector : public Object {
    inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
    inline ERR push(int Position) noexcept {
       struct vec::Push args = { Position };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR trace(FUNCTION Callback, double Scale, int Transform) noexcept {
       struct vec::Trace args = { &Callback, Scale, Transform };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR getBoundary(VBF Flags, double * X, double * Y, double * Width, double * Height) noexcept {
       struct vec::GetBoundary args = { Flags, (double)0, (double)0, (double)0, (double)0 };
@@ -3273,36 +3274,36 @@ class objVector : public Object {
       if (Y) *Y = args.Y;
       if (Width) *Width = args.Width;
       if (Height) *Height = args.Height;
-      return(error);
+      return error;
    }
    inline ERR pointInPath(double X, double Y) noexcept {
       struct vec::PointInPath args = { X, Y };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR subscribeInput(JTYPE Mask, FUNCTION Callback) noexcept {
       struct vec::SubscribeInput args = { Mask, &Callback };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR subscribeKeyboard(FUNCTION Callback) noexcept {
       struct vec::SubscribeKeyboard args = { &Callback };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR subscribeFeedback(FM Mask, FUNCTION Callback) noexcept {
       struct vec::SubscribeFeedback args = { Mask, &Callback };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR debug() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR newMatrix(struct VectorMatrix ** Transform, int End) noexcept {
       struct vec::NewMatrix args = { (struct VectorMatrix *)0, End };
       ERR error = Action(AC(-9), this, &args);
       if (Transform) *Transform = args.Transform;
-      return(error);
+      return error;
    }
    inline ERR freeMatrix(struct VectorMatrix * Matrix) noexcept {
       struct vec::FreeMatrix args = { Matrix };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
 
    // Customised field getting
@@ -3753,25 +3754,25 @@ class objVectorPath : public objVector {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR addCommand(struct PathCommand * Commands, int Size) noexcept {
       struct vp::AddCommand args = { Commands, Size };
-      return(Action(AC(-30), this, &args));
+      return Action(AC(-30), this, &args);
    }
    inline ERR removeCommand(int Index, int Total) noexcept {
       struct vp::RemoveCommand args = { Index, Total };
-      return(Action(AC(-31), this, &args));
+      return Action(AC(-31), this, &args);
    }
    inline ERR setCommand(int Index, struct PathCommand * Command, int Size) noexcept {
       struct vp::SetCommand args = { Index, Command, Size };
-      return(Action(AC(-32), this, &args));
+      return Action(AC(-32), this, &args);
    }
    inline ERR getCommand(int Index, struct PathCommand ** Command) noexcept {
       struct vp::GetCommand args = { Index, (struct PathCommand *)0 };
       ERR error = Action(AC(-33), this, &args);
       if (Command) *Command = args.Command;
-      return(error);
+      return error;
    }
    inline ERR setCommandList(APTR Commands, int Size) noexcept {
       struct vp::SetCommandList args = { Commands, Size };
-      return(Action(AC(-34), this, &args));
+      return Action(AC(-34), this, &args);
    }
 
    // Customised field getting
@@ -3852,7 +3853,7 @@ class objVectorText : public objVector {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR deleteLine(int Line) noexcept {
       struct vt::DeleteLine args = { Line };
-      return(Action(AC(-30), this, &args));
+      return Action(AC(-30), this, &args);
    }
 
    // Customised field getting
@@ -5646,4 +5647,3 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
-
