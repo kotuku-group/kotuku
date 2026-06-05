@@ -528,6 +528,13 @@ void test_alignment_and_resize_lifecycle(TestContext &Context) {
       Context.expect_true(values.empty(), "Erase all leaves vector empty");
    }
    Context.expect_true(LifecycleTracker::is_balanced(), "Resize and erase lifecycle remains balanced");
+
+   kt::vector<ThrowOnMove> may_throw_move;
+   may_throw_move.emplace_back(1);
+   may_throw_move.emplace_back(2);
+   auto erased_all = may_throw_move.erase(may_throw_move.begin(), may_throw_move.end());
+   Context.expect_true(may_throw_move.empty(), "Erase all clears vector with throwing move assignment");
+   Context.expect_true(erased_all IS may_throw_move.end(), "Erase all returns end for empty temporary-swap result");
 }
 
 int main() {

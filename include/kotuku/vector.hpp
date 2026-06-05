@@ -192,7 +192,7 @@ public:
          tmp.swap(*this);
       }
 
-      return begin() + index;
+      return index < length ? begin() + index : end();
    }
 
    iterator insert(const_iterator pTarget, const T &pValue) {
