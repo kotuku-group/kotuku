@@ -239,6 +239,7 @@ static int async_action(lua_State *Lua)
       }
       else {
          arg_buffer.reset();
+         abort();
          if (error_msg) {
             if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
             else luaL_error(Lua, error, "%s", error_msg);
