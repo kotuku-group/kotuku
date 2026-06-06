@@ -224,8 +224,10 @@ static int async_action(lua_State *Lua)
       // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
       lua_rotate(Lua, 1, -4);
       lua_pop(Lua, 4);
+      int arg_index = 0;
+      CSTRING error_msg = nullptr;
       if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(),
-            &result_count)) IS ERR::Okay) {
+            &result_count, arg_index, error_msg)) IS ERR::Okay) {
          if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
@@ -238,7 +240,11 @@ static int async_action(lua_State *Lua)
       else {
          arg_buffer.reset();
          abort();
-         luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
+         if (error_msg) {
+            if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
+            else luaL_error(Lua, error, "%s", error_msg);
+         }
+         else luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
       }
    }
    else { // No parameters.
@@ -333,7 +339,10 @@ static int async_method(lua_State *Lua)
             // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
             lua_rotate(Lua, 1, -4);
             lua_pop(Lua, 4);
-            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count)) IS ERR::Okay) {
+            int arg_index = 0;
+            CSTRING error_msg = nullptr;
+            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count, arg_index,
+                  error_msg)) IS ERR::Okay) {
                if (not result_count) {
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }
@@ -345,8 +354,11 @@ static int async_method(lua_State *Lua)
             }
             else {
                argbuffer.reset();
-               abort();
-               luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
+               if (error_msg) {
+                  if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
+                  else luaL_error(Lua, error, "%s", error_msg);
+               }
+               else luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
             }
          }
          else { // No parameters.

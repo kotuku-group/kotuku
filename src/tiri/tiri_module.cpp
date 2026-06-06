@@ -837,7 +837,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
          switch(lua_type(Lua, i)) {
             case LUA_TSTRING: { // Name of function to call
-               lua_getglobal(Lua, lua_tostring(Lua, i));
+               lua_getglobal(Lua, lua_tostringview(Lua, i));
                func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
                ((FUNCTION **)(buffer + j))[0] = &func;
                break;

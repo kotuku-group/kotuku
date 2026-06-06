@@ -706,10 +706,9 @@ static int struct_structSize(lua_State *Lua)
       lua_pushnumber(Lua, fs->StructSize);
       return 1;
    }
-   else {
-      luaL_argerror(Lua, 1, "Expected struct.");
-      return 0;
-   }
+   else luaL_argerror(Lua, 1, "Expected struct.");
+
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -722,10 +721,9 @@ static int struct_len(lua_State *Lua)
       lua_pushnumber(Lua, fs->Def->Fields.size());
       return 1;
    }
-   else {
-      luaL_argerror(Lua, 1, "Expected struct.");
-      return 0;
-   }
+   else luaL_argerror(Lua, 1, "Expected struct.");
+
+   return 0;
 }
 
 //********************************************************************************************************************

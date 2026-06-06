@@ -151,9 +151,16 @@ static int action_draw(lua_State *Lua)
 
    ERR error = ERR::Okay;
    int8_t argbuffer[sizeof(struct acDraw)+8];
+   int arg_index = 0;
+   CSTRING error_msg = nullptr;
 
-   if ((error = build_args(Lua, "Draw", glActions[int(AC::Draw)].Args, glActions[int(AC::Draw)].Size, argbuffer, nullptr)) != ERR::Okay) {
-      luaL_error(Lua, ERR::Args, "Argument build failed for Draw().");
+   if ((error = build_args(Lua, "Draw", glActions[int(AC::Draw)].Args, glActions[int(AC::Draw)].Size, argbuffer,
+         nullptr, arg_index, error_msg)) != ERR::Okay) {
+      if (error_msg) {
+         if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
+         else luaL_error(Lua, error, "%s", error_msg);
+      }
+      else luaL_error(Lua, ERR::Args, "Argument build failed for Draw().");
       return 0;
    }
 
