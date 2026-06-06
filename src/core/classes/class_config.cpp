@@ -485,7 +485,7 @@ then the first known key value will be returned.
 -INPUT-
 strview Group: The name of a group to examine for a key.  If empty, all groups are scanned.
 strview Key: The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.
-&cstr Data: The key value will be stored in this parameter on returning.
+&strview Data: The key value will be stored in this parameter on return.
 
 -ERRORS-
 Okay
@@ -509,18 +509,17 @@ static ERR CONFIG_ReadValue(extConfig *Self, struct cfg::ReadValue *Args)
 
       if (Args->Key.empty()) {
          if (keys.empty()) Args->Data = "";
-         else Args->Data = keys.cbegin()->second.c_str();
+         else Args->Data = keys.cbegin()->second;
          return ERR::Okay;
       }
       else if (auto it = keys.find(Args->Key); it != keys.end()) {
-         Args->Data = it->second.c_str();
+         Args->Data = it->second;
          return ERR::Okay;
       }
    }
 
-   log.trace("Could not find key %.*s : %.*s.", int(Args->Group.size()), Args->Group.data(), int(Args->Key.size()),
-      Args->Key.data());
-   Args->Data = nullptr;
+   log.trace("Could not find key %.*s : %.*s.", int(Args->Group.size()), Args->Group.data(), int(Args->Key.size()), Args->Key.data());
+   Args->Data = std::string_view{};
    return ERR::Search;
 }
 

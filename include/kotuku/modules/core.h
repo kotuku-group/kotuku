@@ -2122,7 +2122,7 @@ struct CoreBase {
    ERR (*_AddInfoTag)(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value);
    void (*_SetDefaultPermissions)(int User, int Group, PERMIT Permissions);
    void (*_VLogF)(VLF Flags, const char *Header, const char *Message, va_list Args);
-   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view &Name, CSTRING *Value);
+   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value);
    ERR (*_SetResourcePath)(RP PathType, const std::string_view &Path);
    objTask * (*_CurrentTask)(void);
    CSTRING (*_ResolveGroupID)(int Group);
@@ -2222,7 +2222,7 @@ inline ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callbac
 inline ERR AddInfoTag(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
 inline void SetDefaultPermissions(int User, int Group, PERMIT Permissions) { return CoreBase->_SetDefaultPermissions(User,Group,Permissions); }
 inline void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args) { return CoreBase->_VLogF(Flags,Header,Message,Args); }
-inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, CSTRING *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
+inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
 inline ERR SetResourcePath(RP PathType, const std::string_view &Path) { return CoreBase->_SetResourcePath(PathType,Path); }
 inline objTask * CurrentTask(void) { return CoreBase->_CurrentTask(); }
 inline CSTRING ResolveGroupID(int Group) { return CoreBase->_ResolveGroupID(Group); }
@@ -2317,7 +2317,7 @@ extern "C" ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Cal
 extern "C" ERR AddInfoTag(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value);
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args);
-extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, CSTRING *Value);
+extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value);
 extern "C" ERR SetResourcePath(RP PathType, const std::string_view &Path);
 extern "C" objTask * CurrentTask(void);
 extern "C" CSTRING ResolveGroupID(int Group);
@@ -3150,7 +3150,7 @@ class objFile : public Object {
 // Config methods
 
 namespace cfg {
-struct ReadValue { std::string_view Group; std::string_view Key; CSTRING Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Set { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct WriteValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DeleteKey { std::string_view Group; std::string_view Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -3242,8 +3242,8 @@ class objConfig : public Object {
       struct acSaveToObject args = { Dest, { ClassID } };
       return Action(AC::SaveToObject, this, &args);
    }
-   inline ERR readValue(const std::string_view &Group, const std::string_view &Key, CSTRING * Data) noexcept {
-      struct cfg::ReadValue args = { Group, Key, (CSTRING)0 };
+   inline ERR readValue(const std::string_view &Group, const std::string_view &Key, std::string_view * Data) noexcept {
+      struct cfg::ReadValue args = { Group, Key };
       ERR error = Action(AC(-1), this, &args);
       if (Data) *Data = args.Data;
       return error;
@@ -3363,7 +3363,7 @@ struct Exec { std::string_view Procedure; const struct ScriptArg *Args; int Tota
 struct DerefProcedure { FUNCTION *Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Callback { int64_t ProcedureID; const struct ScriptArg *Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetProcedureID { std::string_view Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DebugLog { std::string_view Options; CSTRING Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DebugLog { std::string_view Options; std::string *Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3435,10 +3435,9 @@ class objScript : public Object {
       if (ProcedureID) *ProcedureID = args.ProcedureID;
       return error;
    }
-   inline ERR debugLog(const std::string_view &Options, CSTRING * Result) noexcept {
-      struct sc::DebugLog args = { Options, (CSTRING)0 };
+   inline ERR debugLog(const std::string_view &Options, std::string &Result) noexcept {
+      struct sc::DebugLog args = { Options, &Result };
       ERR error = Action(AC(-5), this, &args);
-      if (Result) *Result = args.Result;
       return error;
    }
 

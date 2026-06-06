@@ -412,10 +412,7 @@ following options:
 
 Options marked with [L] are only available when calling DebugLog() from inside the script.
 
-The resulting log information is returned as a string, which needs to be deallocated once no longer required.
-
--TAGS-
-caller-owns-result, null-terminated-result
+The resulting log information is written to the caller-provided `Result` string.
 
 *********************************************************************************************************************/
 
@@ -423,7 +420,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 {
    kt::Log log;
 
-   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
 
    auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv->Lua) return log.warning(ERR::NotInitialised);
@@ -674,9 +671,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
    if (opts.show_memory) emit_memory_stats(prv, buf, opts.compact);
    if (opts.show_state) emit_state_info(prv, buf, opts.compact);
 
-   const std::string result = buf.str();
-   if ((Args->Result = kt::strclone(result.c_str())) IS nullptr) return ERR::AllocMemory;
-
+   *Args->Result = buf.str();
    return ERR::Okay;
 }
 

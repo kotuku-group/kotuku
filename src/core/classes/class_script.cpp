@@ -139,24 +139,23 @@ will depend on the scripting language in use, but will typically dump readable b
 parameter is a comma-separated list that may be used to pass language-specific options to the underlying
 implementation.
 
-The resulting log information is returned as a string, which needs to be deallocated once no longer required.
+The resulting log information is written to the caller-provided `Result` string.
 
 -INPUT-
 strview Options: Options to pass to the underlying language.
-&!cstr Result: Resulting log information.
+^&string Result: Resulting log information.
 
 -ERRORS-
 Okay:
 NullArgs:
-
--TAGS-
-caller-owns-result, null-terminated-result
 
 *********************************************************************************************************************/
 
 static ERR SCRIPT_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 {
    // It is the responsibility of the derived class to override this method with something appropriate.
+   if ((not Args) or (not Args->Result)) return ERR::NullArgs;
+   Args->Result->clear();
    return ERR::Okay;
 }
 

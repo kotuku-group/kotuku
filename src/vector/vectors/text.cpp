@@ -727,9 +727,9 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
 {
    if (Value.empty()) return ERR::InvalidValue;
 
-   CSTRING name;
+   std::string_view name;
    if (fnt::ResolveFamilyName(Value, &name) IS ERR::Okay) {
-      Self->txFamily = name ? name : "Noto Sans";
+      Self->txFamily = name.empty() ? "Noto Sans" : name;
    }
    else Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
 
@@ -835,11 +835,11 @@ static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
       return ERR::Okay;
    }
 
-   CSTRING next;
+   std::string_view next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
       Self->FillString = Value;
 
-      if (next) {
+      if (not next.empty()) {
          vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
          Self->FGFill = true;
       }

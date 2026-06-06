@@ -458,14 +458,14 @@ Z: Close Path
   <function>
     <name>ReadPainter</name>
     <comment>Parses a painter string to its colour, gradient, pattern or image value.</comment>
-    <prototype>ERR vec::ReadPainter(objVectorScene * Scene, STRVIEW IRI, struct VectorPainter * Painter, CSTRING * Result)</prototype>
+    <prototype>ERR vec::ReadPainter(objVectorScene * Scene, STRVIEW IRI, struct VectorPainter * Painter, STRVIEW * Result)</prototype>
     <tiriPrototype>err, Result:str = ReadPainter(Scene:obj, IRI:str, Painter:any)</tiriPrototype>
     <tags>mutates-input, object-owns-result</tags>
     <input>
       <param type="objVectorScene *" name="Scene">Optional.  Required if <code>url()</code> references are to be resolved.</param>
       <param type="STRVIEW" name="IRI">The IRI string to be translated.</param>
       <param type="struct VectorPainter *" name="Painter">This <st>VectorPainter</st> structure will store the deserialised result.</param>
-      <param type="CSTRING *" name="Result">Optional pointer for storing the end of the parsed IRI string.  <code>NULL</code> is returned if there is no further content to parse or an error occurred.</param>
+      <param type="STRVIEW *" name="Result">Optional reference for storing the end of the parsed IRI string.  An empty string is returned if there is no further content to parse or an error occurred.</param>
     </input>
     <description>
 <p>This function will parse an SVG style IRI into its equivalent logical values.  The results can then be processed for rendering a stroke or fill operation in the chosen style.</p>

@@ -402,18 +402,17 @@ end
    info = struct.new('FileInfo')
 
    err = mSys.AddInfoTag(info, 'Label', 'Filesystem test')
-   assert(err is ERR_Okay, 'AddInfoTag() failed: ' .. mSys.GetErrorMsg(err))
+   assert(err is ERR_Okay, f'AddInfoTag() failed: {mSys.GetErrorMsg(err)}')
 
    err, value = mSys.ReadInfoTag(info, 'Label')
-   assert(err is ERR_Okay, 'ReadInfoTag() failed to retrieve an existing tag: ' .. mSys.GetErrorMsg(err))
-   assert(value is 'Filesystem test', 'ReadInfoTag() returned an unexpected value: ' .. tostring(value))
+   assert(err is ERR_Okay, f'ReadInfoTag() failed to retrieve an existing tag: {mSys.GetErrorMsg(err)}')
+   assert(value is 'Filesystem test', f'ReadInfoTag() returned an unexpected value: {value}')
 
    err = mSys.AddInfoTag(info, 'Label', nil)
-   assert(err is ERR_Okay, 'AddInfoTag() failed to remove a tag: ' .. mSys.GetErrorMsg(err))
+   assert(err is ERR_Okay, f'AddInfoTag() failed to remove a tag: {mSys.GetErrorMsg(err)}')
 
    err, value = mSys.ReadInfoTag(info, 'Label')
-   assert(err is ERR_Search, 'ReadInfoTag() should report ERR_Search after a tag is removed, got: ' .. mSys.GetErrorMsg(err))
-   assert(value is nil, 'ReadInfoTag() should return nil for a removed tag.')
+   assert(err is ERR_Search, f'ReadInfoTag() should report ERR_Search after a tag is removed, got: {mSys.GetErrorMsg(err)}')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

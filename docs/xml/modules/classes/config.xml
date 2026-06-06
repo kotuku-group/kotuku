@@ -196,12 +196,12 @@ print('The Action class is located at ' .. str)
     <method>
       <name>ReadValue</name>
       <comment>Reads a key-value string.</comment>
-      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, CSTRING * Data)</prototype>
+      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, STRVIEW * Data)</prototype>
       <tiriPrototype>err, Data:str = ReadValue(Group:str, Key:str)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Group">The name of a group to examine for a key.  If empty, all groups are scanned.</param>
         <param type="STRVIEW" name="Key">The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.</param>
-        <param type="CSTRING *" name="Data">The key value will be stored in this parameter on returning.</param>
+        <param type="STRVIEW *" name="Data">The key value will be stored in this parameter on return.</param>
       </input>
       <description>
 <p>This function retrieves key values in their original string format.  On success, the resulting string remains valid only for as long as the client has exclusive access to the config object.  The pointer can also be invalidated if more information is written to the config object.  For this reason, consider copying the result if it will be used extensively.</p>

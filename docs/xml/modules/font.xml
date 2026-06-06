@@ -79,12 +79,12 @@
   <function>
     <name>ResolveFamilyName</name>
     <comment>Convert a CSV family string to a single family name.</comment>
-    <prototype>ERR fnt::ResolveFamilyName(STRVIEW String, CSTRING * Result)</prototype>
+    <prototype>ERR fnt::ResolveFamilyName(STRVIEW String, STRVIEW * Result)</prototype>
     <tiriPrototype>err, Result:str = ResolveFamilyName(String:str)</tiriPrototype>
     <tags>volatile-result, null-terminated-result, blocking, case-insensitive</tags>
     <input>
       <param type="STRVIEW" name="String">A CSV family string to resolve.</param>
-      <param type="CSTRING *" name="Result">The resolved family name is returned in this parameter.</param>
+      <param type="STRVIEW *" name="Result">The resolved family name is returned in this parameter.</param>
     </input>
     <description>
 <p>Converts a CSV family string to one resolved family name.  <code>String</code> is parsed from left to right, with each family name or wildcard tested against the font database in order.  If a single asterisk is used to terminate the list, the system default is returned when no earlier name matches.</p>
@@ -103,18 +103,17 @@
   <function>
     <name>SelectFont</name>
     <comment>Searches for a 'best fitting' font file, based on family name and style.</comment>
-    <prototype>ERR fnt::SelectFont(STRVIEW Name, STRVIEW Style, CSTRING * Path, FMETA * Meta)</prototype>
+    <prototype>ERR fnt::SelectFont(STRVIEW Name, STRVIEW Style, STRING * Path, FMETA * Meta)</prototype>
     <tiriPrototype>err, Path:str, Meta:num = SelectFont(Name:str, Style:str)</tiriPrototype>
-    <tags>caller-owns-result, creates-resource, blocking, case-insensitive</tags>
+    <tags>blocking, case-insensitive, mutates-input</tags>
     <input>
       <param type="STRVIEW" name="Name">The name of a font face to search for (case insensitive).</param>
       <param type="STRVIEW" name="Style">The preferred style, e.g. <code>Bold</code> or <code>Italic</code>.</param>
-      <param type="CSTRING *" name="Path">The location of the best-matching font file is returned in this parameter.</param>
+      <param type="STRING *" name="Path">The location of the best-matching font file is returned in this parameter.</param>
       <param type="FMETA *" name="Meta" lookup="FMETA">Optional, returns additional meta information about the font file.</param>
     </input>
     <description>
 <p>Resolves a font family <code>Name</code> and preferred <code>Style</code> to a font file path.  The family name must exist in the font database.  If the requested style is unavailable, the function falls back to the face's regular style or first registered style.</p>
-<p>The returned <code>Path</code> is allocated and must be released with <code>FreeResource()</code> when it is no longer required.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

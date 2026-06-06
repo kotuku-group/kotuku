@@ -11,7 +11,7 @@ FDEF maExec[] = { { "Procedure", FD_CPP|FD_STR }, { "ScriptArg:Args", FD_PTR|FD_
 FDEF maDerefProcedure[] = { { "Procedure", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maCallback[] = { { "ProcedureID", FD_INT64 }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { "Error", FD_RESULT|FD_INT|FD_ERROR }, { 0, 0 } };
 FDEF maGetProcedureID[] = { { "Procedure", FD_CPP|FD_STR }, { "ProcedureID", FD_RESULT|FD_INT64 }, { 0, 0 } };
-FDEF maDebugLog[] = { { "Options", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { 0, 0 } };
+FDEF maDebugLog[] = { { "Options", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
 
 static const struct MethodEntry clScriptMethods[] = {
    { AC(-1), (APTR)SCRIPT_Exec, "Exec", maExec, sizeof(struct sc::Exec) },

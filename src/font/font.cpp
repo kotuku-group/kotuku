@@ -670,12 +670,10 @@ Resolves a font family `Name` and preferred `Style` to a font file path.  The fa
 database.  If the requested style is unavailable, the function falls back to the face's regular style or first
 registered style.
 
-The returned `Path` is allocated and must be released with `FreeResource()` when it is no longer required.
-
 -INPUT-
 strview Name:  The name of a font face to search for (case insensitive).
 strview Style: The preferred style, e.g. `Bold` or `Italic`.
-&!cstr Path: The location of the best-matching font file is returned in this parameter.
+^&string Path: The location of the best-matching font file is returned in this parameter.
 &int(FMETA) Meta: Optional, returns additional meta information about the font file.
 
 -ERRORS-
@@ -686,12 +684,12 @@ AllocMemory
 Search: Unable to find a suitable font.
 
 -TAGS-
-caller-owns-result, creates-resource, blocking, case-insensitive
+blocking, case-insensitive
 -END-
 
 *********************************************************************************************************************/
 
-ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTRING *Path, FMETA *Meta)
+ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta)
 {
    kt::Log log(__FUNCTION__);
 
@@ -699,7 +697,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTR
 
    if (Name.empty() or (not Path)) return log.warning(ERR::NullArgs);
 
-   *Path = nullptr;
+   *Path = "";
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
@@ -721,15 +719,15 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTR
       return meta;
    };
 
-   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style, CSTRING *Path) {
+   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style, std::string *Path) {
       if (Keys.contains(Style)) {
-         if ((*Path = strclone(Keys[Style]))) return ERR::Okay;
-         else return ERR::AllocMemory;
+         *Path = Keys[Style];
+         return ERR::Okay;
       }
       else if (not iequals("Regular", Style)) {
          if (Keys.contains("Regular")) {
-            if ((*Path = strclone(Keys["Regular"]))) return ERR::Okay;
-            else return ERR::AllocMemory;
+            *Path = Keys["Regular"];
+            return ERR::Okay;
          }
       }
       return ERR::Search;
@@ -756,7 +754,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTR
       std::string first_style = styles.substr(0, end);
 
       if (keys.contains(first_style)) {
-         if (not (*Path = strclone(keys[first_style]))) return ERR::AllocMemory;
+         *Path = keys[first_style];
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }
@@ -855,7 +853,7 @@ The returned `Result` is borrowed storage.  Copy it immediately if it needs to s
 
 -INPUT-
 strview String: A CSV family string to resolve.
-&cstr Result: The resolved family name is returned in this parameter.
+&strview Result: The resolved family name is returned in this parameter.
 
 -ERRORS-
 Okay
@@ -871,7 +869,7 @@ volatile-result, null-terminated-result, blocking, case-insensitive
 
 *********************************************************************************************************************/
 
-ERR ResolveFamilyName(const std::string_view &String, CSTRING *Result)
+ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
 {
    kt::Log log(__FUNCTION__);
 
@@ -899,7 +897,7 @@ ERR ResolveFamilyName(const std::string_view &String, CSTRING *Result)
             // Default family requested - use the first font declaring a "Default" key
             for (auto & [group, keys] : groups[0]) {
                if (keys.contains("Default")) {
-                  *Result = keys["Name"].c_str();
+                  *Result = keys["Name"];
                   return ERR::Okay;
                }
             }
@@ -932,7 +930,7 @@ ERR ResolveFamilyName(const std::string_view &String, CSTRING *Result)
                   }
                }
 
-               *Result = keys["Name"].c_str();
+               *Result = keys["Name"];
                return ERR::Okay;
             }
          }
