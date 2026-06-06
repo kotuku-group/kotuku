@@ -270,7 +270,11 @@ static void key_event(evKey *, int, struct finput *);
          };
 
          auto error = acDataFeed(*src, Lua->script, DATA::REQUEST, &dcr, sizeof(dcr));
-         if (error != ERR::Okay) luaL_error(Lua, ERR::Failed, "Failed to request item %d from source #%d: %s", item, source_id, GetErrorMsg(error));
+         if (error != ERR::Okay) {
+            src.unlock();
+            luaL_error(Lua, ERR::Failed, "Failed to request item %d from source #%d: %s", item, source_id,
+               GetErrorMsg(error));
+         }
       }
    }
 
@@ -332,19 +336,24 @@ static void key_event(evKey *, int, struct finput *);
 
       lua_pushvalue(Lua, lua_gettop(Lua)); // Take a copy of the Tiri.input object
       input->InputValue = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      input->Script      = Lua->script;
       input->KeyEvent    = nullptr;
       input->InputHandle = 0;
       input->Mask        = mask;
       input->Mode        = FIM_DEVICE;
-      input->Next        = prv->InputList;
-
-      prv->InputList = input;
+      input->Next        = nullptr;
 
       auto callback = C_FUNCTION(consume_input_events);
-      if ((error = gfx::SubscribeInput(&callback, input->SurfaceID, mask, device_id, &input->InputHandle)) != ERR::Okay) {
+      if ((error = gfx::SubscribeInput(&callback, input->SurfaceID, mask, device_id,
+            &input->InputHandle)) != ERR::Okay) {
+         if (input->InputHandle) { gfx::UnsubscribeInput(input->InputHandle); input->InputHandle = 0; }
+         if (input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
+         if (input->Callback)    { luaL_unref(Lua, LUA_REGISTRYINDEX, input->Callback); input->Callback = 0; }
          luaL_error(Lua, error);
       }
 
+      input->Next = prv->InputList;
+      prv->InputList = input;
       return 1;
    }
    else luaL_error(Lua, ERR::Memory, "Failed to initialise input subscription.");

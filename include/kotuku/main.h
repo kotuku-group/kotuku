@@ -221,6 +221,14 @@ class ScopedObjectLock {
          }
       }
 
+      inline void unlock() {
+         if (error IS ERR::Okay) {
+            if (quicklock) obj->unlock();
+            else ReleaseObject((OBJECTPTR)obj);
+            error = ERR::ResourceNotLocked;
+         }
+      }
+
       inline ScopedObjectLock() = default;
       [[nodiscard]] inline bool granted() { return error IS ERR::Okay; }
 

@@ -35,6 +35,7 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include <kotuku/strings.hpp>
 
 #include <inttypes.h>
+#include <format>
 #include <vector>
 #include <iterator>
 #include <mutex>
@@ -193,7 +194,8 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    std::string module_name;
    if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
       if (auto error = load_include(Lua->script, module_name.c_str()); error != ERR::Okay) {
-         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name.c_str(), MetaClass->ClassName.c_str());
+         luaL_error(Lua, error,
+            std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }
    }
    else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));
@@ -555,19 +557,14 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
       auto &sdef = glStructs[s_name];
 
       for (int i=0; i < Elements; i++) {
-         if (struct_to_table(Lua, ref, sdef, Values[i]) IS ERR::Okay) {
-            // Table is now on top of stack; retrieve arr from stack in case GC moved it
-            arr = arrayV(Lua->base + arr_idx - 1);
-            TValue *tv = Lua->top - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(Lua, arr, tab);
-            Lua->top--;  // Pop the table
-         }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
+         struct_to_table(Lua, ref, sdef, Values[i]);
+         // Table is now on top of stack; retrieve arr from stack in case GC moved it
+         arr = arrayV(Lua->base + arr_idx - 1);
+         TValue *tv = Lua->top - 1;
+         GCtab *tab = tabV(tv);
+         setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+         lj_gc_objbarrier(Lua, arr, tab);
+         Lua->top--;  // Pop the table
       }
    }
 }
@@ -594,19 +591,14 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
       int struct_stride = (Stride > 0) ? Stride : sdef.Size;
 
       for (int i=0; i < Elements; i++) {
-         if (struct_to_table(Lua, ref, sdef, Input) IS ERR::Okay) {
-            // Table is now on top of stack; retrieve arr from stack in case GC moved it
-            arr = arrayV(Lua->base + arr_idx - 1);
-            TValue *tv = Lua->top - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(Lua, arr, tab);
-            Lua->top--;  // Pop the table
-         }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
+         struct_to_table(Lua, ref, sdef, Input);
+         // Table is now on top of stack; retrieve arr from stack in case GC moved it
+         arr = arrayV(Lua->base + arr_idx - 1);
+         TValue *tv = Lua->top - 1;
+         GCtab *tab = tabV(tv);
+         setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+         lj_gc_objbarrier(Lua, arr, tab);
+         Lua->top--;  // Pop the table
 
          Input = (int8_t *)Input + struct_stride;
       }

@@ -431,9 +431,9 @@ extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);
 void new_module(lua_State *, objModule *);
-ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
+void struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
 ERR table_to_struct(lua_State *, std::string_view, APTR *);
-ERR keyvalue_to_table(lua_State *, const KEYVALUE *);
+void keyvalue_to_table(lua_State *, const KEYVALUE *);
 
 int fcmd_arg(lua_State *);
 int fcmd_msg(lua_State *);
@@ -495,8 +495,8 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
 {
    if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
       if ((Object) and (Object->classptr)) {
-         std::string call_name = std::format("{}.{}", Object->classptr->ClassName, Action ? Action : "Action");
-         raise_checked_call_error(Lua, Error, call_name.c_str());
+         luaL_error(Lua, Error, std::format("{}.{}() failed: {}", Object->classptr->ClassName,
+            Action ? Action : "Action", GetErrorMsg(Error)));
       }
       else raise_checked_call_error(Lua, Error, Action ? Action : "Action");
    }

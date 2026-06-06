@@ -17,6 +17,7 @@ Examples:
 #include <kotuku/strings.hpp>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <cctype>
 
 #include "lauxlib.h"
@@ -223,7 +224,8 @@ static int regex_new(lua_State *Lua)
 
       std::string error_msg;
       if (rx::Compile(pattern, flags, &error_msg, &r->regex_obj) != ERR::Okay) {
-         luaL_error(Lua, ERR::Syntax, "Regex compilation failed: %s", error_msg.c_str());
+         error_msg.insert(0, "Regex compilation failed: ");
+         luaL_error(Lua, ERR::Syntax, std::move(error_msg));
       }
 
       return 1; // userdata is already on stack

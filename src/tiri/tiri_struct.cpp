@@ -111,23 +111,27 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
    // NB: Custom comparator will stop if a colon is encountered in StructName
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
       std::vector<lua_ref> ref;
-      return struct_to_table(Lua, ref, def->second, Address);
+      struct_to_table(Lua, ref, def->second, Address);
+      return ERR::Okay;
    }
    else if (StructName.starts_with("KeyValue")) {
       // A struct name of 'KeyValue' allows the KEYVALUE type to be used for building structures dynamically.
       // ankerl::unordered_dense::map<std::string, std::string>
 
-      return keyvalue_to_table(Lua, (const KEYVALUE *)Address);
+      keyvalue_to_table(Lua, (const KEYVALUE *)Address);
+      return ERR::Okay;
    }
-   else luaL_error(Lua, ERR::Search, "Unknown struct name '%.*s' - use 'include' to load module definitions.", int(StructName.size()), StructName.data());
-   return ERR::Search;
+   else {
+      kt::Log().warning("Unknown struct name '%.*s' - use 'include' to load module definitions.", int(StructName.size()), StructName.data());
+      return ERR::Search;
+   }
 }
 
 //********************************************************************************************************************
 
-[[nodiscard]] ERR keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
+[[nodiscard]] void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
 {
-   if (not Map) { lua_pushnil(Lua); return ERR::Okay; }
+   if (not Map) { lua_pushnil(Lua); return; }
 
    lua_createtable(Lua, 0, Map->size()); // Create a new table on the stack.
 
@@ -136,8 +140,6 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
       lua_pushlstring(Lua, val.c_str(), val.size());
       lua_settable(Lua, -3);
    }
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -218,7 +220,7 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 
 //********************************************************************************************************************
 
-[[nodiscard]] ERR struct_to_table(lua_State *Lua, std::vector<lua_ref> &References, struct_record &StructDef, CPTR Address)
+[[nodiscard]] void struct_to_table(lua_State *Lua, std::vector<lua_ref> &References, struct_record &StructDef, CPTR Address)
 {
    kt::Log log(__FUNCTION__);
 
@@ -226,7 +228,7 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 
    // Do not push a Lua value in the event of an error.
 
-   if (not Address) { lua_pushnil(Lua); return ERR::Okay; }
+   if (not Address) { lua_pushnil(Lua); return; }
 
    // Check if there is an existing struct table already associated with this address.  If so, return it
    // rather than creating another table.
@@ -234,7 +236,7 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
    for (auto &rec : References) {
       if (Address IS rec.Address) {
          lua_rawgeti(Lua, LUA_REGISTRYINDEX, rec.Ref);
-         return ERR::Okay;
+         return;
       }
    }
 
@@ -288,11 +290,11 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
          if (auto def = glStructs.find(std::string_view(field.StructRef)); def != glStructs.end()) {
             if (type & FD_PTR) {
                if (((APTR *)address)[0]) {
-                  if (struct_to_table(Lua, References, def->second, ((APTR *)address)[0]) != ERR::Okay) lua_pushnil(Lua);
+                  struct_to_table(Lua, References, def->second, ((APTR *)address)[0]);
                }
                else lua_pushnil(Lua);
             }
-            else if (struct_to_table(Lua, References, def->second, address) != ERR::Okay) lua_pushnil(Lua);
+            else struct_to_table(Lua, References, def->second, address);
          }
          else {
             log.msg("Struct '%s' not found for field '%s'", field.StructRef.c_str(), field.Name.c_str());
@@ -318,8 +320,6 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 
       lua_settable(Lua, -3);
    }
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -346,7 +346,7 @@ struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view Str
    }
    else {
       if (Deallocate) FreeResource(Address);
-      luaL_error(prv->Lua, ERR::Search, "Unrecognised struct '%s'", StructName.data());
+      kt::Log(__FUNCTION__).warning("Unrecognised struct '%s'", StructName.data());
       return nullptr;
    }
 }
@@ -363,7 +363,7 @@ struct fstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &St
       lua_setmetatable(Lua, -2);
       return fs;
    }
-   else luaL_error(Lua, ERR::Memory, "Failed to create new struct.");
+   else kt::Log(__FUNCTION__).warning("Failed to create new struct.");
 
    return nullptr;
 }
@@ -745,7 +745,6 @@ static int struct_get(lua_State *Lua)
 
          if (not fs->Data) {
             luaL_error(Lua, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", fieldname);
-            return 0;
          }
 
          if (auto field_opt = find_field(fs, fieldname)) {
@@ -833,15 +832,13 @@ static int struct_get(lua_State *Lua)
                else lua_pushinteger(Lua, ((uint8_t *)address)[0]);
             }
             else {
-               luaL_error(Lua, ERR::InvalidType, "%s", std::format("Field '{}' does not use a supported type of {:x}", fieldname, field.Type).c_str());
-               return 0;
+               luaL_error(Lua, ERR::InvalidType,
+                  std::format("Field '{}' does not use a supported type of {:x}", fieldname, field.Type));
             }
+
             return 1;
          }
-         else {
-            luaL_error(Lua, ERR::FieldSearch, "Field '%s' does not exist in structure.", fieldname);
-            return 0;
-         }
+         else luaL_error(Lua, ERR::FieldSearch, "Field '%s' does not exist in structure.", fieldname);
       }
    }
 
@@ -855,10 +852,7 @@ static int struct_set(lua_State *Lua)
 {
    if (auto fs = (struct fstruct *)lua_touserdata(Lua, 1)) {
       if (auto ref = luaL_checkstring(Lua, 2)) {
-         if (not fs->Data) {
-            luaL_error(Lua, "Cannot reference field '%s' because struct address is NULL.", ref);
-            return 0;
-         }
+         if (not fs->Data) luaL_error(Lua, "Cannot reference field '%s' because struct address is NULL.", ref);
 
          if (auto field_opt = find_field(fs, ref)) {
             auto &field = field_opt->get();
@@ -900,10 +894,7 @@ static int struct_destruct(lua_State *Lua)
          destroy_struct_cpp_strings(*fs->Def, fs->Data);
       }
 
-      if (fs->Deallocate) {
-         FreeResource(fs->Data);
-         fs->Data = nullptr;
-      }
+      if (fs->Deallocate) { FreeResource(fs->Data); fs->Data = nullptr; }
    }
 
    return 0;
