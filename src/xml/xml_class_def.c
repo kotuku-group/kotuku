@@ -24,28 +24,28 @@ static const struct FieldDef clXMLFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maSetAttrib[] = { { "Index", FD_INT }, { "Attrib", FD_INT }, { "Name", FD_CPP|FD_STR }, { "Value", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maSerialise[] = { { "Index", FD_INT }, { "Flags", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maInsertXML[] = { { "Index", FD_INT }, { "Where", FD_INT }, { "XML", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maGetContent[] = { { "Index", FD_INT }, { "Buffer", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maSort[] = { { "XPath", FD_CPP|FD_STR }, { "Sort", FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maSetAttrib[] = { { "Index", FD_INT }, { "Attrib", FD_INT }, { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSerialise[] = { { "Index", FD_INT }, { "Flags", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maInsertXML[] = { { "Index", FD_INT }, { "Where", FD_INT }, { "XML", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maGetContent[] = { { "Index", FD_INT }, { "Buffer", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSort[] = { { "XPath", FDF_CPPSTRING }, { "Sort", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maRemoveTag[] = { { "Index", FD_INT }, { "Total", FD_INT }, { 0, 0 } };
 FDEF maMoveTags[] = { { "Index", FD_INT }, { "Total", FD_INT }, { "DestIndex", FD_INT }, { "Where", FD_INT }, { 0, 0 } };
-FDEF maGetAttrib[] = { { "Index", FD_INT }, { "Attrib", FD_CPP|FD_STR }, { "Value", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maInsertXPath[] = { { "XPath", FD_CPP|FD_STR }, { "Where", FD_INT }, { "XML", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maSearch[] = { { "Expression", FD_CPP|FD_STR }, { "Callback", FD_FUNCTIONPTR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maFilter[] = { { "XPath", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maEvaluate[] = { { "Statement", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maInsertContent[] = { { "Index", FD_INT }, { "Where", FD_INT }, { "Content", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maRemoveXPath[] = { { "XPath", FD_CPP|FD_STR }, { "Limit", FD_INT }, { 0, 0 } };
+FDEF maGetAttrib[] = { { "Index", FD_INT }, { "Attrib", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maInsertXPath[] = { { "XPath", FDF_CPPSTRING }, { "Where", FD_INT }, { "XML", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maSearch[] = { { "Expression", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maFilter[] = { { "XPath", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maEvaluate[] = { { "Statement", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maInsertContent[] = { { "Index", FD_INT }, { "Where", FD_INT }, { "Content", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maRemoveXPath[] = { { "XPath", FDF_CPPSTRING }, { "Limit", FD_INT }, { 0, 0 } };
 FDEF maGetTag[] = { { "Index", FD_INT }, { "XTag:Result", FD_RESULT|FD_PTR|FD_STRUCT }, { 0, 0 } };
-FDEF maRegisterNamespace[] = { { "URI", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
-FDEF maGetNamespaceURI[] = { { "NamespaceID", FD_INT|FD_UNSIGNED }, { "Result", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maRegisterNamespace[] = { { "URI", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
+FDEF maGetNamespaceURI[] = { { "NamespaceID", FD_INT|FD_UNSIGNED }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF maSetTagNamespace[] = { { "TagID", FD_INT }, { "NamespaceID", FD_INT }, { 0, 0 } };
-FDEF maResolvePrefix[] = { { "Prefix", FD_CPP|FD_STR }, { "TagID", FD_INT }, { "Result", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
-FDEF maGetEntity[] = { { "Name", FD_CPP|FD_STR }, { "Value", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maGetNotation[] = { { "Name", FD_CPP|FD_STR }, { "Value", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maLoadSchema[] = { { "Path", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maResolvePrefix[] = { { "Prefix", FDF_CPPSTRING }, { "TagID", FD_INT }, { "Result", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
+FDEF maGetEntity[] = { { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maGetNotation[] = { { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maLoadSchema[] = { { "Path", FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clXMLMethods[] = {
    { AC(-1), (APTR)XML_SetAttrib, "SetAttrib", maSetAttrib, sizeof(struct xml::SetAttrib) },

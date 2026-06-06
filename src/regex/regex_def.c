@@ -12,11 +12,11 @@ extern ERR GetCaptureIndex(struct Regex * Regex, const std::string_view & Name, 
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsCompile[] = { { "Error", FD_INT|FD_ERROR }, { "Pattern", FD_CPP|FD_STR }, { "Flags", FD_INT }, { "ErrorMsg", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { "Regex:Result", FD_RESULT|FD_PTR|FD_STRUCT|FD_ALLOC }, { 0, 0 } };
-FDEF argsGetCaptureIndex[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Name", FD_CPP|FD_STR }, { "Indices", FD_RESULT|FD_CPP|FD_ARRAY|FD_MUTABLE|FD_INT }, { 0, 0 } };
-FDEF argsReplace[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Text", FD_CPP|FD_STR }, { "Replacement", FD_CPP|FD_STR }, { "Output", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF argsSearch[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Text", FD_CPP|FD_STR }, { "Flags", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF argsSplit[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Text", FD_CPP|FD_STR }, { "Output", FD_RESULT|FD_ARRAY|FD_MUTABLE|FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF argsCompile[] = { { "Error", FD_INT|FD_ERROR }, { "Pattern", FDF_CPPSTRING }, { "Flags", FD_INT }, { "ErrorMsg", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Regex:Result", FD_RESULT|FD_PTR|FD_STRUCT|FD_ALLOC }, { 0, 0 } };
+FDEF argsGetCaptureIndex[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Indices", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { 0, 0 } };
+FDEF argsReplace[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Text", FDF_CPPSTRING }, { "Replacement", FDF_CPPSTRING }, { "Output", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF argsSearch[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Text", FDF_CPPSTRING }, { "Flags", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF argsSplit[] = { { "Error", FD_INT|FD_ERROR }, { "Regex:Regex", FD_PTR|FD_STRUCT }, { "Text", FDF_CPPSTRING }, { "Output", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)rx::Compile, "Compile", argsCompile },

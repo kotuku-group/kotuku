@@ -16,9 +16,9 @@ extern ERR ResolveFamilyName(const std::string_view & String, std::string_view *
 FDEF argsCharWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "Char", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsGetList[] = { { "Error", FD_INT|FD_ERROR }, { "FontList:Result", FD_RESULT|FD_PTR|FD_STRUCT|FD_ALLOC }, { 0, 0 } };
 FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
-FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FD_CPP|FD_STR }, { "Result", FD_RESULT|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FD_CPP|FD_STR }, { "Style", FD_CPP|FD_STR }, { "Path", FD_RESULT|FD_MUTABLE|FD_CPP|FD_STR }, { "Meta", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF argsStringWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "String", FD_CPP|FD_STR }, { "Chars", FD_INT }, { 0, 0 } };
+FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "Result", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Style", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Meta", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF argsStringWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "String", FDF_CPPSTRING }, { "Chars", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)fnt::GetList, "GetList", argsGetList },

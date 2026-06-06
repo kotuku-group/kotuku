@@ -22,18 +22,18 @@ static const struct FieldDef clDocumentFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maFeedParser[] = { { "String", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maSelectLink[] = { { "Index", FD_INT }, { "Name", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maFindIndex[] = { { "Name", FD_CPP|FD_STR }, { "Start", FD_RESULT|FD_INT }, { "End", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maInsertXML[] = { { "XML", FD_CPP|FD_STR }, { "Index", FD_INT }, { 0, 0 } };
+FDEF maFeedParser[] = { { "String", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSelectLink[] = { { "Index", FD_INT }, { "Name", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maFindIndex[] = { { "Name", FDF_CPPSTRING }, { "Start", FD_RESULT|FD_INT }, { "End", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maInsertXML[] = { { "XML", FDF_CPPSTRING }, { "Index", FD_INT }, { 0, 0 } };
 FDEF maRemoveContent[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
-FDEF maInsertText[] = { { "Text", FD_CPP|FD_STR }, { "Index", FD_INT }, { "Char", FD_INT }, { "Preformat", FD_INT }, { 0, 0 } };
-FDEF maCallFunction[] = { { "Function", FD_CPP|FD_STR }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
+FDEF maInsertText[] = { { "Text", FDF_CPPSTRING }, { "Index", FD_INT }, { "Char", FD_INT }, { "Preformat", FD_INT }, { 0, 0 } };
+FDEF maCallFunction[] = { { "Function", FDF_CPPSTRING }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
 FDEF maAddListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maRemoveListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maShowIndex[] = { { "Name", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maHideIndex[] = { { "Name", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maEdit[] = { { "Name", FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maShowIndex[] = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maHideIndex[] = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maEdit[] = { { "Name", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maReadContent[] = { { "Format", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { 0, 0 } };
 
 static const struct MethodEntry clDocumentMethods[] = {

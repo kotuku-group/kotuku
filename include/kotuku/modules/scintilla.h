@@ -628,8 +628,8 @@ class objScintillaSearch : public Object {
    }
 
    inline ERR setText(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      this->Text = Value;
+      return ERR::Okay;
    }
 
    inline ERR setFlags(const STF Value) noexcept {

@@ -37,6 +37,7 @@
 #define FDF_INIT        FD_INIT                 // Field can only be written prior to Init()
 #define FDF_SYSTEM      FD_SYSTEM
 #define FDF_ERROR       (FD_INT|FD_ERROR)
+#define FDF_VECTOR      (FD_CPP|FD_ARRAY)
 #define FDF_R           FD_READ
 #define FDF_W           FD_WRITE
 #define FDF_RW          (FD_READ|FD_WRITE)

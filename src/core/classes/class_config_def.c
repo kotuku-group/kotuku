@@ -8,14 +8,14 @@ static const struct FieldDef clConfigFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maReadValue[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_RESULT|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maSet[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maWriteValue[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { "Data", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maDeleteKey[] = { { "Group", FD_CPP|FD_STR }, { "Key", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maDeleteGroup[] = { { "Group", FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maGetGroupFromIndex[] = { { "Index", FD_INT }, { "Group", FD_RESULT|FD_CPP|FD_STR }, { 0, 0 } };
-FDEF maSortByKey[] = { { "Key", FD_CPP|FD_STR }, { "Descending", FD_INT }, { 0, 0 } };
-FDEF maMergeFile[] = { { "Path", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maReadValue[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { "Data", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSet[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { "Data", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maWriteValue[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { "Data", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maDeleteKey[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maDeleteGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maGetGroupFromIndex[] = { { "Index", FD_INT }, { "Group", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSortByKey[] = { { "Key", FDF_CPPSTRING }, { "Descending", FD_INT }, { 0, 0 } };
+FDEF maMergeFile[] = { { "Path", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maMerge[] = { { "Source", FD_OBJECTPTR }, { 0, 0 } };
 
 static const struct MethodEntry clConfigMethods[] = {

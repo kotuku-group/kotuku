@@ -60,8 +60,8 @@ global glTypes = {
    ptr        = { fd='FD_PTR',                t_type='any', c_type='APTR' },
    resource   = { fd='FD_STRUCT|FD_RESOURCE', t_type='any', c_type='APTR' },
    short      = { fd='FD_WORD',               t_type='num', c_type='int16_t', doc_type='INT16' },
-   strview    = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string_view', doc_type='STRVIEW' }, -- For API calls only
-   string     = { fd='FD_CPP|FD_STR',         t_type='str', c_type='std::string', doc_type='STRING' },
+   strview    = { fd='FDF_CPPSTRING',         t_type='str', c_type='std::string_view', doc_type='STRVIEW' }, -- For API calls only
+   string     = { fd='FDF_CPPSTRING',         t_type='str', c_type='std::string', doc_type='STRING' },
    str        = { fd='FD_STR',                t_type='str', c_type='STRING', doc_type='STRING' },
    struct     = { fd='FD_STRUCT',             t_type='any', c_type='APTR' },
    structsize = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
@@ -614,12 +614,11 @@ global function cType(Value:table, Origin:str):table
          Value.docType = Value.type
 
          Value.fullType = {
-            fd       = 'FD_ARRAY|' .. Value.fullType.fd,
+            fd       = 'FDF_VECTOR|' .. Value.fullType.fd,
             c_type   = Value.fullType.c_type,
             t_type   = 'array'
          }
 
-         if not Value.fullType.fd:find('FD_CPP') then Value.fullType.fd = 'FD_CPP|' .. Value.fullType.fd end
          return Value
       end
    end

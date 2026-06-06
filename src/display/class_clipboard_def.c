@@ -7,10 +7,10 @@ static const struct FieldDef clClipboardFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maAddFile[] = { { "Datatype", FD_INT }, { "Path", FD_CPP|FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maAddFile[] = { { "Datatype", FD_INT }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maAddObjects[] = { { "Datatype", FD_INT }, { "Objects", FD_PTR }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maGetFiles[] = { { "Filter", FD_INT }, { "Index", FD_INT }, { "Datatype", FD_RESULT|FD_INT }, { "Files", FD_RESULT|FD_ARRAY|FD_MUTABLE|FD_CPP|FD_STR }, { "Flags", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maAddText[] = { { "String", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF maGetFiles[] = { { "Filter", FD_INT }, { "Index", FD_INT }, { "Datatype", FD_RESULT|FD_INT }, { "Files", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FDF_CPPSTRING }, { "Flags", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maAddText[] = { { "String", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maRemove[] = { { "Datatype", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clClipboardMethods[] = {
