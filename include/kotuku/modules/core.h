@@ -3363,7 +3363,7 @@ struct Exec { std::string_view Procedure; const struct ScriptArg *Args; int Tota
 struct DerefProcedure { FUNCTION *Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Callback { int64_t ProcedureID; const struct ScriptArg *Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetProcedureID { std::string_view Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DebugLog { std::string_view Options; CSTRING Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DebugLog { std::string_view Options; std::string *Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3435,10 +3435,9 @@ class objScript : public Object {
       if (ProcedureID) *ProcedureID = args.ProcedureID;
       return error;
    }
-   inline ERR debugLog(const std::string_view &Options, CSTRING * Result) noexcept {
-      struct sc::DebugLog args = { Options, (CSTRING)0 };
+   inline ERR debugLog(const std::string_view &Options, std::string &Result) noexcept {
+      struct sc::DebugLog args = { Options, &Result };
       ERR error = Action(AC(-5), this, &args);
-      if (Result) *Result = args.Result;
       return error;
    }
 
