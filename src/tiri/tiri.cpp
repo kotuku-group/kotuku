@@ -533,7 +533,7 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
 //********************************************************************************************************************
 // Create a Lua array from a list of structure pointers.
 
-void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
+ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
 {
    kt::Log log(__FUNCTION__);
 
@@ -546,7 +546,7 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
    }
 
    auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   if (not glStructs.contains(s_name)) return ERR::Search;
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
@@ -568,6 +568,8 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
          Lua->top--;  // Pop the table
       }
    }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -641,7 +643,11 @@ void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int E
 void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values)
 {
    if (Flags & FD_STRUCT) {
-      if (Flags & FD_POINTER) make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values);
+      if (Flags & FD_POINTER) {
+         if (make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values) != ERR::Okay) {
+            luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(TypeName.size()), TypeName.data());
+         }
+      }
       else make_struct_serial_array(Lua, TypeName, Elements, Values);
    }
    else make_array(Lua, ff_to_aet(Flags), Elements, Values, TypeName);

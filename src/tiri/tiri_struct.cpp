@@ -287,11 +287,11 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
          if (auto def = glStructs.find(std::string_view(field.StructRef)); def != glStructs.end()) {
             if (type & FD_PTR) {
                if (((APTR *)address)[0]) {
-                  struct_to_table(Lua, References, def->second, ((APTR *)address)[0]);
+                  (void)struct_to_table(Lua, References, def->second, ((APTR *)address)[0]);
                }
                else lua_pushnil(Lua);
             }
-            else struct_to_table(Lua, References, def->second, address);
+            else (void)struct_to_table(Lua, References, def->second, address);
          }
          else {
             log.msg("Struct '%s' not found for field '%s'", field.StructRef.c_str(), field.Name.c_str());
@@ -331,13 +331,12 @@ struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view Str
    log.traceBranch("Struct: %s, Address: %p, Deallocate: %d", StructName.data(), Address, Deallocate);
 
    auto prv = (prvTiri *)Self->DerivedPtr;
-   auto def = glStructs.find(StructName);
-   if (def != glStructs.end()) {
+   if (auto def = glStructs.find(StructName); def != glStructs.end()) {
       return push_struct_def(prv->Lua, Address, def->second, Deallocate);
    }
    else if (AllowEmpty) {
       // The AllowEmpty option is useful in situations where a successful API call returns a structure that is strictly
-      // unavailable to Tiri.  Rather than throw an exception because the structure isn't in the dictionary, we return
+      // unavailable to Tiri.  Rather than return NULL because the structure isn't in the dictionary, we return
       // an empty structure declaration.
 
       static struct_record empty("");
@@ -345,7 +344,7 @@ struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view Str
    }
    else {
       if (Deallocate) FreeResource(Address);
-      kt::Log(__FUNCTION__).warning("Unrecognised struct '%s'", StructName.data());
+      log.warning("Unrecognised struct '%s'", StructName.data());
       return nullptr;
    }
 }
@@ -765,7 +764,9 @@ static int struct_get(lua_State *Lua)
                      }
                      else lua_createarray(Lua, array_size, ff_to_element(field.Type), (APTR *)address, ARRAY_CACHED, field.StructRef);
                   }
-                  else push_struct(Lua->script, ((APTR *)address)[0], field.StructRef, false, false);
+                  else if (!push_struct(Lua->script, ((APTR *)address)[0], field.StructRef, false, false)) {
+                     luaL_error(Lua, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
+                  }
                }
                else lua_pushnil(Lua);
             }
@@ -777,7 +778,9 @@ static int struct_get(lua_State *Lua)
                else make_struct_array(Lua, field.StructRef, array_size, address);
             }
             else if (field.Type & FD_STRUCT) { // Embedded structure
-               push_struct(Lua->script, address, field.StructRef, false, false);
+               if (!push_struct(Lua->script, address, field.StructRef, false, false)) {
+                  luaL_error(Lua, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
+               }
             }
             else if (field.Type & FD_STRING) {
                if (field.Type & FD_ARRAY) {
@@ -788,7 +791,7 @@ static int struct_get(lua_State *Lua)
                   else lua_createarray(Lua, array_size, AET::CSTR, (APTR *)address, ARRAY_CACHED);
                }
                else if (field.Type & FD_CPP) {
-                  lua_pushstring(Lua, ((std::string *)address)->c_str());
+                  lua_pushstring(Lua, *((std::string *)address));
                }
                else lua_pushstring(Lua, ((STRING *)address)[0]);
             }
