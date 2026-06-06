@@ -359,8 +359,6 @@ static ERR SCRIPT_Init(objScript *Self)
 static ERR SCRIPT_NewPlacement(objScript *Self)
 {
    new (Self) objScript;
-
-   Self->CurrentLine = -1;
    return ERR::Okay;
 }
 

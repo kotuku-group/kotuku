@@ -65,6 +65,11 @@ public:
    std::string FindPort;
    int FindEnabled = -1;
    bool Find = false;
+
+   extProxy() {
+      Enabled = true;
+      Port = 80;
+   }
 };
 
 static ERR find_proxy(extProxy *);
@@ -339,8 +344,6 @@ static ERR PROXY_Free(extProxy *Self)
 static ERR PROXY_NewPlacement(extProxy *Self)
 {
    new (Self) extProxy;
-   Self->Enabled = true;
-   Self->Port = 80;
    return ERR::Okay;
 }
 

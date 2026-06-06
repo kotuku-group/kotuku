@@ -2210,6 +2210,7 @@ static ResourceManager glNodeManager = {
       <const name="Flush"/>
       <const name="Focus"/>
       <const name="Free"/>
+      <const name="FreePlacement"/>
       <const name="FreeWarning"/>
       <const name="GetKey"/>
       <const name="Hide"/>

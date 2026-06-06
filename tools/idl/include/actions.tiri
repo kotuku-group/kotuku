@@ -7,6 +7,7 @@ global glActionStubs = {
    NewObject     = '',
    NewOwner      = '',
    NewPlacement  = '',
+   FreePlacement = '',
 
    -- Actions without parameters
    Activate     = '   inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }',

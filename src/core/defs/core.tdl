@@ -98,7 +98,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "READ",         "RENAME",        "RESET",        "RESIZE",      "SAVEIMAGE",    "SAVETOOBJECT",
     "SEEK",         "SETKEY",        "SHOW",         "TIMER",       "UNLOCK",       "NEXT",         "PREV",
     "WRITE",        "SETFIELD",      "CLIPBOARD",    "REFRESH",     "DISABLE",      "ENABLE",       "REDIMENSION",
-    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO")
+    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO",         "FREEPLACEMENT")
 
   flags("MHF", { comment="Internal options for requesting function tables from modules." },
     "STATIC: Keep the module code in memory",

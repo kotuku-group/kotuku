@@ -903,12 +903,6 @@ static ERR SOUND_Init(extSound *Self)
 static ERR SOUND_NewPlacement(extSound *Self)
 {
    new (Self) extSound;
-   Self->Compression = 50;     // 50% compression by default
-   Self->Volume      = 1.0;    // Playback at 100% volume level
-   Self->Pan         = 0;
-   Self->Playback    = 0;
-   Self->Note        = NOTE_C; // Standard pitch
-   Self->Stream      = STREAM::SMART;
    return ERR::Okay;
 }
 

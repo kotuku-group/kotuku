@@ -410,6 +410,10 @@ class extMetaClass : public objMetaClass {
    ActionEntry ActionTable[int(AC::END)];
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
+
+   extMetaClass() {
+      Local[0] = 0xff;
+   }
 };
 
 class extFile : public objFile {
@@ -437,6 +441,11 @@ class extFile : public objFile {
    PERMIT Permissions;
    bool   isFolder;
    int   Handle;         // Native system file handle
+
+   extFile() {
+      Handle = -1;
+      Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
+   }
 };
 
 class extConfig : public objConfig {

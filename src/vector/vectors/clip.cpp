@@ -87,8 +87,6 @@ static ERR CLIP_NewChild(extVectorClip *Self, struct acNewChild *Args)
 static ERR CLIP_NewPlacement(extVectorClip *Self)
 {
    new (Self) extVectorClip;
-
-   Self->Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
    return ERR::Okay;
 }
 
@@ -181,4 +179,3 @@ static ERR init_clip(void)
 
    return clVectorClip ? ERR::Okay : ERR::AddClass;
 }
-

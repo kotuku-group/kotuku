@@ -361,6 +361,17 @@ class extHTTP : public objHTTP {
    uint16_t MultipleInput:1;
    uint16_t KeepAlive:1;
    uint16_t ProxyDefined:1;   // TRUE if the ProxyServer has been manually set by the user
+
+   extHTTP() {
+      Error          = ERR::Okay;
+      DataTimeout    = 5.0;
+      ConnectTimeout = 10.0;
+      Datatype       = DATA::RAW;
+      BufferSize     = 16 * 1024;
+      AuthQOP        = "auth";
+      AuthAlgorithm  = "md5";
+      KeepAlive      = true;
+   }
 };
 
 static ERR HTTP_Activate(extHTTP *);
@@ -1039,14 +1050,6 @@ static ERR HTTP_NewPlacement(extHTTP *Self)
 {
    // Note: No local object allocations are permitted due to lack of context.  Use a NewObject hook if necessary
    new (Self) extHTTP;
-   Self->Error          = ERR::Okay;
-   Self->DataTimeout    = 5.0;
-   Self->ConnectTimeout = 10.0;
-   Self->Datatype       = DATA::RAW;
-   Self->BufferSize     = 16 * 1024;
-   Self->AuthQOP        = "auth";
-   Self->AuthAlgorithm  = "md5";
-   Self->KeepAlive      = true;
    return ERR::Okay;
 }
 

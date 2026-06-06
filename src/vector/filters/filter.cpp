@@ -667,16 +667,6 @@ static ERR VECTORFILTER_NewChild(extVectorFilter *Self, struct acNewChild *Args)
 static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self)
 {
    new (Self) extVectorFilter;
-   Self->Units          = VUNIT::BOUNDING_BOX;
-   Self->PrimitiveUnits = VUNIT::UNDEFINED;
-   Self->Opacity        = 1.0;
-   Self->X              = -0.1; // -10% default as per SVG requirements
-   Self->Y              = -0.1;
-   Self->Width          = 1.2;  // +120% default as per SVG requirements
-   Self->Height         = 1.2;
-   Self->AspectRatio    = VFA::MEET; // Scale X/Y values independently
-   Self->ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
-   Self->Dimensions     = DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT;
    return ERR::Okay;
 }
 

@@ -93,6 +93,15 @@ class extFont : public objFont {
    int16_t prvLineCountCR;
    char prvEscape[2];
    uint8_t prvDefaultChar;
+
+   extFont() {
+      TabSize         = 8;
+      prvDefaultChar  = '.';
+      prvLineCountCR  = 1;
+      Colour.Alpha    = 255;
+      GlyphSpacing    = 1.0;
+      Style           = "Regular";
+   }
 };
 
 #include "font_def.c"

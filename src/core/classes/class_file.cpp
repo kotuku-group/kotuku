@@ -947,8 +947,6 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
 static ERR FILE_NewPlacement(extFile *Self)
 {
    new (Self) extFile;
-   Self->Handle = -1;
-   Self->Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
    return ERR::Okay;
 }
 

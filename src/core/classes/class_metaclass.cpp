@@ -428,7 +428,6 @@ ERR CLASS_Init(extMetaClass *Self)
 ERR CLASS_NewPlacement(extMetaClass *Self)
 {
    new (Self) extMetaClass;
-   Self->Local[0] = 0xff;
    return ERR::Okay;
 }
 

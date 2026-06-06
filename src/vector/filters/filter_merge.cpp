@@ -31,6 +31,10 @@ class extMergeFX : public extFilterEffect {
    using create = kt::Create<extMergeFX>;
 
    std::vector<MergeSource> List;
+
+   extMergeFX() {
+      SourceType = VSF::IGNORE;
+   }
 };
 
 //********************************************************************************************************************
@@ -91,7 +95,6 @@ static ERR MERGEFX_Free(extMergeFX *Self)
 static ERR MERGEFX_NewPlacement(extMergeFX *Self)
 {
    new (Self) extMergeFX;
-   Self->SourceType = VSF::IGNORE;
    return ERR::Okay;
 }
 

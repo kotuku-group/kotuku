@@ -193,7 +193,8 @@ enum class AC : int {
    Refresh = 46,
    Disable = 47,
    NewPlacement = 48,
-   END = 49,
+   FreePlacement = 49,
+   END = 50,
 };
 
 // Permission flags
@@ -1564,6 +1565,7 @@ struct Edges {
 #define AHASH_SIGNAL 0xec1cd0b6
 #define AHASH_NEWPLACEMENT 0x25d84fc8
 #define AHASH_UNDO 0x45e5725e
+#define AHASH_FREEPLACEMENT 0x560489a0
 
 
 typedef AC ACTIONID;
