@@ -1474,7 +1474,7 @@ static void load_config(extAudio *Self)
 
 //********************************************************************************************************************
 
-#include "audio_def.c"
+#include "class_audio_def.c"
 
 static const FieldArray clAudioFields[] = {
    { "OutputRate",    FDF_INT|FDF_RI, nullptr, SET_OutputRate },

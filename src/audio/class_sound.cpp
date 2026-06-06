@@ -1707,20 +1707,7 @@ static ERR win32_audio_stream(extSound *Self, int64_t Elapsed, int64_t CurrentTi
 
 //********************************************************************************************************************
 
-static const FieldDef clFlags[] = {
-   { "Loop",         (int)SDF::LOOP },
-   { "New",          (int)SDF::NEW },
-   { "Stereo",       (int)SDF::STEREO },
-   { "RestrictPlay", (int)SDF::RESTRICT_PLAY },
-   { nullptr, 0 }
-};
-
-static const FieldDef clStream[] = {
-   { "Always", (int)STREAM::ALWAYS },
-   { "Smart",  (int)STREAM::SMART },
-   { "Never",  (int)STREAM::NEVER },
-   { nullptr, 0 }
-};
+#include "class_sound_def.c"
 
 static const FieldArray clFields[] = {
    { "Volume",         FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Volume },
@@ -1729,7 +1716,7 @@ static const FieldArray clFields[] = {
    { "Priority",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Priority },
    { "Length",         FDF_INT|FDF_RW, nullptr, SOUND_SET_Length },
    { "Octave",         FDF_INT|FDF_RW, nullptr, SOUND_SET_Octave },
-   { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SOUND_SET_Flags, &clFlags },
+   { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SOUND_SET_Flags, &clSoundFlags },
    { "Frequency",      FDF_INT|FDF_RI },
    { "Playback",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Playback },
    { "Compression",    FDF_INT|FDF_RW },
@@ -1738,34 +1725,18 @@ static const FieldArray clFields[] = {
    { "Audio",          FDF_OBJECTID|FDF_RI },
    { "LoopStart",      FDF_INT|FDF_RW },
    { "LoopEnd",        FDF_INT|FDF_RW },
-   { "Stream",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clStream },
+   { "Stream",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clSoundStream },
    { "Handle",         FDF_INT|FDF_SYSTEM|FDF_R },
    { "ChannelIndex",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Active",   FDF_INT|FDF_R,            SOUND_GET_Active },
-   { "Duration", FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
-   { "Header",   FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
-   { "OnStop",   FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
-   { "Path",     FDF_CPPSTRING|FDF_RI|FDF_PURE,     SOUND_GET_Path, SOUND_SET_Path },
-   { "Src",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, SOUND_GET_Path, SOUND_SET_Path },
-   { "Note",     FDF_CPPSTRING|FDF_RW,     SOUND_GET_Note, SOUND_SET_Note },
+   { "Active",   FDF_VIRTUAL|FDF_INT|FDF_R,                     SOUND_GET_Active },
+   { "Duration", FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
+   { "Header",   FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
+   { "OnStop",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
+   { "Path",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE,     SOUND_GET_Path, SOUND_SET_Path },
+   { "Src",      FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, SOUND_GET_Path, SOUND_SET_Path },
+   { "Note",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
-};
-
-static const ActionArray clActions[] = {
-   { AC::Activate,      SOUND_Activate },
-   { AC::Deactivate,    SOUND_Deactivate },
-   { AC::Disable,       SOUND_Disable },
-   { AC::Enable,        SOUND_Enable },
-   { AC::Free,          SOUND_Free },
-   { AC::GetKey,        SOUND_GetKey },
-   { AC::Init,          SOUND_Init },
-   { AC::NewPlacement,  SOUND_NewPlacement },
-   { AC::Read,          SOUND_Read },
-   { AC::SaveToObject,  SOUND_SaveToObject },
-   { AC::Seek,          SOUND_Seek },
-   { AC::SetKey,        SOUND_SetKey },
-   { AC::NIL, nullptr }
 };
 
 //********************************************************************************************************************
