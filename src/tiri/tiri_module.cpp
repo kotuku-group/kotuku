@@ -636,15 +636,17 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    APTR function = mod->Functions[index].Address;
    FUNCTION func;
 
-   // Guarantees that the Lua registry reference created for an FD_FUNCTION argument is released on every exit
-   // path.  The module function only uses the callback for the duration of this synchronous call, so it is
-   // safe to drop the reference once module_call_inner() returns.
+   // This guard owns the Lua registry reference for an FD_FUNCTION argument until the call is handed to the module.
+   // After that point, the module function is responsible for calling DerefProcedure() when it no longer needs it.
 
    struct func_ref_guard {
       lua_State *Lua;
       FUNCTION  &Func;
+      bool OwnsReference = true;
       ~func_ref_guard() {
-         if (Func.isScript() and (Func.ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
+         if (OwnsReference) {
+            if (Func.isScript() and (Func.ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
+         }
       }
    } func_guard{ Lua, func };
 
@@ -828,6 +830,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ErrorMsg = "Multiple function arguments are not supported.";
             return ERR::Args;
          }
+
+         // NOTE: The client is responsible for calling DerefProcedure() on the function reference when it is no longer needed.
 
          switch(lua_type(Lua, i)) {
             case LUA_TSTRING: { // Name of function to call
@@ -1179,6 +1183,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    }
 
    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, total_args, return_type, arg_types) IS FFI_OK) {
+      func_guard.OwnsReference = false;
       ffi_call(&cif, (void (*)())function, &rc, arg_values);
       copy_mutable_cpp_strings();
       if (not ErrorMsg.empty()) return ERR::BufferOverflow;
