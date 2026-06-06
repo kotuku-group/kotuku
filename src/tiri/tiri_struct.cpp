@@ -111,8 +111,7 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
    // NB: Custom comparator will stop if a colon is encountered in StructName
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
       std::vector<lua_ref> ref;
-      struct_to_table(Lua, ref, def->second, Address);
-      return ERR::Okay;
+      return struct_to_table(Lua, ref, def->second, Address);
    }
    else if (StructName.starts_with("KeyValue")) {
       // A struct name of 'KeyValue' allows the KEYVALUE type to be used for building structures dynamically.
@@ -220,15 +219,13 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 
 //********************************************************************************************************************
 
-[[nodiscard]] void struct_to_table(lua_State *Lua, std::vector<lua_ref> &References, struct_record &StructDef, CPTR Address)
+[[nodiscard]] ERR struct_to_table(lua_State *Lua, std::vector<lua_ref> &References, struct_record &StructDef, CPTR Address)
 {
    kt::Log log(__FUNCTION__);
 
    log.traceBranch("Struct: %s, Data: %p", StructDef.Name.c_str(), Address);
 
-   // Do not push a Lua value in the event of an error.
-
-   if (not Address) { lua_pushnil(Lua); return; }
+   if (not Address) { lua_pushnil(Lua); return ERR::NullArgs; }
 
    // Check if there is an existing struct table already associated with this address.  If so, return it
    // rather than creating another table.
@@ -236,7 +233,7 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
    for (auto &rec : References) {
       if (Address IS rec.Address) {
          lua_rawgeti(Lua, LUA_REGISTRYINDEX, rec.Ref);
-         return;
+         return ERR::Okay;
       }
    }
 
@@ -320,6 +317,8 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 
       lua_settable(Lua, -3);
    }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

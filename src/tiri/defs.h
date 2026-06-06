@@ -431,7 +431,7 @@ extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);
 void new_module(lua_State *, objModule *);
-void struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
+ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
 ERR table_to_struct(lua_State *, std::string_view, APTR *);
 void keyvalue_to_table(lua_State *, const KEYVALUE *);
 

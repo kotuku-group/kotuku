@@ -557,13 +557,14 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
       auto &sdef = glStructs[s_name];
 
       for (int i=0; i < Elements; i++) {
-         struct_to_table(Lua, ref, sdef, Values[i]);
-         // Table is now on top of stack; retrieve arr from stack in case GC moved it
-         arr = arrayV(Lua->base + arr_idx - 1);
-         TValue *tv = Lua->top - 1;
-         GCtab *tab = tabV(tv);
-         setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-         lj_gc_objbarrier(Lua, arr, tab);
+         if (struct_to_table(Lua, ref, sdef, Values[i]) IS ERR::Okay) {
+            // Table is now on top of stack; retrieve arr from stack in case GC moved it
+            arr = arrayV(Lua->base + arr_idx - 1);
+            TValue *tv = Lua->top - 1;
+            GCtab *tab = tabV(tv);
+            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+            lj_gc_objbarrier(Lua, arr, tab);
+         }
          Lua->top--;  // Pop the table
       }
    }
@@ -591,13 +592,14 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
       int struct_stride = (Stride > 0) ? Stride : sdef.Size;
 
       for (int i=0; i < Elements; i++) {
-         struct_to_table(Lua, ref, sdef, Input);
-         // Table is now on top of stack; retrieve arr from stack in case GC moved it
-         arr = arrayV(Lua->base + arr_idx - 1);
-         TValue *tv = Lua->top - 1;
-         GCtab *tab = tabV(tv);
-         setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-         lj_gc_objbarrier(Lua, arr, tab);
+         if (struct_to_table(Lua, ref, sdef, Input) IS ERR::Okay) {
+            // Table is now on top of stack; retrieve arr from stack in case GC moved it
+            arr = arrayV(Lua->base + arr_idx - 1);
+            TValue *tv = Lua->top - 1;
+            GCtab *tab = tabV(tv);
+            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+            lj_gc_objbarrier(Lua, arr, tab);
+         }
          Lua->top--;  // Pop the table
 
          Input = (int8_t *)Input + struct_stride;
