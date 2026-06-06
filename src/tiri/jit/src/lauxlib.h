@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #include <kotuku/system/errors.h>
 #include "lua.h"
 #include "lj_obj.h"
@@ -36,8 +37,10 @@ extern int  luaL_newmetatable(lua_State *, const char *);
 extern void * luaL_checkudata(lua_State *, int ud, const char *);
 extern void luaL_where(lua_State *, int lvl);
 [[noreturn]] extern void luaL_error(lua_State *, const char *fmt, ...);
+[[noreturn]] extern void luaL_error(lua_State *, std::string);
 [[noreturn]] extern void luaL_error(lua_State *, ERR);
 [[noreturn]] extern void luaL_error(lua_State *, ERR, const char *, ...);
+[[noreturn]] extern void luaL_error(lua_State *, ERR, std::string);
 extern int luaL_checkoption(lua_State *, int, const char *, const char *const lst[]);
 extern TValue * resolve_index(lua_State *L, int);
 

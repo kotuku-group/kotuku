@@ -56,6 +56,7 @@
 #define LUA_CORE
 
 #include <bit>
+#include <string>
 
 #include <kotuku/main.h>
 
@@ -1509,6 +1510,17 @@ extern void luaL_where(lua_State *L, int level)
    lj_debug_addloc(L, "", frame, size ? frame + size : nullptr);
 }
 
+static CSTRING luaL_push_error_string(lua_State *L, std::string &Message)
+{
+   auto lua_msg = lj_str_new(L, Message.data(), Message.size());
+   setstrV(L, L->top, lua_msg);
+   incr_top(L);
+
+   auto msg = strdata(lua_msg);
+   std::string().swap(Message);
+   return msg;
+}
+
 [[noreturn]] extern void luaL_error(lua_State *L, CSTRING Format, ...)
 {
    if (L->CaughtError <= ERR::ExceptionThreshold) L->CaughtError = ERR::Exception;
@@ -1516,6 +1528,13 @@ extern void luaL_where(lua_State *L, int level)
    va_start(argp, Format);
    auto msg = lj_strfmt_pushvf(L, Format, argp);
    va_end(argp);
+   lj_err_callermsg(L, msg);
+}
+
+[[noreturn]] extern void luaL_error(lua_State *L, std::string Message)
+{
+   if (L->CaughtError <= ERR::ExceptionThreshold) L->CaughtError = ERR::Exception;
+   auto msg = luaL_push_error_string(L, Message);
    lj_err_callermsg(L, msg);
 }
 
@@ -1534,6 +1553,13 @@ extern void luaL_where(lua_State *L, int level)
    va_start(argp, Format);
    auto msg = lj_strfmt_pushvf(L, Format, argp);
    va_end(argp);
+   lj_err_callermsg(L, msg);
+}
+
+[[noreturn]] extern void luaL_error(lua_State *L, ERR ErrorCode, std::string Message)
+{
+   L->CaughtError = ErrorCode;
+   auto msg = luaL_push_error_string(L, Message);
    lj_err_callermsg(L, msg);
 }
 

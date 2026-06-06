@@ -4,8 +4,10 @@
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
 #include <kotuku/modules/tiri.h>
+#include <format>
 #include <inttypes.h>
 #include <mutex>
+#include <utility>
 
 #include "lib.h"
 #include "lua.h"
@@ -33,20 +35,33 @@ static int processing_new(lua_State *Lua)
       fp->Signals = 0;
       fp->SignalRefs = 0;
 
+      auto fail = [&](ERR Error, std::string Message) -> int {
+         if (fp->SignalRefs) {
+            for (auto ref : *fp->SignalRefs) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+            delete fp->SignalRefs;
+            fp->SignalRefs = nullptr;
+         }
+         if (fp->Signals) {
+            delete fp->Signals;
+            fp->Signals = nullptr;
+         }
+
+         luaL_error(Lua, Error, std::move(Message));
+         return 0;
+      };
+
       if (not (fp->Signals = new (std::nothrow) std::list<ObjectSignal>)) {
-         luaL_error(Lua, ERR::Memory);
+         return fail(ERR::Memory, std::format("Failed to initialise processing signal list."));
       }
 
       if (not (fp->SignalRefs = new (std::nothrow) std::list<int>)) {
-         delete fp->Signals;
-         fp->Signals = nullptr;
-         luaL_error(Lua, ERR::Memory);
+         return fail(ERR::Memory, std::format("Failed to initialise processing signal references."));
       }
 
       if (lua_istable(Lua, 1)) {
          lua_pushnil(Lua);  // Access first key for lua_next()
          while (lua_next(Lua, 1) != 0) {
-            if (auto field_name = luaL_checkstring(Lua, -2)) {
+            if (auto field_name = lua_tostring(Lua, -2)) {
                auto field_hash = strihash(field_name);
 
                switch (field_hash) {
@@ -63,25 +78,37 @@ static int processing_new(lua_State *Lua)
                               if (gcref(refs[i])) {
                                  auto obj = gco_to_object(gcref(refs[i]));
                                  ObjectSignal sig = { .Object = obj->ptr ? obj->ptr : GetObjectPtr(obj->uid) };
-                                 if (not sig.Object) luaL_error(Lua, ERR::AccessObject, "Signal object at index %d is not available.", i);
+                                 if (not sig.Object) {
+                                    return fail(ERR::AccessObject,
+                                       std::format("Signal object at index {} is not available.", i));
+                                 }
                                  fp->Signals->push_back(sig);
                                  setobjectV(Lua, Lua->top++, obj);
                                  fp->SignalRefs->push_back(luaL_ref(Lua, LUA_REGISTRYINDEX));
                               }
-                              else luaL_error(Lua, ERR::InvalidType, "Nil entry at index %d in signal array.", i);
+                              else {
+                                 return fail(ERR::InvalidType,
+                                    std::format("Nil entry at index {} in signal array.", i));
+                              }
                            }
                         }
-                        else luaL_error(Lua, ERR::InvalidType, "The signals option requires an array of objects.");
+                        else {
+                           return fail(ERR::InvalidType,
+                              std::format("The signals option requires an array of objects."));
+                        }
                      }
-                     else luaL_error(Lua, "The signals option requires an array<object> reference.");
+                     else {
+                        return fail(ERR::InvalidType,
+                           std::format("The signals option requires an array<object> reference."));
+                     }
                      break;
                   }
 
                   default:
-                     luaL_error(Lua, ERR::UnknownProperty, "Unrecognised option '%s'", field_name);
+                     return fail(ERR::UnknownProperty, std::format("Unrecognised option '{}'", field_name));
                }
             }
-            else luaL_error(Lua, ERR::UnknownProperty, "Unrecognised option.");
+            else return fail(ERR::UnknownProperty, std::format("Unrecognised option."));
 
             lua_pop(Lua, 1);  // removes 'value'; keeps 'key' for the proceeding lua_next() iteration
          }

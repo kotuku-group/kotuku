@@ -224,16 +224,19 @@ static int async_action(lua_State *Lua)
       // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
       lua_rotate(Lua, 1, -4);
       lua_pop(Lua, 4);
-      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
+      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(),
+            &result_count)) IS ERR::Okay) {
          if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
          else {
+            arg_buffer.reset();
             abort();
             luaL_error(Lua, "Actions that return results are not yet supported.");
          }
       }
       else {
+         arg_buffer.reset();
          abort();
          luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
       }
@@ -335,11 +338,13 @@ static int async_method(lua_State *Lua)
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }
                else {
+                  argbuffer.reset();
                   abort();
                   luaL_error(Lua, "Methods that return results are not yet supported.");
                }
             }
             else {
+               argbuffer.reset();
                abort();
                luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
             }

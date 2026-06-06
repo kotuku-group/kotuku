@@ -35,6 +35,7 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include <kotuku/strings.hpp>
 
 #include <inttypes.h>
+#include <format>
 #include <vector>
 #include <iterator>
 #include <mutex>
@@ -193,7 +194,8 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    std::string module_name;
    if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
       if (auto error = load_include(Lua->script, module_name.c_str()); error != ERR::Okay) {
-         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name.c_str(), MetaClass->ClassName.c_str());
+         luaL_error(Lua, error,
+            std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }
    }
    else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));
@@ -531,7 +533,7 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
 //********************************************************************************************************************
 // Create a Lua array from a list of structure pointers.
 
-void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
+ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
 {
    kt::Log log(__FUNCTION__);
 
@@ -544,7 +546,7 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
    }
 
    auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   if (not glStructs.contains(s_name)) return ERR::Search;
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
@@ -562,14 +564,12 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
             GCtab *tab = tabV(tv);
             setgcref(arr->get<GCRef>()[i], obj2gco(tab));
             lj_gc_objbarrier(Lua, arr, tab);
-            Lua->top--;  // Pop the table
          }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
+         Lua->top--;  // Pop the table
       }
    }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -601,12 +601,8 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
             GCtab *tab = tabV(tv);
             setgcref(arr->get<GCRef>()[i], obj2gco(tab));
             lj_gc_objbarrier(Lua, arr, tab);
-            Lua->top--;  // Pop the table
          }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
+         Lua->top--;  // Pop the table
 
          Input = (int8_t *)Input + struct_stride;
       }
@@ -647,7 +643,11 @@ void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int E
 void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values)
 {
    if (Flags & FD_STRUCT) {
-      if (Flags & FD_POINTER) make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values);
+      if (Flags & FD_POINTER) {
+         if (make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values) != ERR::Okay) {
+            luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(TypeName.size()), TypeName.data());
+         }
+      }
       else make_struct_serial_array(Lua, TypeName, Elements, Values);
    }
    else make_array(Lua, ff_to_aet(Flags), Elements, Values, TypeName);

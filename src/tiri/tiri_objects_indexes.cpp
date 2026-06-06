@@ -520,7 +520,7 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
                if (field->Flags & FD_RESOURCE) {
                    push_struct(Lua->script, result, (CSTRING)field->Arg, (field->Flags & FD_ALLOC) ? TRUE : FALSE, TRUE);
                }
-               else named_struct_to_table(Lua, (CSTRING)field->Arg, result);
+               else error = named_struct_to_table(Lua, (CSTRING)field->Arg, result);
             }
             else lua_pushnil(Lua);
          }

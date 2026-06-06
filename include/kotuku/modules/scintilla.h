@@ -110,7 +110,7 @@ class objScintilla : public Object {
    using create = kt::Create<objScintilla>;
 
    objFont * Font;               // Refers to the font that is used for drawing text in the document.
-   std::string Path;               // Identifies the location of a text file to load.
+   std::string Path;             // Identifies the location of a text file to load.
    SEF       EventFlags;         // Specifies events that need to be reported from the Scintilla object.
    OBJECTID  SurfaceID;          // Refers to the Surface targeted by the Scintilla object.
    SCIF      Flags;              // Optional flags.

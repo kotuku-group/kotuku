@@ -20,6 +20,7 @@
 #include "lj_proto_registry.h"
 
 #include <ffi.h>
+#include <utility>
 #include <unordered_map>
 #include <algorithm>
 #include <set>
@@ -421,6 +422,7 @@ static int module_load(lua_State *Lua)
       }
 
       if (defs_error != ERR::Okay) {
+         FreeResource(loaded_mod);
          luaL_error(Lua, defs_error, "Failed to process definitions for the %s module.", modname);
       }
 
@@ -549,7 +551,7 @@ static int module_call(lua_State *Lua)
    auto err = module_call_inner(Lua, error_msg, results);
    if (err != ERR::Okay) {
       if (error_msg.empty()) error_msg = GetErrorMsg(err);
-      luaL_error(Lua, err, "%s", error_msg.c_str());
+      luaL_error(Lua, err, std::move(error_msg));
    }
    return results;
 }
