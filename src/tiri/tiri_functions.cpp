@@ -23,10 +23,15 @@
 
 static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 {
+   int filesize = 0;
+   if (File->get(FID_Size, filesize) != ERR::Okay) return 1;
+
    std::string buffer;
-   auto filesize = File->get<int>(FID_Size);
    buffer.resize(filesize);
-   File->read(buffer.data(), filesize);
+
+   int bytes_read = 0;
+   if (File->read(buffer.data(), filesize, &bytes_read) != ERR::Okay) return 1;
+   buffer.resize(bytes_read); // Guard against a short read leaving uninitialised tail bytes
 
    return lua_load(Lua, std::string_view(buffer.data(), buffer.size()), SourceName);
 }
@@ -141,16 +146,10 @@ int fcmd_unsubscribe_event(lua_State *Lua)
 int fcmd_subscribe_event(lua_State *Lua)
 {
    CSTRING event;
-   if (not (event = lua_tostring(Lua, 1))) {
-      luaL_argerror(Lua, 1, "Event string expected.");
-      return 0;
-   }
+   if (not (event = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Event string expected.");
 
    if (not lua_isfunction(Lua, 2)) {
-      if (not lua_isnil(Lua, 2)) {
-         luaL_argerror(Lua, 2, "Function or nil expected.");
-         return 0;
-      }
+      if (not lua_isnil(Lua, 2)) luaL_argerror(Lua, 2, "Function or nil expected.");
    }
 
    // Generate the event ID
@@ -199,18 +198,11 @@ int fcmd_subscribe_event(lua_State *Lua)
       }
    }
 
-   if (group_id IS EVG::NIL) {
-      luaL_error(Lua, "Invalid group name '%s' in event string.", event);
-      return 0;
-   }
+   if (group_id IS EVG::NIL) luaL_error(Lua, "Invalid group name '%s' in event string.", event);
 
    EVENTID event_id = GetEventID(group_id, subgroup_str.c_str(), event);
 
-   if (not event_id) {
-      luaL_argerror(Lua, 1, "Failed to build event ID.");
-      lua_pushinteger(Lua, int(ERR::Failed));
-      return 1;
-   }
+   if (not event_id) luaL_argerror(Lua, 1, "Failed to build event ID.");
    else {
       APTR handle;
       lua_settop(Lua, 2);
@@ -294,10 +286,7 @@ int fcmd_print(lua_State *Lua)
 
 int fcmd_include(lua_State *Lua)
 {
-   if (not lua_isstring(Lua, 1)) {
-      luaL_argerror(Lua, 1, "Include name(s) required.");
-      return 0;
-   }
+   if (not lua_isstring(Lua, 1)) luaL_argerror(Lua, 1, "Include name(s) required.");
 
    int top = lua_gettop(Lua);
    for (int n=1; n <= top; n++) {
@@ -315,13 +304,11 @@ int fcmd_include(lua_State *Lua)
 
       if ((include[i]) or (i >= 32)) {
          luaL_error(Lua, "Invalid module name; only alpha-numeric names are permitted with max 32 chars.");
-         return 0;
       }
 
       if (auto error = load_include(Lua->script, include); error != ERR::Okay) {
          if (error IS ERR::FileNotFound) luaL_error(Lua, "Requested include file '%s' does not exist.", include);
          else luaL_error(Lua, error, "Failed to process include file: %s", GetErrorMsg(error));
-         return 0;
       }
    }
 
@@ -533,6 +520,8 @@ int fcmd_arg(lua_State *Lua)
    int args = lua_gettop(Lua);
 
    auto key = lua_tostring(Lua, 1);
+   if (not key) luaL_argerror(Lua, 1, "Argument name required.");
+
    if (auto it = Self->Vars.find(key); it != Self->Vars.end()) {
       lua_pushstring(Lua, it->second.c_str());
       return 1;
