@@ -727,9 +727,9 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
 {
    if (Value.empty()) return ERR::InvalidValue;
 
-   CSTRING name;
+   std::string_view name;
    if (fnt::ResolveFamilyName(Value, &name) IS ERR::Okay) {
-      Self->txFamily = name ? name : "Noto Sans";
+      Self->txFamily = name.empty() ? "Noto Sans" : name;
    }
    else Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
 

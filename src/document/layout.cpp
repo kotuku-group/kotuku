@@ -2450,7 +2450,7 @@ font_entry * bc_font::layout_font(layout &Layout)
 
    // Check the cache for this font
 
-   CSTRING resolved_face;
+   std::string_view resolved_face;
    if (fnt::ResolveFamilyName(face, &resolved_face) IS ERR::Okay) {
       face.assign(resolved_face);
    }
