@@ -635,6 +635,19 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    APTR function = mod->Functions[index].Address;
    FUNCTION func;
+
+   // Guarantees that the Lua registry reference created for an FD_FUNCTION argument is released on every exit
+   // path.  The module function only uses the callback for the duration of this synchronous call, so it is
+   // safe to drop the reference once module_call_inner() returns.
+
+   struct func_ref_guard {
+      lua_State *Lua;
+      FUNCTION  &Func;
+      ~func_ref_guard() {
+         if (Func.isScript() and (Func.ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
+      }
+   } func_guard{ Lua, func };
+
    ffi_cif cif;
    union {
       ffi_arg Arg;

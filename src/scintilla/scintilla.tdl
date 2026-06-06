@@ -73,7 +73,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
 
   klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx" }, [[
     obj(Font) Font             # Font to use for the text
-    cstr Path                  # Source text file
+    string Path                # Source text file
     int(SEF) EventFlags        # SEF flags.  Indicates the events that will be reported.
     oid Surface                # The object that should be rendered to
     int(SCIF) Flags            # Optional flags
@@ -101,7 +101,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
 
   klass("ScintillaSearch", { comment="Simple search for Scintilla", src="class_scintilla_search.cxx" }, [[
     obj(Scintilla) Scintilla  # The targeted Scintilla object.
-    cstr Text       # The text being searched for.
+    string Text     # The text being searched for.
     int(STF) Flags  # Optional flags affecting the search.
     int Start       # Start of the current/most recent selection
     int End         # End of the current/most recent selection
