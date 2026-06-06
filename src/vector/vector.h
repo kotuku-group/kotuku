@@ -1300,7 +1300,7 @@ extern ERR DrawPath(objBitmap * Bitmap, APTR Path, double StrokeWidth, OBJECTPTR
 extern ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, APTR *Path);
 extern ERR GeneratePath(const std::string_view &Sequence, APTR *Path);
 extern ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Path);
-extern ERR ReadPainter(objVectorScene * Scene, const std::string_view &IRI, struct VectorPainter * Painter, CSTRING * Result);
+extern ERR ReadPainter(objVectorScene * Scene, const std::string_view &IRI, struct VectorPainter * Painter, std::string_view * Result);
 extern void TranslatePath(APTR Path, double X, double Y);
 extern void MoveTo(APTR Path, double X, double Y);
 extern void LineTo(APTR Path, double X, double Y);

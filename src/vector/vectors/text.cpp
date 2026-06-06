@@ -835,11 +835,11 @@ static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
       return ERR::Okay;
    }
 
-   CSTRING next;
+   std::string_view next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
       Self->FillString = Value;
 
-      if (next) {
+      if (not next.empty()) {
          vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
          Self->FGFill = true;
       }

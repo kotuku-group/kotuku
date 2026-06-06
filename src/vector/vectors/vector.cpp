@@ -1402,13 +1402,13 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
       return ERR::Okay;
    }
 
-   CSTRING next;
+   std::string_view next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
       Self->FillString = Value;
 
-      if (next) {
-         if (*next IS ';') {
-            next++;
+      if (not next.empty()) {
+         if (next.starts_with(';')) {
+            next.remove_prefix(1);
             vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
             Self->FGFill = true;
          }
@@ -2242,9 +2242,9 @@ static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
 
    if (not Value.empty()) {
       Self->StrokeString = Value;
-      CSTRING next;
+      std::string_view next;
       vec::ReadPainter(Self->Scene, Self->StrokeString, &Self->Stroke, &next);
-      if (next) {
+      if (not next.empty()) {
          // SVG rules allow for a solid colour fallback to follow the initial painter reference.
          // This typically looks something like 'url(#thing) rgb(values)'
          VectorPainter fallback;

@@ -3150,7 +3150,7 @@ class objFile : public Object {
 // Config methods
 
 namespace cfg {
-struct ReadValue { std::string_view Group; std::string_view Key; CSTRING Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Set { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct WriteValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DeleteKey { std::string_view Group; std::string_view Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -3242,8 +3242,8 @@ class objConfig : public Object {
       struct acSaveToObject args = { Dest, { ClassID } };
       return Action(AC::SaveToObject, this, &args);
    }
-   inline ERR readValue(const std::string_view &Group, const std::string_view &Key, CSTRING * Data) noexcept {
-      struct cfg::ReadValue args = { Group, Key, (CSTRING)0 };
+   inline ERR readValue(const std::string_view &Group, const std::string_view &Key, std::string_view * Data) noexcept {
+      struct cfg::ReadValue args = { Group, Key };
       ERR error = Action(AC(-1), this, &args);
       if (Data) *Data = args.Data;
       return error;
