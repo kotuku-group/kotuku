@@ -180,7 +180,7 @@ static void key_event(evKey *, int, struct finput *);
          input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
       else {
-         lua_getglobal(Lua, (STRING)lua_tostring(Lua, 2));
+         lua_getglobal(Lua, lua_tostringview(Lua, 2));
          input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
 
@@ -255,7 +255,7 @@ static void key_event(evKey *, int, struct finput *);
       prv->Requests.emplace_back(source_id, luaL_ref(Lua, LUA_REGISTRYINDEX));
    }
    else if (function_type IS LUA_TSTRING) {
-      lua_getglobal(Lua, (STRING)lua_tostring(Lua, 4));
+      lua_getglobal(Lua, lua_tostringview(Lua, 4));
       prv->Requests.emplace_back(source_id, luaL_ref(Lua, LUA_REGISTRYINDEX));
    }
 
@@ -331,7 +331,7 @@ static void key_event(evKey *, int, struct finput *);
          input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
       else {
-         lua_getglobal(Lua, (STRING)lua_tostring(Lua, 4));
+         lua_getglobal(Lua, lua_tostringview(Lua, 4));
          input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
 
