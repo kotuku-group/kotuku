@@ -7,12 +7,12 @@
     <type>class</type>
     <module>Scintilla</module>
     <comment>Provides advanced text display and editing facilities.</comment>
-    <fileExtension>*.txt|*.text</fileExtension>
+    <fileExtension>txt|text</fileExtension>
     <version>1</version>
-    <id>3f218968</id>
+    <id>9780a38c</id>
     <idstring>SCINTILLA</idstring>
     <category>Tool</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p></description>
     <source>
@@ -25,12 +25,14 @@
       <name>Clear</name>
       <comment>Clears all content from the editor.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>Clipboard</name>
       <comment>Full support for clipboard activity is provided through this action.</comment>
       <prototype>ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)</prototype>
+      <tiriPrototype>err = Object.acClipboard(Clipboard:obj, Mode:CLIPMODE)</tiriPrototype>
       <input>
         <param type="CLIPMODE" name="Mode" lookup="CLIPMODE">The mode that will be used to shift data between the target object and clipboard system.</param>
       </input>
@@ -40,12 +42,14 @@
       <name>Disable</name>
       <comment>Disables the target <fl>Surface</fl>.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Draw</name>
       <comment>Draws the Scintilla object's graphics.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -58,33 +62,38 @@
       <name>Enable</name>
       <comment>Enables the target <fl>Surface</fl>.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Focus</name>
       <comment>Focus on the Scintilla surface.</comment>
       <prototype>ERR acFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acFocus()</tiriPrototype>
     </action>
 
     <action>
       <name>Hide</name>
       <comment>Hides a visible object from the view of the user.</comment>
       <prototype>ERR acHide(*Object)</prototype>
+      <tiriPrototype>err = Object.acHide()</tiriPrototype>
     </action>
 
     <action>
       <name>Redo</name>
       <comment>Redo the most recently undone activity.</comment>
       <prototype>ERR acRedo(*Object)</prototype>
+      <tiriPrototype>err = Object.acRedo()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveToObject</name>
       <comment>Save content as a text stream to another object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -92,12 +101,14 @@
       <name>Show</name>
       <comment>Makes an object visible to the user.</comment>
       <prototype>ERR acShow(*Object)</prototype>
+      <tiriPrototype>err = Object.acShow()</tiriPrototype>
     </action>
 
     <action>
       <name>Undo</name>
       <comment>Undo the last user action.</comment>
       <prototype>ERR acUndo(*Object)</prototype>
+      <tiriPrototype>err = Object.acUndo()</tiriPrototype>
     </action>
 
   </actions>
@@ -107,6 +118,7 @@
       <name>DeleteLine</name>
       <comment>Deletes a line.</comment>
       <prototype>ERR sci::DeleteLine(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = DeleteLine(Line:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The number of the line to delete.  Indexing starts from 0.</param>
       </input>
@@ -119,6 +131,7 @@
       <name>GetLine</name>
       <comment>Copies the text content of any line to a user-supplied buffer.</comment>
       <prototype>ERR sci::GetLine(OBJECTPTR Object, INT Line, STRING Buffer, INT Length)</prototype>
+      <tiriPrototype>err = GetLine(Line:num, Buffer:any, Length:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The index of the line to retrieve.</param>
         <param type="STRING" name="Buffer">The destination buffer.</param>
@@ -133,6 +146,7 @@
       <name>GetPos</name>
       <comment>Returns the byte position of a given line and column number.</comment>
       <prototype>ERR sci::GetPos(OBJECTPTR Object, INT Line, INT Column, INT * Pos)</prototype>
+      <tiriPrototype>err, Pos:num = GetPos(Line:num, Column:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">Line index</param>
         <param type="INT" name="Column">Column index</param>
@@ -147,6 +161,7 @@
       <name>GotoLine</name>
       <comment>Moves the cursor to any line in the document.</comment>
       <prototype>ERR sci::GotoLine(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = GotoLine(Line:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The line index to move to.</param>
       </input>
@@ -158,9 +173,10 @@
     <method>
       <name>InsertText</name>
       <comment>Inserts text into a document.</comment>
-      <prototype>ERR sci::InsertText(OBJECTPTR Object, CSTRING String, INT Pos)</prototype>
+      <prototype>ERR sci::InsertText(OBJECTPTR Object, STRVIEW String, INT Pos)</prototype>
+      <tiriPrototype>err = InsertText(String:str, Pos:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="String">A text string to add.</param>
+        <param type="STRVIEW" name="String">A text string to add.</param>
         <param type="INT" name="Pos">-1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.</param>
       </input>
       <description>
@@ -172,10 +188,11 @@
     <method>
       <name>ReplaceLine</name>
       <comment>Replaces a line with new text content.</comment>
-      <prototype>ERR sci::ReplaceLine(OBJECTPTR Object, INT Line, CSTRING String, INT Length)</prototype>
+      <prototype>ERR sci::ReplaceLine(OBJECTPTR Object, INT Line, STRVIEW String, INT Length)</prototype>
+      <tiriPrototype>err = ReplaceLine(Line:num, String:str, Length:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">Index of the line being targeted.</param>
-        <param type="CSTRING" name="String">The new string that will replace the line.</param>
+        <param type="STRVIEW" name="String">The new string that will replace the line.</param>
         <param type="INT" name="Length">The number of characters to replace the target with, or -1 for the entire source string.</param>
       </input>
       <description>
@@ -186,10 +203,11 @@
     <method>
       <name>ReplaceText</name>
       <comment>Replaces all text within an entire document or limited range.</comment>
-      <prototype>ERR sci::ReplaceText(OBJECTPTR Object, CSTRING Find, CSTRING Replace, STF Flags, INT Start, INT End)</prototype>
+      <prototype>ERR sci::ReplaceText(OBJECTPTR Object, STRVIEW Find, STRVIEW Replace, STF Flags, INT Start, INT End)</prototype>
+      <tiriPrototype>err = ReplaceText(Find:str, Replace:str, Flags:num, Start:num, End:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Find">The keyword string to find.</param>
-        <param type="CSTRING" name="Replace">The string that will replace the keyword.</param>
+        <param type="STRVIEW" name="Find">The keyword string to find.</param>
+        <param type="STRVIEW" name="Replace">The string that will replace the keyword.</param>
         <param type="STF" name="Flags" lookup="STF">Optional flags.</param>
         <param type="INT" name="Start">The start of the search - set to zero if covering the entire document.  If -1, starts from the current cursor position.</param>
         <param type="INT" name="End">The end of the search - set to -1 if covering the entire document.</param>
@@ -203,6 +221,7 @@
       <name>ScrollToPoint</name>
       <comment>Scrolls text by moving the Page.</comment>
       <prototype>ERR sci::ScrollToPoint(OBJECTPTR Object, INT X, INT Y)</prototype>
+      <tiriPrototype>err = ScrollToPoint(X:num, Y:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">New horizontal position.</param>
         <param type="INT" name="Y">New vertical position.</param>
@@ -216,6 +235,7 @@
       <name>SelectRange</name>
       <comment>Selects a range of text, can also deselect all text.</comment>
       <prototype>ERR sci::SelectRange(OBJECTPTR Object, INT Start, INT End)</prototype>
+      <tiriPrototype>err = SelectRange(Start:num, End:num)</tiriPrototype>
       <input>
         <param type="INT" name="Start">The character at which the selection will start.</param>
         <param type="INT" name="End">The character at which the selection will end.  If negative, the last character in the document will be targeted.</param>
@@ -228,9 +248,10 @@
     <method>
       <name>SetFont</name>
       <comment>Changes the font that is used for text display.</comment>
-      <prototype>ERR sci::SetFont(OBJECTPTR Object, CSTRING Face)</prototype>
+      <prototype>ERR sci::SetFont(OBJECTPTR Object, STRVIEW Face)</prototype>
+      <tiriPrototype>err = SetFont(Face:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Face">The name of the new font face.</param>
+        <param type="STRVIEW" name="Face">The name of the new font face.</param>
       </input>
       <description>
 <p>Call SetFont() to change the font face that is used for displaying text.  The string format follows the standard for font requests, e.g. <code>Helvete:12:Bold Italic:#ff0000</code>.  Refer to the Face field in the <class name="Font">Font</class> class for more details.</p>
@@ -242,6 +263,7 @@
       <name>TrimWhitespace</name>
       <comment>Strips trailing white-space from the document.</comment>
       <prototype>ERR sci::TrimWhitespace(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = TrimWhitespace()</tiriPrototype>
       <description>
 <p>The TrimWhitespace method will remove trailing white-space from every line in the document.  Both tabs and spaces are considered white-space - all other characters shall be treated as content.</p>
 <p>The position of the cursor is reset to the left margin as a result of calling this method.</p>
@@ -423,11 +445,11 @@
 
     <field>
       <name>Origin</name>
-      <comment>Similar to the Path field, but does not automatically load content if set.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <comment>Sets the <fl>Path</fl> field without loading the document.</comment>
+      <access write="S">Set</access>
       <type>STRING</type>
       <description>
-<p>This field is identical to the <fl>Path</fl> field, with the exception that it does not update the content of a scintilla object if it is set after initialisation.  This may be useful if the origin of the currently loaded content needs to be changed without causing a load operation.</p>
+<p>Setting the Origin will update <fl>Path</fl> without updating the content of the Scintilla object.  Use for situations such as changing the document location or name.</p>
       </description>
     </field>
 
@@ -435,7 +457,7 @@
       <name>Path</name>
       <comment>Identifies the location of a text file to load.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
 <p>To load data from a text file into a scintilla object, set the Path field.</p>
 <p>If the Path is set after initialisation, the existing content will be cleared and data loaded from the location that you specify.  To change the path without automatically loading from the source file, set the <fl>Origin</fl> field instead.</p>
@@ -546,7 +568,6 @@
       <const name="CSS">CSS</const>
       <const name="DIFF">Diff</const>
       <const name="ERRORLIST">ErrorList</const>
-      <const name="FLUID">Tiri</const>
       <const name="HTML">HTML</const>
       <const name="MAKEFILE">Makefile</const>
       <const name="PASCAL">Pascal</const>
@@ -557,6 +578,7 @@
       <const name="REBOL">Rebol</const>
       <const name="RUBY">Ruby</const>
       <const name="SQL">SQL</const>
+      <const name="TIRI">Tiri</const>
       <const name="VB">Visual Basic</const>
       <const name="VBSCRIPT">VBScript</const>
       <const name="XML">XML</const>
