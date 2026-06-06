@@ -159,6 +159,188 @@ static void cleanup_function_arg(lua_State *Lua, FUNCTION *Func)
    FreeResource(Func);
 }
 
+template <class T> static void delete_cpp_array_arg(APTR Array)
+{
+   delete (kt::vector<T> *)Array;
+}
+
+static void delete_cpp_array_arg(int Type, APTR Array)
+{
+   if (not Array) return;
+
+   if (Type & FD_STR) delete_cpp_array_arg<std::string>(Array);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) delete_cpp_array_arg<OBJECTPTR>(Array);
+   else if (Type & FD_PTR) delete_cpp_array_arg<APTR>(Array);
+   else if (Type & FD_DOUBLE) delete_cpp_array_arg<double>(Array);
+   else if (Type & FD_FLOAT) delete_cpp_array_arg<float>(Array);
+   else if (Type & FD_INT64) delete_cpp_array_arg<int64_t>(Array);
+   else if (Type & FD_INT) delete_cpp_array_arg<int>(Array);
+   else if (Type & FD_WORD) delete_cpp_array_arg<int16_t>(Array);
+   else if (Type & FD_BYTE) delete_cpp_array_arg<uint8_t>(Array);
+}
+
+template <class T> static ERR make_cpp_array_arg(APTR *Result)
+{
+   auto vector = new (std::nothrow) kt::vector<T>;
+   if (not vector) return ERR::AllocMemory;
+
+   *Result = vector;
+   return ERR::Okay;
+}
+
+static ERR make_cpp_array_arg(int Type, APTR *Result)
+{
+   if (Type & FD_STR) return make_cpp_array_arg<std::string>(Result);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) return make_cpp_array_arg<OBJECTPTR>(Result);
+   else if (Type & FD_PTR) return make_cpp_array_arg<APTR>(Result);
+   else if (Type & FD_DOUBLE) return make_cpp_array_arg<double>(Result);
+   else if (Type & FD_FLOAT) return make_cpp_array_arg<float>(Result);
+   else if (Type & FD_INT64) return make_cpp_array_arg<int64_t>(Result);
+   else if (Type & FD_INT) return make_cpp_array_arg<int>(Result);
+   else if (Type & FD_WORD) return make_cpp_array_arg<int16_t>(Result);
+   else if (Type & FD_BYTE) return make_cpp_array_arg<uint8_t>(Result);
+   else return ERR::NoSupport;
+}
+
+template <class T> static ERR copy_primitive_cpp_array_arg(GCarray *Array, AET Type, kt::vector<T> *Vector)
+{
+   if (Array->elemtype != Type) return ERR::InvalidType;
+
+   Vector->reserve(Array->len);
+   auto values = Array->get<T>();
+   for (uint32_t i=0; i < Array->len; i++) {
+      Vector->push_back(values[i]);
+   }
+
+   return ERR::Okay;
+}
+
+static ERR copy_string_cpp_array_arg(GCarray *Array, kt::vector<std::string> *Vector)
+{
+   Vector->reserve(Array->len);
+
+   if (Array->elemtype IS AET::STR_GC) {
+      auto refs = Array->get<GCRef>();
+      for (uint32_t i=0; i < Array->len; i++) {
+         if (gcref(refs[i])) {
+            auto string = gco_to_string(gcref(refs[i]));
+            Vector->emplace_back(strdata(string), string->len);
+         }
+         else Vector->emplace_back();
+      }
+   }
+   else if (Array->elemtype IS AET::STR_CPP) {
+      auto strings = Array->get<std::string>();
+      for (uint32_t i=0; i < Array->len; i++) {
+         Vector->push_back(strings[i]);
+      }
+   }
+   else if (Array->elemtype IS AET::CSTR) {
+      auto strings = Array->get<CSTRING>();
+      for (uint32_t i=0; i < Array->len; i++) {
+         if (strings[i]) Vector->emplace_back(strings[i]);
+         else Vector->emplace_back();
+      }
+   }
+   else return ERR::InvalidType;
+
+   return ERR::Okay;
+}
+
+static ERR copy_object_cpp_array_arg(GCarray *Array, kt::vector<OBJECTPTR> *Vector)
+{
+   if (Array->elemtype != AET::OBJECT) return ERR::InvalidType;
+
+   Vector->reserve(Array->len);
+   auto refs = Array->get<GCRef>();
+   for (uint32_t i=0; i < Array->len; i++) {
+      if (not gcref(refs[i])) {
+         Vector->push_back(nullptr);
+         continue;
+      }
+
+      auto obj_ref = gco_to_object(gcref(refs[i]));
+      if (obj_ref->ptr) Vector->push_back(obj_ref->ptr);
+      else if (auto ptr_obj = access_object(obj_ref)) {
+         Vector->push_back(ptr_obj);
+         release_object(obj_ref);
+      }
+      else Vector->push_back(nullptr);
+   }
+
+   return ERR::Okay;
+}
+
+static ERR copy_cpp_array_arg(int Type, GCarray *Array, APTR *Result)
+{
+   APTR output = nullptr;
+   auto error = make_cpp_array_arg(Type, &output);
+   if (error != ERR::Okay) return error;
+
+   if (Type & FD_STR) error = copy_string_cpp_array_arg(Array, (kt::vector<std::string> *)output);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) {
+      error = copy_object_cpp_array_arg(Array, (kt::vector<OBJECTPTR> *)output);
+   }
+   else if (Type & FD_PTR) {
+      error = copy_primitive_cpp_array_arg<APTR>(Array, AET::PTR, (kt::vector<APTR> *)output);
+   }
+   else if (Type & FD_DOUBLE) {
+      error = copy_primitive_cpp_array_arg<double>(Array, AET::DOUBLE, (kt::vector<double> *)output);
+   }
+   else if (Type & FD_FLOAT) {
+      error = copy_primitive_cpp_array_arg<float>(Array, AET::FLOAT, (kt::vector<float> *)output);
+   }
+   else if (Type & FD_INT64) {
+      error = copy_primitive_cpp_array_arg<int64_t>(Array, AET::INT64, (kt::vector<int64_t> *)output);
+   }
+   else if (Type & FD_INT) {
+      error = copy_primitive_cpp_array_arg<int>(Array, AET::INT32, (kt::vector<int> *)output);
+   }
+   else if (Type & FD_WORD) {
+      error = copy_primitive_cpp_array_arg<int16_t>(Array, AET::INT16, (kt::vector<int16_t> *)output);
+   }
+   else if (Type & FD_BYTE) {
+      error = copy_primitive_cpp_array_arg<uint8_t>(Array, AET::BYTE, (kt::vector<uint8_t> *)output);
+   }
+   else error = ERR::NoSupport;
+
+   if (error != ERR::Okay) {
+      delete_cpp_array_arg(Type, output);
+      return error;
+   }
+
+   *Result = output;
+   return ERR::Okay;
+}
+
+template <class T> static void push_cpp_array_arg(lua_State *Lua, int Type, std::string_view Name, APTR Source)
+{
+   auto vector = (kt::vector<T> *)Source;
+   make_any_array(Lua, Type, Name, int(vector->size()), vector->data());
+}
+
+static bool push_cpp_array_arg(lua_State *Lua, int Type, std::string_view Name, APTR Source)
+{
+   if (Type & FD_STR) {
+      auto vector = (kt::vector<std::string> *)Source;
+      make_array(Lua, AET::STR_CPP, int(vector->size()), vector);
+   }
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) {
+      auto vector = (kt::vector<OBJECTPTR> *)Source;
+      make_array(Lua, AET::OBJECT, int(vector->size()), vector->data());
+   }
+   else if (Type & FD_PTR) push_cpp_array_arg<APTR>(Lua, Type, Name, Source);
+   else if (Type & FD_DOUBLE) push_cpp_array_arg<double>(Lua, Type, Name, Source);
+   else if (Type & FD_FLOAT) push_cpp_array_arg<float>(Lua, Type, Name, Source);
+   else if (Type & FD_INT64) push_cpp_array_arg<int64_t>(Lua, Type, Name, Source);
+   else if (Type & FD_INT) push_cpp_array_arg<int>(Lua, Type, Name, Source);
+   else if (Type & FD_WORD) push_cpp_array_arg<int16_t>(Lua, Type, Name, Source);
+   else if (Type & FD_BYTE) push_cpp_array_arg<uint8_t>(Lua, Type, Name, Source);
+   else return false;
+
+   return true;
+}
+
 static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer)
 {
    if ((not Args) or (not ArgBuffer)) return;
@@ -169,6 +351,10 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
       if (type & FD_RESULT) {
          if (type & FD_ARRAY) {
             j = ALIGN64(j);
+            if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
+               delete_cpp_array_arg(type, ((APTR *)(ArgBuffer + j))[0]);
+               ((APTR *)(ArgBuffer + j))[0] = nullptr;
+            }
             j += sizeof(APTR);
          }
          else if ((type & FD_PTR) or (type & FD_STRUCT)) {
@@ -205,7 +391,15 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
          continue;
       }
 
-      if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
+      if (type & FD_ARRAY) {
+         j = ALIGN64(j);
+         if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
+            delete_cpp_array_arg(type, ((APTR *)(ArgBuffer + j))[0]);
+            ((APTR *)(ArgBuffer + j))[0] = nullptr;
+         }
+         j += sizeof(APTR);
+      }
+      else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
          j = ALIGN64(j);
          j += sizeof(APTR);
       }
@@ -282,6 +476,12 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
          if (Args[i].Type & FD_ARRAY) {
             j = ALIGN64(j);
+
+            if (Args[i].Type & FD_CPP) { // kt::vector<> *
+               auto error = make_cpp_array_arg(Args[i].Type, (APTR *)(ArgBuffer + j));
+               if (error != ERR::Okay) return fail(error);
+            }
+
             j += sizeof(APTR);
          }
          else if ((Args[i].Type & FD_PTR) or (Args[i].Type & FD_STRUCT)) {
@@ -328,7 +528,35 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
       //log.trace("Processing arg %s, type $%.8x", Args[i].Name, Args[i].Type);
 
-      if ((Args[i].Type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
+      if (Args[i].Type & FD_ARRAY) {
+         j = ALIGN64(j);
+         if (type != LUA_TARRAY) return fail_arg(n, "Array required.");
+
+         auto array = lua_toarray(Lua, n);
+         if (Args[i].Type & FD_CPP) {
+            APTR vector = nullptr;
+            auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
+            if (error IS ERR::InvalidType) return fail_arg(n, "Array element type mismatch.");
+            else if (error != ERR::Okay) return fail(error);
+            ((APTR *)(ArgBuffer + j))[0] = vector;
+            j += sizeof(APTR);
+         }
+         else {
+            ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
+            j += sizeof(APTR);
+
+            if (Args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
+               size_t total = (Args[i+1].Type & FD_BUFSIZE) ? array->len * array->elemsize : array->len;
+               if (Args[i+1].Type & FD_BUFSIZE) {
+                  buffer_capacity = total;
+                  buffer_capacity_known = true;
+               }
+               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(total);
+               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(total);
+            }
+         }
+      }
+      else if ((Args[i].Type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
          j = ALIGN64(j);
          if (type IS LUA_TARRAY) {
             //log.trace("Arg: %s, Value: Buffer (Source is Memory)", Args[i].Name);
@@ -526,7 +754,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             }
             ((int *)(ArgBuffer + j))[0] = value;
          }
-         else if (Args[i].Type & FD_BUFSIZE) {
+         else if (Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
             buffer_capacity_known = false; // Do not alter as the FD_BUFFER support would have managed it
          }
          else ((int *)(ArgBuffer + j))[0] = 0;
@@ -541,7 +769,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else if (Args[i].Type & FD_INT64) {
          j = ALIGN64(j);
-         if ((Args[i].Type & FD_BUFSIZE) and (type IS LUA_TNIL)) {
+         if ((Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) and (type IS LUA_TNIL)) {
             buffer_capacity_known = false;
          }
          else {
@@ -586,7 +814,24 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
       const int type = Args[i].Type;
       if (type & FD_ARRAY) { // Pointer to an array.
          of = ALIGN64(of);
-         if (type & FD_RESULT) {
+         if (type & FD_CPP) {
+            auto slot = (APTR *)(ArgBuf + of);
+            APTR vector = slot[0];
+            if (type & FD_RESULT) {
+               if (vector) {
+                  if (not push_cpp_array_arg(Lua, type, Args[i].Name, vector)) {
+                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", Args[i].Name, type);
+                     lua_pushnil(Lua);
+                  }
+               }
+               else lua_pushnil(Lua);
+               total++;
+            }
+
+            delete_cpp_array_arg(type, vector);
+            slot[0] = nullptr;
+         }
+         else if (type & FD_RESULT) {
             int total_elements = -1;  // If -1, make_any_array() assumes the array is null terminated.
             if (Args[i+1].Type & FD_ARRAYSIZE) {
                CPTR size_var = ArgBuf + of + sizeof(APTR);
