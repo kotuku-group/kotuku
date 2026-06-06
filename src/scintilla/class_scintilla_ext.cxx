@@ -1,6 +1,8 @@
 
 // Style codes for each lexer are defined in SciLexer.h
 
+#include <format>
+
 #define COL_BLACK          0x000000
 #define COL_DARKSLATEGREY  0x2F4F4F
 #define COL_LIGHTSLATEGREY 0x576889
@@ -120,9 +122,7 @@ ScintillaKTK::~ScintillaKTK()
 
 void ScintillaKTK::Finalise()
 {
-   kt::Log log(__FUNCTION__);
-
-   log.trace("");
+   kt::Log(__FUNCTION__).trace("");
 
    SetTicking(true);
    ScintillaBase::Finalise();
@@ -132,25 +132,20 @@ void ScintillaKTK::Finalise()
 
 void ScintillaKTK::CreateCallTipWindow(Scintilla::PRectangle rc)
 {
-   kt::Log log(__FUNCTION__);
-   log.trace("");
+   kt::Log(__FUNCTION__).trace("");
 }
 
 //********************************************************************************************************************
 
 void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
 {
-   kt::Log log(__FUNCTION__);
-   log.trace("%s", label);
+   kt::Log(__FUNCTION__).trace("%s", label);
 
    // The one and only Menu object is a member of ScintillaBase: Menu popup;
 
-   auto menu = reinterpret_cast<OBJECTPTR>(popup.GetID());
-
-   if (menu) {
-      char buffer[200];
-      snprintf(buffer, sizeof(buffer), "<item text=\"%s\"></item>", label);
-      acDataXML(menu, buffer);
+   if (auto menu = OBJECTPTR(popup.GetID()); menu) {
+      auto buffer = std::format("<item text=\"{}\"></item>", label);
+      acDataFeed(menu, nullptr, DATA::XML, buffer.c_str(), buffer.size());
    }
 }
 
@@ -355,11 +350,7 @@ void ScintillaKTK::Paste()
                else error_dialog("Paste Error", nullptr, ERR::AllocMemory);
             }
          }
-         else {
-            char msg[200];
-            snprintf(msg, sizeof(msg), "Failed to load clipboard file \"%s\"", files[0]);
-            error_dialog("Paste Error", msg, ERR::Okay);
-         }
+         else error_dialog("Paste Error", std::format("Failed to load clipboard file \"{}\"", files[0]), ERR::Okay);
       }
    }
 }

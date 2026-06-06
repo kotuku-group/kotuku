@@ -173,7 +173,7 @@ static ERR GET_LineCount(extScintilla *, int *);
 static ERR GET_LineNumbers(extScintilla *, int *);
 static ERR GET_ShowWhitespace(extScintilla *, int *);
 static ERR GET_EventCallback(extScintilla *, FUNCTION * &);
-static ERR GET_String(extScintilla *, STRING *);
+static ERR GET_String(extScintilla *, std::string_view &);
 static ERR GET_Symbols(extScintilla *, int *);
 static ERR GET_TabWidth(extScintilla *, int *);
 static ERR GET_Wordwrap(extScintilla *, int *);
@@ -208,7 +208,7 @@ static ERR consume_input_events(const InputEvent *, int);
 static void create_styled_fonts(extScintilla *);
 static ERR create_scintilla(void);
 static void draw_scintilla(extScintilla *, objSurface *, objBitmap *);
-static ERR load_file(extScintilla *, CSTRING);
+static ERR load_file(extScintilla *, std::string_view);
 static void calc_longest_line(extScintilla *);
 static void key_event(evKey *, int, extScintilla *);
 static void report_event(extScintilla *, SEF Event);
@@ -647,7 +647,6 @@ static ERR SCINTILLA_Free(extScintilla *Self, APTR)
 
    if (Self->prvKeyEvent)  { UnsubscribeEvent(Self->prvKeyEvent); Self->prvKeyEvent = nullptr; }
    if (Self->FileStream)   { FreeResource(Self->FileStream); Self->FileStream = nullptr; }
-   if (Self->StringBuffer) { FreeResource(Self->StringBuffer); Self->StringBuffer = nullptr; }
    if (Self->Font)         { FreeResource(Self->Font);       Self->Font = nullptr; }
    if (Self->BoldFont)     { FreeResource(Self->BoldFont);   Self->BoldFont = nullptr; }
    if (Self->ItalicFont)   { FreeResource(Self->ItalicFont); Self->ItalicFont = nullptr; }
@@ -655,7 +654,7 @@ static ERR SCINTILLA_Free(extScintilla *Self, APTR)
 
    gfx::UnsubscribeInput(Self->InputHandle);
 
-   ~extScintilla(Self);
+   Self->~extScintilla();
    return ERR::Okay;
 }
 
@@ -958,7 +957,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    kt::Log log;
    int pos;
 
-   if ((!Args) or (Args->String.empty())) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->String.empty())) return log.warning(ERR::NullArgs);
 
    log.branch("Pos: %d, Text: %.*s", Args->Pos, std::min<int>(Args->String.size(), 10), Args->String.data());
 
@@ -971,7 +970,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
       // Replace currently selected text
 
       SCICALL(SCI_BEGINUNDOACTION);
-      SCICALL(SCI_REPLACESEL, 0UL, Args->String);
+      SCICALL(SCI_REPLACESEL, 0UL, Args->String.data());
       SCICALL(SCI_ENDUNDOACTION);
       return ERR::Okay;
    }
@@ -980,7 +979,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    }
 
    SCICALL(SCI_BEGINUNDOACTION);
-   SCICALL(SCI_INSERTTEXT, pos, Args->String);
+   SCICALL(SCI_INSERTTEXT, pos, Args->String.data());
    SCICALL(SCI_ENDUNDOACTION);
    return ERR::Okay;
 }
@@ -1096,7 +1095,7 @@ static ERR SCINTILLA_ReplaceLine(extScintilla *Self, struct sci::ReplaceLine *Ar
 
    // Replace the targeted text
 
-   SCICALL(SCI_REPLACETARGET, Args->Length, Args->String);
+   SCICALL(SCI_REPLACETARGET, Args->Length, Args->String.data());
 
    return ERR::Okay;
 }
@@ -1171,7 +1170,7 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
       SCICALL(SCI_SETTARGETSTART, start);
       SCICALL(SCI_SETTARGETEND, end);
 
-      pos = SCICALL(SCI_SEARCHINTARGET, findlen, (char *)Args->Find);
+      pos = SCICALL(SCI_SEARCHINTARGET, findlen, (char *)Args->Find.data());
 
       if (pos != -1) {
          log.trace("Found keyword at %d", pos);
@@ -1181,11 +1180,11 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
          // Do the replace
 
          if ((Args->Flags & STF::EXPRESSION) != STF::NIL) {
-            int len = SCICALL(SCI_REPLACETARGETRE, (long unsigned int)-1, replace);
+            int len = SCICALL(SCI_REPLACETARGETRE, (long unsigned int)-1, replace.data());
             end = end + (len - findlen);
          }
          else {
-            SCICALL(SCI_REPLACETARGET, (uint32_t)-1, replace);
+            SCICALL(SCI_REPLACETARGET, (uint32_t)-1, replace.data());
             end = end + (replacelen - findlen);
          }
       }
@@ -1931,16 +1930,13 @@ method as the preferred alternative, as it is much more efficient with memory us
 
 static ERR GET_String(extScintilla *Self, std::string_view &Value)
 {
-   int len = SCICALL(SCI_GETLENGTH);
+   auto len = SCICALL(SCI_GETLENGTH);
 
-   if (Self->StringBuffer) { FreeResource(Self->StringBuffer); Self->StringBuffer = nullptr; }
-
-   if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &Self->StringBuffer) IS ERR::Okay) {
-      SCICALL(SCI_GETTEXT, len+1, (const char *)Self->StringBuffer);
-      Value = std::string_view(Self->StringBuffer, len);
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Self->StringBuffer.clear();
+   Self->StringBuffer.resize(len);
+   SCICALL(SCI_GETTEXT, len+1, Self->StringBuffer.c_str());
+   Value = std::string_view(Self->StringBuffer);
+   return ERR::Okay;
 }
 
 static ERR SET_String(extScintilla *Self, const std::string_view &Value)
@@ -2129,7 +2125,7 @@ static void draw_scintilla(extScintilla *Self, objSurface *Surface, objBitmap *B
 
 //********************************************************************************************************************
 
-static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
+static void error_dialog(std::string_view Title, std::string_view Message, ERR Error)
 {
    kt::Log log;
    static OBJECTID dialog_id = 0;
@@ -2152,7 +2148,7 @@ static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
       CSTRING errstr;
       if ((Error != ERR::Okay) and (errstr = GetErrorMsg(Error))) {
          std::ostringstream buffer;
-         if (Message) buffer << Message << "\n\nDetails: " << errstr;
+         if (not Message.empty()) buffer << Message << "\n\nDetails: " << errstr;
          else buffer << "Error: " << errstr;
 
          acSetKey(dialog, "message", buffer.str().c_str());
@@ -2171,7 +2167,7 @@ static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
 
 //********************************************************************************************************************
 
-static ERR load_file(extScintilla *Self, CSTRING Path)
+static ERR load_file(extScintilla *Self, std::string_view Path)
 {
    kt::Log log(__FUNCTION__);
    STRING str;
@@ -2218,9 +2214,8 @@ static ERR load_file(extScintilla *Self, CSTRING Path)
    else error = ERR::File;
 
    if ((error IS ERR::Okay) and ((Self->Flags & SCIF::DETECT_LEXER) != SCIF::NIL)) {
-      int i = strlen(Path);
-      while ((i > 0) and (Path[i-1] != '/') and (Path[i-1] != '\\') and (Path[i-1] != ':')) i--;
-      Path = Path + i;
+      auto i = Path.find_last_of("/\\:");
+      if (i != std::string::npos) Path.remove_prefix(i+1);
 
       for (i=0; i < std::ssize(glLexers); i++) {
          if (wildcmp(glLexers[i].File, Path)) {
@@ -2231,7 +2226,7 @@ static ERR load_file(extScintilla *Self, CSTRING Path)
             break;
          }
       }
-      if (i >= std::ssize(glLexers)) log.msg("Failed to choose a lexer for %s", Path);
+      if (i >= std::ssize(glLexers)) log.msg("Failed to choose a lexer for %.*s", int(Path.size()), Path.data());
    }
 
    return error;
