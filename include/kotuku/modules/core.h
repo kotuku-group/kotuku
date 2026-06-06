@@ -2122,7 +2122,7 @@ struct CoreBase {
    ERR (*_AddInfoTag)(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value);
    void (*_SetDefaultPermissions)(int User, int Group, PERMIT Permissions);
    void (*_VLogF)(VLF Flags, const char *Header, const char *Message, va_list Args);
-   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view &Name, CSTRING *Value);
+   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value);
    ERR (*_SetResourcePath)(RP PathType, const std::string_view &Path);
    objTask * (*_CurrentTask)(void);
    CSTRING (*_ResolveGroupID)(int Group);
@@ -2222,7 +2222,7 @@ inline ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callbac
 inline ERR AddInfoTag(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
 inline void SetDefaultPermissions(int User, int Group, PERMIT Permissions) { return CoreBase->_SetDefaultPermissions(User,Group,Permissions); }
 inline void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args) { return CoreBase->_VLogF(Flags,Header,Message,Args); }
-inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, CSTRING *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
+inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
 inline ERR SetResourcePath(RP PathType, const std::string_view &Path) { return CoreBase->_SetResourcePath(PathType,Path); }
 inline objTask * CurrentTask(void) { return CoreBase->_CurrentTask(); }
 inline CSTRING ResolveGroupID(int Group) { return CoreBase->_ResolveGroupID(Group); }
@@ -2317,7 +2317,7 @@ extern "C" ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Cal
 extern "C" ERR AddInfoTag(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value);
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args);
-extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, CSTRING *Value);
+extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value);
 extern "C" ERR SetResourcePath(RP PathType, const std::string_view &Path);
 extern "C" objTask * CurrentTask(void);
 extern "C" CSTRING ResolveGroupID(int Group);

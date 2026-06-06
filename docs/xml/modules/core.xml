@@ -1446,13 +1446,13 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <name>ReadInfoTag</name>
     <category>Files</category>
     <comment>Read a named tag from a <st>FileInfo</st> structure.</comment>
-    <prototype>ERR ReadInfoTag(struct FileInfo * Info, STRVIEW Name, CSTRING * Value)</prototype>
+    <prototype>ERR ReadInfoTag(struct FileInfo * Info, STRVIEW Name, STRVIEW * Value)</prototype>
     <tiriPrototype>err, Value:str = ReadInfoTag(Info:any, Name:str)</tiriPrototype>
-    <tags>object-owns-result, null-terminated-result, non-null-result, case-sensitive</tags>
+    <tags>object-owns-result, null-terminated-result, case-sensitive</tags>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
       <param type="STRVIEW" name="Name">The name of the tag, which must be declared in camel-case as tags are case-sensitive.</param>
-      <param type="CSTRING *" name="Value">The discovered string value is returned here if found.</param>
+      <param type="STRVIEW *" name="Value">The discovered string value is returned here if found.</param>
     </input>
     <description>
 <p>ReadInfoTag() will read the value of a named tag in a <st>FileInfo</st> structure.  The tag must have been added with <function>AddInfoTag</function> or <code>ERR::NotFound</code> will be returned.</p>

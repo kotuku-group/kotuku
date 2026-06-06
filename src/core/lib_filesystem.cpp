@@ -1238,7 +1238,7 @@ ReadInfoTag() will read the value of a named tag in a !FileInfo structure.  The 
 -INPUT-
 struct(FileInfo) Info: Pointer to a valid !FileInfo structure.
 strview Name: The name of the tag, which must be declared in camel-case as tags are case-sensitive.
-&cstr Value: The discovered string value is returned here if found.
+&strview Value: The discovered string value is returned here if found.
 
 -ERRORS-
 Okay:
@@ -1246,24 +1246,22 @@ NullArgs:
 NotFound:
 
 -TAGS-
-object-owns-result, null-terminated-result, non-null-result, case-sensitive
+object-owns-result, null-terminated-result, case-sensitive
 
 *********************************************************************************************************************/
 
-ERR ReadInfoTag(FileInfo *Info, const std::string_view &Name, CSTRING *Value)
+ERR ReadInfoTag(FileInfo *Info, const std::string_view &Name, std::string_view *Value)
 {
-   if ((not Info) or (Name.empty()) or (not Value)) {
-      kt::Log log(__FUNCTION__);
-      return ERR::NullArgs;
-   }
+   if ((not Info) or (Name.empty()) or (not Value)) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    if ((Info->Tags) and (Info->Tags->contains(Name))) {
-      *Value = Info->Tags[0][Name].c_str();
+      *Value = Info->Tags[0][Name];
       return ERR::Okay;
    }
-   else *Value = nullptr;
-
-   return ERR::NotFound;
+   else {
+      *Value = std::string_view{};
+      return ERR::NotFound;
+   }
 }
 
 //********************************************************************************************************************
