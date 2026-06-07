@@ -1336,7 +1336,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Watch" }
   })
 
-  klass("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c" }, [[
+  klass("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c", extended=true }, [[
     large     Position  # The current read/write byte position in a file.
     int(FL)   Flags     # File flags and options.
     ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
@@ -1363,7 +1363,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Merge" }
   })
 
-  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c" }, [[
+  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c", extended=true }, [[
     string Path          # The location pointer
     string KeyFilter     # Enables key filtering, removing any unwanted keys on load.
     string GroupFilter   # Enables group filtering, removing any unwanted groups on load.
@@ -1497,7 +1497,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=5, name="SetEnv" }
   })
 
-  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
+  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c", extended=true }, [[
     string LaunchPath
     string Name
     string Location
@@ -1513,7 +1513,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=1, name="SetData" }
   })
 
-  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c" }, [[
+  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
    ptr   Data         # User data pointer.
    int   DataSize     # Size of user data.
    error Error        # Error code returned by the thread on completion.
@@ -1525,7 +1525,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=2, name="Test" }
   })
 
-  klass("Module", { src="../classes/class_module.cpp" }, [[
+  klass("Module", { src="../classes/class_module.cpp", extended=true }, [[
     cstruct(*Function) FunctionList # Array of functions
     ptr ModBase                     # Ptr to function jump table
     class(*RootModule) Root         # Shared details on the module
@@ -1592,7 +1592,8 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=14, name="Find" }
   })
 
-  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" }, output="../compression/class_compression_def.c" }, [[
+  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
+    output="../compression/class_compression_def.c", extended=true }, [[
     large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
     oid Output              # Reference to output object for user messages
     int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
@@ -1603,7 +1604,8 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     int WindowBits          # Window bits, currently applicable to the default (zlib) compression
   ]])
 
-  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp", output="../compression/class_compressed_stream_def.c" }, [[
+  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp",
+    output="../compression/class_compressed_stream_def.c", extended=true }, [[
     large TotalOutput  # Count of the total bytes that have been output.
     obj Input          # The object that is the source of the compressed data.
     obj Output         # The object that is the destination for the compressed data.
@@ -1621,7 +1623,7 @@ namespace kt {
    struct ActionMessage {
       OBJECTID ObjectID;  // The object that is to receive the action
       int  Time;
-      AC ActionID;        // ID of the action or method to execute
+      AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
 
       // Action arguments follow this structure in a buffer

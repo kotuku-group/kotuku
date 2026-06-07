@@ -228,8 +228,8 @@ static const struct MethodEntry clSurfaceMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR SURFACE_NewPlacement(objSurface *Self) {
-   new (Self) objSurface;
+static ERR SURFACE_NewPlacement(extSurface *Self) {
+   new (Self) extSurface;
    return ERR::Okay;
 }
 

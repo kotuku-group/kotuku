@@ -91,8 +91,8 @@ static const struct MethodEntry clBitmapMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR BITMAP_NewPlacement(objBitmap *Self) {
-   new (Self) objBitmap;
+static ERR BITMAP_NewPlacement(extBitmap *Self) {
+   new (Self) extBitmap;
    return ERR::Okay;
 }
 

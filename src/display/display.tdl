@@ -379,7 +379,7 @@ module({
     { id=10, name="ConvertToRGB" }
   })
 
-  klass("Bitmap", { src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" } }, [[
+  klass("Bitmap", { src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" }, extended=true }, [[
     struct(*RGBPalette) Palette          # Pointer to the Bitmap's palette
     struct(*ColourFormat) ColourFormat   # Pointer to colour information
     fptr(void obj(Bitmap) int int uint) DrawUCPixel
@@ -499,7 +499,7 @@ module({
     { id=10, name='GetFrame' }
   })
 
-  klass('Display', { src='class_display.cpp', output='class_display_def.c' }, [[
+  klass('Display', { src='class_display.cpp', output='class_display_def.c', extended=true }, [[
     double RefreshRate   # The active refresh rate
     obj(Bitmap) Bitmap   # Reference to the display's bitmap information.
     int(SCR) Flags       # Optional flags
@@ -532,14 +532,14 @@ module({
     { id=5, name='Remove' }
   })
 
-  klass('Clipboard', { src='class_clipboard.cpp', output='class_clipboard_def.c' }, [[
+  klass('Clipboard', { src='class_clipboard.cpp', output='class_clipboard_def.c', extended=false }, [[
     int(CPF) Flags      # Optional flags
   ]],
   [[
    FUNCTION RequestHandler;
   ]])
 
-  klass('Controller', { src='class_controller.cpp', output='class_controller_def.c' }, [[
+  klass('Controller', { src='class_controller.cpp', output='class_controller_def.c', extended=false }, [[
     double LeftTrigger  # Left trigger value between 0.0 and 1.0
     double RightTrigger # Right trigger value between 0.0 and 1.0
     double LeftStickX   # Left analog stick value for X axis, between -1.0 and 1.0
@@ -550,7 +550,7 @@ module({
     int    Port         # The port number assigned to the controller.
   ]])
 
-  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC', 'PF' } }, [[
+  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC', 'PF' }, extended=true }, [[
     double Speed           # Speed multiplier (%)
     double Acceleration    # Acceleration level - keep between 0.0 and 3.0
     double DoubleClick     # Double click speed
@@ -590,7 +590,7 @@ module({
     { id=10, name='ScheduleRedraw' }
   })
 
-  klass('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, src={
+  klass('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, extended=true, src={
       'class_surface/class_surface.cpp',
       'class_surface/surface_dimensions.cpp',
       'class_surface/surface_drawing.cpp',

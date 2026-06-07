@@ -1814,12 +1814,6 @@ static ERR COMPRESSION_NewObject(extCompression *Self)
    else return ERR::AllocMemory;
 }
 
-static ERR COMPRESSION_NewPlacement(extCompression *Self)
-{
-   new (Self) extCompression;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

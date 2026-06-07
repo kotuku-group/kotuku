@@ -72,8 +72,8 @@ static const struct FieldDef clPointerPF[] = {
    { nullptr, 0 }
 };
 
-static ERR POINTER_NewPlacement(objPointer *Self) {
-   new (Self) objPointer;
+static ERR POINTER_NewPlacement(extPointer *Self) {
+   new (Self) extPointer;
    return ERR::Okay;
 }
 

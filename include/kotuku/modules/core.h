@@ -4584,7 +4584,7 @@ namespace kt {
    struct ActionMessage {
       OBJECTID ObjectID;  // The object that is to receive the action
       int  Time;
-      AC ActionID;        // ID of the action or method to execute
+      AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
 
       // Action arguments follow this structure in a buffer

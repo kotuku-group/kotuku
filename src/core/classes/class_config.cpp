@@ -460,14 +460,6 @@ static ERR CONFIG_MergeFile(extConfig *Self, struct cfg::MergeFile *Args)
    else return ERR::File;
 }
 
-//********************************************************************************************************************
-
-static ERR CONFIG_NewPlacement(extConfig *Self)
-{
-   new (Self) extConfig;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

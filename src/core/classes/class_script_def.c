@@ -22,6 +22,11 @@ static const struct MethodEntry clScriptMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SCRIPT_NewPlacement(objScript *Self) {
+   new (Self) objScript;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clScriptActions[] = {
    { AC::Activate, SCRIPT_Activate },
    { AC::DataFeed, SCRIPT_DataFeed },

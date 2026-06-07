@@ -31,6 +31,11 @@ static const struct MethodEntry clConfigMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR CONFIG_NewPlacement(extConfig *Self) {
+   new (Self) extConfig;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clConfigActions[] = {
    { AC::Clear, CONFIG_Clear },
    { AC::DataFeed, CONFIG_DataFeed },
