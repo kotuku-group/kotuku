@@ -43,7 +43,7 @@ static ERR TIME_SetTime(objTime *);
 static ERR tzi_free(ResourceRecord *Resource, APTR Address)
 {
    ((struct TimeZoneInfo *)Address)->~TimeZoneInfo();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, false };

@@ -162,7 +162,7 @@ ERR object_free(ResourceRecord *Resource, Object *Object)
    auto mc = Object->ExtClass;
    if (not mc) {
       log.trace("Object %p #%d is missing its class pointer.", Object, Object->UID);
-      return ERR::Okay;
+      return ERR::Terminate;
    }
 
    // If the object is locked then we mark it for collection and return.
@@ -292,7 +292,7 @@ ERR object_free(ResourceRecord *Resource, Object *Object)
 
    Object->Class = nullptr;
    Object->UID   = 0;
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 //********************************************************************************************************************

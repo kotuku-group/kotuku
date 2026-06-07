@@ -141,7 +141,7 @@ static srell::regex_constants::match_flag_type convert_match_flags(RMATCH Flags)
 static ERR regex_free(ResourceRecord *Resource, APTR Address)
 {
    ((extRegex *)Address)->~extRegex();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glRegexMgr = {

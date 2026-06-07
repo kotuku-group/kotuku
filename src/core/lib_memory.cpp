@@ -430,9 +430,10 @@ ERR FreeResource(RESOURCEID MemoryID)
       RESOURCEID resource_id = MemoryID;
       auto resource_it = glResources.find(resource_id);
       if ((resource_it != glResources.end()) and (resource_it->second.Address)) {
-         ResourceRecord resource = resource_it->second;
+         ResourceRecord *resource = &resource_it->second; // Take a copy
+
          if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)", MemoryID,
-            resource.Address, resource.Size, resource.OwnerID);
+            resource->Address, resource->Size, resource->OwnerID);
 
          // TODO: This only applies to memory resources and should be moved to memory_resource_free
 
@@ -446,38 +447,53 @@ ERR FreeResource(RESOURCEID MemoryID)
 
          // Fast route for direct memory deallocation
 
-         if (resource.Manager IS &glResourceMemoryHandler) {
-            return memory_resource_free(&resource_it->second, resource.Address);
+         if (resource->Manager IS &glResourceMemoryHandler) {
+            return memory_resource_free(&resource_it->second, resource->Address);
          }
 
          // Use the resource manager if possible.  Resource managers are not considered safe in an uncontrolled shutdown.
 
          if (not glCrashStatus) {
-            auto free_address = resource.Address;
-            auto resource_manager = resource.Manager;
-            if (resource_manager->CanBlock) {
-               // Resource managers can wait on other locks, so drop the memory lock to prevent deadlocking.
-               lock.unlock();
-            }
-            auto manager_error = resource_manager->Free(&resource, free_address);
-            if (manager_error IS ERR::InUse) {
-               // The manager has complex needs and will be able to handle this situation appropriately.
-               return ERR::InUse;
-            }
+            auto free_address = resource->Address;
+            auto resource_manager = resource->Manager;
+
+            // If the manager can block, drop the memory lock to prevent deadlocking.
+            if (resource_manager->CanBlock) lock.unlock();
+
+            // The following responses apply to error codes returned from the resource manager:
+            //
+            // ERR::Okay      - The manager deallocated the resource, return to user immediately
+            // ERR::InUse     - Resource cannot be deallocated yet, do nothing and return error to user
+            // ERR::Terminate - Deallocate the resource as a standard memory block
+            // ERR::*         - Return code to user
+
+            auto error = resource_manager->Free(resource, free_address);
 
             if (resource_manager->CanBlock) lock.lock();
 
-            resource_it = glResources.find(resource_id);
-            if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) {
+            if (error IS ERR::Okay) {
+               // Resource manager took care of the deallocation, we just need to remove the record
+               // TODO: Using a glDirtyResources marker could eliminate the need for this
+               if (auto current_resource = glResources.find(resource_id); current_resource != glResources.end()) {
+                  glResources.erase(current_resource);
+               }
                return ERR::Okay;
             }
+            else if (error != ERR::Terminate) return error; // Do nothing and return the error code
 
-            resource = resource_it->second;
+            // Drop-through to standard memory deallocation
+
+            resource_it = glResources.find(resource_id);
+            if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::Okay;
+            resource = &resource_it->second;
+
+            SetResourceMgr(resource->Address, &glResourceMemoryHandler);
+
             mem_it = glPrivateMemory.find(MemoryID);
             if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address) and (mem_it->second.AccessCount > 0)) {
                log.msg("Block #%d marked for collection (open count %d).", MemoryID, mem_it->second.AccessCount);
                mem_it->second.Flags |= MEM::COLLECT;
-               resource_it->second.Collect = true;
+               resource->Collect = true;
                return ERR::Okay;
             }
          }
@@ -486,7 +502,7 @@ ERR FreeResource(RESOURCEID MemoryID)
 
          mem_it = glPrivateMemory.find(MemoryID);
          if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address)) {
-            return memory_resource_free(&resource_it->second, mem_it->second.Address);
+            return memory_resource_free(resource, mem_it->second.Address);
          }
 
          glResources.erase(resource_id);
@@ -786,10 +802,10 @@ This working example from the XPath module ensures that `XPathNode` objects are 
 ~FreeResource():
 
 <pre>
-static ERR xpnode_free(APTR Address)
+static ERR xpnode_free(ResourceRecord *Resource, APTR Address)
 {
    ((XPathNode *)Address)->&#126;XPathNode();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glNodeManager = {

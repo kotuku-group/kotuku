@@ -323,20 +323,15 @@
     <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
       <const name="AUDIO">The memory space is reserved by an audio device such as a sound card.</const>
       <const name="CALLER">This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</const>
-      <const name="CODE">Set if the memory will contain executable program code.</const>
+      <const name="CODE">Used for memory that can execute code.</const>
       <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
       <const name="HIDDEN">Hidden blocks are not recorded and are excluded from resource tracking.</const>
       <const name="MANAGED">Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</const>
-      <const name="NO_BLOCK">Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</const>
-      <const name="NO_BLOCKING">Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</const>
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
-      <const name="NO_LOCK">For AllocMemory() only, indicates that the (private) memory block should not be locked on return.</const>
-      <const name="NO_POOL">Gives a hint to the allocator to allocate the block outside of the memory pool.</const>
       <const name="READ">The memory is explicitly marked as readable.</const>
       <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
       <const name="STRING">Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</const>
       <const name="TEXTURE">The memory space is reserved by a video driver for hosting texture graphics.</const>
-      <const name="TMP_LOCK">Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.</const>
       <const name="UNTRACKED">Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</const>
       <const name="VIDEO">The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>

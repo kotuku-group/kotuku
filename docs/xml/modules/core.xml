@@ -1862,15 +1862,16 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <description>
 <p>SetResourceMgr() associates a ResourceManager with a memory block that was allocated with the <code>MEM::MANAGED</code> flag. This allows customised memory management logic to be used when an event is triggered on a memory block, such as the block being destroyed.  Most commonly, resource managers are used to allow C++ destructors to be integrated with Kōtuku's memory management system.</p>
 <p>This working example from the XPath module ensures that <code>XPathNode</code> objects are properly destructed when passed to <function>FreeResource</function>:</p>
-<pre>static ERR xpnode_free(APTR Address)
+<pre>static ERR xpnode_free(ResourceRecord *Resource, APTR Address)
 {
    ((XPathNode *)Address)-&gt;~XPathNode();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glNodeManager = {
    &quot;XPathNode&quot;,  // Name of the custom resource type
-   &amp;xpnode_free  // Custom destructor function
+   &amp;xpnode_free, // Custom destructor function
+   false
 };
 
    if (AllocMemory(sizeof(XPathNode), MEM::MANAGED, (APTR *)&amp;node, nullptr) IS ERR::Okay) {

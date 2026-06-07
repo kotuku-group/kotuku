@@ -65,7 +65,7 @@ static ERR msghandler_free(ResourceRecord *Resource, APTR Address)
       if (h->Next) h->Next->Prev = h->Prev;
       if (h->Prev) h->Prev->Next = h->Next;
    }
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glResourceMsgHandler = {

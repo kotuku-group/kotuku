@@ -104,7 +104,7 @@ static ERR folder_free(ResourceRecord *Resource, APTR Address)
 
    fs_closedir(folder);
    folder->~extDirInfo();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glResourceFolder = {

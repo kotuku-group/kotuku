@@ -1695,7 +1695,7 @@ struct ObjectSignal {
 struct ResourceManager {
    CSTRING Name;                                   // The name of the resource.
    ERR (*Free)(struct ResourceRecord *, APTR);     // A function that will remove the resource's content when terminated.
-   bool CanBlock;                                  // True if the Free callback might wait on locks, callbacks or external resources.
+   bool    CanBlock;                               // True if the Free callback might wait on locks, callbacks or external resources.
 };
 
 struct FunctionField {

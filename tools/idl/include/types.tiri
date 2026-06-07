@@ -72,7 +72,8 @@ global glTypes = {
    ushort     = { fd='FD_WORD',               t_type='num', c_type='uint16_t', doc_type='UINT16' },
    va_list    = { fd='FD_PTR',                t_type='any', c_type='va_list' },
    void       = { fd='FD_VOID',               t_type=nil, c_type='void' },
-   vtags      = { fd='FD_VARTAGS',            t_type=nil, c_type='...' }
+   vtags      = { fd='FD_VARTAGS',            t_type=nil, c_type='...' },
+   bool       = { fd='FD_BYTE',               t_type='bool', c_type='bool', doc_type='BOOL' }
 }
 
 function copyOf(Type:str)

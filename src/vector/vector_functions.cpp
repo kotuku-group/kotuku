@@ -24,7 +24,7 @@ functions for creating paths and rendering them to bitmaps.
 // Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
 
 static ERR simplevector_free(ResourceRecord *Resource, APTR Address) {
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
 static ResourceManager glResourceSimpleVector = {
