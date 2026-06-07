@@ -61,7 +61,7 @@ public:
    MEM      Flags;
    int16_t  AccessCount = 0; // Total number of locks
 
-   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, OBJECTID aOwnerID, uint32_t aSize, MEM aFlags) :
+   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, uint32_t aSize, MEM aFlags) :
       Address(aAddress), MemoryID(aMemoryID), Size(aSize), Flags(aFlags) { };
 
    void clear() {

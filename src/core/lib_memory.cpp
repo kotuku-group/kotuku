@@ -227,12 +227,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    // Determine the object that will own the memory block.  The preferred default is for it to belong to the current context.
 
    OBJECTID owner_id = 0;
-   if ((Flags & (MEM::HIDDEN|MEM::UNTRACKED)) != MEM::NIL);
-   else if ((Flags & MEM::CALLER) != MEM::NIL) {
-      // Rarely used, but this feature allows methods to return memory that is tracked to the caller.
-      if (tlContext.size() > 2) owner_id = tlContext[tlContext.size()-2].obj->UID;
-      else owner_id = glCurrentTask->UID;
-   }
+   if ((Flags & MEM::UNTRACKED) != MEM::NIL);
    else if (tlContext.size() > 1) owner_id = current_resource()->UID;
    else if (glCurrentTask) owner_id = glCurrentTask->UID;
 
@@ -302,14 +297,11 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 
       ((int *)header)[0]  = unique_id;
 
-      // Remember the memory block's details such as the size, ID, flags and object that it belongs to.  This helps us
+      // Record memory details such as the size, ID and flags.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
-      bool tracked = ((Flags & MEM::HIDDEN) IS MEM::NIL);
-      if (tracked) {
-         glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, owner_id, (uint32_t)Size, Flags)));
-         TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler, Flags, (uint32_t)Size);
-      }
+      glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
+      TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler, Flags, (uint32_t)Size);
 
       if (Address) *Address = data_start;
 

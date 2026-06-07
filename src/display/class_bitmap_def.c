@@ -22,8 +22,6 @@ static const struct FieldDef clBitmapDataFlags[] = {
    { "Write", 0x00020000 },
    { "ReadWrite", 0x00030000 },
    { "NoClear", 0x00040000 },
-   { "Hidden", 0x00100000 },
-   { "Caller", 0x00800000 },
    { nullptr, 0 }
 };
 
