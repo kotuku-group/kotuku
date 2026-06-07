@@ -49,7 +49,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (AllocMemory(1000, MEM::DATA, &address, nullptr) IS ERR::Okay) {
+if (AllocMemory(1000, MEM::DATA, &address) IS ERR::Okay) {
    // Use memory block...
    FreeResource(address);
 }

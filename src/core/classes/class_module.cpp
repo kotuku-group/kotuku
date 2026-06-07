@@ -696,7 +696,7 @@ APTR build_jump_table(const Function *FList)
    log.trace("%d functions have been detected in the function list.", size);
 
    void **functions;
-   if (AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions, nullptr) IS ERR::Okay) {
+   if (AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions) IS ERR::Okay) {
       for (int i=0; i < size; i++) functions[i] = FList[i].Address;
       functions[size] = nullptr;
       return functions;

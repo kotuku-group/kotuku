@@ -677,7 +677,7 @@ static int64_t calc_length(objSound *Self, int ReduceEnd)
    prv->File->get(FID_Size, filesize);
 
    uint8_t *buffer;
-   if (AllocMemory(SIZE_BUFFER, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+   if (AllocMemory(SIZE_BUFFER, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
       // Load MP3 data from the file
 
       prv->File->seekStart(prv->SeekOffset);

@@ -202,7 +202,7 @@ static ERR ARCHIVE_Init(extFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr, nullptr) IS ERR::Okay) {
+   if (AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
       auto prv = (prvFileArchive *)Self->DerivedPtr;
       new (prv) prvFileArchive;
 

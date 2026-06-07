@@ -335,11 +335,11 @@ static ERR FILE_BufferContent(extFile *Self)
          // Allocate a 1 MB memory block, read the stream into it, then reallocate the block to the correct size.
 
          uint8_t *buffer;
-         if (AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+         if (AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
             acSeekStart(Self, 0);
             acRead(Self, buffer, 1024 * 1024, &len);
             if (len > 0) {
-               if (AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer, nullptr) IS ERR::Okay) {
+               if (AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer) IS ERR::Okay) {
                   copymem(buffer, Self->Buffer, len);
                   Self->Size = len;
                }
@@ -353,7 +353,7 @@ static ERR FILE_BufferContent(extFile *Self)
       // the file content is treated as a string.
 
       int8_t *buffer;
-      if (AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+      if (AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
          buffer[Self->Size] = 0;
          if (acRead(Self, buffer, Self->Size, &len) IS ERR::Okay) {
             Self->Buffer = buffer;
@@ -369,7 +369,7 @@ static ERR FILE_BufferContent(extFile *Self)
    // If the file was empty, allocate a 1-byte memory block for the Buffer field, in order to satisfy condition tests.
 
    if (not Self->Buffer) {
-      if (AllocMemory(1, MEM::DATA, (APTR *)&Self->Buffer, nullptr) != ERR::Okay) {
+      if (AllocMemory(1, MEM::DATA, (APTR *)&Self->Buffer) != ERR::Okay) {
          return log.warning(ERR::AllocMemory);
       }
    }
@@ -637,7 +637,7 @@ static ERR FILE_Init(extFile *Self)
          // Allocate buffer if none specified.  An extra byte is allocated for a NULL byte on the end, in case the file
          // content is treated as a string.
 
-         if (AllocMemory((Self->Size < 1) ? 1 : Self->Size+1, MEM::NO_CLEAR, (APTR *)&Self->Buffer, nullptr) != ERR::Okay) {
+         if (AllocMemory((Self->Size < 1) ? 1 : Self->Size+1, MEM::NO_CLEAR, (APTR *)&Self->Buffer) != ERR::Okay) {
             return log.warning(ERR::AllocMemory);
          }
          ((int8_t *)Self->Buffer)[Self->Size] = 0;
@@ -656,7 +656,7 @@ static ERR FILE_Init(extFile *Self)
       Self->Size = Self->Path.size() - 7;
 
       if (Self->Size > 0) {
-         if (AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer, nullptr) IS ERR::Okay) {
+         if (AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer) IS ERR::Okay) {
             Self->Flags |= FL::READ|FL::WRITE;
             Self->Permissions |= PERMIT::HIDDEN;
             copymem(Self->Path.c_str() + 7, Self->Buffer, Self->Size);
@@ -1584,9 +1584,9 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
       if (vd.WatchPath) {
          #ifdef _WIN32
-         if (AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch, nullptr) IS ERR::Okay) {
+         if (AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch) IS ERR::Okay) {
          #else
-         if (AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch, nullptr) IS ERR::Okay) {
+         if (AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch) IS ERR::Okay) {
          #endif
             Self->prvWatch->VirtualID = vd.VirtualID;
             Self->prvWatch->Routine   = *Args->Callback;

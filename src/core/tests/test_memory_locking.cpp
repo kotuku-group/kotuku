@@ -89,7 +89,7 @@ static void * test_allocation(void *Arg)
    int i, j;
    int start = 0;
    for (i=0; i < glTotalAlloc; i++) {
-      AllocMemory(1024, MEM::DATA|MEM::NO_CLEAR, &memory[i], nullptr);
+      AllocMemory(1024, MEM::DATA|MEM::NO_CLEAR, &memory[i]);
       if (rand() % 10 > 7) {
          for (j=start; j < i; j++) {
             FreeResource(memory[j]);

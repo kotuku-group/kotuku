@@ -800,7 +800,7 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (not valid_timezone_year_range(Args->StartYear, Args->EndYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
-   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA|MEM::MANAGED, (APTR *)&tz, nullptr) IS ERR::Okay) {
+   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA|MEM::MANAGED, (APTR *)&tz) IS ERR::Okay) {
       new (tz) struct TimeZoneInfo;
       SetResourceMgr(tz, &glTimeZoneHandler);
 
