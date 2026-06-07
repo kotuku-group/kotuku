@@ -1178,10 +1178,6 @@ inline ERR FreeResource(const void *Address) {
    return FreeResource(((int *)Address)[-2]);
 }
 
-inline ERR AllocMemory(int Size, MEM Flags, APTR Address) {
-   return AllocMemory(Size, Flags, (APTR *)Address, nullptr);
-}
-
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::NIL, (OBJECTPTR *)Result);
 }
@@ -1703,7 +1699,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr, nullptr) IS ERR::Okay) {
+   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;

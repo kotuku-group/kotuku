@@ -6,7 +6,7 @@ extern "C" void ActionList(struct ActionTable ** Actions, int * Size);
 extern "C" ERR DeleteFile(const std::string_view & Path, FUNCTION * Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
-extern "C" ERR AllocMemory(int Size, MEM Flags, APTR * Address, MEMORYID * ID);
+extern "C" ERR AllocMemory(int Size, MEM Flags, APTR * Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR * Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckMemoryExists(MEMORYID ID);
@@ -35,7 +35,7 @@ extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Er
 extern "C" ERR CopyFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION * Callback);
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass);
-extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR * Address, MEMORYID * ID);
+extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR * Address);
 extern "C" ERR ReleaseMemory(MEMORYID MemoryID);
 extern "C" CLASSID ResolveClassName(const std::string_view & Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);

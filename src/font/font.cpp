@@ -518,7 +518,7 @@ ERR GetList(FontList **Result)
       }
 
       FontList *list, *last_list = nullptr;
-      if (AllocMemory(size, MEM::DATA, &list) IS ERR::Okay) {
+      if (AllocMemory(size, MEM::DATA, (APTR *)&list) IS ERR::Okay) {
          auto buffer = (STRING)(list + groups->size());
          *Result = list;
 

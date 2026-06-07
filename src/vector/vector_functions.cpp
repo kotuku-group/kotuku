@@ -35,7 +35,7 @@ static ResourceManager glResourceSimpleVector = {
 static SimpleVector * new_simplevector(void)
 {
    SimpleVector *vector;
-   if (AllocMemory(sizeof(SimpleVector), MEM::MANAGED, &vector) != ERR::Okay) return nullptr;
+   if (AllocMemory(sizeof(SimpleVector), MEM::MANAGED, (APTR *)&vector) != ERR::Okay) return nullptr;
    SetResourceMgr(vector, &glResourceSimpleVector);
    new(vector) SimpleVector;
    return vector;

@@ -1655,7 +1655,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
          if (Self->Position + Args->Length > Self->Size) {
             // Increase the size of the buffer to cater for the write.  A null byte (not included in the official size)
             // is always placed at the end.
-            if (ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer, nullptr) IS ERR::Okay) {
+            if (ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer) IS ERR::Okay) {
                Self->Size = Self->Position + Args->Length;
                Self->Buffer[Self->Size] = 0;
             }

@@ -269,7 +269,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
       sample.Data = nullptr;
    }
-   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, &sample.Data) IS ERR::Okay) {
+   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) IS ERR::Okay) {
       copymem(Args->Data, sample.Data, Args->DataSize);
    }
    else return log.warning(ERR::AllocMemory);
@@ -397,7 +397,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
       if (sample.Loop2Start IS sample.Loop2End) sample.Loop2Type = LTYPE::NIL;
    }
 
-   if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, &sample.Data) != ERR::Okay) {
+   if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) != ERR::Okay) {
       return ERR::AllocMemory;
    }
 

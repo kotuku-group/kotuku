@@ -328,7 +328,7 @@ void ScintillaKTK::Paste()
             int len, size;
             if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
                STRING buffer;
-               if (AllocMemory(size, MEM::STRING, &buffer) IS ERR::Okay) {
+               if (AllocMemory(size, MEM::STRING, (APTR *)&buffer) IS ERR::Okay) {
                   if (file->read(buffer, size, &len) IS ERR::Okay) {
                      pdoc->BeginUndoAction();
 
