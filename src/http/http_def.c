@@ -125,6 +125,11 @@ static const struct FieldDef clHTTPCurrentState[] = {
    { nullptr, 0 }
 };
 
+static ERR HTTP_NewPlacement(extHTTP *Self) {
+   new (Self) extHTTP;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clHTTPActions[] = {
    { AC::Activate, HTTP_Activate },
    { AC::Deactivate, HTTP_Deactivate },

@@ -21,9 +21,6 @@
     </source>
   </info>
 
-  <actions>
-  </actions>
-
   <fields>
     <field>
       <name>CenterX</name>

@@ -692,14 +692,6 @@ static ERR NETSOCKET_LeaveMulticastGroup(extNetSocket *Self, struct ns::LeaveMul
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR NETSOCKET_NewPlacement(extNetSocket * Self)
-{
-   new (Self) extNetSocket;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -ACTION-

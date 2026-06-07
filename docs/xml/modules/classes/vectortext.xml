@@ -28,9 +28,6 @@
     </source>
   </info>
 
-  <actions>
-  </actions>
-
   <methods>
     <method>
       <name>DeleteLine</name>

@@ -166,14 +166,6 @@ static ERR NETSERVER_NewObject(extNetServer *Self)
 
 //********************************************************************************************************************
 
-static ERR NETSERVER_NewPlacement(extNetServer *Self)
-{
-   new (Self) extNetServer;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR NETSERVER_Read(extNetServer *Self, struct acRead *Args)
 {
    // Not allowed - client must read from the ClientSocket.

@@ -9,6 +9,11 @@ static const struct MethodEntry clProxyMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR PROXY_NewPlacement(extProxy *Self) {
+   new (Self) extProxy;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clProxyActions[] = {
    { AC::Disable, PROXY_Disable },
    { AC::Enable, PROXY_Enable },

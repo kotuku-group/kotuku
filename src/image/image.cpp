@@ -501,14 +501,7 @@ static ERR IMAGE_Init(extImage *Self)
 
 static ERR IMAGE_NewObject(extImage *Self)
 {
-   Self->Quality = 80; // 80% quality rating when saving
    return NewLocalObject(CLASSID::BITMAP, &Self->Bitmap);
-}
-
-static ERR IMAGE_NewPlacement(extImage *Self)
-{
-   new (Self) extImage;
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************

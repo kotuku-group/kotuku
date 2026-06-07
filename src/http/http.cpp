@@ -379,7 +379,6 @@ static ERR HTTP_Deactivate(extHTTP *);
 static ERR HTTP_Free(extHTTP *);
 static ERR HTTP_GetKey(extHTTP *, struct acGetKey *);
 static ERR HTTP_Init(extHTTP *);
-static ERR HTTP_NewPlacement(extHTTP *);
 static ERR HTTP_SetKey(extHTTP *, struct acSetKey *);
 static ERR HTTP_Write(extHTTP *, struct acWrite *);
 
@@ -1041,15 +1040,6 @@ static ERR HTTP_Init(extHTTP *Self)
    }
    else log.msg("Proxy pre-defined by user.");
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR HTTP_NewPlacement(extHTTP *Self)
-{
-   // Note: No local object allocations are permitted due to lack of context.  Use a NewObject hook if necessary
-   new (Self) extHTTP;
    return ERR::Okay;
 }
 
