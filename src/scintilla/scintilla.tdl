@@ -71,7 +71,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=12, name="ScrollToPoint" }
   })
 
-  klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx" }, [[
+  klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx", extended=true }, [[
     obj(Font) Font             # Font to use for the text
     string Path                # Source text file
     int(SEF) EventFlags        # SEF flags.  Indicates the events that will be reported.

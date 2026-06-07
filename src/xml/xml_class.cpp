@@ -1091,14 +1091,6 @@ static ERR XML_MoveTags(extXML *Self, struct xml::MoveTags *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR XML_NewPlacement(extXML *Self)
-{
-   new (Self) extXML;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

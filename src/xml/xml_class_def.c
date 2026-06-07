@@ -74,6 +74,11 @@ static const struct MethodEntry clXMLMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR XML_NewPlacement(extXML *Self) {
+   new (Self) extXML;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clXMLActions[] = {
    { AC::Clear, XML_Clear },
    { AC::DataFeed, XML_DataFeed },

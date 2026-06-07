@@ -22,6 +22,7 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
   })
 
   klass('XQuery', {
+    extended   = true,
     src        = 'xquery_class.cpp',
     output     = 'xquery_class_def.cpp',
     references = { 'XQF', 'XPVT', 'XEF' },
