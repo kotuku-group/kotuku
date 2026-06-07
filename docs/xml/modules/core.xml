@@ -826,21 +826,21 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   <function>
     <name>FreeResource</name>
     <category>Memory</category>
-    <comment>Safely deallocates memory blocks allocated by AllocMemory().</comment>
-    <prototype>ERR FreeResource(MEMORYID ID)</prototype>
+    <comment>Safely deallocates resources allocated by AllocMemory() and similar functions.</comment>
+    <prototype>ERR FreeResource(RESOURCEID ID)</prototype>
     <tiriPrototype>err = FreeResource(ID:num)</tiriPrototype>
     <tags>closes-handle, blocking</tags>
     <input>
-      <param type="MEMORYID" name="ID">The unique identifier of the memory block to be freed.</param>
+      <param type="RESOURCEID" name="ID">The unique identifier of the resource to be freed.</param>
     </input>
     <description>
-<p>FreeResource() provides safe deallocation of memory blocks with comprehensive validation and cleanup. The function accepts memory identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
+<p>FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
 <p>The deallocation process includes boundary validation to detect buffer overruns, lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
 <p>When a memory block is currently locked (AccessCount &gt; 0), it is marked for delayed collection rather than immediate deallocation. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
 <p>Memory corruption detection is performed by validating header and trailer markers. Any detected corruption is logged as a high-priority error requiring immediate attention, as this indicates potential buffer overrun or memory management bugs in the application code.</p>
     </description>
     <result type="ERR">
-      <error code="Okay">The memory block was successfully freed or marked for delayed collection.</error>
+      <error code="Okay">The resource was successfully freed or marked for delayed collection.</error>
       <error code="InUse">The memory block is a busy managed resource.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).</error>
       <error code="InvalidData">Memory corruption detected - header or trailer markers are damaged.</error>
       <error code="MemoryDoesNotExist">The specified memory block identifier is not valid or already freed.</error>
@@ -2877,7 +2877,6 @@ static ResourceManager glNodeManager = {
 
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
       <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
-      <const name="COLLECT">Marked for garbage collection.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
@@ -3343,10 +3342,9 @@ static ResourceManager glNodeManager = {
 
     <struct name="MemInfo" typeName="MEMINFO">
       <field name="Start" type="APTR">The starting address of the memory block (does not apply to shared blocks).</field>
-      <field name="ObjectID" type="OBJECTID">The object that owns the memory block.</field>
       <field name="Size" type="UINT">The size of the memory block.</field>
       <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
-      <field name="MemoryID" type="MEMORYID">The unique ID for this block.</field>
+      <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
       <field name="AccessCount" type="INT16">Total number of active locks on this block.</field>
     </struct>
 

@@ -38,6 +38,59 @@ constexpr size_t CACHE_LINE_SIZE = 64;
 
 /*********************************************************************************************************************
 
+Internal resource registry helpers.
+
+*********************************************************************************************************************/
+
+ResourceRecord * find_resource(RESOURCEID ResourceID)
+{
+   auto resource = glResources.find(ResourceID);
+   if (resource IS glResources.end()) return nullptr;
+   return &resource->second;
+}
+
+ERR TrackResource(RESOURCEID ResourceID, APTR Address, OBJECTID OwnerID, ResourceManager *Manager, MEM Flags,
+   uint32_t Size)
+{
+   std::lock_guard lock(glmMemory);
+
+   if (not ResourceID) return ERR::Args;
+
+   if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
+      if ((existing->second.Manager IS &glResourceObject) and existing->second.OwnerID) {
+         if (auto object_rec = glObjects.find(existing->second.OwnerID); object_rec != glObjects.end()) {
+            object_rec->second.Resources.erase(ResourceID);
+         }
+      }
+   }
+
+   glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Flags, Size));
+
+   if ((Manager IS &glResourceObject) and OwnerID) glObjects[OwnerID].Resources.insert(ResourceID);
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+void UntrackResource(RESOURCEID ResourceID)
+{
+   std::lock_guard lock(glmMemory);
+
+   auto resource = glResources.find(ResourceID);
+   if (resource IS glResources.end()) return;
+
+   if ((resource->second.Manager IS &glResourceObject) and resource->second.OwnerID) {
+      if (auto object_rec = glObjects.find(resource->second.OwnerID); object_rec != glObjects.end()) {
+         object_rec->second.Resources.erase(ResourceID);
+      }
+   }
+
+   glResources.erase(resource);
+}
+
+/*********************************************************************************************************************
+
 -FUNCTION-
 AllocMemory: Allocates a managed memory block on the heap.
 
@@ -188,7 +241,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       bool tracked = ((Flags & MEM::HIDDEN) IS MEM::NIL);
       if (tracked) {
          glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, owner_id, (uint32_t)Size, Flags)));
-         if (((Flags & MEM::OBJECT) IS MEM::NIL) and owner_id) glObjects[owner_id].Memory.insert(unique_id);
+         TrackResource(unique_id, data_start, owner_id, nullptr, Flags, (uint32_t)Size);
       }
 
       if (Address) *Address = data_start;
@@ -248,10 +301,10 @@ ERR CheckMemoryExists(MEMORYID MemoryID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-FreeResource: Safely deallocates memory blocks allocated by AllocMemory().
+FreeResource: Safely deallocates resources allocated by AllocMemory() and similar functions.
 
-FreeResource() provides safe deallocation of memory blocks with comprehensive validation and cleanup. The function
-accepts memory identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.
+FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function
+accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.
 
 The deallocation process includes boundary validation to detect buffer overruns, lock-aware deallocation that respects
 access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking
@@ -266,10 +319,10 @@ logged as a high-priority error requiring immediate attention, as this indicates
 memory management bugs in the application code.
 
 -INPUT-
-mem ID: The unique identifier of the memory block to be freed.
+res ID: The unique identifier of the resource to be freed.
 
 -ERRORS-
-Okay: The memory block was successfully freed or marked for delayed collection.
+Okay: The resource was successfully freed or marked for delayed collection.
 InvalidData: Memory corruption detected - header or trailer markers are damaged.
 MemoryDoesNotExist: The specified memory block identifier is not valid or already freed.
 SystemLocked: Memory management system is currently locked by another thread.
@@ -286,98 +339,114 @@ ERR FreeResource(MEMORYID MemoryID)
    kt::Log log(__FUNCTION__);
 
    if (auto lock = std::unique_lock{glmMemory}) {
-      auto it = glPrivateMemory.find(MemoryID);
-      if ((it != glPrivateMemory.end()) and (it->second.Address)) {
-         auto &mem = it->second;
+      RESOURCEID resource_id = MemoryID;
+      auto resource_it = glResources.find(resource_id);
+      if ((resource_it != glResources.end()) and (resource_it->second.Address)) {
+         ResourceRecord resource = resource_it->second;
+         if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)", MemoryID,
+            resource.Address, resource.Size, resource.OwnerID);
 
-         if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, $%.8x, Owner: #%d)", MemoryID, mem.Address, mem.Size, int(mem.Flags), mem.OwnerID);
+         auto mem_it = glPrivateMemory.find(MemoryID);
+
+         if ((mem_it IS glPrivateMemory.end()) or (not mem_it->second.Address)) {
+            log.trace("Memory ID #%d does not exist.", MemoryID);
+            return ERR::MemoryDoesNotExist;
+         }
+
+         auto &mem = mem_it->second;
 
          ERR error = ERR::Okay;
+
          if (mem.AccessCount > 0) {
             log.msg("Block #%d marked for collection (open count %d).", MemoryID, mem.AccessCount);
             mem.Flags |= MEM::COLLECT;
+            resource_it->second.Collect = true;
+            return error;
          }
-         else {
-            // If the block has a resource manager then call its Free() implementation.
 
-            if ((mem.Flags & MEM::MANAGED) != MEM::NIL) {
-               auto free_address = mem.Address;
-               auto start_mem = (char *)mem.Address - sizeof(int) - sizeof(int) - sizeof(ResourceManager *);
-               if (not glCrashStatus) { // Resource managers are not considered safe in an uncontrolled shutdown
-                  auto rm = ((ResourceManager **)start_mem)[0];
-                  lock.unlock(); // Resource managers can wait on other locks, so drop the memory lock to prevent deadlocking
-                  if (rm->Free((APTR)free_address) IS ERR::InUse) {
-                     // Memory block is in use. Given that the AccessCount is 0, it is assumed that the resource
-                     // manager has complex needs and will be able to handle this situation appropriately.
-                     return ERR::InUse;
-                  }
-                  lock.lock();
+         // Use the resource manager if possible.  Resource managers are not considered safe in an uncontrolled shutdown.
 
-                  // Another thread may have mutated or removed this block while the memory mutex was unlocked.
-                  it = glPrivateMemory.find(MemoryID);
-                  if ((it IS glPrivateMemory.end()) or (not it->second.Address)) {
-                     log.trace("Memory ID #%d does not exist.", MemoryID);
-                     return ERR::MemoryDoesNotExist;
-                  }
-
-                  if (it->second.AccessCount > 0) {
-                     log.msg("Block #%d marked for collection (open count %d).", MemoryID, it->second.AccessCount);
-                     it->second.Flags |= MEM::COLLECT;
-                     return error;
-                  }
-               }
+         if ((resource.Manager) and (not glCrashStatus)) {
+            auto free_address = resource.Address;
+            lock.unlock(); // Resource managers can wait on other locks, so drop the memory lock to prevent deadlocking.
+            if (resource.Manager->Free(free_address) IS ERR::InUse) {
+               // The manager has complex needs and will be able to handle this situation appropriately.
+               return ERR::InUse;
             }
-            auto &active_mem = it->second;
-            auto start_mem = (char *)active_mem.Address - sizeof(int) - sizeof(int);
-            if ((active_mem.Flags & MEM::MANAGED) != MEM::NIL) start_mem = (char *)start_mem - sizeof(ResourceManager *);
+            lock.lock();
 
-            auto mem_end = ((int8_t *)active_mem.Address) + active_mem.Size;
-
-            if (((int *)active_mem.Address)[-1] != CODE_MEMH) {
-               log.warning("Bad header on block #%d, address %p, size %d.", MemoryID, active_mem.Address, active_mem.Size);
-               error = ERR::InvalidData;
+            resource_it = glResources.find(resource_id);
+            if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) {
+               log.trace("Resource ID #%d does not exist.", resource_id);
+               return ERR::MemoryDoesNotExist;
             }
 
-            if (((int *)mem_end)[0] != CODE_MEMT) {
-               log.warning("Bad tail on block #%d, address %p, size %d.", MemoryID, active_mem.Address, active_mem.Size);
-               error = ERR::InvalidData;
-               DEBUG_BREAK
+            resource = resource_it->second;
+            mem_it = glPrivateMemory.find(MemoryID);
+            if ((mem_it IS glPrivateMemory.end()) or (not mem_it->second.Address)) {
+               log.trace("Memory ID #%d does not exist.", MemoryID);
+               return ERR::MemoryDoesNotExist;
             }
 
-            // Free the memory using the appropriate method based on how it was allocated
-            if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
-               // Memory was allocated with OS-level protection
-               #ifdef _WIN32
-                  winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER + ((active_mem.Flags & MEM::MANAGED) != MEM::NIL ? sizeof(ResourceManager *) : 0)));
-               #else
-                  munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER + ((active_mem.Flags & MEM::MANAGED) != MEM::NIL ? sizeof(ResourceManager *) : 0)));
-               #endif
+            if (mem_it->second.AccessCount > 0) {
+               log.msg("Block #%d marked for collection (open count %d).", MemoryID, mem_it->second.AccessCount);
+               mem_it->second.Flags |= MEM::COLLECT;
+               resource_it->second.Collect = true;
+               return error;
             }
-            else { // Standard aligned allocation
-               #ifdef _WIN32
-                  _aligned_free(start_mem);
-               #else
-                  free(start_mem);
-               #endif
-            }
-
-            if ((active_mem.Flags & MEM::OBJECT) != MEM::NIL) {
-               if (auto object_it = glObjects.find(active_mem.OwnerID); object_it != glObjects.end()) {
-                  object_it->second.Children.erase(MemoryID);
-               }
-               glObjects.erase(MemoryID);
-            }
-            else if (auto object_it = glObjects.find(active_mem.OwnerID); object_it != glObjects.end()) {
-               object_it->second.Memory.erase(MemoryID);
-            }
-
-            active_mem.clear();
-            if (glProgramStage != STAGE_SHUTDOWN) glPrivateMemory.erase(MemoryID);
          }
+
+         auto &active_mem = mem_it->second;
+         auto start_mem = (char *)active_mem.Address - sizeof(int) - sizeof(int);
+         if ((active_mem.Flags & MEM::MANAGED) != MEM::NIL) start_mem = (char *)start_mem - sizeof(ResourceManager *);
+
+         auto mem_end = ((int8_t *)active_mem.Address) + active_mem.Size;
+
+         if (((int *)active_mem.Address)[-1] != CODE_MEMH) {
+            log.warning("Bad header on block #%d, address %p, size %d.", MemoryID, active_mem.Address, active_mem.Size);
+            error = ERR::InvalidData;
+         }
+
+         if (((int *)mem_end)[0] != CODE_MEMT) {
+            log.warning("Bad tail on block #%d, address %p, size %d.", MemoryID, active_mem.Address, active_mem.Size);
+            error = ERR::InvalidData;
+            DEBUG_BREAK
+         }
+
+         // Free the memory using the appropriate method based on how it was allocated
+         if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
+            // Memory was allocated with OS-level protection
+            #ifdef _WIN32
+               winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER + ((active_mem.Flags & MEM::MANAGED) != MEM::NIL ? sizeof(ResourceManager *) : 0)));
+            #else
+               munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER + ((active_mem.Flags & MEM::MANAGED) != MEM::NIL ? sizeof(ResourceManager *) : 0)));
+            #endif
+         }
+         else { // Standard aligned allocation
+            #ifdef _WIN32
+               _aligned_free(start_mem);
+            #else
+               free(start_mem);
+            #endif
+         }
+
+         if ((active_mem.Flags & MEM::OBJECT) != MEM::NIL) {
+            if (auto object_it = glObjects.find(resource.OwnerID); object_it != glObjects.end()) {
+               object_it->second.Children.erase(resource_id);
+            }
+            glObjects.erase(resource_id);
+         }
+         else if (auto object_it = glObjects.find(resource.OwnerID); object_it != glObjects.end()) {
+            object_it->second.Resources.erase(resource_id);
+         }
+
+         glResources.erase(resource_id);
+         active_mem.clear();
+         if (glProgramStage != STAGE_SHUTDOWN) glPrivateMemory.erase(MemoryID);
 
          return error;
       }
-      log.trace("Memory ID #%d does not exist.", MemoryID);
+      log.trace("Resource ID #%d does not exist.", resource_id);
       return ERR::MemoryDoesNotExist;
    }
    else return log.warning(ERR::SystemLocked);
@@ -431,7 +500,6 @@ ERR MemoryIDInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
       auto mem = glPrivateMemory.find(MemoryID);
       if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
          MemInfo->Start       = mem->second.Address;
-         MemInfo->ObjectID    = mem->second.OwnerID;
          MemInfo->Size        = mem->second.Size;
          MemInfo->AccessCount = mem->second.AccessCount;
          MemInfo->Flags       = mem->second.Flags;
@@ -499,7 +567,6 @@ ERR MemoryPtrInfo(APTR Memory, MemInfo *MemInfo, int Size)
       for (const auto & [ id, mem ] : glPrivateMemory) {
          if (Memory IS mem.Address) {
             MemInfo->Start       = Memory;
-            MemInfo->ObjectID    = mem.OwnerID;
             MemInfo->Size        = mem.Size;
             MemInfo->AccessCount = mem.AccessCount;
             MemInfo->Flags       = mem.Flags;
@@ -705,4 +772,9 @@ void SetResourceMgr(APTR Address, ResourceManager *Manager)
 {
    auto address_mgr = (ResourceManager **)((char *)Address - sizeof(int) - sizeof(int) - sizeof(ResourceManager *));
    address_mgr[0] = Manager;
+
+   std::lock_guard lock(glmMemory);
+   if (auto resource = glResources.find(GetMemoryID(Address)); resource != glResources.end()) {
+      resource->second.Manager = Manager;
+   }
 }

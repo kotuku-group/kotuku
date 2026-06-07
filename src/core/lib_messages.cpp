@@ -69,7 +69,7 @@ static ERR msghandler_free(APTR Address)
 }
 
 static ResourceManager glResourceMsgHandler = {
-   "MsgHandler",
+   "Message",
    &msghandler_free
 };
 

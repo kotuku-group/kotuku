@@ -538,16 +538,23 @@ static void free_private_memory(void)
             if (!glCrashStatus) {
                if ((mem.Flags & MEM::OBJECT) != MEM::NIL) {
                   // Note: Class pointers are all invalid at this stage
-                  log.warning("Unfreed object #%d, Size %d, Container: #%d.",
-                     mem.MemoryID, mem.Size, mem.OwnerID);
+                  log.warning("Unfreed object #%d, Size %d", mem.MemoryID, mem.Size);
                }
-               else log.warning("Unfreed memory #%d/%p, Size %d, Container: #%d, Locks: %d, ThreadLock: %d.",
-                  mem.MemoryID, mem.Address, mem.Size, mem.OwnerID, mem.AccessCount, int(mem.ThreadLockID));
+               else log.warning("Unfreed memory #%d/%p, Size %d, Locks: %d, ThreadLock: %d.",
+                  mem.MemoryID, mem.Address, mem.Size, mem.AccessCount, int(mem.ThreadLockID));
             }
             mem.AccessCount = 0;
             FreeResource(mem.Address);
             mem.Address = nullptr;
             count++;
+         }
+      }
+
+      for (const auto & [ id, resource ] : glResources) {
+         if ((resource.Address) and (not glCrashStatus)) {
+            CSTRING name = (resource.Manager) ? resource.Manager->Name : "unmanaged";
+            log.warning("Unfreed resource #%d/%p (%s), Size %d, Container: #%d.",
+               id, resource.Address, name, resource.Size, resource.OwnerID);
          }
       }
    }

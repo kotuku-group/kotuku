@@ -20,7 +20,7 @@ extern "C" ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int 
 extern "C" ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECTID * ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view & Path, LOC * Type);
-extern "C" ERR FreeResource(MEMORYID ID);
+extern "C" ERR FreeResource(RESOURCEID ID);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB);

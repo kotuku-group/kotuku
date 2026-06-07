@@ -206,7 +206,6 @@
 
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
       <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
-      <const name="COLLECT">Marked for garbage collection.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
@@ -405,10 +404,9 @@
 
     <struct name="MemInfo" typeName="MEMINFO">
       <field name="Start" type="APTR">The starting address of the memory block (does not apply to shared blocks).</field>
-      <field name="ObjectID" type="OBJECTID">The object that owns the memory block.</field>
       <field name="Size" type="UINT">The size of the memory block.</field>
       <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
-      <field name="MemoryID" type="MEMORYID">The unique ID for this block.</field>
+      <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
       <field name="AccessCount" type="INT16">Total number of active locks on this block.</field>
     </struct>
 

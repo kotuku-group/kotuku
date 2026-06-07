@@ -150,7 +150,7 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 //********************************************************************************************************************
 // Object termination hook for FreeResource()
 
-static ERR object_free(Object *Object)
+ERR object_free(Object *Object)
 {
    kt::Log log("Free");
 
@@ -184,12 +184,7 @@ static ERR object_free(Object *Object)
    if (Object->ActionDepth > 0) {
       // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
       // is considered a critical error.
-      log.error("Object in use; marking for collection.");
-      if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-      if (not Object->defined(NF::COLLECT)) {
-         Object->setFlag(NF::COLLECT);
-         SendMessage(MSGID::FREE, MSF::NIL, &Object->UID, sizeof(OBJECTID));
-      }
+      log.error("Cannot free object #%d; current state: in use without a lock.", Object->UID);
       return ERR::InUse;
    }
 #endif
@@ -300,11 +295,6 @@ static ERR object_free(Object *Object)
    return ERR::Okay;
 }
 
-static ResourceManager glResourceObject = {
-   "Object",
-   (ERR (*)(APTR))&object_free
-};
-
 //********************************************************************************************************************
 
 constexpr CSTRING action_name(OBJECTPTR Object, ACTIONID ActionID)
@@ -330,6 +320,8 @@ static void free_children(OBJECTPTR Object)
       auto object_rec = glObjects.find(Object->UID);
       if (object_rec IS glObjects.end()) return;
 
+      // Free all children associated with this object.
+
       if (not object_rec->second.Children.empty()) {
          const auto children = object_rec->second.Children; // Take an immutable copy of the resource list
 
@@ -337,6 +329,7 @@ static void free_children(OBJECTPTR Object)
             auto child_rec = glObjects.find(id);
             if ((child_rec IS glObjects.end()) or (not child_rec->second.Object)) continue;
 
+            // Skip child objects that are marked for collection, we can't destroy them until they are unlocked.
             auto mem = glPrivateMemory.find(id);
             if ((mem IS glPrivateMemory.end()) or (not mem->second.Address)) continue;
 
@@ -359,8 +352,10 @@ static void free_children(OBJECTPTR Object)
          }
       }
 
-      if (auto object_rec = glObjects.find(Object->UID); (object_rec != glObjects.end()) and (not object_rec->second.Memory.empty())) {
-         const auto list = object_rec->second.Memory; // Take an immutable copy of the resource list
+      // Free all resources associated with this object
+
+      if (auto object_rec = glObjects.find(Object->UID); (object_rec != glObjects.end()) and (not object_rec->second.Resources.empty())) {
+         const auto list = object_rec->second.Resources; // Take an immutable copy of the resource list
 
          for (const auto id : list) {
             auto it = glPrivateMemory.find(id);
@@ -1880,6 +1875,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          glObjects.insert_or_assign(head->UID, ObjectRecord(head));
       }
 
+      TrackResource(head->UID, head, 0, &glResourceObject, MEM::OBJECT|MEM::MANAGED, (uint32_t)mc->Size);
+
       // Tracking for our new object is configured here.
 
       if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
@@ -2260,7 +2257,9 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
       }
 
       object_rec->second.OwnerID = Owner->UID;
-      mem->second.OwnerID = Owner->UID;
+      if (auto resource = glResources.find(Object->UID); resource != glResources.end()) {
+         resource->second.OwnerID = Owner->UID;
+      }
       Object->Owner = Owner;
 
       glObjects[Owner->UID].Children.insert(Object->UID);

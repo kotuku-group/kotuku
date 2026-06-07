@@ -56,34 +56,61 @@ public:
       OBJECTPTR Object;
    };
    MEMORYID MemoryID;   // Unique identifier
-   OBJECTID OwnerID;    // The object that allocated this block.
    uint32_t Size;       // 4GB max (user-requested size)
    THREADID ThreadLockID = THREADID(0);
    MEM      Flags;
    int16_t  AccessCount = 0; // Total number of locks
 
    PrivateAddress(APTR aAddress, MEMORYID aMemoryID, OBJECTID aOwnerID, uint32_t aSize, MEM aFlags) :
-      Address(aAddress), MemoryID(aMemoryID), OwnerID(aOwnerID), Size(aSize), Flags(aFlags) { };
+      Address(aAddress), MemoryID(aMemoryID), Size(aSize), Flags(aFlags) { };
 
    void clear() {
       Address  = 0;
       MemoryID = 0;
-      OwnerID  = 0;
       Flags    = MEM::NIL;
       ThreadLockID = THREADID(0);
    }
 };
 
 //********************************************************************************************************************
+// Unified resource management record.  These records are keyed by RESOURCEID in glResources and provide the
+// ResourceManager dispatch and generic ownership metadata for live resources.
+
+class ResourceRecord {
+public:
+   APTR       Address = nullptr;
+   ResourceManager *Manager = nullptr;
+   RESOURCEID ResourceID = 0;
+   OBJECTID   OwnerID = 0;
+   uint32_t   Size = 0;
+   bool       Collect = false;
+
+   ResourceRecord() = default;
+
+   ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager,
+      MEM AFlags, uint32_t ASize) :
+      ResourceID(AResourceID), Address(AAddress), OwnerID(AOwnerID), Manager(AManager), Size(ASize) { };
+
+   void clear() {
+      ResourceID = 0;
+      Address = nullptr;
+      OwnerID = 0;
+      Manager = nullptr;
+      Size = 0;
+      Collect = false;
+   }
+};
+
+//********************************************************************************************************************
 // Object management record.  These records are keyed by OBJECTID in glObjects and are used for live object lookup,
-// object ownership, and memory resources tracked to each object.
+// object ownership, and non-child resources tracked to each object.
 
 class ObjectRecord {
 public:
    OBJECTPTR Object;
    OBJECTID OwnerID;
    ankerl::unordered_dense::set<OBJECTID> Children;
-   ankerl::unordered_dense::set<MEMORYID> Memory;
+   ankerl::unordered_dense::set<RESOURCEID> Resources;
 
    ObjectRecord() : Object(nullptr), OwnerID(0) { };
 
@@ -94,6 +121,6 @@ public:
       Object = nullptr;
       OwnerID = 0;
       Children.clear();
-      Memory.clear();
+      Resources.clear();
    }
 };

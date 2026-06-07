@@ -276,7 +276,7 @@ struct Object { // Must be 64-bit aligned
    [[nodiscard]] CSTRING className();
 
    [[nodiscard]] inline bool collecting() { // Is object being freed or marked for collection?
-      return defined(NF::FREE|NF::COLLECT|NF::FREE_ON_UNLOCK);
+      return defined(NF::FREE|NF::FREE_ON_UNLOCK);
    }
 
    [[nodiscard]] inline bool terminating() { // Is object currently being freed?

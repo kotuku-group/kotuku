@@ -287,7 +287,6 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "FREE: Read-only indicator for when the object is being freed.",
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
-    "COLLECT: Marked for garbage collection.",
     "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
@@ -852,10 +851,9 @@ using ModTest    = void (*)(std::string_view, int *, int *);
 
   struct("MemInfo", { type="meminfo" }, [[
     ptr  Start         # The starting address of the memory block (does not apply to shared blocks).
-    oid  ObjectID      # The object that owns the memory block.
     uint Size          # The size of the memory block.
     int(MEM) Flags     # The type of memory.
-    mem   MemoryID     # The unique ID for this block.
+    mem   MemoryID     # The unique resource ID for this block.
     short AccessCount  # Total number of active locks on this block.
   ]])
 

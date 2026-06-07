@@ -1010,11 +1010,10 @@ enum class NF : uint32_t {
    FREE = 0x00000010,
    TIMER_SUB = 0x00000020,
    SUPPRESS_LOG = 0x00000040,
-   COLLECT = 0x00000080,
-   RECLASSED = 0x00000100,
-   SIGNALLED = 0x00000200,
-   PERMIT_TERMINATE = 0x00000400,
-   ASYNC_ACTIVE = 0x00000800,
+   RECLASSED = 0x00000080,
+   SIGNALLED = 0x00000100,
+   PERMIT_TERMINATE = 0x00000200,
+   ASYNC_ACTIVE = 0x00000400,
    UNIQUE = 0x40000000,
    NAME = 0x80000000,
 };
@@ -1856,10 +1855,9 @@ struct Message {
 
 typedef struct MemInfo {
    APTR     Start;       // The starting address of the memory block (does not apply to shared blocks).
-   OBJECTID ObjectID;    // The object that owns the memory block.
    uint32_t Size;        // The size of the memory block.
    MEM      Flags;       // The type of memory.
-   MEMORYID MemoryID;    // The unique ID for this block.
+   MEMORYID MemoryID;    // The unique resource ID for this block.
    int16_t  AccessCount; // Total number of active locks on this block.
 } MEMINFO;
 
@@ -2056,7 +2054,7 @@ struct CoreBase {
    ERR (*_FindObject)(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
-   ERR (*_FreeResource)(MEMORYID ID);
+   ERR (*_FreeResource)(RESOURCEID ID);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
    ERR (*_CompareFilePaths)(const std::string_view &PathA, const std::string_view &PathB);
@@ -2156,7 +2154,7 @@ inline ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int Buffe
 inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,ObjectID); }
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
-inline ERR FreeResource(MEMORYID ID) { return CoreBase->_FreeResource(ID); }
+inline ERR FreeResource(RESOURCEID ID) { return CoreBase->_FreeResource(ID); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
 inline ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
@@ -2251,7 +2249,7 @@ extern "C" ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int B
 extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
-extern "C" ERR FreeResource(MEMORYID ID);
+extern "C" ERR FreeResource(RESOURCEID ID);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB);

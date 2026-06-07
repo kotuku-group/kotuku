@@ -54,6 +54,7 @@ global glTypes = {
    large      = { fd='FD_INT64',              t_type='num', c_type='int64_t', doc_type='INT64' },
    maxint     = { fd='FD_INT64',              t_type='num', c_type='MAXINT' },
    mem        = { fd='FD_INT',                t_type='num', c_type='MEMORYID' },
+   res        = { fd='FD_INT',                t_type='num', c_type='RESOURCEID' },
    obj        = { fd='FD_OBJECTPTR',          t_type='obj', c_type='OBJECTPTR' },
    oid        = { fd='FD_OBJECTID',           t_type='obj', c_type='OBJECTID' },
    printf     = { fd='FD_TAGS',               t_type=nil, c_type='...' },

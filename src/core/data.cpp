@@ -66,6 +66,7 @@ struct CoreBase *LocalCoreBase = nullptr;
 // NB: During shutdown, elements in glPrivateMemory are not erased but will have their fields cleared.
 // Can't use ankerl here because removal of elements is too slow.
 std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;
+std::unordered_map<RESOURCEID, ResourceRecord> glResources;
 
 std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 
@@ -98,7 +99,7 @@ std::mutex glmPrint;
 std::recursive_mutex glmMemory;
 std::recursive_mutex glmMsgHandler;
 std::recursive_mutex glmAsyncActions;
-std::shared_timed_mutex glmObjectLookup;
+std::shared_timed_mutex glmObjectLookup; // For glObjectLookup
 std::recursive_timed_mutex glmTimer;
 std::timed_mutex glmClassDB;
 std::shared_timed_mutex glmFieldKeys;
@@ -250,6 +251,11 @@ void (*glKeyboardRecovery)(void) = nullptr;
 #ifdef __ANDROID__
 static struct AndroidBase *AndroidBase = nullptr;
 #endif
+
+ResourceManager glResourceObject = {
+   "Object",
+   (ERR (*)(APTR))&object_free
+};
 
 //********************************************************************************************************************
 

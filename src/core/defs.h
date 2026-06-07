@@ -732,6 +732,7 @@ extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse 
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
 extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory: Using ankerl::unordered_dense for superior performance
+extern std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Locked with glmMemory.
 extern std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Locked with glmMemory.
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 extern std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes; // VolumeName = { Key, Value }
@@ -1128,6 +1129,7 @@ void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
 struct ClassItem * find_class(CLASSID);
 ERR    find_private_object_entry(OBJECTID, int *);
+ResourceRecord * find_resource(RESOURCEID);
 void   free_events(void);
 void   free_module_entry(RootModule *);
 void   free_wakelocks(void);
@@ -1145,6 +1147,8 @@ ERR    process_janitor(OBJECTID, int, int);
 void   register_sleep(int);
 void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
+ERR    TrackResource(RESOURCEID, APTR, OBJECTID, ResourceManager *, MEM, uint32_t);
+void   UntrackResource(RESOURCEID);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
 ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 
@@ -1272,6 +1276,9 @@ extern "C" int winSetSystemTime(int16_t Year, int16_t Month, int16_t Day, int16_
 extern ERR winGetTimeZoneInfo(std::string_view ZoneID, int StartYear, int EndYear, struct rkTimeZoneInfo &Info);
 
 #endif
+
+extern ERR object_free(Object *);
+extern ResourceManager glResourceObject;
 
 //********************************************************************************************************************
 
