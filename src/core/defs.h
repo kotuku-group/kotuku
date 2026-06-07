@@ -1277,7 +1277,7 @@ extern ERR winGetTimeZoneInfo(std::string_view ZoneID, int StartYear, int EndYea
 
 #endif
 
-extern ERR object_free(Object *);
+extern ERR object_free(ResourceRecord *, Object *);
 extern ResourceManager glResourceObject;
 
 //********************************************************************************************************************

@@ -87,9 +87,8 @@ private:
    APTR prvDriverStorage = nullptr;
 };
 
-static ERR folder_free(APTR Address)
+static ERR folder_free(ResourceRecord *Resource, APTR Address)
 {
-   kt::Log log("CloseDir");
    auto folder = (extDirInfo *)Address;
 
    // Note: Virtual file systems should focus on destroying handles as fs_closedir() will take care of memory and list
@@ -98,7 +97,7 @@ static ERR folder_free(APTR Address)
    if ((folder->prvVirtualID) and (folder->prvVirtualID != DEFAULT_VIRTUALID)) {
       auto id = folder->prvVirtualID;
       if (auto vd = get_virtual_drive(id)) {
-         log.trace("Virtual file driver function @ %p", vd->CloseDir);
+         kt::Log("CloseDir").trace("Virtual file driver function @ %p", vd->CloseDir);
          if (vd->CloseDir) vd->CloseDir(folder);
       }
    }
@@ -110,7 +109,8 @@ static ERR folder_free(APTR Address)
 
 static ResourceManager glResourceFolder = {
    "Folder",
-   &folder_free
+   &folder_free,
+   true
 };
 
 /*********************************************************************************************************************

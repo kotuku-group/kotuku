@@ -668,7 +668,8 @@ class FloatRect {
 
   struct("ResourceManager", { comment="This structure must be placed at the start of any memory block allocated with the MEM::MANAGED flag.", restrict="c" }, [[
      cstr Name             # The name of the resource.
-     fptr(error ptr) Free  # A function that will remove the resource's content when terminated.
+     fptr(error struct(*ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated.
+     bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources.
   ]])
 
   struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[

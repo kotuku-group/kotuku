@@ -254,7 +254,8 @@ static struct AndroidBase *AndroidBase = nullptr;
 
 ResourceManager glResourceObject = {
    "Object",
-   (ERR (*)(APTR))&object_free
+   (ERR (*)(ResourceRecord *, APTR))&object_free,
+   true
 };
 
 //********************************************************************************************************************

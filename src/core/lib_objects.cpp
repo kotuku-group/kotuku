@@ -150,7 +150,7 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 //********************************************************************************************************************
 // Object termination hook for FreeResource()
 
-ERR object_free(Object *Object)
+ERR object_free(ResourceRecord *Resource, Object *Object)
 {
    kt::Log log("Free");
 

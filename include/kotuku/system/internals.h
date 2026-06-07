@@ -78,18 +78,18 @@ public:
 
 class ResourceRecord {
 public:
-   APTR       Address = nullptr;
-   ResourceManager *Manager = nullptr;
-   RESOURCEID ResourceID = 0;
-   OBJECTID   OwnerID = 0;
+   APTR       Address = nullptr; // Direct pointer to the resource (optional, can rely on ResourceID instead)
+   ResourceManager *Manager = nullptr; // Reference to the resource manager for this record
+   RESOURCEID ResourceID = 0;  // Unique identifier
+   OBJECTID   OwnerID = 0;     // Owner of the resource
    uint32_t   Size = 0;
-   bool       Collect = false;
+   bool       Collect = false; // Marked for collection while currently in use.
 
    ResourceRecord() = default;
 
    ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager,
-      MEM AFlags, uint32_t ASize) :
-      ResourceID(AResourceID), Address(AAddress), OwnerID(AOwnerID), Manager(AManager), Size(ASize) { };
+      MEM, uint32_t ASize) :
+      Address(AAddress), Manager(AManager), ResourceID(AResourceID), OwnerID(AOwnerID), Size(ASize) { };
 
    void clear() {
       ResourceID = 0;

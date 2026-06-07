@@ -40,13 +40,13 @@ static ERR GET_Timestamp(objTime *, int64_t *);
 static ERR TIME_Query(objTime *);
 static ERR TIME_SetTime(objTime *);
 
-static ERR tzi_free(APTR Address)
+static ERR tzi_free(ResourceRecord *Resource, APTR Address)
 {
    ((struct TimeZoneInfo *)Address)->~TimeZoneInfo();
    return ERR::Okay;
 }
 
-static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free };
+static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, false };
 
 static constexpr int TIMEZONE_MIN_YEAR = 1601;
 static constexpr int TIMEZONE_MAX_YEAR = 9999;
