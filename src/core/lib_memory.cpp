@@ -92,7 +92,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    kt::Log log(__FUNCTION__);
 
    if ((Size <= 0) or (not Address)) {
-      log.warning("Bad args - Size %" PF64 ", Address %p", Size, Address);
+      log.warning("Bad args - Size %" PF64 ", Address %p", (long long)Size, Address);
       return ERR::Args;
    }
 
@@ -156,7 +156,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    }
 
    if (not start_mem) {
-      log.warning("Failed to allocate %d bytes.", Size);
+      log.warning("Failed to allocate %" PF64 " bytes.", (long long)Size);
       return ERR::AllocMemory;
    }
 
@@ -196,7 +196,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 
       if (Address) *Address = data_start;
 
-      if (glShowPrivate) log.pmsg("AllocMemory(%p/#%d, %" PF64 ", $%.8x, Owner: #%d)", data_start, unique_id, Size, int(Flags), owner_id);
+      if (glShowPrivate) log.pmsg("AllocMemory(%p/#%d, %" PF64 ", $%.8x, Owner: #%d)", data_start, unique_id, (long long)Size, int(Flags), owner_id);
       return ERR::Okay;
    }
    else {

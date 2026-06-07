@@ -1843,7 +1843,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    OBJECTPTR head = nullptr;
 
-   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::MANAGED|MEM::OBJECT|MEM::NO_LOCK|(((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head) IS ERR::Okay) {
+   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::MANAGED|MEM::OBJECT|(((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head) IS ERR::Okay) {
       MEMORYID head_id = GetMemoryID(head);
       SetResourceMgr(head, &glResourceObject);
 

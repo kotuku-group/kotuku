@@ -275,7 +275,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice (bitmap: #%d, mem: $%.8x)", Bitmap->UID, Bitmap->DataFlags);
 
       if (!Bitmap->Data) {
-         if (AllocMemory(Bitmap->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Bitmap->DataFlags, &Bitmap->Data) != ERR::Okay) {
+         if (AllocMemory(Bitmap->Size, MEM::NO_CLEAR|Bitmap->DataFlags, &Bitmap->Data) != ERR::Okay) {
             return log.warning(ERR::AllocMemory);
          }
          Bitmap->prvAFlags |= BF_DATA;
@@ -839,7 +839,7 @@ static ERR BITMAP_Decompress(extBitmap *Self, struct bmp::Decompress *Args)
    // accesses the Data address following attempted decompression.
 
    if (!Self->Data) {
-      if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
+      if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
          Self->prvAFlags |= BF_DATA;
       }
       else return log.warning(ERR::AllocMemory);
@@ -1231,7 +1231,7 @@ static ERR BITMAP_Init(extBitmap *Self)
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
 
          if (glHeadless) {
-            if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+            if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
                Self->prvAFlags |= BF_DATA;
             }
             else return log.warning(ERR::AllocMemory);
@@ -1278,7 +1278,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             Self->prvAFlags |= BF_WINVIDEO;
             if (!(Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
          }
-         else if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
+         else if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1306,7 +1306,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             log.warning("Support for MEM::TEXTURE not included yet.");
             return ERR::NoSupport;
          }
-         else if (AllocMemory(Self->Size, Self->DataFlags|MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR, &Self->Data) IS ERR::Okay) {
+         else if (AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data) IS ERR::Okay) {
             Self->prvAFlags |= BF_DATA;
          }
          else return ERR::AllocMemory;
@@ -1321,7 +1321,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
-         if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+         if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1935,7 +1935,7 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
       if ((size <= Self->Size) and (size / Self->Size > 0.5)) { // Do nothing when shrinking unless able to save considerable resources
          size = Self->Size;
       }
-      else if (AllocMemory(size, MEM::NO_BLOCKING|MEM::NO_POOL|Self->DataFlags|MEM::NO_CLEAR, (APTR *)&data) IS ERR::Okay) {
+      else if (AllocMemory(size, Self->DataFlags|MEM::NO_CLEAR, (APTR *)&data) IS ERR::Okay) {
          if (Self->Data) FreeResource(Self->Data);
          Self->Data = data;
       }

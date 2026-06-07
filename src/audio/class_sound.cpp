@@ -379,7 +379,7 @@ static ERR SOUND_Activate(extSound *Self)
          }
          else return ERR::AccessObject;
       }
-      else if (AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
+      else if (AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
          auto dc = deferred_call([&buffer] { FreeResource(buffer); });
 
          auto client_pos = Self->Position;
