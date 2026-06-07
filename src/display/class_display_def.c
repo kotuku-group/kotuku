@@ -66,6 +66,11 @@ static const struct MethodEntry clDisplayMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR DISPLAY_NewPlacement(objDisplay *Self) {
+   new (Self) objDisplay;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clDisplayActions[] = {
    { AC::Activate, DISPLAY_Activate },
    { AC::Clear, DISPLAY_Clear },

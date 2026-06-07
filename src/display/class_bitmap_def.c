@@ -91,6 +91,11 @@ static const struct MethodEntry clBitmapMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR BITMAP_NewPlacement(objBitmap *Self) {
+   new (Self) objBitmap;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clBitmapActions[] = {
    { AC::Clear, BITMAP_Clear },
    { AC::CopyData, BITMAP_CopyData },
@@ -100,6 +105,7 @@ static const struct ActionArray clBitmapActions[] = {
    { AC::Init, BITMAP_Init },
    { AC::Lock, BITMAP_Lock },
    { AC::NewObject, BITMAP_NewObject },
+   { AC::NewPlacement, BITMAP_NewPlacement },
    { AC::Query, BITMAP_Query },
    { AC::Read, BITMAP_Read },
    { AC::Resize, BITMAP_Resize },

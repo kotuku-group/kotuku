@@ -1,9 +1,9 @@
 -- Universal utility functions
 
-local rx_root_extract   = <{ regex.new('^<ROOT>(.*)</ROOT>$', regex.DOT_ALL) }>
-local rx_angle_brackets = <{ regex.new('[<>]') }>
-local rx_first_char     = <{ regex.new('^(.)(.+)$') }>
-local rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
+rx_root_extract   = <{ regex.new('^<ROOT>(.*)</ROOT>$', regex.DOT_ALL) }>
+rx_angle_brackets = <{ regex.new('[<>]') }>
+rx_first_char     = <{ regex.new('^(.)(.+)$') }>
+rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Save text output via a temporary file, replacing the target only when the content hash has changed.
@@ -172,7 +172,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Extract information from a compiled class' field definition (the blueprint as provided by the client).
 
-global function getMetaFieldDefinition(Field)
+global function getMetaFieldDefinition(Field:table):table
    fl = {
       name  = Field.name,
       flags = Field.flags,

@@ -17,6 +17,11 @@ static const struct FieldDef clSoundStream[] = {
    { nullptr, 0 }
 };
 
+static ERR SOUND_NewPlacement(extSound *Self) {
+   new (Self) extSound;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSoundActions[] = {
    { AC::Activate, SOUND_Activate },
    { AC::Deactivate, SOUND_Deactivate },

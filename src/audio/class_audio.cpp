@@ -601,12 +601,6 @@ static ERR AUDIO_NewObject(extAudio *Self)
    return ERR::Okay;
 }
 
-static ERR AUDIO_NewPlacement(extAudio *Self)
-{
-   new (Self) extAudio;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

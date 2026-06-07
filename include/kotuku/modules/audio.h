@@ -669,12 +669,12 @@ class objSound : public Object {
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
+      return field->WriteValue(this, field, 0x00904508, &Value, 1);
    }
 
    inline ERR setNote(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[26];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804308, &Value, 1);
    }
 
 };

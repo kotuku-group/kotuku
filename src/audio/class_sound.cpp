@@ -898,14 +898,6 @@ static ERR SOUND_Init(extSound *Self)
 
 #endif
 
-//********************************************************************************************************************
-
-static ERR SOUND_NewPlacement(extSound *Self)
-{
-   new (Self) extSound;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Read: Read decoded audio from the sound sample.
@@ -1752,7 +1744,7 @@ ERR add_sound_class(void)
       fl::Icon("filetypes/audio"),
       fl::Name("Sound"),
       fl::Category(CCF::AUDIO),
-      fl::Actions(clActions),
+      fl::Actions(clSoundActions),
       fl::Fields(clFields),
       fl::Size(sizeof(extSound)),
       fl::Path(MOD_PATH));

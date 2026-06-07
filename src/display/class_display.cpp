@@ -1267,12 +1267,6 @@ static ERR DISPLAY_NewObject(extDisplay *Self)
    return ERR::Okay;
 }
 
-static ERR DISPLAY_NewPlacement(extDisplay *Self)
-{
-   new (Self) extDisplay;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redimension: Moves and resizes a display object in a single action call.
