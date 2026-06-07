@@ -70,7 +70,7 @@ Memory blocks are automatically associated with their owning object context, ena
 the owner is destroyed. This prevents memory leaks in object-oriented code.
 
 -INPUT-
-int Size:     The size of the memory block in bytes. Must be greater than zero.
+large Size:     The size of the memory block in bytes. Must be greater than zero.
 int(MEM) Flags: Optional allocation flags controlling behavior and ownership.
 &ptr Address: Pointer to store the address of the allocated memory block.
 
@@ -87,12 +87,12 @@ caller-owns-result, creates-resource, blocking
 
 *********************************************************************************************************************/
 
-ERR AllocMemory(int Size, MEM Flags, APTR *Address)
+ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 {
    kt::Log log(__FUNCTION__);
 
    if ((Size <= 0) or (not Address)) {
-      log.warning("Bad args - Size %d, Address %p", Size, Address);
+      log.warning("Bad args - Size %" PF64 ", Address %p", Size, Address);
       return ERR::Args;
    }
 
@@ -110,8 +110,8 @@ ERR AllocMemory(int Size, MEM Flags, APTR *Address)
    else if (tlContext.size() > 1) owner_id = current_resource()->UID;
    else if (glCurrentTask) owner_id = glCurrentTask->UID;
 
-   uint32_t full_size = Size + MEMHEADER;
-   uint32_t aligned_size = full_size;
+   size_t full_size = Size + MEMHEADER;
+   size_t aligned_size = full_size;
    if ((Flags & MEM::MANAGED) != MEM::NIL) full_size += sizeof(ResourceManager *);
 
    // Check if memory protection is requested
@@ -196,7 +196,7 @@ ERR AllocMemory(int Size, MEM Flags, APTR *Address)
 
       if (Address) *Address = data_start;
 
-      if (glShowPrivate) log.pmsg("AllocMemory(%p/#%d, %d, $%.8x, Owner: #%d)", data_start, unique_id, Size, int(Flags), owner_id);
+      if (glShowPrivate) log.pmsg("AllocMemory(%p/#%d, %" PF64 ", $%.8x, Owner: #%d)", data_start, unique_id, Size, int(Flags), owner_id);
       return ERR::Okay;
    }
    else {

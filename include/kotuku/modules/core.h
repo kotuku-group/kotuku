@@ -2048,7 +2048,7 @@ struct CoreBase {
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
-   ERR (*_AllocMemory)(int Size, MEM Flags, APTR *Address);
+   ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
    ERR (*_CheckMemoryExists)(MEMORYID ID);
@@ -2148,7 +2148,7 @@ inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBas
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
-inline ERR AllocMemory(int Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
+inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
 inline ERR CheckMemoryExists(MEMORYID ID) { return CoreBase->_CheckMemoryExists(ID); }
@@ -2244,7 +2244,7 @@ extern "C" void ActionList(struct ActionTable **Actions, int *Size);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
-extern "C" ERR AllocMemory(int Size, MEM Flags, APTR *Address);
+extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckMemoryExists(MEMORYID ID);

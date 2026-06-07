@@ -269,11 +269,11 @@ struct FunctionField argsResize[] = {
     <name>AllocMemory</name>
     <category>Memory</category>
     <comment>Allocates a managed memory block on the heap.</comment>
-    <prototype>ERR AllocMemory(INT Size, MEM Flags, APTR * Address)</prototype>
+    <prototype>ERR AllocMemory(INT64 Size, MEM Flags, APTR * Address)</prototype>
     <tiriPrototype>err, Address:any = AllocMemory(Size:num, Flags:num)</tiriPrototype>
     <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
-      <param type="INT" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
+      <param type="INT64" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
       <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behavior and ownership.</param>
       <param type="APTR *" name="Address">Pointer to store the address of the allocated memory block.</param>
     </input>
