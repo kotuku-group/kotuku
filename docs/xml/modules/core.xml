@@ -835,14 +835,12 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </input>
     <description>
 <p>FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
-<p>The deallocation process includes boundary validation to detect buffer overruns, lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
+<p>The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
 <p>When a memory block is currently locked (AccessCount &gt; 0), it is marked for delayed collection rather than immediate deallocation. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
-<p>Memory corruption detection is performed by validating header and trailer markers. Any detected corruption is logged as a high-priority error requiring immediate attention, as this indicates potential buffer overrun or memory management bugs in the application code.</p>
     </description>
     <result type="ERR">
       <error code="Okay">The resource was successfully freed or marked for delayed collection.</error>
       <error code="InUse">The memory block is a busy managed resource.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).</error>
-      <error code="InvalidData">Memory corruption detected - header or trailer markers are damaged.</error>
       <error code="MemoryDoesNotExist">The specified memory block identifier is not valid or already freed.</error>
       <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
     </result>

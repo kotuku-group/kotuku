@@ -63,21 +63,6 @@ static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
       auto start_mem = (char *)active_mem.Address - sizeof(int) - sizeof(int);
       if ((active_mem.Flags & MEM::MANAGED) != MEM::NIL) start_mem = (char *)start_mem - sizeof(ResourceManager *);
 
-      auto mem_end = ((int8_t *)active_mem.Address) + active_mem.Size;
-
-      ERR error = ERR::Okay;
-
-      if (((int *)active_mem.Address)[-1] != CODE_MEMH) {
-         log.warning("Bad header on block #%d, address %p, size %d.", memory_id, active_mem.Address, active_mem.Size);
-         error = ERR::InvalidData;
-      }
-
-      if (((int *)mem_end)[0] != CODE_MEMT) {
-         log.warning("Bad tail on block #%d, address %p, size %d.", memory_id, active_mem.Address, active_mem.Size);
-         error = ERR::InvalidData;
-         DEBUG_BREAK
-      }
-
       if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
          #ifdef _WIN32
             winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER +
@@ -111,7 +96,7 @@ static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
       active_mem.clear();
       if (glProgramStage != STAGE_SHUTDOWN) glPrivateMemory.erase(memory_id);
 
-      return error;
+      return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);
 }
@@ -301,13 +286,13 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       return ERR::AllocMemory;
    }
 
-   APTR data_start = (char *)start_mem + sizeof(int) + sizeof(int); // Skip MEMH and unique ID.
+   APTR data_start = (char *)start_mem + sizeof(int) + sizeof(int); // Skip unique ID and alignment padding.
    if ((Flags & MEM::MANAGED) != MEM::NIL) data_start = (char *)data_start + sizeof(ResourceManager *); // Skip managed resource reference.
 
    if (auto lock = std::unique_lock{glmMemory}) { // To keep threads synced, it is essential that this lock is made early.
       MEMORYID unique_id = glPrivateIDCounter++;
 
-      // Configure the memory header and place boundary cookies at the start and end of the memory block.
+      // Configure the memory header.
 
       APTR header = start_mem;
       if ((Flags & MEM::MANAGED) != MEM::NIL) {
@@ -316,12 +301,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       }
 
       ((int *)header)[0]  = unique_id;
-      header = (char *)header + sizeof(int);
-
-      ((int *)header)[0]  = CODE_MEMH;
-      header = (char *)header + sizeof(int);
-
-      ((int *)((char *)data_start + Size))[0] = CODE_MEMT;
 
       // Remember the memory block's details such as the size, ID, flags and object that it belongs to.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
@@ -394,24 +373,18 @@ FreeResource: Safely deallocates resources allocated by AllocMemory() and simila
 FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function
 accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.
 
-The deallocation process includes boundary validation to detect buffer overruns, lock-aware deallocation that respects
-access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking
-structures.
+The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration
+for managed memory blocks, and automatic cleanup of ownership tracking structures.
 
 When a memory block is currently locked (AccessCount > 0), it is marked for delayed collection rather than
 immediate deallocation. This prevents use-after-free errors while ensuring eventual cleanup when all references
 are released.
-
-Memory corruption detection is performed by validating header and trailer markers. Any detected corruption is
-logged as a high-priority error requiring immediate attention, as this indicates potential buffer overrun or
-memory management bugs in the application code.
 
 -INPUT-
 res ID: The unique identifier of the resource to be freed.
 
 -ERRORS-
 Okay: The resource was successfully freed or marked for delayed collection.
-InvalidData: Memory corruption detected - header or trailer markers are damaged.
 MemoryDoesNotExist: The specified memory block identifier is not valid or already freed.
 SystemLocked: Memory management system is currently locked by another thread.
 InUse: The memory block is a busy managed resource.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).

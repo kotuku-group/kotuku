@@ -69,8 +69,6 @@ constexpr int DRIVETYPE_USB       = 5;
 
 #define DEFAULT_VIRTUALID 0xffffffff
 
-#define CODE_MEMH 0x4D454D48L
-#define CODE_MEMT 0x4D454D54L
 
 #ifdef _WIN32
    typedef void * MODHANDLE;
@@ -361,7 +359,7 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 //********************************************************************************************************************
 // Resource definitions.
 
-#define MEMHEADER 12    // 8 bytes at start for MEMH and MemoryID, 4 at end for MEMT
+#define MEMHEADER 8     // 4 bytes at start for MemoryID, 4 bytes for payload alignment
 
 // Turning off USE_SHM means that the shared memory pool is available to all processes by default.
 
