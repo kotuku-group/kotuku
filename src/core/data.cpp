@@ -110,8 +110,7 @@ ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
 ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB;
 ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
-std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory;
-std::unordered_map<OBJECTID, ankerl::unordered_dense::set<OBJECTID>> glObjectChildren;
+std::unordered_map<OBJECTID, ObjectRecord> glObjects;
 ankerl::unordered_dense::map<uint32_t, std::string> glFields;
 
 std::unordered_multimap<uint32_t, CLASSID> glWildClassMap;

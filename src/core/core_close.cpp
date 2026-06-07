@@ -182,7 +182,14 @@ void CloseCore(void)
       // Removing objects that are tracked to the task before the first expunge will make for a cleaner exit.
 
       if (glCurrentTask) {
-         const auto children = glObjectChildren[glCurrentTask->UID]; // Take an immutable copy of the resource list
+         std::vector<OBJECTID> children;
+
+         {
+            std::lock_guard lock(glmMemory);
+            if (auto object_rec = glObjects.find(glCurrentTask->UID); object_rec != glObjects.end()) {
+               children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
+            }
+         }
 
          if (children.size() > 0) {
             log.branch("Freeing %d objects allocated to task #%d.", (int)children.size(), glCurrentTask->UID);
@@ -348,11 +355,21 @@ __export void Expunge(int16_t Force)
             // if the module code is in use.
 
             bool class_in_use = false;
-            for (const auto & id : glObjectChildren[mod_master->UID]) {
-               auto mem = glPrivateMemory.find(id);
-               if (mem IS glPrivateMemory.end()) continue;
+            std::vector<OBJECTPTR> children;
 
-               if (auto mc = (extMetaClass *)mem->second.Address; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
+            {
+               std::lock_guard lock(glmMemory);
+               if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
+                  for (const auto id : object_rec->second.Children) {
+                     if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
+                        if (child_rec->second.Object) children.push_back(child_rec->second.Object);
+                     }
+                  }
+               }
+            }
+
+            for (auto child : children) {
+               if (auto mc = (extMetaClass *)child; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
                   if (mc->OpenCount > 0) {
                      log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.",
                         mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
@@ -423,23 +440,40 @@ __export void Expunge(int16_t Force)
                // Search for classes that have been created by this module and check their open count values to figure
                // out if the module code is in use.
 
-               for (const auto & id : glObjectChildren[mod_master->UID]) {
-                  auto mem = glPrivateMemory.find(id);
-                  if (mem IS glPrivateMemory.end()) continue;
+               std::vector<OBJECTPTR> children;
 
-                  auto mc = (extMetaClass *)mem->second.Address;
+               {
+                  std::lock_guard lock(glmMemory);
+                  if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
+                     for (const auto id : object_rec->second.Children) {
+                        if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
+                           if (child_rec->second.Object) children.push_back(child_rec->second.Object);
+                        }
+                     }
+                  }
+               }
+
+               for (auto child : children) {
+                  auto mc = (extMetaClass *)child;
                   if ((mc) and (mc->classID() IS CLASSID::METACLASS) and (mc->OpenCount > 0)) {
                      log.warning("Warning: The %s module holds a class with existing objects (Class: %s, Objects: %d)",
                         mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
 
-                     for (auto & [ id, mem ] : glPrivateMemory) {
-                        if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.Object)) {
-                           if (mem.Object->classID() IS mc->ClassID) {
-                              log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d",
-                                 mc->ClassName.c_str(), mem.Object->UID, mem.Object->ownerID(),
-                                 mem.Object->RefCount.load(), mem.Object->Queue.load());
+                     std::vector<OBJECTPTR> objects;
+
+                     {
+                        std::lock_guard lock(glmMemory);
+                        for (auto &entry : glObjects) {
+                           if ((entry.second.Object) and (entry.second.Object->classID() IS mc->ClassID)) {
+                              objects.push_back(entry.second.Object);
                            }
                         }
+                     }
+
+                     for (auto object : objects) {
+                        log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d",
+                           mc->ClassName.c_str(), object->UID, object->ownerID(),
+                           object->RefCount.load(), object->Queue.load());
                      }
                   }
                }

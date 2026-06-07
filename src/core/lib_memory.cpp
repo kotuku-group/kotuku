@@ -188,10 +188,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       bool tracked = ((Flags & MEM::HIDDEN) IS MEM::NIL);
       if (tracked) {
          glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, owner_id, (uint32_t)Size, Flags)));
-         if ((Flags & MEM::OBJECT) != MEM::NIL) {
-            if (owner_id) glObjectChildren[owner_id].insert(unique_id);
-         }
-         else glObjectMemory[owner_id].insert(unique_id);
+         if (((Flags & MEM::OBJECT) IS MEM::NIL) and owner_id) glObjects[owner_id].Memory.insert(unique_id);
       }
 
       if (Address) *Address = data_start;
@@ -365,12 +362,13 @@ ERR FreeResource(MEMORYID MemoryID)
             }
 
             if ((active_mem.Flags & MEM::OBJECT) != MEM::NIL) {
-               if (auto object_it = glObjectChildren.find(active_mem.OwnerID); object_it != glObjectChildren.end()) {
-                  object_it->second.erase(MemoryID);
+               if (auto object_it = glObjects.find(active_mem.OwnerID); object_it != glObjects.end()) {
+                  object_it->second.Children.erase(MemoryID);
                }
+               glObjects.erase(MemoryID);
             }
-            else if (auto object_it = glObjectMemory.find(active_mem.OwnerID); object_it != glObjectMemory.end()) {
-               object_it->second.erase(MemoryID);
+            else if (auto object_it = glObjects.find(active_mem.OwnerID); object_it != glObjects.end()) {
+               object_it->second.Memory.erase(MemoryID);
             }
 
             active_mem.clear();

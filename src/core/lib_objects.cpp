@@ -327,34 +327,40 @@ static void free_children(OBJECTPTR Object)
    kt::Log log;
 
    if (auto lock = std::unique_lock{glmMemory}) {
-      if (not glObjectChildren[Object->UID].empty()) {
-         const auto children = glObjectChildren[Object->UID]; // Take an immutable copy of the resource list
+      auto object_rec = glObjects.find(Object->UID);
+      if (object_rec IS glObjects.end()) return;
+
+      if (not object_rec->second.Children.empty()) {
+         const auto children = object_rec->second.Children; // Take an immutable copy of the resource list
 
          for (const auto id : children) {
-            auto it = glPrivateMemory.find(id);
-            if ((it IS glPrivateMemory.end()) or (not it->second.Address)) continue;
-            auto &mem = it->second;
+            auto child_rec = glObjects.find(id);
+            if ((child_rec IS glObjects.end()) or (not child_rec->second.Object)) continue;
 
-            if (((mem.Flags & MEM::COLLECT) != MEM::NIL) or (not mem.Object)) continue;
+            auto mem = glPrivateMemory.find(id);
+            if ((mem IS glPrivateMemory.end()) or (not mem->second.Address)) continue;
 
-            if ((mem.Object->Owner) and (mem.Object->Owner != Object)) {
-               // Indicates that glObjectChildren[Object->UID] doesn't coincide with the owner declared by the child.
-               // Preference is given to the child object, which means glObjectChildren hasn't been kept up to date.
-               log.warning("Object #%d has stale association with child #%d (owned by #%d)", Object->UID, mem.Object->UID, mem.Object->ownerID());
+            if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) continue;
+
+            auto child = child_rec->second.Object;
+            if ((child->Owner) and (child->Owner != Object)) {
+               // Indicates that glObjects[Object->UID].Children doesn't coincide with the owner declared by the child.
+               // Preference is given to the child object, which means glObjects hasn't been kept up to date.
+               log.warning("Object #%d has stale association with child #%d (owned by #%d)", Object->UID, child->UID, child->ownerID());
                continue;
             }
 
-            if (not mem.Object->defined(NF::FREE_ON_UNLOCK)) {
-               if (mem.Object->defined(NF::LOCAL)) {
-                  log.warning("Found unfreed child object #%d (class %s) belonging to %s object #%d.", mem.Object->UID, ResolveClassID(mem.Object->classID()), Object->className(), Object->UID);
+            if (not child->defined(NF::FREE_ON_UNLOCK)) {
+               if (child->defined(NF::LOCAL)) {
+                  log.warning("Found unfreed child object #%d (class %s) belonging to %s object #%d.", child->UID, ResolveClassID(child->classID()), Object->className(), Object->UID);
                }
-               FreeResource(mem.Object);
+               FreeResource(child);
             }
          }
       }
 
-      if (not glObjectMemory[Object->UID].empty()) {
-         const auto list = glObjectMemory[Object->UID]; // Take an immutable copy of the resource list
+      if (auto object_rec = glObjects.find(Object->UID); (object_rec != glObjects.end()) and (not object_rec->second.Memory.empty())) {
+         const auto list = object_rec->second.Memory; // Take an immutable copy of the resource list
 
          for (const auto id : list) {
             auto it = glPrivateMemory.find(id);
@@ -379,8 +385,7 @@ static void free_children(OBJECTPTR Object)
          }
       }
 
-      glObjectChildren.erase(Object->UID);
-      glObjectMemory.erase(Object->UID);
+      glObjects.erase(Object->UID);
    }
 }
 
@@ -1224,8 +1229,8 @@ blocking, pure-query
 ERR CheckObjectExists(OBJECTID ObjectID)
 {
    if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto mem = glPrivateMemory.find(ObjectID); (mem != glPrivateMemory.end()) and (mem->second.Object)) {
-         return mem->second.Object->defined(NF::FREE_ON_UNLOCK) ? ERR::False : ERR::True;
+      if (auto object_rec = glObjects.find(ObjectID); (object_rec != glObjects.end()) and (object_rec->second.Object)) {
+         return object_rec->second.Object->defined(NF::FREE_ON_UNLOCK) ? ERR::False : ERR::True;
       }
       return ERR::False;
    }
@@ -1525,12 +1530,8 @@ api-owns-result, nullable-result, blocking
 OBJECTPTR GetObjectPtr(OBJECTID ObjectID)
 {
    if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto mem = glPrivateMemory.find(ObjectID); mem != glPrivateMemory.end()) {
-         if (((mem->second.Flags & MEM::OBJECT) != MEM::NIL) and (mem->second.Object)) {
-            if (mem->second.Object->UID IS ObjectID) {
-               return mem->second.Object;
-            }
-         }
+      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+         if ((object_rec->second.Object) and (object_rec->second.Object->UID IS ObjectID)) return object_rec->second.Object;
       }
    }
 
@@ -1561,8 +1562,8 @@ blocking, pure-query
 OBJECTID GetOwnerID(OBJECTID ObjectID)
 {
    if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto mem = glPrivateMemory.find(ObjectID); mem != glPrivateMemory.end()) {
-         if (mem->second.Object) return mem->second.Object->ownerID();
+      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+         if (object_rec->second.Object) return object_rec->second.Object->ownerID();
       }
    }
    return 0;
@@ -1762,11 +1763,13 @@ ERR ListChildren(OBJECTID ObjectID, kt::vector<ChildEntry> *List)
    log.trace("#%d, List: %p", ObjectID, List);
 
    if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto id : glObjectChildren[ObjectID]) {
-         auto mem = glPrivateMemory.find(id);
-         if (mem IS glPrivateMemory.end()) continue;
+      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+         for (const auto id : object_rec->second.Children) {
+            auto child_rec = glObjects.find(id);
+            if (child_rec IS glObjects.end()) continue;
 
-         if (auto child = mem->second.Object) {
+            auto child = child_rec->second.Object;
+            if (not child) continue;
             if (not child->defined(NF::LOCAL)) {
                List->emplace_back(child->UID, child->classID());
             }
@@ -1871,6 +1874,11 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       head->UID     = head_id;
       head->Class   = (extMetaClass *)mc;
       head->setFlag(Flags);
+
+      {
+         std::lock_guard lock(glmMemory);
+         glObjects.insert_or_assign(head->UID, ObjectRecord(head));
+      }
 
       // Tracking for our new object is configured here.
 
@@ -2236,24 +2244,26 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
 
    //if (Object->Owner) log.trace("SetOwner:","Changing the owner for object %d from %d to %d.", Object->UID, Object->ownerID(), Owner->UID);
 
-   // Track the object's memory header to the new owner.
-   // NB: SetOwner() is not the only modifier of glObjectChildren - AllocMemory() will have preset glObjectChildren
-   // on the initial allocation of the child's Object structure.  Additionally, the memory record is considered to be
-   // the definitive source of ownership information.
+   // Track the object record to the new owner.  glPrivateMemory is kept in sync for allocation metadata and diagnostics,
+   // but glObjects is the authoritative source for object ownership.
 
    if (auto lock = std::unique_lock{glmMemory}) {
+      auto object_rec = glObjects.find(Object->UID);
+      if (object_rec IS glObjects.end()) return log.warning(ERR::SystemCorrupt);
+
       auto mem = glPrivateMemory.find(Object->UID);
       if (mem IS glPrivateMemory.end()) return log.warning(ERR::SystemCorrupt);
 
       // Remove reference from the now previous owner
-      if (auto it = glObjectChildren.find(mem->second.OwnerID); it != glObjectChildren.end()) {
-         it->second.erase(Object->UID);
+      if (auto it = glObjects.find(object_rec->second.OwnerID); it != glObjects.end()) {
+         it->second.Children.erase(Object->UID);
       }
 
+      object_rec->second.OwnerID = Owner->UID;
       mem->second.OwnerID = Owner->UID;
       Object->Owner = Owner;
 
-      glObjectChildren[Owner->UID].insert(Object->UID);
+      glObjects[Owner->UID].Children.insert(Object->UID);
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);

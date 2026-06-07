@@ -732,8 +732,7 @@ extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse 
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
 extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory: Using ankerl::unordered_dense for superior performance
-extern std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory; // Locked with glmMemory.
-extern std::unordered_map<OBJECTID, ankerl::unordered_dense::set<OBJECTID>> glObjectChildren; // Locked with glmMemory.
+extern std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Locked with glmMemory.
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 extern std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes; // VolumeName = { Key, Value }
 extern std::unordered_multimap<uint32_t, CLASSID> glWildClassMap; // Fast lookup for identifying classes by file extension

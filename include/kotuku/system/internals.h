@@ -73,3 +73,27 @@ public:
       ThreadLockID = THREADID(0);
    }
 };
+
+//********************************************************************************************************************
+// Object management record.  These records are keyed by OBJECTID in glObjects and are used for live object lookup,
+// object ownership, and memory resources tracked to each object.
+
+class ObjectRecord {
+public:
+   OBJECTPTR Object;
+   OBJECTID OwnerID;
+   ankerl::unordered_dense::set<OBJECTID> Children;
+   ankerl::unordered_dense::set<MEMORYID> Memory;
+
+   ObjectRecord() : Object(nullptr), OwnerID(0) { };
+
+   ObjectRecord(OBJECTPTR AObject, OBJECTID AOwnerID = 0) :
+      Object(AObject), OwnerID(AOwnerID) { };
+
+   void clear() {
+      Object = nullptr;
+      OwnerID = 0;
+      Children.clear();
+      Memory.clear();
+   }
+};
