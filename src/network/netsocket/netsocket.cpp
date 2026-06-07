@@ -397,7 +397,7 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
          if (file.ok()) {
             auto size = file->get<size_t>(FID_Size);
             int8_t *buf;
-            if (AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buf, nullptr) IS ERR::Okay) {
+            if (AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buf) IS ERR::Okay) {
                kt::LocalResource resource(buf);
                if (file->read(buf, size) IS ERR::Okay) {
                   return acWrite(Self, buf, size, nullptr);
@@ -689,14 +689,6 @@ static ERR NETSOCKET_LeaveMulticastGroup(extNetSocket *Self, struct ns::LeaveMul
       return ERR::Failed;
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR NETSOCKET_NewPlacement(extNetSocket * Self)
-{
-   new (Self) extNetSocket;
    return ERR::Okay;
 }
 

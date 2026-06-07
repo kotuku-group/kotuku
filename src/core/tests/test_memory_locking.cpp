@@ -89,7 +89,7 @@ static void * test_allocation(void *Arg)
    int i, j;
    int start = 0;
    for (i=0; i < glTotalAlloc; i++) {
-      AllocMemory(1024, MEM::DATA|MEM::NO_CLEAR, &memory[i], nullptr);
+      AllocMemory(1024, MEM::DATA|MEM::NO_CLEAR, &memory[i]);
       if (rand() % 10 > 7) {
          for (j=start; j < i; j++) {
             FreeResource(memory[j]);
@@ -134,7 +134,8 @@ int main(int argc, CSTRING *argv)
       }
    }
 
-   AllocMemory(10000, MEM::DATA, nullptr, (MEMORYID *)&glMemoryID);
+   AllocMemory(10000, MEM::DATA, &mem);
+   glMemoryID = GetMemoryID(mem);
 
    printf("Spawning %d threads...\n", glTotalThreads);
 
@@ -155,7 +156,7 @@ int main(int argc, CSTRING *argv)
       pthread_join(glThreads[i].thread, nullptr);
    }
 
-   FreeResource(glMemoryID);
+   FreeResource(mem);
 
    printf("Testing complete.\n");
 

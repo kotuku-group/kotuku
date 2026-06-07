@@ -30,9 +30,6 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
     </source>
   </info>
 
-  <actions>
-  </actions>
-
   <methods>
     <method>
       <name>ResolveSymbol</name>

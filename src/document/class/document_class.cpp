@@ -1029,12 +1029,6 @@ static ERR DOCUMENT_NewObject(extDocument *Self)
    return ERR::Okay;
 }
 
-static ERR DOCUMENT_NewPlacement(extDocument *Self)
-{
-   new (Self) extDocument;
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 // XML-safe element names for every SCODE entry.  Kept parallel to strCodes in document.cpp, but uses lowercase,
 // hyphenated tokens that are valid XML identifiers.  Used by the DATA::XML branch of ReadContent().
@@ -1724,7 +1718,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
    else if (Args->Format IS DATA::RAW) {
       STRING output;
       auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
-      if (AllocMemory(size + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
+      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output) IS ERR::Okay) {
          copymem(Self->Stream.data.data() + Args->Start, output, size);
          output[size] = 0;
          Args->Result = output;

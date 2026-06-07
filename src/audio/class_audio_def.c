@@ -32,6 +32,11 @@ static const struct MethodEntry clAudioMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR AUDIO_NewPlacement(extAudio *Self) {
+   new (Self) extAudio;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clAudioActions[] = {
    { AC::Activate, AUDIO_Activate },
    { AC::Deactivate, AUDIO_Deactivate },

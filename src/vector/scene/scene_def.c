@@ -37,6 +37,11 @@ static const struct MethodEntry clVectorSceneMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTORSCENE_NewPlacement(extVectorScene *Self) {
+   new (Self) extVectorScene;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorSceneActions[] = {
    { AC::Draw, VECTORSCENE_Draw },
    { AC::Flush, VECTORSCENE_Flush },

@@ -47,6 +47,11 @@ static const struct MethodEntry clXQueryMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR XQUERY_NewPlacement(extXQuery *Self) {
+   new (Self) extXQuery;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clXQueryActions[] = {
    { AC::Activate, XQUERY_Activate },
    { AC::Clear, XQUERY_Clear },

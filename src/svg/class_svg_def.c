@@ -16,6 +16,11 @@ static const struct MethodEntry clSVGMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SVG_NewPlacement(extSVG *Self) {
+   new (Self) extSVG;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSVGActions[] = {
    { AC::Activate, SVG_Activate },
    { AC::DataFeed, SVG_DataFeed },

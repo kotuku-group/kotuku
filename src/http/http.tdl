@@ -107,7 +107,7 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
     "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification (use with caution).",
     "NO_AUTO_REDIRECT: Do not automatically follow `301` responses.")
 
-  klass("HTTP", { src={ "http.cpp", "http_fields.cpp" }, output="http_def.c" }, [[
+  klass("HTTP", { src={ "http.cpp", "http_fields.cpp" }, output="http_def.c", extended=true }, [[
    double DataTimeout     # Timeout for receiving data, measured in seconds
    double ConnectTimeout  # Timeout for initial connection, measured in seconds
    large Index            # Current read/write index, relative to content length so always starts from zero

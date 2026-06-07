@@ -69,6 +69,11 @@ static const struct MethodEntry clScintillaMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SCINTILLA_NewPlacement(extScintilla *Self) {
+   new (Self) extScintilla;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clScintillaActions[] = {
    { AC::Clear, SCINTILLA_Clear },
    { AC::Clipboard, SCINTILLA_Clipboard },
@@ -82,6 +87,7 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Init, SCINTILLA_Init },
    { AC::NewObject, SCINTILLA_NewObject },
    { AC::NewOwner, SCINTILLA_NewOwner },
+   { AC::NewPlacement, SCINTILLA_NewPlacement },
    { AC::Redo, SCINTILLA_Redo },
    { AC::SaveToObject, SCINTILLA_SaveToObject },
    { AC::Show, SCINTILLA_Show },

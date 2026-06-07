@@ -161,7 +161,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
       auto vd = get_fs(resolved_path);
 
       extDirInfo *dir;
-      if (AllocMemory(sizeof(extDirInfo), MEM::DATA|MEM::MANAGED, (APTR *)&dir, nullptr) != ERR::Okay) {
+      if (AllocMemory(sizeof(extDirInfo), MEM::DATA|MEM::MANAGED, (APTR *)&dir) != ERR::Okay) {
          return ERR::AllocMemory;
       }
 

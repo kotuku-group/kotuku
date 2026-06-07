@@ -35,14 +35,6 @@ static ERR NETCLIENT_Init(objNetClient *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR NETCLIENT_NewPlacement(objNetClient *Self)
-{
-   new (Self) objNetClient;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-

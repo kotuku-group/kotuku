@@ -1842,9 +1842,9 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    }
 
    OBJECTPTR head = nullptr;
-   MEMORYID head_id;
 
-   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::MANAGED|MEM::OBJECT|MEM::NO_LOCK|(((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head, &head_id) IS ERR::Okay) {
+   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::MANAGED|MEM::OBJECT|(((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head) IS ERR::Okay) {
+      MEMORYID head_id = GetMemoryID(head);
       SetResourceMgr(head, &glResourceObject);
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them

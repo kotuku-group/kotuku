@@ -43,6 +43,11 @@ static const struct MethodEntry clFileMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR FILE_NewPlacement(extFile *Self) {
+   new (Self) extFile;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clFileActions[] = {
    { AC::Activate, FILE_Activate },
    { AC::DataFeed, FILE_DataFeed },

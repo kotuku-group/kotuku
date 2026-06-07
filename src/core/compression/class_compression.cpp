@@ -861,7 +861,7 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
    }
    else {
       Self->OutputSize = 32 * 1024;
-      if (AllocMemory(Self->OutputSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer, nullptr) != ERR::Okay) {
+      if (AllocMemory(Self->OutputSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) {
          return ERR::AllocMemory;
       }
       output = Self->OutputBuffer;
@@ -1111,7 +1111,7 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
    }
    else {
       Self->OutputSize = 32 * 1024;
-      if (AllocMemory(Self->OutputSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer, nullptr) != ERR::Okay) {
+      if (AllocMemory(Self->OutputSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) {
          return ERR::AllocMemory;
       }
       output = Self->OutputBuffer;
@@ -1801,8 +1801,8 @@ static ERR COMPRESSION_Init(extCompression *Self)
 
 static ERR COMPRESSION_NewObject(extCompression *Self)
 {
-   if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output, nullptr) IS ERR::Okay) {
-      if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input, nullptr) IS ERR::Okay) {
+   if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output) IS ERR::Okay) {
+      if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input) IS ERR::Okay) {
          Self->CompressionLevel = 60; // 60% compression by default
          Self->Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
          Self->MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k
@@ -1812,12 +1812,6 @@ static ERR COMPRESSION_NewObject(extCompression *Self)
       else return ERR::AllocMemory;
    }
    else return ERR::AllocMemory;
-}
-
-static ERR COMPRESSION_NewPlacement(extCompression *Self)
-{
-   new (Self) extCompression;
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

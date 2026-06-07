@@ -238,7 +238,7 @@ static ERR ASSET_Init(objFile *Self)
 
    // Allocate private structure
 
-   if (!AllocMemory(sizeof(prvFileAsset), Self->memflags(), &Self->DerivedPtr, nullptr)) {
+   if (!AllocMemory(sizeof(prvFileAsset), Self->memflags(), &Self->DerivedPtr)) {
       int len;
       for (len=0; Self->Path[len]; len++);
 

@@ -601,14 +601,6 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
    else return log.warning(ERR::Search);
 }
 
-//********************************************************************************************************************
-
-static ERR XQUERY_NewPlacement(extXQuery *Self)
-{
-   new (Self) extXQuery;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

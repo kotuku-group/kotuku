@@ -82,6 +82,11 @@ static const struct MethodEntry clCompressionMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR COMPRESSION_NewPlacement(extCompression *Self) {
+   new (Self) extCompression;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clCompressionActions[] = {
    { AC::Flush, COMPRESSION_Flush },
    { AC::Free, COMPRESSION_Free },

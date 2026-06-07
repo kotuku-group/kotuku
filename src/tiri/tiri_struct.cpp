@@ -128,7 +128,7 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 
 //********************************************************************************************************************
 
-[[nodiscard]] void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
+void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
 {
    if (not Map) { lua_pushnil(Lua); return; }
 

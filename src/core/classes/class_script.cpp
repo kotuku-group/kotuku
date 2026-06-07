@@ -355,15 +355,6 @@ static ERR SCRIPT_Init(objScript *Self)
 }
 
 //********************************************************************************************************************
-
-static ERR SCRIPT_NewPlacement(objScript *Self)
-{
-   new (Self) objScript;
-
-   Self->CurrentLine = -1;
-   return ERR::Okay;
-}
-
 // If reset, the script will be reloaded from the original file location the next time an activation occurs.  All
 // parameters are also reset.
 

@@ -830,6 +830,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
    local cl = registerClass(Name)
    cl.name = Name -- The name defined by class() has priority over any name defined by method()
    cl.src = Options.src
+   cl.extended = Options.extended
+   cl.cppName = (Options.extended ? 'ext' :> 'obj') .. Name
    if Options.base then
       cl.base = "obj" .. Options.base
    end
@@ -874,6 +876,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
    end
 
    cl.actions = { }
+   cl.actions['NewPlacement'] = { name = 'NewPlacement' }
+
    if cl.src then
       -- Process -METHOD- and -FIELD- definitions
 
@@ -1170,8 +1174,15 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
       end
 
+      if cl.actions.NewPlacement then
+         mdef ..= f'static ERR {Name:upper()}_NewPlacement({cl.cppName} *Self) {{\n'
+         mdef ..= f'   new (Self) {cl.cppName};\n'
+         mdef ..= f'   return ERR::Okay;\n'
+         mdef ..= '}\n\n'
+      end
+
       if not table.empty(cl.sortedActions) then
-         mdef ..= "static const struct ActionArray cl" .. Name .. "Actions[] = {\n"
+         mdef ..= f"static const struct ActionArray cl{Name}Actions[] = {{\n"
          for action in values(cl.sortedActions) do
             mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
          end

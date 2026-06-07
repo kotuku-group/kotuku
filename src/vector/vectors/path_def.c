@@ -15,12 +15,18 @@ static const struct MethodEntry clVectorPathMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTORPATH_NewPlacement(extVectorPath *Self) {
+   new (Self) extVectorPath;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorPathActions[] = {
    { AC::Clear, VECTORPATH_Clear },
    { AC::Flush, VECTORPATH_Flush },
    { AC::Free, VECTORPATH_Free },
    { AC::Init, VECTORPATH_Init },
    { AC::NewObject, VECTORPATH_NewObject },
+   { AC::NewPlacement, VECTORPATH_NewPlacement },
    { AC::NIL, nullptr }
 };
 

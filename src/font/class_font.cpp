@@ -220,20 +220,6 @@ static ERR FONT_Init(extFont *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR FONT_NewPlacement(extFont *Self)
-{
-   new (Self) extFont;
-   Self->TabSize         = 8;
-   Self->prvDefaultChar  = '.';
-   Self->prvLineCountCR  = 1;
-   Self->Colour.Alpha    = 255;
-   Self->GlyphSpacing    = 1.0;
-   Self->Style           = "Regular";
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-

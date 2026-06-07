@@ -2055,7 +2055,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, double Wid
 
             uint8_t *output;
             int size = strlen(val);
-            if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, &output) IS ERR::Okay) {
+            if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&output) IS ERR::Okay) {
                int written;
                if ((error = kt::Base64Decode(&state, val, size, output, &written)) IS ERR::Okay) {
                   Path = "temp:svg.img";

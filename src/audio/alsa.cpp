@@ -340,7 +340,7 @@ static ERR init_audio(extAudio *Self)
 
    if (Self->AudioBuffer) { FreeResource(Self->AudioBuffer); Self->AudioBuffer = nullptr; }
 
-   if (AllocMemory(Self->AudioBufferSize, MEM::DATA, &Self->AudioBuffer) IS ERR::Okay) {
+   if (AllocMemory(Self->AudioBufferSize, MEM::DATA, (APTR *)&Self->AudioBuffer) IS ERR::Okay) {
       if ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL) {
          log.msg("Applying user configured volumes.");
 

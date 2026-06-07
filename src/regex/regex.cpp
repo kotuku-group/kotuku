@@ -205,7 +205,7 @@ ERR Compile(const std::string_view &Pattern, REGEX Flags, std::string *ErrorMsg,
    log.traceBranch("Pattern: '%.*s', Flags: $%.8x", int(Pattern.size()), Pattern.data(), int(Flags));
 
    extRegex *regex;
-   if (AllocMemory(sizeof(struct extRegex), MEM::MANAGED, &regex) IS ERR::Okay) {
+   if (AllocMemory(sizeof(struct extRegex), MEM::MANAGED, (APTR *)&regex) IS ERR::Okay) {
       SetResourceMgr(regex, &glRegexMgr);
       new (regex) extRegex();
       regex->Pattern = Pattern;

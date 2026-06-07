@@ -20,9 +20,6 @@
     </source>
   </info>
 
-  <actions>
-  </actions>
-
   <fields>
     <field>
       <name>ClientData</name>

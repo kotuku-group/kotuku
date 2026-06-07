@@ -399,6 +399,19 @@ class extVectorFilter : public objVectorFilter {
    bool Rendered;
    bool Disabled;
    bool ReqBkgd; // True if the filter requires a background bitmap for one or more effects.
+
+   extVectorFilter() {
+      Units          = VUNIT::BOUNDING_BOX;
+      PrimitiveUnits = VUNIT::UNDEFINED;
+      Opacity        = 1.0;
+      X              = -0.1; // -10% default as per SVG requirements
+      Y              = -0.1;
+      Width          = 1.2;  // +120% default as per SVG requirements
+      Height         = 1.2;
+      AspectRatio    = VFA::MEET; // Scale X/Y values independently
+      ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
+      Dimensions     = DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT;
+   }
 };
 
 class extFilterEffect : public objFilterEffect {
@@ -461,6 +474,25 @@ class extVector : public objVector {
    agg::line_join_e  LineJoin;
    agg::line_cap_e   LineCap;
    agg::inner_join_e InnerJoin;
+
+   extVector() {
+      StrokeOpacity = 1.0;
+      FillOpacity   = 1.0;
+      Opacity       = 1.0;              // Overall opacity multiplier
+      MiterLimit    = 4;                // SVG default is 4;
+      LineJoin      = agg::miter_join_revert;  // SVG default is miter; the 'revert' version matches SVG rules
+      LineCap       = agg::butt_cap;    // SVG default is butt
+      InnerJoin     = agg::inner_miter; // AGG only
+      NumericID     = 0x7fffffff;
+      StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
+      Visibility    = VIS::VISIBLE;
+      FillRule      = VFR::NON_ZERO;
+      ClipRule      = VFR::NON_ZERO;
+      Dirty         = RC::DIRTY;
+      TabOrder      = 255;
+      ColourSpace   = VCS::INHERIT;
+      ValidState    = true;
+   }
 
    // Methods
 
@@ -610,6 +642,10 @@ class extVectorClip : public objVectorClip, public SceneDef {
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORCLIP;
    static constexpr CSTRING CLASS_NAME = "VectorClip";
    using create = kt::Create<extVectorClip>;
+
+   extVectorClip() {
+      Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
+   }
 
    TClipRectangle<double> Bounds;
    OBJECTID ViewportID;

@@ -273,14 +273,6 @@ static ERR THREAD_Init(extThread *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR THREAD_NewPlacement(extThread *Self)
-{
-   new (Self) extThread;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -327,7 +319,7 @@ static ERR THREAD_SetData(extThread *Self, struct th::SetData *Args)
       Self->DataSize = 0;
       return ERR::Okay;
    }
-   else if (AllocMemory(Args->Size, MEM::DATA, &Self->Data, nullptr) IS ERR::Okay) {
+   else if (AllocMemory(Args->Size, MEM::DATA, &Self->Data) IS ERR::Okay) {
       Self->DataSize = Args->Size;
       copymem(Args->Data, Self->Data, Args->Size);
       return ERR::Okay;

@@ -38,10 +38,16 @@ static const struct MethodEntry clVectorTextMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTORTEXT_NewPlacement(extVectorText *Self) {
+   new (Self) extVectorText;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorTextActions[] = {
    { AC::Free, VECTORTEXT_Free },
    { AC::Init, VECTORTEXT_Init },
    { AC::NewObject, VECTORTEXT_NewObject },
+   { AC::NewPlacement, VECTORTEXT_NewPlacement },
    { AC::NIL, nullptr }
 };
 

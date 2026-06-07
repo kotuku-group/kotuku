@@ -53,6 +53,11 @@ static const struct MethodEntry clDocumentMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR DOCUMENT_NewPlacement(extDocument *Self) {
+   new (Self) extDocument;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clDocumentActions[] = {
    { AC::Activate, DOCUMENT_Activate },
    { AC::Clear, DOCUMENT_Clear },

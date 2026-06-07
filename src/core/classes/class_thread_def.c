@@ -12,6 +12,11 @@ static const struct MethodEntry clThreadMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR THREAD_NewPlacement(extThread *Self) {
+   new (Self) extThread;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clThreadActions[] = {
    { AC::Activate, THREAD_Activate },
    { AC::Deactivate, THREAD_Deactivate },

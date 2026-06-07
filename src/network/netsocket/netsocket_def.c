@@ -39,6 +39,11 @@ static const struct MethodEntry clNetSocketMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR NETSOCKET_NewPlacement(extNetSocket *Self) {
+   new (Self) extNetSocket;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetSocketActions[] = {
    { AC::DataFeed, NETSOCKET_DataFeed },
    { AC::Disable, NETSOCKET_Disable },

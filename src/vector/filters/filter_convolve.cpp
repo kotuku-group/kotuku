@@ -521,14 +521,6 @@ static ERR CONVOLVEFX_Free(extConvolveFX *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR CONVOLVEFX_NewPlacement(extConvolveFX *Self)
-{
-   new (Self) extConvolveFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-

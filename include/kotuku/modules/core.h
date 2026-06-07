@@ -193,7 +193,8 @@ enum class AC : int {
    Refresh = 46,
    Disable = 47,
    NewPlacement = 48,
-   END = 49,
+   FreePlacement = 49,
+   END = 50,
 };
 
 // Permission flags
@@ -288,17 +289,11 @@ enum class MEM : uint32_t {
    TEXTURE = 0x00000004,
    AUDIO = 0x00000008,
    CODE = 0x00000010,
-   NO_POOL = 0x00000020,
-   TMP_LOCK = 0x00000040,
-   UNTRACKED = 0x00000080,
-   STRING = 0x00000100,
-   OBJECT = 0x00000200,
-   NO_LOCK = 0x00000400,
-   EXCLUSIVE = 0x00000800,
-   COLLECT = 0x00001000,
-   NO_BLOCKING = 0x00002000,
-   NO_BLOCK = 0x00002000,
-   PROTECTED = 0x00004000,
+   UNTRACKED = 0x00000020,
+   STRING = 0x00000040,
+   OBJECT = 0x00000080,
+   COLLECT = 0x00000100,
+   PROTECTED = 0x00000200,
    READ = 0x00010000,
    WRITE = 0x00020000,
    READ_WRITE = 0x00030000,
@@ -1564,6 +1559,7 @@ struct Edges {
 #define AHASH_SIGNAL 0xec1cd0b6
 #define AHASH_NEWPLACEMENT 0x25d84fc8
 #define AHASH_UNDO 0x45e5725e
+#define AHASH_FREEPLACEMENT 0x560489a0
 
 
 typedef AC ACTIONID;
@@ -2046,7 +2042,7 @@ struct CoreBase {
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
-   ERR (*_AllocMemory)(int Size, MEM Flags, APTR *Address, MEMORYID *ID);
+   ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
    ERR (*_CheckMemoryExists)(MEMORYID ID);
@@ -2075,7 +2071,7 @@ struct CoreBase {
    ERR (*_CopyFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
-   ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID);
+   ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address);
    ERR (*_ReleaseMemory)(MEMORYID MemoryID);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
@@ -2146,7 +2142,7 @@ inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBas
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
-inline ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *ID) { return CoreBase->_AllocMemory(Size,Flags,Address,ID); }
+inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
 inline ERR CheckMemoryExists(MEMORYID ID) { return CoreBase->_CheckMemoryExists(ID); }
@@ -2175,7 +2171,7 @@ inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error)
 inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
-inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID) { return CoreBase->_ReallocMemory(Memory,Size,Address,ID); }
+inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address) { return CoreBase->_ReallocMemory(Memory,Size,Address); }
 inline ERR ReleaseMemory(MEMORYID MemoryID) { return CoreBase->_ReleaseMemory(MemoryID); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
@@ -2242,7 +2238,7 @@ extern "C" void ActionList(struct ActionTable **Actions, int *Size);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
-extern "C" ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *ID);
+extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckMemoryExists(MEMORYID ID);
@@ -2270,7 +2266,7 @@ extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Er
 extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
-extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID);
+extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address);
 extern "C" ERR ReleaseMemory(MEMORYID MemoryID);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
@@ -2371,10 +2367,6 @@ inline ERR ReleaseMemory(const void *Address) {
 inline ERR FreeResource(const void *Address) {
    if (!Address) return ERR::NullArgs;
    return FreeResource(((int *)Address)[-2]);
-}
-
-inline ERR AllocMemory(int Size, MEM Flags, APTR Address) {
-   return AllocMemory(Size, Flags, (APTR *)Address, nullptr);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
@@ -4582,7 +4574,7 @@ namespace kt {
    struct ActionMessage {
       OBJECTID ObjectID;  // The object that is to receive the action
       int  Time;
-      AC ActionID;        // ID of the action or method to execute
+      AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
 
       // Action arguments follow this structure in a buffer
@@ -4662,7 +4654,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr, nullptr) IS ERR::Okay) {
+   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;

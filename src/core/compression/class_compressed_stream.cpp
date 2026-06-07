@@ -123,7 +123,7 @@ static ERR CSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
       // An internal buffer will need to be allocated if the one supplied to Read() is not large enough.
       outputsize = MIN_OUTPUT_SIZE;
       if (!(output = Self->OutputBuffer)) {
-         if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer, nullptr) != ERR::Okay) return ERR::AllocMemory;
+         if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) return ERR::AllocMemory;
          output = Self->OutputBuffer;
       }
    }
@@ -269,7 +269,7 @@ static ERR CSTREAM_Write(extCompressedStream *Self, struct acWrite *Args)
    }
 
    if (!Self->OutputBuffer) {
-      if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer, nullptr) != ERR::Okay) return ERR::AllocMemory;
+      if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) return ERR::AllocMemory;
    }
 
    Args->Result = 0;

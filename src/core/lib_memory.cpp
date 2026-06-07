@@ -49,7 +49,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (AllocMemory(1000, MEM::DATA, &address, nullptr) IS ERR::Okay) {
+if (AllocMemory(1000, MEM::DATA, &address) IS ERR::Okay) {
    // Use memory block...
    FreeResource(address);
 }
@@ -70,14 +70,13 @@ Memory blocks are automatically associated with their owning object context, ena
 the owner is destroyed. This prevents memory leaks in object-oriented code.
 
 -INPUT-
-int Size:     The size of the memory block in bytes. Must be greater than zero.
+large Size:     The size of the memory block in bytes. Must be greater than zero.
 int(MEM) Flags: Optional allocation flags controlling behavior and ownership.
 &ptr Address: Pointer to store the address of the allocated memory block.
-&mem ID:      Pointer to store the unique identifier of the allocated memory block.
 
 -ERRORS-
 Okay: Memory block successfully allocated.
-Args: Invalid parameters (size <= 0 or both Address and ID are NULL).
+Args: Invalid parameters (size <= 0 or Address is NULL).
 AllocMemory: Insufficient memory available for the requested allocation.
 AccessMemory: Memory block was allocated but could not be locked when both Address and ID were requested.
 SystemLocked: Memory management system is currently locked by another thread.
@@ -88,32 +87,31 @@ caller-owns-result, creates-resource, blocking
 
 *********************************************************************************************************************/
 
-ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *MemoryID)
+ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((Size <= 0) or ((!Address) and (!MemoryID))) {
-      log.warning("Bad args - Size %d, Address %p, MemoryID %p", Size, Address, MemoryID);
+   if ((Size <= 0) or (not Address)) {
+      log.warning("Bad args - Size %" PF64 ", Address %p", (long long)Size, Address);
       return ERR::Args;
    }
 
-   if (MemoryID) *MemoryID = 0;
    if (Address) *Address = nullptr;
 
    // Determine the object that will own the memory block.  The preferred default is for it to belong to the current context.
 
-   OBJECTID object_id = 0;
+   OBJECTID owner_id = 0;
    if ((Flags & (MEM::HIDDEN|MEM::UNTRACKED)) != MEM::NIL);
    else if ((Flags & MEM::CALLER) != MEM::NIL) {
       // Rarely used, but this feature allows methods to return memory that is tracked to the caller.
-      if (tlContext.size() > 2) object_id = tlContext[tlContext.size()-2].obj->UID;
-      else object_id = glCurrentTask->UID;
+      if (tlContext.size() > 2) owner_id = tlContext[tlContext.size()-2].obj->UID;
+      else owner_id = glCurrentTask->UID;
    }
-   else if (tlContext.size() > 1) object_id = current_resource()->UID;
-   else if (glCurrentTask) object_id = glCurrentTask->UID;
+   else if (tlContext.size() > 1) owner_id = current_resource()->UID;
+   else if (glCurrentTask) owner_id = glCurrentTask->UID;
 
-   uint32_t full_size = Size + MEMHEADER;
-   uint32_t aligned_size = full_size;
+   size_t full_size = Size + MEMHEADER;
+   size_t aligned_size = full_size;
    if ((Flags & MEM::MANAGED) != MEM::NIL) full_size += sizeof(ResourceManager *);
 
    // Check if memory protection is requested
@@ -157,8 +155,8 @@ ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *MemoryID)
       }
    }
 
-   if (!start_mem) {
-      log.warning("Failed to allocate %d bytes.", Size);
+   if (not start_mem) {
+      log.warning("Failed to allocate %" PF64 " bytes.", (long long)Size);
       return ERR::AllocMemory;
    }
 
@@ -189,56 +187,16 @@ ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *MemoryID)
 
       bool tracked = ((Flags & MEM::HIDDEN) IS MEM::NIL);
       if (tracked) {
-         glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, object_id, (uint32_t)Size, Flags)));
+         glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, owner_id, (uint32_t)Size, Flags)));
          if ((Flags & MEM::OBJECT) != MEM::NIL) {
-            if (object_id) glObjectChildren[object_id].insert(unique_id);
+            if (owner_id) glObjectChildren[owner_id].insert(unique_id);
          }
-         else glObjectMemory[object_id].insert(unique_id);
+         else glObjectMemory[owner_id].insert(unique_id);
       }
 
-      // Gain exclusive access if both the address pointer and memory ID have been specified.
+      if (Address) *Address = data_start;
 
-      if ((MemoryID) and (Address)) {
-         if ((Flags & MEM::NO_LOCK) != MEM::NIL) *Address = data_start;
-         else if (AccessMemory(unique_id, MEM::READ_WRITE, 2000, Address) != ERR::Okay) {
-            // This failure path shouldn't happen, but rollback to a safe point just in case.
-            if (tracked) {
-               if ((Flags & MEM::OBJECT) != MEM::NIL) {
-                  if (auto object_it = glObjectChildren.find(object_id); object_it != glObjectChildren.end()) {
-                     object_it->second.erase(unique_id);
-                  }
-               }
-               else if (auto object_it = glObjectMemory.find(object_id); object_it != glObjectMemory.end()) {
-                  object_it->second.erase(unique_id);
-               }
-               glPrivateMemory.erase(unique_id);
-            }
-
-            if ((Flags & MEM::PROTECTED) != MEM::NIL) {
-               #ifdef _WIN32
-                  winFreeProtectedMemory(start_mem, aligned_size);
-               #else
-                  munmap(start_mem, aligned_size);
-               #endif
-            }
-            else {
-               #ifdef _WIN32
-                  _aligned_free(start_mem);
-               #else
-                  free(start_mem);
-               #endif
-            }
-
-            return log.warning(ERR::AccessMemory);
-         }
-         *MemoryID = unique_id;
-      }
-      else {
-         if (Address)  *Address  = data_start;
-         if (MemoryID) *MemoryID = unique_id;
-      }
-
-      if (glShowPrivate) log.pmsg("AllocMemory(%p/#%d, %d, $%.8x, Owner: #%d)", data_start, unique_id, Size, int(Flags), object_id);
+      if (glShowPrivate) log.pmsg("AllocMemory(%p/#%d, %" PF64 ", $%.8x, Owner: #%d)", data_start, unique_id, (long long)Size, int(Flags), owner_id);
       return ERR::Okay;
    }
    else {
@@ -348,7 +306,7 @@ ERR FreeResource(MEMORYID MemoryID)
             if ((mem.Flags & MEM::MANAGED) != MEM::NIL) {
                auto free_address = mem.Address;
                auto start_mem = (char *)mem.Address - sizeof(int) - sizeof(int) - sizeof(ResourceManager *);
-               if (!glCrashStatus) { // Resource managers are not considered safe in an uncontrolled shutdown
+               if (not glCrashStatus) { // Resource managers are not considered safe in an uncontrolled shutdown
                   auto rm = ((ResourceManager **)start_mem)[0];
                   lock.unlock(); // Resource managers can wait on other locks, so drop the memory lock to prevent deadlocking
                   if (rm->Free((APTR)free_address) IS ERR::InUse) {
@@ -360,7 +318,7 @@ ERR FreeResource(MEMORYID MemoryID)
 
                   // Another thread may have mutated or removed this block while the memory mutex was unlocked.
                   it = glPrivateMemory.find(MemoryID);
-                  if ((it IS glPrivateMemory.end()) or (!it->second.Address)) {
+                  if ((it IS glPrivateMemory.end()) or (not it->second.Address)) {
                      log.trace("Memory ID #%d does not exist.", MemoryID);
                      return ERR::MemoryDoesNotExist;
                   }
@@ -466,7 +424,7 @@ ERR MemoryIDInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!MemInfo) or (!MemoryID)) return log.warning(ERR::NullArgs);
+   if ((not MemInfo) or (not MemoryID)) return log.warning(ERR::NullArgs);
    if ((size_t)Size < sizeof(MemInfo)) return log.warning(ERR::Args);
 
    clearmem(MemInfo, Size);
@@ -530,7 +488,7 @@ ERR MemoryPtrInfo(APTR Memory, MemInfo *MemInfo, int Size)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!MemInfo) or (!Memory)) return log.warning(ERR::NullArgs);
+   if ((not MemInfo) or (not Memory)) return log.warning(ERR::NullArgs);
    if ((size_t)Size < sizeof(MemInfo)) return log.warning(ERR::Args);
 
    clearmem(MemInfo, Size);
@@ -645,7 +603,6 @@ which case your existing memory block will remain valid.
 ptr Memory:   Pointer to a memory block obtained from ~AllocMemory().
 uint Size:    The size of the new memory block.
 !ptr Address: Point to an `APTR` variable to store the resulting pointer to the new memory block.
-&mem ID:      Point to a `MEMORYID` variable to store the resulting memory block's unique ID.
 
 -ERRORS-
 Okay
@@ -660,19 +617,19 @@ caller-owns-result, creates-resource, closes-handle, blocking
 
 *********************************************************************************************************************/
 
-ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory, MEMORYID *MemoryID)
+ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
 {
    kt::Log log(__FUNCTION__);
 
    if (Memory) *Memory = Address; // If we fail, the result must be the same memory block
 
-   if ((!Address) or (NewSize <= 0)) {
-      log.function("Address: %p, NewSize: %d, &Memory: %p, &MemoryID: %p", Address, NewSize, Memory, MemoryID);
+   if ((not Address) or (NewSize <= 0)) {
+      log.function("Address: %p, NewSize: %d, &Memory: %p", Address, NewSize, Memory);
       return log.warning(ERR::Args);
    }
 
-   if ((!Memory) and (!MemoryID)) {
-      log.function("Address: %p, NewSize: %d, &Memory: %p, &MemoryID: %p", Address, NewSize, Memory, MemoryID);
+   if (not Memory) {
+      log.function("Address: %p, NewSize: %d, &Memory: %p", Address, NewSize, Memory);
       return log.warning(ERR::NullArgs);
    }
 
@@ -690,7 +647,7 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory, MEMORYID *Memory
 
    // Allocate the new memory block and copy the data across
 
-   if (AllocMemory(NewSize, meminfo.Flags, Memory, MemoryID) IS ERR::Okay) {
+   if (AllocMemory(NewSize, meminfo.Flags, Memory) IS ERR::Okay) {
       auto copysize = (NewSize < meminfo.Size) ? NewSize : meminfo.Size;
       copymem(Address, *Memory, copysize);
 

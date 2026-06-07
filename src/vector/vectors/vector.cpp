@@ -566,30 +566,6 @@ static ERR VECTOR_MoveToFront(extVector *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTOR_NewPlacement(extVector *Self)
-{
-   new (Self) extVector;
-   Self->StrokeOpacity = 1.0;
-   Self->FillOpacity   = 1.0;
-   Self->Opacity       = 1.0;              // Overall opacity multiplier
-   Self->MiterLimit    = 4;                // SVG default is 4;
-   Self->LineJoin      = agg::miter_join_revert;  // SVG default is miter; the 'revert' version matches SVG rules
-   Self->LineCap       = agg::butt_cap;    // SVG default is butt
-   Self->InnerJoin     = agg::inner_miter; // AGG only
-   Self->NumericID     = 0x7fffffff;
-   Self->StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
-   Self->Visibility    = VIS::VISIBLE;
-   Self->FillRule      = VFR::NON_ZERO;
-   Self->ClipRule      = VFR::NON_ZERO;
-   Self->Dirty         = RC::DIRTY;
-   Self->TabOrder      = 255;
-   Self->ColourSpace   = VCS::INHERIT;
-   Self->ValidState    = true;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTOR_NewOwner(extVector *Self, struct acNewOwner *Args)
 {
    kt::Log log;
@@ -639,7 +615,7 @@ static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
    if (!Args) return ERR::NullArgs;
 
    VectorMatrix *transform;
-   if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, &transform) IS ERR::Okay) {
+   if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform) IS ERR::Okay) {
 
       transform->Vector = Self;
       transform->ScaleX = 1.0;

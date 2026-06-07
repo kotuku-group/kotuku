@@ -13,7 +13,7 @@ module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestam
     { id=2, name="ParseSymbol" }
   })
 
-  klass("SVG", { src="class_svg.cpp", output="class_svg_def.c" }, [[
+  klass("SVG", { src="class_svg.cpp", output="class_svg_def.c", extended=true }, [[
     obj Target         # Refers to the target of the generated SVG scene.
     string Path        # A path referring to an SVG file.
     string Title       # Automatically defined if the title element is used in the SVG source document.

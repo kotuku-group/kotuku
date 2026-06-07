@@ -528,14 +528,6 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR CLIENTSOCKET_NewPlacement(extClientSocket *Self)
-{
-   new (Self) extClientSocket;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -ACTION-

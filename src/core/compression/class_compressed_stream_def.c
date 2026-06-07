@@ -7,3 +7,13 @@ static const struct FieldDef clCompressedStreamFormat[] = {
    { nullptr, 0 }
 };
 
+static ERR COMPRESSEDSTREAM_NewPlacement(extCompressedStream *Self) {
+   new (Self) extCompressedStream;
+   return ERR::Okay;
+}
+
+static const struct ActionArray clCompressedStreamActions[] = {
+   { AC::NewPlacement, COMPRESSEDSTREAM_NewPlacement },
+   { AC::NIL, nullptr }
+};
+

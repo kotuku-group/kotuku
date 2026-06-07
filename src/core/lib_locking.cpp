@@ -708,9 +708,6 @@ ERR ReleaseMemory(MEMORYID MemoryID)
          log.trace("Collecting memory block #%d", MemoryID);
          FreeResource(mem->second.Address);
       }
-      else if ((mem->second.Flags & MEM::EXCLUSIVE) != MEM::NIL) {
-         mem->second.Flags &= ~MEM::EXCLUSIVE;
-      }
 
       cvResources.notify_all();
    }

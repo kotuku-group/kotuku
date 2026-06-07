@@ -1583,14 +1583,6 @@ static ERR TASK_Init(extTask *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR TASK_NewPlacement(extTask *Self)
-{
-   new (Self) extTask; // See constructor for initialisation
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

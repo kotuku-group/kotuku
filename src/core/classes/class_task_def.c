@@ -26,6 +26,11 @@ static const struct MethodEntry clTaskMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR TASK_NewPlacement(extTask *Self) {
+   new (Self) extTask;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clTaskActions[] = {
    { AC::Activate, TASK_Activate },
    { AC::Free, TASK_Free },

@@ -10,6 +10,11 @@ static const struct FieldDef clClientSocketState[] = {
    { nullptr, 0 }
 };
 
+static ERR CLIENTSOCKET_NewPlacement(extClientSocket *Self) {
+   new (Self) extClientSocket;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clClientSocketActions[] = {
    { AC::Deactivate, CLIENTSOCKET_Deactivate },
    { AC::Free, CLIENTSOCKET_Free },

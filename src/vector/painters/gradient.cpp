@@ -207,12 +207,6 @@ static ERR VECTORGRADIENT_NewObject(extVectorGradient *Self)
    return ERR::Okay;
 }
 
-static ERR VECTORGRADIENT_NewPlacement(extVectorGradient *Self)
-{
-   new (Self) extVectorGradient;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -493,7 +487,7 @@ static ERR VECTORGRADIENT_SET_Matrices(extVectorGradient *Self, VectorMatrix *Va
       auto hook = &Self->Matrices;
       while (Value) {
          VectorMatrix *matrix;
-         if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, &matrix) IS ERR::Okay) {
+         if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix) IS ERR::Okay) {
             matrix->Vector = nullptr;
             matrix->Next   = nullptr;
             matrix->ScaleX = Value->ScaleX;
@@ -700,7 +694,7 @@ static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, const std::stri
 
    if (not Self->Matrices) {
       VectorMatrix *matrix;
-      if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, &matrix) IS ERR::Okay) {
+      if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix) IS ERR::Okay) {
          matrix->Vector = nullptr;
          matrix->Next   = Self->Matrices;
          matrix->ScaleX = 1.0;

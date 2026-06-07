@@ -51,7 +51,7 @@ ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
    if (!t_info) {
       // Each thread gets an allocation that can't be resource tracked, so MEM::HIDDEN is used in this case.
       // Note that this could conceivably cause memory leaks if temporary threads were to use this function.
-      if (AllocMemory(sizeof(DisplayInfo), MEM::NO_CLEAR|MEM::HIDDEN, &t_info) != ERR::Okay) {
+      if (AllocMemory(sizeof(DisplayInfo), MEM::NO_CLEAR|MEM::HIDDEN, (APTR *)&t_info) != ERR::Okay) {
          return ERR::AllocMemory;
       }
    }

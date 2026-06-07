@@ -269,14 +269,6 @@ static ERR NETLOOKUP_FreeWarning(extNetLookup *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR NETLOOKUP_NewPlacement(extNetLookup *Self)
-{
-   new (Self) extNetLookup;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

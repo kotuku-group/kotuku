@@ -677,7 +677,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
                FUNCTION *func;
 
-               if (AllocMemory(sizeof(FUNCTION), MEM::DATA, &func) IS ERR::Okay) {
+               if (AllocMemory(sizeof(FUNCTION), MEM::DATA, (APTR *)&func) IS ERR::Okay) {
                   if (type IS LUA_TSTRING) {
                      lua_getglobal(Lua, lua_tostring(Lua, n));
                      *func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));

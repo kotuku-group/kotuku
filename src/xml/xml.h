@@ -165,7 +165,10 @@ class extXML : public objXML {
    // then this lookup table returns the most recently assigned URI.
    XMLStringLookupMap<uint32_t> Prefixes; // hash(Prefix) -> hash(URI)
 
-   extXML() : StaleMap(true) { }
+   extXML() : StaleMap(true) {
+      LineNo = 1;
+      ParseError = ERR::Okay;
+   }
 
    ~extXML() {
    }

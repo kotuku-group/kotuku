@@ -286,4 +286,13 @@ class extSound : public objSound {
    int   Note;               // Note to play back (e.g. C, C#, G...)
    std::string NoteString;
    bool   Active;             // True once the sound is registered with the audio driver or mixer.
+
+   extSound() {
+      Compression = 50;     // 50% compression by default
+      Volume      = 1.0;    // Playback at 100% volume level
+      Pan         = 0;
+      Playback    = 0;
+      Note        = NOTE_C; // Standard pitch
+      Stream      = STREAM::SMART;
+   }
 };

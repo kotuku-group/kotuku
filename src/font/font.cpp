@@ -93,6 +93,15 @@ class extFont : public objFont {
    int16_t prvLineCountCR;
    char prvEscape[2];
    uint8_t prvDefaultChar;
+
+   extFont() {
+      TabSize         = 8;
+      prvDefaultChar  = '.';
+      prvLineCountCR  = 1;
+      Colour.Alpha    = 255;
+      GlyphSpacing    = 1.0;
+      Style           = "Regular";
+   }
 };
 
 #include "font_def.c"
@@ -509,7 +518,7 @@ ERR GetList(FontList **Result)
       }
 
       FontList *list, *last_list = nullptr;
-      if (AllocMemory(size, MEM::DATA, &list) IS ERR::Okay) {
+      if (AllocMemory(size, MEM::DATA, (APTR *)&list) IS ERR::Okay) {
          auto buffer = (STRING)(list + groups->size());
          *Result = list;
 

@@ -115,7 +115,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       }
 
       if (!cache->Data) {
-         if (AllocMemory(cache->LineWidth * canvas_height, MEM::DATA|MEM::NO_CLEAR, &Self->BitmapData) IS ERR::Okay) {
+         if (AllocMemory(cache->LineWidth * canvas_height, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->BitmapData) IS ERR::Okay) {
             Self->DataSize = cache->LineWidth * canvas_height;
          }
          else return ERR::AllocMemory;
