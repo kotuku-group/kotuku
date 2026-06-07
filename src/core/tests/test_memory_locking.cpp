@@ -134,7 +134,8 @@ int main(int argc, CSTRING *argv)
       }
    }
 
-   AllocMemory(10000, MEM::DATA, nullptr, (MEMORYID *)&glMemoryID);
+   AllocMemory(10000, MEM::DATA, &mem);
+   glMemoryID = GetMemoryID(mem);
 
    printf("Spawning %d threads...\n", glTotalThreads);
 
@@ -155,7 +156,7 @@ int main(int argc, CSTRING *argv)
       pthread_join(glThreads[i].thread, nullptr);
    }
 
-   FreeResource(glMemoryID);
+   FreeResource(mem);
 
    printf("Testing complete.\n");
 
