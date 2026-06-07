@@ -57,6 +57,11 @@ static const struct FieldDef clVectorFilterAspectRatio[] = {
    { nullptr, 0 }
 };
 
+static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self) {
+   new (Self) extVectorFilter;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorFilterActions[] = {
    { AC::Clear, VECTORFILTER_Clear },
    { AC::Free, VECTORFILTER_Free },

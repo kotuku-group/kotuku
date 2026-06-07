@@ -227,14 +227,6 @@ static ERR REMAPFX_Free(extRemapFX *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR REMAPFX_NewPlacement(extRemapFX *Self)
-{
-   new (Self) extRemapFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

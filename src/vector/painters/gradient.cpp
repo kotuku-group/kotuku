@@ -207,12 +207,6 @@ static ERR VECTORGRADIENT_NewObject(extVectorGradient *Self)
    return ERR::Okay;
 }
 
-static ERR VECTORGRADIENT_NewPlacement(extVectorGradient *Self)
-{
-   new (Self) extVectorGradient;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-

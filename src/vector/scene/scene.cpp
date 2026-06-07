@@ -537,12 +537,6 @@ static ERR VECTORSCENE_NewObject(extVectorScene *Self)
    return VECTORSCENE_Reset(Self);
 }
 
-static ERR VECTORSCENE_NewPlacement(extVectorScene *Self)
-{
-   new (Self) extVectorScene;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redimension: Redefines the size of the page.

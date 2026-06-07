@@ -664,14 +664,6 @@ static ERR VECTORFILTER_NewChild(extVectorFilter *Self, struct acNewChild *Args)
 
 //********************************************************************************************************************
 
-static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self)
-{
-   new (Self) extVectorFilter;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTORFILTER_NewOwner(extVectorFilter *Self, struct acNewOwner *Args)
 {
    if (Args->NewOwner->classID() IS CLASSID::VECTORSCENE) {

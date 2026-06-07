@@ -1,24 +1,24 @@
 --$TIRI:Include
 
-module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611,
-    src={ "vector_functions.cpp", "vector_readpainter.cpp" }
+module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, timestamp=20240611,
+    src={ 'vector_functions.cpp', 'vector_readpainter.cpp' }
   }, function()
-  c_include("<kotuku/modules/display.h>", "<kotuku/modules/image.h>")
+  c_include('<kotuku/modules/display.h>', '<kotuku/modules/image.h>')
 
   restrict(function()
     loadFile(glPath .. 'common.tdl')
     loadFile(glPath .. 'common-graphics.tdl')
   end)
 
-  flags("ARC", { comment="Options for drawing arcs." },
-    "LARGE: The arc will take the longest available drawing path rather than the shortest.",
-    "SWEEP: Inverts the default behaviour in generating the arc path (go clockwise).")
+  flags('ARC', { comment='Options for drawing arcs.' },
+    'LARGE: The arc will take the longest available drawing path rather than the shortest.',
+    'SWEEP: Inverts the default behaviour in generating the arc path (go clockwise).')
 
-  flags("VCLF", { comment="Options for VectorClip." },
-    "APPLY_FILLS: Apply fill instructions when drawing the clipping path(s).",
-    "APPLY_STROKES: Apply stroke instructions when drawing the clipping path(s).")
+  flags('VCLF', { comment='Options for VectorClip.' },
+    'APPLY_FILLS: Apply fill instructions when drawing the clipping path(s).',
+    'APPLY_STROKES: Apply stroke instructions when drawing the clipping path(s).')
 
-  flags("VF", { comment="Optional flags and indicators for the Vector class." },
+  flags('VF', { comment='Optional flags and indicators for the Vector class.' },
      "DISABLED: The vector is disabled and user input should be ignored.",
      "HAS_FOCUS: The vector holds the user's input focus.",
      "JOIN_PATHS: When appending a new path, use a join operation to connect the tail end to the head.",
@@ -117,25 +117,25 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "DIAMOND: A diamond gradient is drawn as a square emanating from the center point.",
     "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.")
 
-  enums("VTS", { type="int", start=0, comment="Options for stretching text in VectorText." },
-    "INHERIT",
-    "NORMAL",
-    "WIDER",
-    "NARROWER",
-    "ULTRA_CONDENSED",
-    "EXTRA_CONDENSED",
-    "CONDENSED",
-    "SEMI_CONDENSED",
-    "EXPANDED",
-    "SEMI_EXPANDED",
-    "ULTRA_EXPANDED",
-    "EXTRA_EXPANDED")
+  enums('VTS', { type='int', start=0, comment='Options for stretching text in VectorText.' },
+    'INHERIT',
+    'NORMAL',
+    'WIDER',
+    'NARROWER',
+    'ULTRA_CONDENSED',
+    'EXTRA_CONDENSED',
+    'CONDENSED',
+    'SEMI_CONDENSED',
+    'EXPANDED',
+    'SEMI_EXPANDED',
+    'ULTRA_EXPANDED',
+    'EXTRA_EXPANDED')
 
-  enums("MOP", { type="int", start=0, comment="MorphologyFX options." },
-    "ERODE: Erode (thin) the input source.",
-    "DILATE: Dilate (fatten) the input source.")
+  enums('MOP', { type='int', start=0, comment='MorphologyFX options.' },
+    'ERODE: Erode (thin) the input source.',
+    'DILATE: Dilate (fatten) the input source.')
 
-   enums("OP", { type="int", start=0, comment="Operators for CompositionFX." },
+   enums('OP', { type='int', start=0, comment='Operators for CompositionFX.' },
     "OVER: The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.",
     "IN: The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.",
     "OUT: The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.",
@@ -219,28 +219,28 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "DESATURATE: Desaturate the input completely so that it is rendered in greyscale.",
     "COLOURISE: Colourise the input with the first 3 parameters used as RGB multipliers and the fourth parameter controlling intensity from 0 - 1.0.")
 
-  flags("VGF", { comment="Gradient flags" },
-    "SCALED_X1: X1 is scaled",
-    "SCALED_Y1: Y1 is scaled",
-    "SCALED_X2: X2 is scaled",
-    "SCALED_Y2: Y2 is scaled",
-    "SCALED_CX: CX is scaled",
-    "SCALED_CY: CY is scaled",
-    "SCALED_FX: FX is scaled",
-    "SCALED_FY: FY is scaled",
-    "SCALED_RADIUS: Radius is scaled",
-    "SCALED_FOCAL_RADIUS: Focal radius is scaled",
-    "FIXED_X1: X1 is fixed",
-    "FIXED_Y1: Y1 is fixed",
-    "FIXED_X2: X2 is fixed",
-    "FIXED_Y2: Y2 is fixed",
-    "FIXED_CX: CX is fixed",
-    "FIXED_CY: CY is fixed",
-    "FIXED_FX: FX is fixed",
-    "FIXED_FY: FY is fixed",
-    "FIXED_RADIUS: Radius is fixed",
-    "FIXED_FOCAL_RADIUS: Focal radius is fixed",
-    "CONTAIN_FOCAL: Contain the FX,FY point to the base radius.")
+  flags('VGF', { comment='Gradient flags' },
+    'SCALED_X1: X1 is scaled',
+    'SCALED_Y1: Y1 is scaled',
+    'SCALED_X2: X2 is scaled',
+    'SCALED_Y2: Y2 is scaled',
+    'SCALED_CX: CX is scaled',
+    'SCALED_CY: CY is scaled',
+    'SCALED_FX: FX is scaled',
+    'SCALED_FY: FY is scaled',
+    'SCALED_RADIUS: Radius is scaled',
+    'SCALED_FOCAL_RADIUS: Focal radius is scaled',
+    'FIXED_X1: X1 is fixed',
+    'FIXED_Y1: Y1 is fixed',
+    'FIXED_X2: X2 is fixed',
+    'FIXED_Y2: Y2 is fixed',
+    'FIXED_CX: CX is fixed',
+    'FIXED_CY: CY is fixed',
+    'FIXED_FX: FX is fixed',
+    'FIXED_FY: FY is fixed',
+    'FIXED_RADIUS: Radius is fixed',
+    'FIXED_FOCAL_RADIUS: Focal radius is fixed',
+    'CONTAIN_FOCAL: Contain the FX,FY point to the base radius.')
 
   flags("VPF", { comment="Optional flags for the VectorScene object." },
     "BITMAP_SIZED: Automatically adjust the @VectorScene.PageWidth and @VectorScene.PageHeight to match the target @Bitmap.Width and @Bitmap.Height.",
@@ -302,12 +302,12 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
      "CHILD_HAS_FOCUS: A child of the vector has gained the user focus.",
      "LOST_FOCUS: The vector has lost the user focus.")
 
-  struct("GradientStop", { comment="Describes a colour stop for the VectorGradient Stops field." }, [[
+  struct('GradientStop', { comment='Describes a colour stop for the VectorGradient Stops field.' }, [[
    double Offset     # An offset in the range of 0 - 1.0
    struct(FRGB) RGB  # A floating point RGB value.
   ]])
 
-  struct("Transition", { comment="For VectorTransition definitions" }, [[
+  struct('Transition', { comment='For VectorTransition definitions' }, [[
     double Offset   # An offset from 0.0 to 1.0 at which to apply the transform.
     cstr Transform  # A transform string, as per SVG guidelines.
   ]])
@@ -392,18 +392,18 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
 
   klass('VectorTransition', {
     src='transformers/transition.cpp',
-    references={ 'Transition' },
+    references={ 'Transition' }, extended=true,
     comment="Transitions are used to gradually apply transforms over distance."
   })
 
-  methods("vectorscene", "Sc", {
-    { id=1, name="AddDef" },
-    { id=2, name="SearchByID" },
-    { id=3, name="FindDef" },
-    { id=4, name="Debug" }
+  methods('vectorscene', 'Sc', {
+    { id=1, name='AddDef' },
+    { id=2, name='SearchByID' },
+    { id=3, name='FindDef' },
+    { id=4, name='Debug' }
   })
 
-  klass("VectorScene", { src="scene/scene.cpp", output="scene/scene_def.c" }, [[
+  klass('VectorScene', { src='scene/scene.cpp', output='scene/scene_def.c', extended=true }, [[
    large  RenderTime             # Microseconds elapsed during the last rendering operation.
    double Gamma                  # Not currently implemented.
    obj(VectorScene)    HostScene # Reference to a controlling VectorScene at the top of the hierarchy, if applicable.
@@ -416,7 +416,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
    int(VSM) SampleMethod         # Method to use for resampling images and patterns.
   ]])
 
-  klass("VectorImage", { src="painters/image.cpp" }, [[
+  klass('VectorImage', { src='painters/image.cpp', extended=true }, [[
     double X                   # Starting horizontal coordinate
     double Y                   # Starting vertical coordinate
     obj(Image)   Image
@@ -427,7 +427,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
   ]])
 
-  klass("VectorPattern", { src="painters/pattern.cpp" }, [[
+  klass('VectorPattern', { src='painters/pattern.cpp', extended=true }, [[
     double X                      # Starting horizontal coordinate
     double Y                      # Starting vertical coordinate
     double Width                  # Width of the canvas
@@ -442,7 +442,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(DMF) Dimensions           # Flags for the dimension values.
   ]])
 
-  klass("VectorGradient", { src="painters/gradient.cpp", output="painters/gradient_def.c" }, [[
+  klass('VectorGradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
     double X1                    # Starting X coordinate of the gradient 'line'
     double Y1                    # Starting Y coordinate of the gradient 'line'
     double X2                    # Ending X of the gradient 'line'
@@ -461,7 +461,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
   ]])
 
-  klass("FilterEffect", { src="filters/filter_effect.cpp", output="filters/filter_effect_def.c", references={ 'VSF' } }, [[
+  klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
     obj(FilterEffect) Next  # Next filter in the chain.
     obj(FilterEffect) Prev  # Previous filter in the chain.
     obj(Bitmap) Target      # Target bitmap for rendering the effect.
@@ -476,7 +476,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(VSF) MixType        # Optional input for mixing.
   ]])
 
-  struct("MergeSource", { comment="Input source declaration for MergeFX" }, [[
+  struct('MergeSource', { comment='Input source declaration for MergeFX' }, [[
    int(VSF) SourceType        # The type of the required source.
    obj(FilterEffect) Effect   # Effect pointer if the `SourceType` is `REFERENCE`.
   ]],
@@ -484,59 +484,59 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
   MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
   ]])
 
-  methods("RemapFX", "RF", {
-    { id=20, name="SelectGamma" },
-    { id=21, name="SelectTable" },
-    { id=22, name="SelectLinear" },
-    { id=23, name="SelectIdentity" },
-    { id=24, name="SelectDiscrete" },
-    { id=25, name="SelectInvert" },
-    { id=26, name="SelectMask" }
+  methods('RemapFX', 'RF', {
+    { id=20, name='SelectGamma' },
+    { id=21, name='SelectTable' },
+    { id=22, name='SelectLinear' },
+    { id=23, name='SelectIdentity' },
+    { id=24, name='SelectDiscrete' },
+    { id=25, name='SelectInvert' },
+    { id=26, name='SelectMask' }
   })
 
-  methods("LightingFX", "LT", {
-    { id=20, name="SetDistantLight" },
-    { id=22, name="SetPointLight" },
-    { id=21, name="SetSpotLight" }
+  methods('LightingFX', 'LT', {
+    { id=20, name='SetDistantLight' },
+    { id=22, name='SetPointLight' },
+    { id=21, name='SetSpotLight' }
   })
 
-  klass("ImageFX",        { base='FilterEffect', src="filters/filter_image.cpp", output="filters/filter_image_def.c", comment="Image filter support class." })
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true })
 
-  klass("SourceFX",       { base='FilterEffect', src="filters/filter_source.cpp", output="filters/filter_source_def.c", comment="Source filter support class." })
+  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true })
 
-  klass("BlurFX",         { base='FilterEffect', src="filters/filter_blur.cpp", output="filters/filter_blur_def.c", comment="Blur filter support class." })
+  klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
 
-  klass("ColourFX",       { base='FilterEffect', src="filters/filter_colourmatrix.cpp", output="filters/filter_colourmatrix_def.c", comment="Colour filter support class." })
+  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true })
 
-  klass("CompositeFX",    { base='FilterEffect', src="filters/filter_composite.cpp", output="filters/filter_composite_def.c", comment="Composite filter support class." })
+  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true })
 
-  klass("ConvolveFX",     { base='FilterEffect', src="filters/filter_convolve.cpp", output="filters/filter_convolve_def.c", comment="Convolve filter support class." })
+  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true })
 
-  klass("DisplacementFX", { base='FilterEffect', src="filters/filter_displacement.cpp", output="filters/filter_displacement_def.c", comment="Displacement filter support class." })
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true })
 
-  klass("FloodFX",        { base='FilterEffect', src="filters/filter_flood.cpp", output="filters/filter_flood_def.c", comment="Flood filter support class." })
+  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true })
 
-  klass("LightingFX",     { base='FilterEffect', src="filters/filter_lighting.cpp", output="filters/filter_lighting_def.c", comment="Lighting filter support class." })
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true })
 
-  klass("MergeFX",        { base='FilterEffect', src="filters/filter_merge.cpp", output="filters/filter_merge_def.c", comment="Merge filter support class." })
+  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true })
 
-  klass("MorphologyFX",   { base='FilterEffect', src="filters/filter_morphology.cpp", output="filters/filter_morphology_def.c", comment="Morphology filter support class." })
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true })
 
-  klass("OffsetFX",       { base='FilterEffect', src="filters/filter_offset.cpp", output="filters/filter_offset_def.c", comment="Offset filter support class." })
+  klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
 
-  klass("RemapFX",        { base='FilterEffect', src="filters/filter_remap.cpp", output="filters/filter_remap_def.c", comment="Remap filter support class." })
+  klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 
-  klass("TurbulenceFX",   { base='FilterEffect', src="filters/filter_turbulence.cpp", output="filters/filter_turbulence_def.c", comment="Turbulence filter support class." })
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', extended=true })
 
-  klass("WaveFunctionFX",   { base='FilterEffect', src="filters/filter_wavefunction.cpp", output="filters/filter_wavefunction_def.c", comment="WaveFunction filter support class." })
+  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true })
 
-  klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp' }, [[
+  klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp', extended=true }, [[
     obj(VectorViewport) Viewport # Hosts the Vector objects that will contribute to the clip path.
     int(VUNIT) Units             # Defines the coordinate system for fields X, Y, Width and Height.
     int(VCLF) Flags              # Optional flags.
   ]])
 
-  klass("VectorFilter",   { src="filters/filter.cpp", output="filters/filter_def.c" }, [[
+  klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[
     double X                  # Left-most position of filter area
     double Y                  # Top-most position of filter area
     double Width              # Width of filter area
@@ -552,20 +552,20 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(VFA) AspectRatio      # Aspect ratio to use when scaling X/Y values
   ]])
 
-  methods("vector", "Vec", {
-    { id=1, name="Push" },
-    { id=2, name="Trace" },
-    { id=3, name="GetBoundary" },
-    { id=4, name="PointInPath" },
-    { id=5, name="SubscribeInput" },
-    { id=6, name="SubscribeKeyboard" },
-    { id=7, name="SubscribeFeedback" },
-    { id=8, name="Debug" },
-    { id=9, name="NewMatrix" },
-    { id=10, name="FreeMatrix" }
+  methods('vector', 'Vec', {
+    { id=1, name='Push' },
+    { id=2, name='Trace' },
+    { id=3, name='GetBoundary' },
+    { id=4, name='PointInPath' },
+    { id=5, name='SubscribeInput' },
+    { id=6, name='SubscribeKeyboard' },
+    { id=7, name='SubscribeFeedback' },
+    { id=8, name='Debug' },
+    { id=9, name='NewMatrix' },
+    { id=10, name='FreeMatrix' }
   })
 
-  klass("Vector", { src="vectors/vector.cpp", output="vectors/vector_def.c", version=1 }, [[
+  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true }, [[
     obj(Vector) Child       # The first child vector, or `NULL`.
     obj(VectorScene) Scene  # Short-cut to the top-level @VectorScene.
     obj(Vector) Next        # The next vector in the branch, or `NULL`.
@@ -588,72 +588,72 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
 
   // VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
 
-  methods("VectorPath", "VP", {
-    { id=30, name="AddCommand" },
-    { id=31, name="RemoveCommand" },
-    { id=32, name="SetCommand" },
-    { id=33, name="GetCommand" },
-    { id=34, name="SetCommandList" }
+  methods('VectorPath', 'VP', {
+    { id=30, name='AddCommand' },
+    { id=31, name='RemoveCommand' },
+    { id=32, name='SetCommand' },
+    { id=33, name='GetCommand' },
+    { id=34, name='SetCommandList' }
   })
 
-  klass("VectorPath", { base='Vector', src="vectors/path.cpp", output="vectors/path_def.c" })
+  klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true })
 
   // VectorText method ID's start high enough to give a cushion from inherited Vector methods.
 
-  methods("VectorText", "VT", {
-    { id=30, name="DeleteLine" }
+  methods('VectorText', 'VT', {
+    { id=30, name='DeleteLine' }
   })
 
-  klass('VectorText', { base='Vector', src='vectors/text.cpp', output="vectors/text_def.cpp", references={ 'VTXF', 'VTS' } })
+  klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF', 'VTS' }, extended=true })
 
-  klass('VectorGroup', { base='Vector', src='vectors/group.cpp' })
+  klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp' })
+  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', extended=true })
 
-  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp' })
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
 
-  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp' })
+  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true })
 
-  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp' })
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true })
 
-  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp' })
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', extended=true })
 
-  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp' })
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true })
 
-  klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp' })
+  klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true })
 
-  functionNames("vec",
-    "DrawPath",
-    "GenerateEllipse",
-    "GeneratePath",
-    "GenerateRectangle",
-    "ReadPainter",
-    "TranslatePath",
-    "MoveTo",
-    "LineTo",
-    "ArcTo",
-    "Curve3",
-    "Smooth3",
-    "Curve4",
-    "Smooth4",
-    "ClosePath",
-    "RewindPath",
-    "GetVertex",
-    "ApplyPath",
-    "Rotate",
-    "Translate",
-    "Skew",
-    "Multiply",
-    "MultiplyMatrix",
-    "Scale",
-    "ParseTransform",
-    "ResetMatrix",
-    "GetFontHandle",
-    "GetFontMetrics",
-    "CharWidth",
-    "StringWidth",
-    "FlushMatrix",
-    "TracePath")
+  functionNames('vec',
+    'DrawPath',
+    'GenerateEllipse',
+    'GeneratePath',
+    'GenerateRectangle',
+    'ReadPainter',
+    'TranslatePath',
+    'MoveTo',
+    'LineTo',
+    'ArcTo',
+    'Curve3',
+    'Smooth3',
+    'Curve4',
+    'Smooth4',
+    'ClosePath',
+    'RewindPath',
+    'GetVertex',
+    'ApplyPath',
+    'Rotate',
+    'Translate',
+    'Skew',
+    'Multiply',
+    'MultiplyMatrix',
+    'Scale',
+    'ParseTransform',
+    'ResetMatrix',
+    'GetFontHandle',
+    'GetFontMetrics',
+    'CharWidth',
+    'StringWidth',
+    'FlushMatrix',
+    'TracePath')
 
   c_insert([[
 

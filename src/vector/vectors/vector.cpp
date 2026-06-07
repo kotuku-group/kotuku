@@ -566,14 +566,6 @@ static ERR VECTOR_MoveToFront(extVector *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTOR_NewPlacement(extVector *Self)
-{
-   new (Self) extVector;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTOR_NewOwner(extVector *Self, struct acNewOwner *Args)
 {
    kt::Log log;

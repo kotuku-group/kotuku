@@ -90,14 +90,6 @@ static ERR MERGEFX_Free(extMergeFX *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR MERGEFX_NewPlacement(extMergeFX *Self)
-{
-   new (Self) extMergeFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-

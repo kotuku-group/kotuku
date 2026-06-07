@@ -13,3 +13,16 @@ static const struct FieldDef clVectorClipFlags[] = {
    { nullptr, 0 }
 };
 
+static ERR VECTORCLIP_NewPlacement(extVectorClip *Self) {
+   new (Self) extVectorClip;
+   return ERR::Okay;
+}
+
+static const struct ActionArray clVectorClipActions[] = {
+   { AC::Free, VECTORCLIP_Free },
+   { AC::Init, VECTORCLIP_Init },
+   { AC::NewChild, VECTORCLIP_NewChild },
+   { AC::NewPlacement, VECTORCLIP_NewPlacement },
+   { AC::NIL, nullptr }
+};
+

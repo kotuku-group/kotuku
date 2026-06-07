@@ -661,14 +661,6 @@ static ERR LIGHTINGFX_Free(extLightingFX *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR LIGHTINGFX_NewPlacement(extLightingFX *Self)
-{
-   new (Self) extLightingFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

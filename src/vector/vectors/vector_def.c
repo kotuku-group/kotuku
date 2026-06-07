@@ -85,6 +85,11 @@ static const struct MethodEntry clVectorMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTOR_NewPlacement(extVector *Self) {
+   new (Self) extVector;
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorActions[] = {
    { AC::Disable, VECTOR_Disable },
    { AC::Draw, VECTOR_Draw },
