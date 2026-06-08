@@ -154,6 +154,8 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
 
+   if (Object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) Resource.Collect = true;
+
    ScopedObjectAccess objlock(Object);
    if (not objlock.granted()) return ERR::AccessObject;
 
@@ -172,6 +174,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
       if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
       Object->setFlag(NF::FREE_ON_UNLOCK);
+      Resource.Collect = true;
       return ERR::InUse;
    }
 
@@ -185,6 +188,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
       // is considered a critical error.
       log.error("Cannot free object #%d; current state: in use without a lock.", Object->UID);
+      Resource.Collect = true;
       return ERR::InUse;
    }
 #endif
@@ -237,6 +241,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
    Object->setFlag(NF::FREE);
    Object->clearFlag(NF::FREE_ON_UNLOCK);
+   Resource.Collect = true;
 
    NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 

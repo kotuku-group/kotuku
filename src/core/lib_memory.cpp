@@ -468,9 +468,6 @@ ERR FreeResource(RESOURCEID MemoryID)
          if (not glCrashStatus) {
             auto free_address = resource->Address;
             auto resource_manager = resource->Manager;
-            auto object_resource = resource_manager IS &glResourceObject;
-
-            if (object_resource) resource->Collect = true;
 
             // If the manager can block, drop the memory lock to prevent deadlocking.
             if (resource_manager->CanBlock) lock.unlock();
@@ -485,16 +482,6 @@ ERR FreeResource(RESOURCEID MemoryID)
             auto error = resource_manager->Free(*resource, free_address);
 
             if (resource_manager->CanBlock) lock.lock();
-
-            if (object_resource) {
-               if (auto current_resource = glResources.find(resource_id); current_resource != glResources.end()) {
-                  auto object = (OBJECTPTR)current_resource->second.Address;
-                  if ((error IS ERR::Terminate) or ((object) and (object->defined(NF::FREE|NF::FREE_ON_UNLOCK)))) {
-                     current_resource->second.Collect = true;
-                  }
-                  else current_resource->second.Collect = false;
-               }
-            }
 
             if (error IS ERR::Okay) {
                // Resource manager took care of the deallocation, we just need to remove the record
