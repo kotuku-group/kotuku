@@ -457,16 +457,6 @@ ERR FreeResource(RESOURCEID MemoryID)
          if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)", MemoryID,
             resource->Address, resource->Size, resource->OwnerID);
 
-         // TODO: This only applies to memory resources and should be moved to memory_resource_free
-
-         auto mem_it = glPrivateMemory.find(MemoryID);
-         if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address) and (mem_it->second.AccessCount > 0)) {
-            log.msg("Block #%d marked for collection (open count %d).", MemoryID, mem_it->second.AccessCount);
-            mem_it->second.Flags |= MEM::COLLECT;
-            resource_it->second.Collect = true;
-            return ERR::Okay;
-         }
-
          // Fast route for direct memory deallocation
 
          if (resource->Manager IS &glResourceMemoryHandler) {
@@ -523,19 +513,11 @@ ERR FreeResource(RESOURCEID MemoryID)
             resource = &resource_it->second;
 
             resource->Manager = &glResourceMemoryHandler;
-
-            mem_it = glPrivateMemory.find(MemoryID);
-            if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address) and (mem_it->second.AccessCount > 0)) {
-               log.msg("Block #%d marked for collection (open count %d).", MemoryID, mem_it->second.AccessCount);
-               mem_it->second.Flags |= MEM::COLLECT;
-               resource->Collect = true;
-               return ERR::Okay;
-            }
          }
 
          // If resource manager unavailable, revert to using memory deallocation if the UID is recognised.
 
-         mem_it = glPrivateMemory.find(MemoryID);
+         auto mem_it = glPrivateMemory.find(MemoryID);
          if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address)) {
             return memory_resource_free(*resource, mem_it->second.Address);
          }
