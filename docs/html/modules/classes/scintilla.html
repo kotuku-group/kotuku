@@ -112,7 +112,6 @@
 <tr><th class="col-md-1">SCLEX::CSS</th><td>CSS</td></tr>
 <tr><th class="col-md-1">SCLEX::DIFF</th><td>Diff</td></tr>
 <tr><th class="col-md-1">SCLEX::ERRORLIST</th><td>ErrorList</td></tr>
-<tr><th class="col-md-1">SCLEX::FLUID</th><td>Tiri</td></tr>
 <tr><th class="col-md-1">SCLEX::HTML</th><td>HTML</td></tr>
 <tr><th class="col-md-1">SCLEX::MAKEFILE</th><td>Makefile</td></tr>
 <tr><th class="col-md-1">SCLEX::PASCAL</th><td>Pascal</td></tr>
@@ -123,6 +122,7 @@
 <tr><th class="col-md-1">SCLEX::REBOL</th><td>Rebol</td></tr>
 <tr><th class="col-md-1">SCLEX::RUBY</th><td>Ruby</td></tr>
 <tr><th class="col-md-1">SCLEX::SQL</th><td>SQL</td></tr>
+<tr><th class="col-md-1">SCLEX::TIRI</th><td>Tiri</td></tr>
 <tr><th class="col-md-1">SCLEX::VB</th><td>Visual Basic</td></tr>
 <tr><th class="col-md-1">SCLEX::VBSCRIPT</th><td>VBScript</td></tr>
 <tr><th class="col-md-1">SCLEX::XML</th><td>XML</td></tr>
@@ -145,17 +145,17 @@
 <p>It is recommended that you manually set this field to <code>false</code> if the document is saved to disk.  The Scintilla class will not make this change for you automatically.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Origin" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Origin"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Origin" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Origin"><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Origin</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Similar to the Path field, but does not automatically load content if set.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Origin" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>This field is identical to the <a data-bs-toggle="tooltip" title="Identifies the location of a text file to load." href="#tf-Path">Path</a> field, with the exception that it does not update the content of a scintilla object if it is set after initialisation.  This may be useful if the origin of the currently loaded content needs to be changed without causing a load operation.</p>
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Origin</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Sets the <a data-bs-toggle="tooltip" title="Identifies the location of a text file to load." href="#tf-Path">Path</a> field without loading the document.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Origin" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Setting the Origin will update <a data-bs-toggle="tooltip" title="Identifies the location of a text file to load." href="#tf-Path">Path</a> without updating the content of the Scintilla object.  Use for situations such as changing the document location or name.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">CSTRING</span></td><td>Identifies the location of a text file to load.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Identifies the location of a text file to load.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>To load data from a text file into a scintilla object, set the Path field.</p>
-<p>If the Path is set after initialisation, the existing content will be cleared and data loaded from the location that you specify.  To change the path without automatically loading from the source file, set the <a data-bs-toggle="tooltip" title="Similar to the Path field, but does not automatically load content if set." href="#tf-Origin">Origin</a> field instead.</p>
+<p>If the Path is set after initialisation, the existing content will be cleared and data loaded from the location that you specify.  To change the path without automatically loading from the source file, set the <a data-bs-toggle="tooltip" title="Sets the Path field without loading the document." href="#tf-Origin">Origin</a> field instead.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-RightMargin" style="scroll-margin:3em;"><td class="col-md-1" id="tf-RightMargin"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
@@ -214,7 +214,7 @@
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Hide" style="scroll-margin:3em;" id="ta-Hide"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Hide</th><td>Hides a visible object from the view of the user.</td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Redo" style="scroll-margin:3em;" id="ta-Redo"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Redo</th><td>Redo the most recently undone activity.</td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-SaveToObject" style="scroll-margin:3em;" id="ta-SaveToObject" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">SaveToObject</th><td>Save content as a text stream to another object.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-SaveToObject" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Dest</td><td>Refers to an object that will receive the encoded data.</td></tr>
-<tr><td>ClassID</td><td>Can refer to a sub-class that should be used when encoding the data.</td></tr>
+<tr><td>ClassID</td><td>Can refer to a derived class that should be used when encoding the data.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;"></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Show" style="scroll-margin:3em;" id="ta-Show"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Show</th><td>Makes an object visible to the user.</td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Undo" style="scroll-margin:3em;" id="ta-Undo"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Undo</th><td>Undo the last user action.</td></tr>
@@ -242,21 +242,21 @@
 <p>This method moves the cursor to a given line index.  If the index is greater than the total number of available lines, the cursor is moved to the last line in the document.  A line index of less than zero is invalid.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-InsertText" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">InsertText</th><td id="tm-InsertText">Inserts text into a document.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-InsertText" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::InsertText(OBJECTPTR Object, CSTRING String, INT Pos)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>String</td><td>A text string to add.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-InsertText" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">InsertText</th><td id="tm-InsertText">Inserts text into a document.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-InsertText" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::InsertText(OBJECTPTR Object, STRVIEW String, INT Pos)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>String</td><td>A text string to add.</td></tr>
 <tr><td>Pos</td><td>-1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use InsertText to insert a string at any point in the document (if adding text to the end of the document, we recommend using data channels instead).</p>
 <p>You will need to specify the character position at which the provided String should be inserted.  Two special character positions are also supported as an alternative - a value of -1 inserts the text at the current cursor position and a value of -2 replaces currently selected text.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-ReplaceLine" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ReplaceLine</th><td id="tm-ReplaceLine">Replaces a line with new text content.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ReplaceLine" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::ReplaceLine(OBJECTPTR Object, INT Line, CSTRING String, INT Length)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Line</td><td>Index of the line being targeted.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-ReplaceLine" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ReplaceLine</th><td id="tm-ReplaceLine">Replaces a line with new text content.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ReplaceLine" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::ReplaceLine(OBJECTPTR Object, INT Line, STRVIEW String, INT Length)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Line</td><td>Index of the line being targeted.</td></tr>
 <tr><td>String</td><td>The new string that will replace the line.</td></tr>
 <tr><td>Length</td><td>The number of characters to replace the target with, or -1 for the entire source string.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>This method will replace an entire line with a new text string.  If the new string contains line feeds, then multiple lines will be inserted at the target position.  It is possible to limit the number of characters inserted from the source string by setting the Length parameter.  To insert all characters from the source string, set a Length of -1.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-ReplaceText" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ReplaceText</th><td id="tm-ReplaceText">Replaces all text within an entire document or limited range.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ReplaceText" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::ReplaceText(OBJECTPTR Object, CSTRING Find, CSTRING Replace, STF Flags, INT Start, INT End)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Find</td><td>The keyword string to find.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-ReplaceText" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ReplaceText</th><td id="tm-ReplaceText">Replaces all text within an entire document or limited range.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ReplaceText" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::ReplaceText(OBJECTPTR Object, STRVIEW Find, STRVIEW Replace, STF Flags, INT Start, INT End)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Find</td><td>The keyword string to find.</td></tr>
 <tr><td>Replace</td><td>The string that will replace the keyword.</td></tr>
 <tr><td><a href="?page=STF">Flags</a></td><td>Optional flags.</td></tr>
 <tr><td>Start</td><td>The start of the search - set to zero if covering the entire document.  If -1, starts from the current cursor position.</td></tr>
@@ -277,7 +277,7 @@
 <p>This method will select an area of text between a start and end point, measured in characters.  It can also deselect all text if no arguments are provided.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-SetFont" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SetFont</th><td id="tm-SetFont">Changes the font that is used for text display.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SetFont" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::SetFont(OBJECTPTR Object, CSTRING Face)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Face</td><td>The name of the new font face.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-SetFont" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SetFont</th><td id="tm-SetFont">Changes the font that is used for text display.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SetFont" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sci::SetFont(OBJECTPTR Object, STRVIEW Face)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Face</td><td>The name of the new font face.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Call SetFont() to change the font face that is used for displaying text.  The string format follows the standard for font requests, e.g. <code>Helvete:12:Bold Italic:#ff0000</code>.  Refer to the Face field in the <a href="font.html">Font</a> class for more details.</p>
 <p>If the new face is invalid or fails to load, the current font will remain unchanged.</p>
@@ -288,11 +288,11 @@
 <p>The position of the cursor is reset to the left margin as a result of calling this method.</p>
       
 </div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">Scintilla class documentation © Paul Manias © 2005-2025</div></div><div class="docs-content" style="display:none;" id="SCIF"><h1>SCIF Type</h1><p class="lead">Optional flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCIF::DETECT_LEXER</th><td>Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.</td></tr>
+</tbody></table><div class="footer copyright text-right">Scintilla class documentation © Paul Manias © 2005-2026</div></div><div class="docs-content" style="display:none;" id="SCIF"><h1>SCIF Type</h1><p class="lead">Optional flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCIF::DETECT_LEXER</th><td>Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.</td></tr>
 <tr><th>SCIF::DISABLED</th><td>Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.</td></tr>
 <tr><th>SCIF::EDIT</th><td>Must be defined if the document is to be editable via user input.</td></tr>
 <tr><th>SCIF::EXT_PAGE</th><td>Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.</td></tr>
-</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2025</div></div>
+</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2026</div></div>
 <div class="docs-content" style="display:none;" id="SCLEX"><h1>SCLEX Type</h1><p class="lead">Scintilla Lexers.  These codes originate from the Scintilla library.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCLEX::ASP</th><td>Active Server Pages</td></tr>
 <tr><th>SCLEX::ASSEMBLER</th><td>Assembler</td></tr>
 <tr><th>SCLEX::BASH</th><td>Bash</td></tr>
@@ -301,7 +301,6 @@
 <tr><th>SCLEX::CSS</th><td>CSS</td></tr>
 <tr><th>SCLEX::DIFF</th><td>Diff</td></tr>
 <tr><th>SCLEX::ERRORLIST</th><td>ErrorList</td></tr>
-<tr><th>SCLEX::FLUID</th><td>Tiri</td></tr>
 <tr><th>SCLEX::HTML</th><td>HTML</td></tr>
 <tr><th>SCLEX::MAKEFILE</th><td>Makefile</td></tr>
 <tr><th>SCLEX::PASCAL</th><td>Pascal</td></tr>
@@ -312,22 +311,23 @@
 <tr><th>SCLEX::REBOL</th><td>Rebol</td></tr>
 <tr><th>SCLEX::RUBY</th><td>Ruby</td></tr>
 <tr><th>SCLEX::SQL</th><td>SQL</td></tr>
+<tr><th>SCLEX::TIRI</th><td>Tiri</td></tr>
 <tr><th>SCLEX::VB</th><td>Visual Basic</td></tr>
 <tr><th>SCLEX::VBSCRIPT</th><td>VBScript</td></tr>
 <tr><th>SCLEX::XML</th><td>XML</td></tr>
-</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2025</div></div>
+</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2026</div></div>
 <div class="docs-content" style="display:none;" id="SEF"><h1>SEF Type</h1><p class="lead">Flags for EventCallback and EventFlags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SEF::CURSOR_POS</th><td>The cursor position has changed.</td></tr>
 <tr><th>SEF::FAIL_RO</th><td>User attempt to edit read-only content.</td></tr>
 <tr><th>SEF::MODIFIED</th><td>The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.</td></tr>
 <tr><th>SEF::NEW_CHAR</th><td>At least one new character has been inserted.</td></tr>
-</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2025</div></div>
+</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2026</div></div>
 <div class="docs-content" style="display:none;" id="STF"><h1>STF Type</h1><p class="lead">Scintilla search flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>STF::BACKWARDS</th><td>Search backwards.</td></tr>
 <tr><th>STF::CASE</th><td>Case sensitive search.</td></tr>
 <tr><th>STF::EXPRESSION</th><td>Search text is a regular expression.</td></tr>
 <tr><th>STF::MOVE_CURSOR</th><td>The cursor is moved to the discovered string.  If not set, the string is auto-selected.</td></tr>
 <tr><th>STF::SCAN_SELECTION</th><td>Limit search to within the user's current selection.</td></tr>
 <tr><th>STF::WRAP</th><td>Wrap search at the end of the document.</td></tr>
-</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2025</div></div>
+</tbody></table><div class="footer copyright text-right">Scintilla module documentation © Paul Manias © 2005-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

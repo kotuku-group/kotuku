@@ -37,7 +37,7 @@
 <tr><th class="col-md-1">GetField</th><td>Failed to read font database entries after scanning.</td></tr>
 <tr><th class="col-md-1">OpenFile</th><td>Failed to open <code>fonts:fonts.cfg</code> for writing.</td></tr>
 </tbody></table><div class="footer copyright text-right">Font module documentation © Paul Manias © 1998-2026</div></div>
-<div class="docs-content" style="display:none;" id="ResolveFamilyName"><h2>ResolveFamilyName()</h2><p class="lead">Convert a CSV family string to a single family name.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR fnt::ResolveFamilyName(STRVIEW String, CSTRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>String</td><td>A CSV family string to resolve.</td></tr>
+<div class="docs-content" style="display:none;" id="ResolveFamilyName"><h2>ResolveFamilyName()</h2><p class="lead">Convert a CSV family string to a single family name.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR fnt::ResolveFamilyName(STRVIEW String, STRVIEW * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>String</td><td>A CSV family string to resolve.</td></tr>
 <tr><td>Result</td><td>The resolved family name is returned in this parameter.</td></tr>
 </tbody></table></div></div>
 <p>Converts a CSV family string to one resolved family name.  <code>String</code> is parsed from left to right, with each family name or wildcard tested against the font database in order.  If a single asterisk is used to terminate the list, the system default is returned when no earlier name matches.</p>
@@ -49,13 +49,12 @@
 <tr><th class="col-md-1">GetField</th><td>GetField() failed to retrieve a field value</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Font module documentation © Paul Manias © 1998-2026</div></div>
-<div class="docs-content" style="display:none;" id="SelectFont"><h2>SelectFont()</h2><p class="lead">Searches for a 'best fitting' font file, based on family name and style.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR fnt::SelectFont(STRVIEW Name, STRVIEW Style, CSTRING * Path, FMETA * Meta)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Name</td><td>The name of a font face to search for (case insensitive).</td></tr>
+<div class="docs-content" style="display:none;" id="SelectFont"><h2>SelectFont()</h2><p class="lead">Searches for a 'best fitting' font file, based on family name and style.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR fnt::SelectFont(STRVIEW Name, STRVIEW Style, STRING * Path, FMETA * Meta)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Name</td><td>The name of a font face to search for (case insensitive).</td></tr>
 <tr><td>Style</td><td>The preferred style, e.g. <code>Bold</code> or <code>Italic</code>.</td></tr>
 <tr><td>Path</td><td>The location of the best-matching font file is returned in this parameter.</td></tr>
 <tr><td><a onclick="showPage('FMETA');">Meta</a></td><td>Optional, returns additional meta information about the font file.</td></tr>
 </tbody></table></div></div>
 <p>Resolves a font family <code>Name</code> and preferred <code>Style</code> to a font file path.  The family name must exist in the font database.  If the requested style is unavailable, the function falls back to the face's regular style or first registered style.</p>
-<p>The returned <code>Path</code> is allocated and must be released with <code>FreeResource()</code> when it is no longer required.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Search</th><td>Unable to find a suitable font.</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Access to the font database was denied, or the object does not exist.</td></tr>

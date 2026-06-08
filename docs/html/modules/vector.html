@@ -200,10 +200,10 @@ Z: Close Path
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="ReadPainter"><h2>ReadPainter()</h2><p class="lead">Parses a painter string to its colour, gradient, pattern or image value.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR vec::ReadPainter(objVectorScene * Scene, STRVIEW IRI, struct VectorPainter * Painter, CSTRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Scene</td><td>Optional.  Required if <code>url()</code> references are to be resolved.</td></tr>
+<div class="docs-content" style="display:none;" id="ReadPainter"><h2>ReadPainter()</h2><p class="lead">Parses a painter string to its colour, gradient, pattern or image value.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR vec::ReadPainter(objVectorScene * Scene, STRVIEW IRI, struct VectorPainter * Painter, STRVIEW * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Scene</td><td>Optional.  Required if <code>url()</code> references are to be resolved.</td></tr>
 <tr><td>IRI</td><td>The IRI string to be translated.</td></tr>
 <tr><td>Painter</td><td>This <a data-toggle="tooltip" title="" href="?page=struct-VectorPainter">VectorPainter</a> structure will store the deserialised result.</td></tr>
-<tr><td>Result</td><td>Optional pointer for storing the end of the parsed IRI string.  <code>NULL</code> is returned if there is no further content to parse or an error occurred.</td></tr>
+<tr><td>Result</td><td>Optional reference for storing the end of the parsed IRI string.  An empty string is returned if there is no further content to parse or an error occurred.</td></tr>
 </tbody></table></div></div>
 <p>This function will parse an SVG style IRI into its equivalent logical values.  The results can then be processed for rendering a stroke or fill operation in the chosen style.</p>
 <p>Colours can be expressed in the following formats:</p>

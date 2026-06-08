@@ -70,6 +70,7 @@
 <tr><th>AC::Flush</th><td></td></tr>
 <tr><th>AC::Focus</th><td></td></tr>
 <tr><th>AC::Free</th><td></td></tr>
+<tr><th>AC::FreePlacement</th><td></td></tr>
 <tr><th>AC::FreeWarning</th><td></td></tr>
 <tr><th>AC::GetKey</th><td></td></tr>
 <tr><th>AC::Hide</th><td></td></tr>
@@ -134,24 +135,16 @@
 <tr><th>LOC::FILE</th><td>The path refers to a file.</td></tr>
 <tr><th>LOC::VOLUME</th><td>The path refers to a volume name.</td></tr>
 </tbody></table><div class="footer copyright text-right">CompressedStream module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>The memory space is reserved by an audio device such as a sound card.</td></tr>
-<tr><th>MEM::CALLER</th><td>This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</td></tr>
-<tr><th>MEM::CODE</th><td>Set if the memory will contain executable program code.</td></tr>
+<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
+<tr><th>MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
 <tr><th>MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
-<tr><th>MEM::HIDDEN</th><td>Hidden blocks are not recorded and are excluded from resource tracking.</td></tr>
-<tr><th>MEM::MANAGED</th><td>Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</td></tr>
-<tr><th>MEM::NO_BLOCK</th><td>Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</td></tr>
-<tr><th>MEM::NO_BLOCKING</th><td>Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</td></tr>
 <tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
-<tr><th>MEM::NO_LOCK</th><td>For AllocMemory() only, indicates that the (private) memory block should not be locked on return.</td></tr>
-<tr><th>MEM::NO_POOL</th><td>Gives a hint to the allocator to allocate the block outside of the memory pool.</td></tr>
 <tr><th>MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
 <tr><th>MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
-<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</td></tr>
-<tr><th>MEM::TEXTURE</th><td>The memory space is reserved by a video driver for hosting texture graphics.</td></tr>
-<tr><th>MEM::TMP_LOCK</th><td>Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.</td></tr>
-<tr><th>MEM::UNTRACKED</th><td>Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</td></tr>
-<tr><th>MEM::VIDEO</th><td>The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</td></tr>
+<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string, which aids diagnostics.</td></tr>
+<tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
+<tr><th>MEM::UNTRACKED</th><td>Prevents the memory block from being tracked back to the current context.</td></tr>
+<tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
 <tr><th>MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
 </tbody></table><div class="footer copyright text-right">CompressedStream module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="MSF"><h1>MSF Type</h1><p class="lead">Message flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MSF::NO_DUPLICATE</th><td>If the <code>Type</code> parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with <code>ERR::Okay</code>.</td></tr>
@@ -172,7 +165,6 @@
 <tr><th>MSGID::WAIT_FOR_OBJECTS</th><td></td></tr>
 </tbody></table><div class="footer copyright text-right">CompressedStream module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="NF"><h1>NF Type</h1><p class="lead">Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>NF::ASYNC_ACTIVE</th><td>Read-only indicator that asynchronous actions are queued or executing against this object.</td></tr>
-<tr><th>NF::COLLECT</th><td>Marked for garbage collection.</td></tr>
 <tr><th>NF::FREE</th><td>Read-only indicator for when the object is being freed.</td></tr>
 <tr><th>NF::FREE_ON_UNLOCK</th><td>Read-only indicator for when the object is marked for deletion.</td></tr>
 <tr><th>NF::INITIALISED</th><td>Read-only indicator if the object has been initialised.</td></tr>
@@ -337,11 +329,9 @@
 <tr><th>Modified</th><td><span class="text-nowrap">struct DateTime</span></td><td>The date/time of the last file modification.</td></tr>
 </tbody></table><div class="footer copyright text-right">CompressedStream class documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-MemInfo"><h1>MemInfo Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Start</th><td><span class="text-nowrap">APTR</span></td><td>The starting address of the memory block (does not apply to shared blocks).</td></tr>
-<tr><th>ObjectID</th><td><span class="text-nowrap">OBJECTID</span></td><td>The object that owns the memory block.</td></tr>
 <tr><th>Size</th><td><span class="text-nowrap">UINT</span></td><td>The size of the memory block.</td></tr>
 <tr><th>Flags</th><td><span class="text-nowrap">MEM</span></td><td>The type of memory.</td></tr>
-<tr><th>MemoryID</th><td><span class="text-nowrap">MEMORYID</span></td><td>The unique ID for this block.</td></tr>
-<tr><th>AccessCount</th><td><span class="text-nowrap">INT16</span></td><td>Total number of active locks on this block.</td></tr>
+<tr><th>MemoryID</th><td><span class="text-nowrap">MEMORYID</span></td><td>The unique resource ID for this block.</td></tr>
 </tbody></table><div class="footer copyright text-right">CompressedStream class documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-Message"><h1>Message Structure</h1><p class="lead">Message header.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Time</th><td><span class="text-nowrap">INT64</span></td><td>A timestamp acquired from <a href="core.html?page=PreciseTime">PreciseTime()</a> when the message was first passed to <a href="core.html?page=SendMessage">SendMessage()</a>.</td></tr>
 <tr><th>UID</th><td><span class="text-nowrap">INT</span></td><td>A unique identifier automatically created by <a href="core.html?page=SendMessage">SendMessage()</a>.</td></tr>
