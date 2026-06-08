@@ -1847,40 +1847,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
   </function>
 
   <function>
-    <name>SetResourceMgr</name>
-    <category>Memory</category>
-    <comment>Define a resource manager for a memory block originating from <function>AllocMemory</function>.</comment>
-    <prototype>void SetResourceMgr(APTR Address, struct ResourceManager * Manager)</prototype>
-    <tiriPrototype>SetResourceMgr(Address:any, Manager:any)</tiriPrototype>
-    <tags>retains-input, does-not-take-ownership</tags>
-    <input>
-      <param type="APTR" name="Address">The address of a <code>MEM::MANAGED</code> memory block allocated by <function>AllocMemory</function>.</param>
-      <param type="struct ResourceManager *" name="Manager">Must refer to an initialised ResourceManager structure.</param>
-    </input>
-    <description>
-<p>SetResourceMgr() associates a ResourceManager with a memory block that was allocated with the <code>MEM::MANAGED</code> flag. This allows customised memory management logic to be used when an event is triggered on a memory block, such as the block being destroyed.  Most commonly, resource managers are used to allow C++ destructors to be integrated with Kōtuku's memory management system.</p>
-<p>This working example from the XPath module ensures that <code>XPathNode</code> objects are properly destructed when passed to <function>FreeResource</function>:</p>
-<pre>static ERR xpnode_free(ResourceRecord *Resource, APTR Address)
-{
-   ((XPathNode *)Address)-&gt;~XPathNode();
-   return ERR::Terminate;
-}
-
-static ResourceManager glNodeManager = {
-   &quot;XPathNode&quot;,  // Name of the custom resource type
-   &amp;xpnode_free, // Custom destructor function
-   false
-};
-
-   if (AllocMemory(sizeof(XPathNode), MEM::MANAGED, (APTR *)&amp;node, nullptr) IS ERR::Okay) {
-      SetResourceMgr(node, &amp;glNodeManager);
-      new (node) XPathNode(); // Placement new
-   }
-</pre>
-    </description>
-  </function>
-
-  <function>
     <name>SetResourcePath</name>
     <category>System</category>
     <comment>Redefines the location of a system resource path.</comment>
@@ -2031,14 +1997,14 @@ static ResourceManager glNodeManager = {
     <tags>retains-input, does-not-take-ownership, blocking, thread-safe</tags>
     <input>
       <param type="RESOURCEID" name="ResourceID">Unique identifier for the resource to register or replace.</param>
-      <param type="APTR" name="Address">Address of the resource, or <code>NULL</code> if the resource is identified only by <code>ResourceID</code>.</param>
-      <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.  If <code>RESOURCEID_INHERIT</code> then either the existing owner is not changed, or the context is inherited.</param>
+      <param type="APTR" name="Address">Address of the resource, or <code>NULL</code> to preserve an existing address.</param>
+      <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.</param>
       <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
-      <param type="INT64" name="Size">Size of the tracked resource in bytes, if known.</param>
+      <param type="INT64" name="Size">Size of the tracked resource in bytes, or <code>0</code> to preserve an existing size.</param>
     </input>
     <description>
-<p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is replaced and any old owner relationship is removed before the new owner is recorded.</p>
-<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.</p>
+<p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
+<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -2818,13 +2784,12 @@ static ResourceManager glNodeManager = {
       <const name="AUDIO">Identifies memory located on an audio device, such as a sound card.</const>
       <const name="CODE">Used for memory that can execute code.</const>
       <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
-      <const name="MANAGED">Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</const>
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
       <const name="READ">The memory is explicitly marked as readable.</const>
       <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
-      <const name="STRING">Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</const>
+      <const name="STRING">Identifies the memory content as a null terminated string, which aids diagnostics.</const>
       <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
-      <const name="UNTRACKED">Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</const>
+      <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
       <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>

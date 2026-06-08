@@ -668,7 +668,7 @@ class FloatRect {
      obj Object # Reference to an object to monitor.
   ]])
 
-  struct("ResourceManager", { comment="This structure must be placed at the start of any memory block allocated with the MEM::MANAGED flag.", restrict="c" }, [[
+  struct("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
      cstr Name             # The name of the resource.
      fptr(error struct(*ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated.
      bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources.
@@ -1130,7 +1130,6 @@ struct ScriptArg { // For use with sc::Exec
     "ResolveUserID",
     "CreateLink",
     "ParentContext",
-    "SetResourceMgr",
     "WakeThread",
     "AsyncCancel",
     "AsyncPending",

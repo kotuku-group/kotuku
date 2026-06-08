@@ -161,12 +161,12 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
       auto vd = get_fs(resolved_path);
 
       extDirInfo *dir;
-      if (AllocMemory(sizeof(extDirInfo), MEM::DATA|MEM::MANAGED, (APTR *)&dir) != ERR::Okay) {
+      if (AllocMemory(sizeof(extDirInfo), MEM::DATA, (APTR *)&dir) != ERR::Okay) {
          return ERR::AllocMemory;
       }
 
       new (dir) extDirInfo();
-      SetResourceMgr(dir, &glResourceFolder);
+      TrackResource(GetMemoryID(dir), dir, RESOURCEID_INHERIT, &glResourceFolder, sizeof(extDirInfo));
       if (auto error = dir->initialise(Path, resolved_path, Flags, vd.DriverSize); error != ERR::Okay) {
          FreeResource(dir);
          return error;

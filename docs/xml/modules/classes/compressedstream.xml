@@ -170,13 +170,12 @@
       <const name="AUDIO">Identifies memory located on an audio device, such as a sound card.</const>
       <const name="CODE">Used for memory that can execute code.</const>
       <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
-      <const name="MANAGED">Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</const>
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
       <const name="READ">The memory is explicitly marked as readable.</const>
       <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
-      <const name="STRING">Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</const>
+      <const name="STRING">Identifies the memory content as a null terminated string, which aids diagnostics.</const>
       <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
-      <const name="UNTRACKED">Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</const>
+      <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
       <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>

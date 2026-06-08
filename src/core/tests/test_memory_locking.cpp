@@ -134,7 +134,8 @@ int main(int argc, CSTRING *argv)
       }
    }
 
-   AllocMemory(10000, MEM::DATA, &mem);
+   APTR mem = nullptr;
+   if (AllocMemory(10000, MEM::DATA, &mem) != ERR::Okay) return -1;
    glMemoryID = GetMemoryID(mem);
 
    printf("Spawning %d threads...\n", glTotalThreads);

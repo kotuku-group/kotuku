@@ -368,9 +368,10 @@ static void free_children(OBJECTPTR Object)
                if ((mem.Flags & MEM::STRING) != MEM::NIL) {
                   log.warning("Unfreed string \"%.40s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
                }
-               else if ((mem.Flags & MEM::MANAGED) != MEM::NIL) {
-                  auto res = (ResourceManager **)((char *)mem.Address - sizeof(int) - sizeof(int) - sizeof(ResourceManager *));
-                  if (res[0]) log.warning("Unfreed %s resource at %p.", res[0]->Name, mem.Address);
+               else if (auto resource = glResources.find(mem.MemoryID); resource != glResources.end()) {
+                  if (resource->second.Manager) {
+                     log.warning("Unfreed %s resource at %p.", resource->second.Manager->Name, mem.Address);
+                  }
                   else log.warning("Unfreed resource at %p.", mem.Address);
                }
                else log.warning("Unfreed memory block %p, Size %d", mem.Address, mem.Size);
@@ -1841,9 +1842,9 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    OBJECTPTR head = nullptr;
 
-   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::MANAGED|MEM::OBJECT|(((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head) IS ERR::Okay) {
+   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::OBJECT|
+      (((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head) IS ERR::Okay) {
       MEMORYID head_id = GetMemoryID(head);
-      SetResourceMgr(head, &glResourceObject);
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));

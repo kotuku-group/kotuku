@@ -89,7 +89,6 @@ extern "C" CSTRING ResolveGroupID(int Group);
 extern "C" CSTRING ResolveUserID(int User);
 extern "C" ERR CreateLink(const std::string_view & From, const std::string_view & To);
 extern "C" OBJECTPTR ParentContext();
-extern "C" void SetResourceMgr(APTR Address, struct ResourceManager * Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(kt::vector<OBJECTID> & Objects);
 extern "C" int AsyncPending(OBJECTID Object);

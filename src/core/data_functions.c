@@ -83,7 +83,6 @@ FDEF argsSetName[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR },
 FDEF argsSetObjectContext[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { "Field:Field", FD_PTR|FD_STRUCT }, { "ActionID", FD_INT }, { 0, 0 } };
 FDEF argsSetOwner[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Owner", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsSetResource[] = { { "Result", FD_INT64 }, { "Resource", FD_INT }, { "Value", FD_INT64 }, { 0, 0 } };
-FDEF argsSetResourceMgr[] = { { "Void", FD_VOID }, { "Address", FD_PTR }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsSetResourcePath[] = { { "Error", FD_INT|FD_ERROR }, { "PathType", FD_INT }, { "Path", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsSetVolume[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Path", FDF_CPPSTRING }, { "Icon", FDF_CPPSTRING }, { "Label", FDF_CPPSTRING }, { "Device", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsSubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
@@ -191,7 +190,6 @@ const struct Function glFunctions[] = {
    { (APTR)ResolveUserID, "ResolveUserID", argsResolveUserID },
    { (APTR)CreateLink, "CreateLink", argsCreateLink },
    { (APTR)ParentContext, "ParentContext", argsParentContext },
-   { (APTR)SetResourceMgr, "SetResourceMgr", argsSetResourceMgr },
    { (APTR)WakeThread, "WakeThread", argsWakeThread },
    { (APTR)AsyncCancel, "AsyncCancel", argsAsyncCancel },
    { (APTR)AsyncPending, "AsyncPending", argsAsyncPending },

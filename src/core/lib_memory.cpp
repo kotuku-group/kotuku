@@ -61,15 +61,12 @@ static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
       }
 
       auto start_mem = (char *)active_mem.Address - sizeof(int) - sizeof(int);
-      if ((active_mem.Flags & MEM::MANAGED) != MEM::NIL) start_mem = (char *)start_mem - sizeof(ResourceManager *);
 
       if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
          #ifdef _WIN32
-            winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER +
-               ((active_mem.Flags & MEM::MANAGED) != MEM::NIL ? sizeof(ResourceManager *) : 0)));
+            winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER));
          #else
-            munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER +
-               ((active_mem.Flags & MEM::MANAGED) != MEM::NIL ? sizeof(ResourceManager *) : 0)));
+            munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER));
          #endif
       }
       else {
@@ -127,18 +124,19 @@ TrackResource: Assign a resource manager to an address, or update an existing on
 
 TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
 dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing
-record is replaced and any old owner relationship is removed before the new owner is recorded.
+record is updated with the non-zero values provided by the caller.
 
 The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
 tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
-resource is added to the owner's resource list so it can be removed during owner cleanup.
+resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
+preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
 
 -INPUT-
 res ResourceID: Unique identifier for the resource to register or replace.
-ptr Address: Address of the resource, or `NULL` if the resource is identified only by `ResourceID`.
-res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.  If `RESOURCEID_INHERIT` then either the existing owner is not changed, or the context is inherited.
+ptr Address: Address of the resource, or `NULL` to preserve an existing address.
+res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
 struct(ResourceManager) Manager: Resource manager used to release the resource.
-large Size: Size of the tracked resource in bytes, if known.
+large Size: Size of the tracked resource in bytes, or `0` to preserve an existing size.
 
 -ERRORS-
 Okay
@@ -299,7 +297,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 
    size_t full_size = Size + MEMHEADER;
    size_t aligned_size = full_size;
-   if ((Flags & MEM::MANAGED) != MEM::NIL) full_size += sizeof(ResourceManager *);
 
    // Check if memory protection is requested
    bool use_protection = ((Flags & (MEM::READ|MEM::WRITE)) != MEM::NIL);
@@ -348,20 +345,13 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    }
 
    APTR data_start = (char *)start_mem + sizeof(int) + sizeof(int); // Skip unique ID and alignment padding.
-   if ((Flags & MEM::MANAGED) != MEM::NIL) data_start = (char *)data_start + sizeof(ResourceManager *); // Skip managed resource reference.
 
    if (auto lock = std::unique_lock{glmMemory}) { // To keep threads synced, it is essential that this lock is made early.
       MEMORYID unique_id = glPrivateIDCounter++;
 
       // Configure the memory header.
 
-      APTR header = start_mem;
-      if ((Flags & MEM::MANAGED) != MEM::NIL) {
-         ((ResourceManager **)header)[0] = nullptr;
-         header = (char *)header + sizeof(ResourceManager *);
-      }
-
-      ((int *)header)[0]  = unique_id;
+      ((int *)start_mem)[0]  = unique_id;
 
       // Record memory details such as the size, ID and flags.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
@@ -518,7 +508,8 @@ ERR FreeResource(RESOURCEID MemoryID)
             if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::Okay;
             resource = &resource_it->second;
 
-            SetResourceMgr(resource->Address, &glResourceMemoryHandler);
+            TrackResource(resource_id, resource->Address, RESOURCEID_INHERIT, &glResourceMemoryHandler,
+               resource->Size);
 
             mem_it = glPrivateMemory.find(MemoryID);
             if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address) and (mem_it->second.AccessCount > 0)) {
@@ -715,14 +706,8 @@ ERR ProtectMemory(APTR Address, MEM Flags)
          return ERR::Args;
       }
 
-      // Calculate the start address and size of the protected region
       auto start_mem = (char *)Address - sizeof(int) - sizeof(int);
-      if ((meminfo.Flags & MEM::MANAGED) != MEM::NIL) {
-         start_mem -= sizeof(ResourceManager *);
-      }
-
       auto full_size = meminfo.Size + MEMHEADER;
-      if ((meminfo.Flags & MEM::MANAGED) != MEM::NIL) full_size += sizeof(ResourceManager *);
       auto aligned_size = align_page_size(full_size);
 
       #ifdef _WIN32
@@ -811,58 +796,4 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
       return ERR::Okay;
    }
    else return log.warning(ERR::AllocMemory);
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
-SetResourceMgr: Define a resource manager for a memory block originating from ~AllocMemory().
-
-SetResourceMgr() associates a !ResourceManager with a memory block that was allocated with the `MEM::MANAGED` flag.
-This allows customised memory management logic to be used when an event is triggered on a memory block, such as
-the block being destroyed.  Most commonly, resource managers are used to allow C++ destructors to be integrated with
-Kōtuku's memory management system.
-
-This working example from the XPath module ensures that `XPathNode` objects are properly destructed when passed to
-~FreeResource():
-
-<pre>
-static ERR xpnode_free(ResourceRecord *Resource, APTR Address)
-{
-   ((XPathNode *)Address)->&#126;XPathNode();
-   return ERR::Terminate;
-}
-
-static ResourceManager glNodeManager = {
-   "XPathNode",  // Name of the custom resource type
-   &xpnode_free, // Custom destructor function
-   false
-};
-
-   if (AllocMemory(sizeof(XPathNode), MEM::MANAGED, (APTR *)&node, nullptr) IS ERR::Okay) {
-      SetResourceMgr(node, &glNodeManager);
-      new (node) XPathNode(); // Placement new
-   }
-</pre>
-
--INPUT-
-ptr Address: The address of a `MEM::MANAGED` memory block allocated by ~AllocMemory().
-struct(ResourceManager) Manager: Must refer to an initialised ResourceManager structure.
-
--TAGS-
-retains-input, does-not-take-ownership
-
--END-
-
-*********************************************************************************************************************/
-
-void SetResourceMgr(APTR Address, ResourceManager *Manager)
-{
-   auto address_mgr = (ResourceManager **)((char *)Address - sizeof(int) - sizeof(int) - sizeof(ResourceManager *));
-   address_mgr[0] = Manager;
-
-   std::lock_guard lock(glmMemory);
-   if (auto resource = glResources.find(GetMemoryID(Address)); resource != glResources.end()) {
-      resource->second.Manager = Manager;
-   }
 }

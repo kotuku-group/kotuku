@@ -284,16 +284,15 @@ DEFINE_ENUM_FLAG_OPERATORS(KQ)
 enum class MEM : uint32_t {
    NIL = 0,
    DATA = 0x00000000,
-   MANAGED = 0x00000001,
-   VIDEO = 0x00000002,
-   TEXTURE = 0x00000004,
-   AUDIO = 0x00000008,
-   CODE = 0x00000010,
-   UNTRACKED = 0x00000020,
-   STRING = 0x00000040,
-   OBJECT = 0x00000080,
-   COLLECT = 0x00000100,
-   PROTECTED = 0x00000200,
+   VIDEO = 0x00000001,
+   TEXTURE = 0x00000002,
+   AUDIO = 0x00000004,
+   CODE = 0x00000008,
+   UNTRACKED = 0x00000010,
+   STRING = 0x00000020,
+   OBJECT = 0x00000040,
+   COLLECT = 0x00000080,
+   PROTECTED = 0x00000100,
    READ = 0x00010000,
    WRITE = 0x00020000,
    READ_WRITE = 0x00030000,
@@ -2124,7 +2123,6 @@ struct CoreBase {
    CSTRING (*_ResolveUserID)(int User);
    ERR (*_CreateLink)(const std::string_view &From, const std::string_view &To);
    OBJECTPTR (*_ParentContext)(void);
-   void (*_SetResourceMgr)(APTR Address, struct ResourceManager *Manager);
    ERR (*_WakeThread)(int Thread, int Stop);
    ERR (*_AsyncCancel)(kt::vector<OBJECTID> &Objects);
    int (*_AsyncPending)(OBJECTID Object);
@@ -2225,7 +2223,6 @@ inline CSTRING ResolveGroupID(int Group) { return CoreBase->_ResolveGroupID(Grou
 inline CSTRING ResolveUserID(int User) { return CoreBase->_ResolveUserID(User); }
 inline ERR CreateLink(const std::string_view &From, const std::string_view &To) { return CoreBase->_CreateLink(From,To); }
 inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
-inline void SetResourceMgr(APTR Address, struct ResourceManager *Manager) { return CoreBase->_SetResourceMgr(Address,Manager); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
 inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncCancel(Objects); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
@@ -2321,7 +2318,6 @@ extern "C" CSTRING ResolveGroupID(int Group);
 extern "C" CSTRING ResolveUserID(int User);
 extern "C" ERR CreateLink(const std::string_view &From, const std::string_view &To);
 extern "C" OBJECTPTR ParentContext(void);
-extern "C" void SetResourceMgr(APTR Address, struct ResourceManager *Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);

@@ -151,8 +151,8 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
 
    if (auto lock = std::unique_lock{glmMsgHandler}) {
       MsgHandler *handler;
-      if (AllocMemory(sizeof(MsgHandler), MEM::MANAGED, (APTR *)&handler) IS ERR::Okay) {
-         SetResourceMgr(handler, &glResourceMsgHandler);
+      if (AllocMemory(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler) IS ERR::Okay) {
+         TrackResource(GetMemoryID(handler), handler, RESOURCEID_INHERIT, &glResourceMsgHandler, sizeof(MsgHandler));
 
          handler->Prev     = nullptr;
          handler->Next     = nullptr;

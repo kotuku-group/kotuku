@@ -800,9 +800,9 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (not valid_timezone_year_range(Args->StartYear, Args->EndYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
-   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA|MEM::MANAGED, (APTR *)&tz) IS ERR::Okay) {
+   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA, (APTR *)&tz) IS ERR::Okay) {
       new (tz) struct TimeZoneInfo;
-      SetResourceMgr(tz, &glTimeZoneHandler);
+      TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler, sizeof(struct TimeZoneInfo));
 
       const std::string_view zone_id = Args->ZoneID;
       if (is_utc_zone(zone_id)) {
