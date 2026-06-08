@@ -1875,7 +1875,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          glObjects.insert_or_assign(head->UID, ObjectRecord(head));
       }
 
-      TrackResource(head->UID, head, 0, &glResourceObject, MEM::OBJECT|MEM::MANAGED, (uint32_t)mc->Size);
+      TrackResource(head->UID, head, 0, &glResourceObject, mc->Size);
 
       // Tracking for our new object is configured here.
 

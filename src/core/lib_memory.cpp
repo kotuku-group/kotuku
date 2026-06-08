@@ -120,25 +120,79 @@ ResourceRecord * find_resource(RESOURCEID ResourceID)
    return &resource->second;
 }
 
-ERR TrackResource(RESOURCEID ResourceID, APTR Address, OBJECTID OwnerID, ResourceManager *Manager, MEM Flags,
-   uint32_t Size)
-{
-   std::lock_guard lock(glmMemory);
+/*********************************************************************************************************************
 
-   if (not ResourceID) return ERR::Args;
+-FUNCTION-
+TrackResource: Assign a resource manager to an address, or update an existing one.
+
+TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
+dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing
+record is replaced and any old owner relationship is removed before the new owner is recorded.
+
+The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
+tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
+resource is added to the owner's resource list so it can be removed during owner cleanup.
+
+-INPUT-
+res ResourceID: Unique identifier for the resource to register or replace.
+ptr Address: Address of the resource, or `NULL` if the resource is identified only by `ResourceID`.
+res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
+struct(ResourceManager) Manager: Resource manager used to release the resource.
+large Size: Size of the tracked resource in bytes, if known.
+
+-ERRORS-
+Okay
+NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
+
+-TAGS-
+retains-input, does-not-take-ownership, blocking, thread-safe
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager, int64_t Size)
+{
+   std::lock_guard lock(glmMemory); // TODO: Use a resource specific mutex
+
+   if (not ResourceID) return ERR::NullArgs;
 
    if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
-      if (existing->second.OwnerID) {
-         if (auto object_rec = glObjects.find(existing->second.OwnerID); object_rec != glObjects.end()) {
+      const auto previous_owner_id = existing->second.OwnerID;
+      const auto previous_manager = existing->second.Manager;
+
+      if (Address) existing->second.Address = Address;
+      if (Manager) existing->second.Manager = Manager;
+      if (Size) existing->second.Size = uint32_t(Size);
+
+      if ((previous_owner_id != OwnerID) or (previous_manager != existing->second.Manager)) {
+         if (auto object_rec = glObjects.find(previous_owner_id); object_rec != glObjects.end()) {
             object_rec->second.Resources.erase(ResourceID);
             object_rec->second.Children.erase(ResourceID);
          }
+
+         existing->second.OwnerID = OwnerID;
+      }
+
+      if ((existing->second.Manager != &glResourceObject) and existing->second.OwnerID) {
+         // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
+         if (auto object_rec = glObjects.find(existing->second.OwnerID); object_rec != glObjects.end()) {
+            object_rec->second.Resources.insert(ResourceID);
+         }
       }
    }
+   else {
+      if (not Manager) return ERR::NullArgs;
 
-   glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Flags, Size));
+      glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Size));
 
-   if ((Manager != &glResourceObject) and OwnerID) glObjects[OwnerID].Resources.insert(ResourceID);
+      if ((Manager != &glResourceObject) and OwnerID) {
+         // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
+         if (auto object_rec = glObjects.find(OwnerID); object_rec != glObjects.end()) {
+            object_rec->second.Resources.insert(ResourceID);
+         }
+      }
+   }
 
    return ERR::Okay;
 }
@@ -301,7 +355,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
       glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
-      TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler, Flags, (uint32_t)Size);
+      TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler, Size);
 
       if (Address) *Address = data_start;
 
@@ -713,24 +767,18 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
 {
    kt::Log log(__FUNCTION__);
 
-   if (Memory) *Memory = Address; // If we fail, the result must be the same memory block
+   if (Memory) *Memory = Address; // If we fail, return the original memory block
 
-   if ((not Address) or (NewSize <= 0)) {
+   if ((not Address) or (NewSize <= 0) or (not Memory)) {
       log.function("Address: %p, NewSize: %d, &Memory: %p", Address, NewSize, Memory);
       return log.warning(ERR::Args);
-   }
-
-   if (not Memory) {
-      log.function("Address: %p, NewSize: %d, &Memory: %p", Address, NewSize, Memory);
-      return log.warning(ERR::NullArgs);
    }
 
    // Check the validity of what we have been sent
 
    MemInfo meminfo;
    if (MemoryIDInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) != ERR::Okay) {
-      log.warning("MemoryPtrInfo() failed for address %p.", Address);
-      return ERR::Memory;
+      return log.warning(ERR::Memory);
    }
 
    if (meminfo.Size IS NewSize) return ERR::Okay;
@@ -750,7 +798,7 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
 
       return ERR::Okay;
    }
-   else return log.error(ERR::AllocMemory);
+   else return log.warning(ERR::AllocMemory);
 }
 
 /*********************************************************************************************************************

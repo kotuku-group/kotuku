@@ -87,8 +87,7 @@ public:
 
    ResourceRecord() = default;
 
-   ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager,
-      MEM, uint32_t ASize) :
+   ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager, uint32_t ASize) :
       Address(AAddress), Manager(AManager), ResourceID(AResourceID), OwnerID(AOwnerID), Size(ASize) { };
 
    void clear() {

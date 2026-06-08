@@ -2023,6 +2023,30 @@ static ResourceManager glNodeManager = {
   </function>
 
   <function>
+    <name>TrackResource</name>
+    <category>Memory</category>
+    <comment>Assign a resource manager to an address, or update an existing one.</comment>
+    <prototype>ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager, INT64 Size)</prototype>
+    <tiriPrototype>err = TrackResource(ResourceID:num, Address:any, OwnerID:num, Manager:any, Size:num)</tiriPrototype>
+    <tags>retains-input, does-not-take-ownership, blocking, thread-safe</tags>
+    <input>
+      <param type="RESOURCEID" name="ResourceID">Unique identifier for the resource to register or replace.</param>
+      <param type="APTR" name="Address">Address of the resource, or <code>NULL</code> if the resource is identified only by <code>ResourceID</code>.</param>
+      <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.</param>
+      <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
+      <param type="INT64" name="Size">Size of the tracked resource in bytes, if known.</param>
+    </input>
+    <description>
+<p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is replaced and any old owner relationship is removed before the new owner is recorded.</p>
+<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="NullArgs"><code>ResourceID</code> is <code>0</code>, or <code>Manager</code> is <code>NULL</code> when registering a new resource.</error>
+    </result>
+  </function>
+
+  <function>
     <name>UnloadFile</name>
     <category>Files</category>
     <comment>Unloads files from the file cache.</comment>

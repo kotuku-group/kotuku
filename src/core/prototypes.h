@@ -95,3 +95,4 @@ extern "C" ERR AsyncCancel(kt::vector<OBJECTID> & Objects);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(kt::vector<OBJECTID> & Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> * Classes);
+extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager, int64_t Size);
