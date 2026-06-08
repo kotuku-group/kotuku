@@ -495,7 +495,7 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
       if (resource->second.Collect or resource->second.Terminating) return ERR::MarkedForDeletion;
 
       object = (OBJECTPTR)resource->second.Address;
-      if (object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) return ERR::MarkedForDeletion;
+      if (object->collecting()) return ERR::MarkedForDeletion;
 
       object->pin();
    }
@@ -504,7 +504,7 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
 
    // Sanity check in case a thread called FreeResource() on the object before LockObject()
 
-   if ((error IS ERR::Okay) and (object->defined(NF::FREE|NF::FREE_ON_UNLOCK))) {
+   if ((error IS ERR::Okay) and (object->collecting())) {
       ReleaseObject(object);
       error = ERR::MarkedForDeletion;
    }
@@ -578,7 +578,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       return ERR::Okay;
    }
 
-   if (Object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) return ERR::MarkedForDeletion; // If the object is currently being removed by another thread, sleeping on it is pointless.
+   if (Object->collecting()) return ERR::MarkedForDeletion; // If the object is currently being removed by another thread, sleeping on it is pointless.
 
    // Problem: What if ReleaseObject() in another thread were to release the object prior to our glmObjectLocking lock?  This means that we would never receive the wake signal.
    // Solution: Prior to wait_until(), increment the object queue to attempt a lock.  This is *slightly* less efficient than doing it after the cond_wait(), but
@@ -780,7 +780,7 @@ void ReleaseObject(OBJECTPTR Object)
       log.traceBranch("Waking %d threads for this object.", Object->SleepQueue.load());
 
       if (auto lock = std::unique_lock{glmObjectLocking}) {
-         if (Object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) { // We have to tell other threads that the object is marked for deletion.
+         if (Object->collecting()) { // We have to tell other threads that the object is marked for deletion.
             // NB: A lock on glWaitLocks is not required because we're already protected by the glmObjectLocking
             // barrier (which is common between LockObject() and ReleaseObject()
             for (unsigned i=0; i < glWaitLocks.size(); i++) {

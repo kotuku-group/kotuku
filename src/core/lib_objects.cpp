@@ -154,7 +154,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
 
-   if (Object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) Resource.Collect = true;
+   if (Object->collecting()) Resource.Collect = true; // Probably redundant
 
    ScopedObjectAccess objlock(Object);
    if (not objlock.granted()) return ERR::AccessObject;
@@ -162,11 +162,6 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
    extObjectContext new_context(Object, AC::Free);
 
    auto mc = Object->ExtClass;
-   if (not mc) {
-      log.trace("Object %p #%d is missing its class pointer.", Object, Object->UID);
-      glObjects.erase(Resource.ResourceID);
-      return ERR::Terminate;
-   }
 
    // If the object is locked then we mark it for collection and return.
    // Collection is achieved via the message queue for maximum safety.

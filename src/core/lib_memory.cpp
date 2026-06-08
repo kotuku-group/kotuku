@@ -419,18 +419,16 @@ accepts resource identifiers for optimal safety, though C++ headers also provide
 The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration
 for managed memory blocks, and automatic cleanup of ownership tracking structures.
 
-When a memory block is currently locked (AccessCount > 0), it is marked for delayed collection rather than
-immediate deallocation. This prevents use-after-free errors while ensuring eventual cleanup when all references
-are released.
+If a resource is locked at the time of the call, it is marked for delayed collection only. This prevents
+use-after-free errors while ensuring eventual cleanup when all references are released.
 
 -INPUT-
 res ID: The unique identifier of the resource to be freed.
 
 -ERRORS-
 Okay: The resource was successfully freed or marked for delayed collection.
-MemoryDoesNotExist: The specified memory block identifier is not valid or already freed.
-SystemLocked: Memory management system is currently locked by another thread.
-InUse: The memory block is a busy managed resource.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).
+DoesNotExist: The specified memory block identifier is not valid or already freed.
+InUse: The resource is busy.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).
 
 -TAGS-
 closes-handle, blocking
@@ -440,89 +438,90 @@ closes-handle, blocking
 
 ERR FreeResource(RESOURCEID ResourceID)
 {
-   kt::Log log(__FUNCTION__);
+   auto lock = std::unique_lock{glmMemory}; // TODO Use a new mutex
 
-   if (auto lock = std::unique_lock{glmMemory}) { // TODO Use a new mutex
-      auto resource_it = glResources.find(ResourceID);
-      if ((resource_it != glResources.end()) and (resource_it->second.Address)) {
-         auto *resource = &resource_it->second;
-         if (resource->Terminating) return ERR::InUse;
+   auto resource_it = glResources.find(ResourceID);
+   if ((resource_it != glResources.end()) and (resource_it->second.Address)) {
+      auto *resource = &resource_it->second;
+      if (resource->Terminating) return ERR::InUse;
 
-         // Setting Terminating to true stops other threads from interfering with the deallocation process, and
-         // keeps the resource pointer stable.
+      // Setting Terminating to true stops other threads from interfering with the deallocation process, and
+      // keeps the resource pointer stable.
 
-         resource->Terminating = true;
+      resource->Terminating = true;
 
-         if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)",
-            ResourceID, resource->Address, resource->Size, resource->OwnerID);
+      kt::Log log(__FUNCTION__);
 
-         // Fast route for direct memory deallocation
+      if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)",
+         ResourceID, resource->Address, resource->Size, resource->OwnerID);
 
-         if (resource->Manager IS &glResourceMemoryHandler) {
-            auto error = memory_resource_free(resource_it->second, resource->Address);
-            if ((error IS ERR::Okay) and (not resource->Collect)) erase_resource(*resource);
-            else resource->Terminating = false;
-            return error;
-         }
+      // Fast route for direct memory deallocation
 
-         // Use the resource manager if possible.  Resource managers are not considered safe in an uncontrolled shutdown.
-
-         if (not glCrashStatus) {
-            auto free_address = resource->Address;
-            auto resource_manager = resource->Manager;
-
-            // If the manager can block, drop the memory lock to prevent deadlocking.
-            // It is presumed that the resource pointer remains stable under std::unordered_map guidance.
-
-            if (resource_manager->CanBlock) lock.unlock();
-
-            // The following responses apply to error codes returned from the resource manager:
-            //
-            // ERR::Okay      - The manager deallocated the resource, return to user immediately
-            // ERR::InUse     - Resource cannot be deallocated yet, do nothing and return error to user
-            // ERR::Terminate - Deallocate the resource as a standard memory block
-            // ERR::*         - Return code to user
-
-            auto error = resource_manager->Free(*resource, free_address);
-
-            if (resource_manager->CanBlock) lock.lock();
-
-            if (error IS ERR::Okay) {
-               // Resource manager took care of the deallocation, we just need to remove the record
-               if (resource->Collect) resource->Terminating = false;
-               else erase_resource(*resource);
-               return ERR::Okay;
-            }
-            else if (error != ERR::Terminate) { // Do nothing and return the error code
-               resource->Terminating = false;
-               return error;
-            }
-
-            // Drop-through to standard memory deallocation
-
-            resource_it = glResources.find(ResourceID);
-            if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::Okay;
-            resource = &resource_it->second;
-
-            resource->Manager = &glResourceMemoryHandler;
-         }
-
-         // If resource manager unavailable, revert to using memory deallocation if the UID is recognised.
-
-         auto error = ERR::Okay;
-         auto mem_it = glPrivateMemory.find(ResourceID);
-         if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address)) {
-            error = memory_resource_free(*resource, mem_it->second.Address);
-         }
-
+      if (resource->Manager IS &glResourceMemoryHandler) {
+         auto error = memory_resource_free(resource_it->second, resource->Address);
          if ((error IS ERR::Okay) and (not resource->Collect)) erase_resource(*resource);
          else resource->Terminating = false;
          return error;
       }
-      log.trace("Resource ID #%d does not exist.", ResourceID);
-      return ERR::MemoryDoesNotExist;
+
+      // Use the resource manager if possible.  Resource managers are not considered safe in an uncontrolled shutdown.
+
+      if (not glCrashStatus) {
+         auto free_address = resource->Address;
+         auto resource_manager = resource->Manager;
+
+         // If the manager can block, drop the memory lock to prevent deadlocking.
+         // It is presumed that the resource pointer remains stable under std::unordered_map guidance.
+
+         if (resource_manager->CanBlock) lock.unlock();
+
+         // The following responses apply to error codes returned from the resource manager:
+         //
+         // ERR::Okay      - The manager deallocated the resource, return to user immediately
+         // ERR::InUse     - Resource cannot be deallocated yet, do nothing and return error to user
+         // ERR::Terminate - Deallocate the resource as a standard memory block
+         // ERR::*         - Return code to user
+
+         auto error = resource_manager->Free(*resource, free_address);
+
+         if (resource_manager->CanBlock) lock.lock();
+
+         if (error IS ERR::Okay) {
+            // Resource manager took care of the deallocation, we just need to remove the record
+            if (resource->Collect) resource->Terminating = false;
+            else erase_resource(*resource);
+            return ERR::Okay;
+         }
+         else if (error != ERR::Terminate) { // Do nothing and return the error code
+            resource->Terminating = false;
+            return error;
+         }
+
+         // Drop-through to standard memory deallocation
+
+         resource_it = glResources.find(ResourceID);
+         if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::Okay;
+         resource = &resource_it->second;
+
+         resource->Manager = &glResourceMemoryHandler;
+      }
+
+      // If resource manager unavailable, revert to using memory deallocation if the UID is recognised.
+
+      auto error = ERR::Okay;
+      auto mem_it = glPrivateMemory.find(ResourceID);
+      if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address)) {
+         error = memory_resource_free(*resource, mem_it->second.Address);
+      }
+
+      if ((error IS ERR::Okay) and (not resource->Collect)) erase_resource(*resource);
+      else resource->Terminating = false;
+      return error;
    }
-   else return log.warning(ERR::SystemLocked);
+   else {
+      kt::Log(__FUNCTION__).trace("Resource ID #%d does not exist.", ResourceID);
+      return ERR::DoesNotExist;
+   }
 }
 
 /*********************************************************************************************************************
