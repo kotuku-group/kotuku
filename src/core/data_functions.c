@@ -20,8 +20,8 @@ FDEF argsAsyncPending[] = { { "Result", FD_INT }, { "Object", FD_OBJECTID }, { 0
 FDEF argsAsyncWait[] = { { "Error", FD_INT|FD_ERROR }, { "Objects", FDF_VECTOR|FD_OBJECTID }, { "TimeOut", FD_INT }, { 0, 0 } };
 FDEF argsBroadcastEvent[] = { { "Error", FD_INT|FD_ERROR }, { "Event", FD_PTR }, { "EventSize", FD_INT }, { 0, 0 } };
 FDEF argsCheckAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { 0, 0 } };
-FDEF argsCheckMemoryExists[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
 FDEF argsCheckObjectExists[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { 0, 0 } };
+FDEF argsCheckResourceExists[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
 FDEF argsClassDatabase[] = { { "Error", FD_INT|FD_ERROR }, { "ClassRecord:Classes", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsCompareFilePaths[] = { { "Error", FD_INT|FD_ERROR }, { "PathA", FDF_CPPSTRING }, { "PathB", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsCopyFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FDF_CPPSTRING }, { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
@@ -110,7 +110,7 @@ const struct Function glFunctions[] = {
    { (APTR)AllocMemory, "AllocMemory", argsAllocMemory },
    { (APTR)AccessObject, "AccessObject", argsAccessObject },
    { (APTR)CheckAction, "CheckAction", argsCheckAction },
-   { (APTR)CheckMemoryExists, "CheckMemoryExists", argsCheckMemoryExists },
+   { (APTR)CheckResourceExists, "CheckResourceExists", argsCheckResourceExists },
    { (APTR)CheckObjectExists, "CheckObjectExists", argsCheckObjectExists },
    { (APTR)InitObject, "InitObject", argsInitObject },
    { (APTR)VirtualVolume, "VirtualVolume", argsVirtualVolume },

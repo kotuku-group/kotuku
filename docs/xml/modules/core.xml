@@ -491,25 +491,6 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
   </function>
 
   <function>
-    <name>CheckMemoryExists</name>
-    <category>Memory</category>
-    <comment>Verifies the existence of a memory block.</comment>
-    <prototype>ERR CheckMemoryExists(MEMORYID ID)</prototype>
-    <tiriPrototype>err = CheckMemoryExists(ID:num)</tiriPrototype>
-    <tags>blocking, pure-query</tags>
-    <input>
-      <param type="MEMORYID" name="ID">The unique identifier of the memory block to verify.</param>
-    </input>
-    <description>
-<p>CheckMemoryExists() validates whether a memory block with the specified identifier still exists in the system's memory tracking structures. This function is useful for defensive programming when working with memory identifiers that may have been freed by other code paths.</p>
-    </description>
-    <result type="ERR">
-      <error code="True">The memory block exists and is valid.</error>
-      <error code="False">The memory block does not exist or has been freed.</error>
-    </result>
-  </function>
-
-  <function>
     <name>CheckObjectExists</name>
     <category>Objects</category>
     <comment>Checks if a particular object is still available in the system.</comment>
@@ -526,6 +507,25 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <error code="True">The object exists.</error>
       <error code="False">The object ID does not exist.</error>
       <error code="LockFailed">Failed to lock a required resource</error>
+    </result>
+  </function>
+
+  <function>
+    <name>CheckResourceExists</name>
+    <category>Memory</category>
+    <comment>Verifies the existence of a resource.</comment>
+    <prototype>ERR CheckResourceExists(RESOURCEID ID)</prototype>
+    <tiriPrototype>err = CheckResourceExists(ID:num)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
+    <input>
+      <param type="RESOURCEID" name="ID">The unique identifier of the resource to verify.</param>
+    </input>
+    <description>
+<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with memory identifiers that may have been freed by other code paths.</p>
+    </description>
+    <result type="ERR">
+      <error code="True">The resource exists and is valid.</error>
+      <error code="False">The resource does not exist or has been freed.</error>
     </result>
   </function>
 

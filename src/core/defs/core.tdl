@@ -1052,7 +1052,7 @@ struct ScriptArg { // For use with sc::Exec
     "AllocMemory",
     "AccessObject",
     "CheckAction",
-    "CheckMemoryExists",
+    "CheckResourceExists",
     "CheckObjectExists",
     "InitObject",
     "VirtualVolume",

@@ -133,7 +133,6 @@ flags("MEM", { comment="Memory types used by AllocMemory().  The lower 16 bits a
     "CODE:      Used for memory that can execute code.",
     "UNTRACKED: Prevents the memory block from being tracked back to the current context.",
     "STRING:    Identifies the memory content as a null terminated string, which aids diagnostics.",
-    "OBJECT:    Internal - The memory block represents an object structure.",
     "COLLECT:   Internal - The memory block is marked for collection.",
     "PROTECTED: Internal - Indicates that the block is using memory protection features.",
     { DATA          = "0: The default type, `DATA`, is used to indicate a standard memory allocation from system RAM." },

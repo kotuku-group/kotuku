@@ -33,9 +33,6 @@ Name: Memory
 
 using namespace kt;
 
-// Align to 64-byte cache line boundaries for better performance on modern CPUs
-constexpr size_t CACHE_LINE_SIZE = 64;
-
 //********************************************************************************************************************
 
 static void erase_resource(ResourceRecord &Resource)
@@ -381,18 +378,18 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 /*********************************************************************************************************************
 
 -FUNCTION-
-CheckMemoryExists: Verifies the existence of a memory block.
+CheckResourceExists: Verifies the existence of a resource.
 
-CheckMemoryExists() validates whether a memory block with the specified identifier still exists in the system's
-memory tracking structures. This function is useful for defensive programming when working with memory identifiers
-that may have been freed by other code paths.
+CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's
+resource tracking collection. This function is useful for defensive programming when working with resources
+such as memory or objects that may have been freed by other code paths.
 
 -INPUT-
-mem ID: The unique identifier of the memory block to verify.
+res ID: The unique identifier of the resource to verify.
 
 -ERRORS-
-True: The memory block exists and is valid.
-False: The memory block does not exist or has been freed.
+True: The resource exists and is valid.
+False: The resource does not exist or has been freed.
 
 -TAGS-
 blocking, pure-query
@@ -400,10 +397,13 @@ blocking, pure-query
 
 *********************************************************************************************************************/
 
-ERR CheckMemoryExists(MEMORYID MemoryID)
+ERR CheckResourceExists(RESOURCEID ResourceID)
 {
    if (auto lock = std::unique_lock{glmMemory}) {
-      if (glPrivateMemory.contains(MemoryID)) return ERR::True;
+      if (auto it = glResources.find(ResourceID); it != glResources.end()) {
+         if ((it->second.Terminating) or (it->second.Collect)) return ERR::False;
+         return ERR::True;
+      }
    }
    return ERR::False;
 }

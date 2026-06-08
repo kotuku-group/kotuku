@@ -148,6 +148,19 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 }
 
 //********************************************************************************************************************
+// Releases the heap block backing an object.  Object memory is allocated directly in NewObject() with an 8-byte
+// MEMHEADER cookie preceding the object pointer, so the block start is rewound by MEMHEADER before being freed.  This
+// must only be called once all object locks and contexts have been released (see object_free()).
+
+static void free_object_block(OBJECTPTR Object)
+{
+   if (not Object) return;
+   APTR start_mem = (char *)Object - MEMHEADER;
+   Object->~Object();
+   aligned_block_free(start_mem);
+}
+
+//********************************************************************************************************************
 // Object termination hook for FreeResource()
 
 ERR object_free(ResourceRecord &Resource, Object *Object)
@@ -156,68 +169,54 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
    if (Object->collecting()) Resource.Collect = true; // Probably redundant
 
-   ScopedObjectAccess objlock(Object);
-   if (not objlock.granted()) return ERR::AccessObject;
+   {
+      ScopedObjectAccess objlock(Object);
+      if (not objlock.granted()) return ERR::AccessObject;
 
-   extObjectContext new_context(Object, AC::Free);
+      extObjectContext new_context(Object, AC::Free);
 
-   auto mc = Object->ExtClass;
+      auto mc = Object->ExtClass;
 
-   // If the object is locked then we mark it for collection and return.
-   // Collection is achieved via the message queue for maximum safety.
+      // If the object is locked then we mark it for collection and return.
+      // Collection is achieved via the message queue for maximum safety.
 
-   if (((Object->Queue > 1) or (Object->isPinned())) and (not Object->defined(NF::PERMIT_TERMINATE))) {
-      log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
-      if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
-      Object->setFlag(NF::FREE_ON_UNLOCK);
-      Resource.Collect = true;
-      return ERR::InUse;
-   }
+      if (((Object->Queue > 1) or (Object->isPinned())) and (not Object->defined(NF::PERMIT_TERMINATE))) {
+         log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
+         if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
+         Object->setFlag(NF::FREE_ON_UNLOCK);
+         Resource.Collect = true;
+         return ERR::InUse;
+      }
 
-   if (Object->terminating()) {
-      log.trace("Object already being terminated.");
-      return ERR::InUse;
-   }
+      if (Object->terminating()) {
+         log.trace("Object already being terminated.");
+         return ERR::InUse;
+      }
 
 #ifndef NDEBUG
-   if (Object->ActionDepth > 0) {
-      // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
-      // is considered a critical error.
-      log.error("Cannot free object #%d; current state: in use without a lock.", Object->UID);
-      Resource.Collect = true;
-      return ERR::InUse;
-   }
+      if (Object->ActionDepth > 0) {
+         // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
+         // is considered a critical error.
+         log.error("Cannot free object #%d; current state: in use without a lock.", Object->UID);
+         Resource.Collect = true;
+         return ERR::InUse;
+      }
 #endif
 
-   if (Object->classID() IS CLASSID::METACLASS)   log.branch("%s, Owner: %d", Object->className(), Object->ownerID());
-   else if (Object->classID() IS CLASSID::MODULE) log.branch("%s, Owner: %d", ((extModule *)Object)->Name.c_str(), Object->ownerID());
-   else if (Object->Name[0])                      log.branch("Name: %s, Owner: %d", Object->Name, Object->ownerID());
-   else log.branch("Owner: %d", Object->ownerID());
+      if (Object->classID() IS CLASSID::METACLASS)   log.branch("%s, Owner: %d", Object->className(), Object->ownerID());
+      else if (Object->classID() IS CLASSID::MODULE) log.branch("%s, Owner: %d", ((extModule *)Object)->Name.c_str(), Object->ownerID());
+      else if (Object->Name[0])                      log.branch("Name: %s, Owner: %d", Object->Name, Object->ownerID());
+      else log.branch("Owner: %d", Object->ownerID());
 
-   // If the object wants to be warned when the free process is about to be executed, it will subscribe to the
-   // FreeWarning action.  The process can be aborted by returning ERR::InUse.
+      // If the object wants to be warned when the free process is about to be executed, it will subscribe to the
+      // FreeWarning action.  The process can be aborted by returning ERR::InUse.
 
-   if (mc->ActionTable[int(AC::FreeWarning)].PerformAction) {
-      if (mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
-         if (Object->collecting()) {
-            // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
-            // from locking up the shutdown process).
-
-            log.msg("Object will be destroyed despite being in use.");
-         }
-         else {
-            if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-            return ERR::InUse;
-         }
-      }
-   }
-
-   if (mc->Base) { // Derived class detected, so call the base class
-      if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
-         if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
+      if (mc->ActionTable[int(AC::FreeWarning)].PerformAction) {
+         if (mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
             if (Object->collecting()) {
-               // If the object is marked for deletion then it is not possible to avoid destruction (this prevents
-               // objects from locking up the shutdown process).
+               // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
+               // from locking up the shutdown process).
+
                log.msg("Object will be destroyed despite being in use.");
             }
             else {
@@ -226,76 +225,95 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
             }
          }
       }
-   }
 
-   // Object destruction is guaranteed; queued async actions can be cancelled safely.
-
-   drain_action_queue(Object->UID, true);
-
-   // Mark the object as being in the free process.  The mark prevents any further access to the object via
-   // AccessObject().  Classes may also use the flag to check if an object is in the process of being freed.
-
-   Object->setFlag(NF::FREE);
-   Object->clearFlag(NF::FREE_ON_UNLOCK);
-   Resource.Collect = true;
-
-   NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
-
-   if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
-      mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-   }
-
-   if (mc->Base) { // Derived class detected, so call the base class
-      if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
-         mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-      }
-   }
-
-   if (Object->NotifyFlags.load()) {
-      const std::lock_guard<std::recursive_mutex> lock(glSubLock);
-      glSubscriptions.erase(Object->UID);
-   }
-
-   if (Object->DerivedPtr) {
-      if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
-      Object->DerivedPtr = nullptr;
-   }
-
-   free_children(Object);
-
-   if (Object->defined(NF::TIMER_SUB)) {
-      if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
-         for (auto it=glTimers.begin(); it != glTimers.end(); ) {
-            if (it->SubscriberID IS Object->UID) {
-               log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
-                  mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
-               if (it->Routine.isScript()) {
-                  ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
+      if (mc->Base) { // Derived class detected, so call the base class
+         if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
+            if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
+               if (Object->collecting()) {
+                  // If the object is marked for deletion then it is not possible to avoid destruction (this prevents
+                  // objects from locking up the shutdown process).
+                  log.msg("Object will be destroyed despite being in use.");
                }
-               it = glTimers.erase(it);
+               else {
+                  if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
+                  return ERR::InUse;
+               }
             }
-            else it++;
          }
       }
-   }
 
-   if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Derived class detected
-   if (mc->OpenCount > 0) mc->OpenCount--;
+      // Object destruction is guaranteed; queued async actions can be cancelled safely.
 
-   if (Object->Name[0]) { // Remove the object from the name lookup list
-      if (auto olock = std::unique_lock{glmObjectLookup, 4s}) {
-         remove_object_hash(Object);
+      drain_action_queue(Object->UID, true);
+
+      // Mark the object as being in the free process.  The mark prevents any further access to the object via
+      // AccessObject().  Classes may also use the flag to check if an object is in the process of being freed.
+
+      Object->setFlag(NF::FREE);
+      Object->clearFlag(NF::FREE_ON_UNLOCK);
+      Resource.Collect = true;
+
+      NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
+
+      if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
+         mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
       }
+
+      if (mc->Base) { // Derived class detected, so call the base class
+         if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
+            mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
+         }
+      }
+
+      if (Object->NotifyFlags.load()) {
+         const std::lock_guard<std::recursive_mutex> lock(glSubLock);
+         glSubscriptions.erase(Object->UID);
+      }
+
+      if (Object->DerivedPtr) {
+         if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
+         Object->DerivedPtr = nullptr;
+      }
+
+      free_children(Object);
+
+      if (Object->defined(NF::TIMER_SUB)) {
+         if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
+            for (auto it=glTimers.begin(); it != glTimers.end(); ) {
+               if (it->SubscriberID IS Object->UID) {
+                  log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
+                     mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
+                  if (it->Routine.isScript()) {
+                     ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
+                  }
+                  it = glTimers.erase(it);
+               }
+               else it++;
+            }
+         }
+      }
+
+      if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Derived class detected
+      if (mc->OpenCount > 0) mc->OpenCount--;
+
+      if (Object->Name[0]) { // Remove the object from the name lookup list
+         if (auto olock = std::unique_lock{glmObjectLookup, 4s}) {
+            remove_object_hash(Object);
+         }
+      }
+
+      // Clear the object header to help raise use-after-free errors.
+
+      Object->Class = nullptr;
+      Object->UID   = 0;
+
+      glObjects.erase(Resource.ResourceID);
+
+      Resource.Collect = false;
    }
 
-   // Clear the object header.  This helps to raise problems in any areas of code that may attempt to use the object
-   // after it has been destroyed.
-
-   Object->Class = nullptr;
-   Object->UID   = 0;
-
-   glObjects.erase(Resource.ResourceID);
-   return ERR::Terminate;
+   free_object_block(Object);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1854,9 +1872,15 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    OBJECTPTR head = nullptr;
 
-   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::OBJECT|
-      (((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head) IS ERR::Okay) {
-      MEMORYID head_id = GetMemoryID(head);
+   // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
+   // glPrivateMemory.  Behaviour is mostly aligned with AllocMemory(), such as the header allocation.
+
+   if (APTR start_mem = aligned_block_alloc(mc->Size + MEMHEADER)) {
+      head = (OBJECTPTR)((char *)start_mem + MEMHEADER);
+
+      MEMORYID head_id = glPrivateIDCounter++;
+
+      ((int *)start_mem)[0] = head_id; // Store the UID cookie at ((int *)head)[-2]
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
@@ -1875,7 +1899,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       }
 
       if (error != ERR::Okay) {
-         FreeResource(head);
+         free_object_block(head);
          return error;
       }
 

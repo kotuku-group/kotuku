@@ -290,9 +290,8 @@ enum class MEM : uint32_t {
    CODE = 0x00000008,
    UNTRACKED = 0x00000010,
    STRING = 0x00000020,
-   OBJECT = 0x00000040,
-   COLLECT = 0x00000080,
-   PROTECTED = 0x00000100,
+   COLLECT = 0x00000040,
+   PROTECTED = 0x00000080,
    READ = 0x00010000,
    WRITE = 0x00020000,
    READ_WRITE = 0x00030000,
@@ -2045,7 +2044,7 @@ struct CoreBase {
    ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
-   ERR (*_CheckMemoryExists)(MEMORYID ID);
+   ERR (*_CheckResourceExists)(RESOURCEID ID);
    ERR (*_CheckObjectExists)(OBJECTID Object);
    ERR (*_InitObject)(OBJECTPTR Object);
    ERR (*_VirtualVolume)(const std::string_view &Name, ...);
@@ -2145,7 +2144,7 @@ inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
 inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
-inline ERR CheckMemoryExists(MEMORYID ID) { return CoreBase->_CheckMemoryExists(ID); }
+inline ERR CheckResourceExists(RESOURCEID ID) { return CoreBase->_CheckResourceExists(ID); }
 inline ERR CheckObjectExists(OBJECTID Object) { return CoreBase->_CheckObjectExists(Object); }
 inline ERR InitObject(OBJECTPTR Object) { return CoreBase->_InitObject(Object); }
 template<class... Args> ERR VirtualVolume(const std::string_view &Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
@@ -2241,7 +2240,7 @@ extern "C" int AllocateID(IDTYPE Type);
 extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
-extern "C" ERR CheckMemoryExists(MEMORYID ID);
+extern "C" ERR CheckResourceExists(RESOURCEID ID);
 extern "C" ERR CheckObjectExists(OBJECTID Object);
 extern "C" ERR InitObject(OBJECTPTR Object);
 extern "C" OBJECTPTR CurrentContext(void);

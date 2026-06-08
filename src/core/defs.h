@@ -29,6 +29,8 @@ using namespace std::chrono_literals;
 #define __system__
 #endif
 
+#include <stdlib.h> // Contains free(), malloc(), posix_memalign() etc
+
 #ifdef __unix__
  #include <fcntl.h>
  #include <sys/un.h>
@@ -37,6 +39,7 @@ using namespace std::chrono_literals;
  #include <semaphore.h>
 #elif defined(_WIN32)
  #include <fcntl.h>
+ #include <malloc.h> // For _aligned_malloc, _aligned_free
 #endif
 
 #include "microsoft/windefs.h"
@@ -360,6 +363,33 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 // Resource definitions.
 
 #define MEMHEADER 8     // 4 bytes at start for MemoryID, 4 bytes for payload alignment
+
+// Align to 64-byte cache line boundaries for better performance on modern CPUs.
+
+constexpr size_t CACHE_LINE_SIZE = 64;
+
+// Cache-line aligned heap allocation/free helpers shared by the memory and object subsystems.
+
+[[maybe_unused]] static inline APTR aligned_block_alloc(size_t Size)
+{
+   size_t aligned_size = ((Size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
+   #ifdef _WIN32
+      return _aligned_malloc(aligned_size, CACHE_LINE_SIZE);
+   #else
+      APTR result = nullptr;
+      if (posix_memalign(&result, CACHE_LINE_SIZE, aligned_size) != 0) return nullptr;
+      return result;
+   #endif
+}
+
+[[maybe_unused]] static inline void aligned_block_free(APTR Address)
+{
+   #ifdef _WIN32
+      _aligned_free(Address);
+   #else
+      free(Address);
+   #endif
+}
 
 // Turning off USE_SHM means that the shared memory pool is available to all processes by default.
 
