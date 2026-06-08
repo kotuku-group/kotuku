@@ -472,18 +472,34 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
    }
 
    OBJECTPTR object = nullptr;
-   auto error = AccessMemory(ObjectID, MEM::READ, MilliSeconds, (APTR *)&object);
-   if (error IS ERR::MemoryDoesNotExist) return ERR::NoMatchingObject;
-   else if (error != ERR::Okay) return error;
 
-   error = LockObject(object, MilliSeconds);
-   ReleaseMemory(ObjectID);
+   {
+      std::lock_guard lock(glmMemory);
 
-   if (error IS ERR::Okay) {
-      *Result = object;
-      return ERR::Okay;
+      auto resource = glResources.find(ObjectID);
+      if ((resource IS glResources.end()) or (not resource->second.Address)) return ERR::NoMatchingObject;
+      if (resource->second.Manager != &glResourceObject) return ERR::NoMatchingObject;
+      if (resource->second.Collect) return ERR::MarkedForDeletion;
+
+      object = (OBJECTPTR)resource->second.Address;
+      if (object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) return ERR::MarkedForDeletion;
+
+      object->pin();
    }
-   else return error;
+
+   auto error = LockObject(object, MilliSeconds);
+
+   // Sanity check in case a thread called FreeResource() on the object before LockObject()
+
+   if ((error IS ERR::Okay) and (object->defined(NF::FREE|NF::FREE_ON_UNLOCK))) {
+      ReleaseObject(object);
+      error = ERR::MarkedForDeletion;
+   }
+
+   object->unpin(error != ERR::Okay);
+
+   if (error IS ERR::Okay) *Result = object;
+   return error;
 }
 
 /*********************************************************************************************************************
