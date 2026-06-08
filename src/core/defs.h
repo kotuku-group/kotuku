@@ -1172,7 +1172,6 @@ ERR    process_janitor(OBJECTID, int, int);
 void   register_sleep(int);
 void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
-ERR    TrackResource(RESOURCEID, APTR, RESOURCEID, ResourceManager *, int64_t);
 void   UntrackResource(RESOURCEID);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
 ERR get_file_info(const std::string_view &Path, FileInfo &Info);

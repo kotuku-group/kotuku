@@ -162,7 +162,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
       }
 
       new (dir) extDirInfo();
-      TrackResource(GetMemoryID(dir), dir, RESOURCEID_INHERIT, &glResourceFolder, sizeof(extDirInfo));
+      TrackResource(GetMemoryID(dir), dir, RESOURCEID_INHERIT, &glResourceFolder);
       if (auto error = dir->initialise(Path, resolved_path, Flags, vd.DriverSize); error != ERR::Okay) {
          FreeResource(dir);
          return error;

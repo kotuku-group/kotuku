@@ -33,7 +33,7 @@ static SimpleVector * new_simplevector(void)
 {
    SimpleVector *vector;
    if (AllocMemory(sizeof(SimpleVector), MEM::NIL, (APTR *)&vector) != ERR::Okay) return nullptr;
-   TrackResource(GetMemoryID(vector), vector, RESOURCEID_INHERIT, &glResourceSimpleVector, sizeof(SimpleVector));
+   TrackResource(GetMemoryID(vector), vector, RESOURCEID_INHERIT, &glResourceSimpleVector);
    new(vector) SimpleVector;
    return vector;
 }

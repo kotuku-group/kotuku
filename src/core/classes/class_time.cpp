@@ -802,7 +802,7 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    struct TimeZoneInfo *tz;
    if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA, (APTR *)&tz) IS ERR::Okay) {
       new (tz) struct TimeZoneInfo;
-      TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler, sizeof(struct TimeZoneInfo));
+      TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler);
 
       const std::string_view zone_id = Args->ZoneID;
       if (is_utc_zone(zone_id)) {

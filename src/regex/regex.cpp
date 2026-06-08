@@ -203,7 +203,7 @@ ERR Compile(const std::string_view &Pattern, REGEX Flags, std::string *ErrorMsg,
 
    extRegex *regex;
    if (AllocMemory(sizeof(struct extRegex), MEM::NIL, (APTR *)&regex) IS ERR::Okay) {
-      TrackResource(GetMemoryID(regex), regex, RESOURCEID_INHERIT, &glRegexMgr, sizeof(struct extRegex));
+      TrackResource(GetMemoryID(regex), regex, RESOURCEID_INHERIT, &glRegexMgr);
       new (regex) extRegex();
       regex->Pattern = Pattern;
       regex->Flags = Flags;

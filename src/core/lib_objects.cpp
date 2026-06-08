@@ -1880,7 +1880,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          glObjects.insert_or_assign(head->UID, ObjectRecord(head));
       }
 
-      TrackResource(head->UID, head, 0, &glResourceObject, mc->Size);
+      TrackResource(head->UID, head, 0, &glResourceObject);
 
       // Tracking for our new object is configured here.
 

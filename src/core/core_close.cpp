@@ -550,9 +550,7 @@ static void free_private_memory(void)
 
       for (const auto & [ id, resource ] : glResources) {
          if ((resource.Address) and (not glCrashStatus)) {
-            CSTRING name = (resource.Manager) ? resource.Manager->Name : "unmanaged";
-            log.warning("Unfreed resource #%d/%p (%s), Size %d, Container: #%d.",
-               id, resource.Address, name, resource.Size, resource.OwnerID);
+            log.warning("Unfreed resource #%d/%p (%s), Owner: #%d.", id, resource.Address, resource.Manager->Name, resource.OwnerID);
          }
       }
    }

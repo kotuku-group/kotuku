@@ -125,7 +125,6 @@ res ResourceID: Unique identifier for the resource to register or replace.
 ptr Address: Address of the resource, or `NULL` to preserve an existing address.
 res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
 struct(ResourceManager) Manager: Resource manager used to release the resource.
-large Size: Size of the tracked resource in bytes, or `0` to preserve an existing size.
 
 -ERRORS-
 Okay
@@ -138,7 +137,7 @@ retains-input, does-not-take-ownership, blocking, thread-safe
 
 *********************************************************************************************************************/
 
-ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager, int64_t Size)
+ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager)
 {
    kt::Log log(__FUNCTION__);
    std::lock_guard lock(glmMemory); // TODO: Use a resource specific mutex
@@ -151,7 +150,6 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
 
       if (Address) record.Address = Address; // Assigning a new address to an existing ID is permissable
       if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permissable
-      if (Size) record.Size = uint32_t(Size);
 
       const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
 
@@ -184,7 +182,7 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
          else OwnerID = 0;
       }
 
-      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Size));
+      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
 
       if (OwnerID) {
          auto owner_record = glResources.find(OwnerID);
@@ -337,7 +335,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
       glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
-      TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler, Size);
+      TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler);
 
       if (Address) *Address = data_start;
 
@@ -440,8 +438,7 @@ ERR FreeResource(RESOURCEID ResourceID)
 
       kt::Log log(__FUNCTION__);
 
-      if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)",
-         ResourceID, resource->Address, resource->Size, resource->OwnerID);
+      if (glShowPrivate) log.branch("FreeResource(#%d, %p, Owner: #%d)", ResourceID, resource->Address, resource->OwnerID);
 
       // Fast route for direct memory deallocation
 

@@ -82,22 +82,20 @@ public:
    ResourceManager *Manager = nullptr; // Reference to the resource manager for this record
    RESOURCEID ResourceID = 0;  // Unique identifier
    OBJECTID   OwnerID = 0;     // Owner of the resource
-   uint32_t   Size = 0;
    bool       Collect = false; // Marked for collection while currently in use.
    bool       Terminating = false; // A FreeResource() call currently owns the destruction path.
    bool       OwnerManagesChildren = false; // True if the current OwnerID manages its child resources
 
    ResourceRecord() = default;
 
-   ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager, uint32_t ASize) :
-      Address(AAddress), Manager(AManager), ResourceID(AResourceID), OwnerID(AOwnerID), Size(ASize) { };
+   ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager) :
+      Address(AAddress), Manager(AManager), ResourceID(AResourceID), OwnerID(AOwnerID) { };
 
    void clear() {
       ResourceID = 0;
       Address = nullptr;
       OwnerID = 0;
       Manager = nullptr;
-      Size = 0;
       Collect = false;
       Terminating = false;
    }

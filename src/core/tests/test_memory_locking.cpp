@@ -63,7 +63,7 @@ static int run_terminating_resource_check(void)
    glManagerCanFinish.store(false, std::memory_order_release);
    glConcurrentFreeError = ERR::Okay;
 
-   if (auto error = TrackResource(GetMemoryID(memory), memory, 0, &glTerminatingResourceManager, 64); error != ERR::Okay) {
+   if (auto error = TrackResource(GetMemoryID(memory), memory, 0, &glTerminatingResourceManager); error != ERR::Okay) {
       FreeResource(memory);
       log.warning("TrackResource() failed for terminating resource test: %s.", GetErrorMsg(error));
       return -1;

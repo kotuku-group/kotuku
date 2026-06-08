@@ -1921,15 +1921,14 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>TrackResource</name>
     <category>Memory</category>
     <comment>Assign a resource manager to an address, or update an existing one.</comment>
-    <prototype>ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager, INT64 Size)</prototype>
-    <tiriPrototype>err = TrackResource(ResourceID:num, Address:any, OwnerID:num, Manager:any, Size:num)</tiriPrototype>
+    <prototype>ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager)</prototype>
+    <tiriPrototype>err = TrackResource(ResourceID:num, Address:any, OwnerID:num, Manager:any)</tiriPrototype>
     <tags>retains-input, does-not-take-ownership, blocking, thread-safe</tags>
     <input>
       <param type="RESOURCEID" name="ResourceID">Unique identifier for the resource to register or replace.</param>
       <param type="APTR" name="Address">Address of the resource, or <code>NULL</code> to preserve an existing address.</param>
       <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.</param>
       <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
-      <param type="INT64" name="Size">Size of the tracked resource in bytes, or <code>0</code> to preserve an existing size.</param>
     </input>
     <description>
 <p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>

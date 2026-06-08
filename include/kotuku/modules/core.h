@@ -2125,7 +2125,7 @@ struct CoreBase {
    int (*_AsyncPending)(OBJECTID Object);
    ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
-   ERR (*_TrackResource)(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager, int64_t Size);
+   ERR (*_TrackResource)(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
 #endif // KOTUKU_STATIC
 };
 
@@ -2222,7 +2222,7 @@ inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncC
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
 inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
-inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager, int64_t Size) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager,Size); }
+inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
@@ -2314,7 +2314,7 @@ extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
-extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager, int64_t Size);
+extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
 #endif // KOTUKU_STATIC
 
 
