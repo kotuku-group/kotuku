@@ -136,7 +136,7 @@ resource is added to the owner's resource list so it can be removed during owner
 -INPUT-
 res ResourceID: Unique identifier for the resource to register or replace.
 ptr Address: Address of the resource, or `NULL` if the resource is identified only by `ResourceID`.
-res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
+res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.  If `RESOURCEID_INHERIT` then either the existing owner is not changed, or the context is inherited.
 struct(ResourceManager) Manager: Resource manager used to release the resource.
 large Size: Size of the tracked resource in bytes, if known.
 
@@ -165,24 +165,35 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
       if (Manager) existing->second.Manager = Manager;
       if (Size) existing->second.Size = uint32_t(Size);
 
-      if ((previous_owner_id != OwnerID) or (previous_manager != existing->second.Manager)) {
+      const bool inherit_owner = OwnerID IS RESOURCEID_INHERIT;
+      const auto effective_owner_id = inherit_owner ? previous_owner_id : OwnerID;
+
+      if ((previous_owner_id != effective_owner_id) or (previous_manager != existing->second.Manager)) {
+         // TODO: Call the previous manager's RemoveChild() implementation, if defined.
+         // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
          if (auto object_rec = glObjects.find(previous_owner_id); object_rec != glObjects.end()) {
             object_rec->second.Resources.erase(ResourceID);
             object_rec->second.Children.erase(ResourceID);
          }
 
-         existing->second.OwnerID = OwnerID;
+         if (not inherit_owner) existing->second.OwnerID = OwnerID;
       }
 
-      if ((existing->second.Manager != &glResourceObject) and existing->second.OwnerID) {
+      if ((existing->second.Manager != &glResourceObject) and effective_owner_id) {
          // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
-         if (auto object_rec = glObjects.find(existing->second.OwnerID); object_rec != glObjects.end()) {
+         if (auto object_rec = glObjects.find(effective_owner_id); object_rec != glObjects.end()) {
             object_rec->second.Resources.insert(ResourceID);
          }
       }
    }
    else {
       if (not Manager) return ERR::NullArgs;
+
+      if (OwnerID IS RESOURCEID_INHERIT) { // Get the owner from the current context
+         if (tlContext.size() > 1) OwnerID = current_resource()->UID;
+         else if (glCurrentTask) OwnerID = glCurrentTask->UID;
+         else OwnerID = 0;
+      }
 
       glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Size));
 
@@ -207,6 +218,7 @@ void UntrackResource(RESOURCEID ResourceID)
    if (resource IS glResources.end()) return;
 
    if (resource->second.OwnerID) {
+      // TODO: Get the OwnerID's resource manager, then call its RemoveChild() implementation, if defined.
       if (auto object_rec = glObjects.find(resource->second.OwnerID); object_rec != glObjects.end()) {
          object_rec->second.Resources.erase(ResourceID);
          object_rec->second.Children.erase(ResourceID);

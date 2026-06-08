@@ -2032,7 +2032,7 @@ static ResourceManager glNodeManager = {
     <input>
       <param type="RESOURCEID" name="ResourceID">Unique identifier for the resource to register or replace.</param>
       <param type="APTR" name="Address">Address of the resource, or <code>NULL</code> if the resource is identified only by <code>ResourceID</code>.</param>
-      <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.</param>
+      <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.  If <code>RESOURCEID_INHERIT</code> then either the existing owner is not changed, or the context is inherited.</param>
       <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
       <param type="INT64" name="Size">Size of the tracked resource in bytes, if known.</param>
     </input>

@@ -604,6 +604,8 @@ constexpr T roundup(T Num, T Alignment) {
 
 } // namespace
 
+constexpr RESOURCEID RESOURCEID_INHERIT = 1;
+
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
