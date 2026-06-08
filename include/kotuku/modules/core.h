@@ -2045,7 +2045,6 @@ struct CoreBase {
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
    ERR (*_CheckResourceExists)(RESOURCEID ID);
-   ERR (*_CheckObjectExists)(OBJECTID Object);
    ERR (*_InitObject)(OBJECTPTR Object);
    ERR (*_VirtualVolume)(const std::string_view &Name, ...);
    OBJECTPTR (*_CurrentContext)(void);
@@ -2145,7 +2144,6 @@ inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
 inline ERR CheckResourceExists(RESOURCEID ID) { return CoreBase->_CheckResourceExists(ID); }
-inline ERR CheckObjectExists(OBJECTID Object) { return CoreBase->_CheckObjectExists(Object); }
 inline ERR InitObject(OBJECTPTR Object) { return CoreBase->_InitObject(Object); }
 template<class... Args> ERR VirtualVolume(const std::string_view &Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
 inline OBJECTPTR CurrentContext(void) { return CoreBase->_CurrentContext(); }
@@ -2241,7 +2239,6 @@ extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckResourceExists(RESOURCEID ID);
-extern "C" ERR CheckObjectExists(OBJECTID Object);
 extern "C" ERR InitObject(OBJECTPTR Object);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);

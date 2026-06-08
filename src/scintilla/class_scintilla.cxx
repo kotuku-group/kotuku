@@ -2133,7 +2133,7 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
    log.warning("%s", Message);
 
    if (dialog_id) {
-      if (CheckObjectExists(dialog_id) IS ERR::True) return;
+      if (CheckResourceExists(dialog_id) IS ERR::True) return;
    }
 
    OBJECTPTR dialog;

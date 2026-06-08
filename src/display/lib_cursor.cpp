@@ -453,7 +453,7 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
    // Return if the cursor is currently pwn3d by someone
 
    if ((pointer->CursorOwnerID) and (pointer->CursorOwnerID != OwnerID)) {
-      if ((pointer->CursorOwnerID < 0) and (CheckObjectExists(pointer->CursorOwnerID) != ERR::True)) pointer->CursorOwnerID = 0;
+      if ((pointer->CursorOwnerID < 0) and (CheckResourceExists(pointer->CursorOwnerID) != ERR::True)) pointer->CursorOwnerID = 0;
       else if ((Flags & CRF::BUFFER) != CRF::NIL) {
          // If the BUFFER option is used, then we can buffer the change so that it
          // will be activated as soon as the current holder releases the cursor.

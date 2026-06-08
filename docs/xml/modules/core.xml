@@ -491,26 +491,6 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
   </function>
 
   <function>
-    <name>CheckObjectExists</name>
-    <category>Objects</category>
-    <comment>Checks if a particular object is still available in the system.</comment>
-    <prototype>ERR CheckObjectExists(OBJECTID Object)</prototype>
-    <tiriPrototype>err = CheckObjectExists(Object:obj)</tiriPrototype>
-    <tags>blocking, pure-query</tags>
-    <input>
-      <param type="OBJECTID" name="Object">The object identity to verify.</param>
-    </input>
-    <description>
-<p>The CheckObjectExists() function verifies the presence of any object created by <function>NewObject</function>. Objects that are marked for termination are considered to no longer exist for the purposes of this function, and will return <code>ERR::False</code>.</p>
-    </description>
-    <result type="ERR">
-      <error code="True">The object exists.</error>
-      <error code="False">The object ID does not exist.</error>
-      <error code="LockFailed">Failed to lock a required resource</error>
-    </result>
-  </function>
-
-  <function>
     <name>CheckResourceExists</name>
     <category>Memory</category>
     <comment>Verifies the existence of a resource.</comment>
@@ -521,7 +501,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <param type="RESOURCEID" name="ID">The unique identifier of the resource to verify.</param>
     </input>
     <description>
-<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with memory identifiers that may have been freed by other code paths.</p>
+<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.</p>
     </description>
     <result type="ERR">
       <error code="True">The resource exists and is valid.</error>

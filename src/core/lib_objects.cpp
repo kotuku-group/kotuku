@@ -1234,38 +1234,6 @@ ERR CheckAction(OBJECTPTR Object, ACTIONID ActionID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-CheckObjectExists: Checks if a particular object is still available in the system.
-
-The CheckObjectExists() function verifies the presence of any object created by ~NewObject(). Objects that are marked
-for termination are considered to no longer exist for the purposes of this function, and will return `ERR::False`.
-
--INPUT-
-oid Object: The object identity to verify.
-
--ERRORS-
-True:  The object exists.
-False: The object ID does not exist.
-LockFailed:
-
--TAGS-
-blocking, pure-query
-
-*********************************************************************************************************************/
-
-ERR CheckObjectExists(OBJECTID ObjectID)
-{
-   if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto object_rec = glObjects.find(ObjectID); (object_rec != glObjects.end()) and (object_rec->second.Object)) {
-         return object_rec->second.Object->defined(NF::FREE_ON_UNLOCK) ? ERR::False : ERR::True;
-      }
-      return ERR::False;
-   }
-   else return kt::Log(__FUNCTION__).warning(ERR::LockFailed);
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
 ClassDatabase: Returns an array of all classes known to the system.
 
 Call ClassDatabase() to obtain an array of all classes known to the system.

@@ -10,7 +10,6 @@ extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR * Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR * Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckResourceExists(RESOURCEID ID);
-extern "C" ERR CheckObjectExists(OBJECTID Object);
 extern "C" ERR InitObject(OBJECTPTR Object);
 extern "C" ERR VirtualVolume(const std::string_view & Name, ...);
 extern "C" OBJECTPTR CurrentContext();
