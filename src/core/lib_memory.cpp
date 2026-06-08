@@ -38,6 +38,21 @@ constexpr size_t CACHE_LINE_SIZE = 64;
 
 //********************************************************************************************************************
 
+static void erase_resource(ResourceRecord &Resource)
+{
+   if (Resource.OwnerManagesChildren) {
+      auto parent = glResources.find(Resource.OwnerID);
+      if ((parent != glResources.end()) and (parent->second.Manager) and (parent->second.Manager->RemoveChild)) {
+         parent->second.Manager->RemoveChild(parent->second, Resource);
+      }
+      Resource.OwnerManagesChildren = false;
+   }
+
+   glResources.erase(Resource.ResourceID);
+}
+
+//********************************************************************************************************************
+
 static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 {
    kt::Log log("FreeMemory");
@@ -77,19 +92,7 @@ static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
          #endif
       }
 
-      // TODO: Should be moved to the object's resource manager
-
-      if ((active_mem.Flags & MEM::OBJECT) != MEM::NIL) {
-         if (auto object_it = glObjects.find(Resource.OwnerID); object_it != glObjects.end()) {
-            object_it->second.Children.erase(memory_id);
-         }
-         glObjects.erase(memory_id);
-      }
-      else if (auto object_it = glObjects.find(Resource.OwnerID); object_it != glObjects.end()) {
-         object_it->second.Resources.erase(memory_id);
-      }
-
-      glResources.erase(memory_id);
+      Resource.Collect = false;
       active_mem.clear();
       if (glProgramStage != STAGE_SHUTDOWN) glPrivateMemory.erase(memory_id);
 
@@ -213,18 +216,7 @@ void UntrackResource(RESOURCEID ResourceID)
    auto resource = glResources.find(ResourceID);
    if (resource IS glResources.end()) return;
 
-   if (resource->second.OwnerID) {
-      auto &record = resource->second;
-
-      if (record.OwnerManagesChildren) {
-         auto owner_record = glResources.find(record.OwnerID);
-         if ((owner_record != glResources.end()) and (owner_record->second.Manager->RemoveChild)) {
-            owner_record->second.Manager->RemoveChild(owner_record->second, record);
-         }
-      }
-   }
-
-   glResources.erase(resource);
+   erase_resource(resource->second);
 }
 
 /*********************************************************************************************************************
@@ -444,23 +436,24 @@ closes-handle, blocking
 
 *********************************************************************************************************************/
 
-ERR FreeResource(RESOURCEID MemoryID)
+ERR FreeResource(RESOURCEID ResourceID)
 {
    kt::Log log(__FUNCTION__);
 
    if (auto lock = std::unique_lock{glmMemory}) { // TODO Use a new mutex
-      RESOURCEID resource_id = MemoryID;
-      auto resource_it = glResources.find(resource_id);
+      auto resource_it = glResources.find(ResourceID);
       if ((resource_it != glResources.end()) and (resource_it->second.Address)) {
          ResourceRecord *resource = &resource_it->second; // Take a copy
 
-         if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)", MemoryID,
-            resource->Address, resource->Size, resource->OwnerID);
+         if (glShowPrivate) log.branch("FreeResource(#%d, %p, Size: %d, Owner: #%d)",
+            ResourceID, resource->Address, resource->Size, resource->OwnerID);
 
          // Fast route for direct memory deallocation
 
          if (resource->Manager IS &glResourceMemoryHandler) {
-            return memory_resource_free(resource_it->second, resource->Address);
+            auto error = memory_resource_free(resource_it->second, resource->Address);
+            if ((error IS ERR::Okay) and (not resource->Collect)) erase_resource(*resource);
+            return error;
          }
 
          // Use the resource manager if possible.  Resource managers are not considered safe in an uncontrolled shutdown.
@@ -486,8 +479,8 @@ ERR FreeResource(RESOURCEID MemoryID)
             if (error IS ERR::Okay) {
                // Resource manager took care of the deallocation, we just need to remove the record
                // TODO: Using a glDirtyResources marker could eliminate the need for this
-               if (auto current_resource = glResources.find(resource_id); current_resource != glResources.end()) {
-                  glResources.erase(current_resource);
+               if (auto current_resource = glResources.find(ResourceID); current_resource != glResources.end()) {
+                  erase_resource(current_resource->second);
                }
                return ERR::Okay;
             }
@@ -495,7 +488,7 @@ ERR FreeResource(RESOURCEID MemoryID)
 
             // Drop-through to standard memory deallocation
 
-            resource_it = glResources.find(resource_id);
+            resource_it = glResources.find(ResourceID);
             if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::Okay;
             resource = &resource_it->second;
 
@@ -504,15 +497,16 @@ ERR FreeResource(RESOURCEID MemoryID)
 
          // If resource manager unavailable, revert to using memory deallocation if the UID is recognised.
 
-         auto mem_it = glPrivateMemory.find(MemoryID);
+         auto error = ERR::Okay;
+         auto mem_it = glPrivateMemory.find(ResourceID);
          if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address)) {
-            return memory_resource_free(*resource, mem_it->second.Address);
+            error = memory_resource_free(*resource, mem_it->second.Address);
          }
 
-         glResources.erase(resource_id);
-         return ERR::Okay;
+         if ((error IS ERR::Okay) and (not resource->Collect)) erase_resource(*resource);
+         return error;
       }
-      log.trace("Resource ID #%d does not exist.", resource_id);
+      log.trace("Resource ID #%d does not exist.", ResourceID);
       return ERR::MemoryDoesNotExist;
    }
    else return log.warning(ERR::SystemLocked);

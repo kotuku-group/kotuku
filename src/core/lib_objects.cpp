@@ -164,6 +164,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
    auto mc = Object->ExtClass;
    if (not mc) {
       log.trace("Object %p #%d is missing its class pointer.", Object, Object->UID);
+      glObjects.erase(Resource.ResourceID);
       return ERR::Terminate;
    }
 
@@ -297,6 +298,8 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
    Object->Class = nullptr;
    Object->UID   = 0;
+
+   glObjects.erase(Resource.ResourceID);
    return ERR::Terminate;
 }
 
@@ -304,11 +307,9 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
 void object_add_child(ResourceRecord &Parent, ResourceRecord &Child)
 {
-   if (Child.Manager != &glResourceObject) {
-      // Tracking of standard resources is managed here.  Child objects are managed through other mechanisms
-      if (auto parent_object = glObjects.find(Parent.ResourceID); parent_object != glObjects.end()) {
-         parent_object->second.Resources.insert(Child.ResourceID);
-      }
+   if (auto parent_object = glObjects.find(Parent.ResourceID); parent_object != glObjects.end()) {
+      if (Child.Manager IS &glResourceObject) parent_object->second.Children.insert(Child.ResourceID);
+      else parent_object->second.Resources.insert(Child.ResourceID);
    }
 }
 
@@ -357,10 +358,9 @@ static void free_children(OBJECTPTR Object)
             if ((child_rec IS glObjects.end()) or (not child_rec->second.Object)) continue;
 
             // Skip child objects that are marked for collection, we can't destroy them until they are unlocked.
-            auto mem = glPrivateMemory.find(id);
-            if ((mem IS glPrivateMemory.end()) or (not mem->second.Address)) continue;
-
-            if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) continue;
+            auto resource = glResources.find(id);
+            if ((resource IS glResources.end()) or (not resource->second.Address)) continue;
+            if (resource->second.Collect) continue;
 
             auto child = child_rec->second.Object;
             if ((child->Owner) and (child->Owner != Object)) {
@@ -385,26 +385,16 @@ static void free_children(OBJECTPTR Object)
          const auto list = object_rec->second.Resources; // Take an immutable copy of the resource list
 
          for (const auto id : list) {
-            auto it = glPrivateMemory.find(id);
-            if ((it IS glPrivateMemory.end()) or (not it->second.Address)) continue;
-            auto &mem = it->second;
+            auto resource = glResources.find(id);
+            if ((resource IS glResources.end()) or (not resource->second.Address)) continue;
+            auto &rec = resource->second;
+            if (rec.Collect) continue;
 
-            if (((mem.Flags & MEM::COLLECT) != MEM::NIL) or (not mem.Address)) continue;
+            auto address = rec.Address;
 
-            if (glLogLevel >= 3) {
-               if ((mem.Flags & MEM::STRING) != MEM::NIL) {
-                  log.warning("Unfreed string \"%.40s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-               }
-               else if (auto resource = glResources.find(mem.MemoryID); resource != glResources.end()) {
-                  if (resource->second.Manager) {
-                     log.warning("Unfreed %s resource at %p.", resource->second.Manager->Name, mem.Address);
-                  }
-                  else log.warning("Unfreed resource at %p.", mem.Address);
-               }
-               else log.warning("Unfreed memory block %p, Size %d", mem.Address, mem.Size);
-            }
+            if (glLogLevel >= 3) log.warning("Unfreed %s resource at %p.", rec.Manager->Name, address);
 
-            if (FreeResource(mem.Address) != ERR::Okay) log.warning("Error freeing tracked address %p", mem.Address);
+            if (FreeResource(id) != ERR::Okay) log.warning("Error freeing tracked resource #%d at %p", id, address);
          }
       }
 
@@ -2269,28 +2259,41 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
 
    //if (Object->Owner) log.trace("SetOwner:","Changing the owner for object %d from %d to %d.", Object->UID, Object->ownerID(), Owner->UID);
 
-   // Track the object record to the new owner.  glPrivateMemory is kept in sync for allocation metadata and diagnostics,
-   // but glObjects is the authoritative source for object ownership.
+   // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
 
    if (auto lock = std::unique_lock{glmMemory}) {
-      auto object_rec = glObjects.find(Object->UID);
-      if (object_rec IS glObjects.end()) return log.warning(ERR::SystemCorrupt);
+      auto object_rec   = glObjects.find(Object->UID);
+      auto resource_rec = glResources.find(Object->UID);
+      auto owner_rec    = glResources.find(Owner->UID);
 
-      auto mem = glPrivateMemory.find(Object->UID);
-      if (mem IS glPrivateMemory.end()) return log.warning(ERR::SystemCorrupt);
+      if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return log.warning(ERR::SystemCorrupt);
 
-      // Remove reference from the now previous owner
-      if (auto it = glObjects.find(object_rec->second.OwnerID); it != glObjects.end()) {
-         it->second.Children.erase(Object->UID);
+      if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
+         (not owner_rec->second.Manager->AddChild)) {
+         return log.warning(ERR::SystemCorrupt);
+      }
+
+      auto &resource = resource_rec->second;
+
+      if (resource.OwnerManagesChildren) {
+         if (auto previous_owner = glResources.find(resource.OwnerID);
+            (previous_owner != glResources.end()) and (previous_owner->second.Manager) and
+            (previous_owner->second.Manager->RemoveChild)) {
+            previous_owner->second.Manager->RemoveChild(previous_owner->second, resource);
+         }
+      }
+      else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
+         previous_owner->second.Children.erase(Object->UID);
       }
 
       object_rec->second.OwnerID = Owner->UID;
-      if (auto resource = glResources.find(Object->UID); resource != glResources.end()) {
-         resource->second.OwnerID = Owner->UID;
-      }
+      resource.OwnerID = Owner->UID;
+      resource.OwnerManagesChildren = false;
       Object->Owner = Owner;
 
-      glObjects[Owner->UID].Children.insert(Object->UID);
+      owner_rec->second.Manager->AddChild(owner_rec->second, resource);
+      resource.OwnerManagesChildren = true;
+
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);

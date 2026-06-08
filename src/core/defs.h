@@ -729,7 +729,7 @@ extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
-extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory: Using ankerl::unordered_dense for superior performance
+extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory
 extern std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Locked with glmMemory.
 extern std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Locked with glmMemory.
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;

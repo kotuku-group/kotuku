@@ -57,16 +57,35 @@ static void remove_schedulers(void)
 static void remove_object_locks(void)
 {
    kt::Log log(__FUNCTION__);
+   struct object_lock {
+      OBJECTID ObjectID;
+      int Locks;
+   };
 
+   std::vector<object_lock> locked_objects;
    if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.AccessCount > 0)) {
-            if (auto obj = mem.Object) {
-               log.warning("Removing locks on object #%d, Owner: %d, Locks: %d", obj->UID, obj->Owner ? obj->Owner->UID : 0, mem.AccessCount);
-               for (auto count=mem.AccessCount; count > 0; count--) ReleaseObject(obj);
-            }
+      for (const auto & rec : glObjects) {
+         if (auto obj = rec.second.Object) {
+            const auto locks = int(obj->Queue.load(std::memory_order_relaxed));
+            if (locks > 0) locked_objects.emplace_back(obj->UID, locks);
          }
       }
+   }
+
+   for (auto & rec : locked_objects) {
+      OBJECTPTR obj = nullptr;
+      {
+         std::lock_guard lock(glmMemory);
+         if (auto object_rec = glObjects.find(rec.ObjectID); object_rec != glObjects.end()) {
+            obj = object_rec->second.Object;
+         }
+      }
+
+      if (not obj) continue;
+
+      log.warning("Removing locks on object #%d, Owner: %d, Locks: %d",
+         obj->UID, obj->Owner ? obj->Owner->UID : 0, rec.Locks);
+      for (auto count = rec.Locks; count > 0; count--) ReleaseObject(obj);
    }
 }
 
@@ -509,6 +528,7 @@ restart_forced_expunge:
 }
 
 //********************************************************************************************************************
+// Note: Class and object pointers are no longer valid for interaction at this stage
 
 static void free_private_memory(void)
 {
@@ -536,11 +556,7 @@ static void free_private_memory(void)
       for (auto & [ id, mem ] : glPrivateMemory) {
          if (mem.Address) {
             if (!glCrashStatus) {
-               if ((mem.Flags & MEM::OBJECT) != MEM::NIL) {
-                  // Note: Class pointers are all invalid at this stage
-                  log.warning("Unfreed object #%d, Size %d", mem.MemoryID, mem.Size);
-               }
-               else log.warning("Unfreed memory #%d/%p, Size %d, Locks: %d, ThreadLock: %d.",
+               log.warning("Unfreed resource #%d/%p, Size %d, Locks: %d, ThreadLock: %d.",
                   mem.MemoryID, mem.Address, mem.Size, mem.AccessCount, int(mem.ThreadLockID));
             }
             mem.AccessCount = 0;
