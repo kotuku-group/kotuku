@@ -346,6 +346,8 @@ ERR AccessMemory(MEMORYID MemoryID, MEM Flags, int MilliSeconds, APTR *Result)
    if (auto lock = std::unique_lock{glmMemory}) {
       auto mem = glPrivateMemory.find(MemoryID);
       if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
+         if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) return ERR::MemoryDoesNotExist;
+
          auto our_thread = get_thread_id();
 
          // This loop condition verifies that the block is available and protects against recursion.
@@ -380,11 +382,22 @@ ERR AccessMemory(MEMORYID MemoryID, MEM Flags, int MilliSeconds, APTR *Result)
                auto timeout_remaining = end_time - now;
                //log.msg("Sleep on memory #%d, Access %d, Threads %d/%d", MemoryID, mem->second.AccessCount, (int)mem->second.ThreadLockID, our_thread);
                cvResources.wait_for(glmMemory, timeout_remaining);
+
+               // TODO: Could be optimised with a dirty marker on glPrivateMemory
+               mem = glPrivateMemory.find(MemoryID);
+               if ((mem IS glPrivateMemory.end()) or (not mem->second.Address) or
+                   ((mem->second.Flags & MEM::COLLECT) != MEM::NIL)) {
+                  auto expected = TSTATE::PAUSED;
+                  record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
+                  return ERR::MemoryDoesNotExist;
+               }
             }
 
             auto expected = TSTATE::PAUSED;
             record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
          }
+
+         if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) return ERR::MemoryDoesNotExist;
 
          mem->second.ThreadLockID = our_thread;
          mem->second.AccessCount++;
@@ -479,7 +492,7 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
       auto resource = glResources.find(ObjectID);
       if ((resource IS glResources.end()) or (not resource->second.Address)) return ERR::NoMatchingObject;
       if (resource->second.Manager != &glResourceObject) return ERR::NoMatchingObject;
-      if (resource->second.Collect) return ERR::MarkedForDeletion;
+      if (resource->second.Collect or resource->second.Terminating) return ERR::MarkedForDeletion;
 
       object = (OBJECTPTR)resource->second.Address;
       if (object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) return ERR::MarkedForDeletion;

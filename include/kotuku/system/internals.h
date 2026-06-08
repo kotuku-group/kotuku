@@ -84,6 +84,7 @@ public:
    OBJECTID   OwnerID = 0;     // Owner of the resource
    uint32_t   Size = 0;
    bool       Collect = false; // Marked for collection while currently in use.
+   bool       Terminating = false; // A FreeResource() call currently owns the destruction path.
    bool       OwnerManagesChildren = false; // True if the current OwnerID manages its child resources
 
    ResourceRecord() = default;
@@ -98,6 +99,7 @@ public:
       Manager = nullptr;
       Size = 0;
       Collect = false;
+      Terminating = false;
    }
 };
 

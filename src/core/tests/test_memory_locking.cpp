@@ -10,6 +10,7 @@ This program tests the locking of memory between threads.
 *********************************************************************************************************************/
 
 #include <pthread.h>
+#include <atomic>
 #include <kotuku/startup.h>
 #include <kotuku/strings.hpp>
 
@@ -22,11 +23,87 @@ static uint32_t glLockAttempts = 20;
 static int glAccessGap = 2000;
 static bool glTerminateMemory = false;
 static bool glTestAllocation = false;
+static APTR glTerminatingResource = nullptr;
+static std::atomic_bool glManagerEntered = false;
+static std::atomic_bool glManagerCanFinish = false;
+static ERR glConcurrentFreeError = ERR::Okay;
 
 struct thread_info{
    pthread_t thread;
    int index;
 };
+
+//********************************************************************************************************************
+
+static ERR terminating_resource_free(ResourceRecord &, APTR)
+{
+   glManagerEntered.store(true, std::memory_order_release);
+   while (not glManagerCanFinish.load(std::memory_order_acquire)) WaitTime(0.001);
+   return ERR::Terminate;
+}
+
+static ResourceManager glTerminatingResourceManager = {
+   "TerminatingTest",
+   &terminating_resource_free,
+   nullptr,
+   nullptr,
+   true
+};
+
+//********************************************************************************************************************
+
+static void * free_terminating_resource(void *)
+{
+   glConcurrentFreeError = FreeResource(glTerminatingResource);
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static int run_terminating_resource_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   APTR memory = nullptr;
+   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+      log.warning("AllocMemory() failed for terminating resource test.");
+      return -1;
+   }
+
+   glTerminatingResource = memory;
+   glManagerEntered.store(false, std::memory_order_release);
+   glManagerCanFinish.store(false, std::memory_order_release);
+   glConcurrentFreeError = ERR::Okay;
+
+   if (auto error = TrackResource(GetMemoryID(memory), memory, 0, &glTerminatingResourceManager, 64); error != ERR::Okay) {
+      FreeResource(memory);
+      log.warning("TrackResource() failed for terminating resource test: %s.", GetErrorMsg(error));
+      return -1;
+   }
+
+   pthread_t thread;
+   pthread_create(&thread, nullptr, &free_terminating_resource, nullptr);
+
+   while (not glManagerEntered.load(std::memory_order_acquire)) WaitTime(0.001);
+
+   auto second_error = FreeResource(memory);
+
+   glManagerCanFinish.store(true, std::memory_order_release);
+   pthread_join(thread, nullptr);
+
+   if (second_error != ERR::InUse) {
+      log.warning("FreeResource() returned %s for a terminating resource.", GetErrorMsg(second_error));
+      return -1;
+   }
+
+   if (glConcurrentFreeError != ERR::Okay) {
+      log.warning("Initial FreeResource() returned %s for terminating resource test.", GetErrorMsg(glConcurrentFreeError));
+      return -1;
+   }
+
+   glTerminatingResource = nullptr;
+   return 0;
+}
 
 //********************************************************************************************************************
 
@@ -220,6 +297,11 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_access_object_checks() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_terminating_resource_check() != 0) {
       close_kotuku();
       return -1;
    }

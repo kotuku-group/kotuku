@@ -360,7 +360,7 @@ static void free_children(OBJECTPTR Object)
             // Skip child objects that are marked for collection, we can't destroy them until they are unlocked.
             auto resource = glResources.find(id);
             if ((resource IS glResources.end()) or (not resource->second.Address)) continue;
-            if (resource->second.Collect) continue;
+            if (resource->second.Collect or resource->second.Terminating) continue;
 
             auto child = child_rec->second.Object;
             if ((child->Owner) and (child->Owner != Object)) {
@@ -388,7 +388,7 @@ static void free_children(OBJECTPTR Object)
             auto resource = glResources.find(id);
             if ((resource IS glResources.end()) or (not resource->second.Address)) continue;
             auto &rec = resource->second;
-            if (rec.Collect) continue;
+            if (rec.Collect or rec.Terminating) continue;
 
             auto address = rec.Address;
 
