@@ -1859,7 +1859,6 @@ typedef struct MemInfo {
    uint32_t Size;        // The size of the memory block.
    MEM      Flags;       // The type of memory.
    MEMORYID MemoryID;    // The unique resource ID for this block.
-   int16_t  AccessCount; // Total number of active locks on this block.
 } MEMINFO;
 
 struct MsgHandler {
@@ -2035,7 +2034,6 @@ struct ScriptArg { // For use with sc::Exec
 
 struct CoreBase {
 #ifndef KOTUKU_STATIC
-   ERR (*_AccessMemory)(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
    ERR (*_Action)(AC Action, OBJECTPTR Object, APTR Parameters);
    void (*_ActionList)(struct ActionTable **Actions, int *Size);
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
@@ -2070,7 +2068,6 @@ struct CoreBase {
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address);
-   ERR (*_ReleaseMemory)(MEMORYID MemoryID);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
@@ -2134,7 +2131,6 @@ struct CoreBase {
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_CORE_MODULE)
 extern struct CoreBase *CoreBase;
-inline ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result) { return CoreBase->_AccessMemory(Memory,Flags,MilliSeconds,Result); }
 inline ERR Action(AC Action, OBJECTPTR Object, APTR Parameters) { return CoreBase->_Action(Action,Object,Parameters); }
 inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBase->_ActionList(Actions,Size); }
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
@@ -2169,7 +2165,6 @@ inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address) { return CoreBase->_ReallocMemory(Memory,Size,Address); }
-inline ERR ReleaseMemory(MEMORYID MemoryID) { return CoreBase->_ReleaseMemory(MemoryID); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
@@ -2229,7 +2224,6 @@ inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBa
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager, int64_t Size) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager,Size); }
 #else
-extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
@@ -2263,7 +2257,6 @@ extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address);
-extern "C" ERR ReleaseMemory(MEMORYID MemoryID);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
@@ -2353,11 +2346,6 @@ inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
    return SubscribeTimer(Interval,&Callback,Subscription);
-}
-
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
 }
 
 inline ERR FreeResource(const void *Address) {

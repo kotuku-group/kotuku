@@ -118,32 +118,6 @@ template <class T = double, class M = double>
 DEFINE_ENUM_FLAG_OPERATORS(ERR)
 
 //********************************************************************************************************************
-
-template <class T>
-class ScopedAccessMemory { // C++ wrapper for automatically releasing locked memory
-   public:
-      int id;
-      T *ptr;
-      ERR error;
-
-      ScopedAccessMemory(int ID, MEM Flags, int Milliseconds = 5000) {
-         id = ID;
-         error = AccessMemory(ID, Flags, Milliseconds, (APTR *)&ptr);
-      }
-
-      ~ScopedAccessMemory() { if (error IS ERR::Okay) ReleaseMemory(ptr); }
-
-      bool granted() { return error == ERR::Okay; }
-
-      void release() {
-         if (error IS ERR::Okay) {
-            ReleaseMemory(ptr);
-            error = ERR::ResourceNotLocked;
-         }
-      }
-};
-
-//********************************************************************************************************************
 // Defer() function for calling lambdas at end-of-scope.
 // Example: auto cleanup = kt::Defer([&]() { log.msg("Finished"); });
 

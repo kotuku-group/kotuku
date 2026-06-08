@@ -235,7 +235,6 @@ extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
 extern std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
-extern std::condition_variable_any cvResources;
 extern std::condition_variable_any cvObjects;
 
 // Per-thread record for the global thread registry.  Threads are registered on first use of get_thread_id() and
@@ -847,8 +846,6 @@ extern thread_local int16_t tlMsgRecursion;
 extern thread_local int16_t tlDepth;
 extern thread_local int16_t tlLogStatus;
 extern thread_local int16_t tlPreventSleep;
-extern thread_local int16_t tlPublicLockCount;
-extern thread_local int16_t tlPrivateLockCount;
 extern thread_local int glForceUID, glForceGID;
 extern thread_local PERMIT glDefaultPermissions;
 extern THREADID glMainThreadID;

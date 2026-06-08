@@ -53,34 +53,6 @@
   </info>
 
   <function>
-    <name>AccessMemory</name>
-    <category>Memory</category>
-    <comment>Grants access to memory blocks by identifier.</comment>
-    <prototype>ERR AccessMemory(MEMORYID Memory, MEM Flags, INT MilliSeconds, APTR * Result)</prototype>
-    <tiriPrototype>err, Result:any = AccessMemory(Memory:num, Flags:num, MilliSeconds:num)</tiriPrototype>
-    <tags>blocking</tags>
-    <input>
-      <param type="MEMORYID" name="Memory">The ID of the memory block to access.</param>
-      <param type="MEM" name="Flags" lookup="MEM">Set to <code>READ</code>, <code>WRITE</code> or <code>READ_WRITE</code>.</param>
-      <param type="INT" name="MilliSeconds">The millisecond interval to wait before a timeout occurs.  Use at least 40ms for best results.</param>
-      <param type="APTR *" name="Result">Must refer to an <code>APTR</code> for storing the resolved address.</param>
-    </input>
-    <description>
-<p>Call AccessMemory() to resolve a memory ID to its address and acquire a lock so that it is inaccessible to other threads.</p>
-<p>Memory blocks should never be locked for extended periods of time.  Ensure that all locks are matched with a call to <function>ReleaseMemory</function> within the same code block.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Cancelled">The thread has been requested to stop whilst sleeping.</error>
-      <error code="Args">The <code>MilliSeconds</code> value is less or equal to zero.</error>
-      <error code="TimeOut">Function timed-out before successful completion</error>
-      <error code="MemoryDoesNotExist">The supplied <code>Memory</code> ID does not refer to an existing memory block.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
     <name>AccessObject</name>
     <category>Objects</category>
     <comment>Grants exclusive access to objects via unique ID.</comment>
@@ -288,7 +260,6 @@ if (AllocMemory(1000, MEM::DATA, &amp;address) IS ERR::Okay) {
 </pre>
 <p>Memory allocation behavior is controlled through MEM flags:</p>
 <types lookup="MEM"/>
-<p>The function can return both a memory address pointer and a unique memory identifier. For most applications, retrieving only the address pointer is sufficient. When both parameters are requested, the memory block is automatically locked, requiring an explicit call to ReleaseMemory() before freeing.</p>
 <p>The resulting memory block is zero-initialized unless the <code>MEM::NO_CLEAR</code> flag is specified. For large allocations where initialization overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     </description>
@@ -296,7 +267,6 @@ if (AllocMemory(1000, MEM::DATA, &amp;address) IS ERR::Okay) {
       <error code="Okay">Memory block successfully allocated.</error>
       <error code="Args">Invalid parameters (size &lt;= 0 or Address is NULL).</error>
       <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
-      <error code="AccessMemory">Memory block was allocated but could not be locked when both Address and ID were requested.</error>
       <error code="AllocMemory">Insufficient memory available for the requested allocation.</error>
     </result>
   </function>
@@ -1489,26 +1459,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">The <code>FD</code> was successfully registered.</error>
       <error code="Args">The <code>FD</code> was set to a value of <code>-1</code>.</error>
       <error code="NoSupport">The host platform does not support the provided <code>FD</code>.</error>
-    </result>
-  </function>
-
-  <function>
-    <name>ReleaseMemory</name>
-    <category>Memory</category>
-    <comment>Releases a lock from a memory based resource.</comment>
-    <prototype>ERR ReleaseMemory(MEMORYID MemoryID)</prototype>
-    <tiriPrototype>err = ReleaseMemory(MemoryID:num)</tiriPrototype>
-    <tags>blocking</tags>
-    <input>
-      <param type="MEMORYID" name="MemoryID">A reference to a memory resource for release.</param>
-    </input>
-    <description>
-<p>Successful calls to <function>AccessMemory</function> must be paired with a call to ReleaseMemory() so that the memory can be made available to other processes.  Releasing the resource decreases the access count, and if applicable a thread that is in the queue for access may then be able to acquire a lock.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Search">A search routine in this function failed</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -3310,7 +3260,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Size" type="UINT">The size of the memory block.</field>
       <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
       <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
-      <field name="AccessCount" type="INT16">Total number of active locks on this block.</field>
     </struct>
 
     <struct name="Message" comment="Message header.">

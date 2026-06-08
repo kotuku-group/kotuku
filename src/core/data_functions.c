@@ -4,7 +4,6 @@
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsAccessMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Memory", FD_INT }, { "Flags", FD_INT }, { "MilliSeconds", FD_INT }, { "Result", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsAccessObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { "MilliSeconds", FD_INT }, { "Result", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTPTR }, { "Parameters", FD_PTR }, { 0, 0 } };
 FDEF argsActionList[] = { { "Void", FD_VOID }, { "ActionTable:Actions", FD_RESULT|FD_ARRAY|FD_STRUCT }, { "Size", FD_RESULT|FD_INT|FD_ARRAYSIZE }, { 0, 0 } };
@@ -66,7 +65,6 @@ FDEF argsReadFileToBuffer[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPS
 FDEF argsReadInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsReallocMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Memory", FD_PTR }, { "Size", FD_INT|FD_UNSIGNED }, { "Address", FD_RESULT|FD_PTR|FD_ALLOC }, { 0, 0 } };
 FDEF argsRegisterFD[] = { { "Error", FD_INT|FD_ERROR }, { "FD", FD_PTR }, { "Flags", FD_INT }, { "Routine", FD_PTR }, { "Data", FD_PTR }, { 0, 0 } };
-FDEF argsReleaseMemory[] = { { "Error", FD_INT|FD_ERROR }, { "MemoryID", FD_INT }, { 0, 0 } };
 FDEF argsReleaseObject[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsResolveClassID[] = { { "Result", FD_STR }, { "ID", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsResolveClassName[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Name", FDF_CPPSTRING }, { 0, 0 } };
@@ -100,7 +98,6 @@ FDEF argsWaitTime[] = { { "Error", FD_INT|FD_ERROR }, { "Seconds", FD_DOUBLE }, 
 FDEF argsWakeThread[] = { { "Error", FD_INT|FD_ERROR }, { "Thread", FD_INT }, { "Stop", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
-   { (APTR)AccessMemory, "AccessMemory", argsAccessMemory },
    { (APTR)Action, "Action", argsAction },
    { (APTR)ActionList, "ActionList", argsActionList },
    { (APTR)DeleteFile, "DeleteFile", argsDeleteFile },
@@ -135,7 +132,6 @@ const struct Function glFunctions[] = {
    { (APTR)ProcessMessages, "ProcessMessages", argsProcessMessages },
    { (APTR)IdentifyFile, "IdentifyFile", argsIdentifyFile },
    { (APTR)ReallocMemory, "ReallocMemory", argsReallocMemory },
-   { (APTR)ReleaseMemory, "ReleaseMemory", argsReleaseMemory },
    { (APTR)ResolveClassName, "ResolveClassName", argsResolveClassName },
    { (APTR)SendMessage, "SendMessage", argsSendMessage },
    { (APTR)SetOwner, "SetOwner", argsSetOwner },

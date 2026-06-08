@@ -65,13 +65,6 @@ static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 
       auto &active_mem = mem_it->second;
 
-      if (active_mem.AccessCount > 0) {
-         log.msg("Block #%d marked for collection (open count %d).", memory_id, active_mem.AccessCount);
-         active_mem.Flags |= MEM::COLLECT;
-         Resource.Collect = true;
-         return ERR::Okay;
-      }
-
       auto start_mem = (char *)active_mem.Address - sizeof(int) - sizeof(int);
 
       if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
@@ -241,10 +234,6 @@ Memory allocation behavior is controlled through MEM flags:
 
 <types lookup="MEM"/>
 
-The function can return both a memory address pointer and a unique memory identifier. For most applications,
-retrieving only the address pointer is sufficient. When both parameters are requested, the memory block is
-automatically locked, requiring an explicit call to ReleaseMemory() before freeing.
-
 The resulting memory block is zero-initialized unless the `MEM::NO_CLEAR` flag is specified. For large
 allocations where initialization overhead is a concern, utilising `MEM::NO_CLEAR` is recommended.
 
@@ -260,7 +249,6 @@ int(MEM) Flags: Optional allocation flags controlling behavior and ownership.
 Okay: Memory block successfully allocated.
 Args: Invalid parameters (size <= 0 or Address is NULL).
 AllocMemory: Insufficient memory available for the requested allocation.
-AccessMemory: Memory block was allocated but could not be locked when both Address and ID were requested.
 SystemLocked: Memory management system is currently locked by another thread.
 
 -TAGS-
@@ -573,7 +561,6 @@ ERR MemoryIDInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
       if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
          MemInfo->Start       = mem->second.Address;
          MemInfo->Size        = mem->second.Size;
-         MemInfo->AccessCount = mem->second.AccessCount;
          MemInfo->Flags       = mem->second.Flags;
          MemInfo->MemoryID    = mem->second.MemoryID;
          return ERR::Okay;
@@ -640,7 +627,6 @@ ERR MemoryPtrInfo(APTR Memory, MemInfo *MemInfo, int Size)
          if (Memory IS mem.Address) {
             MemInfo->Start       = Memory;
             MemInfo->Size        = mem.Size;
-            MemInfo->AccessCount = mem.AccessCount;
             MemInfo->Flags       = mem.Flags;
             MemInfo->MemoryID    = mem.MemoryID;
             return ERR::Okay;
@@ -775,12 +761,7 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
    if (AllocMemory(NewSize, meminfo.Flags, Memory) IS ERR::Okay) {
       auto copysize = (NewSize < meminfo.Size) ? NewSize : meminfo.Size;
       copymem(Address, *Memory, copysize);
-
-      // Free the old memory block.  If it is locked then we also release it for the caller.
-
-      if (meminfo.AccessCount > 0) ReleaseMemory(Address);
       FreeResource(Address);
-
       return ERR::Okay;
    }
    else return log.warning(ERR::AllocMemory);

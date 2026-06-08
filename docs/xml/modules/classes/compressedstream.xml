@@ -404,7 +404,6 @@
       <field name="Size" type="UINT">The size of the memory block.</field>
       <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
       <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
-      <field name="AccessCount" type="INT16">Total number of active locks on this block.</field>
     </struct>
 
     <struct name="Message" comment="Message header.">

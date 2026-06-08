@@ -221,7 +221,7 @@ void deregister_sleep(void)
 // Prepare a thread for going to sleep on a resource.  Checks for deadlocks in advance.  Once a thread has added a
 // WakeLock entry, it must keep it until either the thread or process is destroyed.
 //
-// Used by AccessMemory() and LockObject()
+// Used by LockObject()
 
 ERR init_sleep(THREADID OtherThreadID, int ResourceID, int ResourceType)
 {
@@ -298,120 +298,6 @@ void free_threadlock(void)
    // Individual thread lock cleanup happens when the thread terminates
 }
 #endif
-
-/*********************************************************************************************************************
-
--FUNCTION-
-AccessMemory: Grants access to memory blocks by identifier.
-Category: Memory
-
-Call AccessMemory() to resolve a memory ID to its address and acquire a lock so that it is inaccessible to other
-threads.
-
-Memory blocks should never be locked for extended periods of time.  Ensure that all locks are matched with a
-call to ~ReleaseMemory() within the same code block.
-
--INPUT-
-mem Memory:       The ID of the memory block to access.
-int(MEM) Flags:   Set to `READ`, `WRITE` or `READ_WRITE`.
-int MilliSeconds: The millisecond interval to wait before a timeout occurs.  Use at least 40ms for best results.
-&ptr Result:      Must refer to an `APTR` for storing the resolved address.
-
--ERRORS-
-Okay
-Args: The `MilliSeconds` value is less or equal to zero.
-NullArgs
-SystemLocked
-TimeOut
-Cancelled: The thread has been requested to stop whilst sleeping.
-MemoryDoesNotExist: The supplied `Memory` ID does not refer to an existing memory block.
-
--TAGS-
-blocking
--END-
-
-*********************************************************************************************************************/
-
-ERR AccessMemory(MEMORYID MemoryID, MEM Flags, int MilliSeconds, APTR *Result)
-{
-   kt::Log log(__FUNCTION__);
-
-   if ((not MemoryID) or (not Result)) return log.warning(ERR::NullArgs);
-   if (MilliSeconds <= 0) return log.warning(ERR::Args);
-
-   // NB: Logging AccessMemory() calls is usually a waste of time unless the process is going to sleep.
-   //log.trace("MemoryID: %d, Flags: $%x, TimeOut: %d", MemoryID, int(Flags), MilliSeconds);
-
-   *Result = nullptr;
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glPrivateMemory.find(MemoryID);
-      if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
-         if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) return ERR::MemoryDoesNotExist;
-
-         auto our_thread = get_thread_id();
-
-         // This loop condition verifies that the block is available and protects against recursion.
-         // wait_for() is awoken with a global wake-up, not necessarily on the desired block, hence the need for while().
-
-         auto end_time = steady_clock::now() + milliseconds(MilliSeconds);
-         if ((mem->second.AccessCount > 0) and (mem->second.ThreadLockID != our_thread)) {
-            auto record = get_thread_record();
-            record->state.store(TSTATE::PAUSED, std::memory_order_release);
-
-            while ((mem->second.AccessCount > 0) and (mem->second.ThreadLockID != our_thread)) {
-               // Check if woken or stopped by WakeThread() before blocking
-               {
-                  if (record->interrupted.load(std::memory_order_acquire) or
-                      record->state.load(std::memory_order_acquire) IS TSTATE::STOPPING) {
-                     record->interrupted.store(false, std::memory_order_release);
-                     auto expected = TSTATE::PAUSED;
-                     record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
-                     return ERR::Cancelled;
-                  }
-               }
-
-               auto now = steady_clock::now();
-               if (now >= end_time) {
-                  {
-                     if (record->state.load(std::memory_order_acquire) IS TSTATE::STOPPING) return ERR::Cancelled;
-                     record->state.store(TSTATE::RUNNING, std::memory_order_release);
-                  }
-                  return log.warning(ERR::TimeOut);
-               }
-
-               auto timeout_remaining = end_time - now;
-               //log.msg("Sleep on memory #%d, Access %d, Threads %d/%d", MemoryID, mem->second.AccessCount, (int)mem->second.ThreadLockID, our_thread);
-               cvResources.wait_for(glmMemory, timeout_remaining);
-
-               // TODO: Could be optimised with a dirty marker on glPrivateMemory
-               mem = glPrivateMemory.find(MemoryID);
-               if ((mem IS glPrivateMemory.end()) or (not mem->second.Address) or
-                   ((mem->second.Flags & MEM::COLLECT) != MEM::NIL)) {
-                  auto expected = TSTATE::PAUSED;
-                  record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
-                  return ERR::MemoryDoesNotExist;
-               }
-            }
-
-            auto expected = TSTATE::PAUSED;
-            record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
-         }
-
-         if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) return ERR::MemoryDoesNotExist;
-
-         mem->second.ThreadLockID = our_thread;
-         mem->second.AccessCount++;
-         tlPrivateLockCount++;
-
-         *Result = mem->second.Address;
-         return ERR::Okay;
-      }
-      else log.trace("Cannot find memory ID #%d", MemoryID); // Attempting a non-existing ID is allowed, so trace only
-   }
-   else return log.warning(ERR::SystemLocked);
-
-   return ERR::MemoryDoesNotExist;
-}
 
 /*********************************************************************************************************************
 
@@ -682,66 +568,6 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       Object->SleepQueue.fetch_sub(1, std::memory_order_release);
       return ERR::SystemLocked;
    }
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
-ReleaseMemory: Releases a lock from a memory based resource.
-Category: Memory
-
-Successful calls to ~AccessMemory() must be paired with a call to ReleaseMemory() so that the memory can be made
-available to other processes.  Releasing the resource decreases the access count, and if applicable a
-thread that is in the queue for access may then be able to acquire a lock.
-
--INPUT-
-mem MemoryID: A reference to a memory resource for release.
-
--ERRORS-
-Okay
-NullArgs
-Search
-
--TAGS-
-blocking
--END-
-
-*********************************************************************************************************************/
-
-ERR ReleaseMemory(MEMORYID MemoryID)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (not MemoryID) return log.warning(ERR::NullArgs);
-
-   std::lock_guard lock(glmMemory);
-   auto mem = glPrivateMemory.find(MemoryID);
-
-   if ((mem IS glPrivateMemory.end()) or (not mem->second.Address)) { // Sanity check; this should never happen
-      if (tlContext.back().obj->Class) log.warning("Unable to find a record for memory address #%d [Context %d, Class %s].", MemoryID, tlContext.back().obj->UID, tlContext.back().obj->className());
-      else log.warning("Unable to find a record for memory #%d.", MemoryID);
-      return ERR::Search;
-   }
-
-   int16_t access;
-   if (mem->second.AccessCount > 0) { // Sometimes ReleaseMemory() is called on addresses that aren't actually locked.  This is OK - we simply don't do anything in that case.
-      access = --mem->second.AccessCount;
-      tlPrivateLockCount--;
-   }
-   else access = -1;
-
-   if (not access) {
-      mem->second.ThreadLockID = THREADID(0);
-
-      if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) {
-         log.trace("Collecting memory block #%d", MemoryID);
-         FreeResource(mem->second.Address);
-      }
-
-      cvResources.notify_all();
-   }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

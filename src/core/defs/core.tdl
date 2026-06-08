@@ -859,7 +859,6 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     uint Size          # The size of the memory block.
     int(MEM) Flags     # The type of memory.
     mem   MemoryID     # The unique resource ID for this block.
-    short AccessCount  # Total number of active locks on this block.
   ]])
 
   struct("MsgHandler", { restrict="c" }, [[
@@ -1043,7 +1042,6 @@ struct ScriptArg { // For use with sc::Exec
 ]])
 
   functionNames(nil,
-    "AccessMemory",
     "Action",
     "ActionList",
     "DeleteFile",
@@ -1078,7 +1076,6 @@ struct ScriptArg { // For use with sc::Exec
     "ProcessMessages",
     "IdentifyFile",
     "ReallocMemory",
-    "ReleaseMemory",
     "ResolveClassName",
     "SendMessage",
     "SetOwner",
@@ -1168,11 +1165,6 @@ inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
    return SubscribeTimer(Interval,&Callback,Subscription);
-}
-
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
 }
 
 inline ERR FreeResource(const void *Address) {

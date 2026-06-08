@@ -889,22 +889,6 @@ ERR sleep_task(int Timeout)
       log.warning("Only the main thread can call this function.");
       return ERR::MessageOperation;
    }
-   else if (tlPublicLockCount > 0) {
-      log.warning("Cannot sleep while holding %d global locks.", tlPublicLockCount);
-      return ERR::Okay;
-   }
-   else if (tlPrivateLockCount != 0) {
-      char buffer[120];
-      size_t pos = 0;
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.AccessCount > 0) {
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%d.%d ", mem.MemoryID, mem.AccessCount);
-            if (pos >= sizeof(buffer)-1) break;
-         }
-      }
-
-      if (pos > 0) log.warning("WARNING - Sleeping with %d private locks held (%s)", tlPrivateLockCount, buffer);
-   }
 
    register_sleep(Timeout);
 
@@ -1061,22 +1045,6 @@ ERR sleep_task(int Timeout, int8_t SystemOnly)
       log.warning("Only the main thread can call this function.");
       return ERR::MessageOperation;
    }
-   else if (tlPublicLockCount > 0) {
-      log.warning("You cannot sleep while still holding %d global locks!", tlPublicLockCount);
-      return ERR::Okay;
-   }
-   else if (tlPrivateLockCount != 0) {
-      char buffer[120];
-      size_t pos = 0;
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.AccessCount > 0) {
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "#%d +%d ", mem.MemoryID, mem.AccessCount);
-            if (pos >= sizeof(buffer)-1) break;
-         }
-      }
-
-      if (pos > 0) log.warning("WARNING - Sleeping with %d private locks held (%s)", tlPrivateLockCount, buffer);
-   }
 
    //log.traceBranch("Time-out: %d, TotalFDs: %d", Timeout, glTotalFDs);
 
@@ -1209,10 +1177,6 @@ static ERR wake_task(void)
    kt::Log log(__FUNCTION__);
 
    if (!glCurrentTask) return ERR::Okay;
-
-   if (tlPublicLockCount > 0) {
-      if (glProgramStage != STAGE_SHUTDOWN) log.warning("Illegal call while holding %d global locks.", tlPublicLockCount);
-   }
 
 #ifdef __unix__
 

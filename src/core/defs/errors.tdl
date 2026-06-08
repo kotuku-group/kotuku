@@ -82,7 +82,7 @@ function declareErrors()
     "Draw",                          -- An error occurred while drawing the object
     "NoMethods",                     -- The class does not export any methods
     "NoMatchingObject",              -- Unable to find object
-    "AccessMemory",                  -- Access to a memory block was denied
+    "DEP01",                         -- DEPRECATED
     "MissingPath",                   -- The object is missing a path reference
     "ResourceNotLocked",             -- A lock was expected but not found
     "NoSearchResult",                -- The search yielded no results

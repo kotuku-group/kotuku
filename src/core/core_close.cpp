@@ -279,21 +279,6 @@ void CloseCore(void)
       }
    #endif
 
-   if (glCodeIndex < CP_REMOVE_PRIVATE_LOCKS) {
-      glCodeIndex = CP_REMOVE_PRIVATE_LOCKS;
-
-      log.msg("Removing all resource locks.");
-
-      if (auto lock = std::unique_lock{glmMemory}) {
-         for (auto & [ id, mem ] : glPrivateMemory) {
-            if ((mem.Address) and (mem.AccessCount > 0)) {
-               if (!glCrashStatus) log.msg("Removing %d locks on private memory block #%d, size %d.", mem.AccessCount, mem.MemoryID, mem.Size);
-               mem.AccessCount = 0;
-            }
-         }
-      }
-   }
-
    if (!glCrashStatus) {
       if (glTaskClass) { FreeResource(glTaskClass); glTaskClass = 0; }
       // Although we haven't crashed, setting this to true enables safer shutdown behaviour in memory deallocations from this point.
@@ -544,7 +529,6 @@ static void free_private_memory(void)
       for (auto & [ id, mem ] : glPrivateMemory) {
          if ((mem.Address) and ((mem.Flags & MEM::STRING) != MEM::NIL)) {
             if (!glCrashStatus) log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-            mem.AccessCount = 0;
             FreeResource(mem.Address);
             mem.Address = nullptr;
             count++;
@@ -555,11 +539,9 @@ static void free_private_memory(void)
 
       for (auto & [ id, mem ] : glPrivateMemory) {
          if (mem.Address) {
-            if (!glCrashStatus) {
-               log.warning("Unfreed resource #%d/%p, Size %d, Locks: %d, ThreadLock: %d.",
-                  mem.MemoryID, mem.Address, mem.Size, mem.AccessCount, int(mem.ThreadLockID));
+            if (not glCrashStatus) {
+               log.warning("Unfreed resource #%d/%p, Size %d, ThreadLock: %d.", mem.MemoryID, mem.Address, mem.Size, int(mem.ThreadLockID));
             }
-            mem.AccessCount = 0;
             FreeResource(mem.Address);
             mem.Address = nullptr;
             count++;
