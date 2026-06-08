@@ -1680,8 +1680,8 @@ struct OpenInfo {
    std::string ModulePath;            // Path to module files
    std::string RootPath;              // Kotuku root directory
    CSTRING *Args;                     // Command-line arguments
-   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list.
-   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure.
+   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list
+   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure
    int     MaxDepth;                  // Maximum debug depth
    int     Detail;                    // Debug detail level (0 none - 9 trace)
    int     ArgCount;                  // Total arguments in Args
@@ -1692,9 +1692,11 @@ struct ObjectSignal {
 };
 
 struct ResourceManager {
-   CSTRING Name;                                   // The name of the resource.
-   ERR (*Free)(struct ResourceRecord *, APTR);     // A function that will remove the resource's content when terminated.
-   bool    CanBlock;                               // True if the Free callback might wait on locks, callbacks or external resources.
+   CSTRING Name;                                                              // The name of the resource
+   ERR (*Free)(struct ResourceRecord &, APTR);                                // A function that will remove the resource's content when terminated
+   void (*AddChild)(struct ResourceRecord &, struct ResourceRecord &);        // Optional function for tracking child resources
+   void (*RemoveChild)(struct ResourceRecord &, struct ResourceRecord &);     // Optional function to remove tracking of child resources
+   bool    CanBlock;                                                          // True if the Free callback might wait on locks, callbacks or external resources
 };
 
 struct FunctionField {

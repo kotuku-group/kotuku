@@ -3351,8 +3351,8 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="ModulePath" type="STRING">Path to module files</field>
       <field name="RootPath" type="STRING">Kotuku root directory</field>
       <field name="*Args" type="CSTRING">Command-line arguments</field>
-      <field name="Options" type="const struct OpenTag *">Tag-list of additional options.  Typecast to va_list.</field>
-      <field name="Flags" type="OPF" lookup="OPF">Client flags indicating the values that have been defined in this structure.</field>
+      <field name="Options" type="const struct OpenTag *">Tag-list of additional options.  Typecast to va_list</field>
+      <field name="Flags" type="OPF" lookup="OPF">Client flags indicating the values that have been defined in this structure</field>
       <field name="MaxDepth" type="INT">Maximum debug depth</field>
       <field name="Detail" type="INT">Debug detail level (0 none - 9 trace)</field>
       <field name="ArgCount" type="INT">Total arguments in Args</field>

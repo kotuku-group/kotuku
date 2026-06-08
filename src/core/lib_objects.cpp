@@ -150,7 +150,7 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 //********************************************************************************************************************
 // Object termination hook for FreeResource()
 
-ERR object_free(ResourceRecord *Resource, Object *Object)
+ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
 
@@ -293,6 +293,28 @@ ERR object_free(ResourceRecord *Resource, Object *Object)
    Object->Class = nullptr;
    Object->UID   = 0;
    return ERR::Terminate;
+}
+
+//********************************************************************************************************************
+
+void object_add_child(ResourceRecord &Parent, ResourceRecord &Child)
+{
+   if (Child.Manager != &glResourceObject) {
+      // Tracking of standard resources is managed here.  Child objects are managed through other mechanisms
+      if (auto parent_object = glObjects.find(Parent.ResourceID); parent_object != glObjects.end()) {
+         parent_object->second.Resources.insert(Child.ResourceID);
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+void object_remove_child(ResourceRecord &Parent, ResourceRecord &Child)
+{
+   if (auto object_rec = glObjects.find(Parent.ResourceID); object_rec != glObjects.end()) {
+      object_rec->second.Resources.erase(Child.ResourceID);
+      object_rec->second.Children.erase(Child.ResourceID);
+   }
 }
 
 //********************************************************************************************************************

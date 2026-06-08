@@ -53,7 +53,7 @@ template <class T> inline APTR ResolveAddress(T *Pointer, int Offset) {
    return APTR(((int8_t *)Pointer) + Offset);
 }
 
-static ERR msghandler_free(ResourceRecord *Resource, APTR Address)
+static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
 {
    kt::Log log("RemoveMsgHandler");
    log.trace("Handle: %p", Address);
@@ -68,11 +68,7 @@ static ERR msghandler_free(ResourceRecord *Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glResourceMsgHandler = {
-   "Message",
-   &msghandler_free,
-   true
-};
+static ResourceManager glResourceMsgHandler = { "Message", &msghandler_free, nullptr, nullptr, true };
 
 //********************************************************************************************************************
 // Handler for WaitForObjects().  If an object on the list is signalled then it is removed from the list.  A

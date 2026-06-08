@@ -138,17 +138,13 @@ static srell::regex_constants::match_flag_type convert_match_flags(RMATCH Flags)
 //********************************************************************************************************************
 // C++ destructor for cleaning up compiled Regex objects
 
-static ERR regex_free(ResourceRecord *Resource, APTR Address)
+static ERR regex_free(ResourceRecord &Resource, APTR Address)
 {
    ((extRegex *)Address)->~extRegex();
    return ERR::Terminate;
 }
 
-static ResourceManager glRegexMgr = {
-   "Regex",
-   &regex_free,
-   false
-};
+static ResourceManager glRegexMgr = { "Regex", &regex_free, nullptr, nullptr, false };
 
 //********************************************************************************************************************
 

@@ -6,7 +6,7 @@ global glCustomTypes = { }
 rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }> -- Alloc !, Result &, Mutable ^ symbols
 rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
 rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
-rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
+rx_ptr_extract     = <{ regex.new([[([\*&])(.+)]]) }>
 rx_resource_type   = <{ regex.new([[^(c?)resource\((.+)\)$]]) }>
 rx_ext_type        = <{ regex.new([[^ext\((.+)\)$]]) }>
 rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
@@ -290,7 +290,7 @@ global function cType(Value:table, Origin:str):table
       end
 
       if struct then
-         local ptr_struct = rx_ptr_extract.extract(struct) -- Check '*' prefix
+         local prefix, ptr_struct = rx_ptr_extract.extract(struct) -- Check '*' or '&' prefix
          if ptr_struct then struct = ptr_struct end
 
          Value.struct = struct
@@ -309,8 +309,9 @@ global function cType(Value:table, Origin:str):table
          end
 
          if ptr_struct then
-            Value.type ..= ' *'
+            Value.type ..= ' ' .. prefix
             Value.isPointer = true -- Explicit pointer
+            Value.byRef = prefix is '&'
             Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
          elseif Value.isFunction then
             if Value.isArray then
@@ -334,7 +335,7 @@ global function cType(Value:table, Origin:str):table
    do -- resource() types are structs, but with an FD_RESOURCE marker.
       local const, struct = rx_resource_type.extract(Value.type)
       if struct then
-         local ptr_struct = rx_ptr_extract.extract(struct)
+         local prefix, ptr_struct = rx_ptr_extract.extract(struct)
          if ptr_struct then struct = ptr_struct end
 
          Value.struct = struct
@@ -349,8 +350,9 @@ global function cType(Value:table, Origin:str):table
          end
 
          if ptr_struct then
-            Value.type ..= ' *'
+            Value.type ..= ' ' .. prefix
             Value.isPointer = true -- Explicit pointer
+            Value.byRef = prefix is '&'
             Value.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
          elseif Value.isFunction then
             if Value.isArray then
@@ -382,10 +384,11 @@ global function cType(Value:table, Origin:str):table
       end
 
       if ref_obj then
-         local ptr_object = rx_ptr_extract.extract(ref_obj)
+         local prefix, ptr_object = rx_ptr_extract.extract(ref_obj)
          if ptr_object then
-            Value.type = f'obj{ptr_object} **'
-            if extended then Value.extType = f'ext{ptr_object} **' end
+            Value.type = f'obj{ptr_object} *' .. prefix
+            Value.byRef = prefix is '&'
+            if extended then Value.extType = f'ext{ptr_object} *' .. prefix end
             Value.className = ptr_object
          else
             Value.type = f'obj{ref_obj} *'

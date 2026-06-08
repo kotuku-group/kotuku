@@ -657,8 +657,8 @@ class FloatRect {
      string ModulePath    # Path to module files
      string RootPath      # Kotuku root directory
      cstr *Args           # Command-line arguments
-     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list.
-     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure.
+     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list
+     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure
      int MaxDepth         # Maximum debug depth
      int Detail           # Debug detail level (0 none - 9 trace)
      int ArgCount         # Total arguments in Args
@@ -669,9 +669,11 @@ class FloatRect {
   ]])
 
   struct("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
-     cstr Name             # The name of the resource.
-     fptr(error struct(*ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated.
-     bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources.
+     cstr Name             # The name of the resource
+     fptr(error struct(&ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated
+     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) AddChild # Optional function for tracking child resources
+     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) RemoveChild # Optional function to remove tracking of child resources
+     bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
   struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[

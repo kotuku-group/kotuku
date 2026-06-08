@@ -84,6 +84,7 @@ public:
    OBJECTID   OwnerID = 0;     // Owner of the resource
    uint32_t   Size = 0;
    bool       Collect = false; // Marked for collection while currently in use.
+   bool       OwnerManagesChildren = false; // True if the current OwnerID manages its child resources
 
    ResourceRecord() = default;
 
@@ -108,8 +109,8 @@ class ObjectRecord {
 public:
    OBJECTPTR Object;
    OBJECTID OwnerID;
-   ankerl::unordered_dense::set<OBJECTID> Children;
-   ankerl::unordered_dense::set<RESOURCEID> Resources;
+   ankerl::unordered_dense::set<OBJECTID> Children; // Object children
+   ankerl::unordered_dense::set<RESOURCEID> Resources; // Non-object resources
 
    ObjectRecord() : Object(nullptr), OwnerID(0) { };
 

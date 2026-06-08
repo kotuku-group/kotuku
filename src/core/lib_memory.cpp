@@ -38,11 +38,11 @@ constexpr size_t CACHE_LINE_SIZE = 64;
 
 //********************************************************************************************************************
 
-static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
+static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 {
    kt::Log log("FreeMemory");
 
-   MEMORYID memory_id = Resource->ResourceID;
+   MEMORYID memory_id = Resource.ResourceID;
 
    if (auto lock = std::unique_lock{glmMemory}) {
       auto mem_it = glPrivateMemory.find(memory_id);
@@ -56,7 +56,7 @@ static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
       if (active_mem.AccessCount > 0) {
          log.msg("Block #%d marked for collection (open count %d).", memory_id, active_mem.AccessCount);
          active_mem.Flags |= MEM::COLLECT;
-         Resource->Collect = true;
+         Resource.Collect = true;
          return ERR::Okay;
       }
 
@@ -80,12 +80,12 @@ static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
       // TODO: Should be moved to the object's resource manager
 
       if ((active_mem.Flags & MEM::OBJECT) != MEM::NIL) {
-         if (auto object_it = glObjects.find(Resource->OwnerID); object_it != glObjects.end()) {
+         if (auto object_it = glObjects.find(Resource.OwnerID); object_it != glObjects.end()) {
             object_it->second.Children.erase(memory_id);
          }
          glObjects.erase(memory_id);
       }
-      else if (auto object_it = glObjects.find(Resource->OwnerID); object_it != glObjects.end()) {
+      else if (auto object_it = glObjects.find(Resource.OwnerID); object_it != glObjects.end()) {
          object_it->second.Resources.erase(memory_id);
       }
 
@@ -98,11 +98,7 @@ static ERR memory_resource_free(ResourceRecord *Resource, APTR Address)
    else return log.warning(ERR::SystemLocked);
 }
 
-static ResourceManager glResourceMemoryHandler = {
-   "Memory",
-   &memory_resource_free,
-   false
-};
+static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_free, nullptr, nullptr, false };
 
 /*********************************************************************************************************************
 
@@ -151,41 +147,42 @@ retains-input, does-not-take-ownership, blocking, thread-safe
 
 ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager, int64_t Size)
 {
+   kt::Log log(__FUNCTION__);
    std::lock_guard lock(glmMemory); // TODO: Use a resource specific mutex
 
-   if (not ResourceID) return ERR::NullArgs;
+   if (not ResourceID) return log.warning(ERR::NullArgs);
 
    if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
-      const auto previous_owner_id = existing->second.OwnerID;
-      const auto previous_manager = existing->second.Manager;
+      auto &record = existing->second;
 
-      if (Address) existing->second.Address = Address;
-      if (Manager) existing->second.Manager = Manager;
-      if (Size) existing->second.Size = uint32_t(Size);
+      if (Address) record.Address = Address; // Assigning a new address to an existing ID is permissable
+      if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permissable
+      if (Size) record.Size = uint32_t(Size);
 
-      const bool inherit_owner = OwnerID IS RESOURCEID_INHERIT;
-      const auto effective_owner_id = inherit_owner ? previous_owner_id : OwnerID;
+      const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
 
-      if ((previous_owner_id != effective_owner_id) or (previous_manager != existing->second.Manager)) {
-         // TODO: Call the previous manager's RemoveChild() implementation, if defined.
-         // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
-         if (auto object_rec = glObjects.find(previous_owner_id); object_rec != glObjects.end()) {
-            object_rec->second.Resources.erase(ResourceID);
-            object_rec->second.Children.erase(ResourceID);
+      if (record.OwnerID != new_owner) {
+         if (record.OwnerManagesChildren) {
+            auto current_owner = glResources.find(record.OwnerID);
+            if ((current_owner != glResources.end()) and (current_owner->second.Manager->RemoveChild)) {
+               current_owner->second.Manager->RemoveChild(current_owner->second, record);
+            }
          }
 
-         if (not inherit_owner) existing->second.OwnerID = OwnerID;
-      }
+         record.OwnerID = OwnerID;
+         record.OwnerManagesChildren = false; // Revert to standard behaviour
 
-      if ((existing->second.Manager != &glResourceObject) and effective_owner_id) {
-         // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
-         if (auto object_rec = glObjects.find(effective_owner_id); object_rec != glObjects.end()) {
-            object_rec->second.Resources.insert(ResourceID);
+         if (new_owner) {
+            auto owner_record = glResources.find(OwnerID);
+            if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
+               owner_record->second.Manager->AddChild(owner_record->second, record);
+               record.OwnerManagesChildren = true;
+            }
          }
       }
    }
    else {
-      if (not Manager) return ERR::NullArgs;
+      if (not Manager) return log.warning(ERR::NullArgs);
 
       if (OwnerID IS RESOURCEID_INHERIT) { // Get the owner from the current context
          if (tlContext.size() > 1) OwnerID = current_resource()->UID;
@@ -193,12 +190,13 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
          else OwnerID = 0;
       }
 
-      glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Size));
+      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager, Size));
 
-      if ((Manager != &glResourceObject) and OwnerID) {
-         // TODO: Get the OwnerID's resource manager, then call its AddChild() implementation, if defined.
-         if (auto object_rec = glObjects.find(OwnerID); object_rec != glObjects.end()) {
-            object_rec->second.Resources.insert(ResourceID);
+      if (OwnerID) {
+         auto owner_record = glResources.find(OwnerID);
+         if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
+            owner_record->second.Manager->AddChild(owner_record->second, resource.first->second);
+            resource.first->second.OwnerManagesChildren = true;
          }
       }
    }
@@ -210,16 +208,19 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
 
 void UntrackResource(RESOURCEID ResourceID)
 {
-   std::lock_guard lock(glmMemory);
+   std::lock_guard lock(glmMemory); // TODO: Use a resource specific mutex
 
    auto resource = glResources.find(ResourceID);
    if (resource IS glResources.end()) return;
 
    if (resource->second.OwnerID) {
-      // TODO: Get the OwnerID's resource manager, then call its RemoveChild() implementation, if defined.
-      if (auto object_rec = glObjects.find(resource->second.OwnerID); object_rec != glObjects.end()) {
-         object_rec->second.Resources.erase(ResourceID);
-         object_rec->second.Children.erase(ResourceID);
+      auto &record = resource->second;
+
+      if (record.OwnerManagesChildren) {
+         auto owner_record = glResources.find(record.OwnerID);
+         if ((owner_record != glResources.end()) and (owner_record->second.Manager->RemoveChild)) {
+            owner_record->second.Manager->RemoveChild(owner_record->second, record);
+         }
       }
    }
 
@@ -469,7 +470,7 @@ ERR FreeResource(RESOURCEID MemoryID)
          // Fast route for direct memory deallocation
 
          if (resource->Manager IS &glResourceMemoryHandler) {
-            return memory_resource_free(&resource_it->second, resource->Address);
+            return memory_resource_free(resource_it->second, resource->Address);
          }
 
          // Use the resource manager if possible.  Resource managers are not considered safe in an uncontrolled shutdown.
@@ -488,7 +489,7 @@ ERR FreeResource(RESOURCEID MemoryID)
             // ERR::Terminate - Deallocate the resource as a standard memory block
             // ERR::*         - Return code to user
 
-            auto error = resource_manager->Free(resource, free_address);
+            auto error = resource_manager->Free(*resource, free_address);
 
             if (resource_manager->CanBlock) lock.lock();
 
@@ -508,8 +509,7 @@ ERR FreeResource(RESOURCEID MemoryID)
             if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::Okay;
             resource = &resource_it->second;
 
-            TrackResource(resource_id, resource->Address, RESOURCEID_INHERIT, &glResourceMemoryHandler,
-               resource->Size);
+            resource->Manager = &glResourceMemoryHandler;
 
             mem_it = glPrivateMemory.find(MemoryID);
             if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address) and (mem_it->second.AccessCount > 0)) {
@@ -524,7 +524,7 @@ ERR FreeResource(RESOURCEID MemoryID)
 
          mem_it = glPrivateMemory.find(MemoryID);
          if ((mem_it != glPrivateMemory.end()) and (mem_it->second.Address)) {
-            return memory_resource_free(resource, mem_it->second.Address);
+            return memory_resource_free(*resource, mem_it->second.Address);
          }
 
          glResources.erase(resource_id);
