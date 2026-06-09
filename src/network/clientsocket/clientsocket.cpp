@@ -36,7 +36,14 @@ static void disconnect(extClientSocket *Self)
       Self->Handle = NOHANDLE;
    }
 
-   if (Self->State != NTC::DISCONNECTED) Self->setState(NTC::DISCONNECTED);
+   if (Self->State != NTC::DISCONNECTED) {
+      if (Self->Client) {
+         auto server = (extNetSocket *)Self->Client->Owner;
+         if ((server) and (not server->collecting())) Self->setState(NTC::DISCONNECTED);
+         else Self->State = NTC::DISCONNECTED;
+      }
+      else Self->State = NTC::DISCONNECTED;
+   }
 }
 
 //********************************************************************************************************************
@@ -453,32 +460,14 @@ static ERR CLIENTSOCKET_Free(extClientSocket *Self)
    disconnect(Self);
 
    if (Self->Client) { // If undefined, ClientSocket was never initialised
-      kt::ScopedObjectLock lock(Self->Client);
+      auto client = Self->Client;
+      kt::ScopedObjectLock lock(client);
       if (lock.granted()) {
-         bool linked = false;
-         for (auto scan=Self->Client->Connections; scan; scan=scan->Next) {
-            if (scan IS Self) {
-               linked = true;
-               break;
-            }
-         }
+         unlink_client_socket(client, Self);
 
-         if (linked) {
-            if (Self->Prev) {
-               Self->Prev->Next = Self->Next;
-               if (Self->Next) Self->Next->Prev = Self->Prev;
-            }
-            else {
-               Self->Client->Connections = Self->Next;
-               if (Self->Next) Self->Next->Prev = nullptr;
-            }
-
-            if (Self->Client->TotalConnections > 0) Self->Client->TotalConnections--;
-         }
-
-         if (not Self->Client->Connections) {
+         if (not client->Connections) {
             log.msg("No more connections for this IP, removing client.");
-            free_client((extNetServer *)Self->Client->Owner, Self->Client);
+            free_client((extNetServer *)client->Owner, client);
          }
       }
    }
@@ -643,6 +632,11 @@ static ERR CS_SET_State(extClientSocket *Self, NTC Value)
    kt::Log log;
 
    if (Value != Self->State) {
+      if (not Self->Client) {
+         Self->State = Value;
+         return ERR::Okay;
+      }
+
       auto server = (extNetSocket *)(Self->Client->Owner);
 
       log.branch("State changed from %s to %s", clientsocket_state(Self->State), clientsocket_state(Value));

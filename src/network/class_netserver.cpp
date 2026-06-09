@@ -581,10 +581,17 @@ static void free_client(extNetServer *Server, objNetClient *Client)
 
    while (Client->Connections) {
       objClientSocket *current_socket = Client->Connections;
-      FreeResource(current_socket); // Disconnects & sends a Feedback message
+      auto error = FreeResource(current_socket); // Disconnects & sends a Feedback message
       if (Client->Connections IS current_socket) { // Sanity check
-         log.warning(ERR::SanityCheckFailed);
-         break;
+         if (error IS ERR::InUse) {
+            log.trace("Client socket #%d is locked; detaching from client before deferred free.", current_socket->UID);
+            disconnect((extClientSocket *)current_socket);
+            unlink_client_socket(Client, current_socket);
+         }
+         else {
+            log.warning(ERR::SanityCheckFailed);
+            break;
+         }
       }
    }
 
