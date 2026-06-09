@@ -996,7 +996,6 @@ static ERR HTTP_Free(extHTTP *Self)
       secure_clear_memory(const_cast<char*>(Self->Password.data()), Self->Password.size());
    }
 
-   Self->~extHTTP();
    return ERR::Okay;
 }
 

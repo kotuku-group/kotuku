@@ -430,7 +430,6 @@ static ERR DISPLAY_Free(extDisplay *Self)
 
    if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
 
-   Self->~extDisplay();
    return ERR::Okay;
 }
 

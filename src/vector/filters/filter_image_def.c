@@ -5,9 +5,15 @@ static ERR IMAGEFX_NewPlacement(extImageFX *Self) {
    return ERR::Okay;
 }
 
+static ERR IMAGEFX_FreePlacement(extImageFX *Self) {
+   Self->~extImageFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clImageFXActions[] = {
    { AC::Draw, IMAGEFX_Draw },
    { AC::Free, IMAGEFX_Free },
+   { AC::FreePlacement, IMAGEFX_FreePlacement },
    { AC::Init, IMAGEFX_Init },
    { AC::NewChild, IMAGEFX_NewChild },
    { AC::NewObject, IMAGEFX_NewObject },

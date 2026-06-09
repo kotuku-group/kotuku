@@ -86,7 +86,6 @@ static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
 static ERR MERGEFX_Free(extMergeFX *Self)
 {
    clear_merge_sources(Self->List);
-   Self->~extMergeFX();
    return ERR::Okay;
 }
 

@@ -90,11 +90,17 @@ static ERR VECTOR_NewPlacement(extVector *Self) {
    return ERR::Okay;
 }
 
+static ERR VECTOR_FreePlacement(extVector *Self) {
+   Self->~extVector();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorActions[] = {
    { AC::Disable, VECTOR_Disable },
    { AC::Draw, VECTOR_Draw },
    { AC::Enable, VECTOR_Enable },
    { AC::Free, VECTOR_Free },
+   { AC::FreePlacement, VECTOR_FreePlacement },
    { AC::Hide, VECTOR_Hide },
    { AC::Init, VECTOR_Init },
    { AC::MoveToBack, VECTOR_MoveToBack },

@@ -351,12 +351,6 @@ static ERR VECTORTEXT_DeleteLine(extVectorText *Self, struct vt::DeleteLine *Arg
 
 static ERR VECTORTEXT_Free(extVectorText *Self)
 {
-   Self->txLines.~vector<TextLine>();
-   Self->txCursor.~TextCursor();
-   Self->txFamily.~basic_string();
-   Self->txFontStyle.~basic_string();
-   Self->txFontSizeString.~basic_string();
-
    if (Self->txHandle) {
       // TODO: This would be a good opportunity to garbage-collect stale glyphs
    }

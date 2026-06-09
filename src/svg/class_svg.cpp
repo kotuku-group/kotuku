@@ -140,8 +140,6 @@ static ERR SVG_Free(extSVG *Self)
       for (auto id : Self->Resources) FreeResource(id);
    }
 
-   Self->~extSVG();
-
    return ERR::Okay;
 }
 

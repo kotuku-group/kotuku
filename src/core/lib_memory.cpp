@@ -369,12 +369,10 @@ blocking, pure-query
 
 ERR CheckResourceExists(RESOURCEID ResourceID)
 {
-   {
-      std::unique_lock lock(glmResources);
-      if (auto it = glResources.find(ResourceID); it != glResources.end()) {
-         if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
-         return ERR::True;
-      }
+   std::unique_lock lock(glmResources);
+   if (auto it = glResources.find(ResourceID); it != glResources.end()) {
+      if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
+      return ERR::True;
    }
    return ERR::False;
 }

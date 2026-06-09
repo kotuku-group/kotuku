@@ -24,9 +24,14 @@ static ERR REMAPFX_NewPlacement(extRemapFX *Self) {
    return ERR::Okay;
 }
 
+static ERR REMAPFX_FreePlacement(extRemapFX *Self) {
+   Self->~extRemapFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clRemapFXActions[] = {
    { AC::Draw, REMAPFX_Draw },
-   { AC::Free, REMAPFX_Free },
+   { AC::FreePlacement, REMAPFX_FreePlacement },
    { AC::NewPlacement, REMAPFX_NewPlacement },
    { AC::NIL, nullptr }
 };

@@ -397,7 +397,6 @@ static ERR IMAGE_Free(extImage *Self)
    if (Self->prvFile) { FreeResource(Self->prvFile); Self->prvFile = nullptr; }
    if (Self->Bitmap)  { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
    if (Self->Mask)    { FreeResource(Self->Mask); Self->Mask = nullptr; }
-   Self->~extImage();
    return ERR::Okay;
 }
 

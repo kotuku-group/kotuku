@@ -21,11 +21,17 @@ static ERR SVG_NewPlacement(extSVG *Self) {
    return ERR::Okay;
 }
 
+static ERR SVG_FreePlacement(extSVG *Self) {
+   Self->~extSVG();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSVGActions[] = {
    { AC::Activate, SVG_Activate },
    { AC::DataFeed, SVG_DataFeed },
    { AC::Deactivate, SVG_Deactivate },
    { AC::Free, SVG_Free },
+   { AC::FreePlacement, SVG_FreePlacement },
    { AC::Init, SVG_Init },
    { AC::NewObject, SVG_NewObject },
    { AC::NewPlacement, SVG_NewPlacement },

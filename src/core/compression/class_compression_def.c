@@ -87,9 +87,15 @@ static ERR COMPRESSION_NewPlacement(extCompression *Self) {
    return ERR::Okay;
 }
 
+static ERR COMPRESSION_FreePlacement(extCompression *Self) {
+   Self->~extCompression();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clCompressionActions[] = {
    { AC::Flush, COMPRESSION_Flush },
    { AC::Free, COMPRESSION_Free },
+   { AC::FreePlacement, COMPRESSION_FreePlacement },
    { AC::Init, COMPRESSION_Init },
    { AC::NewObject, COMPRESSION_NewObject },
    { AC::NewPlacement, COMPRESSION_NewPlacement },

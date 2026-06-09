@@ -31,9 +31,15 @@ static ERR TASK_NewPlacement(extTask *Self) {
    return ERR::Okay;
 }
 
+static ERR TASK_FreePlacement(extTask *Self) {
+   Self->~extTask();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clTaskActions[] = {
    { AC::Activate, TASK_Activate },
    { AC::Free, TASK_Free },
+   { AC::FreePlacement, TASK_FreePlacement },
    { AC::GetKey, TASK_GetKey },
    { AC::Init, TASK_Init },
    { AC::NewPlacement, TASK_NewPlacement },

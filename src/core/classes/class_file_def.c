@@ -48,10 +48,16 @@ static ERR FILE_NewPlacement(extFile *Self) {
    return ERR::Okay;
 }
 
+static ERR FILE_FreePlacement(extFile *Self) {
+   Self->~extFile();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clFileActions[] = {
    { AC::Activate, FILE_Activate },
    { AC::DataFeed, FILE_DataFeed },
    { AC::Free, FILE_Free },
+   { AC::FreePlacement, FILE_FreePlacement },
    { AC::Init, FILE_Init },
    { AC::NewPlacement, FILE_NewPlacement },
    { AC::Query, FILE_Query },

@@ -249,7 +249,6 @@ static ERR THREAD_Free(extThread *Self)
 
    if (Self->CPPThread) { delete Self->CPPThread; Self->CPPThread = nullptr; }
 
-   Self->~extThread();
    return ERR::Okay;
 }
 

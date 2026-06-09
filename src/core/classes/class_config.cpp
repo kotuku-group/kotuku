@@ -328,7 +328,6 @@ static ERR CONFIG_Free(extConfig *Self)
       }
    }
 
-   Self->~extConfig();
    return ERR::Okay;
 }
 

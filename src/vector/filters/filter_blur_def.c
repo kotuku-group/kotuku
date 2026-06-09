@@ -5,8 +5,14 @@ static ERR BLURFX_NewPlacement(extBlurFX *Self) {
    return ERR::Okay;
 }
 
+static ERR BLURFX_FreePlacement(extBlurFX *Self) {
+   Self->~extBlurFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clBlurFXActions[] = {
    { AC::Draw, BLURFX_Draw },
+   { AC::FreePlacement, BLURFX_FreePlacement },
    { AC::NewPlacement, BLURFX_NewPlacement },
    { AC::NIL, nullptr }
 };

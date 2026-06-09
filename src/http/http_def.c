@@ -130,10 +130,16 @@ static ERR HTTP_NewPlacement(extHTTP *Self) {
    return ERR::Okay;
 }
 
+static ERR HTTP_FreePlacement(extHTTP *Self) {
+   Self->~extHTTP();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clHTTPActions[] = {
    { AC::Activate, HTTP_Activate },
    { AC::Deactivate, HTTP_Deactivate },
    { AC::Free, HTTP_Free },
+   { AC::FreePlacement, HTTP_FreePlacement },
    { AC::GetKey, HTTP_GetKey },
    { AC::Init, HTTP_Init },
    { AC::NewPlacement, HTTP_NewPlacement },

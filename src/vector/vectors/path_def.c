@@ -20,11 +20,15 @@ static ERR VECTORPATH_NewPlacement(extVectorPath *Self) {
    return ERR::Okay;
 }
 
+static ERR VECTORPATH_FreePlacement(extVectorPath *Self) {
+   Self->~extVectorPath();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorPathActions[] = {
    { AC::Clear, VECTORPATH_Clear },
    { AC::Flush, VECTORPATH_Flush },
-   { AC::Free, VECTORPATH_Free },
-   { AC::Init, VECTORPATH_Init },
+   { AC::FreePlacement, VECTORPATH_FreePlacement },
    { AC::NewObject, VECTORPATH_NewObject },
    { AC::NewPlacement, VECTORPATH_NewPlacement },
    { AC::NIL, nullptr }

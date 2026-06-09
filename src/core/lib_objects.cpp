@@ -259,6 +259,13 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          }
       }
 
+      if (mc->ActionTable[int(AC::FreePlacement)].PerformAction) {
+         mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      }
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) { // Fall-back to base class
+         mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      }
+
       if (Object->NotifyFlags.load()) {
          const std::lock_guard<std::recursive_mutex> lock(glSubLock);
          glSubscriptions.erase(Object->UID);

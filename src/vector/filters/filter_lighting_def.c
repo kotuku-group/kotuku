@@ -16,9 +16,14 @@ static ERR LIGHTINGFX_NewPlacement(extLightingFX *Self) {
    return ERR::Okay;
 }
 
+static ERR LIGHTINGFX_FreePlacement(extLightingFX *Self) {
+   Self->~extLightingFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clLightingFXActions[] = {
    { AC::Draw, LIGHTINGFX_Draw },
-   { AC::Free, LIGHTINGFX_Free },
+   { AC::FreePlacement, LIGHTINGFX_FreePlacement },
    { AC::NewPlacement, LIGHTINGFX_NewPlacement },
    { AC::NIL, nullptr }
 };

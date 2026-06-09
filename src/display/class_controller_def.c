@@ -25,7 +25,13 @@ static ERR CONTROLLER_NewPlacement(objController *Self) {
    return ERR::Okay;
 }
 
+static ERR CONTROLLER_FreePlacement(objController *Self) {
+   Self->~objController();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clControllerActions[] = {
+   { AC::FreePlacement, CONTROLLER_FreePlacement },
    { AC::NewObject, CONTROLLER_NewObject },
    { AC::NewPlacement, CONTROLLER_NewPlacement },
    { AC::Query, CONTROLLER_Query },

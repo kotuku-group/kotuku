@@ -71,6 +71,11 @@ static ERR DISPLAY_NewPlacement(extDisplay *Self) {
    return ERR::Okay;
 }
 
+static ERR DISPLAY_FreePlacement(extDisplay *Self) {
+   Self->~extDisplay();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clDisplayActions[] = {
    { AC::Activate, DISPLAY_Activate },
    { AC::Clear, DISPLAY_Clear },
@@ -81,6 +86,7 @@ static const struct ActionArray clDisplayActions[] = {
    { AC::Flush, DISPLAY_Flush },
    { AC::Focus, DISPLAY_Focus },
    { AC::Free, DISPLAY_Free },
+   { AC::FreePlacement, DISPLAY_FreePlacement },
    { AC::Hide, DISPLAY_Hide },
    { AC::Init, DISPLAY_Init },
    { AC::Move, DISPLAY_Move },

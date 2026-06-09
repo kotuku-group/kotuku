@@ -62,9 +62,15 @@ static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self) {
    return ERR::Okay;
 }
 
+static ERR VECTORFILTER_FreePlacement(extVectorFilter *Self) {
+   Self->~extVectorFilter();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorFilterActions[] = {
    { AC::Clear, VECTORFILTER_Clear },
    { AC::Free, VECTORFILTER_Free },
+   { AC::FreePlacement, VECTORFILTER_FreePlacement },
    { AC::Init, VECTORFILTER_Init },
    { AC::NewChild, VECTORFILTER_NewChild },
    { AC::NewOwner, VECTORFILTER_NewOwner },

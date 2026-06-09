@@ -1278,7 +1278,6 @@ static ERR TASK_Free(extTask *Self)
    if (Self->MsgThreadCallback) { FreeResource(Self->MsgThreadCallback); Self->MsgThreadCallback  = nullptr; }
    if (Self->MsgThreadAction)   { FreeResource(Self->MsgThreadAction);   Self->MsgThreadAction    = nullptr; }
 
-   Self->~extTask();
    return ERR::Okay;
 }
 

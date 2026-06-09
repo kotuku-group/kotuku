@@ -5,8 +5,14 @@ static ERR FLOODFX_NewPlacement(extFloodFX *Self) {
    return ERR::Okay;
 }
 
+static ERR FLOODFX_FreePlacement(extFloodFX *Self) {
+   Self->~extFloodFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clFloodFXActions[] = {
    { AC::Draw, FLOODFX_Draw },
+   { AC::FreePlacement, FLOODFX_FreePlacement },
    { AC::NewObject, FLOODFX_NewObject },
    { AC::NewPlacement, FLOODFX_NewPlacement },
    { AC::NIL, nullptr }

@@ -160,8 +160,6 @@ static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
       FreeResource(node);
    }
    Self->Matrices = nullptr;
-
-   Self->~extVectorGradient();
    return ERR::Okay;
 }
 

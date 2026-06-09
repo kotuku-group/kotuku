@@ -585,7 +585,6 @@ static ERR FILE_Free(extFile *Self)
    }
 #endif
 
-   Self->~extFile();
    return ERR::Okay;
 }
 

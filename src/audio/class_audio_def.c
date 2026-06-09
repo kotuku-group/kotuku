@@ -37,10 +37,16 @@ static ERR AUDIO_NewPlacement(extAudio *Self) {
    return ERR::Okay;
 }
 
+static ERR AUDIO_FreePlacement(extAudio *Self) {
+   Self->~extAudio();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clAudioActions[] = {
    { AC::Activate, AUDIO_Activate },
    { AC::Deactivate, AUDIO_Deactivate },
    { AC::Free, AUDIO_Free },
+   { AC::FreePlacement, AUDIO_FreePlacement },
    { AC::Init, AUDIO_Init },
    { AC::NewObject, AUDIO_NewObject },
    { AC::NewPlacement, AUDIO_NewPlacement },

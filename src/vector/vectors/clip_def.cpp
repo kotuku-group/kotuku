@@ -18,8 +18,14 @@ static ERR VECTORCLIP_NewPlacement(extVectorClip *Self) {
    return ERR::Okay;
 }
 
+static ERR VECTORCLIP_FreePlacement(extVectorClip *Self) {
+   Self->~extVectorClip();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorClipActions[] = {
    { AC::Free, VECTORCLIP_Free },
+   { AC::FreePlacement, VECTORCLIP_FreePlacement },
    { AC::Init, VECTORCLIP_Init },
    { AC::NewChild, VECTORCLIP_NewChild },
    { AC::NewPlacement, VECTORCLIP_NewPlacement },

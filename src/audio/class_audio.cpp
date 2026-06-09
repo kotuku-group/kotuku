@@ -541,8 +541,6 @@ static ERR AUDIO_Free(extAudio *Self)
 
 #endif
 
-   Self->~extAudio();
-
    return ERR::Okay;
 }
 

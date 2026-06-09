@@ -90,7 +90,6 @@ static ERR FONT_Free(extFont *Self)
       }
    }
 
-   Self->~extFont();
    return ERR::Okay;
 }
 

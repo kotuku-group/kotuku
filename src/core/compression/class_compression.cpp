@@ -1693,8 +1693,6 @@ static ERR COMPRESSION_Free(extCompression *Self)
    if (Self->Output)       { FreeResource(Self->Output); Self->Output = nullptr; }
    if (Self->FileIO)       { FreeResource(Self->FileIO); Self->FileIO = nullptr; }
 
-   Self->~extCompression();
-
    return ERR::Okay;
 }
 

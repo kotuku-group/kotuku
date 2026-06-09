@@ -674,7 +674,6 @@ static ERR DOCUMENT_Free(extDocument *Self)
    if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }
    if (Self->View) { FreeResource(Self->View); Self->View = nullptr; }
 
-   Self->~extDocument();
    return ERR::Okay;
 }
 

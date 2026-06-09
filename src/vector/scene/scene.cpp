@@ -469,7 +469,6 @@ static ERR VECTORSCENE_Flush(extVectorScene *Self)
 static ERR VECTORSCENE_Free(extVectorScene *Self, APTR Args)
 {
    clear_defs(Self);
-   Self->~extVectorScene();
 
    if (Self->Viewport) Self->Viewport->Parent = nullptr;
    if (Self->Buffer)   { delete Self->Buffer; Self->Buffer = nullptr; }
