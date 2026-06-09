@@ -363,22 +363,24 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 //********************************************************************************************************************
 // Resource definitions.
 
-#define MEMHEADER 8     // 4 bytes at start for MemoryID, 4 bytes for payload alignment
+constexpr int MEMHEADER = 8;   // 8-byte private prefix before public memory/object pointers
 
-// Align to 64-byte cache line boundaries for better performance on modern CPUs.
+// Align general memory blocks to 64-byte cache line boundaries for better performance on modern CPUs.  Objects only
+// require 8-byte alignment.
 
 constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t OBJECT_ALIGNMENT = 8;
 
-// Cache-line aligned heap allocation/free helpers shared by the memory and object subsystems.
+// Aligned heap allocation/free helpers shared by the memory and object subsystems.
 
-[[maybe_unused]] static inline APTR aligned_block_alloc(size_t Size)
+[[maybe_unused]] static inline APTR aligned_block_alloc(size_t Size, size_t Alignment = CACHE_LINE_SIZE)
 {
-   size_t aligned_size = ((Size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
+   size_t aligned_size = ((Size + Alignment - 1) / Alignment) * Alignment;
    #ifdef _WIN32
-      return _aligned_malloc(aligned_size, CACHE_LINE_SIZE);
+      return _aligned_malloc(aligned_size, Alignment);
    #else
       APTR result = nullptr;
-      if (posix_memalign(&result, CACHE_LINE_SIZE, aligned_size) != 0) return nullptr;
+      if (posix_memalign(&result, Alignment, aligned_size) != 0) return nullptr;
       return result;
    #endif
 }
@@ -391,34 +393,6 @@ constexpr size_t CACHE_LINE_SIZE = 64;
       free(Address);
    #endif
 }
-
-// Turning off USE_SHM means that the shared memory pool is available to all processes by default.
-
-#ifdef __ANDROID__
-  #undef USE_SHM // Should be using ashmem
-  #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
-
-  #ifdef USE_SHM
-  #else
-    extern int glMemoryFD;
-  #endif
-#elif __unix__
-  #define USE_SHM TRUE
-  #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
-
-  #ifdef USE_SHM
-    #define MEMORYFILE           "/tmp/kotuku.mem"
-  #else
-    // To mount a 32MB RAMFS filesystem for this method:
-    //
-    //    mkdir -p /RAM1
-    //    mount -t ramfs none /tmp/ramfs -o maxsize=32000
-
-    #define MEMORYFILE           "/tmp/ramfs/kotuku.mem"
-
-    extern int glMemoryFD;
-  #endif
-#endif
 
 enum {
    RT_OBJECT,

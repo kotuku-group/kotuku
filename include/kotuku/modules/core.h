@@ -62,6 +62,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
    using underlying = std::underlying_type_t<T>;
    return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
 }
+
+constexpr int RESOURCE_ID_OFFSET = -1;
 class objMetaClass;
 class objStorageDevice;
 class objFile;
@@ -2321,7 +2323,7 @@ extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID Own
 //********************************************************************************************************************
 
 template <class T> inline MEMORYID GetMemoryID(T &&A) {
-   return ((MEMORYID *)A)[-2];
+   return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
 inline ERR DeregisterFD(HOSTHANDLE Handle) {
@@ -2349,8 +2351,8 @@ inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription
 }
 
 inline ERR FreeResource(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return FreeResource(((int *)Address)[-2]);
+   if (not Address) return ERR::NullArgs;
+   return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {

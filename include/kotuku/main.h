@@ -211,8 +211,9 @@ class ScopedObjectLock {
 };
 
 //********************************************************************************************************************
-// Resource guard for any allocation that can be freed with FreeResource().  Retains the resource ID rather than the
-// pointer to ensure that termination is safe, even if the original resource gets terminated elsewhere.
+// Resource guard for any memory-based allocation that can be freed with FreeResource().  Retains the resource ID
+// rather than the pointer to ensure that termination is safe, even if the original resource gets terminated
+// elsewhere.
 //
 // For locally scoped allocations only; this class does not support reference counting.
 //
@@ -225,7 +226,7 @@ class LocalResource {
    public:
       LocalResource(T Resource) {
          static_assert(std::is_pointer<T>::value, "The resource value must be a pointer");
-         id = ((int *)Resource)[-2];
+         id = ((int *)Resource)[RESOURCE_ID_OFFSET];
       }
       ~LocalResource() { FreeResource(id); }
 };
@@ -251,7 +252,7 @@ class GuardedObject {
       GuardedObject() : count(new C(1)), object(nullptr), id(0) { }
 
       GuardedObject(T *pObject) : count(new C(1)), object(pObject) {
-         if (pObject) id = ((int *)pObject)[-2];
+         if (pObject) id = ((OBJECTPTR)pObject)->UID;
          else id = 0;
       }
 
@@ -320,7 +321,7 @@ class GuardedObject {
          if (!Object) return;
          else if (count[0] IS 1) {
             object = Object;
-            id     = ((int *)Object)[-2];
+            id     = ((OBJECTPTR)Object)->UID;
          }
          else { kt::Log log(__FUNCTION__); log.warning(ERR::InUse); }
       }
@@ -332,8 +333,7 @@ class GuardedObject {
 };
 
 //********************************************************************************************************************
-// As for GuardedObject, but works with any resource type.  The reason why these two managers exist with duplicated
-// functionality is because GuardedObject may be enhanced with more integration with the Core in future.
+// As for GuardedObject, but works with any memory-based resource type.
 
 template <class T = void, class C = std::atomic_int>
 class GuardedResource {
@@ -349,7 +349,7 @@ class GuardedResource {
       GuardedResource() : count(new C(1)), resource(nullptr), id(0) { }
 
       GuardedResource(T *Resource) : count(new C(1)), resource(Resource) {
-         id = ((int *)Resource)[-2];
+         id = ((int *)Resource)[RESOURCE_ID_OFFSET];
       }
 
       GuardedResource(const GuardedResource &other) { // Copy constructor
@@ -415,7 +415,7 @@ class GuardedResource {
          if (!Resource) return;
          else if (count[0] IS 1) {
             resource = Resource;
-            id       = ((int *)Resource)[-2];
+            id       = ((int *)Resource)[RESOURCE_ID_OFFSET];
          }
          else { kt::Log log(__FUNCTION__); log.warning(ERR::InUse); }
       }

@@ -67,7 +67,7 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
 
       auto &active_mem = mem_it->second;
 
-      auto start_mem = (char *)active_mem.Address - sizeof(int) - sizeof(int);
+      auto start_mem = (char *)active_mem.Address - MEMHEADER;
 
       if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
          #ifdef _WIN32
@@ -319,7 +319,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       return ERR::AllocMemory;
    }
 
-   APTR data_start = (char *)start_mem + sizeof(int) + sizeof(int); // Skip unique ID and alignment padding.
+   APTR data_start = (char *)start_mem + MEMHEADER;
 
    MEMORYID unique_id = 0;
 
@@ -327,7 +327,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       unique_id = glPrivateIDCounter++;
       // Configure the memory header.
 
-      ((int *)start_mem)[0]  = unique_id;
+      ((int *)data_start)[RESOURCE_ID_OFFSET] = unique_id;
 
       // Record memory details such as the size, ID and flags.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
@@ -537,10 +537,10 @@ ERR MemoryIDInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
    if (auto lock = std::unique_lock{glmMemory}) {
       auto mem = glPrivateMemory.find(MemoryID);
       if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
-         MemInfo->Start       = mem->second.Address;
-         MemInfo->Size        = mem->second.Size;
-         MemInfo->Flags       = mem->second.Flags;
-         MemInfo->MemoryID    = mem->second.MemoryID;
+         MemInfo->Start    = mem->second.Address;
+         MemInfo->Size     = mem->second.Size;
+         MemInfo->Flags    = mem->second.Flags;
+         MemInfo->MemoryID = mem->second.MemoryID;
          return ERR::Okay;
       }
       else return ERR::DoesNotExist;
@@ -598,7 +598,7 @@ ERR MemoryPtrInfo(APTR Memory, MemInfo *MemInfo, int Size)
 
    // Search private addresses.  This is a bit slow, but if the memory pointer is guaranteed to have
    // come from AllocMemory() then the optimal solution for the client is to pull the ID from
-   // (int *)Memory)[-2] first and call MemoryIDInfo() instead.
+   // (int *)Memory)[RESOURCE_ID_OFFSET] first and call MemoryIDInfo() instead.
 
    if (auto lock = std::unique_lock{glmMemory}) {
       for (const auto & [ id, mem ] : glPrivateMemory) {
@@ -658,7 +658,7 @@ ERR ProtectMemory(APTR Address, MEM Flags)
          return ERR::Args;
       }
 
-      auto start_mem = (char *)Address - sizeof(int) - sizeof(int);
+      auto start_mem = (char *)Address - MEMHEADER;
       auto full_size = meminfo.Size + MEMHEADER;
       auto aligned_size = align_page_size(full_size);
 

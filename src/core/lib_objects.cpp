@@ -149,7 +149,7 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 
 //********************************************************************************************************************
 // Releases the heap block backing an object.  Object memory is allocated directly in NewObject() with an 8-byte
-// MEMHEADER cookie preceding the object pointer, so the block start is rewound by MEMHEADER before being freed.  This
+// MEMHEADER prefix preceding the object pointer, so the block start is rewound by MEMHEADER before being freed.  This
 // must only be called once all object locks and contexts have been released (see object_free()).
 
 static void free_object_block(OBJECTPTR Object)
@@ -1828,14 +1828,14 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    OBJECTPTR head = nullptr;
 
    // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
-   // glPrivateMemory.  Behaviour is mostly aligned with AllocMemory(), such as the header allocation.
+   // glPrivateMemory.  Only 8-byte alignment is required for the object header.
 
-   if (APTR start_mem = aligned_block_alloc(mc->Size + MEMHEADER)) {
+   if (APTR start_mem = aligned_block_alloc(mc->Size + MEMHEADER, OBJECT_ALIGNMENT)) {
       head = (OBJECTPTR)((char *)start_mem + MEMHEADER);
 
       MEMORYID head_id = glPrivateIDCounter++;
 
-      ((int *)start_mem)[0] = head_id; // Store the UID cookie at ((int *)head)[-2]
+      ((int *)head)[RESOURCE_ID_OFFSET] = head_id; // Store the UID cookie
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
