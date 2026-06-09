@@ -20,6 +20,7 @@
 #include <string_view>
 #include <ankerl/unordered_dense.h>
 #include <unordered_set>
+#include "node_pool.h"
 
 using namespace std::chrono_literals;
 
@@ -211,6 +212,20 @@ struct QueuedAction {
    std::vector<int8_t> Parameters;
    FUNCTION  Callback;
 };
+
+//********************************************************************************************************************
+// Resource maps recycle their nodes through a per-map NodePool to absorb high insert/erase churn.  std::unordered_map
+// is retained because it guarantees stable references to values across insert/erase, a contract the core relies upon
+// (e.g. a ResourceRecord reference is taken under glmResources, the lock dropped, then dereferenced).  The pool never
+// relocates a node, so that guarantee is preserved.  Each pool is mutated only under its map's mutex.
+
+#ifdef RESOURCE_POOL
+template <class K, class V> using PooledMap =
+   std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, PoolAllocator<std::pair<const K, V>>>;
+extern NodePool glMemoryNodePool, glResourcesNodePool, glObjectsNodePool;
+#else
+template <class K, class V> using PooledMap = std::unordered_map<K, V>;
+#endif
 
 //********************************************************************************************************************
 
@@ -734,9 +749,11 @@ extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
-extern std::unordered_map<MEMORYID, PrivateAddress> glMemory;  // Locked with glmMemory.
-extern std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.
-extern std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Locked with glmObjects.
+
+extern PooledMap<MEMORYID, PrivateAddress> glMemory;  // Locked with glmMemory.
+extern PooledMap<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.
+extern PooledMap<OBJECTID, ObjectRecord> glObjects; // Locked with glmObjects.
+
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 extern std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes; // VolumeName = { Key, Value }
 extern std::unordered_multimap<uint32_t, CLASSID> glWildClassMap; // Fast lookup for identifying classes by file extension

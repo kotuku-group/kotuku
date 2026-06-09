@@ -63,11 +63,23 @@ CONTYPE glConsoleType  = CONTYPE::NONE;
 bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
+
 // NB: During shutdown, elements in glMemory are not erased but will have their fields cleared.
-// Can't use ankerl here because removal of elements is too slow.
-std::unordered_map<MEMORYID, PrivateAddress> glMemory; // Pointer stable collection
-std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
-std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
+// Can't use ankerl here because it's unsuitable for high-churn collections.
+
+#ifdef RESOURCE_POOL
+// Node pools must be constructed before the maps that reference them (guaranteed here by declaration order within
+// this translation unit) and destroyed after them (reverse declaration order).
+NodePool glMemoryNodePool, glResourcesNodePool, glObjectsNodePool;
+PooledMap<MEMORYID, PrivateAddress> glMemory{0, PoolAllocator<std::pair<const MEMORYID, PrivateAddress>>(glMemoryNodePool)}; // Pointer stable collection
+PooledMap<RESOURCEID, ResourceRecord> glResources{0, PoolAllocator<std::pair<const RESOURCEID, ResourceRecord>>(glResourcesNodePool)}; // Pointer stable collection
+PooledMap<OBJECTID, ObjectRecord> glObjects{0, PoolAllocator<std::pair<const OBJECTID, ObjectRecord>>(glObjectsNodePool)}; // Pointer stable collection
+#else
+PooledMap<MEMORYID, PrivateAddress> glMemory; // Pointer stable collection
+PooledMap<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
+PooledMap<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
+#endif
+
 
 std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 
