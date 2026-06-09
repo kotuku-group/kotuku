@@ -493,14 +493,14 @@ ERR FreeResource(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MemoryIDInfo: Returns information on memory ID's.
+MemoryInfo: Returns information on memory ID's.
 
 This function returns the attributes of a memory block, including the start address, parent object, memory ID, size
 and flags.  The following example illustrates correct use of this function:
 
 <pre>
 MemInfo info;
-if (MemoryIDInfo(memid, &info) IS ERR::Okay) {
+if (MemoryInfo(memid, &info) IS ERR::Okay) {
    log.msg("Memory block #%d is %d bytes large.", info.MemoryID, info.Size);
 }
 </pre>
@@ -525,7 +525,7 @@ mutates-input, blocking, pure-query
 
 *********************************************************************************************************************/
 
-ERR MemoryIDInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
+ERR MemoryInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
 {
    kt::Log log(__FUNCTION__);
 
@@ -544,74 +544,6 @@ ERR MemoryIDInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
          return ERR::Okay;
       }
       else return ERR::DoesNotExist;
-   }
-   else return log.warning(ERR::SystemLocked);
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
-MemoryPtrInfo: Returns information on memory addresses.
-
-This function returns the attributes of a memory block.  Information includes the start address, parent object,
-memory ID, size and flags of the memory address that you are querying.  The following code segment illustrates
-correct use of this function:
-
-<pre>
-MemInfo info;
-if (MemoryPtrInfo(ptr, &info) IS ERR::Okay) {
-   log.msg("Address %p is %d bytes large.", info.Start, info.Size);
-}
-</pre>
-
-If the call to MemoryPtrInfo() fails then the !MemInfo structure's fields will be driven to `NULL` and an error code
-will be returned.
-
-Please note that referencing by a pointer requires a slow reverse-lookup to be employed in this function's search
-routine.  We recommend that calls to this function are avoided unless circumstances absolutely require it.
-
--INPUT-
-ptr Address:  Pointer to a valid memory area.
-buf(struct(MemInfo)) MemInfo: Pointer to a !MemInfo structure to be populated.
-structsize Size: Size of the !MemInfo structure.
-
--ERRORS-
-Okay
-NullArgs
-Args
-DoesNotExist
-SystemLocked
-
--TAGS-
-mutates-input, blocking, pure-query
-
-*********************************************************************************************************************/
-
-ERR MemoryPtrInfo(APTR Memory, MemInfo *MemInfo, int Size)
-{
-   kt::Log log(__FUNCTION__);
-
-   if ((not MemInfo) or (not Memory)) return log.warning(ERR::NullArgs);
-   if ((size_t)Size < sizeof(MemInfo)) return log.warning(ERR::Args);
-
-   clearmem(MemInfo, Size);
-
-   // Search private addresses.  This is a bit slow, but if the memory pointer is guaranteed to have
-   // come from AllocMemory() then the optimal solution for the client is to pull the ID from
-   // (int *)Memory)[RESOURCE_ID_OFFSET] first and call MemoryIDInfo() instead.
-
-   if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (Memory IS mem.Address) {
-            MemInfo->Start       = Memory;
-            MemInfo->Size        = mem.Size;
-            MemInfo->Flags       = mem.Flags;
-            MemInfo->MemoryID    = mem.MemoryID;
-            return ERR::Okay;
-         }
-      }
-      log.warning("Private memory address %p is not valid.", Memory);
-      return ERR::DoesNotExist;
    }
    else return log.warning(ERR::SystemLocked);
 }
@@ -652,7 +584,7 @@ ERR ProtectMemory(APTR Address, MEM Flags)
    if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
 
    MemInfo meminfo;
-   if (MemoryIDInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) IS ERR::Okay) {
+   if (MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) IS ERR::Okay) {
       if ((meminfo.Flags & MEM::PROTECTED) IS MEM::NIL) {
          log.warning("Memory block at %p is not protected.", Address);
          return ERR::Args;
@@ -726,7 +658,7 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
    // Check the validity of what we have been sent
 
    MemInfo meminfo;
-   if (MemoryIDInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) != ERR::Okay) {
+   if (MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) != ERR::Okay) {
       return log.warning(ERR::Memory);
    }
 

@@ -50,8 +50,7 @@ FDEF argsListChildren[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTI
 FDEF argsLoadFile[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { "CacheFile:Cache", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
 FDEF argsLockObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "MilliSeconds", FD_INT }, { 0, 0 } };
 FDEF argsLogReturn[] = { { "Void", FD_VOID }, { 0, 0 } };
-FDEF argsMemoryIDInfo[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF argsMemoryPtrInfo[] = { { "Error", FD_INT|FD_ERROR }, { "Address", FD_PTR }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
+FDEF argsMemoryInfo[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 FDEF argsMoveFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FDF_CPPSTRING }, { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsNewObject[] = { { "Error", FD_INT|FD_ERROR }, { "ClassID", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { "Object", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNotifySubscribers[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Args", FD_PTR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
@@ -124,8 +123,8 @@ const struct Function glFunctions[] = {
    { (APTR)ListChildren, "ListChildren", argsListChildren },
    { (APTR)RegisterFD, "RegisterFD", argsRegisterFD },
    { (APTR)ResolvePath, "ResolvePath", argsResolvePath },
-   { (APTR)MemoryIDInfo, "MemoryIDInfo", argsMemoryIDInfo },
-   { (APTR)MemoryPtrInfo, "MemoryPtrInfo", argsMemoryPtrInfo },
+   { (APTR)MemoryInfo, "MemoryInfo", argsMemoryInfo },
+   { (APTR)TrackResource, "TrackResource", argsTrackResource },
    { (APTR)NewObject, "NewObject", argsNewObject },
    { (APTR)NotifySubscribers, "NotifySubscribers", argsNotifySubscribers },
    { (APTR)CopyFile, "CopyFile", argsCopyFile },
@@ -189,7 +188,6 @@ const struct Function glFunctions[] = {
    { (APTR)AsyncPending, "AsyncPending", argsAsyncPending },
    { (APTR)AsyncWait, "AsyncWait", argsAsyncWait },
    { (APTR)ClassDatabase, "ClassDatabase", argsClassDatabase },
-   { (APTR)TrackResource, "TrackResource", argsTrackResource },
    { nullptr, nullptr, nullptr }
 };
 

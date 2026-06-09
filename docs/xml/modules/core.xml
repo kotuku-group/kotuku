@@ -1077,11 +1077,11 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   </function>
 
   <function>
-    <name>MemoryIDInfo</name>
+    <name>MemoryInfo</name>
     <category>Memory</category>
     <comment>Returns information on memory ID's.</comment>
-    <prototype>ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
-    <tiriPrototype>err = MemoryIDInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
+    <prototype>ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
+    <tiriPrototype>err = MemoryInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
     <tags>mutates-input, blocking, pure-query</tags>
     <input>
       <param type="MEMORYID" name="ID">Pointer to a valid memory ID.</param>
@@ -1091,42 +1091,11 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <description>
 <p>This function returns the attributes of a memory block, including the start address, parent object, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
 <pre>MemInfo info;
-if (MemoryIDInfo(memid, &amp;info) IS ERR::Okay) {
+if (MemoryInfo(memid, &amp;info) IS ERR::Okay) {
    log.msg(&quot;Memory block #%d is %d bytes large.&quot;, info.MemoryID, info.Size);
 }
 </pre>
 <p>If the call fails, the <st>MemInfo</st> structure's fields will be driven to <code>NULL</code> and an error code is returned.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
-      <error code="DoesNotExist">Resource does not exist</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
-    <name>MemoryPtrInfo</name>
-    <category>Memory</category>
-    <comment>Returns information on memory addresses.</comment>
-    <prototype>ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo, INT Size)</prototype>
-    <tiriPrototype>err = MemoryPtrInfo(Address:any, MemInfo:any, Size:num)</tiriPrototype>
-    <tags>mutates-input, blocking, pure-query</tags>
-    <input>
-      <param type="APTR" name="Address">Pointer to a valid memory area.</param>
-      <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure to be populated.</param>
-      <param type="INT" name="Size">Size of the <st>MemInfo</st> structure.</param>
-    </input>
-    <description>
-<p>This function returns the attributes of a memory block.  Information includes the start address, parent object, memory ID, size and flags of the memory address that you are querying.  The following code segment illustrates correct use of this function:</p>
-<pre>MemInfo info;
-if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
-   log.msg(&quot;Address %p is %d bytes large.&quot;, info.Start, info.Size);
-}
-</pre>
-<p>If the call to MemoryPtrInfo() fails then the <st>MemInfo</st> structure's fields will be driven to <code>NULL</code> and an error code will be returned.</p>
-<p>Please note that referencing by a pointer requires a slow reverse-lookup to be employed in this function's search routine.  We recommend that calls to this function are avoided unless circumstances absolutely require it.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

@@ -2499,22 +2499,11 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
    if (Self->x11.XShmImage) return ERR::NotPossible;
 #endif
 
-   // This code gets the correct memory flags to define the pixel drawing functions
-   // (i.e. functions to draw to video memory are different to drawing to normal memory).
-
    if (Self->Data != Value) {
       Self->Data = Value;
 
       if (Self->DataFlags IS MEM::NIL) {
-         MemInfo info;
-         if (MemoryPtrInfo(Value, &info) != ERR::Okay) {
-            kt::Log log;
-            log.warning("Could not obtain flags from address %p.", Value);
-         }
-         else if (Self->DataFlags != info.Flags) {
-            Self->DataFlags = info.Flags;
-            if (Self->initialised()) CalculatePixelRoutines(Self);
-         }
+         Self->DataFlags = MEM::DATA;
       }
    }
 

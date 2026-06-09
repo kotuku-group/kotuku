@@ -1361,7 +1361,7 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                   }
                   else {
                      MemInfo meminfo;
-                     if (MemoryIDInfo(GetMemoryID(((APTR *)var)[0]), &meminfo) IS ERR::Okay) size = meminfo.Size;
+                     if (MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo) IS ERR::Okay) size = meminfo.Size;
                   }
 
                   if (size > 0) lua_pushlstring(prv->Lua, ((CSTRING *)var)[0], size);

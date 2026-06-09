@@ -1070,8 +1070,8 @@ struct ScriptArg { // For use with sc::Exec
     "ListChildren",
     "RegisterFD",
     "ResolvePath",
-    "MemoryIDInfo",
-    "MemoryPtrInfo",
+    "MemoryInfo",
+    "TrackResource",
     "NewObject",
     "NotifySubscribers",
     "CopyFile",
@@ -1134,8 +1134,7 @@ struct ScriptArg { // For use with sc::Exec
     "AsyncCancel",
     "AsyncPending",
     "AsyncWait",
-    "ClassDatabase",
-    "TrackResource")
+    "ClassDatabase")
 
   c_insert([==[
 
@@ -1182,12 +1181,8 @@ template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
 }
 
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryIDInfo(ID,MemInfo,sizeof(struct MemInfo));
-}
-
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo) {
-   return MemoryPtrInfo(Address,MemInfo,sizeof(struct MemInfo));
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
+   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
