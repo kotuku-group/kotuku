@@ -522,27 +522,24 @@ static void free_private_memory(void)
 
    log.branch("Checking for orphaned memory allocations...");
 
-   {
-      std::lock_guard lock(glmMemory);
+   // It is assumed that no threads are running by this point in the shutdown process
 
-      for (auto & [ id, mem ] : glMemory) {
-         if (not mem.Address) continue;
+   for (auto & [ id, mem ] : glMemory) {
+      if (not mem.Address) continue;
 
-         if (not glCrashStatus) {
-            if ((mem.Flags & MEM::STRING) != MEM::NIL) {
-               log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-            }
-            else log.warning("Unfreed resource #%d/%p, Size %d, ThreadLock: %d.", mem.MemoryID, mem.Address, mem.Size, int(mem.ThreadLockID));
+      if (not glCrashStatus) {
+         if ((mem.Flags & MEM::STRING) != MEM::NIL) {
+            log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
          }
-
-         FreeResource(mem.Address);
-         mem.Address = nullptr;
+         else log.warning("Unfreed resource #%d/%p, Size %d, ThreadLock: %d.", mem.MemoryID, mem.Address, mem.Size, int(mem.ThreadLockID));
       }
+
+      FreeResource(mem.Address);
+      mem.Address = nullptr;
    }
 
    if (not glCrashStatus) {
       // Print warnings only - resource managers typically expect a stable system environment
-      std::lock_guard lock(glmResources);
       for (const auto & [ id, resource ] : glResources) {
          if (not resource.Address) continue;
 
