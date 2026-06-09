@@ -821,14 +821,12 @@ extern thread_local bool tlMainThread;
 extern thread_local int16_t tlMsgRecursion;
 extern thread_local int16_t tlDepth;
 extern thread_local int16_t tlLogStatus;
-extern thread_local int16_t tlPreventSleep;
 extern thread_local int glForceUID, glForceGID;
 extern thread_local PERMIT glDefaultPermissions;
 extern THREADID glMainThreadID;
 
 //********************************************************************************************************************
 
-extern ERR (*glMessageHandler)(struct Message *);
 extern void (*glVideoRecovery)(void);
 extern void (*glKeyboardRecovery)(void);
 

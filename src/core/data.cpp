@@ -131,7 +131,6 @@ APTR glJNIEnv = 0;
 std::atomic_ushort glFunctionID = 3333; // IDTYPE_FUNCTION
 int glStdErrFlags = 0;
 TIMER glCacheTimer = 0;
-int glMemoryFD = -1;
 int glValidateProcessID = 0;
 int glProcessID = 0;
 int glEUID = -1, glEGID = -1, glGID = -1, glUID = -1;
@@ -218,7 +217,6 @@ thread_local PERMIT glDefaultPermissions = PERMIT::NIL;
 thread_local int16_t tlDepth     = 0;
 thread_local int16_t tlLogStatus = 1;
 thread_local bool tlMainThread = false; // Will be set to TRUE on open, any other threads will remain FALSE.
-thread_local int16_t tlPreventSleep = 0;
 THREADID glMainThreadID = THREADID(0);
 
 Object glDummyObject;
@@ -243,7 +241,6 @@ objTime *glTime = nullptr;
 thread_local int16_t tlMsgRecursion = 0;
 thread_local TaskMessage *tlCurrentMsg = nullptr;
 
-ERR (*glMessageHandler)(struct Message *) = nullptr;
 void (*glVideoRecovery)(void) = nullptr;
 void (*glKeyboardRecovery)(void) = nullptr;
 
