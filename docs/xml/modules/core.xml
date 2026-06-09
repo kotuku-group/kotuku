@@ -1100,8 +1100,8 @@ if (MemoryIDInfo(memid, &amp;info) IS ERR::Okay) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="MemoryDoesNotExist">Memory block does not exist</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1131,8 +1131,8 @@ if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="MemoryDoesNotExist">Memory block does not exist</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1328,8 +1328,8 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid flags specified or memory block is not protected.</error>
-      <error code="MemoryDoesNotExist">The memory block is not valid or was not allocated with protection.</error>
       <error code="SystemCall">A system call failed.</error>
+      <error code="DoesNotExist">The memory block is not valid or was not allocated with protection.</error>
       <error code="NullArgs">Address is NULL.</error>
     </result>
   </function>
@@ -1352,10 +1352,8 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="InvalidData">There is an error in the provided data</error>
       <error code="OutOfRange">The <code>Action</code> ID is invalid.</error>
       <error code="MissingClass">The class could not be found in the system</error>
-      <error code="NoMatchingObject">No matching object was found for the given object ID</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -2792,7 +2790,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
       <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
-      <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
+      <const name="FREE_ON_UNLOCK">Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>

@@ -283,7 +283,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "UNTRACKED: An object created with this flag will not be tracked back to the object that created it.",
     "INITIALISED: Read-only indicator if the object has been initialised.",
     "LOCAL: Classes can allocate local objects to stop them from being associated with the client.",
-    "FREE_ON_UNLOCK: Read-only indicator for when the object is marked for deletion.",
+    "FREE_ON_UNLOCK: Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.",
     "FREE: Read-only indicator for when the object is being freed.",
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",

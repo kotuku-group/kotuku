@@ -766,7 +766,7 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    kt::Log log;
    std::list<OBJECTID> objlist;
 
-   if (auto lock = std::unique_lock{glmMemory}) {
+   if (auto lock = std::unique_lock{glmObjects}) {
       for (const auto &entry : glObjects) {
          if (auto object = entry.second.Object) {
             if (Self->classID() IS object->classID()) {

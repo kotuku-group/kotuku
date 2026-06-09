@@ -11,6 +11,7 @@ This program tests resource locking and termination behaviour.
 
 #include <pthread.h>
 #include <atomic>
+#include <cstdint>
 #include <kotuku/startup.h>
 
 using namespace kt;
@@ -20,6 +21,7 @@ static APTR glTerminatingResource = nullptr;
 static std::atomic_bool glManagerEntered = false;
 static std::atomic_bool glManagerCanFinish = false;
 static ERR glConcurrentFreeError = ERR::Okay;
+static std::atomic_int glAllocFreeFailures = 0;
 
 //********************************************************************************************************************
 
@@ -44,6 +46,133 @@ static void * free_terminating_resource(void *)
 {
    glConcurrentFreeError = FreeResource(glTerminatingResource);
    return nullptr;
+}
+
+//********************************************************************************************************************
+
+static void * alloc_free_worker(void *Arg)
+{
+   auto base = int((intptr_t)Arg);
+
+   for (int i=0; i < 250; i++) {
+      APTR memory = nullptr;
+      if (AllocMemory(32 + ((base + i) % 96), MEM::DATA, &memory) != ERR::Okay) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+         continue;
+      }
+
+      auto memory_id = GetMemoryID(memory);
+      if (CheckResourceExists(memory_id) != ERR::True) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      if (FreeResource(memory) != ERR::Okay) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      if (CheckResourceExists(memory_id) != ERR::False) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+   }
+
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static int run_concurrent_alloc_free_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   static constexpr int thread_count = 4;
+   pthread_t threads[thread_count];
+
+   glAllocFreeFailures.store(0, std::memory_order_release);
+
+   for (int i=0; i < thread_count; i++) {
+      if (pthread_create(&threads[i], nullptr, &alloc_free_worker, (void *)(intptr_t)(i * 1000)) != 0) {
+         log.warning("pthread_create() failed for concurrent allocation worker %d.", i);
+         return -1;
+      }
+   }
+
+   for (int i=0; i < thread_count; i++) pthread_join(threads[i], nullptr);
+
+   if (glAllocFreeFailures.load(std::memory_order_acquire) != 0) {
+      log.warning("%d concurrent allocation/free checks failed.", glAllocFreeFailures.load(std::memory_order_relaxed));
+      return -1;
+   }
+
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_owned_resource_cleanup_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   OBJECTPTR parent = nullptr;
+   OBJECTPTR child = nullptr;
+   APTR memory = nullptr;
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &parent) != ERR::Okay) {
+      log.warning("Failed to create parent Config object for ownership cleanup check.");
+      return -1;
+   }
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &child) != ERR::Okay) {
+      FreeResource(parent);
+      log.warning("Failed to create child Config object for ownership cleanup check.");
+      return -1;
+   }
+
+   if (SetOwner(child, parent) != ERR::Okay) {
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("SetOwner() failed for ownership cleanup check.");
+      return -1;
+   }
+
+   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("AllocMemory() failed for ownership cleanup check.");
+      return -1;
+   }
+
+   const auto child_id = child->UID;
+   const auto memory_id = GetMemoryID(memory);
+
+   if (auto error = TrackResource(memory_id, memory, parent->UID, nullptr); error != ERR::Okay) {
+      FreeResource(memory);
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("TrackResource() failed for ownership cleanup check: %s.", GetErrorMsg(error));
+      return -1;
+   }
+
+   if (FreeResource(parent) != ERR::Okay) {
+      FreeResource(memory);
+      FreeResource(child);
+      log.warning("FreeResource() failed for parent ownership cleanup check.");
+      return -1;
+   }
+
+   OBJECTPTR locked = nullptr;
+   auto error = AccessObject(child_id, 1000, &locked);
+   if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
+      if (error IS ERR::Okay) ReleaseObject(locked);
+      log.warning("AccessObject() returned %s for a child freed with its parent.", GetErrorMsg(error));
+      return -1;
+   }
+
+   if (CheckResourceExists(memory_id) != ERR::False) {
+      log.warning("Tracked memory resource still exists after parent cleanup.");
+      return -1;
+   }
+
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -186,6 +315,16 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_access_object_checks() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_owned_resource_cleanup_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_concurrent_alloc_free_check() != 0) {
       close_kotuku();
       return -1;
    }

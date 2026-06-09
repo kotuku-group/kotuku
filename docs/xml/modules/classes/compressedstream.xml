@@ -204,7 +204,7 @@
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
       <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
-      <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
+      <const name="FREE_ON_UNLOCK">Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>

@@ -65,8 +65,9 @@ bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
 // NB: During shutdown, elements in glPrivateMemory are not erased but will have their fields cleared.
 // Can't use ankerl here because removal of elements is too slow.
-std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;
-std::unordered_map<RESOURCEID, ResourceRecord> glResources;
+std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory; // Pointer stable collection
+std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
+std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
 
 std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 
@@ -96,6 +97,8 @@ OBJECTLOOKUP glObjectLookup; // Name lookups
 
 std::mutex glmPrint;
 std::recursive_mutex glmMemory;
+std::recursive_mutex glmResources; // For glResources
+std::recursive_mutex glmObjects; // For glObjects
 std::recursive_mutex glmMsgHandler;
 std::recursive_mutex glmAsyncActions;
 std::shared_timed_mutex glmObjectLookup; // For glObjectLookup
@@ -110,7 +113,6 @@ ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
 ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB;
 ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
-std::unordered_map<OBJECTID, ObjectRecord> glObjects;
 ankerl::unordered_dense::map<uint32_t, std::string> glFields;
 
 std::unordered_multimap<uint32_t, CLASSID> glWildClassMap;

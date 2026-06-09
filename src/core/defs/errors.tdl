@@ -68,7 +68,7 @@ function declareErrors()
     "EntryMissingHeader",            -- The ModEntry->Header is missing
     "ModuleMissingInit",             -- Module has not defined support for Init()
     "ModuleInitFailed",              -- Module failed its Initialisation routine
-    "MemoryDoesNotExist",            -- Memory block does not exist
+    "MemoryDoesNotExist",            -- DEPRECATED
     "DeadLock",                      -- Dead-lock detected - procedure aborted
     "SystemLocked",                  -- Part of the system is unreachable due to a persistent lock
     "ModuleMissingName",             -- Module has not declared an official name

@@ -373,12 +373,12 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
    OBJECTPTR object = nullptr;
 
    {
-      std::lock_guard lock(glmMemory);
+      std::lock_guard lock(glmResources);
 
       auto resource = glResources.find(ObjectID);
       if ((resource IS glResources.end()) or (not resource->second.Address)) return ERR::NoMatchingObject;
       if (resource->second.Manager != &glResourceObject) return ERR::NoMatchingObject;
-      if (resource->second.Collect or resource->second.Terminating) return ERR::MarkedForDeletion;
+      if (resource->second.CollectOnUnlock or resource->second.Terminating) return ERR::MarkedForDeletion;
 
       object = (OBJECTPTR)resource->second.Address;
       if (object->collecting()) return ERR::MarkedForDeletion;

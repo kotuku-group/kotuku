@@ -63,7 +63,7 @@ static void remove_object_locks(void)
    };
 
    std::vector<object_lock> locked_objects;
-   if (auto lock = std::unique_lock{glmMemory}) {
+   if (auto lock = std::unique_lock{glmObjects}) {
       for (const auto & rec : glObjects) {
          if (auto obj = rec.second.Object) {
             const auto locks = int(obj->Queue.load(std::memory_order_relaxed));
@@ -75,7 +75,7 @@ static void remove_object_locks(void)
    for (auto & rec : locked_objects) {
       OBJECTPTR obj = nullptr;
       {
-         std::lock_guard lock(glmMemory);
+         std::lock_guard lock(glmObjects);
          if (auto object_rec = glObjects.find(rec.ObjectID); object_rec != glObjects.end()) {
             obj = object_rec->second.Object;
          }
@@ -204,7 +204,7 @@ void CloseCore(void)
          std::vector<OBJECTID> children;
 
          {
-            std::lock_guard lock(glmMemory);
+            std::lock_guard lock(glmObjects);
             if (auto object_rec = glObjects.find(glCurrentTask->UID); object_rec != glObjects.end()) {
                children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
             }
@@ -362,7 +362,7 @@ __export void Expunge(int16_t Force)
             std::vector<OBJECTPTR> children;
 
             {
-               std::lock_guard lock(glmMemory);
+               std::lock_guard lock(glmObjects);
                if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
                   for (const auto id : object_rec->second.Children) {
                      if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
@@ -447,7 +447,7 @@ __export void Expunge(int16_t Force)
                std::vector<OBJECTPTR> children;
 
                {
-                  std::lock_guard lock(glmMemory);
+                  std::lock_guard lock(glmObjects);
                   if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
                      for (const auto id : object_rec->second.Children) {
                         if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
@@ -466,7 +466,7 @@ __export void Expunge(int16_t Force)
                      std::vector<OBJECTPTR> objects;
 
                      {
-                        std::lock_guard lock(glmMemory);
+                        std::lock_guard lock(glmObjects);
                         for (auto &entry : glObjects) {
                            if ((entry.second.Object) and (entry.second.Object->classID() IS mc->ClassID)) {
                               objects.push_back(entry.second.Object);
@@ -513,7 +513,8 @@ restart_forced_expunge:
 }
 
 //********************************************************************************************************************
-// Note: Class and object pointers are no longer valid for interaction at this stage
+// Note: Class and object pointers are no longer valid for interaction at this stage.  glPrivateMemory remains stable
+// during this process because records are cleared rather than removed.
 
 static void free_private_memory(void)
 {
@@ -521,39 +522,32 @@ static void free_private_memory(void)
 
    log.branch("Checking for orphaned memory allocations...");
 
-   int count = 0;
-
-   if (auto lock = std::unique_lock{glmMemory}) {
-      // Free strings first
+   {
+      std::lock_guard lock(glmMemory);
 
       for (auto & [ id, mem ] : glPrivateMemory) {
-         if ((mem.Address) and ((mem.Flags & MEM::STRING) != MEM::NIL)) {
-            if (!glCrashStatus) log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-            FreeResource(mem.Address);
-            mem.Address = nullptr;
-            count++;
-         }
-      }
+         if (not mem.Address) continue;
 
-      // Free all other memory blocks
-
-      for (auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.Address) {
-            if (not glCrashStatus) {
-               log.warning("Unfreed resource #%d/%p, Size %d, ThreadLock: %d.", mem.MemoryID, mem.Address, mem.Size, int(mem.ThreadLockID));
+         if (not glCrashStatus) {
+            if ((mem.Flags & MEM::STRING) != MEM::NIL) {
+               log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
             }
-            FreeResource(mem.Address);
-            mem.Address = nullptr;
-            count++;
+            else log.warning("Unfreed resource #%d/%p, Size %d, ThreadLock: %d.", mem.MemoryID, mem.Address, mem.Size, int(mem.ThreadLockID));
          }
-      }
 
-      for (const auto & [ id, resource ] : glResources) {
-         if ((resource.Address) and (not glCrashStatus)) {
-            log.warning("Unfreed resource #%d/%p (%s), Owner: #%d.", id, resource.Address, resource.Manager->Name, resource.OwnerID);
-         }
+         FreeResource(mem.Address);
+         mem.Address = nullptr;
       }
    }
 
-   if ((glCrashStatus) and (count > 0)) log.msg("%d memory blocks were freed.", count);
+   if (not glCrashStatus) {
+      // Print warnings only - resource managers typically expect a stable system environment
+      std::lock_guard lock(glmResources);
+      for (const auto & [ id, resource ] : glResources) {
+         if (not resource.Address) continue;
+
+         log.warning("Unfreed resource #%d/%p (%s), Owner: #%d.", id, resource.Address,
+            resource.Manager ? resource.Manager->Name : "Unknown", resource.OwnerID);
+      }
+   }
 }

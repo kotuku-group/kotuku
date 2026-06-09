@@ -226,6 +226,8 @@ extern std::recursive_timed_mutex glmTimer;        // For timer subscriptions.
 extern std::shared_timed_mutex glmObjectLookup;    // For glObjectLookup
 
 extern std::recursive_mutex glmMemory;
+extern std::recursive_mutex glmResources;
+extern std::recursive_mutex glmObjects;
 extern std::recursive_mutex glmMsgHandler;
 extern std::recursive_mutex glmAsyncActions;
 
@@ -758,9 +760,9 @@ extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
-extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory
-extern std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Locked with glmMemory.
-extern std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Locked with glmMemory.
+extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory.
+extern std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.
+extern std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Locked with glmObjects.
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 extern std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes; // VolumeName = { Key, Value }
 extern std::unordered_multimap<uint32_t, CLASSID> glWildClassMap; // Fast lookup for identifying classes by file extension
@@ -1154,7 +1156,6 @@ void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
 struct ClassItem * find_class(CLASSID);
 ERR    find_private_object_entry(OBJECTID, int *);
-ResourceRecord * find_resource(RESOURCEID);
 void   free_events(void);
 void   free_module_entry(RootModule *);
 void   free_wakelocks(void);

@@ -78,27 +78,19 @@ public:
 
 class ResourceRecord {
 public:
-   APTR       Address = nullptr; // Direct pointer to the resource (optional, can rely on ResourceID instead)
-   ResourceManager *Manager = nullptr; // Reference to the resource manager for this record
-   RESOURCEID ResourceID = 0;  // Unique identifier
-   OBJECTID   OwnerID = 0;     // Owner of the resource
-   bool       Collect = false; // Marked for collection while currently in use.
-   bool       Terminating = false; // A FreeResource() call currently owns the destruction path.
-   bool       OwnerManagesChildren = false; // True if the current OwnerID manages its child resources
+   APTR       Address = nullptr; // [RI] Direct pointer to the resource (optional, can rely on ResourceID instead)
+   ResourceManager *Manager = nullptr; // [RW] Reference to the resource manager for this record
+   RESOURCEID ResourceID = 0;  // [RI] Unique identifier
+   OBJECTID   OwnerID = 0;     // [RW] Owner of the resource
+   bool       CollectOnUnlock = false; // [RW] Resource is locked; manager will collect immediately once unlocked
+   bool       Terminating = false; // [RW] A FreeResource() call currently owns the destruction path
+   bool       OwnerManagesChildren = false; // [RW] True if the current OwnerID manages its child resources
 
    ResourceRecord() = default;
 
    ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager) :
       Address(AAddress), Manager(AManager), ResourceID(AResourceID), OwnerID(AOwnerID) { };
 
-   void clear() {
-      ResourceID = 0;
-      Address = nullptr;
-      OwnerID = 0;
-      Manager = nullptr;
-      Collect = false;
-      Terminating = false;
-   }
 };
 
 //********************************************************************************************************************
