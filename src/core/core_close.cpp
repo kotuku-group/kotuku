@@ -63,7 +63,8 @@ static void remove_object_locks(void)
    };
 
    std::vector<object_lock> locked_objects;
-   if (auto lock = std::unique_lock{glmObjects}) {
+   {
+      std::unique_lock lock(glmObjects);
       for (const auto & rec : glObjects) {
          if (auto obj = rec.second.Object) {
             const auto locks = int(obj->Queue.load(std::memory_order_relaxed));

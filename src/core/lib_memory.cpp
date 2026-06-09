@@ -54,42 +54,38 @@ static void erase_resource(ResourceRecord &Resource)
 
 static ERR free_private_memory_resource(MEMORYID MemoryID)
 {
-   kt::Log log("FreeMemory");
-
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem_it = glMemory.find(MemoryID);
-      if ((mem_it IS glMemory.end()) or (not mem_it->second.Address)) {
-         if (glCrashStatus) return ERR::Okay;
-         else return ERR::DoesNotExist;
-      }
-
-      auto &active_mem = mem_it->second;
-
-      auto start_mem = (char *)active_mem.Address - MEMHEADER;
-
-      if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
-         #ifdef _WIN32
-            winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER));
-         #else
-            munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER));
-         #endif
-      }
-      else {
-         #ifdef _WIN32
-            _aligned_free(start_mem);
-         #else
-            free(start_mem);
-         #endif
-      }
-
-      active_mem.clear();
-
-      // During shutdown, glMemory records are not removed in order to maintain pointer validity
-      if (glProgramStage != STAGE_SHUTDOWN) glMemory.erase(MemoryID);
-
-      return ERR::Okay;
+   std::unique_lock lock(glmMemory);
+   auto mem_it = glMemory.find(MemoryID);
+   if ((mem_it IS glMemory.end()) or (not mem_it->second.Address)) {
+      if (glCrashStatus) return ERR::Okay;
+      else return ERR::DoesNotExist;
    }
-   else return log.warning(ERR::SystemLocked);
+
+   auto &active_mem = mem_it->second;
+
+   auto start_mem = (char *)active_mem.Address - MEMHEADER;
+
+   if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
+      #ifdef _WIN32
+         winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER));
+      #else
+         munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER));
+      #endif
+   }
+   else {
+      #ifdef _WIN32
+         _aligned_free(start_mem);
+      #else
+         free(start_mem);
+      #endif
+   }
+
+   active_mem.clear();
+
+   // During shutdown, glMemory records are not removed in order to maintain pointer validity
+   if (glProgramStage != STAGE_SHUTDOWN) glMemory.erase(MemoryID);
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -322,7 +318,8 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 
    MEMORYID unique_id = 0;
 
-   if (auto lock = std::unique_lock{glmMemory}) { // To keep threads synced, it is essential that this lock is made early.
+   {
+      std::unique_lock lock(glmMemory);
       unique_id = glResourceID++;
       // Configure the memory header.
 
@@ -332,23 +329,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
       glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
-   }
-   else {
-      if (use_protection) {
-         #ifdef _WIN32
-            winFreeProtectedMemory(start_mem, aligned_size);
-         #else
-            munmap(start_mem, aligned_size);
-         #endif
-      }
-      else {
-         #ifdef _WIN32
-            _aligned_free(start_mem);
-         #else
-            free(start_mem);
-         #endif
-      }
-      return log.warning(ERR::SystemLocked);
    }
 
    if (auto error = TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler); error != ERR::Okay) {
@@ -389,7 +369,8 @@ blocking, pure-query
 
 ERR CheckResourceExists(RESOURCEID ResourceID)
 {
-   if (auto lock = std::unique_lock{glmResources}) {
+   {
+      std::unique_lock lock(glmResources);
       if (auto it = glResources.find(ResourceID); it != glResources.end()) {
          if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
          return ERR::True;
@@ -533,18 +514,16 @@ ERR MemoryInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
 
    clearmem(MemInfo, Size);
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glMemory.find(MemoryID);
-      if ((mem != glMemory.end()) and (mem->second.Address)) {
-         MemInfo->Start    = mem->second.Address;
-         MemInfo->Size     = mem->second.Size;
-         MemInfo->Flags    = mem->second.Flags;
-         MemInfo->MemoryID = mem->second.MemoryID;
-         return ERR::Okay;
-      }
-      else return ERR::DoesNotExist;
+   std::unique_lock lock(glmMemory);
+   auto mem = glMemory.find(MemoryID);
+   if ((mem != glMemory.end()) and (mem->second.Address)) {
+      MemInfo->Start    = mem->second.Address;
+      MemInfo->Size     = mem->second.Size;
+      MemInfo->Flags    = mem->second.Flags;
+      MemInfo->MemoryID = mem->second.MemoryID;
+      return ERR::Okay;
    }
-   else return log.warning(ERR::SystemLocked);
+   else return ERR::DoesNotExist;
 }
 
 /*********************************************************************************************************************

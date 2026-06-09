@@ -37,7 +37,7 @@ struct eventsub {
    void     (*Callback)(APTR Info, int Size, APTR Meta);
    APTR     CallbackMeta;
    EVG      Group;
-   uint8_t    Called;
+   uint8_t  Called;
    OBJECTID ContextID;
 
    inline CSTRING groupName() {

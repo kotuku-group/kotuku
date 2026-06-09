@@ -58,13 +58,13 @@ static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
    kt::Log log("RemoveMsgHandler");
    log.trace("Handle: %p", Address);
 
-   if (auto lock = std::unique_lock{glmMsgHandler}) {
-      MsgHandler *h = (MsgHandler *)Address;
-      if (h IS glLastMsgHandler) glLastMsgHandler = h->Prev;
-      if (h IS glMsgHandlers) glMsgHandlers = h->Next;
-      if (h->Next) h->Next->Prev = h->Prev;
-      if (h->Prev) h->Prev->Next = h->Next;
-   }
+   std::unique_lock lock(glmMsgHandler);
+   MsgHandler *h = (MsgHandler *)Address;
+   if (h IS glLastMsgHandler) glLastMsgHandler = h->Prev;
+   if (h IS glMsgHandlers) glMsgHandlers = h->Next;
+   if (h->Next) h->Next->Prev = h->Prev;
+   if (h->Prev) h->Prev->Next = h->Next;
+
    return ERR::Terminate;
 }
 
@@ -145,30 +145,28 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
 
    log.branch("MsgType: %d", int(MsgType));
 
-   if (auto lock = std::unique_lock{glmMsgHandler}) {
-      MsgHandler *handler;
-      if (AllocMemory(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler) IS ERR::Okay) {
-         TrackResource(GetMemoryID(handler), handler, RESOURCEID_INHERIT, &glResourceMsgHandler);
+   std::unique_lock lock(glmMsgHandler);
+   MsgHandler *handler;
+   if (AllocMemory(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler) IS ERR::Okay) {
+      TrackResource(GetMemoryID(handler), handler, RESOURCEID_INHERIT, &glResourceMsgHandler);
 
-         handler->Prev     = nullptr;
-         handler->Next     = nullptr;
-         handler->MsgType  = MsgType;
-         handler->Function = *Routine;
+      handler->Prev     = nullptr;
+      handler->Next     = nullptr;
+      handler->MsgType  = MsgType;
+      handler->Function = *Routine;
 
-         if (!glMsgHandlers) glMsgHandlers = handler;
-         else {
-            if (glLastMsgHandler) glLastMsgHandler->Next = handler;
-            handler->Prev = glLastMsgHandler;
-         }
-
-         glLastMsgHandler = handler;
-
-         if (Handle) *Handle = handler;
-         return ERR::Okay;
+      if (!glMsgHandlers) glMsgHandlers = handler;
+      else {
+         if (glLastMsgHandler) glLastMsgHandler->Next = handler;
+         handler->Prev = glLastMsgHandler;
       }
-      else return log.warning(ERR::AllocMemory);
+
+      glLastMsgHandler = handler;
+
+      if (Handle) *Handle = handler;
+      return ERR::Okay;
    }
-   else return log.warning(ERR::Lock);
+   else return log.warning(ERR::AllocMemory);
 }
 
 /*********************************************************************************************************************
@@ -251,11 +249,7 @@ ERR ProcessMessages(PMF Flags, int TimeOut)
    bool breaking = false;
    ERR error;
 
-   auto granted = std::unique_lock{glmMsgHandler}; // A persistent lock on message handlers is optimal
-   if (!granted) {
-      tlContext.pop_back();
-      return log.warning(ERR::SystemLocked);
-   }
+   std::unique_lock granted(glmMsgHandler); // A persistent lock on message handlers is optimal
 
    std::vector<TaskMessage> local_batch;
    local_batch.reserve(MESSAGE_BATCH_LIMIT);
