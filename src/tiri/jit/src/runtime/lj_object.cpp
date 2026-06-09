@@ -40,17 +40,17 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
 {
    while (obj->accesscount > 0) release_object(obj); // Critical for recovering from exceptions
 
-   if (not obj->is_detached()) {
-      // Only free the Kotuku object if it's owned by this script.
-      // Exception: Recordset objects are always freed as they must be owned by a Database object.
-      if (auto ptr = GetObjectPtr(obj->uid)) {
-         if ((ptr->Class->BaseClassID IS CLASSID::RECORDSET) or
-             (ptr->Owner IS L->script) or
-             (ptr->ownerID() IS L->script->TargetID)) {
-            kt::Log log("obj.destruct");
-            log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
-            FreeResource(ptr);
-         }
+   if ((not obj->is_detached()) and obj->uid) {
+      // Non-detached GCobjects are owned by Tiri.  Do not call GetObjectPtr() here; FreeResource() may have dropped
+      // the memory lock while an object is being torn down, leaving the lookup table observable in an intermediate
+      // state during forced collection.
+      kt::Log log("obj.destruct");
+      log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
+
+      auto error = FreeResource(obj->uid);
+      if ((error IS ERR::Okay) or (error IS ERR::DoesNotExist)) {
+         obj->uid = 0;
+         obj->ptr = nullptr;
       }
    }
 }

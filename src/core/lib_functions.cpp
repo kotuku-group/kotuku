@@ -111,6 +111,9 @@ int AllocateID(IDTYPE Type)
    else if (Type IS IDTYPE::FUNCTION) {
       return ++glFunctionID;
    }
+   else if (Type IS IDTYPE::RESOURCE) {
+      return glResourceID++;
+   }
 
    return 0;
 }
@@ -1126,7 +1129,6 @@ ERR WakeThread(int Thread, int Stop)
    if (paused) {
       record->cv.notify_one();
       cvObjects.notify_all();   // Wake threads blocked in LockObject()
-      cvResources.notify_all(); // Wake threads blocked in AccessMemory()
    }
    return ERR::Okay;
 }

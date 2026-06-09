@@ -948,7 +948,7 @@ void print_layer_list(STRING Function, int POI)
       // Error checks
 
       if (!list[i].SurfaceID) fprintf(stderr, " <---- ERROR");
-      else if (CheckObjectExists(list[i].SurfaceID) != ERR::True) fprintf(stderr, " <---- OBJECT MISSING");
+      else if (CheckResourceExists(list[i].SurfaceID) != ERR::True) fprintf(stderr, " <---- OBJECT MISSING");
 
       // Does the parent exist in the layer list?
 
@@ -1183,7 +1183,7 @@ OBJECTID GetModalSurface(void)
    const std::lock_guard<std::recursive_mutex> lock(glModalLock);
 
    // Safety check: Confirm that the object still exists
-   if ((glModalID) and (CheckObjectExists(glModalID) != ERR::True)) {
+   if ((glModalID) and (CheckResourceExists(glModalID) != ERR::True)) {
       kt::Log log(__FUNCTION__);
       log.msg("Modal surface #%d no longer exists.", glModalID);
       glModalID = 0;

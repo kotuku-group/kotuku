@@ -57,16 +57,35 @@ static void remove_schedulers(void)
 static void remove_object_locks(void)
 {
    kt::Log log(__FUNCTION__);
+   struct object_lock {
+      OBJECTID ObjectID;
+      int Locks;
+   };
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.AccessCount > 0)) {
-            if (auto obj = mem.Object) {
-               log.warning("Removing locks on object #%d, Owner: %d, Locks: %d", obj->UID, obj->Owner ? obj->Owner->UID : 0, mem.AccessCount);
-               for (auto count=mem.AccessCount; count > 0; count--) ReleaseObject(obj);
-            }
+   std::vector<object_lock> locked_objects;
+   if (auto lock = std::unique_lock{glmObjects}) {
+      for (const auto & rec : glObjects) {
+         if (auto obj = rec.second.Object) {
+            const auto locks = int(obj->Queue.load(std::memory_order_relaxed));
+            if (locks > 0) locked_objects.emplace_back(obj->UID, locks);
          }
       }
+   }
+
+   for (auto & rec : locked_objects) {
+      OBJECTPTR obj = nullptr;
+      {
+         std::lock_guard lock(glmObjects);
+         if (auto object_rec = glObjects.find(rec.ObjectID); object_rec != glObjects.end()) {
+            obj = object_rec->second.Object;
+         }
+      }
+
+      if (not obj) continue;
+
+      log.warning("Removing locks on object #%d, Owner: %d, Locks: %d",
+         obj->UID, obj->Owner ? obj->Owner->UID : 0, rec.Locks);
+      for (auto count = rec.Locks; count > 0; count--) ReleaseObject(obj);
    }
 }
 
@@ -182,7 +201,14 @@ void CloseCore(void)
       // Removing objects that are tracked to the task before the first expunge will make for a cleaner exit.
 
       if (glCurrentTask) {
-         const auto children = glObjectChildren[glCurrentTask->UID]; // Take an immutable copy of the resource list
+         std::vector<OBJECTID> children;
+
+         {
+            std::lock_guard lock(glmObjects);
+            if (auto object_rec = glObjects.find(glCurrentTask->UID); object_rec != glObjects.end()) {
+               children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
+            }
+         }
 
          if (children.size() > 0) {
             log.branch("Freeing %d objects allocated to task #%d.", (int)children.size(), glCurrentTask->UID);
@@ -252,21 +278,6 @@ void CloseCore(void)
          glChildSignalFD[1] = -1;
       }
    #endif
-
-   if (glCodeIndex < CP_REMOVE_PRIVATE_LOCKS) {
-      glCodeIndex = CP_REMOVE_PRIVATE_LOCKS;
-
-      log.msg("Removing all resource locks.");
-
-      if (auto lock = std::unique_lock{glmMemory}) {
-         for (auto & [ id, mem ] : glPrivateMemory) {
-            if ((mem.Address) and (mem.AccessCount > 0)) {
-               if (!glCrashStatus) log.msg("Removing %d locks on private memory block #%d, size %d.", mem.AccessCount, mem.MemoryID, mem.Size);
-               mem.AccessCount = 0;
-            }
-         }
-      }
-   }
 
    if (!glCrashStatus) {
       if (glTaskClass) { FreeResource(glTaskClass); glTaskClass = 0; }
@@ -348,11 +359,21 @@ __export void Expunge(int16_t Force)
             // if the module code is in use.
 
             bool class_in_use = false;
-            for (const auto & id : glObjectChildren[mod_master->UID]) {
-               auto mem = glPrivateMemory.find(id);
-               if (mem IS glPrivateMemory.end()) continue;
+            std::vector<OBJECTPTR> children;
 
-               if (auto mc = (extMetaClass *)mem->second.Address; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
+            {
+               std::lock_guard lock(glmObjects);
+               if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
+                  for (const auto id : object_rec->second.Children) {
+                     if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
+                        if (child_rec->second.Object) children.push_back(child_rec->second.Object);
+                     }
+                  }
+               }
+            }
+
+            for (auto child : children) {
+               if (auto mc = (extMetaClass *)child; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
                   if (mc->OpenCount > 0) {
                      log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.",
                         mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
@@ -423,23 +444,40 @@ __export void Expunge(int16_t Force)
                // Search for classes that have been created by this module and check their open count values to figure
                // out if the module code is in use.
 
-               for (const auto & id : glObjectChildren[mod_master->UID]) {
-                  auto mem = glPrivateMemory.find(id);
-                  if (mem IS glPrivateMemory.end()) continue;
+               std::vector<OBJECTPTR> children;
 
-                  auto mc = (extMetaClass *)mem->second.Address;
+               {
+                  std::lock_guard lock(glmObjects);
+                  if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
+                     for (const auto id : object_rec->second.Children) {
+                        if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
+                           if (child_rec->second.Object) children.push_back(child_rec->second.Object);
+                        }
+                     }
+                  }
+               }
+
+               for (auto child : children) {
+                  auto mc = (extMetaClass *)child;
                   if ((mc) and (mc->classID() IS CLASSID::METACLASS) and (mc->OpenCount > 0)) {
                      log.warning("Warning: The %s module holds a class with existing objects (Class: %s, Objects: %d)",
                         mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
 
-                     for (auto & [ id, mem ] : glPrivateMemory) {
-                        if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.Object)) {
-                           if (mem.Object->classID() IS mc->ClassID) {
-                              log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d",
-                                 mc->ClassName.c_str(), mem.Object->UID, mem.Object->ownerID(),
-                                 mem.Object->RefCount.load(), mem.Object->Queue.load());
+                     std::vector<OBJECTPTR> objects;
+
+                     {
+                        std::lock_guard lock(glmObjects);
+                        for (auto &entry : glObjects) {
+                           if ((entry.second.Object) and (entry.second.Object->classID() IS mc->ClassID)) {
+                              objects.push_back(entry.second.Object);
                            }
                         }
+                     }
+
+                     for (auto object : objects) {
+                        log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d",
+                           mc->ClassName.c_str(), object->UID, object->ownerID(),
+                           object->RefCount.load(), object->Queue.load());
                      }
                   }
                }
@@ -475,6 +513,8 @@ restart_forced_expunge:
 }
 
 //********************************************************************************************************************
+// Note: Class and object pointers are no longer valid for interaction at this stage.  glMemory remains stable
+// during this process because records are cleared rather than removed.
 
 static void free_private_memory(void)
 {
@@ -482,41 +522,29 @@ static void free_private_memory(void)
 
    log.branch("Checking for orphaned memory allocations...");
 
-   int count = 0;
+   // It is assumed that no threads are running by this point in the shutdown process
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      // Free strings first
+   for (auto & [ id, mem ] : glMemory) {
+      if (not mem.Address) continue;
 
-      for (auto & [ id, mem ] : glPrivateMemory) {
-         if ((mem.Address) and ((mem.Flags & MEM::STRING) != MEM::NIL)) {
-            if (!glCrashStatus) log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-            mem.AccessCount = 0;
-            FreeResource(mem.Address);
-            mem.Address = nullptr;
-            count++;
+      if (not glCrashStatus) {
+         if ((mem.Flags & MEM::STRING) != MEM::NIL) {
+            log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
          }
+         else log.warning("Unfreed resource #%d/%p, Size %d, ThreadLock: %d.", mem.MemoryID, mem.Address, mem.Size, int(mem.ThreadLockID));
       }
 
-      // Free all other memory blocks
-
-      for (auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.Address) {
-            if (!glCrashStatus) {
-               if ((mem.Flags & MEM::OBJECT) != MEM::NIL) {
-                  // Note: Class pointers are all invalid at this stage
-                  log.warning("Unfreed object #%d, Size %d, Container: #%d.",
-                     mem.MemoryID, mem.Size, mem.OwnerID);
-               }
-               else log.warning("Unfreed memory #%d/%p, Size %d, Container: #%d, Locks: %d, ThreadLock: %d.",
-                  mem.MemoryID, mem.Address, mem.Size, mem.OwnerID, mem.AccessCount, int(mem.ThreadLockID));
-            }
-            mem.AccessCount = 0;
-            FreeResource(mem.Address);
-            mem.Address = nullptr;
-            count++;
-         }
-      }
+      FreeResource(mem.Address);
+      mem.Address = nullptr;
    }
 
-   if ((glCrashStatus) and (count > 0)) log.msg("%d memory blocks were freed.", count);
+   if (not glCrashStatus) {
+      // Print warnings only - resource managers typically expect a stable system environment
+      for (const auto & [ id, resource ] : glResources) {
+         if (not resource.Address) continue;
+
+         log.warning("Unfreed resource #%d/%p (%s), Owner: #%d.", id, resource.Address,
+            resource.Manager ? resource.Manager->Name : "Unknown", resource.OwnerID);
+      }
+   }
 }

@@ -21,22 +21,20 @@ functions for creating paths and rendering them to bitmaps.
 
 #include <charconv>
 
-// Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
+// Resource management for the SimpleVector follows.
 
-static ERR simplevector_free(APTR Address) {
-   return ERR::Okay;
+static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
+   if (Address) ((SimpleVector *)Address)->~SimpleVector();
+   return ERR::Terminate;
 }
 
-static ResourceManager glResourceSimpleVector = {
-   "SimpleVector",
-   &simplevector_free
-};
+static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_free, nullptr, nullptr, false };
 
 static SimpleVector * new_simplevector(void)
 {
    SimpleVector *vector;
-   if (AllocMemory(sizeof(SimpleVector), MEM::MANAGED, (APTR *)&vector) != ERR::Okay) return nullptr;
-   SetResourceMgr(vector, &glResourceSimpleVector);
+   if (AllocMemory(sizeof(SimpleVector), MEM::NIL, (APTR *)&vector) != ERR::Okay) return nullptr;
+   TrackResource(GetMemoryID(vector), vector, RESOURCEID_INHERIT, &glResourceSimpleVector);
    new(vector) SimpleVector;
    return vector;
 }

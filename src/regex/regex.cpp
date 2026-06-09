@@ -138,16 +138,13 @@ static srell::regex_constants::match_flag_type convert_match_flags(RMATCH Flags)
 //********************************************************************************************************************
 // C++ destructor for cleaning up compiled Regex objects
 
-static ERR regex_free(APTR Address)
+static ERR regex_free(ResourceRecord &Resource, APTR Address)
 {
    ((extRegex *)Address)->~extRegex();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
-static ResourceManager glRegexMgr = {
-   "Regex",
-   &regex_free
-};
+static ResourceManager glRegexMgr = { "Regex", &regex_free, nullptr, nullptr, false };
 
 //********************************************************************************************************************
 
@@ -205,8 +202,8 @@ ERR Compile(const std::string_view &Pattern, REGEX Flags, std::string *ErrorMsg,
    log.traceBranch("Pattern: '%.*s', Flags: $%.8x", int(Pattern.size()), Pattern.data(), int(Flags));
 
    extRegex *regex;
-   if (AllocMemory(sizeof(struct extRegex), MEM::MANAGED, (APTR *)&regex) IS ERR::Okay) {
-      SetResourceMgr(regex, &glRegexMgr);
+   if (AllocMemory(sizeof(struct extRegex), MEM::NIL, (APTR *)&regex) IS ERR::Okay) {
+      TrackResource(GetMemoryID(regex), regex, RESOURCEID_INHERIT, &glRegexMgr);
       new (regex) extRegex();
       regex->Pattern = Pattern;
       regex->Flags = Flags;

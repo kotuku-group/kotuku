@@ -53,6 +53,7 @@ static size_t glMaxWriteLen = 16 * 1024;
 static void free_socket(extNetSocket *);
 static void free_client(extNetServer *, objNetClient *);
 static CSTRING netsocket_state(NTC Value);
+static bool unlink_client_socket(objNetClient *, objClientSocket *);
 
 // Implementation functions that take HOSTHANDLE
 static void netsocket_incoming_impl(HOSTHANDLE, extNetSocket *);

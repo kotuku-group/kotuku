@@ -53,34 +53,6 @@
   </info>
 
   <function>
-    <name>AccessMemory</name>
-    <category>Memory</category>
-    <comment>Grants access to memory blocks by identifier.</comment>
-    <prototype>ERR AccessMemory(MEMORYID Memory, MEM Flags, INT MilliSeconds, APTR * Result)</prototype>
-    <tiriPrototype>err, Result:any = AccessMemory(Memory:num, Flags:num, MilliSeconds:num)</tiriPrototype>
-    <tags>blocking</tags>
-    <input>
-      <param type="MEMORYID" name="Memory">The ID of the memory block to access.</param>
-      <param type="MEM" name="Flags" lookup="MEM">Set to <code>READ</code>, <code>WRITE</code> or <code>READ_WRITE</code>.</param>
-      <param type="INT" name="MilliSeconds">The millisecond interval to wait before a timeout occurs.  Use at least 40ms for best results.</param>
-      <param type="APTR *" name="Result">Must refer to an <code>APTR</code> for storing the resolved address.</param>
-    </input>
-    <description>
-<p>Call AccessMemory() to resolve a memory ID to its address and acquire a lock so that it is inaccessible to other threads.</p>
-<p>Memory blocks should never be locked for extended periods of time.  Ensure that all locks are matched with a call to <function>ReleaseMemory</function> within the same code block.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Cancelled">The thread has been requested to stop whilst sleeping.</error>
-      <error code="Args">The <code>MilliSeconds</code> value is less or equal to zero.</error>
-      <error code="TimeOut">Function timed-out before successful completion</error>
-      <error code="MemoryDoesNotExist">The supplied <code>Memory</code> ID does not refer to an existing memory block.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
     <name>AccessObject</name>
     <category>Objects</category>
     <comment>Grants exclusive access to objects via unique ID.</comment>
@@ -274,7 +246,7 @@ struct FunctionField argsResize[] = {
     <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="INT64" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
-      <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behavior and ownership.</param>
+      <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behaviour and ownership.</param>
       <param type="APTR *" name="Address">Pointer to store the address of the allocated memory block.</param>
     </input>
     <description>
@@ -286,17 +258,14 @@ if (AllocMemory(1000, MEM::DATA, &amp;address) IS ERR::Okay) {
    FreeResource(address);
 }
 </pre>
-<p>Memory allocation behavior is controlled through MEM flags:</p>
+<p>Memory allocation behaviour is controlled through MEM flags:</p>
 <types lookup="MEM"/>
-<p>The function can return both a memory address pointer and a unique memory identifier. For most applications, retrieving only the address pointer is sufficient. When both parameters are requested, the memory block is automatically locked, requiring an explicit call to ReleaseMemory() before freeing.</p>
-<p>The resulting memory block is zero-initialized unless the <code>MEM::NO_CLEAR</code> flag is specified. For large allocations where initialization overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
+<p>The resulting memory block is zero-initialised unless the <code>MEM::NO_CLEAR</code> flag is specified.  For large allocations where initialisation overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Memory block successfully allocated.</error>
       <error code="Args">Invalid parameters (size &lt;= 0 or Address is NULL).</error>
-      <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
-      <error code="AccessMemory">Memory block was allocated but could not be locked when both Address and ID were requested.</error>
       <error code="AllocMemory">Insufficient memory available for the requested allocation.</error>
     </result>
   </function>
@@ -491,41 +460,21 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
   </function>
 
   <function>
-    <name>CheckMemoryExists</name>
+    <name>CheckResourceExists</name>
     <category>Memory</category>
-    <comment>Verifies the existence of a memory block.</comment>
-    <prototype>ERR CheckMemoryExists(MEMORYID ID)</prototype>
-    <tiriPrototype>err = CheckMemoryExists(ID:num)</tiriPrototype>
+    <comment>Verifies the existence of a resource.</comment>
+    <prototype>ERR CheckResourceExists(RESOURCEID ID)</prototype>
+    <tiriPrototype>err = CheckResourceExists(ID:num)</tiriPrototype>
     <tags>blocking, pure-query</tags>
     <input>
-      <param type="MEMORYID" name="ID">The unique identifier of the memory block to verify.</param>
+      <param type="RESOURCEID" name="ID">The unique identifier of the resource to verify.</param>
     </input>
     <description>
-<p>CheckMemoryExists() validates whether a memory block with the specified identifier still exists in the system's memory tracking structures. This function is useful for defensive programming when working with memory identifiers that may have been freed by other code paths.</p>
+<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.</p>
     </description>
     <result type="ERR">
-      <error code="True">The memory block exists and is valid.</error>
-      <error code="False">The memory block does not exist or has been freed.</error>
-    </result>
-  </function>
-
-  <function>
-    <name>CheckObjectExists</name>
-    <category>Objects</category>
-    <comment>Checks if a particular object is still available in the system.</comment>
-    <prototype>ERR CheckObjectExists(OBJECTID Object)</prototype>
-    <tiriPrototype>err = CheckObjectExists(Object:obj)</tiriPrototype>
-    <tags>blocking, pure-query</tags>
-    <input>
-      <param type="OBJECTID" name="Object">The object identity to verify.</param>
-    </input>
-    <description>
-<p>The CheckObjectExists() function verifies the presence of any object created by <function>NewObject</function>. Objects that are marked for termination are considered to no longer exist for the purposes of this function, and will return <code>ERR::False</code>.</p>
-    </description>
-    <result type="ERR">
-      <error code="True">The object exists.</error>
-      <error code="False">The object ID does not exist.</error>
-      <error code="LockFailed">Failed to lock a required resource</error>
+      <error code="True">The resource exists and is valid.</error>
+      <error code="False">The resource does not exist or has been freed.</error>
     </result>
   </function>
 
@@ -826,25 +775,22 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   <function>
     <name>FreeResource</name>
     <category>Memory</category>
-    <comment>Safely deallocates memory blocks allocated by AllocMemory().</comment>
-    <prototype>ERR FreeResource(MEMORYID ID)</prototype>
+    <comment>Safely deallocates resources allocated by AllocMemory() and similar functions.</comment>
+    <prototype>ERR FreeResource(RESOURCEID ID)</prototype>
     <tiriPrototype>err = FreeResource(ID:num)</tiriPrototype>
     <tags>closes-handle, blocking</tags>
     <input>
-      <param type="MEMORYID" name="ID">The unique identifier of the memory block to be freed.</param>
+      <param type="RESOURCEID" name="ID">The unique identifier of the resource to be freed.</param>
     </input>
     <description>
-<p>FreeResource() provides safe deallocation of memory blocks with comprehensive validation and cleanup. The function accepts memory identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
-<p>The deallocation process includes boundary validation to detect buffer overruns, lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
-<p>When a memory block is currently locked (AccessCount &gt; 0), it is marked for delayed collection rather than immediate deallocation. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
-<p>Memory corruption detection is performed by validating header and trailer markers. Any detected corruption is logged as a high-priority error requiring immediate attention, as this indicates potential buffer overrun or memory management bugs in the application code.</p>
+<p>FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
+<p>The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
+<p>If a resource is locked at the time of the call, it is marked for delayed collection only. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
     </description>
     <result type="ERR">
-      <error code="Okay">The memory block was successfully freed or marked for delayed collection.</error>
-      <error code="InUse">The memory block is a busy managed resource.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).</error>
-      <error code="InvalidData">Memory corruption detected - header or trailer markers are damaged.</error>
-      <error code="MemoryDoesNotExist">The specified memory block identifier is not valid or already freed.</error>
-      <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
+      <error code="Okay">The resource was successfully freed or marked for delayed collection.</error>
+      <error code="InUse">The resource is busy.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).</error>
+      <error code="DoesNotExist">The specified memory block identifier is not valid or already freed.</error>
     </result>
   </function>
 
@@ -1130,62 +1076,30 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   </function>
 
   <function>
-    <name>MemoryIDInfo</name>
+    <name>MemoryInfo</name>
     <category>Memory</category>
-    <comment>Returns information on memory ID's.</comment>
-    <prototype>ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
-    <tiriPrototype>err = MemoryIDInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
+    <comment>Returns information on memory IDs.</comment>
+    <prototype>ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
+    <tiriPrototype>err = MemoryInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
     <tags>mutates-input, blocking, pure-query</tags>
     <input>
-      <param type="MEMORYID" name="ID">Pointer to a valid memory ID.</param>
+      <param type="MEMORYID" name="ID">Memory identifier to inspect.</param>
       <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure.</param>
       <param type="INT" name="Size">Size of the <st>MemInfo</st> structure.</param>
     </input>
     <description>
-<p>This function returns the attributes of a memory block, including the start address, parent object, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
+<p>This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
 <pre>MemInfo info;
-if (MemoryIDInfo(memid, &amp;info) IS ERR::Okay) {
+if (MemoryInfo(memid, &amp;info) IS ERR::Okay) {
    log.msg(&quot;Memory block #%d is %d bytes large.&quot;, info.MemoryID, info.Size);
 }
 </pre>
-<p>If the call fails, the <st>MemInfo</st> structure's fields will be driven to <code>NULL</code> and an error code is returned.</p>
+<p>If the memory ID is not found after argument validation, the <st>MemInfo</st> structure's fields are cleared before the error code is returned.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="MemoryDoesNotExist">Memory block does not exist</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
-    <name>MemoryPtrInfo</name>
-    <category>Memory</category>
-    <comment>Returns information on memory addresses.</comment>
-    <prototype>ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo, INT Size)</prototype>
-    <tiriPrototype>err = MemoryPtrInfo(Address:any, MemInfo:any, Size:num)</tiriPrototype>
-    <tags>mutates-input, blocking, pure-query</tags>
-    <input>
-      <param type="APTR" name="Address">Pointer to a valid memory area.</param>
-      <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure to be populated.</param>
-      <param type="INT" name="Size">Size of the <st>MemInfo</st> structure.</param>
-    </input>
-    <description>
-<p>This function returns the attributes of a memory block.  Information includes the start address, parent object, memory ID, size and flags of the memory address that you are querying.  The following code segment illustrates correct use of this function:</p>
-<pre>MemInfo info;
-if (MemoryPtrInfo(ptr, &amp;info) IS ERR::Okay) {
-   log.msg(&quot;Address %p is %d bytes large.&quot;, info.Start, info.Size);
-}
-</pre>
-<p>If the call to MemoryPtrInfo() fails then the <st>MemInfo</st> structure's fields will be driven to <code>NULL</code> and an error code will be returned.</p>
-<p>Please note that referencing by a pointer requires a slow reverse-lookup to be employed in this function's search routine.  We recommend that calls to this function are avoided unless circumstances absolutely require it.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="MemoryDoesNotExist">Memory block does not exist</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1381,8 +1295,8 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid flags specified or memory block is not protected.</error>
-      <error code="MemoryDoesNotExist">The memory block is not valid or was not allocated with protection.</error>
       <error code="SystemCall">A system call failed.</error>
+      <error code="DoesNotExist">The memory block is not valid.</error>
       <error code="NullArgs">Address is NULL.</error>
     </result>
   </function>
@@ -1405,10 +1319,8 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="InvalidData">There is an error in the provided data</error>
       <error code="OutOfRange">The <code>Action</code> ID is invalid.</error>
       <error code="MissingClass">The class could not be found in the system</error>
-      <error code="NoMatchingObject">No matching object was found for the given object ID</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1476,7 +1388,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <param type="APTR *" name="Address">Point to an <code>APTR</code> variable to store the resulting pointer to the new memory block.</param>
     </input>
     <description>
-<p>This function is used to reallocate memory blocks to new lengths. You can shrink or expand a memory block as you wish.  The data of your original memory block will be copied over to the new block.  If the new block is of a larger size, the left-over bytes will be populated with zero-byte values. If the new block is smaller, you will lose some of the original data.</p>
+<p>This function is used to reallocate memory blocks to new lengths.  You can shrink or expand a memory block as you wish.  The data of your original memory block will be copied over to the new block.  If the new block is larger and the original allocation did not use <code>MEM::NO_CLEAR</code>, the extra bytes are initialised to zero.  If the new block is smaller, you will lose some of the original data.</p>
 <p>The original block will be destroyed as a result of calling this function unless the reallocation process fails, in which case your existing memory block will remain valid.</p>
     </description>
     <result type="ERR">
@@ -1484,7 +1396,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Args">Invalid arguments passed to function</error>
       <error code="Memory">The memory block to be re-allocated is invalid.</error>
       <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -1512,26 +1423,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">The <code>FD</code> was successfully registered.</error>
       <error code="Args">The <code>FD</code> was set to a value of <code>-1</code>.</error>
       <error code="NoSupport">The host platform does not support the provided <code>FD</code>.</error>
-    </result>
-  </function>
-
-  <function>
-    <name>ReleaseMemory</name>
-    <category>Memory</category>
-    <comment>Releases a lock from a memory based resource.</comment>
-    <prototype>ERR ReleaseMemory(MEMORYID MemoryID)</prototype>
-    <tiriPrototype>err = ReleaseMemory(MemoryID:num)</tiriPrototype>
-    <tags>blocking</tags>
-    <input>
-      <param type="MEMORYID" name="MemoryID">A reference to a memory resource for release.</param>
-    </input>
-    <description>
-<p>Successful calls to <function>AccessMemory</function> must be paired with a call to ReleaseMemory() so that the memory can be made available to other processes.  Releasing the resource decreases the access count, and if applicable a thread that is in the queue for access may then be able to acquire a lock.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Search">A search routine in this function failed</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -1849,39 +1740,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
   </function>
 
   <function>
-    <name>SetResourceMgr</name>
-    <category>Memory</category>
-    <comment>Define a resource manager for a memory block originating from <function>AllocMemory</function>.</comment>
-    <prototype>void SetResourceMgr(APTR Address, struct ResourceManager * Manager)</prototype>
-    <tiriPrototype>SetResourceMgr(Address:any, Manager:any)</tiriPrototype>
-    <tags>retains-input, does-not-take-ownership</tags>
-    <input>
-      <param type="APTR" name="Address">The address of a <code>MEM::MANAGED</code> memory block allocated by <function>AllocMemory</function>.</param>
-      <param type="struct ResourceManager *" name="Manager">Must refer to an initialised ResourceManager structure.</param>
-    </input>
-    <description>
-<p>SetResourceMgr() associates a ResourceManager with a memory block that was allocated with the <code>MEM::MANAGED</code> flag. This allows customised memory management logic to be used when an event is triggered on a memory block, such as the block being destroyed.  Most commonly, resource managers are used to allow C++ destructors to be integrated with Kōtuku's memory management system.</p>
-<p>This working example from the XPath module ensures that <code>XPathNode</code> objects are properly destructed when passed to <function>FreeResource</function>:</p>
-<pre>static ERR xpnode_free(APTR Address)
-{
-   ((XPathNode *)Address)-&gt;~XPathNode();
-   return ERR::Okay;
-}
-
-static ResourceManager glNodeManager = {
-   &quot;XPathNode&quot;,  // Name of the custom resource type
-   &amp;xpnode_free  // Custom destructor function
-};
-
-   if (AllocMemory(sizeof(XPathNode), MEM::MANAGED, (APTR *)&amp;node, nullptr) IS ERR::Okay) {
-      SetResourceMgr(node, &amp;glNodeManager);
-      new (node) XPathNode(); // Placement new
-   }
-</pre>
-    </description>
-  </function>
-
-  <function>
     <name>SetResourcePath</name>
     <category>System</category>
     <comment>Redefines the location of a system resource path.</comment>
@@ -2020,6 +1878,30 @@ static ResourceManager glNodeManager = {
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="InvalidState">The subscriber is marked for termination.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>TrackResource</name>
+    <category>Memory</category>
+    <comment>Assign a resource manager to an address, or update an existing one.</comment>
+    <prototype>ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager)</prototype>
+    <tiriPrototype>err = TrackResource(ResourceID:num, Address:any, OwnerID:num, Manager:any)</tiriPrototype>
+    <tags>retains-input, does-not-take-ownership, blocking, thread-safe</tags>
+    <input>
+      <param type="RESOURCEID" name="ResourceID">Unique identifier for the resource to register or replace.</param>
+      <param type="APTR" name="Address">Address of the resource, or <code>NULL</code> to preserve an existing address.</param>
+      <param type="RESOURCEID" name="OwnerID">Optional owning resource ID, normally an object.  Use <code>0</code> when the resource is not owned.</param>
+      <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
+    </input>
+    <description>
+<p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
+<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
+<p>A unique <code>ResourceID</code> can be obtained from <function>AllocateID</function> by using <code>IDTYPE::RESOURCE</code>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="NullArgs"><code>ResourceID</code> is <code>0</code>, or <code>Manager</code> is <code>NULL</code> when registering a new resource.</error>
     </result>
   </function>
 
@@ -2535,6 +2417,7 @@ static ResourceManager glNodeManager = {
       <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
       <const name="GLOBAL">Global ID's have no specific association with anything.</const>
       <const name="MESSAGE">Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.</const>
+      <const name="RESOURCE">Resource identifier for TrackResource()</const>
     </constants>
 
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
@@ -2792,19 +2675,16 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
-      <const name="AUDIO">The memory space is reserved by an audio device such as a sound card.</const>
-      <const name="CALLER">This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</const>
+      <const name="AUDIO">Identifies memory located on an audio device, such as a sound card.</const>
       <const name="CODE">Used for memory that can execute code.</const>
       <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
-      <const name="HIDDEN">Hidden blocks are not recorded and are excluded from resource tracking.</const>
-      <const name="MANAGED">Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</const>
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
       <const name="READ">The memory is explicitly marked as readable.</const>
       <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
-      <const name="STRING">Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</const>
-      <const name="TEXTURE">The memory space is reserved by a video driver for hosting texture graphics.</const>
-      <const name="UNTRACKED">Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</const>
-      <const name="VIDEO">The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</const>
+      <const name="STRING">Identifies the memory content as a null terminated string, which aids diagnostics.</const>
+      <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
+      <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
+      <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>
 
@@ -2877,9 +2757,8 @@ static ResourceManager glNodeManager = {
 
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
       <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
-      <const name="COLLECT">Marked for garbage collection.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
-      <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
+      <const name="FREE_ON_UNLOCK">Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
@@ -3343,11 +3222,9 @@ static ResourceManager glNodeManager = {
 
     <struct name="MemInfo" typeName="MEMINFO">
       <field name="Start" type="APTR">The starting address of the memory block (does not apply to shared blocks).</field>
-      <field name="ObjectID" type="OBJECTID">The object that owns the memory block.</field>
       <field name="Size" type="UINT">The size of the memory block.</field>
       <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
-      <field name="MemoryID" type="MEMORYID">The unique ID for this block.</field>
-      <field name="AccessCount" type="INT16">Total number of active locks on this block.</field>
+      <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
     </struct>
 
     <struct name="Message" comment="Message header.">
@@ -3367,8 +3244,8 @@ static ResourceManager glNodeManager = {
       <field name="ModulePath" type="STRING">Path to module files</field>
       <field name="RootPath" type="STRING">Kotuku root directory</field>
       <field name="*Args" type="CSTRING">Command-line arguments</field>
-      <field name="Options" type="const struct OpenTag *">Tag-list of additional options.  Typecast to va_list.</field>
-      <field name="Flags" type="OPF" lookup="OPF">Client flags indicating the values that have been defined in this structure.</field>
+      <field name="Options" type="const struct OpenTag *">Tag-list of additional options.  Typecast to va_list</field>
+      <field name="Flags" type="OPF" lookup="OPF">Client flags indicating the values that have been defined in this structure</field>
       <field name="MaxDepth" type="INT">Maximum debug depth</field>
       <field name="Detail" type="INT">Debug detail level (0 none - 9 trace)</field>
       <field name="ArgCount" type="INT">Total arguments in Args</field>

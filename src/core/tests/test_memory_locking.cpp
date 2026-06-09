@@ -5,107 +5,311 @@ that is distributed with this package.  Please refer to it for further informati
 
 **********************************************************************************************************************
 
-This program tests the locking of memory between threads.
+This program tests resource locking and termination behaviour.
 
 *********************************************************************************************************************/
 
 #include <pthread.h>
+#include <atomic>
+#include <cstdint>
 #include <kotuku/startup.h>
-#include <kotuku/strings.hpp>
 
 using namespace kt;
 
-CSTRING ProgName = "MemoryLocking";
-static volatile MEMORYID glMemoryID = 0;
-static uint32_t glTotalThreads = 2;
-static uint32_t glLockAttempts = 20;
-static int glAccessGap = 2000;
-static bool glTerminateMemory = false;
-static bool glTestAllocation = false;
+CSTRING ProgName = "ResourceLocking";
+static APTR glTerminatingResource = nullptr;
+static std::atomic_bool glManagerEntered = false;
+static std::atomic_bool glManagerCanFinish = false;
+static ERR glConcurrentFreeError = ERR::Okay;
+static std::atomic_int glAllocFreeFailures = 0;
 
-struct thread_info{
-   pthread_t thread;
-   int index;
+//********************************************************************************************************************
+
+static ERR terminating_resource_free(ResourceRecord &, APTR)
+{
+   glManagerEntered.store(true, std::memory_order_release);
+   while (not glManagerCanFinish.load(std::memory_order_acquire)) WaitTime(0.001);
+   return ERR::Terminate;
+}
+
+static ResourceManager glTerminatingResourceManager = {
+   "TerminatingTest",
+   &terminating_resource_free,
+   nullptr,
+   nullptr,
+   true
 };
 
 //********************************************************************************************************************
 
-static void * test_locking(void *Arg)
+static void * free_terminating_resource(void *)
+{
+   glConcurrentFreeError = FreeResource(glTerminatingResource);
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static void * alloc_free_worker(void *Arg)
+{
+   auto base = int((intptr_t)Arg);
+
+   for (int i=0; i < 250; i++) {
+      APTR memory = nullptr;
+      if (AllocMemory(32 + ((base + i) % 96), MEM::DATA, &memory) != ERR::Okay) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+         continue;
+      }
+
+      if (((uintptr_t)memory & 31) != 0) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      auto memory_id = GetMemoryID(memory);
+      if (CheckResourceExists(memory_id) != ERR::True) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      if (FreeResource(memory) != ERR::Okay) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      if (CheckResourceExists(memory_id) != ERR::False) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+   }
+
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static int run_concurrent_alloc_free_check(void)
 {
    kt::Log log(__FUNCTION__);
-   auto info = (thread_info *)Arg;
 
-   info->index = GetResource(RES::THREAD_ID);
-   log.msg("----- Thread %d is starting now.", info->index);
+   static constexpr int thread_count = 4;
+   pthread_t threads[thread_count];
 
-   for (unsigned i=0; i < glLockAttempts; i++) {
-      if (!glMemoryID) break;
-      //log.branch("Attempt %d.%d: Acquiring the memory.", info->index, i);
+   glAllocFreeFailures.store(0, std::memory_order_release);
 
-      int8_t *memory;
-      if (auto error = AccessMemory(glMemoryID, MEM::READ_WRITE, 30000, (APTR *)&memory); error IS ERR::Okay) {
-         memory[0]++;
-         log.msg("%d.%d: Memory acquired.", info->index, i);
-         WaitTime(0.002); // Wait 2 milliseconds
-         if (memory[0] > 1) log.warning("--- MAJOR ERROR %d: More than one thread has access to this memory!", info->index);
-         memory[0]--;
-
-         // Test that object removal works in ReleaseObject() and that waiting threads fail peacefully.
-
-         if (glTerminateMemory) {
-            if (i >= glLockAttempts-2) {
-               FreeResource(memory);
-               ReleaseMemory(glMemoryID);
-               memory = nullptr;
-               break;
-            }
-         }
-
-         ReleaseMemory(glMemoryID);
-
-         log.msg("%d: Memory released.", info->index);
-
-         #ifdef __unix__
-            sched_yield();
-         #endif
-         if (glAccessGap > 0) WaitTime(glAccessGap / 1000000.0); // Convert microseconds to seconds
+   for (int i=0; i < thread_count; i++) {
+      if (pthread_create(&threads[i], nullptr, &alloc_free_worker, (void *)(intptr_t)(i * 1000)) != 0) {
+         log.warning("pthread_create() failed for concurrent allocation worker %d.", i);
+         return -1;
       }
-      else log.msg("Attempt %d.%d: Failed to acquire a lock, error: %s", info->index, i, GetErrorMsg(error));
    }
 
-   log.msg("----- Thread %d is finished.", info->index);
-   return nullptr;
+   for (int i=0; i < thread_count; i++) pthread_join(threads[i], nullptr);
+
+   if (glAllocFreeFailures.load(std::memory_order_acquire) != 0) {
+      log.warning("%d concurrent allocation/free checks failed.", glAllocFreeFailures.load(std::memory_order_relaxed));
+      return -1;
+   }
+
+   return 0;
 }
 
 //********************************************************************************************************************
-// Allocate and free sets of memory blocks at random intervals.
 
-static constexpr int glTotalAlloc = 2000;
-
-static void * test_allocation(void *Arg)
+static int run_owned_resource_cleanup_check(void)
 {
-   APTR memory[glTotalAlloc];
+   kt::Log log(__FUNCTION__);
 
-   int i, j;
-   int start = 0;
-   for (i=0; i < glTotalAlloc; i++) {
-      AllocMemory(1024, MEM::DATA|MEM::NO_CLEAR, &memory[i]);
-      if (rand() % 10 > 7) {
-         for (j=start; j < i; j++) {
-            FreeResource(memory[j]);
-         }
-         start = j;
-      }
+   OBJECTPTR parent = nullptr;
+   OBJECTPTR child = nullptr;
+   APTR memory = nullptr;
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &parent) != ERR::Okay) {
+      log.warning("Failed to create parent Config object for ownership cleanup check.");
+      return -1;
    }
 
-   for (j=start; j < i; j++) {
-      FreeResource(memory[j]);
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &child) != ERR::Okay) {
+      FreeResource(parent);
+      log.warning("Failed to create child Config object for ownership cleanup check.");
+      return -1;
    }
 
-   return nullptr;
+   if (SetOwner(child, parent) != ERR::Okay) {
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("SetOwner() failed for ownership cleanup check.");
+      return -1;
+   }
+
+   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("AllocMemory() failed for ownership cleanup check.");
+      return -1;
+   }
+
+   const auto child_id = child->UID;
+   const auto memory_id = GetMemoryID(memory);
+
+   if (auto error = TrackResource(memory_id, memory, parent->UID, nullptr); error != ERR::Okay) {
+      FreeResource(memory);
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("TrackResource() failed for ownership cleanup check: %s.", GetErrorMsg(error));
+      return -1;
+   }
+
+   if (FreeResource(parent) != ERR::Okay) {
+      FreeResource(memory);
+      FreeResource(child);
+      log.warning("FreeResource() failed for parent ownership cleanup check.");
+      return -1;
+   }
+
+   OBJECTPTR locked = nullptr;
+   auto error = AccessObject(child_id, 1000, &locked);
+   if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
+      if (error IS ERR::Okay) ReleaseObject(locked);
+      log.warning("AccessObject() returned %s for a child freed with its parent.", GetErrorMsg(error));
+      return -1;
+   }
+
+   if (CheckResourceExists(memory_id) != ERR::False) {
+      log.warning("Tracked memory resource still exists after parent cleanup.");
+      return -1;
+   }
+
+   return 0;
 }
 
 //********************************************************************************************************************
+
+static int run_terminating_resource_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   APTR memory = nullptr;
+   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+      log.warning("AllocMemory() failed for terminating resource test.");
+      return -1;
+   }
+
+   glTerminatingResource = memory;
+   glManagerEntered.store(false, std::memory_order_release);
+   glManagerCanFinish.store(false, std::memory_order_release);
+   glConcurrentFreeError = ERR::Okay;
+
+   if (auto error = TrackResource(GetMemoryID(memory), memory, 0, &glTerminatingResourceManager); error != ERR::Okay) {
+      FreeResource(memory);
+      log.warning("TrackResource() failed for terminating resource test: %s.", GetErrorMsg(error));
+      return -1;
+   }
+
+   pthread_t thread;
+   pthread_create(&thread, nullptr, &free_terminating_resource, nullptr);
+
+   while (not glManagerEntered.load(std::memory_order_acquire)) WaitTime(0.001);
+
+   auto second_error = FreeResource(memory);
+
+   glManagerCanFinish.store(true, std::memory_order_release);
+   pthread_join(thread, nullptr);
+
+   if (second_error != ERR::InUse) {
+      log.warning("FreeResource() returned %s for a terminating resource.", GetErrorMsg(second_error));
+      return -1;
+   }
+
+   if (glConcurrentFreeError != ERR::Okay) {
+      log.warning("Initial FreeResource() returned %s for terminating resource test.", GetErrorMsg(glConcurrentFreeError));
+      return -1;
+   }
+
+   glTerminatingResource = nullptr;
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_access_object_checks(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   APTR memory = nullptr;
+   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+      log.warning("AllocMemory() failed for AccessObject() resource rejection test.");
+      return -1;
+   }
+
+   OBJECTPTR locked = nullptr;
+   auto error = AccessObject(GetMemoryID(memory), 1000, &locked);
+   if (error IS ERR::Okay) {
+      ReleaseObject(locked);
+      FreeResource(memory);
+      log.warning("AccessObject() incorrectly accepted a memory resource ID.");
+      return -1;
+   }
+   else if (error != ERR::NoMatchingObject) {
+      FreeResource(memory);
+      log.warning("AccessObject() returned %s for a memory resource ID.", GetErrorMsg(error));
+      return -1;
+   }
+
+   FreeResource(memory);
+
+   OBJECTPTR object = nullptr;
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+      log.warning("Failed to create Config object for AccessObject() checks.");
+      return -1;
+   }
+
+   auto object_id = object->UID;
+   error = AccessObject(object_id, 1000, &locked);
+   if (error != ERR::Okay) {
+      FreeResource(object);
+      log.warning("AccessObject() failed for a valid object ID: %s.", GetErrorMsg(error));
+      return -1;
+   }
+
+   if (locked != object) {
+      ReleaseObject(locked);
+      FreeResource(object);
+      log.warning("AccessObject() returned the wrong object pointer.");
+      return -1;
+   }
+
+   ReleaseObject(locked);
+
+   object->pin();
+   object->setFlag(NF::FREE_ON_UNLOCK);
+
+   locked = nullptr;
+   error = AccessObject(object_id, 1000, &locked);
+
+   object->clearFlag(NF::FREE_ON_UNLOCK);
+   object->unpin();
+
+   if (error IS ERR::Okay) {
+      ReleaseObject(locked);
+      FreeResource(object);
+      log.warning("AccessObject() accepted an object marked for deletion.");
+      return -1;
+   }
+   else if (error != ERR::MarkedForDeletion) {
+      FreeResource(object);
+      log.warning("AccessObject() returned %s for an object marked for deletion.", GetErrorMsg(error));
+      return -1;
+   }
+
+   FreeResource(object);
+
+   locked = nullptr;
+   error = AccessObject(object_id, 1000, &locked);
+   if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
+      if (error IS ERR::Okay) ReleaseObject(locked);
+      log.warning("AccessObject() returned %s for a freed object ID.", GetErrorMsg(error));
+      return -1;
+   }
+
+   return 0;
+}
 
 int main(int argc, CSTRING *argv)
 {
@@ -114,49 +318,25 @@ int main(int argc, CSTRING *argv)
       return -1;
    }
 
-   kt::vector<std::string> *args;
-   if ((CurrentTask()->get(FID_Parameters, args) IS ERR::Okay) and (args)) {
-      for (unsigned i=0; i < args->size(); i++) {
-         if (iequals(args[0][i], "-threads")) {
-            if (++i < args->size()) glTotalThreads = strtol(args[0][i].c_str(), nullptr, 0);
-            else break;
-         }
-         else if (iequals(args[0][i], "-attempts")) {
-            if (++i < args->size()) glLockAttempts = strtol(args[0][i].c_str(), nullptr, 0);
-            else break;
-         }
-         else if (iequals(args[0][i], "-gap")) {
-            if (++i < args->size()) glAccessGap = strtol(args[0][i].c_str(), nullptr, 0);
-            else break;
-         }
-         else if (iequals(args[0][i], "-terminate")) glTerminateMemory = true;
-         else if (iequals(args[0][i], "-alloc")) glTestAllocation = true;
-      }
+   if (run_access_object_checks() != 0) {
+      close_kotuku();
+      return -1;
    }
 
-   AllocMemory(10000, MEM::DATA, &mem);
-   glMemoryID = GetMemoryID(mem);
-
-   printf("Spawning %d threads...\n", glTotalThreads);
-
-   thread_info glThreads[glTotalThreads];
-
-   for (unsigned i=0; i < glTotalThreads; i++) {
-      glThreads[i].index = i;
-      if (glTestAllocation) pthread_create(&glThreads[i].thread, nullptr, &test_allocation, &glThreads[i]);
-      else pthread_create(&glThreads[i].thread, nullptr, &test_locking, &glThreads[i]);
+   if (run_owned_resource_cleanup_check() != 0) {
+      close_kotuku();
+      return -1;
    }
 
-   // Main block now waits for both threads to terminate, before it exits.  If main block exits, both threads exit,
-   // even if the threads have not finished their work
-
-   printf("Waiting for thread completion.\n");
-
-   for (unsigned i=0; i < glTotalThreads; i++) {
-      pthread_join(glThreads[i].thread, nullptr);
+   if (run_concurrent_alloc_free_check() != 0) {
+      close_kotuku();
+      return -1;
    }
 
-   FreeResource(mem);
+   if (run_terminating_resource_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
 
    printf("Testing complete.\n");
 

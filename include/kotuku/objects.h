@@ -276,7 +276,7 @@ struct Object { // Must be 64-bit aligned
    [[nodiscard]] CSTRING className();
 
    [[nodiscard]] inline bool collecting() { // Is object being freed or marked for collection?
-      return defined(NF::FREE|NF::COLLECT|NF::FREE_ON_UNLOCK);
+      return defined(NF::FREE|NF::FREE_ON_UNLOCK);
    }
 
    [[nodiscard]] inline bool terminating() { // Is object currently being freed?
@@ -848,6 +848,13 @@ class Create {
    private:
       T *obj;
 
+      inline void freeObject() {
+         if (obj) {
+            FreeResource(obj->UID);
+            obj = nullptr;
+         }
+      }
+
    public:
       ERR error;
 
@@ -855,22 +862,14 @@ class Create {
       // you don't want this.
 
       template <typename... Args> static T * global(Args&&... Fields) {
-         kt::Create<T> object = { std::forward<Args>(Fields)... };
-         if (object.ok()) {
-            auto result = *object;
-            object.obj = nullptr;
-            return result;
-         }
+         kt::Create<T> object({ std::forward<Args>(Fields)... });
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
       inline static T * global(const std::initializer_list<FieldValue> Fields) {
          kt::Create<T> object(Fields);
-         if (object.ok()) {
-            auto result = *object;
-            object.obj = nullptr;
-            return result;
-         }
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
@@ -878,13 +877,13 @@ class Create {
 
       template <typename... Args> static T * local(Args&&... Fields) {
          kt::Create<T> object({ std::forward<Args>(Fields)... }, NF::LOCAL);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
       inline static T * local(const std::initializer_list<FieldValue> Fields) {
          kt::Create<T> object(Fields, NF::LOCAL);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
@@ -892,14 +891,32 @@ class Create {
 
       template <typename... Args> static T * untracked(Args&&... Fields) {
          kt::Create<T> object({ std::forward<Args>(Fields)... }, NF::UNTRACKED);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
       inline static T * untracked(const std::initializer_list<FieldValue> Fields) {
          kt::Create<T> object(Fields, NF::UNTRACKED);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
+      }
+
+      Create(const Create &) = delete;
+      Create & operator=(const Create &) = delete;
+
+      Create(Create &&Other) noexcept : obj(Other.obj), error(Other.error) {
+         Other.obj = nullptr;
+      }
+
+      Create & operator=(Create &&Other) noexcept {
+         if (this != &Other) {
+            freeObject();
+            obj = Other.obj;
+            error = Other.error;
+            Other.obj = nullptr;
+         }
+
+         return *this;
       }
 
       // Create a scoped object that is not initialised.
@@ -925,7 +942,10 @@ class Create {
                      return;
                   }
                   else {
-                     target->lock();
+                     if ((error = target->lock()) != ERR::Okay) {
+                        error = log.warning(error);
+                        return;
+                     }
 
                      error = write_field_value(target, field, f);
 
@@ -952,23 +972,19 @@ class Create {
       }
 
       ~Create() {
-         if (obj) {
-            if (obj->initialised()) {
-               if (obj->defined(NF::UNTRACKED|NF::LOCAL))  {
-                  return; // Detected a successfully created unscoped object
-               }
-            }
-            FreeResource(obj->UID);
-            obj = nullptr;
-         }
+         freeObject();
       }
 
       T * operator->() { return obj; }; // Promotes underlying methods and fields
+      const T * operator->() const { return obj; };
       T * & operator*() { return obj; }; // To allow object pointer referencing when calling functions
 
-      inline bool ok() { return error IS ERR::Okay; }
+      [[nodiscard]] inline T * get() { return obj; }
+      [[nodiscard]] inline const T * get() const { return obj; }
 
-      inline T * detach() { // Return a direct pointer to the object and prevent automated destruction
+      [[nodiscard]] inline bool ok() const { return error IS ERR::Okay; }
+
+      [[nodiscard]] inline T * detach() { // Return a direct pointer to the object and prevent automated destruction
          T *result = obj;
          obj = nullptr;
          return result;

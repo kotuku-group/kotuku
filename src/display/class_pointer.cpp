@@ -141,7 +141,7 @@ static ERR PTR_DataFeed(extPointer *Self, struct acDataFeed *Args)
    if (Args->Datatype IS DATA::DEVICE_INPUT) {
       if (auto input = (struct dcDeviceInput *)Args->Buffer) {
          for (int i=0; i < std::ssize(Self->Buttons); i++) {
-            if ((Self->Buttons[i].LastClicked) and (CheckObjectExists(Self->Buttons[i].LastClicked) != ERR::Okay)) Self->Buttons[i].LastClicked = 0;
+            if ((Self->Buttons[i].LastClicked) and (CheckResourceExists(Self->Buttons[i].LastClicked) != ERR::Okay)) Self->Buttons[i].LastClicked = 0;
          }
 
          for (auto i=sizeof(struct dcDeviceInput); i <= (size_t)Args->Size; i+=sizeof(struct dcDeviceInput), input++) {
@@ -388,7 +388,7 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
       // the pointer is locked.
 
       if (Self->AnchorID) {
-         if (CheckObjectExists(Self->AnchorID) != ERR::Okay) {
+         if (CheckResourceExists(Self->AnchorID) != ERR::Okay) {
             Self->AnchorID = 0;
          }
       }
@@ -1085,7 +1085,7 @@ static bool get_over_object(extPointer *Self)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((Self->SurfaceID) and (CheckObjectExists(Self->SurfaceID) != ERR::Okay)) Self->SurfaceID = 0;
+   if ((Self->SurfaceID) and (CheckResourceExists(Self->SurfaceID) != ERR::Okay)) Self->SurfaceID = 0;
 
    bool changed = false;
 

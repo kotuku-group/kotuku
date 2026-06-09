@@ -89,7 +89,7 @@
 #define ERR_Draw 72
 #define ERR_NoMethods 73
 #define ERR_NoMatchingObject 74
-#define ERR_AccessMemory 75
+#define ERR_DEP01 75
 #define ERR_MissingPath 76
 #define ERR_NotLocked 77
 #define ERR_NoSearchResult 78

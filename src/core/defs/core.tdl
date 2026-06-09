@@ -19,7 +19,11 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
 
 // For use in requires statements
 template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcObject = std::is_base_of_v<Object, T>;
+template <typename T> concept pcComplete = requires { sizeof(T); };
+template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
+template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
+   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
+   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
 
 #ifndef DEFINE_ENUM_FLAG_OPERATORS
 template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
@@ -45,6 +49,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
    using underlying = std::underlying_type_t<T>;
    return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
 }
+
+constexpr int RESOURCE_ID_OFFSET = -1;
 
   ]==])
 
@@ -283,11 +289,10 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "UNTRACKED: An object created with this flag will not be tracked back to the object that created it.",
     "INITIALISED: Read-only indicator if the object has been initialised.",
     "LOCAL: Classes can allocate local objects to stop them from being associated with the client.",
-    "FREE_ON_UNLOCK: Read-only indicator for when the object is marked for deletion.",
+    "FREE_ON_UNLOCK: Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.",
     "FREE: Read-only indicator for when the object is being freed.",
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
-    "COLLECT: Marked for garbage collection.",
     "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
@@ -322,7 +327,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
   enums("IDTYPE", { type="int", start=1, comment="Types for AllocateID()" },
     "MESSAGE: Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.",
     "GLOBAL: Global ID's have no specific association with anything.",
-    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field."
+    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field.",
+    "RESOURCE: Resource identifier for TrackResource()"
   )
 
   enums("TSTATE", { type="char", comment="Indicates the state of a process." },
@@ -605,6 +611,8 @@ constexpr T roundup(T Num, T Alignment) {
 
 } // namespace
 
+constexpr RESOURCEID RESOURCEID_INHERIT = 1;
+
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -656,8 +664,8 @@ class FloatRect {
      string ModulePath    # Path to module files
      string RootPath      # Kotuku root directory
      cstr *Args           # Command-line arguments
-     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list.
-     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure.
+     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list
+     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure
      int MaxDepth         # Maximum debug depth
      int Detail           # Debug detail level (0 none - 9 trace)
      int ArgCount         # Total arguments in Args
@@ -667,9 +675,12 @@ class FloatRect {
      obj Object # Reference to an object to monitor.
   ]])
 
-  struct("ResourceManager", { comment="This structure must be placed at the start of any memory block allocated with the MEM::MANAGED flag.", restrict="c" }, [[
-     cstr Name             # The name of the resource.
-     fptr(error ptr) Free  # A function that will remove the resource's content when terminated.
+  struct("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
+     cstr Name             # The name of the resource
+     fptr(error struct(&ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated
+     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) AddChild # Optional function for tracking child resources
+     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) RemoveChild # Optional function to remove tracking of child resources
+     bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
   struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
@@ -852,11 +863,9 @@ using ModTest    = void (*)(std::string_view, int *, int *);
 
   struct("MemInfo", { type="meminfo" }, [[
     ptr  Start         # The starting address of the memory block (does not apply to shared blocks).
-    oid  ObjectID      # The object that owns the memory block.
     uint Size          # The size of the memory block.
     int(MEM) Flags     # The type of memory.
-    mem   MemoryID     # The unique ID for this block.
-    short AccessCount  # Total number of active locks on this block.
+    mem   MemoryID     # The unique resource ID for this block.
   ]])
 
   struct("MsgHandler", { restrict="c" }, [[
@@ -1040,7 +1049,6 @@ struct ScriptArg { // For use with sc::Exec
 ]])
 
   functionNames(nil,
-    "AccessMemory",
     "Action",
     "ActionList",
     "DeleteFile",
@@ -1049,8 +1057,7 @@ struct ScriptArg { // For use with sc::Exec
     "AllocMemory",
     "AccessObject",
     "CheckAction",
-    "CheckMemoryExists",
-    "CheckObjectExists",
+    "CheckResourceExists",
     "InitObject",
     "VirtualVolume",
     "CurrentContext",
@@ -1068,15 +1075,14 @@ struct ScriptArg { // For use with sc::Exec
     "ListChildren",
     "RegisterFD",
     "ResolvePath",
-    "MemoryIDInfo",
-    "MemoryPtrInfo",
+    "MemoryInfo",
+    "TrackResource",
     "NewObject",
     "NotifySubscribers",
     "CopyFile",
     "ProcessMessages",
     "IdentifyFile",
     "ReallocMemory",
-    "ReleaseMemory",
     "ResolveClassName",
     "SendMessage",
     "SetOwner",
@@ -1129,7 +1135,6 @@ struct ScriptArg { // For use with sc::Exec
     "ResolveUserID",
     "CreateLink",
     "ParentContext",
-    "SetResourceMgr",
     "WakeThread",
     "AsyncCancel",
     "AsyncPending",
@@ -1140,8 +1145,13 @@ struct ScriptArg { // For use with sc::Exec
 
 //********************************************************************************************************************
 
-template <class T> inline MEMORYID GetMemoryID(T &&A) {
-   return ((MEMORYID *)A)[-2];
+template <pcObjectPointer T> inline MEMORYID GetMemoryID(T) {
+   static_assert(not pcObjectPointer<T>, "GetMemoryID() cannot be called on object pointers; use Object->UID.");
+   return 0;
+}
+
+template <class T> requires (not pcObjectPointer<T>) inline MEMORYID GetMemoryID(T &&A) {
+   return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
 inline ERR DeregisterFD(HOSTHANDLE Handle) {
@@ -1168,14 +1178,16 @@ inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription
    return SubscribeTimer(Interval,&Callback,Subscription);
 }
 
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
+// This template leverages pcObject to be the preferred entry point for any Object type or derivation.
+
+template <pcObject T> inline ERR FreeResource(T *Object) {
+   if (not Object) return ERR::NullArgs;
+   return FreeResource(Object->UID);
 }
 
 inline ERR FreeResource(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return FreeResource(((int *)Address)[-2]);
+   if (not Address) return ERR::NullArgs;
+   return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
@@ -1186,12 +1198,8 @@ template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
 }
 
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryIDInfo(ID,MemInfo,sizeof(struct MemInfo));
-}
-
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo) {
-   return MemoryPtrInfo(Address,MemInfo,sizeof(struct MemInfo));
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
+   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {

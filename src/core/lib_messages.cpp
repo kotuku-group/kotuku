@@ -53,7 +53,7 @@ template <class T> inline APTR ResolveAddress(T *Pointer, int Offset) {
    return APTR(((int8_t *)Pointer) + Offset);
 }
 
-static ERR msghandler_free(APTR Address)
+static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
 {
    kt::Log log("RemoveMsgHandler");
    log.trace("Handle: %p", Address);
@@ -65,13 +65,10 @@ static ERR msghandler_free(APTR Address)
       if (h->Next) h->Next->Prev = h->Prev;
       if (h->Prev) h->Prev->Next = h->Next;
    }
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
-static ResourceManager glResourceMsgHandler = {
-   "MsgHandler",
-   &msghandler_free
-};
+static ResourceManager glResourceMsgHandler = { "Message", &msghandler_free, nullptr, nullptr, true };
 
 //********************************************************************************************************************
 // Handler for WaitForObjects().  If an object on the list is signalled then it is removed from the list.  A
@@ -150,8 +147,8 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
 
    if (auto lock = std::unique_lock{glmMsgHandler}) {
       MsgHandler *handler;
-      if (AllocMemory(sizeof(MsgHandler), MEM::MANAGED, (APTR *)&handler) IS ERR::Okay) {
-         SetResourceMgr(handler, &glResourceMsgHandler);
+      if (AllocMemory(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler) IS ERR::Okay) {
+         TrackResource(GetMemoryID(handler), handler, RESOURCEID_INHERIT, &glResourceMsgHandler);
 
          handler->Prev     = nullptr;
          handler->Next     = nullptr;
@@ -892,22 +889,6 @@ ERR sleep_task(int Timeout)
       log.warning("Only the main thread can call this function.");
       return ERR::MessageOperation;
    }
-   else if (tlPublicLockCount > 0) {
-      log.warning("Cannot sleep while holding %d global locks.", tlPublicLockCount);
-      return ERR::Okay;
-   }
-   else if (tlPrivateLockCount != 0) {
-      char buffer[120];
-      size_t pos = 0;
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.AccessCount > 0) {
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%d.%d ", mem.MemoryID, mem.AccessCount);
-            if (pos >= sizeof(buffer)-1) break;
-         }
-      }
-
-      if (pos > 0) log.warning("WARNING - Sleeping with %d private locks held (%s)", tlPrivateLockCount, buffer);
-   }
 
    register_sleep(Timeout);
 
@@ -1064,22 +1045,6 @@ ERR sleep_task(int Timeout, int8_t SystemOnly)
       log.warning("Only the main thread can call this function.");
       return ERR::MessageOperation;
    }
-   else if (tlPublicLockCount > 0) {
-      log.warning("You cannot sleep while still holding %d global locks!", tlPublicLockCount);
-      return ERR::Okay;
-   }
-   else if (tlPrivateLockCount != 0) {
-      char buffer[120];
-      size_t pos = 0;
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.AccessCount > 0) {
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "#%d +%d ", mem.MemoryID, mem.AccessCount);
-            if (pos >= sizeof(buffer)-1) break;
-         }
-      }
-
-      if (pos > 0) log.warning("WARNING - Sleeping with %d private locks held (%s)", tlPrivateLockCount, buffer);
-   }
 
    //log.traceBranch("Time-out: %d, TotalFDs: %d", Timeout, glTotalFDs);
 
@@ -1212,10 +1177,6 @@ static ERR wake_task(void)
    kt::Log log(__FUNCTION__);
 
    if (!glCurrentTask) return ERR::Okay;
-
-   if (tlPublicLockCount > 0) {
-      if (glProgramStage != STAGE_SHUTDOWN) log.warning("Illegal call while holding %d global locks.", tlPublicLockCount);
-   }
 
 #ifdef __unix__
 

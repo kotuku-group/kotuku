@@ -36,7 +36,11 @@
 
 // For use in requires statements
 template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcObject = std::is_base_of_v<Object, T>;
+template <typename T> concept pcComplete = requires { sizeof(T); };
+template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
+template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
+   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
+   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
 
 #ifndef DEFINE_ENUM_FLAG_OPERATORS
 template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
@@ -62,6 +66,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
    using underlying = std::underlying_type_t<T>;
    return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
 }
+
+constexpr int RESOURCE_ID_OFFSET = -1;
 class objMetaClass;
 class objStorageDevice;
 class objFile;
@@ -284,22 +290,18 @@ DEFINE_ENUM_FLAG_OPERATORS(KQ)
 enum class MEM : uint32_t {
    NIL = 0,
    DATA = 0x00000000,
-   MANAGED = 0x00000001,
-   VIDEO = 0x00000002,
-   TEXTURE = 0x00000004,
-   AUDIO = 0x00000008,
-   CODE = 0x00000010,
-   UNTRACKED = 0x00000020,
-   STRING = 0x00000040,
-   OBJECT = 0x00000080,
-   COLLECT = 0x00000100,
-   PROTECTED = 0x00000200,
+   VIDEO = 0x00000001,
+   TEXTURE = 0x00000002,
+   AUDIO = 0x00000004,
+   CODE = 0x00000008,
+   UNTRACKED = 0x00000010,
+   STRING = 0x00000020,
+   COLLECT = 0x00000040,
+   PROTECTED = 0x00000080,
    READ = 0x00010000,
    WRITE = 0x00020000,
    READ_WRITE = 0x00030000,
    NO_CLEAR = 0x00040000,
-   HIDDEN = 0x00100000,
-   CALLER = 0x00800000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(MEM)
@@ -1010,11 +1012,10 @@ enum class NF : uint32_t {
    FREE = 0x00000010,
    TIMER_SUB = 0x00000020,
    SUPPRESS_LOG = 0x00000040,
-   COLLECT = 0x00000080,
-   RECLASSED = 0x00000100,
-   SIGNALLED = 0x00000200,
-   PERMIT_TERMINATE = 0x00000400,
-   ASYNC_ACTIVE = 0x00000800,
+   RECLASSED = 0x00000080,
+   SIGNALLED = 0x00000100,
+   PERMIT_TERMINATE = 0x00000200,
+   ASYNC_ACTIVE = 0x00000400,
    UNIQUE = 0x40000000,
    NAME = 0x80000000,
 };
@@ -1050,6 +1051,7 @@ enum class IDTYPE : int {
    MESSAGE = 1,
    GLOBAL = 2,
    FUNCTION = 3,
+   RESOURCE = 4,
 };
 
 // Indicates the state of a process.
@@ -1634,6 +1636,8 @@ constexpr T roundup(T Num, T Alignment) {
 
 } // namespace
 
+constexpr RESOURCEID RESOURCEID_INHERIT = 1;
+
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -1682,8 +1686,8 @@ struct OpenInfo {
    std::string ModulePath;            // Path to module files
    std::string RootPath;              // Kotuku root directory
    CSTRING *Args;                     // Command-line arguments
-   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list.
-   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure.
+   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list
+   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure
    int     MaxDepth;                  // Maximum debug depth
    int     Detail;                    // Debug detail level (0 none - 9 trace)
    int     ArgCount;                  // Total arguments in Args
@@ -1694,8 +1698,11 @@ struct ObjectSignal {
 };
 
 struct ResourceManager {
-   CSTRING Name;          // The name of the resource.
-   ERR (*Free)(APTR);     // A function that will remove the resource's content when terminated.
+   CSTRING Name;                                                              // The name of the resource
+   ERR (*Free)(struct ResourceRecord &, APTR);                                // A function that will remove the resource's content when terminated
+   void (*AddChild)(struct ResourceRecord &, struct ResourceRecord &);        // Optional function for tracking child resources
+   void (*RemoveChild)(struct ResourceRecord &, struct ResourceRecord &);     // Optional function to remove tracking of child resources
+   bool    CanBlock;                                                          // True if the Free callback might wait on locks, callbacks or external resources
 };
 
 struct FunctionField {
@@ -1856,11 +1863,9 @@ struct Message {
 
 typedef struct MemInfo {
    APTR     Start;       // The starting address of the memory block (does not apply to shared blocks).
-   OBJECTID ObjectID;    // The object that owns the memory block.
    uint32_t Size;        // The size of the memory block.
    MEM      Flags;       // The type of memory.
-   MEMORYID MemoryID;    // The unique ID for this block.
-   int16_t  AccessCount; // Total number of active locks on this block.
+   MEMORYID MemoryID;    // The unique resource ID for this block.
 } MEMINFO;
 
 struct MsgHandler {
@@ -2036,7 +2041,6 @@ struct ScriptArg { // For use with sc::Exec
 
 struct CoreBase {
 #ifndef KOTUKU_STATIC
-   ERR (*_AccessMemory)(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
    ERR (*_Action)(AC Action, OBJECTPTR Object, APTR Parameters);
    void (*_ActionList)(struct ActionTable **Actions, int *Size);
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
@@ -2045,8 +2049,7 @@ struct CoreBase {
    ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
-   ERR (*_CheckMemoryExists)(MEMORYID ID);
-   ERR (*_CheckObjectExists)(OBJECTID Object);
+   ERR (*_CheckResourceExists)(RESOURCEID ID);
    ERR (*_InitObject)(OBJECTPTR Object);
    ERR (*_VirtualVolume)(const std::string_view &Name, ...);
    OBJECTPTR (*_CurrentContext)(void);
@@ -2056,7 +2059,7 @@ struct CoreBase {
    ERR (*_FindObject)(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
-   ERR (*_FreeResource)(MEMORYID ID);
+   ERR (*_FreeResource)(RESOURCEID ID);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
    ERR (*_CompareFilePaths)(const std::string_view &PathA, const std::string_view &PathB);
@@ -2064,15 +2067,14 @@ struct CoreBase {
    ERR (*_ListChildren)(OBJECTID Object, kt::vector<ChildEntry> *List);
    ERR (*_RegisterFD)(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
    ERR (*_ResolvePath)(const std::string_view &Path, RSF Flags, std::string *Result);
-   ERR (*_MemoryIDInfo)(MEMORYID ID, struct MemInfo *MemInfo, int Size);
-   ERR (*_MemoryPtrInfo)(APTR Address, struct MemInfo *MemInfo, int Size);
+   ERR (*_MemoryInfo)(MEMORYID ID, struct MemInfo *MemInfo, int Size);
+   ERR (*_TrackResource)(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
    ERR (*_CopyFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address);
-   ERR (*_ReleaseMemory)(MEMORYID MemoryID);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
@@ -2125,7 +2127,6 @@ struct CoreBase {
    CSTRING (*_ResolveUserID)(int User);
    ERR (*_CreateLink)(const std::string_view &From, const std::string_view &To);
    OBJECTPTR (*_ParentContext)(void);
-   void (*_SetResourceMgr)(APTR Address, struct ResourceManager *Manager);
    ERR (*_WakeThread)(int Thread, int Stop);
    ERR (*_AsyncCancel)(kt::vector<OBJECTID> &Objects);
    int (*_AsyncPending)(OBJECTID Object);
@@ -2136,7 +2137,6 @@ struct CoreBase {
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_CORE_MODULE)
 extern struct CoreBase *CoreBase;
-inline ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result) { return CoreBase->_AccessMemory(Memory,Flags,MilliSeconds,Result); }
 inline ERR Action(AC Action, OBJECTPTR Object, APTR Parameters) { return CoreBase->_Action(Action,Object,Parameters); }
 inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBase->_ActionList(Actions,Size); }
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
@@ -2145,8 +2145,7 @@ inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
 inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
-inline ERR CheckMemoryExists(MEMORYID ID) { return CoreBase->_CheckMemoryExists(ID); }
-inline ERR CheckObjectExists(OBJECTID Object) { return CoreBase->_CheckObjectExists(Object); }
+inline ERR CheckResourceExists(RESOURCEID ID) { return CoreBase->_CheckResourceExists(ID); }
 inline ERR InitObject(OBJECTPTR Object) { return CoreBase->_InitObject(Object); }
 template<class... Args> ERR VirtualVolume(const std::string_view &Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
 inline OBJECTPTR CurrentContext(void) { return CoreBase->_CurrentContext(); }
@@ -2156,7 +2155,7 @@ inline ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int Buffe
 inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,ObjectID); }
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
-inline ERR FreeResource(MEMORYID ID) { return CoreBase->_FreeResource(ID); }
+inline ERR FreeResource(RESOURCEID ID) { return CoreBase->_FreeResource(ID); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
 inline ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
@@ -2164,15 +2163,14 @@ inline const struct SystemState * GetSystemState(void) { return CoreBase->_GetSy
 inline ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List) { return CoreBase->_ListChildren(Object,List); }
 inline ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data) { return CoreBase->_RegisterFD(FD,Flags,Routine,Data); }
 inline ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result) { return CoreBase->_ResolvePath(Path,Flags,Result); }
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryIDInfo(ID,MemInfo,Size); }
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryPtrInfo(Address,MemInfo,Size); }
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryInfo(ID,MemInfo,Size); }
+inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager); }
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
 inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address) { return CoreBase->_ReallocMemory(Memory,Size,Address); }
-inline ERR ReleaseMemory(MEMORYID MemoryID) { return CoreBase->_ReleaseMemory(MemoryID); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
@@ -2225,14 +2223,12 @@ inline CSTRING ResolveGroupID(int Group) { return CoreBase->_ResolveGroupID(Grou
 inline CSTRING ResolveUserID(int User) { return CoreBase->_ResolveUserID(User); }
 inline ERR CreateLink(const std::string_view &From, const std::string_view &To) { return CoreBase->_CreateLink(From,To); }
 inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
-inline void SetResourceMgr(APTR Address, struct ResourceManager *Manager) { return CoreBase->_SetResourceMgr(Address,Manager); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
 inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncCancel(Objects); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
 inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 #else
-extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
@@ -2241,8 +2237,7 @@ extern "C" int AllocateID(IDTYPE Type);
 extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
-extern "C" ERR CheckMemoryExists(MEMORYID ID);
-extern "C" ERR CheckObjectExists(OBJECTID Object);
+extern "C" ERR CheckResourceExists(RESOURCEID ID);
 extern "C" ERR InitObject(OBJECTPTR Object);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
@@ -2251,7 +2246,7 @@ extern "C" ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int B
 extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
-extern "C" ERR FreeResource(MEMORYID ID);
+extern "C" ERR FreeResource(RESOURCEID ID);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB);
@@ -2259,15 +2254,14 @@ extern "C" const struct SystemState * GetSystemState(void);
 extern "C" ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List);
 extern "C" ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
 extern "C" ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result);
-extern "C" ERR MemoryIDInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
-extern "C" ERR MemoryPtrInfo(APTR Address, struct MemInfo *MemInfo, int Size);
+extern "C" ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
+extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
 extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address);
-extern "C" ERR ReleaseMemory(MEMORYID MemoryID);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
@@ -2320,7 +2314,6 @@ extern "C" CSTRING ResolveGroupID(int Group);
 extern "C" CSTRING ResolveUserID(int User);
 extern "C" ERR CreateLink(const std::string_view &From, const std::string_view &To);
 extern "C" OBJECTPTR ParentContext(void);
-extern "C" void SetResourceMgr(APTR Address, struct ResourceManager *Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
@@ -2331,8 +2324,13 @@ extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 
 //********************************************************************************************************************
 
-template <class T> inline MEMORYID GetMemoryID(T &&A) {
-   return ((MEMORYID *)A)[-2];
+template <pcObjectPointer T> inline MEMORYID GetMemoryID(T) {
+   static_assert(not pcObjectPointer<T>, "GetMemoryID() cannot be called on object pointers; use Object->UID.");
+   return 0;
+}
+
+template <class T> requires (not pcObjectPointer<T>) inline MEMORYID GetMemoryID(T &&A) {
+   return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
 inline ERR DeregisterFD(HOSTHANDLE Handle) {
@@ -2359,14 +2357,16 @@ inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription
    return SubscribeTimer(Interval,&Callback,Subscription);
 }
 
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
+// This template leverages pcObject to be the preferred entry point for any Object type or derivation.
+
+template <pcObject T> inline ERR FreeResource(T *Object) {
+   if (not Object) return ERR::NullArgs;
+   return FreeResource(Object->UID);
 }
 
 inline ERR FreeResource(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return FreeResource(((int *)Address)[-2]);
+   if (not Address) return ERR::NullArgs;
+   return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
@@ -2377,12 +2377,8 @@ template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
 }
 
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryIDInfo(ID,MemInfo,sizeof(struct MemInfo));
-}
-
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo) {
-   return MemoryPtrInfo(Address,MemInfo,sizeof(struct MemInfo));
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
+   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {

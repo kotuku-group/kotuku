@@ -66,6 +66,7 @@ using ERROR = int32_t;     // Standard error code
  using OBJECTID = int32_t;  // 32-bit object ID
 #endif
 using MEMORYID = int32_t;  // 32-bit memory ID
+using RESOURCEID = int32_t; // 32-bit resource ID (memory, object, etc)
 using FIELD = int64_t;    // 64-bit field ID - used for flag combos
 
 // Pointer types.

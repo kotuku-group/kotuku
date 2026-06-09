@@ -289,6 +289,40 @@ static void CLOSESOCKET_THREADED(SocketHandle Handle)
 
 //********************************************************************************************************************
 
+static bool unlink_client_socket(objNetClient *Client, objClientSocket *Socket)
+{
+   if ((not Client) or (not Socket)) return false;
+
+   bool linked = false;
+   for (auto scan=Client->Connections; scan; scan=scan->Next) {
+      if (scan IS Socket) {
+         linked = true;
+         break;
+      }
+   }
+
+   if (not linked) return false;
+
+   if (Socket->Prev) {
+      Socket->Prev->Next = Socket->Next;
+      if (Socket->Next) Socket->Next->Prev = Socket->Prev;
+   }
+   else {
+      Client->Connections = Socket->Next;
+      if (Socket->Next) Socket->Next->Prev = nullptr;
+   }
+
+   Socket->Prev = nullptr;
+   Socket->Next = nullptr;
+   Socket->Client = nullptr;
+
+   if (Client->TotalConnections > 0) Client->TotalConnections--;
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 inline void setIPV4(IPAddress &IP, uint32_t IPV4HostOrder, uint16_t Port) {
    IP.Type = IPADDR::V4;
    IP.Port = Port;

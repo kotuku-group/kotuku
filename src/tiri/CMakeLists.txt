@@ -122,6 +122,16 @@ set (JIT_LAYOUT_HEADERS
    "${JIT_SRC}/lj_dispatch.h"
 )
 
+set (JIT_KOTUKU_HEADER_DEPENDENCIES
+   "${PROJECT_SOURCE_DIR}/include/kotuku/main.h"
+   "${PROJECT_SOURCE_DIR}/include/kotuku/objects.h"
+   "${PROJECT_SOURCE_DIR}/include/kotuku/system/types.h"
+   "${INCLUDE_OUTPUT}/modules/core.h"
+   "${INCLUDE_OUTPUT}/system/errors.h"
+   "${INCLUDE_OUTPUT}/system/fields.h"
+   "${INCLUDE_OUTPUT}/system/registry.h"
+)
+
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
 
@@ -285,6 +295,7 @@ if (MSVC)
          ${JIT_BUILD_DIR}/buildvm_lib.obj
          ${JIT_BUILD_DIR}/buildvm_fold.obj
       DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
+         ${JIT_KOTUKU_HEADER_DEPENDENCIES}
       WORKING_DIRECTORY "${JIT_BUILD_DIR}"
       COMMENT "Building buildvm host tool for ${JIT_ARCH}"
       VERBATIM
@@ -509,6 +520,7 @@ else ()
          ${JIT_INCLUDE_DIRS}
          -o ${BUILDVM_TARGET} ${BUILDVM_SOURCES} ${JIT_MATH_LIB}
       DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
+         ${JIT_KOTUKU_HEADER_DEPENDENCIES}
       COMMENT "Building buildvm host tool"
       VERBATIM
    )
@@ -603,6 +615,7 @@ else ()
             -Wno-trigraphs
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
+            ${JIT_KOTUKU_HEADER_DEPENDENCIES}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
       )
@@ -664,6 +677,8 @@ add_dependencies (${MOD} ${FFI_PROJECT} jitlib jit_codegen)
 
 if (BUILD_DEFS)
    add_dependencies (${MOD} ${MOD}_hashes)
+   add_dependencies (jit_codegen core_defs)
+   add_dependencies (jit_lib core_defs)
 endif ()
 
 set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp" "tiri_processing.cpp"

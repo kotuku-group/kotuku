@@ -24,6 +24,7 @@
 <tr><th>AC::Flush</th><td></td></tr>
 <tr><th>AC::Focus</th><td></td></tr>
 <tr><th>AC::Free</th><td></td></tr>
+<tr><th>AC::FreePlacement</th><td></td></tr>
 <tr><th>AC::FreeWarning</th><td></td></tr>
 <tr><th>AC::GetKey</th><td></td></tr>
 <tr><th>AC::Hide</th><td></td></tr>
@@ -285,24 +286,17 @@
 <tr><th>KQ::SCR_LOCK</th><td>Scroll Lock is on</td></tr>
 <tr><th>KQ::SHIFT</th><td>Synonym for <code>L_SHIFT | R_SHIFT</code></td></tr>
 </tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
-<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>The memory space is reserved by an audio device such as a sound card.</td></tr>
-<tr><th>MEM::CALLER</th><td>This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</td></tr>
-<tr><th>MEM::CODE</th><td>Set if the memory will contain executable program code.</td></tr>
+<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
+<tr><th>MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
 <tr><th>MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
-<tr><th>MEM::HIDDEN</th><td>Hidden blocks are not recorded and are excluded from resource tracking.</td></tr>
 <tr><th>MEM::MANAGED</th><td>Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</td></tr>
-<tr><th>MEM::NO_BLOCK</th><td>Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</td></tr>
-<tr><th>MEM::NO_BLOCKING</th><td>Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</td></tr>
 <tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
-<tr><th>MEM::NO_LOCK</th><td>For AllocMemory() only, indicates that the (private) memory block should not be locked on return.</td></tr>
-<tr><th>MEM::NO_POOL</th><td>Gives a hint to the allocator to allocate the block outside of the memory pool.</td></tr>
 <tr><th>MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
 <tr><th>MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
 <tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</td></tr>
-<tr><th>MEM::TEXTURE</th><td>The memory space is reserved by a video driver for hosting texture graphics.</td></tr>
-<tr><th>MEM::TMP_LOCK</th><td>Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.</td></tr>
+<tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
 <tr><th>MEM::UNTRACKED</th><td>Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</td></tr>
-<tr><th>MEM::VIDEO</th><td>The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</td></tr>
+<tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
 <tr><th>MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
 </tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
 <div class="docs-content" style="display:none;" id="PERMIT"><h1>PERMIT Type</h1><p class="lead">Permission flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PERMIT::ALL_DELETE</th><td>Synonym for <code>EVERYONE_DELETE</code></td></tr>

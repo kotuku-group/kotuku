@@ -4,7 +4,6 @@
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsAccessMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Memory", FD_INT }, { "Flags", FD_INT }, { "MilliSeconds", FD_INT }, { "Result", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsAccessObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { "MilliSeconds", FD_INT }, { "Result", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTPTR }, { "Parameters", FD_PTR }, { 0, 0 } };
 FDEF argsActionList[] = { { "Void", FD_VOID }, { "ActionTable:Actions", FD_RESULT|FD_ARRAY|FD_STRUCT }, { "Size", FD_RESULT|FD_INT|FD_ARRAYSIZE }, { 0, 0 } };
@@ -20,8 +19,7 @@ FDEF argsAsyncPending[] = { { "Result", FD_INT }, { "Object", FD_OBJECTID }, { 0
 FDEF argsAsyncWait[] = { { "Error", FD_INT|FD_ERROR }, { "Objects", FDF_VECTOR|FD_OBJECTID }, { "TimeOut", FD_INT }, { 0, 0 } };
 FDEF argsBroadcastEvent[] = { { "Error", FD_INT|FD_ERROR }, { "Event", FD_PTR }, { "EventSize", FD_INT }, { 0, 0 } };
 FDEF argsCheckAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { 0, 0 } };
-FDEF argsCheckMemoryExists[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
-FDEF argsCheckObjectExists[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { 0, 0 } };
+FDEF argsCheckResourceExists[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
 FDEF argsClassDatabase[] = { { "Error", FD_INT|FD_ERROR }, { "ClassRecord:Classes", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsCompareFilePaths[] = { { "Error", FD_INT|FD_ERROR }, { "PathA", FDF_CPPSTRING }, { "PathB", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsCopyFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FDF_CPPSTRING }, { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
@@ -52,8 +50,7 @@ FDEF argsListChildren[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTI
 FDEF argsLoadFile[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { "CacheFile:Cache", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
 FDEF argsLockObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "MilliSeconds", FD_INT }, { 0, 0 } };
 FDEF argsLogReturn[] = { { "Void", FD_VOID }, { 0, 0 } };
-FDEF argsMemoryIDInfo[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF argsMemoryPtrInfo[] = { { "Error", FD_INT|FD_ERROR }, { "Address", FD_PTR }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
+FDEF argsMemoryInfo[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 FDEF argsMoveFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FDF_CPPSTRING }, { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsNewObject[] = { { "Error", FD_INT|FD_ERROR }, { "ClassID", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { "Object", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNotifySubscribers[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Args", FD_PTR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
@@ -67,7 +64,6 @@ FDEF argsReadFileToBuffer[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPS
 FDEF argsReadInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsReallocMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Memory", FD_PTR }, { "Size", FD_INT|FD_UNSIGNED }, { "Address", FD_RESULT|FD_PTR|FD_ALLOC }, { 0, 0 } };
 FDEF argsRegisterFD[] = { { "Error", FD_INT|FD_ERROR }, { "FD", FD_PTR }, { "Flags", FD_INT }, { "Routine", FD_PTR }, { "Data", FD_PTR }, { 0, 0 } };
-FDEF argsReleaseMemory[] = { { "Error", FD_INT|FD_ERROR }, { "MemoryID", FD_INT }, { 0, 0 } };
 FDEF argsReleaseObject[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsResolveClassID[] = { { "Result", FD_STR }, { "ID", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsResolveClassName[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Name", FDF_CPPSTRING }, { 0, 0 } };
@@ -83,12 +79,12 @@ FDEF argsSetName[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR },
 FDEF argsSetObjectContext[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { "Field:Field", FD_PTR|FD_STRUCT }, { "ActionID", FD_INT }, { 0, 0 } };
 FDEF argsSetOwner[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Owner", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsSetResource[] = { { "Result", FD_INT64 }, { "Resource", FD_INT }, { "Value", FD_INT64 }, { 0, 0 } };
-FDEF argsSetResourceMgr[] = { { "Void", FD_VOID }, { "Address", FD_PTR }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsSetResourcePath[] = { { "Error", FD_INT|FD_ERROR }, { "PathType", FD_INT }, { "Path", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsSetVolume[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Path", FDF_CPPSTRING }, { "Icon", FDF_CPPSTRING }, { "Label", FDF_CPPSTRING }, { "Device", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsSubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsSubscribeEvent[] = { { "Error", FD_INT|FD_ERROR }, { "Event", FD_INT64 }, { "Callback", FD_FUNCTIONPTR }, { "Handle", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsSubscribeTimer[] = { { "Error", FD_INT|FD_ERROR }, { "Interval", FD_DOUBLE }, { "Callback", FD_FUNCTIONPTR }, { "Subscription", FD_RESULT|FD_PTR }, { 0, 0 } };
+FDEF argsTrackResource[] = { { "Error", FD_INT|FD_ERROR }, { "ResourceID", FD_INT }, { "Address", FD_PTR }, { "OwnerID", FD_INT }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsUnloadFile[] = { { "Void", FD_VOID }, { "CacheFile:Cache", FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
 FDEF argsUnsubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { 0, 0 } };
 FDEF argsUnsubscribeEvent[] = { { "Void", FD_VOID }, { "Handle", FD_PTR }, { 0, 0 } };
@@ -101,7 +97,6 @@ FDEF argsWaitTime[] = { { "Error", FD_INT|FD_ERROR }, { "Seconds", FD_DOUBLE }, 
 FDEF argsWakeThread[] = { { "Error", FD_INT|FD_ERROR }, { "Thread", FD_INT }, { "Stop", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
-   { (APTR)AccessMemory, "AccessMemory", argsAccessMemory },
    { (APTR)Action, "Action", argsAction },
    { (APTR)ActionList, "ActionList", argsActionList },
    { (APTR)DeleteFile, "DeleteFile", argsDeleteFile },
@@ -110,8 +105,7 @@ const struct Function glFunctions[] = {
    { (APTR)AllocMemory, "AllocMemory", argsAllocMemory },
    { (APTR)AccessObject, "AccessObject", argsAccessObject },
    { (APTR)CheckAction, "CheckAction", argsCheckAction },
-   { (APTR)CheckMemoryExists, "CheckMemoryExists", argsCheckMemoryExists },
-   { (APTR)CheckObjectExists, "CheckObjectExists", argsCheckObjectExists },
+   { (APTR)CheckResourceExists, "CheckResourceExists", argsCheckResourceExists },
    { (APTR)InitObject, "InitObject", argsInitObject },
    { (APTR)VirtualVolume, "VirtualVolume", argsVirtualVolume },
    { (APTR)CurrentContext, "CurrentContext", argsCurrentContext },
@@ -129,15 +123,14 @@ const struct Function glFunctions[] = {
    { (APTR)ListChildren, "ListChildren", argsListChildren },
    { (APTR)RegisterFD, "RegisterFD", argsRegisterFD },
    { (APTR)ResolvePath, "ResolvePath", argsResolvePath },
-   { (APTR)MemoryIDInfo, "MemoryIDInfo", argsMemoryIDInfo },
-   { (APTR)MemoryPtrInfo, "MemoryPtrInfo", argsMemoryPtrInfo },
+   { (APTR)MemoryInfo, "MemoryInfo", argsMemoryInfo },
+   { (APTR)TrackResource, "TrackResource", argsTrackResource },
    { (APTR)NewObject, "NewObject", argsNewObject },
    { (APTR)NotifySubscribers, "NotifySubscribers", argsNotifySubscribers },
    { (APTR)CopyFile, "CopyFile", argsCopyFile },
    { (APTR)ProcessMessages, "ProcessMessages", argsProcessMessages },
    { (APTR)IdentifyFile, "IdentifyFile", argsIdentifyFile },
    { (APTR)ReallocMemory, "ReallocMemory", argsReallocMemory },
-   { (APTR)ReleaseMemory, "ReleaseMemory", argsReleaseMemory },
    { (APTR)ResolveClassName, "ResolveClassName", argsResolveClassName },
    { (APTR)SendMessage, "SendMessage", argsSendMessage },
    { (APTR)SetOwner, "SetOwner", argsSetOwner },
@@ -190,7 +183,6 @@ const struct Function glFunctions[] = {
    { (APTR)ResolveUserID, "ResolveUserID", argsResolveUserID },
    { (APTR)CreateLink, "CreateLink", argsCreateLink },
    { (APTR)ParentContext, "ParentContext", argsParentContext },
-   { (APTR)SetResourceMgr, "SetResourceMgr", argsSetResourceMgr },
    { (APTR)WakeThread, "WakeThread", argsWakeThread },
    { (APTR)AsyncCancel, "AsyncCancel", argsAsyncCancel },
    { (APTR)AsyncPending, "AsyncPending", argsAsyncPending },

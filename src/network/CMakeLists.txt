@@ -20,6 +20,10 @@ add_library (${MOD})
 
 set_module_defaults (${MOD} "Net")
 
+if (MSVC)
+   target_compile_options (${MOD} PRIVATE /MP)
+endif ()
+
 target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/network.cpp")
 
 if (WIN32)

@@ -87,9 +87,8 @@ private:
    APTR prvDriverStorage = nullptr;
 };
 
-static ERR folder_free(APTR Address)
+static ERR folder_free(ResourceRecord &Resource, APTR Address)
 {
-   kt::Log log("CloseDir");
    auto folder = (extDirInfo *)Address;
 
    // Note: Virtual file systems should focus on destroying handles as fs_closedir() will take care of memory and list
@@ -98,20 +97,17 @@ static ERR folder_free(APTR Address)
    if ((folder->prvVirtualID) and (folder->prvVirtualID != DEFAULT_VIRTUALID)) {
       auto id = folder->prvVirtualID;
       if (auto vd = get_virtual_drive(id)) {
-         log.trace("Virtual file driver function @ %p", vd->CloseDir);
+         kt::Log("CloseDir").trace("Virtual file driver function @ %p", vd->CloseDir);
          if (vd->CloseDir) vd->CloseDir(folder);
       }
    }
 
    fs_closedir(folder);
    folder->~extDirInfo();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
-static ResourceManager glResourceFolder = {
-   "Folder",
-   &folder_free
-};
+static ResourceManager glResourceFolder = { "Folder", &folder_free, nullptr, nullptr, true };
 
 /*********************************************************************************************************************
 
@@ -161,12 +157,12 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
       auto vd = get_fs(resolved_path);
 
       extDirInfo *dir;
-      if (AllocMemory(sizeof(extDirInfo), MEM::DATA|MEM::MANAGED, (APTR *)&dir) != ERR::Okay) {
+      if (AllocMemory(sizeof(extDirInfo), MEM::DATA, (APTR *)&dir) != ERR::Okay) {
          return ERR::AllocMemory;
       }
 
       new (dir) extDirInfo();
-      SetResourceMgr(dir, &glResourceFolder);
+      TrackResource(GetMemoryID(dir), dir, RESOURCEID_INHERIT, &glResourceFolder);
       if (auto error = dir->initialise(Path, resolved_path, Flags, vd.DriverSize); error != ERR::Okay) {
          FreeResource(dir);
          return error;

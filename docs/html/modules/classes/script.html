@@ -127,11 +127,11 @@
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-DebugLog" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DebugLog</th><td id="tm-DebugLog">Acquire a debug log from a compiled Script.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DebugLog" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sc::DebugLog(OBJECTPTR Object, STRVIEW Options, CSTRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Options</td><td>Options to pass to the underlying language.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-DebugLog" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DebugLog</th><td id="tm-DebugLog">Acquire a debug log from a compiled Script.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DebugLog" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sc::DebugLog(OBJECTPTR Object, STRVIEW Options, STRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Options</td><td>Options to pass to the underlying language.</td></tr>
 <tr><td>Result</td><td>Resulting log information.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use the DebugLog() method to acquire debug information from a compiled script.  The exact nature of the log will depend on the scripting language in use, but will typically dump readable bytecode for analysis.  The Options parameter is a comma-separated list that may be used to pass language-specific options to the underlying implementation.</p>
-<p>The resulting log information is returned as a string, which needs to be deallocated once no longer required.</p>
+<p>The resulting log information is written to the caller-provided <code>Result</code> string.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>

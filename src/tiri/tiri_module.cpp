@@ -565,12 +565,51 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    // Track dynamically allocated objects for cleanup
    struct allocated_struct_ref {
-      APTR Data;
-      struct_record *Def;
+      APTR Data = nullptr;
+      struct_record *Def = nullptr;
+
+      allocated_struct_ref() = default;
+      allocated_struct_ref(APTR InitData, struct_record *InitDef):
+         Data(InitData),
+         Def(InitDef)
+      {
+      }
+
+      allocated_struct_ref(const allocated_struct_ref &) = delete;
+      allocated_struct_ref & operator=(const allocated_struct_ref &) = delete;
+
+      allocated_struct_ref(allocated_struct_ref &&Other) noexcept:
+         Data(Other.Data),
+         Def(Other.Def)
+      {
+         Other.Data = nullptr;
+         Other.Def = nullptr;
+      }
+
+      allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept
+      {
+         if (this != &Other) {
+            release();
+            Data = Other.Data;
+            Def = Other.Def;
+            Other.Data = nullptr;
+            Other.Def = nullptr;
+         }
+         return *this;
+      }
 
       ~allocated_struct_ref() {
-         if (Def) destroy_struct_cpp_strings(*Def, Data);
-         FreeResource(Data);
+         release();
+      }
+
+      void release()
+      {
+         if (Data) {
+            if (Def) destroy_struct_cpp_strings(*Def, Data);
+            FreeResource(Data);
+            Data = nullptr;
+            Def = nullptr;
+         }
       }
    };
 
@@ -1361,7 +1400,7 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                   }
                   else {
                      MemInfo meminfo;
-                     if (MemoryIDInfo(GetMemoryID(((APTR *)var)[0]), &meminfo) IS ERR::Okay) size = meminfo.Size;
+                     if (MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo) IS ERR::Okay) size = meminfo.Size;
                   }
 
                   if (size > 0) lua_pushlstring(prv->Lua, ((CSTRING *)var)[0], size);

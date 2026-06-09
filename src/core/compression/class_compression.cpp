@@ -1739,7 +1739,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
 
          // Try switching to read-only access if we were denied permission.
 
-         if (file.ok()) Self->FileIO = *file;
+         if (file.ok()) Self->FileIO = file.detach();
          else if ((file.error IS ERR::NoPermission) and ((Self->Flags & CMF::READ_ONLY) IS CMF::NIL)) {
             log.trace("Trying read-only access...");
 
