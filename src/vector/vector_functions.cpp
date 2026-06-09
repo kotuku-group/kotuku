@@ -21,7 +21,7 @@ functions for creating paths and rendering them to bitmaps.
 
 #include <charconv>
 
-// Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
+// Resource management for the SimpleVector follows.
 
 static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
    if (Address) ((SimpleVector *)Address)->~SimpleVector();
