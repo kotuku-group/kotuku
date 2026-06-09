@@ -29,8 +29,6 @@ Name: Memory
 #include "defs.h"
 #include <kotuku/modules/core.h>
 
-#define freemem(a)  free(a)
-
 using namespace kt;
 
 //********************************************************************************************************************

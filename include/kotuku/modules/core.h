@@ -2849,6 +2849,7 @@ class objFile : public Object {
    using create = kt::Create<objFile>;
 
    int64_t  Position;   // The current read/write byte position in a file.
+   std::string Path;    // Specifies the location of a file or folder.
    FL       Flags;      // File flags and options.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
    public:
@@ -2968,6 +2969,11 @@ class objFile : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
    inline ERR getFlags(FL &Value) noexcept {
       Value = this->Flags;
       return ERR::Okay;
@@ -3008,13 +3014,6 @@ class objFile : public Object {
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3084,6 +3083,11 @@ class objFile : public Object {
       return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+   }
+
    inline ERR setFlags(const FL Value) noexcept {
       auto field = &this->Class->Dictionary[2];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
@@ -3097,11 +3101,6 @@ class objFile : public Object {
    inline ERR setCreated(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, 0x08000310, Value, 1);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
    inline ERR setPermissions(const int Value) noexcept {

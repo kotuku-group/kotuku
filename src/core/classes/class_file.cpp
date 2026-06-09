@@ -2745,6 +2745,7 @@ static const FieldDef PermissionFlags[] = {
 
 static const FieldArray FileFields[] = {
    { "Position",     FDF_INT64|FDF_RW, nullptr, SET_Position },
+   { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    // Virtual fields
@@ -2752,7 +2753,6 @@ static const FieldArray FileFields[] = {
    { "Created",      FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Created, nullptr, "DateTime" },
    { "Handle",       FDF_INT64|FDF_R|FDF_PURE,      GET_Handle },
    { "Icon",         FDF_CPPSTRING|FDF_R,  GET_Icon },
-   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &PermissionFlags },
    { "ResolvedPath", FDF_CPPSTRING|FDF_R,  GET_ResolvedPath },
    { "Size",         FDF_INT64|FDF_RW,     GET_Size, SET_Size },

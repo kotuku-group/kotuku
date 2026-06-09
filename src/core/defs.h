@@ -439,7 +439,6 @@ class extFile : public objFile {
    using create = kt::Create<extFile>;
    struct DateTime prvModified;
    struct DateTime prvCreated;
-   std::string Path;
    std::string prvIcon;
    std::string prvLine;
    std::string prvResolvedPath;
