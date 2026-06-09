@@ -148,16 +148,14 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 }
 
 //********************************************************************************************************************
-// Releases the heap block backing an object.  Object memory is allocated directly in NewObject() with an 8-byte
-// MEMHEADER prefix preceding the object pointer, so the block start is rewound by MEMHEADER before being freed.  This
-// must only be called once all object locks and contexts have been released (see object_free()).
+// Releases the heap block backing an object.  Object memory is allocated directly in NewObject() and must only be
+// released once all object locks and contexts have been released (see object_free()).
 
 static void free_object_block(OBJECTPTR Object)
 {
    if (not Object) return;
-   APTR start_mem = (char *)Object - MEMHEADER;
    Object->~Object();
-   aligned_block_free(start_mem);
+   aligned_block_free(Object);
 }
 
 //********************************************************************************************************************
@@ -1830,17 +1828,15 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
    // glPrivateMemory.  Only 8-byte alignment is required for the object header.
 
-   if (APTR start_mem = aligned_block_alloc(mc->Size + MEMHEADER, OBJECT_ALIGNMENT)) {
-      head = (OBJECTPTR)((char *)start_mem + MEMHEADER);
+   if (APTR start_mem = aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
+      head = (OBJECTPTR)start_mem;
 
-      MEMORYID head_id = glPrivateIDCounter++;
-
-      ((int *)head)[RESOURCE_ID_OFFSET] = head_id; // Store the UID cookie
+      OBJECTID object_id = glPrivateIDCounter++;
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // NB: Clients are not permitted to make allocations that pass through AllocMemory() in NewPlacement due to
+      // NB: Clients are not permitted to allocate Kotuku resources in NewPlacement due to
       // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
 
       ERR error = ERR::Okay;
@@ -1858,15 +1854,15 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          return error;
       }
 
-      head->UID     = head_id;
+      head->UID     = object_id;
       head->Class   = (extMetaClass *)mc;
       head->setFlag(Flags);
 
       {
          std::lock_guard resource_lock(glmResources);
          std::lock_guard object_lock(glmObjects);
-         glResources.insert_or_assign(head->UID, ResourceRecord(head->UID, head, 0, &glResourceObject));
-         glObjects.insert_or_assign(head->UID, ObjectRecord(head));
+         glResources.insert_or_assign(object_id, ResourceRecord(object_id, head, 0, &glResourceObject));
+         glObjects.insert_or_assign(object_id, ObjectRecord(head));
       }
 
       // Tracking for our new object is configured here.

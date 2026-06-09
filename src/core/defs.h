@@ -363,7 +363,7 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 //********************************************************************************************************************
 // Resource definitions.
 
-constexpr int MEMHEADER = 8;   // 8-byte private prefix before public memory/object pointers
+constexpr int MEMHEADER = 8;   // 8-byte private prefix before public memory pointers
 
 // Align general memory blocks to 64-byte cache line boundaries for better performance on modern CPUs.  Objects only
 // require 8-byte alignment.

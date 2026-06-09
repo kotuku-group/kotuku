@@ -36,7 +36,11 @@
 
 // For use in requires statements
 template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcObject = std::is_base_of_v<Object, T>;
+template <typename T> concept pcComplete = requires { sizeof(T); };
+template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
+template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
+   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
+   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
 
 #ifndef DEFINE_ENUM_FLAG_OPERATORS
 template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
@@ -2319,7 +2323,12 @@ extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 
 //********************************************************************************************************************
 
-template <class T> inline MEMORYID GetMemoryID(T &&A) {
+template <pcObjectPointer T> inline MEMORYID GetMemoryID(T) {
+   static_assert(not pcObjectPointer<T>, "GetMemoryID() cannot be called on object pointers; use Object->UID.");
+   return 0;
+}
+
+template <class T> requires (not pcObjectPointer<T>) inline MEMORYID GetMemoryID(T &&A) {
    return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
