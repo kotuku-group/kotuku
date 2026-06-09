@@ -1820,18 +1820,18 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
       log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(),
-         glPrivateIDCounter.load(std::memory_order_relaxed), int(Flags));
+         glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
 
    OBJECTPTR head = nullptr;
 
    // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
-   // glPrivateMemory.  Only 8-byte alignment is required for the object header.
+   // glMemory.  Only 8-byte alignment is required for the object header.
 
    if (APTR start_mem = aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
       head = (OBJECTPTR)start_mem;
 
-      OBJECTID object_id = glPrivateIDCounter++;
+      OBJECTID object_id = glResourceID++;
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));

@@ -327,7 +327,8 @@ constexpr int RESOURCE_ID_OFFSET = -1;
   enums("IDTYPE", { type="int", start=1, comment="Types for AllocateID()" },
     "MESSAGE: Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.",
     "GLOBAL: Global ID's have no specific association with anything.",
-    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field."
+    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field.",
+    "RESOURCE: Resource identifier for TrackResource()"
   )
 
   enums("TSTATE", { type="char", comment="Indicates the state of a process." },

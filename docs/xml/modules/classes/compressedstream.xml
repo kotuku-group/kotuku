@@ -154,6 +154,7 @@
       <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
       <const name="GLOBAL">Global ID's have no specific association with anything.</const>
       <const name="MESSAGE">Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.</const>
+      <const name="RESOURCE">Resource identifier for TrackResource()</const>
     </constants>
 
     <constants lookup="LDF" comment="Flags for LoadFile()">

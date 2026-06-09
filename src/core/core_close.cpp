@@ -513,7 +513,7 @@ restart_forced_expunge:
 }
 
 //********************************************************************************************************************
-// Note: Class and object pointers are no longer valid for interaction at this stage.  glPrivateMemory remains stable
+// Note: Class and object pointers are no longer valid for interaction at this stage.  glMemory remains stable
 // during this process because records are cleared rather than removed.
 
 static void free_private_memory(void)
@@ -525,7 +525,7 @@ static void free_private_memory(void)
    {
       std::lock_guard lock(glmMemory);
 
-      for (auto & [ id, mem ] : glPrivateMemory) {
+      for (auto & [ id, mem ] : glMemory) {
          if (not mem.Address) continue;
 
          if (not glCrashStatus) {

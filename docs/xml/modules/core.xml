@@ -246,7 +246,7 @@ struct FunctionField argsResize[] = {
     <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="INT64" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
-      <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behavior and ownership.</param>
+      <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behaviour and ownership.</param>
       <param type="APTR *" name="Address">Pointer to store the address of the allocated memory block.</param>
     </input>
     <description>
@@ -258,15 +258,14 @@ if (AllocMemory(1000, MEM::DATA, &amp;address) IS ERR::Okay) {
    FreeResource(address);
 }
 </pre>
-<p>Memory allocation behavior is controlled through MEM flags:</p>
+<p>Memory allocation behaviour is controlled through MEM flags:</p>
 <types lookup="MEM"/>
-<p>The resulting memory block is zero-initialized unless the <code>MEM::NO_CLEAR</code> flag is specified. For large allocations where initialization overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
+<p>The resulting memory block is zero-initialised unless the <code>MEM::NO_CLEAR</code> flag is specified.  For large allocations where initialisation overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Memory block successfully allocated.</error>
       <error code="Args">Invalid parameters (size &lt;= 0 or Address is NULL).</error>
-      <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
       <error code="AllocMemory">Insufficient memory available for the requested allocation.</error>
     </result>
   </function>
@@ -1079,28 +1078,27 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   <function>
     <name>MemoryInfo</name>
     <category>Memory</category>
-    <comment>Returns information on memory ID's.</comment>
+    <comment>Returns information on memory IDs.</comment>
     <prototype>ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
     <tiriPrototype>err = MemoryInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
     <tags>mutates-input, blocking, pure-query</tags>
     <input>
-      <param type="MEMORYID" name="ID">Pointer to a valid memory ID.</param>
+      <param type="MEMORYID" name="ID">Memory identifier to inspect.</param>
       <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure.</param>
       <param type="INT" name="Size">Size of the <st>MemInfo</st> structure.</param>
     </input>
     <description>
-<p>This function returns the attributes of a memory block, including the start address, parent object, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
+<p>This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
 <pre>MemInfo info;
 if (MemoryInfo(memid, &amp;info) IS ERR::Okay) {
    log.msg(&quot;Memory block #%d is %d bytes large.&quot;, info.MemoryID, info.Size);
 }
 </pre>
-<p>If the call fails, the <st>MemInfo</st> structure's fields will be driven to <code>NULL</code> and an error code is returned.</p>
+<p>If the memory ID is not found after argument validation, the <st>MemInfo</st> structure's fields are cleared before the error code is returned.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1298,7 +1296,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid flags specified or memory block is not protected.</error>
       <error code="SystemCall">A system call failed.</error>
-      <error code="DoesNotExist">The memory block is not valid or was not allocated with protection.</error>
+      <error code="DoesNotExist">The memory block is not valid.</error>
       <error code="NullArgs">Address is NULL.</error>
     </result>
   </function>
@@ -1390,7 +1388,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <param type="APTR *" name="Address">Point to an <code>APTR</code> variable to store the resulting pointer to the new memory block.</param>
     </input>
     <description>
-<p>This function is used to reallocate memory blocks to new lengths. You can shrink or expand a memory block as you wish.  The data of your original memory block will be copied over to the new block.  If the new block is of a larger size, the left-over bytes will be populated with zero-byte values. If the new block is smaller, you will lose some of the original data.</p>
+<p>This function is used to reallocate memory blocks to new lengths.  You can shrink or expand a memory block as you wish.  The data of your original memory block will be copied over to the new block.  If the new block is larger and the original allocation did not use <code>MEM::NO_CLEAR</code>, the extra bytes are initialised to zero.  If the new block is smaller, you will lose some of the original data.</p>
 <p>The original block will be destroyed as a result of calling this function unless the reallocation process fails, in which case your existing memory block will remain valid.</p>
     </description>
     <result type="ERR">
@@ -1398,7 +1396,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Args">Invalid arguments passed to function</error>
       <error code="Memory">The memory block to be re-allocated is invalid.</error>
       <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -1900,6 +1897,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <description>
 <p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
 <p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
+<p>A unique <code>ResourceID</code> can be obtained from <function>AllocateID</function> by using <code>IDTYPE::RESOURCE</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -2419,6 +2417,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
       <const name="GLOBAL">Global ID's have no specific association with anything.</const>
       <const name="MESSAGE">Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.</const>
+      <const name="RESOURCE">Resource identifier for TrackResource()</const>
     </constants>
 
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">

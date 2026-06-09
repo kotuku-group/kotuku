@@ -63,9 +63,9 @@ CONTYPE glConsoleType  = CONTYPE::NONE;
 bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
-// NB: During shutdown, elements in glPrivateMemory are not erased but will have their fields cleared.
+// NB: During shutdown, elements in glMemory are not erased but will have their fields cleared.
 // Can't use ankerl here because removal of elements is too slow.
-std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory; // Pointer stable collection
+std::unordered_map<MEMORYID, PrivateAddress> glMemory; // Pointer stable collection
 std::unordered_map<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
 std::unordered_map<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
 
@@ -136,7 +136,7 @@ int glValidateProcessID = 0;
 int glProcessID = 0;
 int glEUID = -1, glEGID = -1, glGID = -1, glUID = -1;
 int glWildClassMapTotal = 0;
-std::atomic_int glPrivateIDCounter = 500;
+std::atomic_int glResourceID = 500;
 std::atomic_int glMessageIDCount = 10000;
 std::atomic_int glGlobalIDCount = 1;
 int glEventMask = 0;

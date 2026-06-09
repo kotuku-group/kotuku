@@ -1051,6 +1051,7 @@ enum class IDTYPE : int {
    MESSAGE = 1,
    GLOBAL = 2,
    FUNCTION = 3,
+   RESOURCE = 4,
 };
 
 // Indicates the state of a process.

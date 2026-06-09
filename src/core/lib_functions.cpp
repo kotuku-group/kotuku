@@ -111,6 +111,9 @@ int AllocateID(IDTYPE Type)
    else if (Type IS IDTYPE::FUNCTION) {
       return ++glFunctionID;
    }
+   else if (Type IS IDTYPE::RESOURCE) {
+      return glResourceID++;
+   }
 
    return 0;
 }

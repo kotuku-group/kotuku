@@ -59,8 +59,8 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
    kt::Log log("FreeMemory");
 
    if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem_it = glPrivateMemory.find(MemoryID);
-      if ((mem_it IS glPrivateMemory.end()) or (not mem_it->second.Address)) {
+      auto mem_it = glMemory.find(MemoryID);
+      if ((mem_it IS glMemory.end()) or (not mem_it->second.Address)) {
          if (glCrashStatus) return ERR::Okay;
          else return ERR::DoesNotExist;
       }
@@ -86,8 +86,8 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
 
       active_mem.clear();
 
-      // During shutdown, glPrivateMemory records are not removed in order to maintain pointer validity
-      if (glProgramStage != STAGE_SHUTDOWN) glPrivateMemory.erase(MemoryID);
+      // During shutdown, glMemory records are not removed in order to maintain pointer validity
+      if (glProgramStage != STAGE_SHUTDOWN) glMemory.erase(MemoryID);
 
       return ERR::Okay;
    }
@@ -116,6 +116,8 @@ The supplied address and manager are retained as references only.  They must rem
 tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
 resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
 preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
+
+A unique `ResourceID` can be obtained from ~AllocateID() by using `IDTYPE::RESOURCE`.
 
 -INPUT-
 res ResourceID: Unique identifier for the resource to register or replace.
@@ -225,26 +227,25 @@ if (AllocMemory(1000, MEM::DATA, &address) IS ERR::Okay) {
 }
 </pre>
 
-Memory allocation behavior is controlled through MEM flags:
+Memory allocation behaviour is controlled through MEM flags:
 
 <types lookup="MEM"/>
 
-The resulting memory block is zero-initialized unless the `MEM::NO_CLEAR` flag is specified. For large
-allocations where initialization overhead is a concern, utilising `MEM::NO_CLEAR` is recommended.
+The resulting memory block is zero-initialised unless the `MEM::NO_CLEAR` flag is specified.  For large
+allocations where initialisation overhead is a concern, utilising `MEM::NO_CLEAR` is recommended.
 
 Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when
 the owner is destroyed. This prevents memory leaks in object-oriented code.
 
 -INPUT-
 large Size:     The size of the memory block in bytes. Must be greater than zero.
-int(MEM) Flags: Optional allocation flags controlling behavior and ownership.
+int(MEM) Flags: Optional allocation flags controlling behaviour and ownership.
 &ptr Address: Pointer to store the address of the allocated memory block.
 
 -ERRORS-
 Okay: Memory block successfully allocated.
 Args: Invalid parameters (size <= 0 or Address is NULL).
 AllocMemory: Insufficient memory available for the requested allocation.
-SystemLocked: Memory management system is currently locked by another thread.
 
 -TAGS-
 caller-owns-result, creates-resource, blocking
@@ -324,7 +325,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    MEMORYID unique_id = 0;
 
    if (auto lock = std::unique_lock{glmMemory}) { // To keep threads synced, it is essential that this lock is made early.
-      unique_id = glPrivateIDCounter++;
+      unique_id = glResourceID++;
       // Configure the memory header.
 
       ((int *)data_start)[RESOURCE_ID_OFFSET] = unique_id;
@@ -332,7 +333,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // Record memory details such as the size, ID and flags.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
-      glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
+      glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
    }
    else {
       if (use_protection) {
@@ -493,10 +494,10 @@ ERR FreeResource(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MemoryInfo: Returns information on memory ID's.
+MemoryInfo: Returns information on memory IDs.
 
-This function returns the attributes of a memory block, including the start address, parent object, memory ID, size
-and flags.  The following example illustrates correct use of this function:
+This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The
+following example illustrates correct use of this function:
 
 <pre>
 MemInfo info;
@@ -505,10 +506,11 @@ if (MemoryInfo(memid, &info) IS ERR::Okay) {
 }
 </pre>
 
-If the call fails, the !MemInfo structure's fields will be driven to `NULL` and an error code is returned.
+If the memory ID is not found after argument validation, the !MemInfo structure's fields are cleared before the error
+code is returned.
 
 -INPUT-
-mem ID: Pointer to a valid memory ID.
+mem ID: Memory identifier to inspect.
 buf(struct(MemInfo)) MemInfo:  Pointer to a !MemInfo structure.
 structsize Size: Size of the !MemInfo structure.
 
@@ -517,7 +519,6 @@ Okay
 NullArgs
 Args
 DoesNotExist
-SystemLocked
 
 -TAGS-
 mutates-input, blocking, pure-query
@@ -535,8 +536,8 @@ ERR MemoryInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
    clearmem(MemInfo, Size);
 
    if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glPrivateMemory.find(MemoryID);
-      if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
+      auto mem = glMemory.find(MemoryID);
+      if ((mem != glMemory.end()) and (mem->second.Address)) {
          MemInfo->Start    = mem->second.Address;
          MemInfo->Size     = mem->second.Size;
          MemInfo->Flags    = mem->second.Flags;
@@ -565,7 +566,7 @@ int(MEM) Flags: New access flags (MEM::READ, MEM::WRITE).
 Okay
 NullArgs: Address is NULL.
 Args: Invalid flags specified or memory block is not protected.
-DoesNotExist: The memory block is not valid or was not allocated with protection.
+DoesNotExist: The memory block is not valid.
 SystemCall: A system call failed.
 
 -TAGS-
@@ -618,10 +619,10 @@ ERR ProtectMemory(APTR Address, MEM Flags)
 -FUNCTION-
 ReallocMemory: Reallocates memory blocks.
 
-This function is used to reallocate memory blocks to new lengths. You can shrink or expand a memory block as you
-wish.  The data of your original memory block will be copied over to the new block.  If the new block is of a
-larger size, the left-over bytes will be populated with zero-byte values. If the new block is smaller, you will
-lose some of the original data.
+This function is used to reallocate memory blocks to new lengths.  You can shrink or expand a memory block as you
+wish.  The data of your original memory block will be copied over to the new block.  If the new block is larger and the
+original allocation did not use `MEM::NO_CLEAR`, the extra bytes are initialised to zero.  If the new block is smaller,
+you will lose some of the original data.
 
 The original block will be destroyed as a result of calling this function unless the reallocation process fails, in
 which case your existing memory block will remain valid.
@@ -634,7 +635,6 @@ uint Size:    The size of the new memory block.
 -ERRORS-
 Okay
 Args
-NullArgs
 AllocMemory
 Memory: The memory block to be re-allocated is invalid.
 
