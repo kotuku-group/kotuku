@@ -2347,6 +2347,13 @@ inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription
    return SubscribeTimer(Interval,&Callback,Subscription);
 }
 
+// This template leverages pcObject to be the preferred entry point for any Object type or derivation.
+
+template <pcObject T> inline ERR FreeResource(T *Object) {
+   if (not Object) return ERR::NullArgs;
+   return FreeResource(Object->UID);
+}
+
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);

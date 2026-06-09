@@ -51,10 +51,7 @@ public:
 
 class PrivateAddress {
 public:
-   union {
-      APTR      Address;
-      OBJECTPTR Object;
-   };
+   APTR     Address;
    MEMORYID MemoryID;   // Unique identifier
    uint32_t Size;       // 4GB max (user-requested size)
    THREADID ThreadLockID = THREADID(0);
