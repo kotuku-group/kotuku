@@ -24,6 +24,7 @@ functions for creating paths and rendering them to bitmaps.
 // Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
 
 static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
+   if (Address) ((SimpleVector *)Address)->~SimpleVector();
    return ERR::Terminate;
 }
 
