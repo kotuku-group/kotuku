@@ -61,6 +61,10 @@ static void * alloc_free_worker(void *Arg)
          continue;
       }
 
+      if (((uintptr_t)memory & 31) != 0) {
+         glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
+      }
+
       auto memory_id = GetMemoryID(memory);
       if (CheckResourceExists(memory_id) != ERR::True) {
          glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
