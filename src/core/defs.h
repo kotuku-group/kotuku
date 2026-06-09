@@ -369,7 +369,7 @@ constexpr int MEMHEADER = 32;  // Private prefix before public memory pointers; 
 // require 8-byte alignment.
 
 constexpr size_t CACHE_LINE_SIZE = 64;
-constexpr size_t OBJECT_ALIGNMENT = 8;
+constexpr size_t OBJECT_ALIGNMENT = 32;
 
 // Aligned heap allocation/free helpers shared by the memory and object subsystems.
 
