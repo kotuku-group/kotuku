@@ -1508,7 +1508,8 @@ api-owns-result, nullable-result, blocking
 
 OBJECTPTR GetObjectPtr(OBJECTID ObjectID)
 {
-   if (auto lock = std::unique_lock{glmObjects}) {
+   {
+      std::unique_lock lock(glmObjects);
       if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
          if ((object_rec->second.Object) and (object_rec->second.Object->UID IS ObjectID)) return object_rec->second.Object;
       }
@@ -1540,7 +1541,8 @@ blocking, pure-query
 
 OBJECTID GetOwnerID(OBJECTID ObjectID)
 {
-   if (auto lock = std::unique_lock{glmObjects}) {
+   {
+      std::unique_lock lock(glmObjects);
       if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
          if (object_rec->second.Object) return object_rec->second.Object->ownerID();
       }
@@ -1741,22 +1743,20 @@ ERR ListChildren(OBJECTID ObjectID, kt::vector<ChildEntry> *List)
 
    log.trace("#%d, List: %p", ObjectID, List);
 
-   if (auto lock = std::unique_lock{glmObjects}) {
-      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
-         for (const auto id : object_rec->second.Children) {
-            auto child_rec = glObjects.find(id);
-            if (child_rec IS glObjects.end()) continue;
+   std::unique_lock lock(glmObjects);
+   if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+      for (const auto id : object_rec->second.Children) {
+         auto child_rec = glObjects.find(id);
+         if (child_rec IS glObjects.end()) continue;
 
-            auto child = child_rec->second.Object;
-            if (not child) continue;
-            if (not child->defined(NF::LOCAL)) {
-               List->emplace_back(child->UID, child->classID());
-            }
+         auto child = child_rec->second.Object;
+         if (not child) continue;
+         if (not child->defined(NF::LOCAL)) {
+            List->emplace_back(child->UID, child->classID());
          }
       }
-      return ERR::Okay;
    }
-   else return ERR::LockFailed;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2228,43 +2228,41 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
 
    // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
 
-   if (auto lock = std::unique_lock{glmResources}) {
-      std::lock_guard object_lock(glmObjects);
-      auto object_rec   = glObjects.find(Object->UID);
-      auto resource_rec = glResources.find(Object->UID);
-      auto owner_rec    = glResources.find(Owner->UID);
+   std::unique_lock lock(glmResources);
+   std::lock_guard object_lock(glmObjects);
+   auto object_rec   = glObjects.find(Object->UID);
+   auto resource_rec = glResources.find(Object->UID);
+   auto owner_rec    = glResources.find(Owner->UID);
 
-      if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return log.warning(ERR::SystemCorrupt);
+   if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return log.warning(ERR::SystemCorrupt);
 
-      if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
-         (not owner_rec->second.Manager->AddChild)) {
-         return log.warning(ERR::SystemCorrupt);
-      }
-
-      auto &resource = resource_rec->second;
-
-      if (resource.OwnerManagesChildren) {
-         if (auto previous_owner = glResources.find(resource.OwnerID);
-            (previous_owner != glResources.end()) and (previous_owner->second.Manager) and
-            (previous_owner->second.Manager->RemoveChild)) {
-            previous_owner->second.Manager->RemoveChild(previous_owner->second, resource);
-         }
-      }
-      else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
-         previous_owner->second.Children.erase(Object->UID);
-      }
-
-      object_rec->second.OwnerID = Owner->UID;
-      resource.OwnerID = Owner->UID;
-      resource.OwnerManagesChildren = false;
-      Object->Owner = Owner;
-
-      owner_rec->second.Manager->AddChild(owner_rec->second, resource);
-      resource.OwnerManagesChildren = true;
-
-      return ERR::Okay;
+   if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
+      (not owner_rec->second.Manager->AddChild)) {
+      return log.warning(ERR::SystemCorrupt);
    }
-   else return log.warning(ERR::SystemLocked);
+
+   auto &resource = resource_rec->second;
+
+   if (resource.OwnerManagesChildren) {
+      if (auto previous_owner = glResources.find(resource.OwnerID);
+         (previous_owner != glResources.end()) and (previous_owner->second.Manager) and
+         (previous_owner->second.Manager->RemoveChild)) {
+         previous_owner->second.Manager->RemoveChild(previous_owner->second, resource);
+      }
+   }
+   else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
+      previous_owner->second.Children.erase(Object->UID);
+   }
+
+   object_rec->second.OwnerID = Owner->UID;
+   resource.OwnerID = Owner->UID;
+   resource.OwnerManagesChildren = false;
+   Object->Owner = Owner;
+
+   owner_rec->second.Manager->AddChild(owner_rec->second, resource);
+   resource.OwnerManagesChildren = true;
+
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

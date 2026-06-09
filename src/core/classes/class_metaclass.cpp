@@ -766,7 +766,8 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    kt::Log log;
    std::list<OBJECTID> objlist;
 
-   if (auto lock = std::unique_lock{glmObjects}) {
+   {
+      std::unique_lock lock(glmObjects);
       for (const auto &entry : glObjects) {
          if (auto object = entry.second.Object) {
             if (Self->classID() IS object->classID()) {
@@ -775,7 +776,6 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
          }
       }
    }
-   else return log.warning(ERR::SystemLocked);
 
    if (!objlist.size()) {
       *Array = nullptr;

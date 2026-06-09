@@ -605,7 +605,8 @@ void ReleaseObject(OBJECTPTR Object)
       kt::Log log(__FUNCTION__);
       log.traceBranch("Waking %d threads for this object.", Object->SleepQueue.load());
 
-      if (auto lock = std::unique_lock{glmObjectLocking}) {
+      {
+         std::unique_lock lock(glmObjectLocking);
          if (Object->collecting()) { // We have to tell other threads that the object is marked for deletion.
             // NB: A lock on glWaitLocks is not required because we're already protected by the glmObjectLocking
             // barrier (which is common between LockObject() and ReleaseObject()
