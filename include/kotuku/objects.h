@@ -192,7 +192,7 @@ inline void RestoreObjectContext() { SetObjectContext(nullptr, nullptr, AC::NIL)
 // state of the object's superset, it is not strictly necessary to acquire a lock.  Writeable values are managed with
 // atomics and the rest are considered read-only, making many operating patterns safe.
 
-struct Object { // Must be 64-bit aligned
+struct alignas(8) Object { // Must be 64-bit aligned
    union {
       objMetaClass *Class;          // [Public] Class pointer
       class extMetaClass *ExtClass; // [Private] Internal version of the class pointer
@@ -804,7 +804,7 @@ struct Object { // Must be 64-bit aligned
       return ERR::Okay;
    }
 
-} alignas(8);
+};
 
 namespace kt {
 
