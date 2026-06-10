@@ -20,6 +20,47 @@ static const struct FieldDef clFileFlags[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clFilePERMIT[] = {
+   { "Read", 0x00000001 },
+   { "UserRead", 0x00000001 },
+   { "UserWrite", 0x00000002 },
+   { "Write", 0x00000002 },
+   { "Exec", 0x00000004 },
+   { "UserExec", 0x00000004 },
+   { "Delete", 0x00000008 },
+   { "User", 0x0000000f },
+   { "GroupRead", 0x00000010 },
+   { "GroupWrite", 0x00000020 },
+   { "GroupExec", 0x00000040 },
+   { "GroupDelete", 0x00000080 },
+   { "Group", 0x000000f0 },
+   { "OthersRead", 0x00000100 },
+   { "AllRead", 0x00000111 },
+   { "EveryoneRead", 0x00000111 },
+   { "OthersWrite", 0x00000200 },
+   { "AllWrite", 0x00000222 },
+   { "EveryoneWrite", 0x00000222 },
+   { "EveryoneReadwrite", 0x00000333 },
+   { "OthersExec", 0x00000400 },
+   { "AllExec", 0x00000444 },
+   { "EveryoneExec", 0x00000444 },
+   { "OthersDelete", 0x00000800 },
+   { "AllDelete", 0x00000888 },
+   { "EveryoneDelete", 0x00000888 },
+   { "Others", 0x00000f00 },
+   { "EveryoneAccess", 0x00000fff },
+   { "Hidden", 0x00001000 },
+   { "Archive", 0x00002000 },
+   { "Password", 0x00004000 },
+   { "Userid", 0x00008000 },
+   { "Groupid", 0x00010000 },
+   { "Inherit", 0x00020000 },
+   { "Offline", 0x00040000 },
+   { "Network", 0x00080000 },
+   { "Meta", 0x000c5000 },
+   { nullptr, 0 }
+};
+
 FDEF maStartStream[] = { { "Subscriber", FD_OBJECTID }, { "Flags", FD_INT }, { "Length", FD_INT }, { 0, 0 } };
 FDEF maDelete[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF maMove[] = { { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
@@ -56,7 +97,6 @@ static ERR FILE_FreePlacement(extFile *Self) {
 static const struct ActionArray clFileActions[] = {
    { AC::Activate, FILE_Activate },
    { AC::DataFeed, FILE_DataFeed },
-   { AC::Free, FILE_Free },
    { AC::FreePlacement, FILE_FreePlacement },
    { AC::Init, FILE_Init },
    { AC::NewPlacement, FILE_NewPlacement },

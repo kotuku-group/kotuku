@@ -70,27 +70,6 @@ public:
 };
 
 //********************************************************************************************************************
-// Unified resource management record.  These records are keyed by RESOURCEID in glResources and provide the
-// ResourceManager dispatch and generic ownership metadata for live resources.
-
-class ResourceRecord {
-public:
-   APTR       Address = nullptr; // [RI] Direct pointer to the resource (optional, can rely on ResourceID instead)
-   ResourceManager *Manager = nullptr; // [RW] Reference to the resource manager for this record
-   RESOURCEID ResourceID = 0;  // [RI] Unique identifier
-   OBJECTID   OwnerID = 0;     // [RW] Owner of the resource
-   bool       CollectOnUnlock = false; // [RW] Resource is locked; manager will collect immediately once unlocked
-   bool       Terminating = false; // [RW] A FreeResource() call currently owns the destruction path
-   bool       OwnerManagesChildren = false; // [RW] True if the current OwnerID manages its child resources
-
-   ResourceRecord() = default;
-
-   ResourceRecord(RESOURCEID AResourceID, APTR AAddress, OBJECTID AOwnerID, ResourceManager *AManager) :
-      Address(AAddress), Manager(AManager), ResourceID(AResourceID), OwnerID(AOwnerID) { };
-
-};
-
-//********************************************************************************************************************
 // Object management record.  These records are keyed by OBJECTID in glObjects and are used for live object lookup,
 // object ownership, and non-child resources tracked to each object.
 

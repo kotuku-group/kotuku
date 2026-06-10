@@ -45,7 +45,6 @@ static const struct ActionArray clConfigActions[] = {
    { AC::Clear, CONFIG_Clear },
    { AC::DataFeed, CONFIG_DataFeed },
    { AC::Flush, CONFIG_Flush },
-   { AC::Free, CONFIG_Free },
    { AC::FreePlacement, CONFIG_FreePlacement },
    { AC::Init, CONFIG_Init },
    { AC::NewPlacement, CONFIG_NewPlacement },
