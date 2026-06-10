@@ -516,13 +516,16 @@ struct Object { // Must be 64-bit aligned
          if (not field->readable()) return ERR::NoFieldAccess;
 
          auto flags = field->Flags;
+
+         if (flags & FD_ARRAY) return ERR::UnsupportedField;
+
          if (flags & FD_UNIT) {
             double num;
 
             if (auto error = get_unit<double>(target, *field, num); error IS ERR::Okay) {
                char buffer[64];
-               snprintf(buffer, sizeof(buffer), "%f", num);
-               Value.assign(buffer);
+               auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), num);
+               if (ec == std::errc()) Value.assign(buffer, ptr);
                return ERR::Okay;
             }
             else return error;
@@ -534,33 +537,6 @@ struct Object { // Must be 64-bit aligned
          APTR data = fv.second;
 
          if (fv.first != ERR::Okay) return fv.first;
-
-         if (flags & FD_ARRAY) {
-            if (flags & FD_CPP) {
-               array_size = ((kt::vector<int> *)data)->size();
-               data = ((kt::vector<int> *)data)->data();
-            }
-
-            if (array_size IS -1) return ERR::Failed; // Array sizing not supported by this field.
-
-            Value.clear();
-            if (array_size > 0) Value.reserve(size_t(array_size) * 8);
-            if (flags & FD_INT) {
-               auto array = (int *)data;
-               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
-            }
-            else if (flags & FD_BYTE) {
-               auto array = (uint8_t *)data;
-               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
-            }
-            else if (flags & FD_DOUBLE) {
-               auto array = (double *)data;
-               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
-            }
-
-            if (not Value.empty()) Value.pop_back(); // Remove trailing comma
-            return ERR::Okay;
-         }
 
          if (flags & FD_INT) {
             if (flags & FD_LOOKUP) {
@@ -600,8 +576,8 @@ struct Object { // Must be 64-bit aligned
          }
          else if (flags & FD_DOUBLE) {
             char buffer[64];
-            auto written = snprintf(buffer, sizeof(buffer), "%f", *((double *)data));
-            Value.assign(buffer, written);
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), *((double *)data));
+            if (ec == std::errc()) Value.assign(buffer, ptr);
          }
          else if (flags & FD_STRING) {
             if (field->GetValue) {
