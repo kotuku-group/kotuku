@@ -22,3 +22,39 @@
    assert(math.round(1234.5, -1) is 1230, 'math.round(1234.5, -1) should be 1230')
    assert(math.round(1234.5, -2) is 1200, 'math.round(1234.5, -2) should be 1200')
 end
+
+@Test function Clamp()
+   assert(math.clamp(-5, 0, 10) is 0, 'math.clamp() should clamp values below the lower bound')
+   assert(math.clamp(5, 0, 10) is 5, 'math.clamp() should leave values inside the range unchanged')
+   assert(math.clamp(15, 0, 10) is 10, 'math.clamp() should clamp values above the upper bound')
+   assert(math.clamp(-7, -5, -2) is -5, 'math.clamp() should handle negative lower bounds')
+   assert(math.clamp(-3, -5, -2) is -3, 'math.clamp() should handle negative in-range values')
+   assert(math.clamp(-1, -5, -2) is -2, 'math.clamp() should handle negative upper bounds')
+   assert(math.clamp(0.25, 0.5, 1.5) is 0.5, 'math.clamp() should clamp floating-point values below range')
+   assert(math.clamp(1.25, 0.5, 1.5) is 1.25, 'math.clamp() should preserve floating-point values in range')
+   assert(math.clamp(2.25, 0.5, 1.5) is 1.5, 'math.clamp() should clamp floating-point values above range')
+
+   local reversed = math.clamp(5, 10, 0)
+   local expected = math.min(math.max(5, 10), 0)
+   assert(reversed is expected, 'math.clamp() should match min(max(value, lower), upper) for reversed bounds')
+end
+
+@Test function ClampArgumentErrors()
+   local missing_arg_raised = false
+   try
+      math.clamp(1, 0)
+   except e
+      missing_arg_raised = true
+      assert(e.message:find('number'), 'math.clamp() missing argument error should mention number')
+   end
+   assert(missing_arg_raised is true, 'math.clamp() should reject missing numeric arguments')
+
+   local bad_arg_raised = false
+   try
+      math.clamp(1, 'low', 10)
+   except e
+      bad_arg_raised = true
+      assert(e.message:find('number'), 'math.clamp() bad argument error should mention number')
+   end
+   assert(bad_arg_raised is true, 'math.clamp() should reject non-numeric arguments')
+end

@@ -721,8 +721,7 @@ end
 function proxyTimeoutInterval(Timeout:any):num
    local timeout = tonumber(Timeout) or 30
    if timeout <= 0 then return 0 end
-   if timeout < 1 then return math.max(timeout / 2, 0.1) end
-   return math.min(timeout / 2, 1.0)
+   return math.clamp(timeout / 2, 0.1, 1.0)
 end
 
 function expireProxyConnection(self, State:table)

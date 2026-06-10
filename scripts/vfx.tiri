@@ -48,12 +48,7 @@ vfx.ease.inOutCubic = function(Value)
 end
 
 vfx.apply_easing = function(Value, Easing)
-   progress = Value
-   if progress < 0.0 then
-      progress = 0.0
-   elseif progress > 1.0 then
-      progress = 1.0
-   end
+   progress = math.clamp(Value, 0.0, 1.0)
 
    if not Easing then return progress end
 
