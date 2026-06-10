@@ -9,10 +9,20 @@ static const struct MethodEntry clProxyMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR PROXY_NewPlacement(extProxy *Self) {
+   new (Self) extProxy;
+   return ERR::Okay;
+}
+
+static ERR PROXY_FreePlacement(extProxy *Self) {
+   Self->~extProxy();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clProxyActions[] = {
    { AC::Disable, PROXY_Disable },
    { AC::Enable, PROXY_Enable },
-   { AC::Free, PROXY_Free },
+   { AC::FreePlacement, PROXY_FreePlacement },
    { AC::NewPlacement, PROXY_NewPlacement },
    { AC::SaveSettings, PROXY_SaveSettings },
    { AC::NIL, nullptr }

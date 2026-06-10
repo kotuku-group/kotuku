@@ -7,10 +7,10 @@ static const struct FieldDef clClipboardFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maAddFile[] = { { "Datatype", FD_INT }, { "Path", FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maAddFile[] = { { "Datatype", FD_INT }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maAddObjects[] = { { "Datatype", FD_INT }, { "Objects", FD_PTR }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maGetFiles[] = { { "Filter", FD_INT }, { "Index", FD_INT }, { "Datatype", FD_INT|FD_RESULT }, { "Files", FD_ARRAY|FD_STR|FD_ALLOC|FD_RESULT }, { "Flags", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maAddText[] = { { "String", FD_STR }, { 0, 0 } };
+FDEF maGetFiles[] = { { "Filter", FD_INT }, { "Index", FD_INT }, { "Datatype", FD_RESULT|FD_INT }, { "Files", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FDF_CPPSTRING }, { "Flags", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maAddText[] = { { "String", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maRemove[] = { { "Datatype", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clClipboardMethods[] = {
@@ -22,12 +22,24 @@ static const struct MethodEntry clClipboardMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR CLIPBOARD_NewPlacement(objClipboard *Self) {
+   new (Self) objClipboard;
+   return ERR::Okay;
+}
+
+static ERR CLIPBOARD_FreePlacement(objClipboard *Self) {
+   Self->~objClipboard();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clClipboardActions[] = {
    { AC::Clear, CLIPBOARD_Clear },
    { AC::DataFeed, CLIPBOARD_DataFeed },
    { AC::Free, CLIPBOARD_Free },
+   { AC::FreePlacement, CLIPBOARD_FreePlacement },
    { AC::Init, CLIPBOARD_Init },
    { AC::NewObject, CLIPBOARD_NewObject },
+   { AC::NewPlacement, CLIPBOARD_NewPlacement },
    { AC::NIL, nullptr }
 };
 

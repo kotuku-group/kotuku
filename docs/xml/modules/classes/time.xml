@@ -41,17 +41,17 @@
     <method>
       <name>GetTimeZoneInfo</name>
       <comment>Returns time-zone metadata and transition records.</comment>
-      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, CSTRING ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo ** Info)</prototype>
+      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, STRVIEW ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo ** Info)</prototype>
       <tiriPrototype>err, Info:any = GetTimeZoneInfo(ZoneID:str, StartYear:num, EndYear:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="ZoneID">Empty or NULL requests the local system zone.</param>
+        <param type="STRVIEW" name="ZoneID">Zone identifier, or an empty string to request the local system zone.</param>
         <param type="INT" name="StartYear">Inclusive first year.  Must be in the supported 1601-9999 range.</param>
         <param type="INT" name="EndYear">Inclusive final year.  Must be &gt;= StartYear, no later than 9999 and within 400 years of <code>StartYear</code>.</param>
         <param type="struct TimeZoneInfo **" name="Info">Receives the allocated metadata and transition resource.  Release with <function module="Core">FreeResource</function> when no longer required.</param>
       </input>
       <description>
 <p>Returns normalised time-zone information for a named zone or for the host system's local zone.  The returned <st>TimeZoneInfo</st> resource includes the preferred public zone identifier, the host-native identifier, the data source, standard UTC offset and any transition records found within the requested inclusive year range.</p>
-<p>The <code>ZoneID</code> value may be <code>NULL</code> or empty to request the local system zone.  Explicit zone IDs support <code>UTC</code> aliases on all platforms.  Linux builds also accept IANA zone names that resolve under <code>/usr/share/zoneinfo</code>.  Windows builds accept Windows native time-zone IDs and the IANA IDs that are mapped by the Core Windows time-zone wrapper.</p>
+<p>The <code>ZoneID</code> value may be empty to request the local system zone.  Explicit zone IDs support <code>UTC</code> aliases on all platforms.  Linux builds also accept IANA zone names that resolve under <code>/usr/share/zoneinfo</code>.  Windows builds accept Windows native time-zone IDs and the IANA IDs that are mapped by the Core Windows time-zone wrapper.</p>
 <p>For explicit zone requests, an unknown or unsupported ID returns <code>ERR::Search</code>.  For local-zone requests, host lookup failure is not fatal; the method returns a UTC result with <code>Source</code> set to <code>utc</code> and <code>IsFallback</code> set to <code>1</code>.</p>
 <p>Transition <code>Instant</code> values are UTC Unix epoch timestamps in microseconds.  <code>OffsetBefore</code>, <code>OffsetAfter</code> and <code>BaseOffset</code> are expressed in seconds east of UTC.  <code>DaylightSaving</code> is <code>1</code> when the transition enters a daylight-saving period.</p>
       </description>
@@ -167,11 +167,11 @@
   </fields>
   <structs>
     <struct name="TimeZoneInfo" comment="Time zone information returned from GetTimeZoneInfo()">
-      <field name="ZoneID" type="std::string">Preferred public ID, e.g. Europe/London or UTC.</field>
-      <field name="NativeID" type="std::string">Host-native ID, e.g. GMT Standard Time on Windows.</field>
-      <field name="Source" type="std::string">"tzif", "win32", or "utc".</field>
-      <field name="DataPath" type="std::string">TZif path on Linux, otherwise empty.</field>
-      <field name="Version" type="std::string">TZDB/source version if available, otherwise empty.</field>
+      <field name="ZoneID" type="STRING">Preferred public ID, e.g. Europe/London or UTC.</field>
+      <field name="NativeID" type="STRING">Host-native ID, e.g. GMT Standard Time on Windows.</field>
+      <field name="Source" type="STRING">"tzif", "win32", or "utc".</field>
+      <field name="DataPath" type="STRING">TZif path on Linux, otherwise empty.</field>
+      <field name="Version" type="STRING">TZDB/source version if available, otherwise empty.</field>
       <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>
       <field name="BaseOffset" type="INT">Standard UTC offset in seconds.</field>
       <field name="StartYear" type="INT16">Inclusive requested start year.</field>

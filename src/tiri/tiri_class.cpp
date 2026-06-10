@@ -4,17 +4,14 @@
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
-#include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <format>
-#include <iomanip>
 #include <limits>
 #include <ranges>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,12 +19,10 @@
 #include "lua.hpp"
 
 #include "lj_obj.h"
-#include "lj_bc.h"
 #include "parser/parser_diagnostics.h"
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
 
-#include "hashes.h"
 #include "defs.h"
 
 static ERR run_script(objScript *);
@@ -902,7 +897,7 @@ static ERR run_script(objScript *Self)
    int top;
    bool pcall_failed = false;
    if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
-      if (not Self->Procedure.empty()) lua_getglobal(prv->Lua, Self->Procedure.c_str());
+      if (not Self->Procedure.empty()) lua_getglobal(prv->Lua, Self->Procedure);
       else lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Self->ProcedureID);
 
       if (lua_isfunction(prv->Lua, -1)) {

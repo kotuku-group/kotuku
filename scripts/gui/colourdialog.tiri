@@ -462,10 +462,8 @@ end
 -- occurs in order to manage viewport scaling within the display window.
 
 function selectPalette(self, X, Y)
-   if X < 0 then X = 0 end
-   if Y < 0 then Y = 0 end
-   if X >= self._rainbow.winWidth then X = self._rainbow.winWidth - 1 end
-   if Y >= self._rainbow.winHeight then Y = self._rainbow.winHeight - 1 end
+   X = math.clamp(X, 0, self._rainbow.winWidth - 1)
+   Y = math.clamp(Y, 0, self._rainbow.winHeight - 1)
 
    rainbow = getRainbowBitmap()
    descaleX, descaleY = (rainbow.width / self._rainbow.winWidth), (rainbow.height / self._rainbow.winHeight)

@@ -406,7 +406,7 @@ static void error_dialog(const std::string Title, const std::string Message)
 
    {
       std::lock_guard lk(dialog_mutex);
-      if ((dialog_id) and (CheckObjectExists(dialog_id) IS ERR::True)) return;
+      if ((dialog_id) and (CheckResourceExists(dialog_id) IS ERR::True)) return;
       if (detect_recursive_dialog) return;
       detect_recursive_dialog = true;
    }

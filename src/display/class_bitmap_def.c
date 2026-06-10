@@ -8,28 +8,18 @@ static const struct FieldDef clBitmapType[] = {
 
 static const struct FieldDef clBitmapDataFlags[] = {
    { "Data", 0x00000000 },
-   { "Managed", 0x00000001 },
-   { "Video", 0x00000002 },
-   { "Texture", 0x00000004 },
-   { "Audio", 0x00000008 },
-   { "Code", 0x00000010 },
-   { "NoPool", 0x00000020 },
-   { "TmpLock", 0x00000040 },
-   { "Untracked", 0x00000080 },
-   { "String", 0x00000100 },
-   { "Object", 0x00000200 },
-   { "NoLock", 0x00000400 },
-   { "Exclusive", 0x00000800 },
-   { "Collect", 0x00001000 },
-   { "NoBlock", 0x00002000 },
-   { "NoBlocking", 0x00002000 },
-   { "Protected", 0x00004000 },
+   { "Video", 0x00000001 },
+   { "Texture", 0x00000002 },
+   { "Audio", 0x00000004 },
+   { "Code", 0x00000008 },
+   { "Untracked", 0x00000010 },
+   { "String", 0x00000020 },
+   { "Collect", 0x00000040 },
+   { "Protected", 0x00000080 },
    { "Read", 0x00010000 },
    { "Write", 0x00020000 },
    { "ReadWrite", 0x00030000 },
    { "NoClear", 0x00040000 },
-   { "Hidden", 0x00100000 },
-   { "Caller", 0x00800000 },
    { nullptr, 0 }
 };
 
@@ -75,7 +65,7 @@ FDEF maCompress[] = { { "Level", FD_INT }, { 0, 0 } };
 FDEF maDecompress[] = { { "RetainData", FD_INT }, { 0, 0 } };
 FDEF maDrawRectangle[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "Colour", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetClipRegion[] = { { "Left", FD_INT }, { "Top", FD_INT }, { "Right", FD_INT }, { "Bottom", FD_INT }, { 0, 0 } };
-FDEF maGetColour[] = { { "Red", FD_INT }, { "Green", FD_INT }, { "Blue", FD_INT }, { "Alpha", FD_INT }, { "Colour", FD_INT|FD_UNSIGNED|FD_RESULT }, { 0, 0 } };
+FDEF maGetColour[] = { { "Red", FD_INT }, { "Green", FD_INT }, { "Blue", FD_INT }, { "Alpha", FD_INT }, { "Colour", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
 
 static const struct MethodEntry clBitmapMethods[] = {
    { AC(-1), (APTR)BITMAP_CopyArea, "CopyArea", maCopyArea, sizeof(struct bmp::CopyArea) },
@@ -91,15 +81,27 @@ static const struct MethodEntry clBitmapMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR BITMAP_NewPlacement(extBitmap *Self) {
+   new (Self) extBitmap;
+   return ERR::Okay;
+}
+
+static ERR BITMAP_FreePlacement(extBitmap *Self) {
+   Self->~extBitmap();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clBitmapActions[] = {
    { AC::Clear, BITMAP_Clear },
    { AC::CopyData, BITMAP_CopyData },
    { AC::Draw, BITMAP_Draw },
    { AC::Flush, BITMAP_Flush },
    { AC::Free, BITMAP_Free },
+   { AC::FreePlacement, BITMAP_FreePlacement },
    { AC::Init, BITMAP_Init },
    { AC::Lock, BITMAP_Lock },
    { AC::NewObject, BITMAP_NewObject },
+   { AC::NewPlacement, BITMAP_NewPlacement },
    { AC::Query, BITMAP_Query },
    { AC::Read, BITMAP_Read },
    { AC::Resize, BITMAP_Resize },

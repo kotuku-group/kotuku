@@ -12,11 +12,11 @@ Examples:
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
 #include <kotuku/strings.hpp>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <cctype>
 
 #include "lauxlib.h"
@@ -25,7 +25,6 @@ Examples:
 #include "lj_str.h"
 #include "lj_gc.h"
 #include "lj_proto_registry.h"
-#include "hashes.h"
 #include "defs.h"
 
 struct regex_callback {
@@ -223,7 +222,8 @@ static int regex_new(lua_State *Lua)
 
       std::string error_msg;
       if (rx::Compile(pattern, flags, &error_msg, &r->regex_obj) != ERR::Okay) {
-         luaL_error(Lua, ERR::Syntax, "Regex compilation failed: %s", error_msg.c_str());
+         error_msg.insert(0, "Regex compilation failed: ");
+         luaL_error(Lua, ERR::Syntax, std::move(error_msg));
       }
 
       return 1; // userdata is already on stack

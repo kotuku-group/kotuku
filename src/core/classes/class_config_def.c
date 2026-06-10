@@ -8,14 +8,14 @@ static const struct FieldDef clConfigFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maReadValue[] = { { "Group", FD_STR }, { "Key", FD_STR }, { "Data", FD_STR|FD_RESULT }, { 0, 0 } };
-FDEF maSet[] = { { "Group", FD_STR }, { "Key", FD_STR }, { "Data", FD_STR }, { 0, 0 } };
-FDEF maWriteValue[] = { { "Group", FD_STR }, { "Key", FD_STR }, { "Data", FD_STR }, { 0, 0 } };
-FDEF maDeleteKey[] = { { "Group", FD_STR }, { "Key", FD_STR }, { 0, 0 } };
-FDEF maDeleteGroup[] = { { "Group", FD_STR }, { 0, 0 } };
-FDEF maGetGroupFromIndex[] = { { "Index", FD_INT }, { "Group", FD_STR|FD_RESULT }, { 0, 0 } };
-FDEF maSortByKey[] = { { "Key", FD_STR }, { "Descending", FD_INT }, { 0, 0 } };
-FDEF maMergeFile[] = { { "Path", FD_STR }, { 0, 0 } };
+FDEF maReadValue[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { "Data", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSet[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { "Data", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maWriteValue[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { "Data", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maDeleteKey[] = { { "Group", FDF_CPPSTRING }, { "Key", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maDeleteGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maGetGroupFromIndex[] = { { "Index", FD_INT }, { "Group", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSortByKey[] = { { "Key", FDF_CPPSTRING }, { "Descending", FD_INT }, { 0, 0 } };
+FDEF maMergeFile[] = { { "Path", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maMerge[] = { { "Source", FD_OBJECTPTR }, { 0, 0 } };
 
 static const struct MethodEntry clConfigMethods[] = {
@@ -31,11 +31,21 @@ static const struct MethodEntry clConfigMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR CONFIG_NewPlacement(extConfig *Self) {
+   new (Self) extConfig;
+   return ERR::Okay;
+}
+
+static ERR CONFIG_FreePlacement(extConfig *Self) {
+   Self->~extConfig();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clConfigActions[] = {
    { AC::Clear, CONFIG_Clear },
    { AC::DataFeed, CONFIG_DataFeed },
    { AC::Flush, CONFIG_Flush },
-   { AC::Free, CONFIG_Free },
+   { AC::FreePlacement, CONFIG_FreePlacement },
    { AC::Init, CONFIG_Init },
    { AC::NewPlacement, CONFIG_NewPlacement },
    { AC::SaveSettings, CONFIG_SaveSettings },

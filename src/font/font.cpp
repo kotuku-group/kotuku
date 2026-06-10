@@ -93,6 +93,15 @@ class extFont : public objFont {
    int16_t prvLineCountCR;
    char prvEscape[2];
    uint8_t prvDefaultChar;
+
+   extFont() {
+      TabSize         = 8;
+      prvDefaultChar  = '.';
+      prvLineCountCR  = 1;
+      Colour.Alpha    = 255;
+      GlyphSpacing    = 1.0;
+      Style           = "Regular";
+   }
 };
 
 #include "font_def.c"
@@ -509,7 +518,7 @@ ERR GetList(FontList **Result)
       }
 
       FontList *list, *last_list = nullptr;
-      if (AllocMemory(size, MEM::DATA, &list) IS ERR::Okay) {
+      if (AllocMemory(size, MEM::DATA, (APTR *)&list) IS ERR::Okay) {
          auto buffer = (STRING)(list + groups->size());
          *Result = list;
 
@@ -601,7 +610,7 @@ Word wrapping is not applied, even if #WrapEdge has been set on the Font object.
 
 -INPUT-
 obj(Font) Font: An initialised font object.
-cpp(strview) String: The string to be calculated.
+strview String: The string to be calculated.
 int Chars: The maximum number of characters to measure, or `-1` to measure the entire string.
 
 -RESULT-
@@ -670,12 +679,10 @@ Resolves a font family `Name` and preferred `Style` to a font file path.  The fa
 database.  If the requested style is unavailable, the function falls back to the face's regular style or first
 registered style.
 
-The returned `Path` is allocated and must be released with `FreeResource()` when it is no longer required.
-
 -INPUT-
-cpp(strview) Name:  The name of a font face to search for (case insensitive).
-cpp(strview) Style: The preferred style, e.g. `Bold` or `Italic`.
-&!cstr Path: The location of the best-matching font file is returned in this parameter.
+strview Name:  The name of a font face to search for (case insensitive).
+strview Style: The preferred style, e.g. `Bold` or `Italic`.
+^&string Path: The location of the best-matching font file is returned in this parameter.
 &int(FMETA) Meta: Optional, returns additional meta information about the font file.
 
 -ERRORS-
@@ -686,12 +693,12 @@ AllocMemory
 Search: Unable to find a suitable font.
 
 -TAGS-
-caller-owns-result, creates-resource, blocking, case-insensitive
+blocking, case-insensitive
 -END-
 
 *********************************************************************************************************************/
 
-ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTRING *Path, FMETA *Meta)
+ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta)
 {
    kt::Log log(__FUNCTION__);
 
@@ -699,7 +706,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTR
 
    if (Name.empty() or (not Path)) return log.warning(ERR::NullArgs);
 
-   *Path = nullptr;
+   *Path = "";
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
@@ -721,15 +728,15 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTR
       return meta;
    };
 
-   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style, CSTRING *Path) {
+   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style, std::string *Path) {
       if (Keys.contains(Style)) {
-         if ((*Path = strclone(Keys[Style]))) return ERR::Okay;
-         else return ERR::AllocMemory;
+         *Path = Keys[Style];
+         return ERR::Okay;
       }
       else if (not iequals("Regular", Style)) {
          if (Keys.contains("Regular")) {
-            if ((*Path = strclone(Keys["Regular"]))) return ERR::Okay;
-            else return ERR::AllocMemory;
+            *Path = Keys["Regular"];
+            return ERR::Okay;
          }
       }
       return ERR::Search;
@@ -756,7 +763,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, CSTR
       std::string first_style = styles.substr(0, end);
 
       if (keys.contains(first_style)) {
-         if (not (*Path = strclone(keys[first_style]))) return ERR::AllocMemory;
+         *Path = keys[first_style];
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }
@@ -803,7 +810,7 @@ ERR RefreshFonts(void)
    scan_fixed_folder(glConfig);
    scan_truetype_folder(glConfig);
 
-   if (auto error = glConfig->sortByKey(nullptr, false); error != ERR::Okay) return error; // Sort by font name.
+   if (auto error = glConfig->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
 
    // Create a style list for each font, e.g.
    //
@@ -854,8 +861,8 @@ it is available.
 The returned `Result` is borrowed storage.  Copy it immediately if it needs to survive a later font database refresh.
 
 -INPUT-
-cpp(strview) String: A CSV family string to resolve.
-&cstr Result: The resolved family name is returned in this parameter.
+strview String: A CSV family string to resolve.
+&strview Result: The resolved family name is returned in this parameter.
 
 -ERRORS-
 Okay
@@ -871,7 +878,7 @@ volatile-result, null-terminated-result, blocking, case-insensitive
 
 *********************************************************************************************************************/
 
-ERR ResolveFamilyName(const std::string_view &String, CSTRING *Result)
+ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
 {
    kt::Log log(__FUNCTION__);
 
@@ -899,7 +906,7 @@ ERR ResolveFamilyName(const std::string_view &String, CSTRING *Result)
             // Default family requested - use the first font declaring a "Default" key
             for (auto & [group, keys] : groups[0]) {
                if (keys.contains("Default")) {
-                  *Result = keys["Name"].c_str();
+                  *Result = keys["Name"];
                   return ERR::Okay;
                }
             }
@@ -932,7 +939,7 @@ ERR ResolveFamilyName(const std::string_view &String, CSTRING *Result)
                   }
                }
 
-               *Result = keys["Name"].c_str();
+               *Result = keys["Name"];
                return ERR::Okay;
             }
          }

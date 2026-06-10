@@ -211,8 +211,7 @@ end
    rootId = xml.tags[0].id
 
    -- Test shallow content extraction
-   buffer = string.alloc(1000)
-   err = xml.mtGetContent(rootId, buffer)
+   err, buffer = xml.mtGetContent(rootId)
    assert(err is ERR_Okay, "Shallow content extraction should succeed")
    assert(string.find(buffer, "Before"), "Should include direct text")
    assert(string.find(buffer, "after"), "Should include direct text")

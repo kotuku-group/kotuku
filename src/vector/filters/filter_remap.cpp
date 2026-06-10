@@ -95,10 +95,10 @@ class Component {
       }
    }
 
-   void select_discrete(const double *pValues, const int pSize) {
+   void select_discrete(kt::vector<double> &Values) {
       Type = RFT_DISCRETE;
       Table.clear();
-      Table.insert(Table.end(), pValues, pValues + pSize);
+      Table.insert(Table.end(), Values.data(), Values.data() + Values.size());
 
       uint32_t n = Table.size();
       for (size_t i=0; i < sizeof(Lookup); i++) {
@@ -111,10 +111,10 @@ class Component {
       }
    }
 
-   void select_table(const double *pValues, const int pSize) {
+   void select_table(kt::vector<double> &Values) {
       Type = RFT_TABLE;
       Table.clear();
-      Table.insert(Table.end(), pValues, pValues + pSize);
+      Table.insert(Table.end(), Values.data(), Values.data() + Values.size());
 
       uint32_t n = Table.size();
       for (size_t i=0; i < sizeof(Lookup); i++) {
@@ -219,22 +219,6 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR REMAPFX_Free(extRemapFX *Self)
-{
-   Self->~extRemapFX();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR REMAPFX_NewPlacement(extRemapFX *Self)
-{
-   new (Self) extRemapFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -245,8 +229,7 @@ minimum size of 1.
 
 -INPUT-
 int(CMP) Component: The pixel component to which the discrete function must be applied.
-array(double) Values: A list of values for the discrete function.
-arraysize Size: Total number of elements in the `Values` list.
+vector(double) Values: A list of values for the discrete function.
 
 -RESULT-
 Okay:
@@ -262,11 +245,11 @@ static ERR REMAPFX_SelectDiscrete(extRemapFX *Self, struct rf::SelectDiscrete *A
    kt::Log log;
 
    if ((!Args) or (!Args->Values)) return log.warning(ERR::NullArgs);
-   if ((Args->Size < 1) or (Args->Size > 1024)) return log.warning(ERR::Args);
+   if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_discrete(Args->Values, Args->Size);
-      log.detail("%s Values: %d", cmp->Name.c_str(), Args->Size);
+      cmp->select_discrete(*Args->Values);
+      log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -469,8 +452,7 @@ If a single table value is supplied then the component will be output as a const
 
 -INPUT-
 int(CMP) Component: The pixel component to which the table function must be applied.
-array(double) Values: A list of values for the table function.
-arraysize Size: Total number of elements in the value list.
+vector(double) Values: A list of values for the table function.
 
 -RESULT-
 Okay:
@@ -487,11 +469,11 @@ static ERR REMAPFX_SelectTable(extRemapFX *Self, struct rf::SelectTable *Args)
    kt::Log log;
 
    if ((!Args) or (!Args->Values)) return log.warning(ERR::NullArgs);
-   if ((Args->Size < 1) or (Args->Size > 1024)) return log.warning(ERR::Args);
+   if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_table(Args->Values, Args->Size);
-      log.detail("%s Values: %d", cmp->Name.c_str(), Args->Size);
+      cmp->select_table(*Args->Values);
+      log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);

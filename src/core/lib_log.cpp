@@ -32,7 +32,6 @@ Log levels are:
 #endif
 
 #include <stdarg.h>
-#include <fcntl.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -312,7 +311,6 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
          bool flushdbg;
          if ((fd IS stderr) and (level >= 3)) {
             flushdbg = true;
-            if (tlPublicLockCount) flushdbg = false;
             if (flushdbg) fcntl(STDERR_FILENO, F_SETFL, glStdErrFlags & (~O_NONBLOCK));
          }
          else flushdbg = false;

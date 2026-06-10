@@ -48,12 +48,9 @@ ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
 
    if (!Result) return ERR::NullArgs;
 
-   if (!t_info) {
-      // Each thread gets an allocation that can't be resource tracked, so MEM::HIDDEN is used in this case.
-      // Note that this could conceivably cause memory leaks if temporary threads were to use this function.
-      if (AllocMemory(sizeof(DisplayInfo), MEM::NO_CLEAR|MEM::HIDDEN, &t_info) != ERR::Okay) {
-         return ERR::AllocMemory;
-      }
+   if (!t_info) { // Each thread gets an allocation that can't be resource tracked
+      t_info = (DisplayInfo *)malloc(sizeof(DisplayInfo));
+      if (!t_info) return ERR::AllocMemory;
    }
 
    if (auto error = get_display_info(DisplayID, t_info); error IS ERR::Okay) {
@@ -109,7 +106,7 @@ while (scrScanDisplayModes("depth=32", &info) IS ERR::Okay) {
 </pre>
 
 -INPUT-
-cpp(strview) Filter: The filter to apply to the resolution database.  May be NULL for no filter.
+strview Filter: The filter to apply to the resolution database.  May be NULL for no filter.
 struct(*DisplayInfo) Info: A pointer to a !DisplayInfo structure must be referenced here.  The structure will be filled with information when the function returns.
 
 -ERRORS-

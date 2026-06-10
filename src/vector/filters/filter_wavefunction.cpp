@@ -144,9 +144,6 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
 
 static ERR WAVEFUNCTIONFX_Free(extWaveFunctionFX *Self)
 {
-   Self->psi.~vector<std::vector<double>>();
-   Self->Stops.~vector<GradientStop>();
-   Self->ColourMap.~basic_string();
    if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
    if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
    return ERR::Okay;

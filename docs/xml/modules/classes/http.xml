@@ -241,7 +241,7 @@ http.acActivate()
       <name>Host</name>
       <comment>The targeted HTTP server is specified here, either by name or IP address.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The HTTP server to target for HTTP requests is defined here.  To change the host post-initialisation, set the <fl>Location</fl>.</p>
       </description>
@@ -274,7 +274,7 @@ http.acActivate()
       <name>InputFile</name>
       <comment>To upload HTTP content from a file, set a file path here.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>HTTP content can be streamed from a source file when a <code>POST</code> command is executed. To do so, set the InputFile field to the file path that contains the source data.  The path is not opened or checked for validity until the <code>POST</code> command is executed by the HTTP object.</p>
 <p>An alternative is to set the <fl>InputObject</fl> for abstracting the data source.</p>
@@ -341,7 +341,7 @@ http.acActivate()
       <name>OutputFile</name>
       <comment>To download HTTP content to a file, set a file path here.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>HTTP content can be streamed to a target file during transfer.  To do so, set the OutputFile field to the destination file name that will receive data.  If the file already exists, it will be overwritten unless the <code>RESUME</code> flag has been set in the <fl>Flags</fl> field.</p>
       </description>
@@ -373,7 +373,7 @@ http.acActivate()
       <name>Path</name>
       <comment>The HTTP path targeted at the host server.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The path to target at the host server is specified here.  If no path is set, the server root will be targeted.  It is not necessary to set the path if one has been specified in the <fl>Location</fl>.</p>
 <p>If spaces are discovered in the path, they will be converted to the <code>%20</code> HTTP escape code automatically.  No other automatic conversions are operated when setting the Path field.</p>
@@ -404,7 +404,7 @@ http.acActivate()
       <name>ProxyServer</name>
       <comment>Route the HTTP request through the proxy server defined here.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>If a proxy server will receive the HTTP request, set the name or IP address of the server here.  To specify the port that the proxy server uses to receive requests, see the <fl>ProxyPort</fl> field.</p>
       </description>
@@ -477,7 +477,7 @@ http.acActivate()
       <name>UserAgent</name>
       <comment>Specifies the name of the user-agent string that is sent in HTTP requests.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>This field describes the <code>user-agent</code> value that will be sent in HTTP requests.  The default value is <code>Kotuku Client</code>.</p>
       </description>

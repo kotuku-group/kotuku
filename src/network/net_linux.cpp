@@ -317,59 +317,53 @@ public:
       }
    }
 
-   ERR parse_multicast_group(CSTRING Group, bool &IPv6) override
+   ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      if (!Group) return ERR::Args;
+      if (Group.empty()) return ERR::Args;
 
-      struct in6_addr addr6;
-      struct in_addr addr4;
-      kt::clearmem(&addr6, sizeof(addr6));
-      kt::clearmem(&addr4, sizeof(addr4));
+      std::string group(Group);
 
-      if (::inet_pton(AF_INET6, Group, &addr6) IS 1) {
+      struct ipv6_mreq mreq6;
+      kt::clearmem(&mreq6, sizeof(mreq6));
+      if (::inet_pton(AF_INET6, group.c_str(), &mreq6.ipv6mr_multiaddr) IS 1) {
          IPv6 = true;
-         return ERR::Okay;
+         mreq6.ipv6mr_interface = 0;
+         return setsockopt(Handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&mreq6, sizeof(mreq6)) ?
+            ERR::Failed : ERR::Okay;
       }
-      else if (::inet_pton(AF_INET, Group, &addr4) IS 1) {
+      else {
+         struct ip_mreq mreq4;
+         kt::clearmem(&mreq4, sizeof(mreq4));
+         if (::inet_pton(AF_INET, group.c_str(), &mreq4.imr_multiaddr) != 1) return ERR::Args;
          IPv6 = false;
-         return ERR::Okay;
-      }
-      else return ERR::Args;
-   }
-
-   ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
-   {
-      if (IPv6) {
-         struct ipv6_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET6, Group, &mreq.ipv6mr_multiaddr) != 1) return ERR::Args;
-         mreq.ipv6mr_interface = 0;
-         return setsockopt(Handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
-      }
-      else {
-         struct ip_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET, Group, &mreq.imr_multiaddr) != 1) return ERR::Args;
-         mreq.imr_interface.s_addr = INADDR_ANY;
-         return setsockopt(Handle, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
+         mreq4.imr_interface.s_addr = INADDR_ANY;
+         return setsockopt(Handle, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq4, sizeof(mreq4)) ?
+            ERR::Failed : ERR::Okay;
       }
    }
 
-   ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
+   ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      if (IPv6) {
-         struct ipv6_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET6, Group, &mreq.ipv6mr_multiaddr) != 1) return ERR::Args;
-         mreq.ipv6mr_interface = 0;
-         return setsockopt(Handle, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
+      if (Group.empty()) return ERR::Args;
+
+      std::string group(Group);
+
+      struct ipv6_mreq mreq6;
+      kt::clearmem(&mreq6, sizeof(mreq6));
+      if (::inet_pton(AF_INET6, group.c_str(), &mreq6.ipv6mr_multiaddr) IS 1) {
+         IPv6 = true;
+         mreq6.ipv6mr_interface = 0;
+         return setsockopt(Handle, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&mreq6, sizeof(mreq6)) ?
+            ERR::Failed : ERR::Okay;
       }
       else {
-         struct ip_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET, Group, &mreq.imr_multiaddr) != 1) return ERR::Args;
-         mreq.imr_interface.s_addr = INADDR_ANY;
-         return setsockopt(Handle, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
+         struct ip_mreq mreq4;
+         kt::clearmem(&mreq4, sizeof(mreq4));
+         if (::inet_pton(AF_INET, group.c_str(), &mreq4.imr_multiaddr) != 1) return ERR::Args;
+         IPv6 = false;
+         mreq4.imr_interface.s_addr = INADDR_ANY;
+         return setsockopt(Handle, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&mreq4, sizeof(mreq4)) ?
+            ERR::Failed : ERR::Okay;
       }
    }
 

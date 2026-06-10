@@ -24,11 +24,11 @@ For example:
 * [Doc] Updated AGENTS.md with information on how to optimise for AVX2
 ```
 
-Rules:
+Rules - these take precedence over prior statements:
 
-* Do not apply word-wrapping.
+* Never apply word-wrapping.
 * If listing a series of changes, use asterisk based bullet points, one on each line.
-* Do not add credit or authorship attributions for yourself or others.
+* Never add credit or authorship attributions for yourself or others.  For example, a `Co-Authored-By` statement is not permitted.
 * Low-value changes do not need to be mentioned.  For example: comments, decorative changes, file renaming, minor refactoring, and anything that does not make a fundamental difference to programming logic.
 * If the Sub-Label would match the parent Label, the Sub-Label should not be applied.
 

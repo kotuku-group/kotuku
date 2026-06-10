@@ -1,7 +1,10 @@
 -- Flute tests that need to exercise the JIT in specific ways.
 
 local glCfg
+local ir_min <const> = 50  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xstore <const> = 78  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_calln <const> = 95  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 
 @BeforeAll
 function SetupJitTests()
@@ -69,6 +72,15 @@ function count_trace_opcode(TraceNo, Info, Opcode)
       end
    end
    return count
+end
+
+function traced_clamp_sum(Count)
+   local total = 0
+   for i = 1, Count do
+      local value = i - 8
+      total += math.clamp(value, -3, 4)
+   end
+   return total
 end
 
 function sample_vararg(Left, Right, ...)
@@ -295,6 +307,41 @@ end
             f"Snapshot {snap_no} entry {entry_idx} slot {slot} should be below nslots {nslots}")
       end
    end
+end
+
+@Test(hotpath=80) function JITMathClampEmitsMinMax()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local result = 0
+   for i = 1, 80 do
+      result = traced_clamp_sum(40)
+   end
+
+   assert(result is 104, f"Expected traced clamp sum to be 104, got {result}")
+
+   local clamp_trace_no = nil
+   local clamp_trace_info = nil
+   for trace_no = 1, 30 do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         local min_count = count_trace_opcode(trace_no, info, ir_min)
+         local max_count = count_trace_opcode(trace_no, info, ir_max)
+         if min_count > 0 and max_count > 0 then
+            clamp_trace_no = trace_no
+            clamp_trace_info = info
+            break
+         end
+      end
+   end
+
+   assert(clamp_trace_no != nil, "Expected math.clamp() trace to contain IR_MIN and IR_MAX")
+   assert(count_trace_opcode(clamp_trace_no, clamp_trace_info, ir_calln) is 0,
+      "math.clamp() trace should not rely on a runtime IR_CALLN")
 end
 
 @Test(hotpath=80) function JITVariableNumericHashLookup()

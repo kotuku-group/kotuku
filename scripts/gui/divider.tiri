@@ -22,8 +22,7 @@ function arrangeAll(self:table, Middle:num)
       a_len   = math.floor(Middle - HALF_GAP)
       minA    = math.floor(self._primary[self._anchor] + self._minA)
       maxA    = math.floor(self._primary[self._anchor] + self._maxA)
-      if a_len < minA then a_len = minA end
-      if a_len > maxA then a_len = maxA end
+      a_len = math.clamp(a_len, minA, maxA)
       if a_len > a_limit then a_len = a_limit end
       self._primary[self._length] = a_len - self._primary[self._anchor]
    else -- (A) side will stay the same, (B) side will be resized

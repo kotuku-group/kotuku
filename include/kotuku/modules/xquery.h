@@ -136,10 +136,10 @@ DEFINE_ENUM_FLAG_OPERATORS(XEF)
 // XQuery methods
 
 namespace xq {
-struct Evaluate { objXML * XML; int Index; XEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Search { objXML * XML; FUNCTION * Callback; int Index; XEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RegisterFunction { CSTRING FunctionName; FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct InspectFunctions { CSTRING Name; XIF ResultFlags; CSTRING Result; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Evaluate { objXML *XML; int Index; XEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Search { objXML *XML; FUNCTION *Callback; int Index; XEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RegisterFunction { std::string_view FunctionName; FUNCTION *Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InspectFunctions { std::string_view Name; XIF ResultFlags; std::string *Result; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -173,21 +173,20 @@ class objXQuery : public Object {
    }
    inline ERR evaluate(objXML * XML, int Index, XEF Flags) noexcept {
       struct xq::Evaluate args = { XML, Index, Flags };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR search(objXML * XML, FUNCTION Callback, int Index, XEF Flags) noexcept {
       struct xq::Search args = { XML, &Callback, Index, Flags };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR registerFunction(CSTRING FunctionName, FUNCTION Callback) noexcept {
+   inline ERR registerFunction(const std::string_view &FunctionName, FUNCTION Callback) noexcept {
       struct xq::RegisterFunction args = { FunctionName, &Callback };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
-   inline ERR inspectFunctions(CSTRING Name, XIF ResultFlags, CSTRING * Result) noexcept {
-      struct xq::InspectFunctions args = { Name, ResultFlags, (CSTRING)0 };
+   inline ERR inspectFunctions(const std::string_view &Name, XIF ResultFlags, std::string &Result) noexcept {
+      struct xq::InspectFunctions args = { Name, ResultFlags, &Result };
       ERR error = Action(AC(-4), this, &args);
-      if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
 
    // Customised field getting

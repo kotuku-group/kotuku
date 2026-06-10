@@ -275,7 +275,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice (bitmap: #%d, mem: $%.8x)", Bitmap->UID, Bitmap->DataFlags);
 
       if (!Bitmap->Data) {
-         if (AllocMemory(Bitmap->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Bitmap->DataFlags, &Bitmap->Data) != ERR::Okay) {
+         if (AllocMemory(Bitmap->Size, MEM::NO_CLEAR|Bitmap->DataFlags, &Bitmap->Data) != ERR::Okay) {
             return log.warning(ERR::AllocMemory);
          }
          Bitmap->prvAFlags |= BF_DATA;
@@ -587,7 +587,7 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
    if (AllocMemory(Self->Size, MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
       int result;
       if (glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result) IS ERR::Okay) {
-         if (AllocMemory(result, MEM::NO_CLEAR, &Self->prvCompress) IS ERR::Okay) {
+         if (AllocMemory(result, MEM::NO_CLEAR, (APTR *)&Self->prvCompress) IS ERR::Okay) {
             copymem(buffer, Self->prvCompress, result);
          }
          else error = ERR::ReallocMemory;
@@ -839,7 +839,7 @@ static ERR BITMAP_Decompress(extBitmap *Self, struct bmp::Decompress *Args)
    // accesses the Data address following attempted decompression.
 
    if (!Self->Data) {
-      if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+      if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
          Self->prvAFlags |= BF_DATA;
       }
       else return log.warning(ERR::AllocMemory);
@@ -942,7 +942,7 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    if (!glDemultiply) {
       const std::lock_guard<std::mutex> lock(mutex);
       if (!glDemultiply) {
-         if (AllocMemory(256 * 256, MEM::NO_CLEAR|MEM::UNTRACKED, &glDemultiply) IS ERR::Okay) {
+         if (AllocMemory(256 * 256, MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&glDemultiply) IS ERR::Okay) {
             for (int a=1; a <= 255; a++) {
                for (int i=0; i <= 255; i++) {
                   glDemultiply[(a<<8) + i] = (i * 0xff) / a;
@@ -1231,7 +1231,7 @@ static ERR BITMAP_Init(extBitmap *Self)
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
 
          if (glHeadless) {
-            if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+            if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
                Self->prvAFlags |= BF_DATA;
             }
             else return log.warning(ERR::AllocMemory);
@@ -1278,7 +1278,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             Self->prvAFlags |= BF_WINVIDEO;
             if (!(Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
          }
-         else if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+         else if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1306,7 +1306,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             log.warning("Support for MEM::TEXTURE not included yet.");
             return ERR::NoSupport;
          }
-         else if (AllocMemory(Self->Size, Self->DataFlags|MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR, &Self->Data) IS ERR::Okay) {
+         else if (AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data) IS ERR::Okay) {
             Self->prvAFlags |= BF_DATA;
          }
          else return ERR::AllocMemory;
@@ -1321,7 +1321,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
-         if (AllocMemory(Self->Size, MEM::NO_BLOCKING|MEM::NO_POOL|MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+         if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1935,7 +1935,7 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
       if ((size <= Self->Size) and (size / Self->Size > 0.5)) { // Do nothing when shrinking unless able to save considerable resources
          size = Self->Size;
       }
-      else if (AllocMemory(size, MEM::NO_BLOCKING|MEM::NO_POOL|Self->DataFlags|MEM::NO_CLEAR, &data) IS ERR::Okay) {
+      else if (AllocMemory(size, Self->DataFlags|MEM::NO_CLEAR, (APTR *)&data) IS ERR::Okay) {
          if (Self->Data) FreeResource(Self->Data);
          Self->Data = data;
       }
@@ -2067,7 +2067,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    else pcx.NumPlanes = 3;
 
    size = width * height * pcx.NumPlanes;
-   if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
+   if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
       auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
       if (write_error != ERR::Okay) {
          FreeResource(buffer);
@@ -2499,22 +2499,11 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
    if (Self->x11.XShmImage) return ERR::NotPossible;
 #endif
 
-   // This code gets the correct memory flags to define the pixel drawing functions
-   // (i.e. functions to draw to video memory are different to drawing to normal memory).
-
    if (Self->Data != Value) {
       Self->Data = Value;
 
       if (Self->DataFlags IS MEM::NIL) {
-         MemInfo info;
-         if (MemoryPtrInfo(Value, &info) != ERR::Okay) {
-            kt::Log log;
-            log.warning("Could not obtain flags from address %p.", Value);
-         }
-         else if (Self->DataFlags != info.Flags) {
-            Self->DataFlags = info.Flags;
-            if (Self->initialised()) CalculatePixelRoutines(Self);
-         }
+         Self->DataFlags = MEM::DATA;
       }
    }
 
@@ -2666,7 +2655,7 @@ ERR SET_Palette(extBitmap *Self, RGBPalette *SrcPalette)
 
    if (SrcPalette->AmtColours <= 256) {
       if (!Self->Palette) {
-         if (AllocMemory(sizeof(RGBPalette), MEM::NO_CLEAR, &Self->Palette) != ERR::Okay) {
+         if (AllocMemory(sizeof(RGBPalette), MEM::NO_CLEAR, (APTR *)&Self->Palette) != ERR::Okay) {
             return log.warning(ERR::AllocMemory);
          }
       }

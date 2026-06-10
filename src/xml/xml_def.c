@@ -3,16 +3,16 @@
 namespace xml {
 extern ERR XValueToNumber(struct XPathValue * Value, double * Result);
 extern ERR XValueToString(const struct XPathValue * Value, std::string * Result);
-extern ERR XValueNodes(struct XPathValue * Value, kt::vector<struct XTag *> * Result);
+extern ERR XValueNodes(struct XPathValue * Value, kt::vector<XTag *> * Result);
 
 } // namespace
 #ifndef FDEF
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsXValueNodes[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_ARRAY|FD_PTR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
-FDEF argsXValueToNumber[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_DOUBLE|FD_RESULT }, { 0, 0 } };
-FDEF argsXValueToString[] = { { "Error", FD_INT|FD_ERROR }, { "Value", FD_PTR }, { "Result", FD_CPP|FD_STR|FD_MUTABLE|FD_RESULT }, { 0, 0 } };
+FDEF argsXValueNodes[] = { { "Error", FD_INT|FD_ERROR }, { "XPathValue:Value", FD_PTR|FD_STRUCT }, { "XTag:Result", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsXValueToNumber[] = { { "Error", FD_INT|FD_ERROR }, { "XPathValue:Value", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
+FDEF argsXValueToString[] = { { "Error", FD_INT|FD_ERROR }, { "XPathValue:Value", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)xml::XValueToNumber, "XValueToNumber", argsXValueToNumber },
@@ -22,4 +22,4 @@ const struct Function glFunctions[] = {
 };
 
 #undef MOD_IDL
-#define MOD_IDL "s.XMLAttrib:zsName,zsValue\ns.XTag:lID,lParentID,lLineNo,lFlags,ulNamespaceID,lReserved,zeAttribs:XMLAttrib[],zeChildren:XTag[]\ns.XPathValue:lType,dNumberValue,zsStringValue\nc.XMF:HAS_SCHEMA=0x8000,INCLUDE_COMMENTS=0x2,INCLUDE_SIBLINGS=0x80000000,INCLUDE_WHITESPACE=0x100,INDENT=0x8,LOCK_REMOVE=0x10,LOG_ALL=0x800,NAMESPACE_AWARE=0x4000,NEW=0x40,NO_ESCAPE=0x80,OMIT_TAGS=0x2000,PARSE_ENTITY=0x1000,PARSE_HTML=0x200,READABLE=0x8,STANDALONE=0x10000,STRIP_CDATA=0x400,STRIP_CONTENT=0x4,STRIP_HEADERS=0x20,WELL_FORMED=0x1\nc.XMI:CHILD=0x1,CHILD_END=0x3,END=0x4,NEXT=0x2,PREV=0x0,PREVIOUS=0x0\nc.XMS:NEW=0xffffffff,UPDATE=0xfffffffd,UPDATE_ONLY=0xfffffffe\nc.XPVT:Array=0x8,Boolean=0x1,Date=0x4,DateTime=0x6,Map=0x7,NodeSet=0x0,Number=0x2,String=0x3,Time=0x5\nc.XSF:CHECK_SORT=0x2,DESC=0x1\nc.XTF:CDATA=0x1,COMMENT=0x8,INSTRUCTION=0x2,NOTATION=0x4\n"
+#define MOD_IDL "s.XMLAttrib:zsName,zsValue\ns.XTag:lID,lParentID,lLineNo,lFlags,ulNamespaceID,lReserved,zeAttribs:XMLAttrib[],zeChildren:XTag[]\ns.XPathValue:lType,dNumberValue,zsStringValue\nc.XMF:HAS_SCHEMA=0x8000,INCLUDE_COMMENTS=0x2,INCLUDE_SIBLINGS=0x80000000,INCLUDE_WHITESPACE=0x100,INDENT=0x8,LOCK_REMOVE=0x10,LOG_ALL=0x800,NAMESPACE_AWARE=0x4000,NEW=0x40,NO_ESCAPE=0x80,OMIT_TAGS=0x2000,PARSE_ENTITY=0x1000,PARSE_HTML=0x200,READABLE=0x8,READ_ONLY=0x20000,STANDALONE=0x10000,STRIP_CDATA=0x400,STRIP_CONTENT=0x4,STRIP_HEADERS=0x20,WELL_FORMED=0x1\nc.XMI:CHILD=0x1,CHILD_END=0x3,END=0x4,NEXT=0x2,PREV=0x0,PREVIOUS=0x0\nc.XMS:NEW=0xffffffff,REMOVE=0xfffffffc,UPDATE=0xfffffffd,UPDATE_ONLY=0xfffffffe\nc.XPVT:Array=0x8,Boolean=0x1,Date=0x4,DateTime=0x6,Map=0x7,NodeSet=0x0,Number=0x2,String=0x3,Time=0x5\nc.XSF:CHECK_SORT=0x2,DESC=0x1\nc.XTF:CDATA=0x1,COMMENT=0x8,INSTRUCTION=0x2,NOTATION=0x4\n"

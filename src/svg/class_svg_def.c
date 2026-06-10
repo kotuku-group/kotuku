@@ -8,7 +8,7 @@ static const struct FieldDef clSVGFlags[] = {
 };
 
 FDEF maRender[] = { { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
-FDEF maParseSymbol[] = { { "ID", FD_STR }, { "Viewport", FD_OBJECTPTR }, { 0, 0 } };
+FDEF maParseSymbol[] = { { "ID", FDF_CPPSTRING }, { "Viewport", FD_OBJECTPTR }, { 0, 0 } };
 
 static const struct MethodEntry clSVGMethods[] = {
    { AC(-1), (APTR)SVG_Render, "Render", maRender, sizeof(struct svg::Render) },
@@ -16,11 +16,22 @@ static const struct MethodEntry clSVGMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SVG_NewPlacement(extSVG *Self) {
+   new (Self) extSVG;
+   return ERR::Okay;
+}
+
+static ERR SVG_FreePlacement(extSVG *Self) {
+   Self->~extSVG();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSVGActions[] = {
    { AC::Activate, SVG_Activate },
    { AC::DataFeed, SVG_DataFeed },
    { AC::Deactivate, SVG_Deactivate },
    { AC::Free, SVG_Free },
+   { AC::FreePlacement, SVG_FreePlacement },
    { AC::Init, SVG_Init },
    { AC::NewObject, SVG_NewObject },
    { AC::NewPlacement, SVG_NewPlacement },

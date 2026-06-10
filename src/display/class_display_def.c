@@ -49,8 +49,8 @@ FDEF maSetDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, {
 FDEF maSizeHints[] = { { "MinWidth", FD_INT }, { "MinHeight", FD_INT }, { "MaxWidth", FD_INT }, { "MaxHeight", FD_INT }, { "EnforceAspect", FD_INT }, { 0, 0 } };
 FDEF maSetGamma[] = { { "Red", FD_DOUBLE }, { "Green", FD_DOUBLE }, { "Blue", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetGammaLinear[] = { { "Red", FD_DOUBLE }, { "Green", FD_DOUBLE }, { "Blue", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maSetMonitor[] = { { "Name", FD_STR }, { "MinH", FD_INT }, { "MaxH", FD_INT }, { "MinV", FD_INT }, { "MaxV", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maGetFrame[] = { { "Left", FD_INT|FD_RESULT }, { "Top", FD_INT|FD_RESULT }, { "Right", FD_INT|FD_RESULT }, { "Bottom", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maSetMonitor[] = { { "Name", FDF_CPPSTRING }, { "MinH", FD_INT }, { "MaxH", FD_INT }, { "MinV", FD_INT }, { "MaxV", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maGetFrame[] = { { "Left", FD_RESULT|FD_INT }, { "Top", FD_RESULT|FD_INT }, { "Right", FD_RESULT|FD_INT }, { "Bottom", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clDisplayMethods[] = {
    { AC(-1), (APTR)DISPLAY_WaitVBL, "WaitVBL", 0, 0 },
@@ -66,6 +66,16 @@ static const struct MethodEntry clDisplayMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR DISPLAY_NewPlacement(extDisplay *Self) {
+   new (Self) extDisplay;
+   return ERR::Okay;
+}
+
+static ERR DISPLAY_FreePlacement(extDisplay *Self) {
+   Self->~extDisplay();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clDisplayActions[] = {
    { AC::Activate, DISPLAY_Activate },
    { AC::Clear, DISPLAY_Clear },
@@ -76,6 +86,7 @@ static const struct ActionArray clDisplayActions[] = {
    { AC::Flush, DISPLAY_Flush },
    { AC::Focus, DISPLAY_Focus },
    { AC::Free, DISPLAY_Free },
+   { AC::FreePlacement, DISPLAY_FreePlacement },
    { AC::Hide, DISPLAY_Hide },
    { AC::Init, DISPLAY_Init },
    { AC::Move, DISPLAY_Move },

@@ -75,7 +75,7 @@ end
 @Test function ReadOnlyMode()
    xml = obj.new("xml", {
       statement = '<root><child/></root>',
-      readOnly = true
+      flags = XMF_READ_ONLY
    })
 
    rootId = xml.tags[1].id
@@ -131,7 +131,7 @@ end
 @Test function ConcurrentAccess()
    xml = obj.new("xml", {
       statement = '<root><item>1</item><item>2</item><item>3</item></root>',
-      readOnly = true  -- Readonly for safe concurrent access
+      flags = XMF_READ_ONLY  -- Read-only for safe concurrent access
    })
 
    -- Multiple FindTag operations should work safely

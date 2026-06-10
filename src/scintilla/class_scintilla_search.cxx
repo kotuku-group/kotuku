@@ -81,9 +81,9 @@ static ERR SEARCH_Find(objScintillaSearch *Self, struct ss::Find *Args)
    kt::Log log;
    int start, end, pos, startLine, endLine, i, targstart, targend;
 
-   if (!Self->Text) return log.warning(ERR::FieldNotSet);
+   if (Self->Text.empty()) return log.warning(ERR::FieldNotSet);
 
-   log.msg("Text: '%.10s'... From: %d, Flags: $%.8x", Self->Text, Args->Pos, int(Self->Flags));
+   log.msg("Text: '%.10s'... From: %d, Flags: $%.8x", Self->Text.c_str(), Args->Pos, int(Self->Flags));
 
    auto flags = (((Args->Flags & STF::CASE) != STF::NIL) ? SCFIND_MATCHCASE : 0) |
                  (((Args->Flags & STF::EXPRESSION) != STF::NIL) ? SCFIND_REGEXP : 0);
@@ -117,7 +117,7 @@ static ERR SEARCH_Find(objScintillaSearch *Self, struct ss::Find *Args)
 
    SCICALL(SCI_SETTARGETSTART, start);
    SCICALL(SCI_SETTARGETEND, end);
-   pos = SCICALL(SCI_SEARCHINTARGET, strlen(Self->Text), (char *)Self->Text);
+   pos = SCICALL(SCI_SEARCHINTARGET, Self->Text.size(), Self->Text.c_str());
 
    // If not found and wraparound is wanted, try again
 
@@ -133,7 +133,7 @@ static ERR SEARCH_Find(objScintillaSearch *Self, struct ss::Find *Args)
 
       SCICALL(SCI_SETTARGETSTART, start);
       SCICALL(SCI_SETTARGETEND, end);
-      pos = SCICALL(SCI_SEARCHINTARGET, strlen((STRING)Self->Text), (char *)Self->Text);
+      pos = SCICALL(SCI_SEARCHINTARGET, Self->Text.size(), Self->Text.c_str());
    }
 
    if (pos IS -1) return ERR::Search;
@@ -164,7 +164,6 @@ static ERR SEARCH_Find(objScintillaSearch *Self, struct ss::Find *Args)
 
 static ERR SEARCH_Free(objScintillaSearch *Self)
 {
-   if (Self->Text) { FreeResource(Self->Text); Self->Text = nullptr; }
    return ERR::Okay;
 }
 
@@ -183,7 +182,7 @@ static ERR SEARCH_Init(objScintillaSearch *Self)
       else return log.warning(ERR::UnsupportedOwner);
    }
 
-   if ((!Self->Text) or (!Self->Scintilla)) return log.warning(ERR::FieldNotSet);
+   if ((Self->Text.empty()) or (!Self->Scintilla)) return log.warning(ERR::FieldNotSet);
 
    return ERR::Okay;
 }
@@ -215,7 +214,7 @@ static ERR SEARCH_Next(objScintillaSearch *Self, struct ss::Next *Args)
 
    if (!Args) return log.warning(ERR::NullArgs);
 
-   log.branch("Text: '%.10s', Flags: $%.8x, Section %d to %d", Self->Text, int(Self->Flags), Self->Start, Self->End);
+   log.branch("Text: '%.10s', Flags: $%.8x, Section %d to %d", Self->Text.c_str(), int(Self->Flags), Self->Start, Self->End);
 
    int flags = (((Self->Flags & STF::CASE) != STF::NIL) ? SCFIND_MATCHCASE : 0) |
                 (((Self->Flags & STF::EXPRESSION) != STF::NIL) ? SCFIND_REGEXP : 0);
@@ -248,7 +247,7 @@ static ERR SEARCH_Next(objScintillaSearch *Self, struct ss::Next *Args)
 
    SCICALL(SCI_SETTARGETSTART, start);
    SCICALL(SCI_SETTARGETEND, end);
-   int pos = SCICALL(SCI_SEARCHINTARGET, strlen(Self->Text), (char *)Self->Text);
+   int pos = SCICALL(SCI_SEARCHINTARGET, Self->Text.size(), Self->Text.c_str());
 
    // If not found and wraparound is wanted, try again
 
@@ -271,7 +270,7 @@ static ERR SEARCH_Next(objScintillaSearch *Self, struct ss::Next *Args)
 
       SCICALL(SCI_SETTARGETSTART, start);
       SCICALL(SCI_SETTARGETEND, end);
-      pos = SCICALL(SCI_SEARCHINTARGET, strlen((STRING)Self->Text), (char *)Self->Text);
+      pos = SCICALL(SCI_SEARCHINTARGET, Self->Text.size(), Self->Text.c_str());
    }
 
    if (pos IS -1) return ERR::Search;
@@ -351,17 +350,6 @@ This field defines the string sequence that will be searched for when calling ei
 
 *********************************************************************************************************************/
 
-static ERR SET_Text(objScintillaSearch *Self, const std::string_view &Value)
-{
-   if (Self->Text) { FreeResource(Self->Text); Self->Text = nullptr; }
-   if (not Value.empty()) {
-      if (!(Self->Text = kt::strclone(Value))) return ERR::AllocMemory;
-   }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static const ActionArray clActions[] = {
    { AC::Free, SEARCH_Free },
    { AC::Init, SEARCH_Init },
@@ -395,7 +383,7 @@ static const FieldDef clFlags[] = {
 
 static const FieldArray clFields[] = {
    { "Scintilla", FDF_OBJECT|FDF_RI, nullptr, nullptr, CLASSID::SCINTILLA },
-   { "Text",      FDF_CPPSTRING|FDF_RW, nullptr, SET_Text },
+   { "Text",      FDF_CPPSTRING|FDF_RW },
    { "Flags",     FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clFlags },
    END_FIELD
 };

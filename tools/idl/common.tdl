@@ -53,7 +53,7 @@ enums("AC", { type="int", start=1, comment="Action identifiers.", module="Core" 
     "MoveToBack",   "MoveToFront",    "NewChild",     "NewOwner", "NewObject",    "Redo",         "Query",
     "Read",         "Rename",         "Reset",        "Resize",   "SaveImage",    "SaveToObject", "MoveToPoint",
     "Seek",         "SetKey",         "Show",         "Undo",     "Unlock",       "Next",         "Prev",
-    "Write",        "SetField",       "Clipboard",    "Refresh",  "Disable",      "NewPlacement",
+    "Write",        "SetField",       "Clipboard",    "Refresh",  "Disable",      "NewPlacement", "FreePlacement",
     "END")
 
 flags("PERMIT", { comment="Permission flags", module="Core" },
@@ -127,27 +127,18 @@ flags("KQ", { comment="Special qualifier flags", module="Core" },
 )
 
 flags("MEM", { comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.", module="Core" },
-    "MANAGED: Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a `ResourceManager` structure, which is included as part of the block's declared Size.  The `Free()` callback will be called when the block is removed.",
-    "VIDEO: The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.",
-    "TEXTURE: The memory space is reserved by a video driver for hosting texture graphics.",
-    "AUDIO: The memory space is reserved by an audio device such as a sound card.",
-    "CODE: Set if the memory will contain executable program code.",
-    "NO_POOL: Gives a hint to the allocator to allocate the block outside of the memory pool.",
-    "TMP_LOCK: Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.",
-    "UNTRACKED: Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.",
-    "STRING: Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.",
-    "OBJECT: Internal - The memory block represents an object structure.",
-    "NO_LOCK: For AllocMemory() only, indicates that the (private) memory block should not be locked on return.",
-    "EXCLUSIVE: Internal - Used for lock management.",
-    "COLLECT: Internal - The memory block is marked for collection.",
-    "NO_BLOCK|NO_BLOCKING: Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.",
+    "VIDEO:     Identifies video memory, such as the frame buffer.",
+    "TEXTURE:   Identifies non-displayable video memory, e.g. texture graphics.",
+    "AUDIO:     Identifies memory located on an audio device, such as a sound card.",
+    "CODE:      Used for memory that can execute code.",
+    "UNTRACKED: Prevents the memory block from being tracked back to the current context.",
+    "STRING:    Identifies the memory content as a null terminated string, which aids diagnostics.",
+    "COLLECT:   Internal - The memory block is marked for collection.",
     "PROTECTED: Internal - Indicates that the block is using memory protection features.",
     { DATA          = "0: The default type, `DATA`, is used to indicate a standard memory allocation from system RAM." },
     { READ          = "0x00010000: The memory is explicitly marked as readable." },
     { WRITE         = "0x00020000: The memory is explicitly marked as writeable." },
     { NO_CLEAR      = "0x00040000: Do not clear the memory on allocation (saves time)." },
-    { HIDDEN        = "0x00100000: Hidden blocks are not recorded and are excluded from resource tracking." },
-    { CALLER        = "0x00800000: This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself." },
     { READ_WRITE    = "READ|WRITE" })
 
 enums("EVG", { type="int", start=1, comment="Event categories.", module="Core" }, -- 5 bit limit (max 32 entries).  These constants are also managed in core.tiri and tiri_functions.c, line 493

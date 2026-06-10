@@ -1,6 +1,8 @@
 
 // Style codes for each lexer are defined in SciLexer.h
 
+#include <format>
+
 #define COL_BLACK          0x000000
 #define COL_DARKSLATEGREY  0x2F4F4F
 #define COL_LIGHTSLATEGREY 0x576889
@@ -120,9 +122,7 @@ ScintillaKTK::~ScintillaKTK()
 
 void ScintillaKTK::Finalise()
 {
-   kt::Log log(__FUNCTION__);
-
-   log.trace("");
+   kt::Log(__FUNCTION__).trace("");
 
    SetTicking(true);
    ScintillaBase::Finalise();
@@ -132,25 +132,20 @@ void ScintillaKTK::Finalise()
 
 void ScintillaKTK::CreateCallTipWindow(Scintilla::PRectangle rc)
 {
-   kt::Log log(__FUNCTION__);
-   log.trace("");
+   kt::Log(__FUNCTION__).trace("");
 }
 
 //********************************************************************************************************************
 
 void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
 {
-   kt::Log log(__FUNCTION__);
-   log.trace("%s", label);
+   kt::Log(__FUNCTION__).trace("%s", label);
 
    // The one and only Menu object is a member of ScintillaBase: Menu popup;
 
-   auto menu = reinterpret_cast<OBJECTPTR>(popup.GetID());
-
-   if (menu) {
-      char buffer[200];
-      snprintf(buffer, sizeof(buffer), "<item text=\"%s\"></item>", label);
-      acDataXML(menu, buffer);
+   if (auto menu = OBJECTPTR(popup.GetID()); menu) {
+      auto buffer = std::format("<item text=\"{}\"></item>", label);
+      acDataFeed(menu, nullptr, DATA::XML, buffer.c_str(), buffer.size());
    }
 }
 
@@ -276,8 +271,8 @@ void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
    log.traceBranch();
 
    auto clipboard = objClipboard::create { };
-   if (clipboard.ok()) {
-      if (clipboard->addText(selectedText.s) IS ERR::Okay) {
+   if ((clipboard.ok()) and (selectedText.s) and (selectedText.len > 0)) {
+      if (clipboard->addText(std::string_view(selectedText.s, size_t(selectedText.len - 1))) IS ERR::Okay) {
 
       }
    }
@@ -326,14 +321,14 @@ void ScintillaKTK::Paste()
 
    objClipboard::create clipboard = { };
    if (clipboard.ok()) {
-      CSTRING *files;
-      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr) IS ERR::Okay) {
+      kt::vector<std::string> files;
+      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr) IS ERR::Okay) {
          objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
          if (file.ok()) {
             int len, size;
             if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
                STRING buffer;
-               if (AllocMemory(size, MEM::STRING, &buffer) IS ERR::Okay) {
+               if (AllocMemory(size, MEM::STRING, (APTR *)&buffer) IS ERR::Okay) {
                   if (file->read(buffer, size, &len) IS ERR::Okay) {
                      pdoc->BeginUndoAction();
 
@@ -355,11 +350,7 @@ void ScintillaKTK::Paste()
                else error_dialog("Paste Error", nullptr, ERR::AllocMemory);
             }
          }
-         else {
-            char msg[200];
-            snprintf(msg, sizeof(msg), "Failed to load clipboard file \"%s\"", files[0]);
-            error_dialog("Paste Error", msg, ERR::Okay);
-         }
+         else error_dialog("Paste Error", std::format("Failed to load clipboard file \"{}\"", files[0]), ERR::Okay);
       }
    }
 }

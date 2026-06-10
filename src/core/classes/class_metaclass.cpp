@@ -221,6 +221,8 @@ void init_metaclass(void)
    sort_class_fields(&glMetaClass, glMetaClass.FieldLookup);
 
    glMetaClass.BaseCeiling = glMetaClass.FieldLookup.size();
+   
+   glMetaClass.Dictionary = glMetaClass.FieldLookup.data();
 
    glClassMap[CLASSID::METACLASS] = &glMetaClass;
 }
@@ -428,7 +430,6 @@ ERR CLASS_Init(extMetaClass *Self)
 ERR CLASS_NewPlacement(extMetaClass *Self)
 {
    new (Self) extMetaClass;
-   Self->Local[0] = 0xff;
    return ERR::Okay;
 }
 
@@ -767,17 +768,16 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    kt::Log log;
    std::list<OBJECTID> objlist;
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         OBJECTPTR object;
-         if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (object = (OBJECTPTR)mem.Address)) {
+   {
+      std::unique_lock lock(glmObjects);
+      for (const auto &entry : glObjects) {
+         if (auto object = entry.second.Object) {
             if (Self->classID() IS object->classID()) {
                objlist.push_back(object->UID);
             }
          }
       }
    }
-   else return log.warning(ERR::SystemLocked);
 
    if (!objlist.size()) {
       *Array = nullptr;
@@ -788,7 +788,7 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    objlist.sort([](const OBJECTID &a, const OBJECTID &b) { return (a < b); });
 
    OBJECTID *result;
-   if (AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result, nullptr) IS ERR::Okay) {
+   if (AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result) IS ERR::Okay) {
       int i = 0;
       for (const auto & id : objlist) result[i++] = id;
       *Array = result;

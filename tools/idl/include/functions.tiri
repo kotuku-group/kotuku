@@ -830,6 +830,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
    local cl = registerClass(Name)
    cl.name = Name -- The name defined by class() has priority over any name defined by method()
    cl.src = Options.src
+   cl.extended = Options.extended
+   cl.cppName = (Options.extended ? 'ext' :> 'obj') .. Name
    if Options.base then
       cl.base = "obj" .. Options.base
    end
@@ -874,6 +876,9 @@ global function klass(Name, Options:table, Spec, Private, Custom)
    end
 
    cl.actions = { }
+   cl.actions['NewPlacement'] = { name = 'NewPlacement' }
+   cl.actions['FreePlacement'] = { name = 'FreePlacement' }
+
    if cl.src then
       -- Process -METHOD- and -FIELD- definitions
 
@@ -952,7 +957,37 @@ global function klass(Name, Options:table, Spec, Private, Custom)
       end
    end
 
-   -- Export method definitions for a class
+   -- Return the type to use for a given action/method parameter in its struct
+
+   function actionStorageType(Param:table):str
+      local param_type = Param.basicType
+
+      if Param.isComplex then
+         -- std::string is not embeddable, convert to `std::string *`
+         param_type = param_type .. ' *'
+      end
+
+      return param_type
+   end
+
+   -- Return the type to use for a given action parameter in its inline helper call
+
+   function inlineParamType(Param:table):str
+      if Param.type is 'FUNCTION *' then
+         return 'FUNCTION '
+      elseif Param.type is 'std::string_view' then
+         Param.byRef = true
+         return 'const std::string_view &'
+      elseif Param.resultValue and Param.mutable and Param.type:endsWith('*') then
+         Param.byRef = true
+         return Param.type:sub(0,-2) .. '&'
+      elseif Param.isComplex then
+         Param.byRef = true
+         return Param.type .. ' &'
+      end
+
+      return Param.type .. ' '
+   end
 
    if cl.methods then
       pfx  = cl.methodPrefix
@@ -1002,23 +1037,42 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          params = ''
          if method.params then
             for param in values(method.params) do
-               struct_params ..= param.basicType .. ' ' .. pName(param) .. '; '
+               local storage_type = param.basicType
+               if param.isComplex then -- Complex types are not embeddable in structs
+                  storage_type ..= ' *'
+               end
+
+               struct_params ..= storage_type
+               if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
+                  struct_params ..= ' '
+               end
+               struct_params ..= pName(param) .. '; '
 
                if params?? then params ..= ', ' end
 
                if param.type is 'FUNCTION *' then
                   params ..= 'FUNCTION ' .. pName(param)
                   if v?? then v ..= ', ' end
-                  v ..= '&' .. pName(param)
+                  v ..= f'&{pName(param)}'
                else
-                  params ..= param.type .. ' ' .. pName(param)
-                  if v?? then v ..= ', ' end
+                  params ..= inlineParamType(param) .. pName(param)
 
-                  if param.resultValue then
-                     v ..= '(' .. param.basicType .. ')0'
+                  if param.resultValue and param.basicType is 'std::string_view' then
+                     -- Do not embed a default value for string views
                      results = true
                   else
-                     v ..= pName(param)
+                     if v?? then v ..= ', ' end
+
+                     if (param.resultValue and param.mutable) or param.isComplex then
+                        -- Client must provide an empty collection, e.g. std::string or kt::vector
+                        v ..= f'&{pName(param)}'
+                        results = true
+                     elseif param.resultValue then
+                        v ..= f'({actionStorageType(param)})0'
+                        results = true
+                     else
+                        v ..= pName(param)
+                     end
                   end
                end
             end
@@ -1042,16 +1096,22 @@ global function klass(Name, Options:table, Spec, Private, Custom)
             args = '&args'
          end
 
-         if (results) then
+         if results then
             inline ..= f'      ERR error = Action(AC(-{method.id}), this, {args});\n'
             for p in values(method.params) do
                if p.resultValue then
-                  inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                  if not p.mutable then
+                     if p.byRef then
+                        inline ..= f'      if ({p.name}) {p.name} = args.{p.name};\n'
+                     else
+                        inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                     end
+                  end
                end
             end
-            inline ..= '      return(error);\n'
+            inline ..= '      return error;\n'
          else
-            inline ..= f'      return(Action(AC(-{method.id}), this, {args}));\n'
+            inline ..= f'      return Action(AC(-{method.id}), this, {args});\n'
          end
 
          inline ..= '   }'
@@ -1115,8 +1175,22 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
       end
 
+      if cl.actions.NewPlacement then
+         mdef ..= f'static ERR {Name:upper()}_NewPlacement({cl.cppName} *Self) {{\n'
+         mdef ..= f'   new (Self) {cl.cppName};\n'
+         mdef ..= f'   return ERR::Okay;\n'
+         mdef ..= '}\n\n'
+      end
+
+      if cl.actions.FreePlacement then
+         mdef ..= f'static ERR {Name:upper()}_FreePlacement({cl.cppName} *Self) {{\n'
+         mdef ..= f'   Self->~{cl.cppName}();\n'
+         mdef ..= f'   return ERR::Okay;\n'
+         mdef ..= '}\n\n'
+      end
+
       if not table.empty(cl.sortedActions) then
-         mdef ..= "static const struct ActionArray cl" .. Name .. "Actions[] = {\n"
+         mdef ..= f"static const struct ActionArray cl{Name}Actions[] = {{\n"
          for action in values(cl.sortedActions) do
             mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
          end

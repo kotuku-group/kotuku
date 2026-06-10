@@ -19,8 +19,8 @@ module({ name="Regex", copyright="Paul Manias © 2025-2026", version=1.0, timest
     "WHOLE:              Implicit `^...$` around the pattern.")
 
   struct("Regex", { comment="Compiled regex structure." }, [[
-   cpp(str)   Pattern   # Original pattern string
-   int(REGEX) Flags     # Compilation flags
+   string   Pattern   # Original pattern string
+   int(REGEX) Flags   # Compilation flags
   ]])
 
   -- Capture vectors delivered to callbacks are always normalised to include every group.

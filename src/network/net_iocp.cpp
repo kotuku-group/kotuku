@@ -409,19 +409,22 @@ public:
       return iocp_set_multicast_ttl(Handle.socket(), TTL, IPv6);
    }
 
-   ERR parse_multicast_group(CSTRING Group, bool &IPv6) override
+   ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      return iocp_parse_multicast_group(Group, IPv6);
+      if (Group.empty()) return ERR::Args;
+
+      std::string group(Group);
+      if (auto error = iocp_parse_multicast_group(group.c_str(), IPv6); error != ERR::Okay) return error;
+      return iocp_join_multicast_group(Handle.socket(), group.c_str(), IPv6);
    }
 
-   ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
+   ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      return iocp_join_multicast_group(Handle.socket(), Group, IPv6);
-   }
+      if (Group.empty()) return ERR::Args;
 
-   ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
-   {
-      return iocp_leave_multicast_group(Handle.socket(), Group, IPv6);
+      std::string group(Group);
+      if (auto error = iocp_parse_multicast_group(group.c_str(), IPv6); error != ERR::Okay) return error;
+      return iocp_leave_multicast_group(Handle.socket(), group.c_str(), IPv6);
    }
 
    ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) override
@@ -552,17 +555,17 @@ public:
       }
 
       auto task = CurrentTask();
-      CSTRING value;
-      if (task->getEnv(HKEY_PROXY "ProxyEnable", &value) != ERR::Okay) {
+      std::string value;
+      if (task->getEnv(HKEY_PROXY "ProxyEnable", value) != ERR::Okay) {
          log.msg("Host does not have proxies enabled (registry setting: %s)", HKEY_PROXY);
          return ERR::Okay;
       }
 
-      bool enabled = (strtol(value, nullptr, 0) > 0);
+      bool enabled = (strtol(value.c_str(), nullptr, 0) > 0);
 
-      CSTRING servers;
-      if ((task->getEnv(HKEY_PROXY "ProxyServer", &servers) IS ERR::Okay) and servers[0]) {
-         log.msg("Host has defined default proxies: %s", servers);
+      std::string servers;
+      if ((task->getEnv(HKEY_PROXY "ProxyServer", servers) IS ERR::Okay) and (not servers.empty())) {
+         log.msg("Host has defined default proxies: %s", servers.c_str());
 
          auto proxy_entries = parse_proxy_string(servers, enabled);
 
@@ -618,9 +621,8 @@ public:
          }
 
          if (!port_name.empty()) {
-            CSTRING servers;
-            task->getEnv(HKEY_PROXY "ProxyServer", &servers);
-            std::string server_list = servers ? servers : "";
+            std::string server_list;
+            task->getEnv(HKEY_PROXY "ProxyServer", server_list);
 
             const std::string search_pattern = std::format("{}=", port_name);
             if (auto pos = server_list.find(search_pattern); pos != std::string::npos) {

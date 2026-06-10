@@ -131,7 +131,7 @@ if (proxy.ok()) {
       <name>GatewayFilter</name>
       <comment>The IP address of the gateway that the proxy is limited to.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The GatewayFilter defines the IP address of the gateway that this proxy is limited to. It is intended to limit the results of searches performed by the <method>Find</method> method.</p>
 <p>Gateway matching is not currently implemented.  Records that define this field are skipped by <method>Find</method>.</p>
@@ -152,7 +152,7 @@ if (proxy.ok()) {
       <name>NetworkFilter</name>
       <comment>The name of the network that the proxy is limited to.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The NetworkFilter defines the name of the network that this proxy is limited to. It is intended to limit the results of searches performed by the <method>Find</method> method.</p>
 <p>This filter must not be set if the proxy needs to work on an unnamed network.</p>
@@ -164,7 +164,7 @@ if (proxy.ok()) {
       <name>Password</name>
       <comment>The password to use when authenticating against the proxy server.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>If the proxy requires authentication, the user password may be set here to enable an automated authentication process. If the password is not set, a dialog will need to be used to prompt the user for the password before communicating with the proxy.</p>
       </description>
@@ -184,7 +184,7 @@ if (proxy.ok()) {
       <name>ProxyName</name>
       <comment>A human readable name for the proxy server entry.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>A proxy can be given a human readable name by setting this field.</p>
       </description>
@@ -205,7 +205,7 @@ if (proxy.ok()) {
       <name>Server</name>
       <comment>The destination address of the proxy server - may be an IP address or resolvable domain name.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>The domain name or IP address of the proxy server must be defined here.</p>
       </description>
@@ -225,7 +225,7 @@ if (proxy.ok()) {
       <name>Username</name>
       <comment>The username to use when authenticating against the proxy server.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>If the proxy requires authentication, the user name may be set here to enable an automated authentication process. If the username is not set, a dialog will be required to prompt the user for the user name before communicating with the proxy server.</p>
       </description>

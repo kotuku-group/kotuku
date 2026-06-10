@@ -23,13 +23,8 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 #define PRV_CLIENTSOCKET
 #define PRV_NETCLIENT
 
-#include <stdio.h>
-#include <sys/types.h>
 #include <unordered_set>
-#include <ctime>
 #include <type_traits>
-
-#include <string.h>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
@@ -54,11 +49,8 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
   #endif
 #endif
 
-#include <stack>
 #include <mutex>
 #include <shared_mutex>
-#include <span>
-#include <cstring>
 #include <thread>
 #include <optional>
 #include <string_view>
@@ -285,6 +277,40 @@ static void CLOSESOCKET_THREADED(SocketHandle Handle)
    auto thread_ptr = std::make_shared<std::jthread>();
    *thread_ptr = std::jthread([] (SocketHandle Handle) { network_platform().close_socket(Handle); }, Handle);
    glThreads.insert(thread_ptr);
+}
+
+//********************************************************************************************************************
+
+static bool unlink_client_socket(objNetClient *Client, objClientSocket *Socket)
+{
+   if ((not Client) or (not Socket)) return false;
+
+   bool linked = false;
+   for (auto scan=Client->Connections; scan; scan=scan->Next) {
+      if (scan IS Socket) {
+         linked = true;
+         break;
+      }
+   }
+
+   if (not linked) return false;
+
+   if (Socket->Prev) {
+      Socket->Prev->Next = Socket->Next;
+      if (Socket->Next) Socket->Next->Prev = Socket->Prev;
+   }
+   else {
+      Client->Connections = Socket->Next;
+      if (Socket->Next) Socket->Next->Prev = nullptr;
+   }
+
+   Socket->Prev = nullptr;
+   Socket->Next = nullptr;
+   Socket->Client = nullptr;
+
+   if (Client->TotalConnections > 0) Client->TotalConnections--;
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -669,7 +695,7 @@ if (StrToAddress("127.0.0.1", &addr) IS ERR::Okay) {
 </pre>
 
 -INPUT-
-cpp(strview) String:  A null-terminated string containing the IP Address in dotted format.
+strview String:  A null-terminated string containing the IP Address in dotted format.
 struct(IPAddress) Address: Must point to an !IPAddress structure that will be filled in.
 
 -ERRORS-
@@ -830,8 +856,8 @@ be the return value if all other arguments are `NULL`.
 
 -INPUT-
 obj(NetSocket) NetSocket: The target NetSocket object.
-cpp(strview) Command: Name of a command or option to set (case-sensitive, camel-case).
-cpp(strview) Value: Value to set for the command or option.
+strview Command: Name of a command or option to set (case-sensitive, camel-case).
+strview Value: Value to set for the command or option.
 
 -ERRORS-
 Okay:

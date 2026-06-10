@@ -22,12 +22,12 @@ static const struct FieldDef clNetSocketFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maConnect[] = { { "Address", FD_STR }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
+FDEF maConnect[] = { { "Address", FDF_CPPSTRING }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
 FDEF maGetLocalIPAddress[] = { { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
-FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "BytesSent", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FD_BUFFER|FD_PTR|FD_MUTABLE }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "BytesRead", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maJoinMulticastGroup[] = { { "Group", FD_STR }, { 0, 0 } };
-FDEF maLeaveMulticastGroup[] = { { "Group", FD_STR }, { 0, 0 } };
+FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "BytesSent", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "BytesRead", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maJoinMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maLeaveMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clNetSocketMethods[] = {
    { AC(-1), (APTR)NETSOCKET_Connect, "Connect", maConnect, sizeof(struct ns::Connect) },
@@ -39,10 +39,21 @@ static const struct MethodEntry clNetSocketMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR NETSOCKET_NewPlacement(extNetSocket *Self) {
+   new (Self) extNetSocket;
+   return ERR::Okay;
+}
+
+static ERR NETSOCKET_FreePlacement(extNetSocket *Self) {
+   Self->~extNetSocket();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetSocketActions[] = {
    { AC::DataFeed, NETSOCKET_DataFeed },
    { AC::Disable, NETSOCKET_Disable },
    { AC::Free, NETSOCKET_Free },
+   { AC::FreePlacement, NETSOCKET_FreePlacement },
    { AC::FreeWarning, NETSOCKET_FreeWarning },
    { AC::Init, NETSOCKET_Init },
    { AC::NewPlacement, NETSOCKET_NewPlacement },

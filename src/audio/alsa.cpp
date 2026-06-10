@@ -340,7 +340,7 @@ static ERR init_audio(extAudio *Self)
 
    if (Self->AudioBuffer) { FreeResource(Self->AudioBuffer); Self->AudioBuffer = nullptr; }
 
-   if (AllocMemory(Self->AudioBufferSize, MEM::DATA, &Self->AudioBuffer) IS ERR::Okay) {
+   if (AllocMemory(Self->AudioBufferSize, MEM::DATA, (APTR *)&Self->AudioBuffer) IS ERR::Okay) {
       if ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL) {
          log.msg("Applying user configured volumes.");
 
@@ -352,7 +352,7 @@ static ERR init_audio(extAudio *Self)
             for (j=0; j < (int)oldctl.size(); j++) {
                if (volctl[i].Name == oldctl[j].Name) {
                   setvol.Index   = i;
-                  setvol.Name    = nullptr;
+                  setvol.Name    = std::string_view{};
                   setvol.Flags   = SVF::NIL;
                   setvol.Channel = -1;
                   setvol.Volume  = oldctl[j].Channels[0];
@@ -367,7 +367,7 @@ static ERR init_audio(extAudio *Self)
 
             if (j IS (int)oldctl.size()) {
                setvol.Index   = i;
-               setvol.Name    = nullptr;
+               setvol.Name    = std::string_view{};
                setvol.Flags   = SVF::NIL;
                setvol.Channel = -1;
                setvol.Volume  = 0.8;

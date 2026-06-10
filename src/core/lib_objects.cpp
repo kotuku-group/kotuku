@@ -148,81 +148,70 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 }
 
 //********************************************************************************************************************
+// Releases the heap block backing an object.  Object memory is allocated directly in NewObject() and must only be
+// released once all object locks and contexts have been released (see object_free()).
+
+static void free_object_block(OBJECTPTR Object)
+{
+   if (not Object) return;
+   Object->~Object();
+   aligned_block_free(Object);
+}
+
+//********************************************************************************************************************
 // Object termination hook for FreeResource()
 
-static ERR object_free(Object *Object)
+ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
 
-   ScopedObjectAccess objlock(Object);
-   if (not objlock.granted()) return ERR::AccessObject;
+   {
+      ScopedObjectAccess objlock(Object);
+      if (not objlock.granted()) return ERR::AccessObject;
 
-   extObjectContext new_context(Object, AC::Free);
+      extObjectContext new_context(Object, AC::Free);
 
-   auto mc = Object->ExtClass;
-   if (not mc) {
-      log.trace("Object %p #%d is missing its class pointer.", Object, Object->UID);
-      return ERR::Okay;
-   }
+      auto mc = Object->ExtClass;
 
-   // If the object is locked then we mark it for collection and return.
-   // Collection is achieved via the message queue for maximum safety.
+      // If the object is locked then we mark it for collection and return.
+      // Collection is achieved via the message queue for maximum safety.
 
-   if (((Object->Queue > 1) or (Object->isPinned())) and (not Object->defined(NF::PERMIT_TERMINATE))) {
-      log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
-      if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
-      Object->setFlag(NF::FREE_ON_UNLOCK);
-      return ERR::InUse;
-   }
+      if (((Object->Queue > 1) or (Object->isPinned())) and (not Object->defined(NF::PERMIT_TERMINATE))) {
+         log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
+         if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
+         Object->setFlag(NF::FREE_ON_UNLOCK);
+         Resource.CollectOnUnlock = true; // Defer destruction until the object is unlocked
+         return ERR::InUse;
+      }
 
-   if (Object->terminating()) {
-      log.trace("Object already being terminated.");
-      return ERR::InUse;
-   }
+      if (Object->terminating()) {
+         log.trace("Object already being terminated.");
+         return ERR::InUse;
+      }
 
 #ifndef NDEBUG
-   if (Object->ActionDepth > 0) {
-      // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
-      // is considered a critical error.
-      log.error("Object in use; marking for collection.");
-      if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-      if (not Object->defined(NF::COLLECT)) {
-         Object->setFlag(NF::COLLECT);
-         SendMessage(MSGID::FREE, MSF::NIL, &Object->UID, sizeof(OBJECTID));
+      if (Object->ActionDepth > 0) {
+         // The object is still in use.  This indicates that the object wasn't locked with LockObject() or pinned, which
+         // is considered a critical error.
+         log.error("Cannot free object #%d; current state: in use without a lock.", Object->UID);
+         return ERR::InUse;
       }
-      return ERR::InUse;
-   }
 #endif
 
-   if (Object->classID() IS CLASSID::METACLASS)   log.branch("%s, Owner: %d", Object->className(), Object->ownerID());
-   else if (Object->classID() IS CLASSID::MODULE) log.branch("%s, Owner: %d", ((extModule *)Object)->Name.c_str(), Object->ownerID());
-   else if (Object->Name[0])                      log.branch("Name: %s, Owner: %d", Object->Name, Object->ownerID());
-   else log.branch("Owner: %d", Object->ownerID());
+      if (Object->classID() IS CLASSID::METACLASS)   log.branch("%s, Owner: %d", Object->className(), Object->ownerID());
+      else if (Object->classID() IS CLASSID::MODULE) log.branch("%s, Owner: %d", ((extModule *)Object)->Name.c_str(), Object->ownerID());
+      else if (Object->Name[0])                      log.branch("Name: %s, Owner: %d", Object->Name, Object->ownerID());
+      else log.branch("Owner: %d", Object->ownerID());
 
-   // If the object wants to be warned when the free process is about to be executed, it will subscribe to the
-   // FreeWarning action.  The process can be aborted by returning ERR::InUse.
+      // If the object wants to be warned when the free process is about to be executed, it will subscribe to the
+      // FreeWarning action.  The process can be aborted by returning ERR::InUse.
 
-   if (mc->ActionTable[int(AC::FreeWarning)].PerformAction) {
-      if (mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
-         if (Object->collecting()) {
-            // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
-            // from locking up the shutdown process).
-
-            log.msg("Object will be destroyed despite being in use.");
-         }
-         else {
-            if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-            return ERR::InUse;
-         }
-      }
-   }
-
-   if (mc->Base) { // Derived class detected, so call the base class
-      if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
-         if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
+      if (mc->ActionTable[int(AC::FreeWarning)].PerformAction) {
+         if (mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
             if (Object->collecting()) {
-               // If the object is marked for deletion then it is not possible to avoid destruction (this prevents
-               // objects from locking up the shutdown process).
+               // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
+               // from locking up the shutdown process).
+
                log.msg("Object will be destroyed despite being in use.");
             }
             else {
@@ -231,79 +220,127 @@ static ERR object_free(Object *Object)
             }
          }
       }
-   }
 
-   // Object destruction is guaranteed; queued async actions can be cancelled safely.
-
-   drain_action_queue(Object->UID, true);
-
-   // Mark the object as being in the free process.  The mark prevents any further access to the object via
-   // AccessObject().  Classes may also use the flag to check if an object is in the process of being freed.
-
-   Object->setFlag(NF::FREE);
-   Object->clearFlag(NF::FREE_ON_UNLOCK);
-
-   NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
-
-   if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
-      mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-   }
-
-   if (mc->Base) { // Derived class detected, so call the base class
-      if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
-         mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-      }
-   }
-
-   if (Object->NotifyFlags.load()) {
-      const std::lock_guard<std::recursive_mutex> lock(glSubLock);
-      glSubscriptions.erase(Object->UID);
-   }
-
-   if (Object->DerivedPtr) {
-      if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
-      Object->DerivedPtr = nullptr;
-   }
-
-   free_children(Object);
-
-   if (Object->defined(NF::TIMER_SUB)) {
-      if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
-         for (auto it=glTimers.begin(); it != glTimers.end(); ) {
-            if (it->SubscriberID IS Object->UID) {
-               log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
-                  mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
-               if (it->Routine.isScript()) {
-                  ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
+      if (mc->Base) { // Derived class detected, so call the base class
+         if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
+            if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
+               if (Object->collecting()) {
+                  // If the object is marked for deletion then it is not possible to avoid destruction (this prevents
+                  // objects from locking up the shutdown process).
+                  log.msg("Object will be destroyed despite being in use.");
                }
-               it = glTimers.erase(it);
+               else {
+                  if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
+                  return ERR::InUse;
+               }
             }
-            else it++;
          }
       }
-   }
 
-   if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Derived class detected
-   if (mc->OpenCount > 0) mc->OpenCount--;
+      // Object destruction is guaranteed; queued async actions can be cancelled safely.
 
-   if (Object->Name[0]) { // Remove the object from the name lookup list
-      if (auto olock = std::unique_lock{glmObjectLookup, 4s}) {
-         remove_object_hash(Object);
+      drain_action_queue(Object->UID, true);
+
+      // Mark the object as being in the free process.  The mark prevents any further access to the object via
+      // AccessObject().  Classes may also use the flag to check if an object is in the process of being freed.
+
+      Object->setFlag(NF::FREE);
+      Object->clearFlag(NF::FREE_ON_UNLOCK);
+
+      NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
+
+      if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
+         mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
       }
-   }
 
-   // Clear the object header.  This helps to raise problems in any areas of code that may attempt to use the object
-   // after it has been destroyed.
+      if (mc->Base) { // Derived class detected, so call the base class
+         if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
+            mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
+         }
+      }
 
-   Object->Class = nullptr;
-   Object->UID   = 0;
+      if (mc->ActionTable[int(AC::FreePlacement)].PerformAction) {
+         mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      }
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) { // Fall-back to base class
+         mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      }
+
+      if (Object->NotifyFlags.load()) {
+         const std::lock_guard<std::recursive_mutex> lock(glSubLock);
+         glSubscriptions.erase(Object->UID);
+      }
+
+      if (Object->DerivedPtr) {
+         if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
+         Object->DerivedPtr = nullptr;
+      }
+
+      free_children(Object);
+
+      if (Object->defined(NF::TIMER_SUB)) {
+         if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
+            for (auto it=glTimers.begin(); it != glTimers.end(); ) {
+               if (it->SubscriberID IS Object->UID) {
+                  log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
+                     mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
+                  if (it->Routine.isScript()) {
+                     ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
+                  }
+                  it = glTimers.erase(it);
+               }
+               else it++;
+            }
+         }
+      }
+
+      if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Derived class detected
+      if (mc->OpenCount > 0) mc->OpenCount--;
+
+      if (Object->Name[0]) { // Remove the object from the name lookup list
+         if (auto olock = std::unique_lock{glmObjectLookup, 4s}) {
+            remove_object_hash(Object);
+         }
+      }
+
+      // Clear the object header to help raise use-after-free errors.
+
+      Object->Class = nullptr;
+      Object->UID   = 0;
+
+      {
+         std::lock_guard lock(glmObjects);
+         glObjects.erase(Resource.ResourceID);
+      }
+   } // Object lock
+
+   free_object_block(Object);
    return ERR::Okay;
 }
 
-static ResourceManager glResourceObject = {
-   "Object",
-   (ERR (*)(APTR))&object_free
-};
+//********************************************************************************************************************
+
+void object_add_child(ResourceRecord &Parent, ResourceRecord &Child)
+{
+   std::lock_guard lock(glmObjects);
+
+   if (auto parent_object = glObjects.find(Parent.ResourceID); parent_object != glObjects.end()) {
+      if (Child.Manager IS &glResourceObject) parent_object->second.Children.insert(Child.ResourceID);
+      else parent_object->second.Resources.insert(Child.ResourceID);
+   }
+}
+
+//********************************************************************************************************************
+
+void object_remove_child(ResourceRecord &Parent, ResourceRecord &Child)
+{
+   std::lock_guard lock(glmObjects);
+
+   if (auto object_rec = glObjects.find(Parent.ResourceID); object_rec != glObjects.end()) {
+      object_rec->second.Resources.erase(Child.ResourceID);
+      object_rec->second.Children.erase(Child.ResourceID);
+   }
+}
 
 //********************************************************************************************************************
 
@@ -320,68 +357,54 @@ constexpr CSTRING action_name(OBJECTPTR Object, ACTIONID ActionID)
 }
 
 //********************************************************************************************************************
-// Free all private memory resources tracked to an object.
+// Free all private memory resources tracked to an object.  Called from object_free()
 
 static void free_children(OBJECTPTR Object)
 {
    kt::Log log;
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      if (not glObjectChildren[Object->UID].empty()) {
-         const auto children = glObjectChildren[Object->UID]; // Take an immutable copy of the resource list
+   std::vector<RESOURCEID> resources;
 
-         for (const auto id : children) {
-            auto it = glPrivateMemory.find(id);
-            if ((it IS glPrivateMemory.end()) or (not it->second.Address)) continue;
-            auto &mem = it->second;
+   {
+      std::lock_guard resource_lock(glmResources);
+      std::lock_guard object_lock(glmObjects);
 
-            if (((mem.Flags & MEM::COLLECT) != MEM::NIL) or (not mem.Object)) continue;
+      auto object_rec = glObjects.find(Object->UID);
+      if (object_rec IS glObjects.end()) return;
 
-            if ((mem.Object->Owner) and (mem.Object->Owner != Object)) {
-               // Indicates that glObjectChildren[Object->UID] doesn't coincide with the owner declared by the child.
-               // Preference is given to the child object, which means glObjectChildren hasn't been kept up to date.
-               log.warning("Object #%d has stale association with child #%d (owned by #%d)", Object->UID, mem.Object->UID, mem.Object->ownerID());
-               continue;
-            }
+      // Free all children associated with this object.
 
-            if (not mem.Object->defined(NF::FREE_ON_UNLOCK)) {
-               if (mem.Object->defined(NF::LOCAL)) {
-                  log.warning("Found unfreed child object #%d (class %s) belonging to %s object #%d.", mem.Object->UID, ResolveClassID(mem.Object->classID()), Object->className(), Object->UID);
+      if (not object_rec->second.Children.empty()) {
+         for (const auto id : object_rec->second.Children) {
+            auto child_rec = glObjects.find(id);
+            if ((child_rec IS glObjects.end()) or (not child_rec->second.Object)) continue;
+
+            auto child = child_rec->second.Object;
+            if (not child->collecting()) {
+               if (child->defined(NF::LOCAL)) {
+                  log.warning("Found unfreed child object #%d (class %s) belonging to %s object #%d.", child->UID, ResolveClassID(child->classID()), Object->className(), Object->UID);
                }
-               FreeResource(mem.Object);
+               resources.push_back(child->UID);
             }
          }
       }
 
-      if (not glObjectMemory[Object->UID].empty()) {
-         const auto list = glObjectMemory[Object->UID]; // Take an immutable copy of the resource list
+      // Free all non-object resources associated with this object
 
-         for (const auto id : list) {
-            auto it = glPrivateMemory.find(id);
-            if ((it IS glPrivateMemory.end()) or (not it->second.Address)) continue;
-            auto &mem = it->second;
+      if (not object_rec->second.Resources.empty()) {
+         for (const auto id : object_rec->second.Resources) {
+            auto resource = glResources.find(id);
+            if (resource IS glResources.end()) continue;
+            auto &rec = resource->second;
+            if (rec.CollectOnUnlock or rec.Terminating) continue;
 
-            if (((mem.Flags & MEM::COLLECT) != MEM::NIL) or (not mem.Address)) continue;
-
-            if (glLogLevel >= 3) {
-               if ((mem.Flags & MEM::STRING) != MEM::NIL) {
-                  log.warning("Unfreed string \"%.40s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-               }
-               else if ((mem.Flags & MEM::MANAGED) != MEM::NIL) {
-                  auto res = (ResourceManager **)((char *)mem.Address - sizeof(int) - sizeof(int) - sizeof(ResourceManager *));
-                  if (res[0]) log.warning("Unfreed %s resource at %p.", res[0]->Name, mem.Address);
-                  else log.warning("Unfreed resource at %p.", mem.Address);
-               }
-               else log.warning("Unfreed memory block %p, Size %d", mem.Address, mem.Size);
-            }
-
-            if (FreeResource(mem.Address) != ERR::Okay) log.warning("Error freeing tracked address %p", mem.Address);
+            if (glLogLevel >= 3) log.warning("Unfreed %s resource #%d", rec.Manager->Name, rec.ResourceID);
+            resources.push_back(id);
          }
       }
-
-      glObjectChildren.erase(Object->UID);
-      glObjectMemory.erase(Object->UID);
    }
+
+   for (const auto &id : resources) FreeResource(id);
 }
 
 static void launch_async_thread(OBJECTPTR, AC, int, std::vector<int8_t>, FUNCTION);
@@ -949,8 +972,7 @@ drained without execution.
 Callbacks for queued actions will receive `ERR::DoesNotExist` to indicate cancellation.
 
 -INPUT-
-array(oid) Objects: A list of object IDs to cancel.
-arraysize Size: Total number of elements in the `Objects` list.
+vector(oid) Objects: A list of object IDs to cancel.
 
 -ERRORS-
 Okay
@@ -961,15 +983,11 @@ blocking
 
 *********************************************************************************************************************/
 
-ERR AsyncCancel(OBJECTID *Objects, int Size)
+ERR AsyncCancel(kt::vector<OBJECTID> &Objects)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Objects) return ERR::NullArgs;
-
-   for (auto i = 0; i < Size; i++) {
-      auto object_id = Objects[i];
-
+   for (auto object_id : Objects) {
       log.traceBranch("Cancelling async actions for object #%d", object_id);
 
       // Wake the thread with Stop=true to interrupt any active async operation.
@@ -1039,8 +1057,7 @@ Only one AsyncWait() call may be active at any time.  If a second call is made w
 `ERR::InUse` is returned.
 
 -INPUT-
-array(oid) Objects: A list of object IDs to wait on.
-arraysize Size: Total number of elements in the `Objects` list.
+vector(oid) Objects: A list of object IDs to wait on.
 int TimeOut: Maximum time to wait in milliseconds, or `-1` for an indefinite wait.
 
 -ERRORS-
@@ -1059,11 +1076,9 @@ main-thread-only, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut)
+ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut)
 {
    kt::Log log(__FUNCTION__);
-
-   if (not Objects) return log.warning(ERR::NullArgs);
 
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
@@ -1084,8 +1099,7 @@ ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut)
    {
       std::lock_guard<std::mutex> ql(glmActionQueue);
       std::lock_guard<std::mutex> wl(glmAsyncWait);
-      for (int i=0; i < Size; i++) {
-         auto id = Objects[i];
+      for (auto id : Objects) {
          if (glAsyncWaitTargets.insert(id).second and glActiveAsyncObjects.contains(id)) {
             glAsyncWaitCounter.fetch_add(1, std::memory_order_relaxed);
          }
@@ -1212,49 +1226,16 @@ ERR CheckAction(OBJECTPTR Object, ACTIONID ActionID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-CheckObjectExists: Checks if a particular object is still available in the system.
-
-The CheckObjectExists() function verifies the presence of any object created by ~NewObject(). Objects that are marked
-for termination are considered to no longer exist for the purposes of this function, and will return `ERR::False`.
-
--INPUT-
-oid Object: The object identity to verify.
-
--ERRORS-
-True:  The object exists.
-False: The object ID does not exist.
-LockFailed:
-
--TAGS-
-blocking, pure-query
-
-*********************************************************************************************************************/
-
-ERR CheckObjectExists(OBJECTID ObjectID)
-{
-   if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto mem = glPrivateMemory.find(ObjectID); (mem != glPrivateMemory.end()) and (mem->second.Object)) {
-         return mem->second.Object->defined(NF::FREE_ON_UNLOCK) ? ERR::False : ERR::True;
-      }
-      return ERR::False;
-   }
-   else return kt::Log(__FUNCTION__).warning(ERR::LockFailed);
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
 ClassDatabase: Returns an array of all classes known to the system.
 
 Call ClassDatabase() to obtain an array of all classes known to the system.
 
 -INPUT-
-!array(struct(*ClassRecord)) Classes: A pointer to an array of class records is returned here.
+^&vector(struct(*ClassRecord)) Classes: A pointer to an array of class records is returned here.
 
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
 SystemLocked
 
 -TAGS-
@@ -1262,25 +1243,16 @@ caller-owns-result, creates-resource, blocking
 
 *********************************************************************************************************************/
 
-ERR ClassDatabase(ClassRecord ***Classes)
+ERR ClassDatabase(kt::vector<ClassRecord *> *Classes)
 {
-   kt::Log log(__FUNCTION__);
+   if (not Classes) return ERR::NullArgs;
 
-   if (not Classes) return log.warning(ERR::NullArgs);
-
-   *Classes = nullptr;
+   Classes->clear();
    if (auto lock = std::unique_lock{glmClassDB, 3s}) {
-      ClassRecord **array = nullptr;
-      if (AllocMemory(sizeof(struct ClassRecord *) * (glClassDB.size() + 1), MEM::DATA|MEM::NO_CLEAR, &array) IS ERR::Okay) {
-         int i = 0;
-         for (auto &entry : glClassDB) array[i++] = &entry.second;
-         array[i++] = nullptr;
-         *Classes = array;
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::AllocMemory);
+      for (auto &entry : glClassDB) Classes->push_back(&entry.second);
+      return ERR::Okay;
    }
-   else return log.warning(ERR::SystemLocked);
+   else return kt::Log().warning(ERR::SystemLocked);
 }
 
 /*********************************************************************************************************************
@@ -1415,7 +1387,7 @@ FindObject("SystemPointer", CLASSID::POINTER, &id);
 If FindObject() cannot find any matching objects then it will return an error code.
 
 -INPUT-
-cpp(strview) Name: The name of an object to search for.
+strview Name: The name of an object to search for.
 cid ClassID:   Optional.  Set to a class ID to filter the results down to a specific class type.
 &oid ObjectID: An object id variable for storing the result.
 
@@ -1543,13 +1515,10 @@ api-owns-result, nullable-result, blocking
 
 OBJECTPTR GetObjectPtr(OBJECTID ObjectID)
 {
-   if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto mem = glPrivateMemory.find(ObjectID); mem != glPrivateMemory.end()) {
-         if (((mem->second.Flags & MEM::OBJECT) != MEM::NIL) and (mem->second.Object)) {
-            if (mem->second.Object->UID IS ObjectID) {
-               return mem->second.Object;
-            }
-         }
+   {
+      std::unique_lock lock(glmObjects);
+      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+         if ((object_rec->second.Object) and (object_rec->second.Object->UID IS ObjectID)) return object_rec->second.Object;
       }
    }
 
@@ -1579,9 +1548,10 @@ blocking, pure-query
 
 OBJECTID GetOwnerID(OBJECTID ObjectID)
 {
-   if (auto lock = std::unique_lock{glmMemory}) {
-      if (auto mem = glPrivateMemory.find(ObjectID); mem != glPrivateMemory.end()) {
-         if (mem->second.Object) return mem->second.Object->ownerID();
+   {
+      std::unique_lock lock(glmObjects);
+      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+         if (object_rec->second.Object) return object_rec->second.Object->ownerID();
       }
    }
    return 0;
@@ -1760,7 +1730,7 @@ targeted object.
 
 -INPUT-
 oid Object: An object to query.
-ptr(cpp(array(resource(ChildEntry)))) List: Must refer to an array of !ChildEntry structures.
+ptr(vector(resource(ChildEntry))) List: Must refer to an array of !ChildEntry structures.
 
 -ERRORS-
 Okay: Zero or more children were found and listed.
@@ -1780,20 +1750,20 @@ ERR ListChildren(OBJECTID ObjectID, kt::vector<ChildEntry> *List)
 
    log.trace("#%d, List: %p", ObjectID, List);
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto id : glObjectChildren[ObjectID]) {
-         auto mem = glPrivateMemory.find(id);
-         if (mem IS glPrivateMemory.end()) continue;
+   std::unique_lock lock(glmObjects);
+   if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+      for (const auto id : object_rec->second.Children) {
+         auto child_rec = glObjects.find(id);
+         if (child_rec IS glObjects.end()) continue;
 
-         if (auto child = mem->second.Object) {
-            if (not child->defined(NF::LOCAL)) {
-               List->emplace_back(child->UID, child->classID());
-            }
+         auto child = child_rec->second.Object;
+         if (not child) continue;
+         if (not child->defined(NF::LOCAL)) {
+            List->emplace_back(child->UID, child->classID());
          }
       }
-      return ERR::Okay;
    }
-   else return ERR::LockFailed;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1857,19 +1827,23 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
       log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(),
-         glPrivateIDCounter.load(std::memory_order_relaxed), int(Flags));
+         glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
 
    OBJECTPTR head = nullptr;
-   MEMORYID head_id;
 
-   if (AllocMemory(mc->Size, MEM::NO_CLEAR|MEM::MANAGED|MEM::OBJECT|MEM::NO_LOCK|(((Flags & NF::UNTRACKED) != NF::NIL) ? MEM::UNTRACKED : MEM::NIL), (APTR *)&head, &head_id) IS ERR::Okay) {
-      SetResourceMgr(head, &glResourceObject);
+   // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
+   // glMemory.  Only 8-byte alignment is required for the object header.
+
+   if (APTR start_mem = aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
+      head = (OBJECTPTR)start_mem;
+
+      OBJECTID object_id = glResourceID++;
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // NB: Clients are not permitted to make allocations that pass through AllocMemory() in NewPlacement due to
+      // NB: Clients are not permitted to allocate Kotuku resources in NewPlacement due to
       // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
 
       ERR error = ERR::Okay;
@@ -1883,13 +1857,20 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       }
 
       if (error != ERR::Okay) {
-         FreeResource(head);
+         free_object_block(head);
          return error;
       }
 
-      head->UID     = head_id;
+      head->UID     = object_id;
       head->Class   = (extMetaClass *)mc;
       head->setFlag(Flags);
+
+      {
+         std::lock_guard resource_lock(glmResources);
+         std::lock_guard object_lock(glmObjects);
+         glResources.insert_or_assign(object_id, ResourceRecord(object_id, head, 0, &glResourceObject));
+         glObjects.insert_or_assign(object_id, ObjectRecord(head));
+      }
 
       // Tracking for our new object is configured here.
 
@@ -2072,8 +2053,6 @@ Okay:
 NullArgs:
 OutOfRange: The `Action` ID is invalid.
 MissingClass:
-InvalidData:
-NoMatchingObject:
 
 -TAGS-
 copies-input, blocking
@@ -2116,7 +2095,6 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 
    if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer.data(), buffer.size()); error != ERR::Okay) {
-      if (error IS ERR::MemoryDoesNotExist) return ERR::NoMatchingObject;
       return error;
    }
    else return error;
@@ -2131,7 +2109,7 @@ This function will resolve a class `Name` to its `CLASSID` UID and verifies that
 names are case insensitive.
 
 -INPUT-
-cpp(strview) Name: The name of the class that requires resolution.
+strview Name: The name of the class that requires resolution.
 
 -RESULT-
 cid: Returns the class ID identified from the class name, or `NULL` if the class could not be found.
@@ -2255,27 +2233,43 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
 
    //if (Object->Owner) log.trace("SetOwner:","Changing the owner for object %d from %d to %d.", Object->UID, Object->ownerID(), Owner->UID);
 
-   // Track the object's memory header to the new owner.
-   // NB: SetOwner() is not the only modifier of glObjectChildren - AllocMemory() will have preset glObjectChildren
-   // on the initial allocation of the child's Object structure.  Additionally, the memory record is considered to be
-   // the definitive source of ownership information.
+   // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glPrivateMemory.find(Object->UID);
-      if (mem IS glPrivateMemory.end()) return log.warning(ERR::SystemCorrupt);
+   std::unique_lock lock(glmResources);
+   std::lock_guard object_lock(glmObjects);
+   auto object_rec   = glObjects.find(Object->UID);
+   auto resource_rec = glResources.find(Object->UID);
+   auto owner_rec    = glResources.find(Owner->UID);
 
-      // Remove reference from the now previous owner
-      if (auto it = glObjectChildren.find(mem->second.OwnerID); it != glObjectChildren.end()) {
-         it->second.erase(Object->UID);
-      }
+   if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return log.warning(ERR::SystemCorrupt);
 
-      mem->second.OwnerID = Owner->UID;
-      Object->Owner = Owner;
-
-      glObjectChildren[Owner->UID].insert(Object->UID);
-      return ERR::Okay;
+   if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
+      (not owner_rec->second.Manager->AddChild)) {
+      return log.warning(ERR::SystemCorrupt);
    }
-   else return log.warning(ERR::SystemLocked);
+
+   auto &resource = resource_rec->second;
+
+   if (resource.OwnerManagesChildren) {
+      if (auto previous_owner = glResources.find(resource.OwnerID);
+         (previous_owner != glResources.end()) and (previous_owner->second.Manager) and
+         (previous_owner->second.Manager->RemoveChild)) {
+         previous_owner->second.Manager->RemoveChild(previous_owner->second, resource);
+      }
+   }
+   else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
+      previous_owner->second.Children.erase(Object->UID);
+   }
+
+   object_rec->second.OwnerID = Owner->UID;
+   resource.OwnerID = Owner->UID;
+   resource.OwnerManagesChildren = false;
+   Object->Owner = Owner;
+
+   owner_rec->second.Manager->AddChild(owner_rec->second, resource);
+   resource.OwnerManagesChildren = true;
+
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2292,7 +2286,7 @@ This function does not acquire an object lock, that is the responsibility of the
 
 -INPUT-
 obj Object: Object to host the current context.  If NULL, the current context is popped.
-ptr(struct(Field)) Field: Active field, if any.
+struct(Field) Field: Active field, if any.
 int(AC) ActionID: Active action, if any.
 
 *********************************************************************************************************************/
@@ -2317,7 +2311,7 @@ an underscore.
 
 -INPUT-
 obj Object: The target object.
-cpp(strview) Name: The new name for the object, or an empty string to clear an existing name.
+strview Name: The new name for the object, or an empty string to clear an existing name.
 
 -ERRORS-
 Okay:

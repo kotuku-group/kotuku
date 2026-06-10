@@ -151,7 +151,7 @@ extern int   (lua_pushthread) (lua_State *L);
 enum class AET : uint8_t;
 
 extern void   lua_gettable(lua_State *L, int idx);
-extern void   lua_getfield(lua_State *L, int idx, const char *k);
+extern void   lua_getfield(lua_State *L, int idx, std::string_view k);
 extern void   lua_rawget(lua_State *L, int idx);
 extern void   lua_rawgeti(lua_State *L, int idx, int n);
 extern void   lua_createtable(lua_State *L, int narr, int nrec);
@@ -180,7 +180,6 @@ extern int   (lua_setfenv) (lua_State *L, int idx);
 
 extern void lua_call(lua_State *L, int nargs, int nresults);
 extern int  lua_pcall(lua_State *L, int nargs, int nresults, int errfunc);
-extern int  lua_cpcall(lua_State *L, lua_CFunction func, void *ud);
 extern int  lua_load(lua_State *L, std::string_view, const char *chunk_name);
 extern int  lua_dump(lua_State *L, lua_Writer writer, void *data);
 
@@ -231,7 +230,7 @@ inline void lua_pushliteral(lua_State *L, const char (&S)[N]) {
    lua_pushlstring(L, S, N - 1);
 }
 
-inline void lua_getglobal(lua_State *L, const char *S) {
+inline void lua_getglobal(lua_State *L, std::string_view S) {
    lua_getfield(L, LUA_GLOBALSINDEX, S);
 }
 

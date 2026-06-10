@@ -404,7 +404,6 @@ static ERR XQUERY_Free(extXQuery *Self)
       Self->ResolveVariable.clear();
    }
 
-   Self->~extXQuery();
    return ERR::Okay;
 }
 
@@ -489,9 +488,9 @@ The structure of the returned XML document is as follows, with each matching fun
  ```
 
 -INPUT-
-cstr Name: The name of the function or functions to inspect (supports wildcards).
+strview Name: The name of the function or functions to inspect (supports wildcards).
 int(XIF) ResultFlags: Bitmask controlling the returned information.
-&!cstr Result: Receives a serialised XML document describing the function(s).
+^&string Result: Receives a serialised XML document describing the function(s).
 
 -TAGS-
 mutates-object, caller-owns-result, null-terminated-result
@@ -507,7 +506,8 @@ NullArgs
 static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions *Args)
 {
    kt::Log log;
-   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
+   Args->Result->clear();
 
    if (Self->StaleBuild) {
       if (auto err = build_query(Self); err != ERR::Okay) return err;
@@ -517,7 +517,7 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
 
    auto flags = Args->ResultFlags;
    if (flags IS XIF::NIL) flags = XIF::ALL;
-   auto name_filter = Args->Name ? Args->Name : "*";
+   auto name_filter = Args->Name.empty() ? std::string_view("*") : Args->Name;
 
    // Extract function information based on ResultFlags
    auto process_function = [&](const XQueryProlog &Prolog, const XQueryFunction &Function) {
@@ -594,20 +594,10 @@ static ERR XQUERY_InspectFunctions(extXQuery *Self, struct xq::InspectFunctions 
 
       if (not stream.tellp()) return log.warning(ERR::Search);
 
-      std::string result = stream.str();
-      Args->Result = kt::strclone(result.c_str());
-      if (Args->Result) return ERR::Okay;
-      else return ERR::AllocMemory;
+      *Args->Result = stream.str();
+      return ERR::Okay;
    }
    else return log.warning(ERR::Search);
-}
-
-//********************************************************************************************************************
-
-static ERR XQUERY_NewPlacement(extXQuery *Self)
-{
-   new (Self) extXQuery;
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -623,7 +613,7 @@ The C++ function prototype is `ERR (*XQuery, std::string_view FunctionName, cons
 Script callbacks are not currently supported.
 
 -INPUT-
-cstr FunctionName: The name of the function to register (e.g., "custom-function").
+strview FunctionName: The name of the function to register (e.g., "custom-function").
 ptr(func) Callback: The callback function to register for FunctionName.
 
 -TAGS-
@@ -643,11 +633,11 @@ static ERR XQUERY_RegisterFunction(extXQuery *Self, struct xq::RegisterFunction 
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if ((not Args->FunctionName) or (!Args->FunctionName[0])) return log.warning(ERR::NullArgs);
+   if (Args->FunctionName.empty()) return log.warning(ERR::NullArgs);
    if ((not Args->Callback) or (not Args->Callback->defined())) return log.warning(ERR::NullArgs);
    if (not Args->Callback->isC()) return log.warning(ERR::NoSupport);
 
-   Self->RegisteredFunctions[Args->FunctionName] = *Args->Callback;
+   Self->RegisteredFunctions[std::string(Args->FunctionName)] = *Args->Callback;
    return ERR::Okay;
 }
 

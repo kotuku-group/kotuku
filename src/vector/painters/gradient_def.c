@@ -59,8 +59,19 @@ static const struct FieldDef clVectorGradientColourSpace[] = {
    { nullptr, 0 }
 };
 
+static ERR VECTORGRADIENT_NewPlacement(extVectorGradient *Self) {
+   new (Self) extVectorGradient;
+   return ERR::Okay;
+}
+
+static ERR VECTORGRADIENT_FreePlacement(extVectorGradient *Self) {
+   Self->~extVectorGradient();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorGradientActions[] = {
    { AC::Free, VECTORGRADIENT_Free },
+   { AC::FreePlacement, VECTORGRADIENT_FreePlacement },
    { AC::Init, VECTORGRADIENT_Init },
    { AC::NewObject, VECTORGRADIENT_NewObject },
    { AC::NewPlacement, VECTORGRADIENT_NewPlacement },

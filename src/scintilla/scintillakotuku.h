@@ -18,7 +18,7 @@ class extScintilla : public objScintilla {
    objFont *BIFont;          // Bold-Italic version of the current font
    ScintillaKTK *API;
    APTR   prvKeyEvent;
-   STRING StringBuffer;
+   std::string StringBuffer;
    int    LongestLine;         // Longest line in the document
    int    LongestWidth;        // Pixel width of the longest line
    int    TabWidth;

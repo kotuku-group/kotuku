@@ -788,14 +788,14 @@ static ERR xq_prepare_query(parser *Parser, std::string_view Expression, XQEval 
    }
 
    query->setResolveVariable(C_FUNCTION(xq_resolve_runtime_scope, Parser));
-   query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION.data(), C_FUNCTION(xq_document_object_exists, Parser));
-   query->registerFunction(XQ_OBJECT_ID_FUNCTION.data(), C_FUNCTION(xq_document_object_id, Parser));
-   query->registerFunction(XQ_SELF_ID_FUNCTION.data(), C_FUNCTION(xq_document_self_id, Parser));
-   query->registerFunction(XQ_UID_FUNCTION.data(), C_FUNCTION(xq_document_uid, Parser));
-   query->registerFunction(XQ_PLATFORM_FUNCTION.data(), C_FUNCTION(xq_document_platform, Parser));
-   query->registerFunction(XQ_FIELD_FUNCTION.data(), C_FUNCTION(xq_document_field, Parser));
-   query->registerFunction(XQ_KEY_FUNCTION.data(), C_FUNCTION(xq_document_key, Parser));
-   query->registerFunction(XQ_TEMPLATE_CONTENT_FUNCTION.data(), C_FUNCTION(xq_document_template_content, Parser));
+   query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION, C_FUNCTION(xq_document_object_exists, Parser));
+   query->registerFunction(XQ_OBJECT_ID_FUNCTION, C_FUNCTION(xq_document_object_id, Parser));
+   query->registerFunction(XQ_SELF_ID_FUNCTION, C_FUNCTION(xq_document_self_id, Parser));
+   query->registerFunction(XQ_UID_FUNCTION, C_FUNCTION(xq_document_uid, Parser));
+   query->registerFunction(XQ_PLATFORM_FUNCTION, C_FUNCTION(xq_document_platform, Parser));
+   query->registerFunction(XQ_FIELD_FUNCTION, C_FUNCTION(xq_document_field, Parser));
+   query->registerFunction(XQ_KEY_FUNCTION, C_FUNCTION(xq_document_key, Parser));
+   query->registerFunction(XQ_TEMPLATE_CONTENT_FUNCTION, C_FUNCTION(xq_document_template_content, Parser));
 
    if (query->setStatement(eval_expression) != ERR::Okay) {
       Self->Error = ERR::SetField;

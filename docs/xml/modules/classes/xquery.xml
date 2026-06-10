@@ -167,12 +167,12 @@ if (query.ok()) {
     <method>
       <name>InspectFunctions</name>
       <comment>Returns information about compiled XQuery functions.</comment>
-      <prototype>ERR xq::InspectFunctions(OBJECTPTR Object, CSTRING Name, XIF ResultFlags, CSTRING * Result)</prototype>
+      <prototype>ERR xq::InspectFunctions(OBJECTPTR Object, STRVIEW Name, XIF ResultFlags, STRING * Result)</prototype>
       <tiriPrototype>err, Result:str = InspectFunctions(Name:str, ResultFlags:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the function or functions to inspect (supports wildcards).</param>
+        <param type="STRVIEW" name="Name">The name of the function or functions to inspect (supports wildcards).</param>
         <param type="XIF" name="ResultFlags" lookup="XIF">Bitmask controlling the returned information.</param>
-        <param type="CSTRING *" name="Result">Receives a serialised XML document describing the function(s).</param>
+        <param type="STRING *" name="Result">Receives a serialised XML document describing the function(s).</param>
       </input>
       <description>
 <p>Use InspectFunctions to retrieve metadata about user-defined or standard XQuery functions available in the compiled XQuery object.  The function name can include wildcards to match multiple functions.</p>
@@ -199,16 +199,16 @@ if (query.ok()) {
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>mutates-object, caller-owns-result, null-terminated-result</tags>
+      <tags>mutates-object, caller-owns-result, null-terminated-result, mutates-input</tags>
     </method>
 
     <method>
       <name>RegisterFunction</name>
       <comment>Register a custom XQuery function.</comment>
-      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, CSTRING FunctionName, FUNCTION * Callback)</prototype>
+      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, STRVIEW FunctionName, FUNCTION * Callback)</prototype>
       <tiriPrototype>err = RegisterFunction(FunctionName:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
+        <param type="STRVIEW" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
         <param type="FUNCTION *" name="Callback">The callback function to register for FunctionName.</param>
       </input>
       <description>
@@ -260,7 +260,7 @@ if (query.ok()) {
       <name>ErrorMsg</name>
       <comment>A readable description of the last parse or execution error.</comment>
       <access read="R">Read</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>This field may provide a textual description of the last parse or execution error that occurred.</p>
       </description>
@@ -299,7 +299,7 @@ if (query.ok()) {
       <name>Path</name>
       <comment>Base path for resolving relative references.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through automated means on-the-fly, which relies  on the working directory or XML document path.</p>
       </description>
@@ -360,7 +360,7 @@ if (query.ok()) {
       <name>Statement</name>
       <comment>XQuery statements are specified here.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>std::string</type>
+      <type>STRING</type>
       <description>
 <p>Set the Statement field with an XPath or XQuery expression for compilation.</p>
 <p>If this field is set after initialisation then <action>Clear</action> will be applied to the object first.  The expression will be compiled on the next execution attempt.</p>

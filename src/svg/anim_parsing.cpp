@@ -62,8 +62,8 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
       case SVF_href:
       case SVF_xlink_href: {
          OBJECTPTR ref_vector;
-         auto ref = uri_name(std::string(Value));
-         if (Anim.svg->Scene->findDef(ref.c_str(), &ref_vector) IS ERR::Okay) {
+         auto ref = uri_name(Value);
+         if (Anim.svg->Scene->findDef(ref, &ref_vector) IS ERR::Okay) {
             Anim.target_vector = ref_vector->UID;
          }
          break;

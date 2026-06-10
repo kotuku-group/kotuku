@@ -36,12 +36,12 @@
   <function>
     <name>XValueNodes</name>
     <comment>For node-set XPathValue objects, returns the node-set as an array.</comment>
-    <prototype>ERR xml::XValueNodes(struct XPathValue * Value, kt::vector&lt;struct XTag *&gt; * Result)</prototype>
+    <prototype>ERR xml::XValueNodes(struct XPathValue * Value, kt::vector&lt;XTag *&gt; * Result)</prototype>
     <tiriPrototype>err, Result:array = XValueNodes(Value:any)</tiriPrototype>
     <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct XPathValue *" name="Value">The XPathValue to convert.</param>
-      <param type="kt::vector&lt;struct XTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XTag</st> structures.</param>
+      <param type="kt::vector&lt;XTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XTag</st> structures.</param>
     </input>
     <description>
 <p>If an XPathValue represents a node-set (type <code>XPVT::NODE_SET</code>) then XValueToNodes() will return a direct pointer to the node-set array.</p>
@@ -78,12 +78,12 @@
   <function>
     <name>XValueToString</name>
     <comment>Converts an XPathValue to its string representation.</comment>
-    <prototype>ERR xml::XValueToString(const struct XPathValue * Value, std::string * Result)</prototype>
+    <prototype>ERR xml::XValueToString(const struct XPathValue * Value, STRING * Result)</prototype>
     <tiriPrototype>err, Result:str = XValueToString(Value:any)</tiriPrototype>
     <tags>mutates-input, pure-query</tags>
     <input>
       <param type="const struct XPathValue *" name="Value">The XPathValue to convert.</param>
-      <param type="std::string *" name="Result">Receives the string representation of the value.</param>
+      <param type="STRING *" name="Result">Receives the string representation of the value.</param>
     </input>
     <description>
 <p>Call XValueToString() to convert an XPathValue object into its string representation.</p>
@@ -111,6 +111,7 @@
       <const name="PARSE_ENTITY">Enables parsing of DOCTYPE entities.</const>
       <const name="PARSE_HTML">Automatically parse HTML escape codes.</const>
       <const name="READABLE">Indent the output of serialised XML to improve readability.</const>
+      <const name="READ_ONLY">Edits to the document are not permitted.</const>
       <const name="STANDALONE">Automatically defined when the XML declaration specifies standalone="yes".</const>
       <const name="STRIP_CDATA">Do not serialise <code>CDATA</code> sections.  Note that this option is used as a parameter, not an object flag.</const>
       <const name="STRIP_CONTENT">Strip all content from incoming XML data.</const>
@@ -127,6 +128,7 @@
 
     <constants lookup="XMS" comment="For SetAttrib()">
       <const name="NEW">Adds a new attribute.  Note that if the attribute already exists, this will result in at least two attributes of the same name in the tag.</const>
+      <const name="REMOVE">Removes the named attribute, or clears element content if the name is empty.</const>
       <const name="UPDATE">As for <code>UPDATE_ONLY</code>, but if the attribute does not exist, it will be created.</const>
       <const name="UPDATE_ONLY">SetAttrib will find the target attribute and update it.  It is not possible to rename the attribute when using this technique.  <code>ERR::Search</code> is returned if the attribute cannot be found.</const>
     </constants>
@@ -158,14 +160,14 @@
   </types>
   <structs>
     <struct name="XMLAttrib" typeName="XMLATTRIB">
-      <field name="Name" type="std::string">Name of the attribute</field>
-      <field name="Value" type="std::string">Value of the attribute</field>
+      <field name="Name" type="STRING">Name of the attribute</field>
+      <field name="Value" type="STRING">Value of the attribute</field>
     </struct>
 
     <struct name="XPathValue" typeName="XPATHVALUE">
       <field name="Type" type="XPVT" lookup="XPVT">Identifies the type of value stored</field>
       <field name="NumberValue" type="DOUBLE">Defined if the type is Number or Boolean</field>
-      <field name="StringValue" type="std::string">Defined if the type is String</field>
+      <field name="StringValue" type="STRING">Defined if the type is String</field>
     </struct>
 
     <struct name="XTag" typeName="XTAG">

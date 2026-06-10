@@ -1,5 +1,10 @@
 -- Core tests not covered by other test files.
 
+@AfterAll function CleanupTaskStringViewEnvironment()
+   task = mSys.CurrentTask()
+   task.mtSetEnv('KOTUKU_TASK_STRING_VIEW_TEST', '')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Print a list of all actions returned by ActionList()
 
@@ -18,7 +23,52 @@ end
    task = mSys.CurrentTask()
    err, path = task.mtGetEnv('PATH')
    assert(err is ERR_Okay, 'Error reading PATH variable: ' .. mSys.GetErrorMsg(err))
+   assert(#path > 0, 'PATH variable was empty.')
    print('PATH: ' .. path)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function TaskStringViewMethodInputs()
+   task = mSys.CurrentTask()
+
+   err = task.mtSetEnv('KOTUKU_TASK_STRING_VIEW_TEST', 'value')
+   assert(err is ERR_Okay, 'SetEnv() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, value = task.mtGetEnv('KOTUKU_TASK_STRING_VIEW_TEST')
+   assert(err is ERR_Okay, 'GetEnv() failed: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'value', 'GetEnv() returned "' .. value .. '"')
+
+   err = task.mtSetEnv('KOTUKU_TASK_STRING_VIEW_TEST', '')
+   assert(err is ERR_Okay, 'SetEnv() removal failed: ' .. mSys.GetErrorMsg(err))
+
+   err, value = task.mtGetEnv('KOTUKU_TASK_STRING_VIEW_TEST')
+   assert(err is ERR_DoesNotExist, 'GetEnv() should not find removed variable, got ' .. mSys.GetErrorMsg(err))
+
+   new_task = obj.new('task')
+   err = new_task.mtAddArgument('plain')
+   assert(err is ERR_Okay, 'AddArgument() failed: ' .. mSys.GetErrorMsg(err))
+
+   err = new_task.mtAddArgument('"quoted value"')
+   assert(err is ERR_Okay, 'AddArgument() failed for quoted value: ' .. mSys.GetErrorMsg(err))
+   assert(#new_task.parameters is 2, 'Expected 2 task parameters, got ' .. #new_task.parameters)
+   assert(new_task.parameters[0] is 'plain', 'Unexpected first parameter: ' .. new_task.parameters[0])
+   assert(new_task.parameters[1] is 'quoted value', 'Unexpected quoted parameter: ' .. new_task.parameters[1])
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function TaskStringViewNullArgs()
+   task = mSys.CurrentTask()
+
+   err = task.mtAddArgument('')
+   assert(err is ERR_NullArgs, 'Expected AddArgument() to reject an empty argument, got ' .. mSys.GetErrorMsg(err))
+
+   err, value = task.mtGetEnv('')
+   assert(err is ERR_NullArgs, 'Expected GetEnv() to reject an empty name, got ' .. mSys.GetErrorMsg(err))
+
+   err = task.mtSetEnv('', 'value')
+   assert(err is ERR_NullArgs, 'Expected SetEnv() to reject an empty name, got ' .. mSys.GetErrorMsg(err))
 end
 
 -----------------------------------------------------------------------------------------------------------------------

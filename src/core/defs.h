@@ -20,6 +20,7 @@
 #include <string_view>
 #include <ankerl/unordered_dense.h>
 #include <unordered_set>
+#include "node_pool.h"
 
 using namespace std::chrono_literals;
 
@@ -29,6 +30,8 @@ using namespace std::chrono_literals;
 #define __system__
 #endif
 
+#include <stdlib.h> // Contains free(), malloc(), posix_memalign() etc
+
 #ifdef __unix__
  #include <fcntl.h>
  #include <sys/un.h>
@@ -37,6 +40,7 @@ using namespace std::chrono_literals;
  #include <semaphore.h>
 #elif defined(_WIN32)
  #include <fcntl.h>
+ #include <malloc.h> // For _aligned_malloc, _aligned_free
 #endif
 
 #include "microsoft/windefs.h"
@@ -69,8 +73,6 @@ constexpr int DRIVETYPE_USB       = 5;
 
 #define DEFAULT_VIRTUALID 0xffffffff
 
-#define CODE_MEMH 0x4D454D48L
-#define CODE_MEMT 0x4D454D54L
 
 #ifdef _WIN32
    typedef void * MODHANDLE;
@@ -180,11 +182,11 @@ struct rkWatchPath {
 };
 
 #include <kotuku/vector.hpp>
-#include "prototypes.h"
 
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
 #include <kotuku/system/internals.h>
+#include "prototypes.h"
 
 using namespace kt;
 
@@ -212,6 +214,20 @@ struct QueuedAction {
 };
 
 //********************************************************************************************************************
+// Resource maps recycle their nodes through a per-map NodePool to absorb high insert/erase churn.  std::unordered_map
+// is retained because it guarantees stable references to values across insert/erase, a contract the core relies upon
+// (e.g. a ResourceRecord reference is taken under glmResources, the lock dropped, then dereferenced).  The pool never
+// relocates a node, so that guarantee is preserved.  Each pool is mutated only under its map's mutex.
+
+#ifdef RESOURCE_POOL
+template <class K, class V> using PooledMap =
+   std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, PoolAllocator<std::pair<const K, V>>>;
+extern NodePool glMemoryNodePool, glResourcesNodePool, glObjectsNodePool;
+#else
+template <class K, class V> using PooledMap = std::unordered_map<K, V>;
+#endif
+
+//********************************************************************************************************************
 
 extern std::mutex glmPrint;               // For message logging only.
 
@@ -225,6 +241,8 @@ extern std::recursive_timed_mutex glmTimer;        // For timer subscriptions.
 extern std::shared_timed_mutex glmObjectLookup;    // For glObjectLookup
 
 extern std::recursive_mutex glmMemory;
+extern std::recursive_mutex glmResources;
+extern std::recursive_mutex glmObjects;
 extern std::recursive_mutex glmMsgHandler;
 extern std::recursive_mutex glmAsyncActions;
 
@@ -234,7 +252,6 @@ extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
 extern std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
-extern std::condition_variable_any cvResources;
 extern std::condition_variable_any cvObjects;
 
 // Per-thread record for the global thread registry.  Threads are registered on first use of get_thread_id() and
@@ -361,35 +378,36 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 //********************************************************************************************************************
 // Resource definitions.
 
-#define MEMHEADER 12    // 8 bytes at start for MEMH and MemoryID, 4 at end for MEMT
+constexpr int MEMHEADER = 32;  // Private prefix before public memory pointers; keeps AllocMemory() 32-byte aligned.
 
-// Turning off USE_SHM means that the shared memory pool is available to all processes by default.
+// Align general memory blocks to 64-byte cache line boundaries for better performance on modern CPUs.  Objects only
+// require 8-byte alignment.
 
-#ifdef __ANDROID__
-  #undef USE_SHM // Should be using ashmem
-  #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
+constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t OBJECT_ALIGNMENT = 32;
 
-  #ifdef USE_SHM
-  #else
-    extern int glMemoryFD;
-  #endif
-#elif __unix__
-  #define USE_SHM TRUE
-  #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
+// Aligned heap allocation/free helpers shared by the memory and object subsystems.
 
-  #ifdef USE_SHM
-    #define MEMORYFILE           "/tmp/kotuku.mem"
-  #else
-    // To mount a 32MB RAMFS filesystem for this method:
-    //
-    //    mkdir -p /RAM1
-    //    mount -t ramfs none /tmp/ramfs -o maxsize=32000
+[[maybe_unused]] static inline APTR aligned_block_alloc(size_t Size, size_t Alignment = CACHE_LINE_SIZE)
+{
+   size_t aligned_size = ((Size + Alignment - 1) / Alignment) * Alignment;
+   #ifdef _WIN32
+      return _aligned_malloc(aligned_size, Alignment);
+   #else
+      APTR result = nullptr;
+      if (posix_memalign(&result, Alignment, aligned_size) != 0) return nullptr;
+      return result;
+   #endif
+}
 
-    #define MEMORYFILE           "/tmp/ramfs/kotuku.mem"
-
-    extern int glMemoryFD;
-  #endif
-#endif
+[[maybe_unused]] static inline void aligned_block_free(APTR Address)
+{
+   #ifdef _WIN32
+      _aligned_free(Address);
+   #else
+      free(Address);
+   #endif
+}
 
 enum {
    RT_OBJECT,
@@ -410,6 +428,10 @@ class extMetaClass : public objMetaClass {
    ActionEntry ActionTable[int(AC::END)];
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
+
+   extMetaClass() {
+      Local[0] = 0xff;
+   }
 };
 
 class extFile : public objFile {
@@ -417,7 +439,6 @@ class extFile : public objFile {
    using create = kt::Create<extFile>;
    struct DateTime prvModified;
    struct DateTime prvCreated;
-   std::string Path;
    std::string prvIcon;
    std::string prvLine;
    std::string prvResolvedPath;
@@ -425,31 +446,23 @@ class extFile : public objFile {
       std::string prvLink;
    #endif
    int64_t Size;
-   int64_t ProgressTime;
    #ifdef _WIN32
       int  Stream;
    #else
       APTR  Stream;
    #endif
    struct rkWatchPath *prvWatch;
-   OBJECTPTR ProgressDialog;
    struct DirInfo *prvList;
    PERMIT Permissions;
    bool   isFolder;
-   int   Handle;         // Native system file handle
-};
+   int    Handle;         // Native system file handle
 
-class extConfig : public objConfig {
-   public:
-   using create = kt::Create<extConfig>;
-   uint32_t CRC;   // CRC32, for determining if config data has been altered
-};
+   extFile() {
+      Handle = -1;
+      Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
+   }
 
-class extStorageDevice : public objStorageDevice {
-   public:
-   using create = kt::Create<extStorageDevice>;
-   std::string DeviceID;   // Unique ID for the filesystem, if available
-   std::string Volume;
+   ~extFile();
 };
 
 class extThread : public objThread {
@@ -472,11 +485,6 @@ class extTask : public objTask {
    kt::vector<std::string> Parameters; // Arguments (string array)
    uint64_t AffinityMask;  // CPU affinity mask for process/thread binding
    MEMORYID MessageMID;
-   std::string LaunchPath;
-   std::string Path;
-   std::string ProcessPath;
-   std::string Location;      // Where to load the task from (string)
-   std::string Name;          // Name of the task, if specified (string)
    bool     ReturnCodeSet;    // TRUE if the ReturnCode has been set
    bool     QuitCalled;       // TRUE if TASK_Quit has been called before
    FUNCTION ErrorCallback;
@@ -727,9 +735,11 @@ extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
-extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory: Using ankerl::unordered_dense for superior performance
-extern std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory; // Locked with glmMemory.
-extern std::unordered_map<OBJECTID, ankerl::unordered_dense::set<OBJECTID>> glObjectChildren; // Locked with glmMemory.
+
+extern PooledMap<MEMORYID, PrivateAddress> glMemory;  // Locked with glmMemory.
+extern PooledMap<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.
+extern PooledMap<OBJECTID, ObjectRecord> glObjects; // Locked with glmObjects.
+
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 extern std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes; // VolumeName = { Key, Value }
 extern std::unordered_multimap<uint32_t, CLASSID> glWildClassMap; // Fast lookup for identifying classes by file extension
@@ -745,7 +755,7 @@ extern int glValidateProcessID; // Used by core thread only.
 extern size_t glPageSize;
 extern std::atomic_int glMessageIDCount;
 extern std::atomic_int glGlobalIDCount;
-extern std::atomic_int glPrivateIDCounter;
+extern std::atomic_int glResourceID;
 extern int16_t glCrashStatus, glCodeIndex, glLastCodeIndex, glSystemState;
 extern std::atomic_ushort glFunctionID;
 extern "C" int8_t glProgramStage;
@@ -814,16 +824,12 @@ extern thread_local bool tlMainThread;
 extern thread_local int16_t tlMsgRecursion;
 extern thread_local int16_t tlDepth;
 extern thread_local int16_t tlLogStatus;
-extern thread_local int16_t tlPreventSleep;
-extern thread_local int16_t tlPublicLockCount;
-extern thread_local int16_t tlPrivateLockCount;
 extern thread_local int glForceUID, glForceGID;
 extern thread_local PERMIT glDefaultPermissions;
 extern THREADID glMainThreadID;
 
 //********************************************************************************************************************
 
-extern ERR (*glMessageHandler)(struct Message *);
 extern void (*glVideoRecovery)(void);
 extern void (*glKeyboardRecovery)(void);
 
@@ -1142,6 +1148,7 @@ ERR    process_janitor(OBJECTID, int, int);
 void   register_sleep(int);
 void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
+void   UntrackResource(RESOURCEID);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
 ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 
@@ -1197,7 +1204,7 @@ extern "C" int winGetCurrentProcessId(void);
 extern "C" int winGetExitCodeProcess(WINHANDLE, int *Code);
 extern "C" size_t winGetFileSize(STRING);
 extern "C" size_t winGetProcessMemoryUsage(int ProcessID);
-extern "C" APTR winGetProcAddress(WINHANDLE, CSTRING);
+extern "C" APTR winGetProcAddress(WINHANDLE, std::string_view);
 extern "C" WINHANDLE winGetStdInput(void);
 extern "C" void winInitialise(int *, void *);
 extern "C" void winInitializeCriticalSection(APTR Lock);
@@ -1269,6 +1276,11 @@ extern "C" int winSetSystemTime(int16_t Year, int16_t Month, int16_t Day, int16_
 extern ERR winGetTimeZoneInfo(std::string_view ZoneID, int StartYear, int EndYear, struct rkTimeZoneInfo &Info);
 
 #endif
+
+extern ERR object_free(ResourceRecord &, Object *);
+extern void object_add_child(ResourceRecord &, ResourceRecord &);
+extern void object_remove_child(ResourceRecord &, ResourceRecord &);
+extern ResourceManager glResourceObject;
 
 //********************************************************************************************************************
 

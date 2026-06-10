@@ -22,7 +22,6 @@ This documentation is intended for technical reference and is not suitable as an
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <inttypes.h>
 #include <string.h>
 
 #ifdef _MSC_VER
@@ -1367,7 +1366,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       if (size < 1) size = 8192;
 
       STRING buffer;
-      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
          if ((size = read(file, buffer, size)) > 0) {
             buffer[size] = 0;
 

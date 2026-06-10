@@ -430,7 +430,6 @@ static ERR DISPLAY_Free(extDisplay *Self)
 
    if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
 
-   Self->~extDisplay();
    return ERR::Okay;
 }
 
@@ -909,7 +908,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
             }
          }
 
-         std::string name;
+         std::string_view name;
          CurrentTask()->get(FID_Name, name);
          HWND popover = 0;
          if (Self->PopOverID) {
@@ -920,7 +919,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
 
          if (not (Self->WindowHandle = (APTR)winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name.c_str(),
+               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name.data(),
                ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Self->Opacity, desktop))) {
             return log.warning(ERR::SystemCall);
          }
@@ -1264,12 +1263,6 @@ static ERR DISPLAY_NewObject(extDisplay *Self)
       Self->DisplayType = DT::NATIVE;
    #endif
 
-   return ERR::Okay;
-}
-
-static ERR DISPLAY_NewPlacement(extDisplay *Self)
-{
-   new (Self) extDisplay;
    return ERR::Okay;
 }
 
@@ -1822,7 +1815,7 @@ This method does not work on hosted platforms.  All parameters passed to this me
 if it should not be changed).
 
 -INPUT-
-cstr Name: The name of the display.
+strview Name: The name of the display.
 int MinH: The minimum horizontal scan rate.  Usually set to 31.
 int MaxH: The maximum horizontal scan rate.
 int MinV: The minimum vertical scan rate.  Usually set to 50.
@@ -1856,13 +1849,14 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
       return ERR::NoPermission;
    }
 
-   log.branch("%s", Args->Name);
+   std::string name(Args->Name);
+   log.branch("%s", name.c_str());
 
    glSixBitDisplay = ((Args->Flags & MON::BIT_6) != MON::NIL);
    if (glSixBitDisplay) Self->Flags |= SCR::BIT_6;
    else Self->Flags &= ~SCR::BIT_6;
 
-   if (Args->Name) StrCopy(Args->Name, Self->Display, sizeof(Self->Display));
+   if (not Args->Name.empty()) StrCopy(name.c_str(), Self->Display, sizeof(Self->Display));
 
    // Get the current monitor record, then set the new scan rates against it.
 

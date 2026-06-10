@@ -37,7 +37,7 @@ struct eventsub {
    void     (*Callback)(APTR Info, int Size, APTR Meta);
    APTR     CallbackMeta;
    EVG      Group;
-   uint8_t    Called;
+   uint8_t  Called;
    OBJECTID ContextID;
 
    inline CSTRING groupName() {
@@ -136,8 +136,8 @@ group with `SubGroup` and `Event` set to `NULL` will allow for a subscription to
 
 -INPUT-
 int(EVG) Group: The group to which the event belongs.
-cpp(strview) SubGroup: The sub-group to which the event belongs (case-sensitive).
-cpp(strview) Event:    The name of the event (case-sensitive).
+strview SubGroup: The sub-group to which the event belongs (case-sensitive).
+strview Event:    The name of the event (case-sensitive).
 
 -RESULT-
 large: The event ID is returned as a 64-bit integer.

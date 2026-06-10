@@ -156,7 +156,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
    if Def.result?? then
       func.result = Def.result
    elseif not table.empty(Def.errors) then
-      func.result = cType({ type='error', values=Def.errors, isFunction=true }, 'Function ' .. Name)
+      func.result = cType({ type='error', values=Def.errors, isFunction=true }, 'Function:' .. Name)
    end
 
    outValues  = ''
@@ -178,7 +178,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
          if type then
             param = cType({
                type=type:trim(), name=name:trim(), comment=comment:trim(), isFunction=true
-            }, 'Function ' .. Name)
+            }, 'Function:' .. Name)
             table.insert(func.input, param)
 
             if argSeq?? then
@@ -189,21 +189,14 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
             end
 
             if param.type is '...' then
+               -- Variadic handling
                jumpArgs = argSeq .. '...'
                argSeq ..= 'Args... Tags'
-            else
-               if param.type:endsWith('*') then
-                  argSeq ..= param.type .. cName(param)
-               else
-                  argSeq ..= param.type .. ' ' .. cName(param)
-               end
-            end
 
-            if param.type is '...' then
                proto     ..= '...'
                doc_proto ..= '...'
                if not outValues?? then
-                  -- This special case is required when '...' is the first parameter.
+                  -- This special case is required when '...' appears as the first parameter.
                   if param.fullType.fd is 'FD_VARTAGS' then
                      proto = 'int64_t,' .. proto
                   else
@@ -213,8 +206,21 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
                outValues ..= 'Tags...'
                variadic = true
             else
-               proto     ..= (param.extType ?? param.type) .. ' ' .. cName(param)
-               doc_proto ..= (param.docType ?? param.type) .. ' ' .. cName(param)
+               local p_type
+               if param.type is 'std::string_view' then
+                  p_type = 'const std::string_view &'
+               elseif param.isComplex and not (param.type:endsWith('&') or param.type:endsWith('*')) then
+                  p_type = param.type .. ' &'
+               else
+                  p_type = param.type
+               end
+
+               argSeq ..= p_type
+               if not (argSeq:endsWith('*') or argSeq:endsWith('&')) then argSeq ..= ' ' end
+               argSeq ..= cName(param)
+
+               proto     ..= (param.extType ?? p_type) .. ' ' .. cName(param)
+               doc_proto ..= (param.docType ?? p_type) .. ' ' .. cName(param)
                outValues ..= param.name
             end
 
@@ -245,7 +251,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
    end
 
    -- The func.def is used for building the jump table
-   func.def = '   ' .. tostring(response.type)
+   func.def = f'   {response.type}'
    if Def.attrib then func.def = func.def .. ' ' .. Def.attrib end
    func.def ..= f' (*_{func.name})({jumpArgs ?? "void"});'
 
@@ -255,6 +261,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
    func.doc_response = response.docType
 
    if variadic then
+      -- Variadic handling only
       func.macro = function()
          return f'template<class... Args> {response.type} {func.name}({argSeq ?? "void"})' ..
             f' {{ return {glModule.name}Base->_{func.name}({outValues ?? ""}); }}'
@@ -452,7 +459,6 @@ global function buildDefs()
                result_name = func.result.struct
             end
             if func.result.allocated then fd ..= '|FD_ALLOC' end
-            if func.result.mutable then fd ..= '|FD_MUTABLE' end
             plist ..= " { \"" .. result_name .. "\", " .. fd .. " }, "
          else
             plist ..= " { \"" .. func.result.type .. "\", FD_VOID }, "
@@ -476,12 +482,10 @@ global function buildInputParameters(List)
       for param in values(List) do
          fd = param.fullType.fd
          if param.allocated then fd ..= '|FD_ALLOC' end
-         if param.mutable then fd ..= '|FD_MUTABLE' end
-         if param.resultValue then fd ..= '|FD_RESULT' end
          if param.struct then
-            plist ..= "{ \"" .. param.struct .. ":" .. param.name .. "\", " .. fd .. " }, "
+            plist ..= f'{{ "{param.struct}:{param.name}", {fd} }}, '
          else
-            plist ..= "{ \"" .. param.name .. "\", " .. fd .. " }, "
+            plist ..= f'{{ "{param.name}", {fd} }}, '
          end
       end
    end

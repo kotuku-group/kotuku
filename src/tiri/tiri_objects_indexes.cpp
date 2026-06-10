@@ -166,17 +166,8 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
 static ERR object_set_cppstring(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
 {
    auto type = lua_type(Lua, ValueIndex);
-
-   if (type IS LUA_TSTRING) {
-      return object_set_string(Lua, Object, Field, ValueIndex);
-   }
-   else if (type IS LUA_TNUMBER) {
-      return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
-   }
-   else if (type IS LUA_TNIL) {
-      return Object->set(Field->FieldID, std::string_view());
-   }
-   else return ERR::SetValueNotString;
+   if (type IS LUA_TNIL) return Object->set(Field->FieldID, std::string_view());
+   else return object_set_string(Lua, Object, Field, ValueIndex);
 }
 
 static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
@@ -185,7 +176,7 @@ static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int
       case LUA_TNUMBER:
          return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
 
-      case LUA_TSTRING: // Allow internal string parsing to do its thing - important if the field is variable
+      case LUA_TSTRING: // Allow string conversion to a number
          return object_set_string(Lua, Object, Field, ValueIndex);
 
       case LUA_TNIL: // Setting a numeric with nil does nothing.  Use zero to be explicit.
@@ -433,7 +424,9 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
          else return object_set_ptr(Lua, target, field, ValueIndex);
       }
       else if ((field->Flags & FD_STRING) and (field->Flags & FD_CPP)) { // std::string target
-         return object_set_cppstring(Lua, target, field, ValueIndex);
+         auto type = lua_type(Lua, ValueIndex);
+         if (type IS LUA_TNIL) return Object->set(field->FieldID, std::string_view{});
+         else return object_set_string(Lua, target, field, ValueIndex);
       }
       else if (field->Flags & (FD_DOUBLE|FD_FLOAT)) {
          return object_set_double(Lua, target, field, ValueIndex);
@@ -520,7 +513,7 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
                if (field->Flags & FD_RESOURCE) {
                    push_struct(Lua->script, result, (CSTRING)field->Arg, (field->Flags & FD_ALLOC) ? TRUE : FALSE, TRUE);
                }
-               else named_struct_to_table(Lua, (CSTRING)field->Arg, result);
+               else error = named_struct_to_table(Lua, (CSTRING)field->Arg, result);
             }
             else lua_pushnil(Lua);
          }

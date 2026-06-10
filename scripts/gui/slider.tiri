@@ -62,8 +62,7 @@ gui.slider = function(Options:table)
 
       self._sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
          max_size = self._sliderHostVP.height - BOX_SIZE
-         if Y < 0 then Y = 0 end
-         if Y > max_size then Y = max_size end
+         Y = math.clamp(Y, 0, max_size)
          if Viewport.y is Y then return end
 
          Viewport.y = Y
@@ -99,8 +98,7 @@ gui.slider = function(Options:table)
 
       self._sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
          max_size  = self._sliderHostVP.width - BOX_SIZE
-         if X < 0 then X = 0 end
-         if X > max_size then X = max_size end
+         X = math.clamp(X, 0, max_size)
          if Viewport.x is X then return end
 
          Viewport.x = X

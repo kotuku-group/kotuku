@@ -25,9 +25,9 @@ static const struct FieldDef clVectorSceneSampleMethod[] = {
    { nullptr, 0 }
 };
 
-FDEF maAddDef[] = { { "Name", FD_STR }, { "Def", FD_OBJECTPTR }, { 0, 0 } };
-FDEF maSearchByID[] = { { "ID", FD_INT }, { "Result", FD_OBJECTPTR|FD_RESULT }, { 0, 0 } };
-FDEF maFindDef[] = { { "Name", FD_STR }, { "Def", FD_OBJECTPTR|FD_RESULT }, { 0, 0 } };
+FDEF maAddDef[] = { { "Name", FDF_CPPSTRING }, { "Def", FD_OBJECTPTR }, { 0, 0 } };
+FDEF maSearchByID[] = { { "ID", FD_INT }, { "Result", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
+FDEF maFindDef[] = { { "Name", FDF_CPPSTRING }, { "Def", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 
 static const struct MethodEntry clVectorSceneMethods[] = {
    { AC(-1), (APTR)VECTORSCENE_AddDef, "AddDef", maAddDef, sizeof(struct sc::AddDef) },
@@ -37,10 +37,21 @@ static const struct MethodEntry clVectorSceneMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTORSCENE_NewPlacement(extVectorScene *Self) {
+   new (Self) extVectorScene;
+   return ERR::Okay;
+}
+
+static ERR VECTORSCENE_FreePlacement(extVectorScene *Self) {
+   Self->~extVectorScene();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorSceneActions[] = {
    { AC::Draw, VECTORSCENE_Draw },
    { AC::Flush, VECTORSCENE_Flush },
    { AC::Free, VECTORSCENE_Free },
+   { AC::FreePlacement, VECTORSCENE_FreePlacement },
    { AC::Init, VECTORSCENE_Init },
    { AC::NewObject, VECTORSCENE_NewObject },
    { AC::NewPlacement, VECTORSCENE_NewPlacement },

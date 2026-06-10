@@ -351,12 +351,6 @@ static ERR VECTORTEXT_DeleteLine(extVectorText *Self, struct vt::DeleteLine *Arg
 
 static ERR VECTORTEXT_Free(extVectorText *Self)
 {
-   Self->txLines.~vector<TextLine>();
-   Self->txCursor.~TextCursor();
-   Self->txFamily.~basic_string();
-   Self->txFontStyle.~basic_string();
-   Self->txFontSizeString.~basic_string();
-
    if (Self->txHandle) {
       // TODO: This would be a good opportunity to garbage-collect stale glyphs
    }
@@ -633,7 +627,7 @@ static ERR TEXT_SET_DX(extVectorText *Self, double *Values, int Elements)
    if (Self->txDX) { FreeResource(Self->txDX); Self->txDX = nullptr; Self->txTotalDX = 0; }
 
    if ((Values) and (Elements > 0)) {
-      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, &Self->txDX) IS ERR::Okay) {
+      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDX) IS ERR::Okay) {
          copymem(Values, Self->txDX, Elements * sizeof(double));
          Self->txTotalDX = Elements;
          reset_path(Self);
@@ -664,7 +658,7 @@ static ERR TEXT_SET_DY(extVectorText *Self, double *Values, int Elements)
    if (Self->txDY) { FreeResource(Self->txDY); Self->txDY = nullptr; Self->txTotalDY = 0; }
 
    if ((Values) and (Elements > 0)) {
-      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, &Self->txDY) IS ERR::Okay) {
+      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDY) IS ERR::Okay) {
          copymem(Values, Self->txDY, Elements * sizeof(double));
          Self->txTotalDY = Elements;
          reset_path(Self);
@@ -727,9 +721,9 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
 {
    if (Value.empty()) return ERR::InvalidValue;
 
-   CSTRING name;
+   std::string_view name;
    if (fnt::ResolveFamilyName(Value, &name) IS ERR::Okay) {
-      Self->txFamily = name ? name : "Noto Sans";
+      Self->txFamily = name.empty() ? "Noto Sans" : name;
    }
    else Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
 
@@ -835,11 +829,11 @@ static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
       return ERR::Okay;
    }
 
-   CSTRING next;
+   std::string_view next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
       Self->FillString = Value;
 
-      if (next) {
+      if (not next.empty()) {
          vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
          Self->FGFill = true;
       }
@@ -1213,7 +1207,7 @@ static ERR TEXT_SET_Rotate(extVectorText *Self, double *Values, int Elements)
 {
    if (Self->txRotate) { FreeResource(Self->txRotate); Self->txRotate = nullptr; Self->txTotalRotate = 0; }
 
-   if (AllocMemory(sizeof(double) * Elements, MEM::DATA, &Self->txRotate) IS ERR::Okay) {
+   if (AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txRotate) IS ERR::Okay) {
       copymem(Values, Self->txRotate, Elements * sizeof(double));
       Self->txTotalRotate = Elements;
       reset_path(Self);

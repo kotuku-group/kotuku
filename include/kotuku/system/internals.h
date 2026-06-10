@@ -51,25 +51,44 @@ public:
 
 class PrivateAddress {
 public:
-   union {
-      APTR      Address;
-      OBJECTPTR Object;
-   };
+   APTR     Address;
    MEMORYID MemoryID;   // Unique identifier
-   OBJECTID OwnerID;    // The object that allocated this block.
    uint32_t Size;       // 4GB max (user-requested size)
    THREADID ThreadLockID = THREADID(0);
    MEM      Flags;
    int16_t  AccessCount = 0; // Total number of locks
 
-   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, OBJECTID aOwnerID, uint32_t aSize, MEM aFlags) :
-      Address(aAddress), MemoryID(aMemoryID), OwnerID(aOwnerID), Size(aSize), Flags(aFlags) { };
+   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, uint32_t aSize, MEM aFlags) :
+      Address(aAddress), MemoryID(aMemoryID), Size(aSize), Flags(aFlags) { };
 
    void clear() {
       Address  = 0;
       MemoryID = 0;
-      OwnerID  = 0;
       Flags    = MEM::NIL;
       ThreadLockID = THREADID(0);
+   }
+};
+
+//********************************************************************************************************************
+// Object management record.  These records are keyed by OBJECTID in glObjects and are used for live object lookup,
+// object ownership, and non-child resources tracked to each object.
+
+class ObjectRecord {
+public:
+   OBJECTPTR Object;
+   OBJECTID OwnerID;
+   ankerl::unordered_dense::set<OBJECTID> Children; // Object children
+   ankerl::unordered_dense::set<RESOURCEID> Resources; // Non-object resources
+
+   ObjectRecord() : Object(nullptr), OwnerID(0) { };
+
+   ObjectRecord(OBJECTPTR AObject, OBJECTID AOwnerID = 0) :
+      Object(AObject), OwnerID(AOwnerID) { };
+
+   void clear() {
+      Object = nullptr;
+      OwnerID = 0;
+      Children.clear();
+      Resources.clear();
    }
 };

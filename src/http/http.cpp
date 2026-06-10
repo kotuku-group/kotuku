@@ -361,6 +361,17 @@ class extHTTP : public objHTTP {
    uint16_t MultipleInput:1;
    uint16_t KeepAlive:1;
    uint16_t ProxyDefined:1;   // TRUE if the ProxyServer has been manually set by the user
+
+   extHTTP() {
+      Error          = ERR::Okay;
+      DataTimeout    = 5.0;
+      ConnectTimeout = 10.0;
+      Datatype       = DATA::RAW;
+      BufferSize     = 16 * 1024;
+      AuthQOP        = "auth";
+      AuthAlgorithm  = "md5";
+      KeepAlive      = true;
+   }
 };
 
 static ERR HTTP_Activate(extHTTP *);
@@ -368,7 +379,6 @@ static ERR HTTP_Deactivate(extHTTP *);
 static ERR HTTP_Free(extHTTP *);
 static ERR HTTP_GetKey(extHTTP *, struct acGetKey *);
 static ERR HTTP_Init(extHTTP *);
-static ERR HTTP_NewPlacement(extHTTP *);
 static ERR HTTP_SetKey(extHTTP *, struct acSetKey *);
 static ERR HTTP_Write(extHTTP *, struct acWrite *);
 
@@ -882,7 +892,8 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    if (acWrite(Self->Socket, cstr.c_str(), cstr.length()) IS ERR::Okay) {
       if (Self->Socket->State IS NTC::DISCONNECTED) {
-         CSTRING server_host = Self->ProxyServer.empty() ? Self->Host.c_str() : Self->ProxyServer.c_str();
+         const auto server_host = Self->ProxyServer.empty() ? std::string_view(Self->Host) :
+            std::string_view(Self->ProxyServer);
          const int server_port = Self->ProxyServer.empty() ? Self->Port : Self->ProxyPort;
          if (auto result = Self->Socket->connect(server_host, server_port, 5.0); result IS ERR::Okay) {
             Self->Connecting = true;
@@ -985,7 +996,6 @@ static ERR HTTP_Free(extHTTP *Self)
       secure_clear_memory(const_cast<char*>(Self->Password.data()), Self->Password.size());
    }
 
-   Self->~extHTTP();
    return ERR::Okay;
 }
 
@@ -1029,23 +1039,6 @@ static ERR HTTP_Init(extHTTP *Self)
    }
    else log.msg("Proxy pre-defined by user.");
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR HTTP_NewPlacement(extHTTP *Self)
-{
-   // Note: No local object allocations are permitted due to lack of context.  Use a NewObject hook if necessary
-   new (Self) extHTTP;
-   Self->Error          = ERR::Okay;
-   Self->DataTimeout    = 5.0;
-   Self->ConnectTimeout = 10.0;
-   Self->Datatype       = DATA::RAW;
-   Self->BufferSize     = 16 * 1024;
-   Self->AuthQOP        = "auth";
-   Self->AuthAlgorithm  = "md5";
-   Self->KeepAlive      = true;
    return ERR::Okay;
 }
 

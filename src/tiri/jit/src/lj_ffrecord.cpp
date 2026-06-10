@@ -844,6 +844,26 @@ static void recff_math_minmax(jit_State* J, RecordFFData* rd)
    J->base[0] = tr;
 }
 
+static void recff_math_clamp(jit_State* J, RecordFFData* rd)
+{
+   TRef tr = lj_ir_tonumber(J, J->base[0]);
+   TRef lower = lj_ir_tonumber(J, J->base[1]);
+   TRef upper = lj_ir_tonumber(J, J->base[2]);
+   IRType t = IRT_INT;
+
+   if (!(tref_isinteger(tr) and tref_isinteger(lower) and tref_isinteger(upper))) {
+      if (tref_isinteger(tr)) tr = emitir(IRTN(IR_CONV), tr, IRCONV_NUM_INT);
+      if (tref_isinteger(lower)) lower = emitir(IRTN(IR_CONV), lower, IRCONV_NUM_INT);
+      if (tref_isinteger(upper)) upper = emitir(IRTN(IR_CONV), upper, IRCONV_NUM_INT);
+      t = IRT_NUM;
+   }
+
+   tr = emitir(IRT(IR_MAX, t), tr, lower);
+   tr = emitir(IRT(IR_MIN, t), tr, upper);
+   J->base[0] = tr;
+   UNUSED(rd);
+}
+
 static void recff_math_random(jit_State* J, RecordFFData* rd)
 {
    GCudata* ud = udataV(&J->fn->c.upvalue[0]);

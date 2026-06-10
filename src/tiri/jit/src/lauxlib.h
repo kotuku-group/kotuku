@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #include <kotuku/system/errors.h>
 #include "lua.h"
 #include "lj_obj.h"
@@ -20,8 +21,6 @@ struct luaL_Reg {
 
 extern void luaL_openlib(lua_State *, const char *, const luaL_Reg *, int);
 extern void luaL_register(lua_State *, const char *, const luaL_Reg *);
-extern int luaL_getmetafield(lua_State *, int, const char *);
-extern int luaL_callmeta(lua_State *, int, const char *);
 extern int luaL_typerror(lua_State *, int, const char *);
 extern int luaL_argerror(lua_State *, int, const char *);
 extern const char * luaL_checklstring(lua_State *, int, size_t * = nullptr);
@@ -38,8 +37,10 @@ extern int  luaL_newmetatable(lua_State *, const char *);
 extern void * luaL_checkudata(lua_State *, int ud, const char *);
 extern void luaL_where(lua_State *, int lvl);
 [[noreturn]] extern void luaL_error(lua_State *, const char *fmt, ...);
+[[noreturn]] extern void luaL_error(lua_State *, std::string);
 [[noreturn]] extern void luaL_error(lua_State *, ERR);
 [[noreturn]] extern void luaL_error(lua_State *, ERR, const char *, ...);
+[[noreturn]] extern void luaL_error(lua_State *, ERR, std::string);
 extern int luaL_checkoption(lua_State *, int, const char *, const char *const lst[]);
 extern TValue * resolve_index(lua_State *L, int);
 

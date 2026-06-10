@@ -609,9 +609,9 @@ target colour space.
 
 -INPUT-
 obj(VectorScene) Scene: Optional.  Required if `url()` references are to be resolved.
-cpp(strview) IRI: The IRI string to be translated.
+strview IRI: The IRI string to be translated.
 struct(*VectorPainter) Painter: This !VectorPainter structure will store the deserialised result.
-&cstr Result: Optional pointer for storing the end of the parsed IRI string.  `NULL` is returned if there is no further content to parse or an error occurred.
+&strview Result: Optional reference for storing the end of the parsed IRI string.  An empty string is returned if there is no further content to parse or an error occurred.
 
 -ERRORS-
 Okay:
@@ -625,11 +625,11 @@ mutates-input, object-owns-result
 
 *********************************************************************************************************************/
 
-ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, VectorPainter *Painter, CSTRING *Result)
+ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, VectorPainter *Painter, std::string_view *Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if (Result) *Result = nullptr;
+   if (Result) *Result = std::string_view{};
    if (IRI.empty() or (not Painter)) return ERR::NullArgs;
 
    std::string_view iri(IRI);
@@ -666,7 +666,7 @@ ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, VectorPainte
    }
 
    if (error IS ERR::Okay) {
-      if ((Result) and (not result.empty())) *Result = result.data();
+      if (Result and (not result.empty())) *Result = result;
    }
    return error;
 }

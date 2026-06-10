@@ -335,11 +335,11 @@ static ERR FILE_BufferContent(extFile *Self)
          // Allocate a 1 MB memory block, read the stream into it, then reallocate the block to the correct size.
 
          uint8_t *buffer;
-         if (AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+         if (AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
             acSeekStart(Self, 0);
             acRead(Self, buffer, 1024 * 1024, &len);
             if (len > 0) {
-               if (AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer, nullptr) IS ERR::Okay) {
+               if (AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer) IS ERR::Okay) {
                   copymem(buffer, Self->Buffer, len);
                   Self->Size = len;
                }
@@ -353,7 +353,7 @@ static ERR FILE_BufferContent(extFile *Self)
       // the file content is treated as a string.
 
       int8_t *buffer;
-      if (AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+      if (AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
          buffer[Self->Size] = 0;
          if (acRead(Self, buffer, Self->Size, &len) IS ERR::Okay) {
             Self->Buffer = buffer;
@@ -369,7 +369,7 @@ static ERR FILE_BufferContent(extFile *Self)
    // If the file was empty, allocate a 1-byte memory block for the Buffer field, in order to satisfy condition tests.
 
    if (not Self->Buffer) {
-      if (AllocMemory(1, MEM::DATA, (APTR *)&Self->Buffer, nullptr) != ERR::Okay) {
+      if (AllocMemory(1, MEM::DATA, (APTR *)&Self->Buffer) != ERR::Okay) {
          return log.warning(ERR::AllocMemory);
       }
    }
@@ -419,7 +419,7 @@ copied to the new location.  If an error occurs when copying a sub-folder or fil
 and an error code will be returned.
 
 -INPUT-
-cstr Dest: The destination file path for the copy operation.
+strview Dest: The destination file path for the copy operation.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -542,53 +542,6 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
    }
 }
 
-//********************************************************************************************************************
-
-static ERR FILE_Free(extFile *Self)
-{
-   kt::Log log;
-
-   if (Self->prvWatch) Action(fl::Watch::id, Self, nullptr);
-
-#ifdef _WIN32
-   std::string path;
-   if ((Self->Flags & FL::RESET_DATE) != FL::NIL) {
-      // If we have to reset the date, get the file path
-      log.trace("Resetting the file date.");
-      ResolvePath(Self->Path, RSF::NIL, &path);
-   }
-#endif
-
-   if (Self->ProgressDialog) { FreeResource(Self->ProgressDialog); Self->ProgressDialog = nullptr; }
-   if (Self->prvList) { FreeResource(Self->prvList); Self->prvList = nullptr; }
-   if (Self->Buffer)  { FreeResource(Self->Buffer); Self->Buffer = nullptr; }
-
-   if (Self->Handle != -1) {
-      if (close(Self->Handle) IS -1) {
-         #ifdef __unix__
-            log.warning("Unix filesystem error: %s", strerror(errno));
-         #endif
-      }
-      Self->Handle = -1;
-   }
-
-   if (Self->Stream) {
-      #ifdef __unix__
-         closedir((DIR *)Self->Stream);
-      #endif
-      Self->Stream = 0;
-   }
-
-#ifdef _WIN32
-   if (((Self->Flags & FL::RESET_DATE) != FL::NIL) and (not path.empty())) {
-      winResetDate(path.data());
-   }
-#endif
-
-   Self->~extFile();
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -ACTION-
@@ -637,7 +590,7 @@ static ERR FILE_Init(extFile *Self)
          // Allocate buffer if none specified.  An extra byte is allocated for a NULL byte on the end, in case the file
          // content is treated as a string.
 
-         if (AllocMemory((Self->Size < 1) ? 1 : Self->Size+1, MEM::NO_CLEAR, (APTR *)&Self->Buffer, nullptr) != ERR::Okay) {
+         if (AllocMemory((Self->Size < 1) ? 1 : Self->Size+1, MEM::NO_CLEAR, (APTR *)&Self->Buffer) != ERR::Okay) {
             return log.warning(ERR::AllocMemory);
          }
          ((int8_t *)Self->Buffer)[Self->Size] = 0;
@@ -656,7 +609,7 @@ static ERR FILE_Init(extFile *Self)
       Self->Size = Self->Path.size() - 7;
 
       if (Self->Size > 0) {
-         if (AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer, nullptr) IS ERR::Okay) {
+         if (AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer) IS ERR::Okay) {
             Self->Flags |= FL::READ|FL::WRITE;
             Self->Permissions |= PERMIT::HIDDEN;
             copymem(Self->Path.c_str() + 7, Self->Buffer, Self->Size);
@@ -878,7 +831,7 @@ destination path then it will be over-written with the new data.
 The #Position field will be reset as a result of calling this method.
 
 -INPUT-
-cstr Dest: The desired path for the file.
+strview Dest: The desired path for the file.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -897,13 +850,13 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Dest) or (not Args->Dest[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Dest.empty()) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
 
    auto src = std::string_view(Self->Path);
-   auto dest = std::string_view(Args->Dest, strlen(Args->Dest));
+   auto dest = Args->Dest;
 
-   log.msg("%s to %s", src.data(), dest.data());
+   log.msg("%.*s to %.*s", int(src.size()), src.data(), int(dest.size()), dest.data());
 
    if ((dest.ends_with('/')) or (dest.ends_with('\\')) or (dest.ends_with(':'))) {
       // If a trailing slash has been specified, we are moving the file into a folder, rather than to a direct path.
@@ -925,7 +878,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
       if ((error = fs_copy(src, newpath, Args->Callback, true)) IS ERR::Okay) {
          Self->Path.assign(newpath);
       }
-      else log.warning("Failed to move %s to %s", src.data(), newpath.data());
+      else log.warning("Failed to move %.*s to %s", int(src.size()), src.data(), newpath.c_str());
 
       return error;
    }
@@ -940,16 +893,6 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
       }
       else return log.warning(error);
    }
-}
-
-//********************************************************************************************************************
-
-static ERR FILE_NewPlacement(extFile *Self)
-{
-   new (Self) extFile;
-   Self->Handle = -1;
-   Self->Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1137,15 +1080,14 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
 -METHOD-
 ReadLine: Reads the next line from the file.
 
-Reads one line from the file into an internal buffer, which is returned in the Result argument.  Reading a line will
-increase the #Position field by the amount of bytes read from the file.  You must have set the `FL::READ` bit in
+Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line
+will increase the #Position field by the amount of bytes read from the file.  You must have set the `FL::READ` bit in
 the #Flags field when you initialised the file, or the call will fail.
 
-The line buffer is managed internally, so there is no need to free the `Result` string.  `ERR::NoData` is returned
-once all lines have been read.
+`ERR::NoData` is returned once all lines have been read.
 
 -INPUT-
-&str Result: The resulting string is returned in this parameter.
+^&string Result: The string provided in this parameter will be updated with the line read from the file.
 
 -ERRORS-
 Okay: The file information was read into the buffer.
@@ -1165,19 +1107,23 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
 {
    kt::Log log;
 
-   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
    if ((Self->Flags & FL::READ) IS FL::NIL) return log.warning(ERR::FileReadFlag);
+
+   std::string &output = *Args->Result;
+   output.clear();
 
    if (Self->Buffer) {
       if (Self->Position >= Self->Size) return ERR::NoData;
-      auto content = std::string_view((char *)Self->Buffer, Self->Size);
-      auto line_feed = content.find('\n', Self->Position);
-      if (line_feed IS std::string::npos) {
-         Self->prvLine.assign((char *)Self->Buffer, Self->Position);
+      const std::size_t start = std::size_t(Self->Position);
+      auto content = std::string_view((char *)Self->Buffer, std::size_t(Self->Size));
+      auto line_feed = content.find('\n', start);
+      if (line_feed IS std::string_view::npos) {
+         output.assign((char *)Self->Buffer + start, std::size_t(Self->Size) - start);
          Self->Position = Self->Size;
       }
       else {
-         Self->prvLine.assign((char *)Self->Buffer, Self->Position, line_feed - Self->Position);
+         output.assign((char *)Self->Buffer + start, line_feed - start);
          Self->Position = line_feed + 1;
       }
       return ERR::Okay;
@@ -1186,31 +1132,34 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
       if (Self->isFolder) return log.warning(ERR::ExpectedFile);
       if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
 
-      Self->prvLine.resize(4096); // We'll shrink it later
+      output.resize(4096); // We'll shrink it later
       int result;
       const int CHUNK = 256;
       std::size_t line_offset = 0;
-      while ((result = read(Self->Handle, Self->prvLine.data()+line_offset, CHUNK)) > 0) {
+      while ((result = read(Self->Handle, output.data()+line_offset, CHUNK)) > 0) {
          int i;
-         for (i=0; (i < result) and (Self->prvLine[line_offset] != '\n'); i++, line_offset++);
+         for (i=0; (i < result) and (output[line_offset] != '\n'); i++, line_offset++);
          if (i < result) break;
 
-         if (line_offset + CHUNK >= Self->prvLine.size()) {
+         if (line_offset + CHUNK >= output.size()) {
             lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset the file position back to normal
+            output.clear();
             return log.warning(ERR::BufferOverflow);
          }
       }
 
-      if (not line_offset) return ERR::NoData;
+      if (not line_offset) {
+         output.clear();
+         return ERR::NoData;
+      }
 
       Self->Position += line_offset;
-      if (Self->prvLine[line_offset] IS '\n') {
+      if (output[line_offset] IS '\n') {
          Self->Position++; // Skip the line feed
          lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset position to the start of the next line
       }
 
-      Self->prvLine.resize(line_offset);
-      Args->Result = Self->prvLine.data();
+      output.resize(line_offset);
       return ERR::Okay;
    }
 }
@@ -1324,8 +1273,7 @@ static ERR FILE_Seek(extFile *Self, struct acSeek *Args)
 
    if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
 
-   int64_t ret;
-   if ((ret = lseek64(Self->Handle, Self->Position, SEEK_SET)) != Self->Position) {
+   if (auto ret = lseek64(Self->Handle, Self->Position, SEEK_SET); ret != Self->Position) {
       log.warning("Failed to Seek to new position of %" PF64 " (return %" PF64 ").", (long long)Self->Position, (long long)ret);
       Self->Position = oldpos;
       return ERR::SystemCall;
@@ -1589,9 +1537,9 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
       if (vd.WatchPath) {
          #ifdef _WIN32
-         if (AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch, nullptr) IS ERR::Okay) {
+         if (AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch) IS ERR::Okay) {
          #else
-         if (AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch, nullptr) IS ERR::Okay) {
+         if (AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch) IS ERR::Okay) {
          #endif
             Self->prvWatch->VirtualID = vd.VirtualID;
             Self->prvWatch->Routine   = *Args->Callback;
@@ -1660,7 +1608,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
          if (Self->Position + Args->Length > Self->Size) {
             // Increase the size of the buffer to cater for the write.  A null byte (not included in the official size)
             // is always placed at the end.
-            if (ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer, nullptr) IS ERR::Okay) {
+            if (ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer) IS ERR::Okay) {
                Self->Size = Self->Position + Args->Length;
                Self->Buffer[Self->Size] = 0;
             }
@@ -2718,38 +2666,53 @@ static ERR SET_User(extFile *Self, int Value)
 
 //********************************************************************************************************************
 
-static const FieldDef PermissionFlags[] = {
-   { "Read",         PERMIT::READ },
-   { "Write",        PERMIT::WRITE },
-   { "Exec",         PERMIT::EXEC },
-   { "Executable",   PERMIT::EXEC },
-   { "Delete",       PERMIT::DELETE },
-   { "Hidden",       PERMIT::HIDDEN },
-   { "Archive",      PERMIT::ARCHIVE },
-   { "Password",     PERMIT::PASSWORD },
-   { "UserID",       PERMIT::USERID },
-   { "GroupID",      PERMIT::GROUPID },
-   { "OthersRead",   PERMIT::OTHERS_READ },
-   { "OthersWrite",  PERMIT::OTHERS_WRITE },
-   { "OthersExec",   PERMIT::OTHERS_EXEC },
-   { "OthersDelete", PERMIT::OTHERS_DELETE },
-   { "GroupRead",    PERMIT::GROUP_READ },
-   { "GroupWrite",   PERMIT::GROUP_WRITE },
-   { "GroupExec",    PERMIT::GROUP_EXEC },
-   { "GroupDelete",  PERMIT::GROUP_DELETE },
-   { "AllRead",      PERMIT::ALL_READ },
-   { "AllWrite",     PERMIT::ALL_WRITE },
-   { "AllExec",      PERMIT::ALL_EXEC },
-   { "UserRead",     PERMIT::READ },
-   { "UserWrite",    PERMIT::WRITE },
-   { "UserExec",     PERMIT::EXEC },
-   { nullptr, 0 }
-};
+extFile::~extFile() {
+   kt::Log log;
+
+   if (prvWatch) Action(fl::Watch::id, this, nullptr);
+
+#ifdef _WIN32
+   std::string path;
+   if ((Flags & FL::RESET_DATE) != FL::NIL) {
+      // If we have to reset the date, get the file path
+      log.trace("Resetting the file date.");
+      ResolvePath(Path, RSF::NIL, &path);
+   }
+#endif
+
+   if (prvList) { FreeResource(prvList); prvList = nullptr; }
+   if (Buffer)  { FreeResource(Buffer); Buffer = nullptr; }
+
+   if (Handle != -1) {
+      if (close(Handle) IS -1) {
+         #ifdef __unix__
+            log.warning("Unix filesystem error: %s", strerror(errno));
+         #endif
+      }
+      Handle = -1;
+   }
+
+   if (Stream) {
+      #ifdef __unix__
+         closedir((DIR *)Stream);
+      #endif
+      Stream = 0;
+   }
+
+#ifdef _WIN32
+   if (((Flags & FL::RESET_DATE) != FL::NIL) and (not path.empty())) {
+      winResetDate(path.data());
+   }
+#endif
+}
+
+//********************************************************************************************************************
 
 #include "class_file_def.c"
 
 static const FieldArray FileFields[] = {
    { "Position",     FDF_INT64|FDF_RW, nullptr, SET_Position },
+   { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    // Virtual fields
@@ -2757,8 +2720,7 @@ static const FieldArray FileFields[] = {
    { "Created",      FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Created, nullptr, "DateTime" },
    { "Handle",       FDF_INT64|FDF_R|FDF_PURE,      GET_Handle },
    { "Icon",         FDF_CPPSTRING|FDF_R,  GET_Icon },
-   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
-   { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &PermissionFlags },
+   { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &clFilePERMIT },
    { "ResolvedPath", FDF_CPPSTRING|FDF_R,  GET_ResolvedPath },
    { "Size",         FDF_INT64|FDF_RW,     GET_Size, SET_Size },
    { "Timestamp",    FDF_INT64|FDF_R,      GET_Timestamp },

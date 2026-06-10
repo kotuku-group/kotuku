@@ -53,6 +53,7 @@ static size_t glMaxWriteLen = 16 * 1024;
 static void free_socket(extNetSocket *);
 static void free_client(extNetServer *, objNetClient *);
 static CSTRING netsocket_state(NTC Value);
+static bool unlink_client_socket(objNetClient *, objClientSocket *);
 
 // Implementation functions that take HOSTHANDLE
 static void netsocket_incoming_impl(HOSTHANDLE, extNetSocket *);
@@ -114,7 +115,7 @@ Pre-Condition: Must be in a connection state of `NTC::DISCONNECTED`
 Post-Condition: If this method returns `ERR::Okay`, will be in state `NTC::CONNECTING`.
 
 -INPUT-
-cstr Address: String containing either a domain name (e.g. `www.google.com`) or an IP address (e.g. `123.123.123.123`)
+strview Address: String containing either a domain name (e.g. `www.google.com`) or an IP address (e.g. `123.123.123.123`)
 int Port: Remote port to connect to.
 double Timeout: Connection timeout in seconds (0 = no timeout).
 
@@ -132,8 +133,8 @@ non-blocking, mutates-object, copies-input
 
 *********************************************************************************************************************/
 
-static void connect_name_resolved_nl(objNetLookup *, ERR, const std::string &, const std::vector<IPAddress> &);
-static void connect_name_resolved(extNetSocket *, ERR, const std::string &, const std::vector<IPAddress> &);
+static void connect_name_resolved_nl(objNetLookup *, ERR, std::string_view, const std::vector<IPAddress> &);
+static void connect_name_resolved(extNetSocket *, ERR, std::string_view, const std::vector<IPAddress> &);
 static ERR connect_timeout_handler(OBJECTPTR, int64_t, int64_t);
 
 static void clear_connect_timer(extNetSocket *Socket)
@@ -185,7 +186,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Address) or (Args->Port <= 0) or (Args->Port >= 65536)) return log.warning(ERR::Args);
+   if ((!Args) or Args->Address.empty() or (Args->Port <= 0) or (Args->Port >= 65536)) return log.warning(ERR::Args);
 
    if (Self->isDerived()) return ERR::InvalidState; // Server cannot use Connect()
 
@@ -205,9 +206,9 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
    }
 #endif
 
-   log.branch("Address: %s, Port: %d", Args->Address, Args->Port);
+   log.branch("Address: %.*s, Port: %d", int(Args->Address.size()), Args->Address.data(), Args->Port);
 
-   if (Self->Address != std::string_view(Args->Address)) {
+   if (Self->Address != Args->Address) {
       Self->Address.assign(Args->Address);
    }
    Self->Port = Args->Port;
@@ -235,7 +236,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 
       ((extNetLookup *)Self->NetLookup)->Callback = C_FUNCTION(connect_name_resolved_nl);
 
-      if (Self->NetLookup->resolveName(Self->Address.c_str()) != ERR::Okay) {
+      if (Self->NetLookup->resolveName(Self->Address) != ERR::Okay) {
          // Cancel timer on DNS failure
          if (Self->TimerHandle) { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
          return log.warning(Self->Error = ERR::HostNotFound);
@@ -248,7 +249,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 //********************************************************************************************************************
 // This function is called on completion of nlResolveName().
 
-static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const std::string &HostName,
+static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, std::string_view HostName,
    const std::vector<IPAddress> &IPs)
 {
    connect_name_resolved((extNetSocket *)CurrentContext(), Error, HostName, IPs);
@@ -291,7 +292,7 @@ static ERR start_platform_connect(extNetSocket *Socket, const NetworkEndpoint &E
    return ERR::Okay;
 }
 
-static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::string &HostName,
+static void connect_name_resolved(extNetSocket *Socket, ERR Error, std::string_view HostName,
    const std::vector<IPAddress> &IPs)
 {
    kt::Log log(__FUNCTION__);
@@ -306,7 +307,7 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
    log.msg("Received callback on DNS resolution.  Handle: %d", Socket->Handle.int_value());
 
    if (IPs.empty()) {
-      log.warning("No IP addresses resolved for %s", HostName.c_str());
+      log.warning("No IP addresses resolved for %.*s", int(HostName.size()), HostName.data());
       Socket->Error = ERR::HostNotFound;
       Socket->setState(NTC::DISCONNECTED);
       return;
@@ -396,14 +397,11 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
          auto file = objFile::create({ fl::Path(CSTRING(Args->Buffer)), fl::Flags(FL::READ) });
          if (file.ok()) {
             auto size = file->get<size_t>(FID_Size);
-            int8_t *buf;
-            if (AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buf, nullptr) IS ERR::Okay) {
-               kt::LocalResource resource(buf);
-               if (file->read(buf, size) IS ERR::Okay) {
-                  return acWrite(Self, buf, size, nullptr);
-               }
-               else return log.warning(ERR::Read);
+            std::vector<int8_t> buf(size);
+            if (file->read(buf.data(), size) IS ERR::Okay) {
+               return acWrite(Self, buf.data(), size, nullptr);
             }
+            else return log.warning(ERR::Read);
          }
          else return log.warning(ERR::File);
       }
@@ -458,9 +456,6 @@ static ERR NETSOCKET_Free(extNetSocket *Self)
 #endif
 
    free_socket(Self);
-
-   if (Self->classID() IS CLASSID::NETSERVER) ((extNetServer *)Self)->~extNetServer();
-   else Self->~extNetSocket();
    return ERR::Okay;
 }
 
@@ -571,7 +566,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    if (Self->isDerived()) return ERR::Okay; // Will hand-off to the derived class
 
    if ((not Self->Address.empty()) and (Self->Port > 0)) {
-      if ((error = Self->connect(Self->Address.c_str(), Self->Port, 0)) != ERR::Okay) {
+      if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {
          free_socket(Self);
          return error;
       }
@@ -595,7 +590,7 @@ This is only available for UDP sockets.
 The socket must be bound to a local address before joining a multicast group.
 
 -INPUT-
-cstr Group: The multicast group address to join (e.g. `224.1.1.1`).
+strview Group: The multicast group address to join (e.g. `224.1.1.1`).
 
 -ERRORS-
 Okay: Successfully joined the multicast group.
@@ -615,17 +610,18 @@ static ERR NETSOCKET_JoinMulticastGroup(extNetSocket *Self, struct ns::JoinMulti
 
    if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return ERR::NoSupport;
-   if (!Args->Group) return ERR::Args;
+   if (Args->Group.empty()) return ERR::Args;
 
-   log.branch("%s", Args->Group);
+   log.branch("%.*s", int(Args->Group.size()), Args->Group.data());
 
    bool group_ipv6 = false;
-   if (network_platform().parse_multicast_group(Args->Group, group_ipv6) != ERR::Okay) {
-      log.warning("Invalid multicast address: %s", Args->Group);
-      return ERR::Args;
-   }
+   if (auto error = network_platform().join_multicast_group(Self->Handle, Args->Group, group_ipv6);
+         error != ERR::Okay) {
+      if (error IS ERR::Args) {
+         log.warning("Invalid multicast address: %.*s", int(Args->Group.size()), Args->Group.data());
+         return ERR::Args;
+      }
 
-   if (network_platform().join_multicast_group(Self->Handle, Args->Group, group_ipv6) != ERR::Okay) {
       if (group_ipv6) {
          log.warning("Failed to join IPv6 multicast group");
       }
@@ -647,7 +643,7 @@ This method leaves a previously joined multicast group, stopping the reception o
 multicast address.
 
 -INPUT-
-cstr Group: The multicast group address to leave.
+strview Group: The multicast group address to leave.
 
 -ERRORS-
 Okay: Successfully left the multicast group.
@@ -667,17 +663,18 @@ static ERR NETSOCKET_LeaveMulticastGroup(extNetSocket *Self, struct ns::LeaveMul
 
    if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return ERR::NoSupport;
-   if (!Args->Group) return ERR::Args;
+   if (Args->Group.empty()) return ERR::Args;
 
-   log.branch("%s", Args->Group);
+   log.branch("%.*s", int(Args->Group.size()), Args->Group.data());
 
    bool group_ipv6 = false;
-   if (network_platform().parse_multicast_group(Args->Group, group_ipv6) != ERR::Okay) {
-      log.warning("Invalid multicast address: %s", Args->Group);
-      return ERR::Args;
-   }
+   if (auto error = network_platform().leave_multicast_group(Self->Handle, Args->Group, group_ipv6);
+         error != ERR::Okay) {
+      if (error IS ERR::Args) {
+         log.warning("Invalid multicast address: %.*s", int(Args->Group.size()), Args->Group.data());
+         return ERR::Args;
+      }
 
-   if (network_platform().leave_multicast_group(Self->Handle, Args->Group, group_ipv6) != ERR::Okay) {
       if (group_ipv6) {
          log.warning("Failed to leave IPv6 multicast group");
       }
@@ -687,14 +684,6 @@ static ERR NETSOCKET_LeaveMulticastGroup(extNetSocket *Self, struct ns::LeaveMul
       return ERR::Failed;
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR NETSOCKET_NewPlacement(extNetSocket * Self)
-{
-   new (Self) extNetSocket;
    return ERR::Okay;
 }
 

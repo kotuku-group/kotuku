@@ -4,7 +4,7 @@
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsSetVariable[] = { { "Error", FD_INT|FD_ERROR }, { "Script", FD_OBJECTPTR }, { "Name", FD_CPP|FD_STR }, { "Type", FD_INT }, { "Variable", FD_TAGS }, { 0, 0 } };
+FDEF argsSetVariable[] = { { "Error", FD_INT|FD_ERROR }, { "Script", FD_OBJECTPTR }, { "Name", FDF_CPPSTRING }, { "Type", FD_INT }, { "Variable", FD_TAGS }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)fl::SetVariable, "SetVariable", argsSetVariable },

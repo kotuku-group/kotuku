@@ -886,19 +886,18 @@ static void test_prolog_in_xpath()
 
 //********************************************************************************************************************
 
-static void run_unit_tests(CSTRING Options, int &Passed, int &Total)
+static void run_unit_tests(std::string_view Options, int &Passed, int &Total)
 {
    kt::Log log("XQueryTests");
-   std::string_view options = Options ? std::string_view(Options) : std::string_view();
 
    test_count = 0;
    pass_count = 0;
    fail_count = 0;
 
-   if (options IS "resolve_variable") {
+   if (Options IS "resolve_variable") {
       test_resolve_variable_callback();
    }
-   else if (options IS "registered_function") {
+   else if (Options IS "registered_function") {
       test_registered_function_qname_normalisation();
    }
    else {

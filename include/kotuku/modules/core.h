@@ -36,7 +36,11 @@
 
 // For use in requires statements
 template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcObject = std::is_base_of_v<Object, T>;
+template <typename T> concept pcComplete = requires { sizeof(T); };
+template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
+template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
+   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
+   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
 
 #ifndef DEFINE_ENUM_FLAG_OPERATORS
 template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
@@ -62,6 +66,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
    using underlying = std::underlying_type_t<T>;
    return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
 }
+
+constexpr int RESOURCE_ID_OFFSET = -1;
 class objMetaClass;
 class objStorageDevice;
 class objFile;
@@ -193,7 +199,8 @@ enum class AC : int {
    Refresh = 46,
    Disable = 47,
    NewPlacement = 48,
-   END = 49,
+   FreePlacement = 49,
+   END = 50,
 };
 
 // Permission flags
@@ -283,28 +290,18 @@ DEFINE_ENUM_FLAG_OPERATORS(KQ)
 enum class MEM : uint32_t {
    NIL = 0,
    DATA = 0x00000000,
-   MANAGED = 0x00000001,
-   VIDEO = 0x00000002,
-   TEXTURE = 0x00000004,
-   AUDIO = 0x00000008,
-   CODE = 0x00000010,
-   NO_POOL = 0x00000020,
-   TMP_LOCK = 0x00000040,
-   UNTRACKED = 0x00000080,
-   STRING = 0x00000100,
-   OBJECT = 0x00000200,
-   NO_LOCK = 0x00000400,
-   EXCLUSIVE = 0x00000800,
-   COLLECT = 0x00001000,
-   NO_BLOCKING = 0x00002000,
-   NO_BLOCK = 0x00002000,
-   PROTECTED = 0x00004000,
+   VIDEO = 0x00000001,
+   TEXTURE = 0x00000002,
+   AUDIO = 0x00000004,
+   CODE = 0x00000008,
+   UNTRACKED = 0x00000010,
+   STRING = 0x00000020,
+   COLLECT = 0x00000040,
+   PROTECTED = 0x00000080,
    READ = 0x00010000,
    WRITE = 0x00020000,
    READ_WRITE = 0x00030000,
    NO_CLEAR = 0x00040000,
-   HIDDEN = 0x00100000,
-   CALLER = 0x00800000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(MEM)
@@ -1015,11 +1012,10 @@ enum class NF : uint32_t {
    FREE = 0x00000010,
    TIMER_SUB = 0x00000020,
    SUPPRESS_LOG = 0x00000040,
-   COLLECT = 0x00000080,
-   RECLASSED = 0x00000100,
-   SIGNALLED = 0x00000200,
-   PERMIT_TERMINATE = 0x00000400,
-   ASYNC_ACTIVE = 0x00000800,
+   RECLASSED = 0x00000080,
+   SIGNALLED = 0x00000100,
+   PERMIT_TERMINATE = 0x00000200,
+   ASYNC_ACTIVE = 0x00000400,
    UNIQUE = 0x40000000,
    NAME = 0x80000000,
 };
@@ -1055,6 +1051,7 @@ enum class IDTYPE : int {
    MESSAGE = 1,
    GLOBAL = 2,
    FUNCTION = 3,
+   RESOURCE = 4,
 };
 
 // Indicates the state of a process.
@@ -1564,6 +1561,7 @@ struct Edges {
 #define AHASH_SIGNAL 0xec1cd0b6
 #define AHASH_NEWPLACEMENT 0x25d84fc8
 #define AHASH_UNDO 0x45e5725e
+#define AHASH_FREEPLACEMENT 0x560489a0
 
 
 typedef AC ACTIONID;
@@ -1638,6 +1636,8 @@ constexpr T roundup(T Num, T Alignment) {
 
 } // namespace
 
+constexpr RESOURCEID RESOURCEID_INHERIT = 1;
+
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -1686,11 +1686,28 @@ struct OpenInfo {
    std::string ModulePath;            // Path to module files
    std::string RootPath;              // Kotuku root directory
    CSTRING *Args;                     // Command-line arguments
-   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list.
-   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure.
+   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list
+   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure
    int     MaxDepth;                  // Maximum debug depth
    int     Detail;                    // Debug detail level (0 none - 9 trace)
    int     ArgCount;                  // Total arguments in Args
+};
+
+struct ResourceRecord {
+   APTR     Address;                    // Direct pointer to the resource (optional, can rely on ResourceID instead)
+   struct ResourceManager * Manager;    // Reference to the resource manager for this record
+   RESOURCEID ResourceID;               // Unique identifier
+   OBJECTID OwnerID;                    // Owner of the resource
+   bool     CollectOnUnlock;            // Resource is locked; manager will collect immediately once unlocked
+   bool     Terminating;                // A FreeResource() call currently owns the destruction path
+   bool     OwnerManagesChildren;       // True if the current OwnerID manages its child resources
+   ResourceRecord() :
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
 };
 
 struct ObjectSignal {
@@ -1698,8 +1715,11 @@ struct ObjectSignal {
 };
 
 struct ResourceManager {
-   CSTRING Name;          // The name of the resource.
-   ERR (*Free)(APTR);     // A function that will remove the resource's content when terminated.
+   CSTRING Name;                                                              // The name of the resource
+   ERR (*Free)(struct ResourceRecord &, APTR);                                // A function that will remove the resource's content when terminated
+   void (*AddChild)(struct ResourceRecord &, struct ResourceRecord &);        // Optional function for tracking child resources
+   void (*RemoveChild)(struct ResourceRecord &, struct ResourceRecord &);     // Optional function to remove tracking of child resources
+   bool    CanBlock;                                                          // True if the Free callback might wait on locks, callbacks or external resources
 };
 
 struct FunctionField {
@@ -1717,17 +1737,17 @@ using ModClose   = void (*)(OBJECTPTR);
 using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
 using ModOpen    = ERR (*)(OBJECTPTR);
 using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(CSTRING, int *, int *);
+using ModTest    = void (*)(std::string_view, int *, int *);
 struct ModHeader {
-   MHF     Flags;                                 // Special flags, type of function table wanted from the Core
-   CSTRING Definitions;                           // Module definition string, usable by run-time languages such as Tiri
-   ERR (*Init)(OBJECTPTR, struct CoreBase *);     // A one-off initialisation routine for when the module is first opened.
-   void (*Close)(OBJECTPTR);                      // A function that will be called each time the module is closed.
-   ERR (*Open)(OBJECTPTR);                        // A function that will be called each time the module is opened.
-   ERR (*Expunge)(void);                          // Reference to an expunge function to terminate the module.
-   void (*Test)(CSTRING, int *, int *);           // A function that can run embedded unit tests in development builds.
-   CSTRING Name;                                  // Name of the module
-   CSTRING Namespace;                             // A reserved system-wide namespace for function names.
+   MHF     Flags;                                    // Special flags, type of function table wanted from the Core
+   CSTRING Definitions;                              // Module definition string, usable by run-time languages such as Tiri
+   ERR (*Init)(OBJECTPTR, struct CoreBase *);        // A one-off initialisation routine for when the module is first opened.
+   void (*Close)(OBJECTPTR);                         // A function that will be called each time the module is closed.
+   ERR (*Open)(OBJECTPTR);                           // A function that will be called each time the module is opened.
+   ERR (*Expunge)(void);                             // Reference to an expunge function to terminate the module.
+   void (*Test)(std::string_view, int *, int *);     // A function that can run embedded unit tests in development builds.
+   CSTRING Name;                                     // Name of the module
+   CSTRING Namespace;                                // A reserved system-wide namespace for function names.
    STRUCTS *StructDefs;
    class RootModule *Root;
 
@@ -1860,11 +1880,9 @@ struct Message {
 
 typedef struct MemInfo {
    APTR     Start;       // The starting address of the memory block (does not apply to shared blocks).
-   OBJECTID ObjectID;    // The object that owns the memory block.
    uint32_t Size;        // The size of the memory block.
    MEM      Flags;       // The type of memory.
-   MEMORYID MemoryID;    // The unique ID for this block.
-   int16_t  AccessCount; // Total number of active locks on this block.
+   MEMORYID MemoryID;    // The unique resource ID for this block.
 } MEMINFO;
 
 struct MsgHandler {
@@ -2040,51 +2058,48 @@ struct ScriptArg { // For use with sc::Exec
 
 struct CoreBase {
 #ifndef KOTUKU_STATIC
-   ERR (*_AccessMemory)(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
    ERR (*_Action)(AC Action, OBJECTPTR Object, APTR Parameters);
    void (*_ActionList)(struct ActionTable **Actions, int *Size);
-   ERR (*_DeleteFile)(const std::string_view & Path, FUNCTION *Callback);
+   ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
-   ERR (*_AllocMemory)(int Size, MEM Flags, APTR *Address, MEMORYID *ID);
+   ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
-   ERR (*_CheckMemoryExists)(MEMORYID ID);
-   ERR (*_CheckObjectExists)(OBJECTID Object);
+   ERR (*_CheckResourceExists)(RESOURCEID ID);
    ERR (*_InitObject)(OBJECTPTR Object);
-   ERR (*_VirtualVolume)(const std::string_view & Name, ...);
+   ERR (*_VirtualVolume)(const std::string_view &Name, ...);
    OBJECTPTR (*_CurrentContext)(void);
    void (*_SetLogCallback)(APTR Callback, int DepthLimit, int LogLimit);
    int (*_AdjustLogLevel)(int Delta);
-   ERR (*_ReadFileToBuffer)(const std::string_view & Path, APTR Buffer, int BufferSize, int *Result);
-   ERR (*_FindObject)(const std::string_view & Name, CLASSID ClassID, OBJECTID *ObjectID);
+   ERR (*_ReadFileToBuffer)(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result);
+   ERR (*_FindObject)(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
    objMetaClass * (*_FindClass)(CLASSID ClassID);
-   ERR (*_AnalysePath)(const std::string_view & Path, LOC *Type);
-   ERR (*_FreeResource)(MEMORYID ID);
+   ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
+   ERR (*_FreeResource)(RESOURCEID ID);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
-   ERR (*_CompareFilePaths)(const std::string_view & PathA, const std::string_view & PathB);
+   ERR (*_CompareFilePaths)(const std::string_view &PathA, const std::string_view &PathB);
    const struct SystemState * (*_GetSystemState)(void);
    ERR (*_ListChildren)(OBJECTID Object, kt::vector<ChildEntry> *List);
    ERR (*_RegisterFD)(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
-   ERR (*_ResolvePath)(const std::string_view & Path, RSF Flags, std::string *Result);
-   ERR (*_MemoryIDInfo)(MEMORYID ID, struct MemInfo *MemInfo, int Size);
-   ERR (*_MemoryPtrInfo)(APTR Address, struct MemInfo *MemInfo, int Size);
+   ERR (*_ResolvePath)(const std::string_view &Path, RSF Flags, std::string *Result);
+   ERR (*_MemoryInfo)(MEMORYID ID, struct MemInfo *MemInfo, int Size);
+   ERR (*_TrackResource)(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
-   ERR (*_CopyFile)(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
+   ERR (*_CopyFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
-   ERR (*_IdentifyFile)(const std::string_view & Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
-   ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID);
-   ERR (*_ReleaseMemory)(MEMORYID MemoryID);
-   CLASSID (*_ResolveClassName)(const std::string_view & Name);
+   ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
+   ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address);
+   CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
    ERR (*_ProtectMemory)(APTR Address, MEM Flags);
    void (*_SetObjectContext)(OBJECTPTR Object, struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
    ERR (*_ScanDir)(struct DirInfo *Info);
-   ERR (*_SetName)(OBJECTPTR Object, const std::string_view & Name);
+   ERR (*_SetName)(OBJECTPTR Object, const std::string_view &Name);
    void (*_LogReturn)(void);
    ERR (*_SubscribeAction)(OBJECTPTR Object, AC Action, FUNCTION *Callback);
    ERR (*_SubscribeEvent)(int64_t Event, FUNCTION *Callback, APTR *Handle);
@@ -2094,23 +2109,23 @@ struct CoreBase {
    void (*_UnsubscribeEvent)(APTR Handle);
    ERR (*_BroadcastEvent)(APTR Event, int EventSize);
    ERR (*_WaitTime)(double Seconds);
-   int64_t (*_GetEventID)(EVG Group, const std::string_view & SubGroup, const std::string_view & Event);
+   int64_t (*_GetEventID)(EVG Group, const std::string_view &SubGroup, const std::string_view &Event);
    uint32_t (*_GenCRC32)(uint32_t CRC, APTR Data, uint32_t Length);
    int64_t (*_GetResource)(RES Resource);
    int64_t (*_SetResource)(RES Resource, int64_t Value);
    ERR (*_ScanMessages)(int *Handle, MSGID Type, APTR Buffer, int Size);
    ERR (*_WaitForObjects)(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
    void (*_UnloadFile)(struct CacheFile *Cache);
-   ERR (*_CreateFolder)(const std::string_view & Path, PERMIT Permissions);
-   ERR (*_LoadFile)(const std::string_view & Path, LDF Flags, struct CacheFile **Cache);
-   ERR (*_SetVolume)(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags);
-   ERR (*_DeleteVolume)(const std::string_view & Name);
-   ERR (*_MoveFile)(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
+   ERR (*_CreateFolder)(const std::string_view &Path, PERMIT Permissions);
+   ERR (*_LoadFile)(const std::string_view &Path, LDF Flags, struct CacheFile **Cache);
+   ERR (*_SetVolume)(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags);
+   ERR (*_DeleteVolume)(const std::string_view &Name);
+   ERR (*_MoveFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
    ERR (*_UpdateMessage)(int Message, MSGID Type, APTR Data, int Size);
    ERR (*_AddMsgHandler)(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
    ERR (*_QueueAction)(AC Action, OBJECTID Object, APTR Args);
    int64_t (*_PreciseTime)(void);
-   ERR (*_OpenDir)(const std::string_view & Path, RDF Flags, struct DirInfo **Info);
+   ERR (*_OpenDir)(const std::string_view &Path, RDF Flags, struct DirInfo **Info);
    OBJECTPTR (*_GetObjectPtr)(OBJECTID Object);
    struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
    CSTRING (*_GetErrorMsg)(ERR Error);
@@ -2119,72 +2134,68 @@ struct CoreBase {
    ERR (*_LockObject)(OBJECTPTR Object, int MilliSeconds);
    void (*_ReleaseObject)(OBJECTPTR Object);
    ERR (*_AsyncAction)(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callback);
-   ERR (*_AddInfoTag)(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value);
+   ERR (*_AddInfoTag)(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value);
    void (*_SetDefaultPermissions)(int User, int Group, PERMIT Permissions);
    void (*_VLogF)(VLF Flags, const char *Header, const char *Message, va_list Args);
-   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view & Name, CSTRING *Value);
-   ERR (*_SetResourcePath)(RP PathType, const std::string_view & Path);
+   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value);
+   ERR (*_SetResourcePath)(RP PathType, const std::string_view &Path);
    objTask * (*_CurrentTask)(void);
    CSTRING (*_ResolveGroupID)(int Group);
    CSTRING (*_ResolveUserID)(int User);
-   ERR (*_CreateLink)(const std::string_view & From, const std::string_view & To);
+   ERR (*_CreateLink)(const std::string_view &From, const std::string_view &To);
    OBJECTPTR (*_ParentContext)(void);
-   void (*_SetResourceMgr)(APTR Address, struct ResourceManager *Manager);
    ERR (*_WakeThread)(int Thread, int Stop);
-   ERR (*_AsyncCancel)(OBJECTID *Objects, int Size);
+   ERR (*_AsyncCancel)(kt::vector<OBJECTID> &Objects);
    int (*_AsyncPending)(OBJECTID Object);
-   ERR (*_AsyncWait)(OBJECTID *Objects, int Size, int TimeOut);
-   ERR (*_ClassDatabase)(struct ClassRecord * **Classes);
+   ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
+   ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
 #endif // KOTUKU_STATIC
 };
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_CORE_MODULE)
 extern struct CoreBase *CoreBase;
-inline ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result) { return CoreBase->_AccessMemory(Memory,Flags,MilliSeconds,Result); }
 inline ERR Action(AC Action, OBJECTPTR Object, APTR Parameters) { return CoreBase->_Action(Action,Object,Parameters); }
 inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBase->_ActionList(Actions,Size); }
-inline ERR DeleteFile(const std::string_view & Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
+inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
-inline ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *ID) { return CoreBase->_AllocMemory(Size,Flags,Address,ID); }
+inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
-inline ERR CheckMemoryExists(MEMORYID ID) { return CoreBase->_CheckMemoryExists(ID); }
-inline ERR CheckObjectExists(OBJECTID Object) { return CoreBase->_CheckObjectExists(Object); }
+inline ERR CheckResourceExists(RESOURCEID ID) { return CoreBase->_CheckResourceExists(ID); }
 inline ERR InitObject(OBJECTPTR Object) { return CoreBase->_InitObject(Object); }
-template<class... Args> ERR VirtualVolume(const std::string_view & Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
+template<class... Args> ERR VirtualVolume(const std::string_view &Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
 inline OBJECTPTR CurrentContext(void) { return CoreBase->_CurrentContext(); }
 inline void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit) { return CoreBase->_SetLogCallback(Callback,DepthLimit,LogLimit); }
 inline int AdjustLogLevel(int Delta) { return CoreBase->_AdjustLogLevel(Delta); }
-inline ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int BufferSize, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,BufferSize,Result); }
-inline ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,ObjectID); }
+inline ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,BufferSize,Result); }
+inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,ObjectID); }
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
-inline ERR AnalysePath(const std::string_view & Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
-inline ERR FreeResource(MEMORYID ID) { return CoreBase->_FreeResource(ID); }
+inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
+inline ERR FreeResource(RESOURCEID ID) { return CoreBase->_FreeResource(ID); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
-inline ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
+inline ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
 inline const struct SystemState * GetSystemState(void) { return CoreBase->_GetSystemState(); }
 inline ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List) { return CoreBase->_ListChildren(Object,List); }
 inline ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data) { return CoreBase->_RegisterFD(FD,Flags,Routine,Data); }
-inline ERR ResolvePath(const std::string_view & Path, RSF Flags, std::string *Result) { return CoreBase->_ResolvePath(Path,Flags,Result); }
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryIDInfo(ID,MemInfo,Size); }
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryPtrInfo(Address,MemInfo,Size); }
+inline ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result) { return CoreBase->_ResolvePath(Path,Flags,Result); }
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryInfo(ID,MemInfo,Size); }
+inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager); }
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
-inline ERR CopyFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
+inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
-inline ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
-inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID) { return CoreBase->_ReallocMemory(Memory,Size,Address,ID); }
-inline ERR ReleaseMemory(MEMORYID MemoryID) { return CoreBase->_ReleaseMemory(MemoryID); }
-inline CLASSID ResolveClassName(const std::string_view & Name) { return CoreBase->_ResolveClassName(Name); }
+inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
+inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address) { return CoreBase->_ReallocMemory(Memory,Size,Address); }
+inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
 inline ERR ProtectMemory(APTR Address, MEM Flags) { return CoreBase->_ProtectMemory(Address,Flags); }
 inline void SetObjectContext(OBJECTPTR Object, struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
 inline ERR ScanDir(struct DirInfo *Info) { return CoreBase->_ScanDir(Info); }
-inline ERR SetName(OBJECTPTR Object, const std::string_view & Name) { return CoreBase->_SetName(Object,Name); }
+inline ERR SetName(OBJECTPTR Object, const std::string_view &Name) { return CoreBase->_SetName(Object,Name); }
 inline void LogReturn(void) { return CoreBase->_LogReturn(); }
 inline ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback) { return CoreBase->_SubscribeAction(Object,Action,Callback); }
 inline ERR SubscribeEvent(int64_t Event, FUNCTION *Callback, APTR *Handle) { return CoreBase->_SubscribeEvent(Event,Callback,Handle); }
@@ -2194,23 +2205,23 @@ inline ERR UnsubscribeAction(OBJECTPTR Object, AC Action) { return CoreBase->_Un
 inline void UnsubscribeEvent(APTR Handle) { return CoreBase->_UnsubscribeEvent(Handle); }
 inline ERR BroadcastEvent(APTR Event, int EventSize) { return CoreBase->_BroadcastEvent(Event,EventSize); }
 inline ERR WaitTime(double Seconds) { return CoreBase->_WaitTime(Seconds); }
-inline int64_t GetEventID(EVG Group, const std::string_view & SubGroup, const std::string_view & Event) { return CoreBase->_GetEventID(Group,SubGroup,Event); }
+inline int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std::string_view &Event) { return CoreBase->_GetEventID(Group,SubGroup,Event); }
 inline uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length) { return CoreBase->_GenCRC32(CRC,Data,Length); }
 inline int64_t GetResource(RES Resource) { return CoreBase->_GetResource(Resource); }
 inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetResource(Resource,Value); }
 inline ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size) { return CoreBase->_ScanMessages(Handle,Type,Buffer,Size); }
 inline ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,TimeOut,ObjectSignals); }
 inline void UnloadFile(struct CacheFile *Cache) { return CoreBase->_UnloadFile(Cache); }
-inline ERR CreateFolder(const std::string_view & Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
-inline ERR LoadFile(const std::string_view & Path, LDF Flags, struct CacheFile **Cache) { return CoreBase->_LoadFile(Path,Flags,Cache); }
-inline ERR SetVolume(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags) { return CoreBase->_SetVolume(Name,Path,Icon,Label,Device,Flags); }
-inline ERR DeleteVolume(const std::string_view & Name) { return CoreBase->_DeleteVolume(Name); }
-inline ERR MoveFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback) { return CoreBase->_MoveFile(Source,Dest,Callback); }
+inline ERR CreateFolder(const std::string_view &Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
+inline ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **Cache) { return CoreBase->_LoadFile(Path,Flags,Cache); }
+inline ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags) { return CoreBase->_SetVolume(Name,Path,Icon,Label,Device,Flags); }
+inline ERR DeleteVolume(const std::string_view &Name) { return CoreBase->_DeleteVolume(Name); }
+inline ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_MoveFile(Source,Dest,Callback); }
 inline ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size) { return CoreBase->_UpdateMessage(Message,Type,Data,Size); }
 inline ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle) { return CoreBase->_AddMsgHandler(MsgType,Routine,Handle); }
 inline ERR QueueAction(AC Action, OBJECTID Object, APTR Args) { return CoreBase->_QueueAction(Action,Object,Args); }
 inline int64_t PreciseTime(void) { return CoreBase->_PreciseTime(); }
-inline ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo **Info) { return CoreBase->_OpenDir(Path,Flags,Info); }
+inline ERR OpenDir(const std::string_view &Path, RDF Flags, struct DirInfo **Info) { return CoreBase->_OpenDir(Path,Flags,Info); }
 inline OBJECTPTR GetObjectPtr(OBJECTID Object) { return CoreBase->_GetObjectPtr(Object); }
 inline struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
 inline CSTRING GetErrorMsg(ERR Error) { return CoreBase->_GetErrorMsg(Error); }
@@ -2219,67 +2230,63 @@ inline ERR FuncError(CSTRING Header, ERR Error) { return CoreBase->_FuncError(He
 inline ERR LockObject(OBJECTPTR Object, int MilliSeconds) { return CoreBase->_LockObject(Object,MilliSeconds); }
 inline void ReleaseObject(OBJECTPTR Object) { return CoreBase->_ReleaseObject(Object); }
 inline ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callback) { return CoreBase->_AsyncAction(Action,Object,Args,Callback); }
-inline ERR AddInfoTag(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
+inline ERR AddInfoTag(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
 inline void SetDefaultPermissions(int User, int Group, PERMIT Permissions) { return CoreBase->_SetDefaultPermissions(User,Group,Permissions); }
 inline void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args) { return CoreBase->_VLogF(Flags,Header,Message,Args); }
-inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view & Name, CSTRING *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
-inline ERR SetResourcePath(RP PathType, const std::string_view & Path) { return CoreBase->_SetResourcePath(PathType,Path); }
+inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
+inline ERR SetResourcePath(RP PathType, const std::string_view &Path) { return CoreBase->_SetResourcePath(PathType,Path); }
 inline objTask * CurrentTask(void) { return CoreBase->_CurrentTask(); }
 inline CSTRING ResolveGroupID(int Group) { return CoreBase->_ResolveGroupID(Group); }
 inline CSTRING ResolveUserID(int User) { return CoreBase->_ResolveUserID(User); }
-inline ERR CreateLink(const std::string_view & From, const std::string_view & To) { return CoreBase->_CreateLink(From,To); }
+inline ERR CreateLink(const std::string_view &From, const std::string_view &To) { return CoreBase->_CreateLink(From,To); }
 inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
-inline void SetResourceMgr(APTR Address, struct ResourceManager *Manager) { return CoreBase->_SetResourceMgr(Address,Manager); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
-inline ERR AsyncCancel(OBJECTID *Objects, int Size) { return CoreBase->_AsyncCancel(Objects,Size); }
+inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncCancel(Objects); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
-inline ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut) { return CoreBase->_AsyncWait(Objects,Size,TimeOut); }
-inline ERR ClassDatabase(struct ClassRecord * **Classes) { return CoreBase->_ClassDatabase(Classes); }
+inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
+inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 #else
-extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
-extern "C" ERR DeleteFile(const std::string_view & Path, FUNCTION *Callback);
+extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
-extern "C" ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *ID);
+extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
-extern "C" ERR CheckMemoryExists(MEMORYID ID);
-extern "C" ERR CheckObjectExists(OBJECTID Object);
+extern "C" ERR CheckResourceExists(RESOURCEID ID);
 extern "C" ERR InitObject(OBJECTPTR Object);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
-extern "C" ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int BufferSize, int *Result);
-extern "C" ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECTID *ObjectID);
+extern "C" ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result);
+extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
-extern "C" ERR AnalysePath(const std::string_view & Path, LOC *Type);
-extern "C" ERR FreeResource(MEMORYID ID);
+extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
+extern "C" ERR FreeResource(RESOURCEID ID);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
-extern "C" ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB);
+extern "C" ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB);
 extern "C" const struct SystemState * GetSystemState(void);
 extern "C" ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List);
 extern "C" ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
-extern "C" ERR ResolvePath(const std::string_view & Path, RSF Flags, std::string *Result);
-extern "C" ERR MemoryIDInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
-extern "C" ERR MemoryPtrInfo(APTR Address, struct MemInfo *MemInfo, int Size);
+extern "C" ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result);
+extern "C" ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
+extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
-extern "C" ERR CopyFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
+extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
-extern "C" ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
-extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID);
-extern "C" ERR ReleaseMemory(MEMORYID MemoryID);
-extern "C" CLASSID ResolveClassName(const std::string_view & Name);
+extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
+extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address);
+extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
 extern "C" ERR ProtectMemory(APTR Address, MEM Flags);
 extern "C" void SetObjectContext(OBJECTPTR Object, struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
 extern "C" ERR ScanDir(struct DirInfo *Info);
-extern "C" ERR SetName(OBJECTPTR Object, const std::string_view & Name);
+extern "C" ERR SetName(OBJECTPTR Object, const std::string_view &Name);
 extern "C" void LogReturn(void);
 extern "C" ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback);
 extern "C" ERR SubscribeEvent(int64_t Event, FUNCTION *Callback, APTR *Handle);
@@ -2289,23 +2296,23 @@ extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);
-extern "C" int64_t GetEventID(EVG Group, const std::string_view & SubGroup, const std::string_view & Event);
+extern "C" int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std::string_view &Event);
 extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);
 extern "C" ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size);
 extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile *Cache);
-extern "C" ERR CreateFolder(const std::string_view & Path, PERMIT Permissions);
-extern "C" ERR LoadFile(const std::string_view & Path, LDF Flags, struct CacheFile **Cache);
-extern "C" ERR SetVolume(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags);
-extern "C" ERR DeleteVolume(const std::string_view & Name);
-extern "C" ERR MoveFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
+extern "C" ERR CreateFolder(const std::string_view &Path, PERMIT Permissions);
+extern "C" ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **Cache);
+extern "C" ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags);
+extern "C" ERR DeleteVolume(const std::string_view &Name);
+extern "C" ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
 extern "C" ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size);
 extern "C" ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
 extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime(void);
-extern "C" ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo **Info);
+extern "C" ERR OpenDir(const std::string_view &Path, RDF Flags, struct DirInfo **Info);
 extern "C" OBJECTPTR GetObjectPtr(OBJECTID Object);
 extern "C" struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
 extern "C" CSTRING GetErrorMsg(ERR Error);
@@ -2314,29 +2321,33 @@ extern "C" ERR FuncError(CSTRING Header, ERR Error);
 extern "C" ERR LockObject(OBJECTPTR Object, int MilliSeconds);
 extern "C" void ReleaseObject(OBJECTPTR Object);
 extern "C" ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callback);
-extern "C" ERR AddInfoTag(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value);
+extern "C" ERR AddInfoTag(struct FileInfo *Info, const std::string_view &Name, const std::string_view &Value);
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args);
-extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view & Name, CSTRING *Value);
-extern "C" ERR SetResourcePath(RP PathType, const std::string_view & Path);
+extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view &Name, std::string_view *Value);
+extern "C" ERR SetResourcePath(RP PathType, const std::string_view &Path);
 extern "C" objTask * CurrentTask(void);
 extern "C" CSTRING ResolveGroupID(int Group);
 extern "C" CSTRING ResolveUserID(int User);
-extern "C" ERR CreateLink(const std::string_view & From, const std::string_view & To);
+extern "C" ERR CreateLink(const std::string_view &From, const std::string_view &To);
 extern "C" OBJECTPTR ParentContext(void);
-extern "C" void SetResourceMgr(APTR Address, struct ResourceManager *Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);
-extern "C" ERR AsyncCancel(OBJECTID *Objects, int Size);
+extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
-extern "C" ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut);
-extern "C" ERR ClassDatabase(struct ClassRecord * **Classes);
+extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
+extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 #endif // KOTUKU_STATIC
 
 
 //********************************************************************************************************************
 
-template <class T> inline MEMORYID GetMemoryID(T &&A) {
-   return ((MEMORYID *)A)[-2];
+template <pcObjectPointer T> inline MEMORYID GetMemoryID(T) {
+   static_assert(not pcObjectPointer<T>, "GetMemoryID() cannot be called on object pointers; use Object->UID.");
+   return 0;
+}
+
+template <class T> requires (not pcObjectPointer<T>) inline MEMORYID GetMemoryID(T &&A) {
+   return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
 inline ERR DeregisterFD(HOSTHANDLE Handle) {
@@ -2363,18 +2374,16 @@ inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription
    return SubscribeTimer(Interval,&Callback,Subscription);
 }
 
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
+// This template leverages pcObject to be the preferred entry point for any Object type or derivation.
+
+template <pcObject T> inline ERR FreeResource(T *Object) {
+   if (not Object) return ERR::NullArgs;
+   return FreeResource(Object->UID);
 }
 
 inline ERR FreeResource(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return FreeResource(((int *)Address)[-2]);
-}
-
-inline ERR AllocMemory(int Size, MEM Flags, APTR Address) {
-   return AllocMemory(Size, Flags, (APTR *)Address, nullptr);
+   if (not Address) return ERR::NullArgs;
+   return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
@@ -2385,12 +2394,8 @@ template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
 }
 
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryIDInfo(ID,MemInfo,sizeof(struct MemInfo));
-}
-
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo) {
-   return MemoryPtrInfo(Address,MemInfo,sizeof(struct MemInfo));
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
+   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
@@ -2484,7 +2489,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
 // MetaClass methods
 
 namespace mc {
-struct FindField { int ID; struct Field * Field; objMetaClass * Source; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FindField { int ID; struct Field *Field; objMetaClass *Source; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -2525,7 +2530,7 @@ class objMetaClass : public Object {
       ERR error = Action(AC(-1), this, &args);
       if (Field) *Field = args.Field;
       if (Source) *Source = args.Source;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -2779,9 +2784,11 @@ class objStorageDevice : public Object {
    using create = kt::Create<objStorageDevice>;
 
    DEVICE  DeviceFlags;   // These read-only flags identify the type of device and its features.
-   int64_t DeviceSize;    // The storage size of the device in bytes, without accounting for the file system format.
-   int64_t BytesFree;     // Total amount of storage space that is available, measured in bytes.
-   int64_t BytesUsed;     // Total amount of storage space in use.
+   int64_t DeviceSize;    // Total storage capacity of the resolved volume, measured in bytes.
+   int64_t BytesFree;     // Amount of storage space available to the current user, measured in bytes.
+   int64_t BytesUsed;     // Amount of storage space in use, measured in bytes.
+   std::string DeviceID;  // Unique device identifier for the mounted volume, when available.
+   std::string Volume;    // The volume name of the device to query.
 
    // Action stubs
 
@@ -2810,17 +2817,13 @@ class objStorageDevice : public Object {
    }
 
    inline ERR getDevice(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->DeviceID;
+      return ERR::Okay;
    }
 
    inline ERR getVolume(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->Volume;
+      return ERR::Okay;
    }
 
 
@@ -2842,14 +2845,14 @@ class objStorageDevice : public Object {
 namespace fl {
 struct StartStream { OBJECTID SubscriberID; FL Flags; int Length; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct StopStream { static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Delete { FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Move { CSTRING Dest; FUNCTION * Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Copy { CSTRING Dest; FUNCTION * Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Delete { FUNCTION *Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Move { std::string_view Dest; FUNCTION *Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Copy { std::string_view Dest; FUNCTION *Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDate { int Year; int Month; int Day; int Hour; int Minute; int Second; FDT Type; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ReadLine { STRING Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadLine { std::string *Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct BufferContent { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Next { objFile * File; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Watch { FUNCTION * Callback; MFF Flags; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Next { objFile *File; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Watch { FUNCTION *Callback; MFF Flags; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -2861,13 +2864,15 @@ class objFile : public Object {
    using create = kt::Create<objFile>;
 
    int64_t  Position;   // The current read/write byte position in a file.
+   std::string Path;    // Specifies the location of a file or folder.
    FL       Flags;      // File flags and options.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
    public:
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
    }
 
    // Action stubs
@@ -2932,51 +2937,55 @@ class objFile : public Object {
    }
    inline ERR startStream(OBJECTID SubscriberID, FL Flags, int Length) noexcept {
       struct fl::StartStream args = { SubscriberID, Flags, Length };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR stopStream() noexcept {
-      return(Action(AC(-2), this, nullptr));
+      return Action(AC(-2), this, nullptr);
    }
    inline ERR del(FUNCTION Callback) noexcept {
       struct fl::Delete args = { &Callback };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
-   inline ERR move(CSTRING Dest, FUNCTION Callback) noexcept {
+   inline ERR move(const std::string_view &Dest, FUNCTION Callback) noexcept {
       struct fl::Move args = { Dest, &Callback };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
-   inline ERR copy(CSTRING Dest, FUNCTION Callback) noexcept {
+   inline ERR copy(const std::string_view &Dest, FUNCTION Callback) noexcept {
       struct fl::Copy args = { Dest, &Callback };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR setDate(int Year, int Month, int Day, int Hour, int Minute, int Second, FDT Type) noexcept {
       struct fl::SetDate args = { Year, Month, Day, Hour, Minute, Second, Type };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
-   inline ERR readLine(STRING * Result) noexcept {
-      struct fl::ReadLine args = { (STRING)0 };
+   inline ERR readLine(std::string &Result) noexcept {
+      struct fl::ReadLine args = { &Result };
       ERR error = Action(AC(-7), this, &args);
-      if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR bufferContent() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR next(objFile ** File) noexcept {
       struct fl::Next args = { (objFile *)0 };
       ERR error = Action(AC(-9), this, &args);
       if (File) *File = args.File;
-      return(error);
+      return error;
    }
    inline ERR watch(FUNCTION Callback, MFF Flags) noexcept {
       struct fl::Watch args = { &Callback, Flags };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
 
    // Customised field getting
 
    inline ERR getPosition(int64_t &Value) noexcept {
       Value = this->Position;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
       return ERR::Okay;
    }
 
@@ -3020,13 +3029,6 @@ class objFile : public Object {
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3096,6 +3098,11 @@ class objFile : public Object {
       return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+   }
+
    inline ERR setFlags(const FL Value) noexcept {
       auto field = &this->Class->Dictionary[2];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
@@ -3109,11 +3116,6 @@ class objFile : public Object {
    inline ERR setCreated(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, 0x08000310, Value, 1);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
    inline ERR setPermissions(const int Value) noexcept {
@@ -3150,14 +3152,14 @@ class objFile : public Object {
 // Config methods
 
 namespace cfg {
-struct ReadValue { CSTRING Group; CSTRING Key; CSTRING Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Set { CSTRING Group; CSTRING Key; CSTRING Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct WriteValue { CSTRING Group; CSTRING Key; CSTRING Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DeleteKey { CSTRING Group; CSTRING Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DeleteGroup { CSTRING Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetGroupFromIndex { int Index; CSTRING Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SortByKey { CSTRING Key; int Descending; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct MergeFile { CSTRING Path; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Set { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct WriteValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DeleteKey { std::string_view Group; std::string_view Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DeleteGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetGroupFromIndex { int Index; std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SortByKey { std::string_view Key; int Descending; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct MergeFile { std::string_view Path; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Merge { OBJECTPTR Source; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -3242,45 +3244,45 @@ class objConfig : public Object {
       struct acSaveToObject args = { Dest, { ClassID } };
       return Action(AC::SaveToObject, this, &args);
    }
-   inline ERR readValue(CSTRING Group, CSTRING Key, CSTRING * Data) noexcept {
-      struct cfg::ReadValue args = { Group, Key, (CSTRING)0 };
+   inline ERR readValue(const std::string_view &Group, const std::string_view &Key, std::string_view * Data) noexcept {
+      struct cfg::ReadValue args = { Group, Key };
       ERR error = Action(AC(-1), this, &args);
       if (Data) *Data = args.Data;
-      return(error);
+      return error;
    }
-   inline ERR set(CSTRING Group, CSTRING Key, CSTRING Data) noexcept {
+   inline ERR set(const std::string_view &Group, const std::string_view &Key, const std::string_view &Data) noexcept {
       struct cfg::Set args = { Group, Key, Data };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR writeValue(CSTRING Group, CSTRING Key, CSTRING Data) noexcept {
+   inline ERR writeValue(const std::string_view &Group, const std::string_view &Key, const std::string_view &Data) noexcept {
       struct cfg::WriteValue args = { Group, Key, Data };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
-   inline ERR deleteKey(CSTRING Group, CSTRING Key) noexcept {
+   inline ERR deleteKey(const std::string_view &Group, const std::string_view &Key) noexcept {
       struct cfg::DeleteKey args = { Group, Key };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
-   inline ERR deleteGroup(CSTRING Group) noexcept {
+   inline ERR deleteGroup(const std::string_view &Group) noexcept {
       struct cfg::DeleteGroup args = { Group };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
-   inline ERR getGroupFromIndex(int Index, CSTRING * Group) noexcept {
-      struct cfg::GetGroupFromIndex args = { Index, (CSTRING)0 };
+   inline ERR getGroupFromIndex(int Index, std::string_view * Group) noexcept {
+      struct cfg::GetGroupFromIndex args = { Index };
       ERR error = Action(AC(-6), this, &args);
       if (Group) *Group = args.Group;
-      return(error);
+      return error;
    }
-   inline ERR sortByKey(CSTRING Key, int Descending) noexcept {
+   inline ERR sortByKey(const std::string_view &Key, int Descending) noexcept {
       struct cfg::SortByKey args = { Key, Descending };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
-   inline ERR mergeFile(CSTRING Path) noexcept {
+   inline ERR mergeFile(const std::string_view &Path) noexcept {
       struct cfg::MergeFile args = { Path };
-      return(Action(AC(-9), this, &args));
+      return Action(AC(-9), this, &args);
    }
    inline ERR merge(OBJECTPTR Source) noexcept {
       struct cfg::Merge args = { Source };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
 
    // Customised field getting
@@ -3359,11 +3361,11 @@ class objConfig : public Object {
 // Script methods
 
 namespace sc {
-struct Exec { CSTRING Procedure; const struct ScriptArg * Args; int TotalArgs; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DerefProcedure { FUNCTION * Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Callback { int64_t ProcedureID; const struct ScriptArg * Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetProcedureID { CSTRING Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DebugLog { CSTRING Options; CSTRING Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Exec { std::string_view Procedure; const struct ScriptArg *Args; int TotalArgs; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DerefProcedure { FUNCTION *Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Callback { int64_t ProcedureID; const struct ScriptArg *Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetProcedureID { std::string_view Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DebugLog { std::string_view Options; std::string *Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3374,27 +3376,25 @@ class objScript : public Object {
 
    using create = kt::Create<objScript>;
 
-   OBJECTID TargetID;  // Reference to the default container that new script objects will be initialised to.
-   SCF      Flags;     // Optional flags.
-   ERR      Error;     // If a script fails during execution, an error code may be readable here.
-   int      CurrentLine; // Indicates the current line being executed when in debug mode.
-   int      LineOffset; // For debugging purposes, this value is added to any message referencing a line number.
+   std::string Path;            // The location of a script file to be loaded.
+   std::string Procedure;       // Specifies a procedure name to be executed.
+   std::string ErrorMessage;    // A human readable error string may be declared here following a script execution failure.
+   OBJECTID TargetID;           // Reference to the default container that new script objects will be initialised to.
+   SCF      Flags;              // Optional flags.
+   ERR      Error;              // If a script fails during execution, an error code may be readable here.
+   int      CurrentLine;        // Indicates the current line being executed when in debug mode.
+   int      LineOffset;         // For debugging purposes, this value is added to any message referencing a line number.
 
 #ifdef PRV_SCRIPT
    int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars; // Global parameters
+   KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
-   char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string Path;              // File location of the script
    std::string String;
    std::string WorkingPath;
-   std::string ErrorMessage;
-   std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
-   char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
 #endif
 
@@ -3417,34 +3417,48 @@ class objScript : public Object {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR exec(CSTRING Procedure, const struct ScriptArg * Args, int TotalArgs) noexcept {
+   inline ERR exec(const std::string_view &Procedure, const struct ScriptArg * Args, int TotalArgs) noexcept {
       struct sc::Exec args = { Procedure, Args, TotalArgs };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR derefProcedure(FUNCTION Procedure) noexcept {
       struct sc::DerefProcedure args = { &Procedure };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR callback(int64_t ProcedureID, const struct ScriptArg * Args, int TotalArgs, ERR * Error) noexcept {
       struct sc::Callback args = { ProcedureID, Args, TotalArgs, (ERR)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Error) *Error = args.Error;
-      return(error);
+      return error;
    }
-   inline ERR getProcedureID(CSTRING Procedure, int64_t * ProcedureID) noexcept {
+   inline ERR getProcedureID(const std::string_view &Procedure, int64_t * ProcedureID) noexcept {
       struct sc::GetProcedureID args = { Procedure, (int64_t)0 };
       ERR error = Action(AC(-4), this, &args);
       if (ProcedureID) *ProcedureID = args.ProcedureID;
-      return(error);
+      return error;
    }
-   inline ERR debugLog(CSTRING Options, CSTRING * Result) noexcept {
-      struct sc::DebugLog args = { Options, (CSTRING)0 };
+   inline ERR debugLog(const std::string_view &Options, std::string &Result) noexcept {
+      struct sc::DebugLog args = { Options, &Result };
       ERR error = Action(AC(-5), this, &args);
-      if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
 
    // Customised field getting
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getProcedure(std::string_view &Value) noexcept {
+      Value = this->Procedure;
+      return ERR::Okay;
+   }
+
+   inline ERR getErrorMessage(std::string_view &Value) noexcept {
+      Value = this->ErrorMessage;
+      return ERR::Okay;
+   }
 
    inline ERR getTarget(OBJECTID &Value) noexcept {
       Value = this->TargetID;
@@ -3472,14 +3486,7 @@ class objScript : public Object {
    }
 
    inline ERR getCacheFile(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getErrorMessage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -3491,27 +3498,6 @@ class objScript : public Object {
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getLanguage(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getProcedure(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3538,6 +3524,21 @@ class objScript : public Object {
 
    // Customised field setting
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00904500, &Value, 1);
+   }
+
+   inline ERR setProcedure(const std::string_view &Value) noexcept {
+      this->Procedure = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
+      this->ErrorMessage = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setTarget(OBJECTID Value) noexcept {
       this->TargetID = Value;
       return ERR::Okay;
@@ -3555,28 +3556,13 @@ class objScript : public Object {
    }
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setWorkingPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, 0x00804300, &Value, 1);
-   }
-
-   inline ERR setProcedure(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
    inline ERR setResults(const kt::vector<std::string> *Value) noexcept {
@@ -3628,10 +3614,10 @@ struct ActionEntry {
 
 namespace task {
 struct Expunge { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddArgument { CSTRING Argument; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddArgument { std::string_view Argument; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Quit { static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetEnv { CSTRING Name; CSTRING Value; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetEnv { CSTRING Name; CSTRING Value; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetEnv { std::string_view Name; std::string *Value; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetEnv { std::string_view Name; std::string_view Value; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3642,10 +3628,15 @@ class objTask : public Object {
 
    using create = kt::Create<objTask>;
 
-   double TimeOut;    // Limits the amount of time to wait for a launched process to return.
-   TSF    Flags;      // Optional flags.
-   int    ReturnCode; // The task's return code can be retrieved following execution.
-   int    ProcessID;  // Reflects the process ID when an executable is launched.
+   std::string LaunchPath;    // Launched executables will start in the path specified here.
+   std::string Name;          // Name of the task.
+   std::string Location;      // Location of an executable file to launch.
+   std::string Path;          // The current working folder of the active process.
+   std::string ProcessPath;   // The path of the executable that is associated with the task.
+   double TimeOut;            // Limits the amount of time to wait for a launched process to return.
+   TSF    Flags;              // Optional flags.
+   int    ReturnCode;         // The task's return code can be retrieved following execution.
+   int    ProcessID;          // Reflects the process ID when an executable is launched.
 
    // Action stubs
 
@@ -3684,27 +3675,51 @@ class objTask : public Object {
       }
    }
    inline ERR expunge() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
-   inline ERR addArgument(CSTRING Argument) noexcept {
+   inline ERR addArgument(const std::string_view &Argument) noexcept {
       struct task::AddArgument args = { Argument };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR quit() noexcept {
-      return(Action(AC(-3), this, nullptr));
+      return Action(AC(-3), this, nullptr);
    }
-   inline ERR getEnv(CSTRING Name, CSTRING * Value) noexcept {
-      struct task::GetEnv args = { Name, (CSTRING)0 };
+   inline ERR getEnv(const std::string_view &Name, std::string &Value) noexcept {
+      struct task::GetEnv args = { Name, &Value };
       ERR error = Action(AC(-4), this, &args);
-      if (Value) *Value = args.Value;
-      return(error);
+      return error;
    }
-   inline ERR setEnv(CSTRING Name, CSTRING Value) noexcept {
+   inline ERR setEnv(const std::string_view &Name, const std::string_view &Value) noexcept {
       struct task::SetEnv args = { Name, Value };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
 
    // Customised field getting
+
+   inline ERR getLaunchPath(std::string_view &Value) noexcept {
+      Value = this->LaunchPath;
+      return ERR::Okay;
+   }
+
+   inline ERR getName(std::string_view &Value) noexcept {
+      Value = this->Name;
+      return ERR::Okay;
+   }
+
+   inline ERR getLocation(std::string_view &Value) noexcept {
+      Value = this->Location;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getProcessPath(std::string_view &Value) noexcept {
+      Value = this->ProcessPath;
+      return ERR::Okay;
+   }
 
    inline ERR getTimeOut(double &Value) noexcept {
       Value = this->TimeOut;
@@ -3771,44 +3786,9 @@ class objTask : public Object {
       return error;
    }
 
-   inline ERR getLaunchPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getLocation(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getName(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
    inline ERR getOutputCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getProcessPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
    }
@@ -3823,6 +3803,26 @@ class objTask : public Object {
 
 
    // Customised field setting
+
+   inline ERR setLaunchPath(const std::string_view &Value) noexcept {
+      this->LaunchPath = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setName(const std::string_view &Value) noexcept {
+      this->Name = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setLocation(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+   }
+
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+   }
 
    inline ERR setTimeOut(const double Value) noexcept {
       this->TimeOut = Value;
@@ -3876,29 +3876,9 @@ class objTask : public Object {
       return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
-   inline ERR setLaunchPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setLocation(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
-   inline ERR setName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
-   }
-
    inline ERR setOutputCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
    }
 
    inline ERR setPriority(const int Value) noexcept {
@@ -3938,7 +3918,7 @@ class objThread : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR setData(APTR Data, int Size) noexcept {
       struct th::SetData args = { Data, Size };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
 
    // Customised field getting
@@ -4007,8 +3987,8 @@ class objThread : public Object {
 // Module methods
 
 namespace mod {
-struct ResolveSymbol { CSTRING Name; APTR Address; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Test { CSTRING Options; int Passed; int Total; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResolveSymbol { std::string_view Name; APTR Address; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Test { std::string_view Options; int Passed; int Total; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4047,18 +4027,18 @@ class objModule : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR resolveSymbol(CSTRING Name, APTR * Address) noexcept {
+   inline ERR resolveSymbol(const std::string_view &Name, APTR * Address) noexcept {
       struct mod::ResolveSymbol args = { Name, (APTR)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Address) *Address = args.Address;
-      return(error);
+      return error;
    }
-   inline ERR test(CSTRING Options, int * Passed, int * Total) noexcept {
+   inline ERR test(const std::string_view &Options, int * Passed, int * Total) noexcept {
       struct mod::Test args = { Options, (int)0, (int)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Passed) *Passed = args.Passed;
       if (Total) *Total = args.Total;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -4126,7 +4106,7 @@ class objModule : public Object {
 
 namespace pt {
 struct SetTime { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetTimeZoneInfo { CSTRING ZoneID; int StartYear; int EndYear; struct TimeZoneInfo * Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetTimeZoneInfo { std::string_view ZoneID; int StartYear; int EndYear; struct TimeZoneInfo *Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4155,13 +4135,13 @@ class objTime : public Object {
    inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR setTime() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
-   inline ERR getTimeZoneInfo(CSTRING ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
+   inline ERR getTimeZoneInfo(const std::string_view &ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
       struct pt::GetTimeZoneInfo args = { ZoneID, StartYear, EndYear, (struct TimeZoneInfo *)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Info) *Info = args.Info;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -4290,19 +4270,19 @@ class objTime : public Object {
 
 namespace cmp {
 struct CompressBuffer { APTR Input; int InputSize; APTR Output; int OutputSize; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressFile { CSTRING Location; CSTRING Path; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressFile { std::string_view Location; std::string_view Path; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressBuffer { APTR Input; APTR Output; int OutputSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressFile { CSTRING Path; CSTRING Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveFile { CSTRING Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStream { APTR Input; int Length; FUNCTION * Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStream { APTR Input; int Length; FUNCTION * Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressFile { std::string_view Path; std::string_view Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveFile { std::string_view Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressStream { APTR Input; int Length; FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressStream { APTR Input; int Length; FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressStreamStart { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStreamEnd { FUNCTION * Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStreamEnd { FUNCTION * Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressStreamEnd { FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressStreamEnd { FUNCTION *Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStreamStart { static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressObject { CSTRING Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Scan { CSTRING Folder; CSTRING Filter; FUNCTION * Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Find { CSTRING Path; int CaseSensitive; int Wildcard; struct CompressedItem * Item; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressObject { std::string_view Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Scan { std::string_view Folder; std::string_view Filter; FUNCTION *Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Find { std::string_view Path; int CaseSensitive; int Wildcard; struct CompressedItem *Item; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4330,61 +4310,61 @@ class objCompression : public Object {
       struct cmp::CompressBuffer args = { Input, InputSize, Output, OutputSize, (int)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
-   inline ERR compressFile(CSTRING Location, CSTRING Path) noexcept {
+   inline ERR compressFile(const std::string_view &Location, const std::string_view &Path) noexcept {
       struct cmp::CompressFile args = { Location, Path };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR decompressBuffer(APTR Input, APTR Output, int OutputSize, int * Result) noexcept {
       struct cmp::DecompressBuffer args = { Input, Output, OutputSize, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
-   inline ERR decompressFile(CSTRING Path, CSTRING Dest, int Flags) noexcept {
+   inline ERR decompressFile(const std::string_view &Path, const std::string_view &Dest, int Flags) noexcept {
       struct cmp::DecompressFile args = { Path, Dest, Flags };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
-   inline ERR removeFile(CSTRING Path) noexcept {
+   inline ERR removeFile(const std::string_view &Path) noexcept {
       struct cmp::RemoveFile args = { Path };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR compressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
       struct cmp::CompressStream args = { Input, Length, &Callback, Output, OutputSize };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
    inline ERR decompressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
       struct cmp::DecompressStream args = { Input, Length, &Callback, Output, OutputSize };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR compressStreamStart() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR compressStreamEnd(FUNCTION Callback, APTR Output, int OutputSize) noexcept {
       struct cmp::CompressStreamEnd args = { &Callback, Output, OutputSize };
-      return(Action(AC(-9), this, &args));
+      return Action(AC(-9), this, &args);
    }
    inline ERR decompressStreamEnd(FUNCTION Callback) noexcept {
       struct cmp::DecompressStreamEnd args = { &Callback };
-      return(Action(AC(-10), this, &args));
+      return Action(AC(-10), this, &args);
    }
    inline ERR decompressStreamStart() noexcept {
-      return(Action(AC(-11), this, nullptr));
+      return Action(AC(-11), this, nullptr);
    }
-   inline ERR decompressObject(CSTRING Path, OBJECTPTR Object) noexcept {
+   inline ERR decompressObject(const std::string_view &Path, OBJECTPTR Object) noexcept {
       struct cmp::DecompressObject args = { Path, Object };
-      return(Action(AC(-12), this, &args));
+      return Action(AC(-12), this, &args);
    }
-   inline ERR scan(CSTRING Folder, CSTRING Filter, FUNCTION Callback) noexcept {
+   inline ERR scan(const std::string_view &Folder, const std::string_view &Filter, FUNCTION Callback) noexcept {
       struct cmp::Scan args = { Folder, Filter, &Callback };
-      return(Action(AC(-13), this, &args));
+      return Action(AC(-13), this, &args);
    }
-   inline ERR find(CSTRING Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {
+   inline ERR find(const std::string_view &Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {
       struct cmp::Find args = { Path, CaseSensitive, Wildcard, (struct CompressedItem *)0 };
       ERR error = Action(AC(-14), this, &args);
       if (Item) *Item = args.Item;
-      return(error);
+      return error;
    }
 
    // Customised field getting
@@ -4604,7 +4584,7 @@ namespace kt {
    struct ActionMessage {
       OBJECTID ObjectID;  // The object that is to receive the action
       int  Time;
-      AC ActionID;        // ID of the action or method to execute
+      AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
 
       // Action arguments follow this structure in a buffer
@@ -4684,7 +4664,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr, nullptr) IS ERR::Okay) {
+   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;

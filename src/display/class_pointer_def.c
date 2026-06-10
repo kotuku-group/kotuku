@@ -72,3 +72,19 @@ static const struct FieldDef clPointerPF[] = {
    { nullptr, 0 }
 };
 
+static ERR POINTER_NewPlacement(extPointer *Self) {
+   new (Self) extPointer;
+   return ERR::Okay;
+}
+
+static ERR POINTER_FreePlacement(extPointer *Self) {
+   Self->~extPointer();
+   return ERR::Okay;
+}
+
+static const struct ActionArray clPointerActions[] = {
+   { AC::FreePlacement, POINTER_FreePlacement },
+   { AC::NewPlacement, POINTER_NewPlacement },
+   { AC::NIL, nullptr }
+};
+

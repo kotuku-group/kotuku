@@ -163,12 +163,12 @@ struct AudioLoop {
 namespace snd {
 struct OpenChannels { int Total; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CloseChannels { int Handle; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddSample { FUNCTION OnStop; SFM SampleFormat; APTR Data; int DataSize; struct AudioLoop * Loop; int LoopSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddSample { FUNCTION OnStop; SFM SampleFormat; APTR Data; int DataSize; struct AudioLoop *Loop; int LoopSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveSample { int Handle; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetSampleLength { int Sample; int64_t Length; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int SampleLength; int PlayOffset; struct AudioLoop * Loop; int LoopSize; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int SampleLength; int PlayOffset; struct AudioLoop *Loop; int LoopSize; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Beep { int Pitch; int Duration; int Volume; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetVolume { int Index; CSTRING Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetVolume { int Index; std::string_view Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -201,39 +201,39 @@ class objAudio : public Object {
       struct snd::OpenChannels args = { Total, (int)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR closeChannels(int Handle) noexcept {
       struct snd::CloseChannels args = { Handle };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR addSample(FUNCTION OnStop, SFM SampleFormat, APTR Data, int DataSize, struct AudioLoop * Loop, int LoopSize, int * Result) noexcept {
       struct snd::AddSample args = { OnStop, SampleFormat, Data, DataSize, Loop, LoopSize, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR removeSample(int Handle) noexcept {
       struct snd::RemoveSample args = { Handle };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setSampleLength(int Sample, int64_t Length) noexcept {
       struct snd::SetSampleLength args = { Sample, Length };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, int SampleLength, int PlayOffset, struct AudioLoop * Loop, int LoopSize, int * Result) noexcept {
       struct snd::AddStream args = { Callback, OnStop, SampleFormat, SampleLength, PlayOffset, Loop, LoopSize, (int)0 };
       ERR error = Action(AC(-6), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR beep(int Pitch, int Duration, int Volume) noexcept {
       struct snd::Beep args = { Pitch, Duration, Volume };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
-   inline ERR setVolume(int Index, CSTRING Name, SVF Flags, int Channel, double Volume) noexcept {
+   inline ERR setVolume(int Index, const std::string_view &Name, SVF Flags, int Channel, double Volume) noexcept {
       struct snd::SetVolume args = { Index, Name, Flags, Channel, Volume };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-8), this, &args);
    }
 
    // Customised field getting
@@ -669,12 +669,12 @@ class objSound : public Object {
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
+      return field->WriteValue(this, field, 0x00904508, &Value, 1);
    }
 
    inline ERR setNote(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[26];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804308, &Value, 1);
    }
 
 };

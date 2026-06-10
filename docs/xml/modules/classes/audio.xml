@@ -252,11 +252,11 @@
     <method>
       <name>SetVolume</name>
       <comment>Sets the volume for input and output mixers.</comment>
-      <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, CSTRING Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
+      <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, STRVIEW Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
       <tiriPrototype>err = SetVolume(Index:num, Name:str, Flags:num, Channel:num, Volume:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the mixer that you want to set.</param>
-        <param type="CSTRING" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
+        <param type="STRVIEW" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
         <param type="SVF" name="Flags" lookup="SVF">Optional flags.</param>
         <param type="INT" name="Channel">A specific channel to modify (e.g. <code>0</code> for left, <code>1</code> for right).  If <code>-1</code>, all channels are affected.</param>
         <param type="DOUBLE" name="Volume">The volume to set for the mixer, from 0 to 1.0.  If <code>-1</code>, the current volume values are retained.</param>

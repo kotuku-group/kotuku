@@ -4,18 +4,16 @@
 #define PRV_TIRI_MODULE
 
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
 
-#include <inttypes.h>
-#include <mutex>
+#include <format>
 #include <algorithm>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "lua.h"
 #include "lj_obj.h"
-#include "lj_str.h"
 #include "parser/parser_diagnostics.h"
 
 #include "hashes.h"
@@ -23,10 +21,15 @@
 
 static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 {
+   int filesize = 0;
+   if (File->get(FID_Size, filesize) != ERR::Okay) return 1;
+
    std::string buffer;
-   auto filesize = File->get<int>(FID_Size);
    buffer.resize(filesize);
-   File->read(buffer.data(), filesize);
+
+   int bytes_read = 0;
+   if (File->read(buffer.data(), filesize, &bytes_read) != ERR::Okay) return 1;
+   buffer.resize(bytes_read); // Guard against a short read leaving uninitialised tail bytes
 
    return lua_load(Lua, std::string_view(buffer.data(), buffer.size()), SourceName);
 }
@@ -66,7 +69,7 @@ static bool get_caller_src_folder(lua_State *Lua, std::string &Folder)
          if (not msg.empty()) msg += "\n";
          msg += entry.to_string(Lua->script->LineOffset);
       }
-      luaL_error(Lua, "%s", msg.c_str());
+      luaL_error(Lua, std::move(msg));
    }
    else if (auto error_msg = lua_tostring(Lua, -1)) {
       // When not in diagnose mode, errors are thrown via lj_err_lex which pushes the message to the stack
@@ -141,16 +144,10 @@ int fcmd_unsubscribe_event(lua_State *Lua)
 int fcmd_subscribe_event(lua_State *Lua)
 {
    CSTRING event;
-   if (not (event = lua_tostring(Lua, 1))) {
-      luaL_argerror(Lua, 1, "Event string expected.");
-      return 0;
-   }
+   if (not (event = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Event string expected.");
 
    if (not lua_isfunction(Lua, 2)) {
-      if (not lua_isnil(Lua, 2)) {
-         luaL_argerror(Lua, 2, "Function or nil expected.");
-         return 0;
-      }
+      if (not lua_isnil(Lua, 2)) luaL_argerror(Lua, 2, "Function or nil expected.");
    }
 
    // Generate the event ID
@@ -199,35 +196,27 @@ int fcmd_subscribe_event(lua_State *Lua)
       }
    }
 
-   if (group_id IS EVG::NIL) {
-      luaL_error(Lua, "Invalid group name '%s' in event string.", event);
-      return 0;
-   }
+   if (group_id IS EVG::NIL) luaL_error(Lua, "Invalid group name '%s' in event string.", event);
 
    EVENTID event_id = GetEventID(group_id, subgroup_str.c_str(), event);
 
-   if (not event_id) {
-      luaL_argerror(Lua, 1, "Failed to build event ID.");
-      lua_pushinteger(Lua, int(ERR::Failed));
-      return 1;
+   if (not event_id) luaL_argerror(Lua, 1, "Failed to build event ID.");
+
+   APTR handle;
+   lua_settop(Lua, 2);
+   auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); error IS ERR::Okay) {
+      auto prv = (prvTiri *)Lua->script->DerivedPtr;
+      prv->EventList.emplace_back(client_function, event_id, handle);
+      lua_pushinteger(Lua, int(error)); // 1: Error code
+      lua_pushlightuserdata(Lua, handle); // 2: Handle
    }
    else {
-      APTR handle;
-      lua_settop(Lua, 2);
-      auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); error IS ERR::Okay) {
-         auto prv = (prvTiri *)Lua->script->DerivedPtr;
-         prv->EventList.emplace_back(client_function, event_id, handle);
-         lua_pushinteger(Lua, int(error)); // 1: Error code
-         lua_pushlightuserdata(Lua, handle); // 2: Handle
-      }
-      else {
-         luaL_unref(Lua, LUA_REGISTRYINDEX, client_function);
-         lua_pushinteger(Lua, int(error)); // Error code
-         lua_pushnil(Lua); // Handle
-      }
-      return 2;
+      luaL_unref(Lua, LUA_REGISTRYINDEX, client_function);
+      lua_pushinteger(Lua, int(error)); // Error code
+      lua_pushnil(Lua); // Handle
    }
+   return 2;
 }
 
 //********************************************************************************************************************
@@ -294,14 +283,11 @@ int fcmd_print(lua_State *Lua)
 
 int fcmd_include(lua_State *Lua)
 {
-   if (not lua_isstring(Lua, 1)) {
-      luaL_argerror(Lua, 1, "Include name(s) required.");
-      return 0;
-   }
+   if (not lua_isstring(Lua, 1)) luaL_argerror(Lua, 1, "Include name(s) required.");
 
    int top = lua_gettop(Lua);
    for (int n=1; n <= top; n++) {
-      CSTRING include = lua_tostring(Lua, n);
+      auto include = lua_tostring(Lua, n);
 
       // For security purposes, check the validity of the include name.
 
@@ -315,13 +301,11 @@ int fcmd_include(lua_State *Lua)
 
       if ((include[i]) or (i >= 32)) {
          luaL_error(Lua, "Invalid module name; only alpha-numeric names are permitted with max 32 chars.");
-         return 0;
       }
 
       if (auto error = load_include(Lua->script, include); error != ERR::Okay) {
          if (error IS ERR::FileNotFound) luaL_error(Lua, "Requested include file '%s' does not exist.", include);
          else luaL_error(Lua, error, "Failed to process include file: %s", GetErrorMsg(error));
-         return 0;
       }
    }
 
@@ -344,135 +328,137 @@ int fcmd_loadfile(lua_State *Lua)
    int results = 0;
    ERR error = ERR::Okay;
 
-   if (auto path = lua_tostringview(Lua, 1); not path.empty()) {
-      kt::Log log("loadfile");
+   auto path = lua_tostringview(Lua, 1);
+   if (path.empty()) luaL_argerror(Lua, 1, "File path required.");
 
-      log.branch("%.*s", int(path.size()), path.data());
+   kt::Log log("loadfile");
 
-      bool recompile = false;
-      bool inject_working_path = false;
-      if (path.starts_with("./")) {
-         path.remove_prefix(2);
-         inject_working_path = true;
+   log.branch("%.*s", int(path.size()), path.data());
+
+   bool recompile = false;
+   bool inject_working_path = false;
+   if (path.starts_with("./")) {
+      path.remove_prefix(2);
+      inject_working_path = true;
+   }
+   else if (path.starts_with("../")) {
+      // Maintain the prefix to access the parent folder - ResolvePath() takes care of it.
+      inject_working_path = true;
+   }
+   std::string src(path);
+
+   if (inject_working_path) {
+      std::string directory;
+      if (get_caller_src_folder(Lua, directory)) {
+         src.insert(0, directory);
       }
-      else if (path.starts_with("../")) {
-         // Maintain the prefix to access the parent folder - ResolvePath() takes care of it.
-         inject_working_path = true;
+      else {
+         std::string_view wp;
+         if (Lua->script->get(FID_WorkingPath, wp) IS ERR::Okay) src.insert(0, wp);
       }
-      std::string src(path);
+   }
 
-      if (inject_working_path) {
-         std::string directory;
-         if (get_caller_src_folder(Lua, directory)) {
-            src.insert(0, directory);
-         }
-         else {
-            std::string_view wp;
-            if (Lua->script->get(FID_WorkingPath, wp) IS ERR::Okay) src.insert(0, wp);
-         }
-      }
+   #if 0
+   if (src.ends_with(".tiri")) {
+      // File is a text script.  Let's check if a .tbc exists and is date-stamped for the same date as the .tiri version.
+      // Note: The developer can also delete the .tiri file in favour of a .tbc that is already present (for
+      // production releases)
 
-      #if 0
-      if (src.ends_with(".tiri")) {
-         // File is a text script.  Let's check if a .tbc exists and is date-stamped for the same date as the .tiri version.
-         // Note: The developer can also delete the .tiri file in favour of a .tbc that is already present (for
-         // production releases)
+      std::string tbcpath(src.substr(0, src.size() - 5));
+      tbcpath.append(".tbc");
 
-         std::string tbcpath(src.substr(0, src.size() - 5));
-         tbcpath.append(".tbc");
+      log.msg("Checking for a compiled Tiri file: %s", tbcpath.c_str());
 
-         log.msg("Checking for a compiled Tiri file: %s", tbcpath.c_str());
+      objFile::create tbc_file = { fl::Path(tbcpath) };
+      if (tbc_file.ok()) { // A compiled version exists.  Compare datestamps
+         objFile::create src_file = { fl::Path(src) };
+         if (src_file.ok()) {
+            int64_t tbc_ts, src_ts;
+            tbc_file->get(FID_Timestamp, &tbc_ts);
+            src_file->get(FID_Timestamp, &src_ts);
 
-         objFile::create tbc_file = { fl::Path(tbcpath) };
-         if (tbc_file.ok()) { // A compiled version exists.  Compare datestamps
-            objFile::create src_file = { fl::Path(src) };
-            if (src_file.ok()) {
-               int64_t tbc_ts, src_ts;
-               tbc_file->get(FID_Timestamp, &tbc_ts);
-               src_file->get(FID_Timestamp, &src_ts);
-
-               if (tbc_ts != src_ts) {
-                  log.msg("Timestamp mismatch, will recompile the cached version.");
-                  recompile = true;
-                  error = ERR::Failed;
-               }
-               else src = tbcpath;
+            if (tbc_ts != src_ts) {
+               log.msg("Timestamp mismatch, will recompile the cached version.");
+               recompile = true;
+               error = ERR::Failed;
             }
-            else if (error IS ERR::FileNotFound) {
-               src = tbcpath; // Use the .tbc if the developer removed the .tiri (typically done for production releases)
-            }
+            else src = tbcpath;
+         }
+         else if (error IS ERR::FileNotFound) {
+            src = tbcpath; // Use the .tbc if the developer removed the .tiri (typically done for production releases)
          }
       }
-      #endif
+   }
+   #endif
 
-      objFile::create file = { fl::Path(src), fl::Flags(FL::READ) };
-      if (file.ok()) {
-         // Check for the presence of a compiled header and skip it if present
+   objFile::create file = { fl::Path(src), fl::Flags(FL::READ) };
+   if (file.ok()) {
+      // Check for the presence of a compiled header and skip it if present
 
-         {
-            int len, i;
-            char header[256];
-            if (file->read(header, sizeof(header), &len) IS ERR::Okay) {
-               if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
-                  recompile = false; // Do not recompile that which is already compiled
-                  for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++);
-                  if (not header[i]) i++;
-                  else i = 0;
-               }
+      {
+         int len, i;
+         char header[256];
+         if (file->read(header, sizeof(header), &len) IS ERR::Okay) {
+            if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
+               recompile = false; // Do not recompile that which is already compiled
+               for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++);
+               if (not header[i]) i++;
                else i = 0;
             }
             else i = 0;
-
-            file->setPosition(i);
          }
+         else i = 0;
 
-         // Resolve the full path for the chunk name (needed for import statement path resolution)
-         std::string resolved_path;
-         if (ResolvePath(src, RSF::NIL, &resolved_path) IS ERR::Okay) {
-            // Use resolved path for chunk name
-         }
-         else resolved_path = src;  // Fall back to original if resolution fails
+         file->setPosition(i);
+      }
 
-         // Prefix chunk name with '@' (Lua convention for file-based chunks) for better debug output
-         std::string chunk_name = std::string("@") + resolved_path;
+      // Resolve the full path for the chunk name (needed for import statement path resolution)
+      std::string resolved_path;
+      if (ResolvePath(src, RSF::NIL, &resolved_path) IS ERR::Okay) {
+         // Use resolved path for chunk name
+      }
+      else resolved_path = src;  // Fall back to original if resolution fails
 
-         if (not lua_load(Lua, *file, chunk_name.c_str())) {
-            // TODO Code compilation not currently supported
+      // Prefix chunk name with '@' (Lua convention for file-based chunks) for better debug output
+      std::string chunk_name = std::string("@") + resolved_path;
+
+      if (not lua_load(Lua, *file, chunk_name.c_str())) {
+         // TODO Code compilation not currently supported
 /*
-            if (recompile) {
-               objFile::create cachefile = {
-                  fl::Path(tbcpath),
-                  fl::Flags(FL::NEW|FL::WRITE),
-                  fl::Permissions(PERMIT::USER_READ|PERMIT::USER_WRITE)
-               };
+         if (recompile) {
+            objFile::create cachefile = {
+               fl::Path(tbcpath),
+               fl::Flags(FL::NEW|FL::WRITE),
+               fl::Permissions(PERMIT::USER_READ|PERMIT::USER_WRITE)
+            };
 
-               if (cachefile.ok()) {
-                  const Proto *f;
-                  struct DateTime *date;
-                  f = clvalue(Lua->top + (-1))->l.p;
-                  luaU_dump(Lua, f, &code_writer, cachefile, (Self->Flags & SCF_DEBUG) ? 0 : 1);
-                  if (not file.obj->getPtr(FID_Date, &date)) {
-                     cachefile->setDate(date);
-                  }
+            if (cachefile.ok()) {
+               const Proto *f;
+               struct DateTime *date;
+               f = clvalue(Lua->top + (-1))->l.p;
+               luaU_dump(Lua, f, &code_writer, cachefile, (Self->Flags & SCF_DEBUG) ? 0 : 1);
+               if (not file.obj->getPtr(FID_Date, &date)) {
+                  cachefile->setDate(date);
                }
             }
+         }
 */
 
-            int result_top = lua_gettop(Lua);
+         int result_top = lua_gettop(Lua);
 
-            if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
-               results = lua_gettop(Lua) - result_top + 1;
-            }
-            else error_msg = lua_tostringview(Lua, -1);
+         if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
+            results = lua_gettop(Lua) - result_top + 1;
          }
-         else { lua_load_failed(Lua); return 0; }
+         else error_msg = lua_tostringview(Lua, -1);
       }
-      else error = ERR::DoesNotExist;
-
-      if ((error_msg.empty()) and (error != ERR::Okay)) error_msg = GetErrorMsg(error);
-      if (not error_msg.empty()) luaL_error(Lua, "Failed to load/parse file '%.*s', error: %.*s", int(path.size()), path.data(), int(error_msg.size()), error_msg.data());
+      else { lua_load_failed(Lua); return 0; }
    }
-   else luaL_argerror(Lua, 1, "File path required.");
+   else error = ERR::DoesNotExist;
+
+   if ((error_msg.empty()) and (error != ERR::Okay)) error_msg = GetErrorMsg(error);
+   if (not error_msg.empty()) {
+      luaL_error(Lua, std::format("Failed to load/parse file '{}', error: {}", path, error_msg));
+   }
 
    return results;
 }
@@ -488,35 +474,35 @@ int fcmd_exec(lua_State *Lua)
    int results = 0;
 
    size_t len;
-   if (auto statement = lua_tolstring(Lua, 1, &len)) {
-      CSTRING error_msg = nullptr;
+   auto statement = lua_tolstring(Lua, 1, &len);
+   if (not statement) luaL_argerror(Lua, 1, "Tiri statement required.");
 
-      {
-         kt::Log log("exec");
-         log.branch();
+   CSTRING error_msg = nullptr;
 
-         // Check for the presence of a compiled header and skip it if present
+   {
+      kt::Log log("exec");
+      log.branch();
 
-         if (kt::startswith(LUA_COMPILED, std::string_view(statement, len))) {
-            size_t i;
-            for (i=sizeof(LUA_COMPILED)-1; statement[i]; i++);
-            statement += i + 1;
-            len -= (i + 1);
-         }
+      // Check for the presence of a compiled header and skip it if present
 
-         if (not lua_load(Lua, std::string_view(statement, len), "exec")) {
-            int result_top = lua_gettop(Lua);
-            if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
-               results = lua_gettop(Lua) - result_top + 1;
-            }
-            else error_msg = lua_tostring(Lua, -1);
-         }
-         else { lua_load_failed(Lua); return 0; }
+      if (kt::startswith(LUA_COMPILED, std::string_view(statement, len))) {
+         size_t i;
+         for (i=sizeof(LUA_COMPILED)-1; statement[i]; i++);
+         statement += i + 1;
+         len -= (i + 1);
       }
 
-      if (error_msg) luaL_error(Lua, error_msg);
+      if (not lua_load(Lua, std::string_view(statement, len), "exec")) {
+         int result_top = lua_gettop(Lua);
+         if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
+            results = lua_gettop(Lua) - result_top + 1;
+         }
+         else error_msg = lua_tostring(Lua, -1);
+      }
+      else { lua_load_failed(Lua); return 0; }
    }
-   else luaL_argerror(Lua, 1, "Tiri statement required.");
+
+   if (error_msg) luaL_error(Lua, error_msg);
 
    return results;
 }
@@ -533,6 +519,8 @@ int fcmd_arg(lua_State *Lua)
    int args = lua_gettop(Lua);
 
    auto key = lua_tostring(Lua, 1);
+   if (not key) luaL_argerror(Lua, 1, "Argument name required.");
+
    if (auto it = Self->Vars.find(key); it != Self->Vars.end()) {
       lua_pushstring(Lua, it->second.c_str());
       return 1;

@@ -179,7 +179,7 @@ struct ConstructorLookupResult
    if (Prefix.empty()) return std::nullopt;
 
    if (auto prolog = Context.prolog) {
-      auto iter = prolog->declared_namespace_uris.find(std::string(Prefix));
+      auto iter = prolog->declared_namespace_uris.find(Prefix);
       if (iter != prolog->declared_namespace_uris.end()) return iter->second;
    }
 

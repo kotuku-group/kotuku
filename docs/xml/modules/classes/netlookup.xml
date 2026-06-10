@@ -37,10 +37,10 @@
     <method>
       <name>BlockingResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
-      <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, CSTRING Address)</prototype>
+      <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = BlockingResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
       </input>
       <description>
 <p>BlockingResolveAddress() performs an IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process requires contact with a DNS server and this will cause the routine to block until a response is received.</p>
@@ -62,10 +62,10 @@
     <method>
       <name>BlockingResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
-      <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, CSTRING HostName)</prototype>
+      <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, STRVIEW HostName)</prototype>
       <tiriPrototype>err = BlockingResolveName(HostName:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="HostName">The host name to be resolved.</param>
+        <param type="STRVIEW" name="HostName">The host name to be resolved.</param>
       </input>
       <description>
 <p>BlockingResolveName() performs a domain name resolution, converting a domain name to its official host name and IP addresses.  The resolution process requires contact with a DNS server and the function will block until a response is received or a timeout occurs.</p>
@@ -86,10 +86,10 @@
     <method>
       <name>ResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
-      <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, CSTRING Address)</prototype>
+      <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = ResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
       </input>
       <description>
 <p>ResolveAddress() performs a IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>
@@ -107,10 +107,10 @@
     <method>
       <name>ResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
-      <prototype>ERR nl::ResolveName(OBJECTPTR Object, CSTRING HostName)</prototype>
+      <prototype>ERR nl::ResolveName(OBJECTPTR Object, STRVIEW HostName)</prototype>
       <tiriPrototype>err = ResolveName(HostName:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="HostName">The host name to be resolved.</param>
+        <param type="STRVIEW" name="HostName">The host name to be resolved.</param>
       </input>
       <description>
 <p>ResolveName() performs a domain name resolution, converting a domain name to an official host name and IP addresses. The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>
@@ -143,7 +143,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
+<p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, std::string_view HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
 <p>The Tiri prototype is as follows, with results readable from the <fl>HostName</fl> and <fl>Addresses</fl> fields: <code>function(NetLookup, Error)</code>.</p>
       </description>
       <tags>object-owns-result, callback-held</tags>

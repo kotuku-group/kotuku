@@ -36,8 +36,8 @@ static const struct FieldDef clXQueryXEF[] = {
 
 FDEF maEvaluate[] = { { "XML", FD_OBJECTPTR }, { "Index", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSearch[] = { { "XML", FD_OBJECTPTR }, { "Callback", FD_FUNCTIONPTR }, { "Index", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maRegisterFunction[] = { { "FunctionName", FD_STR }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maInspectFunctions[] = { { "Name", FD_STR }, { "ResultFlags", FD_INT }, { "Result", FD_STR|FD_ALLOC|FD_RESULT }, { 0, 0 } };
+FDEF maRegisterFunction[] = { { "FunctionName", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maInspectFunctions[] = { { "Name", FDF_CPPSTRING }, { "ResultFlags", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clXQueryMethods[] = {
    { AC(-1), (APTR)XQUERY_Evaluate, "Evaluate", maEvaluate, sizeof(struct xq::Evaluate) },
@@ -47,10 +47,21 @@ static const struct MethodEntry clXQueryMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR XQUERY_NewPlacement(extXQuery *Self) {
+   new (Self) extXQuery;
+   return ERR::Okay;
+}
+
+static ERR XQUERY_FreePlacement(extXQuery *Self) {
+   Self->~extXQuery();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clXQueryActions[] = {
    { AC::Activate, XQUERY_Activate },
    { AC::Clear, XQUERY_Clear },
    { AC::Free, XQUERY_Free },
+   { AC::FreePlacement, XQUERY_FreePlacement },
    { AC::GetKey, XQUERY_GetKey },
    { AC::Init, XQUERY_Init },
    { AC::NewPlacement, XQUERY_NewPlacement },

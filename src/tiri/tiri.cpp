@@ -28,28 +28,20 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/xml.h>
-#include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
 #include <kotuku/strings.hpp>
 
-#include <inttypes.h>
+#include <format>
 #include <vector>
 #include <iterator>
-#include <mutex>
 
 #include "lua.h"
-#include "lualib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "parser/parser.h"
 #include "lj_bc.h"
 #include "lj_array.h"
 #include "lj_gc.h"
-#include "lj_object.h"
-
-#include "hashes.h"
 
 JUMPTABLE_CORE
 JUMPTABLE_REGEX
@@ -190,10 +182,11 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   std::string module_name;
-   if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
-      if (auto error = load_include(Lua->script, module_name.c_str()); error != ERR::Okay) {
-         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name.c_str(), MetaClass->ClassName.c_str());
+   std::string_view module_name;
+   if (auto error = MetaClass->getModule(module_name); error IS ERR::Okay) {
+      if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
+         luaL_error(Lua, error,
+            std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }
    }
    else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));
@@ -335,7 +328,7 @@ extern void allocator_unit_tests(int &, int &);
 extern void bulk_unit_tests(int &, int &);
 #endif
 
-static void MODTest(CSTRING Options, int *Passed, int *Total)
+static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef ENABLE_UNIT_TESTS
    {
@@ -397,7 +390,7 @@ script.  If the script is cached, the variable settings will be available on the
 
 -INPUT-
 obj(Script) Script: Pointer to a Tiri script.
-cpp(strview) Name: The name of the variable to set.
+strview Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
 
@@ -531,7 +524,7 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
 //********************************************************************************************************************
 // Create a Lua array from a list of structure pointers.
 
-void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
+ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
 {
    kt::Log log(__FUNCTION__);
 
@@ -544,7 +537,7 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
    }
 
    auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   if (not glStructs.contains(s_name)) return ERR::Search;
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
@@ -562,14 +555,12 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
             GCtab *tab = tabV(tv);
             setgcref(arr->get<GCRef>()[i], obj2gco(tab));
             lj_gc_objbarrier(Lua, arr, tab);
-            Lua->top--;  // Pop the table
          }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
+         Lua->top--;  // Pop the table
       }
    }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -601,12 +592,8 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
             GCtab *tab = tabV(tv);
             setgcref(arr->get<GCRef>()[i], obj2gco(tab));
             lj_gc_objbarrier(Lua, arr, tab);
-            Lua->top--;  // Pop the table
          }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
+         Lua->top--;  // Pop the table
 
          Input = (int8_t *)Input + struct_stride;
       }
@@ -647,7 +634,11 @@ void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int E
 void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values)
 {
    if (Flags & FD_STRUCT) {
-      if (Flags & FD_POINTER) make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values);
+      if (Flags & FD_POINTER) {
+         if (make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values) != ERR::Okay) {
+            luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(TypeName.size()), TypeName.data());
+         }
+      }
       else make_struct_serial_array(Lua, TypeName, Elements, Values);
    }
    else make_array(Lua, ff_to_aet(Flags), Elements, Values, TypeName);

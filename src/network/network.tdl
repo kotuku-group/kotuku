@@ -53,7 +53,8 @@ typedef int SOCKET_HANDLE;
   klass("NetClient", {
       src="netclient/netclient.cpp",
       output="netclient/netclient_def.c",
-      comment="Simple data storage class utilised by NetServer to represent a client machine/IP."
+      comment="Simple data storage class utilised by NetServer to represent a client machine/IP.",
+      extended=false
   }, [[
     obj(NetClient) Next            # Next client in the chain
     obj(NetClient) Prev            # Previous client in the chain
@@ -68,7 +69,8 @@ typedef int SOCKET_HANDLE;
   klass("ClientSocket", {
       src="clientsocket/clientsocket.cpp",
       output="clientsocket/clientsocket_def.c",
-      comment="Simple data storage class utilised by NetClient to represent a single client socket connection."
+      comment="Simple data storage class utilised by NetClient to represent a single client socket connection.",
+      extended=true
   },
   [[
     large ConnectTime        # System time for the creation of this socket
@@ -85,13 +87,13 @@ typedef int SOCKET_HANDLE;
     { id=3, name="FindNext" }
   })
 
-  klass("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
-    cpp(str) NetworkFilter
-    cpp(str) GatewayFilter
-    cpp(str) Username
-    cpp(str) Password
-    cpp(str) ProxyName
-    cpp(str) Server
+  klass("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c", extended=true }, [[
+    string NetworkFilter
+    string GatewayFilter
+    string Username
+    string Password
+    string ProxyName
+    string Server
     int Port
     int ServerPort
     int Enabled
@@ -106,7 +108,7 @@ typedef int SOCKET_HANDLE;
     { id=4, name="BlockingResolveAddress" }
   })
 
-  klass("NetLookup", { src="class_netlookup.cpp", output="class_netlookup_def.c" }, [[
+  klass("NetLookup", { src="class_netlookup.cpp", output="class_netlookup_def.c", extended=true }, [[
     large ClientData # Optional user data storage
     int(NLF) Flags   # Optional flags
   ]])
@@ -127,24 +129,24 @@ typedef int SOCKET_HANDLE;
 
   klass("NetSocket", {
       src={ "netsocket/netsocket.cpp", "netsocket/netsocket_fields.cpp" },
-      output="netsocket/netsocket_def.c"
+      output="netsocket/netsocket_def.c", extended=true
   }, [[
-    ptr ClientData         # Pointer to user data that can be used during events
-    cpp(str) Address       # NetSocket: connect to this remote address; NetServer: bind to this local address
-    int(NTC) State         # Connection state
-    error Error            # The last NetSocket error can be read from this field
-    int Port               # NetSocket: remote port to connect to; NetServer: local port to bind
-    int(NSF) Flags         # Optional flags
-    int MsgLimit           # Limits the size of messages, in bytes.
-    int MaxPacketSize      # Maximum size for UDP packets (default 65507 bytes)
-    int MulticastTTL       # Time-to-live for multicast packets (UDP only)
+    ptr ClientData    # Pointer to user data that can be used during events
+    string Address    # NetSocket: connect to this remote address; NetServer: bind to this local address
+    int(NTC) State    # Connection state
+    error Error       # The last NetSocket error can be read from this field
+    int Port          # NetSocket: remote port to connect to; NetServer: local port to bind
+    int(NSF) Flags    # Optional flags
+    int MsgLimit      # Limits the size of messages, in bytes.
+    int MaxPacketSize # Maximum size for UDP packets (default 65507 bytes)
+    int MulticastTTL  # Time-to-live for multicast packets (UDP only)
   ]])
 
   klass("NetServer", {
       base='NetSocket',
       references={ 'NSF', 'NTC' },
       src="class_netserver.cpp",
-      output="netserver_def.c"
+      output="netserver_def.c", extended=true
   })
 
   constants("SCV", { comment="These error codes for certificate validation match the OpenSSL error codes (X509 definitions)" }, {

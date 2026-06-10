@@ -134,13 +134,11 @@ static ERR SVG_Free(extSVG *Self)
       Self->Target = nullptr;
    }
 
-   if (Self->XML)       { FreeResource(Self->XML);       Self->XML = nullptr; }
+   if (Self->XML) { FreeResource(Self->XML); Self->XML = nullptr; }
 
    if (!Self->Resources.empty()) {
       for (auto id : Self->Resources) FreeResource(id);
    }
-
-   Self->~extSVG();
 
    return ERR::Okay;
 }
@@ -195,14 +193,6 @@ static ERR SVG_NewObject(extSVG *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR SVG_NewPlacement(extSVG *Self)
-{
-   new (Self) extSVG;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -218,7 +208,7 @@ The generated content will be structured within the provided @VectorViewport, wh
 scene graph.
 
 -INPUT-
-cstr ID: Name of the symbol to parse.
+strview ID: Name of the symbol to parse.
 obj(VectorViewport) Viewport: The target viewport.
 
 -RESULT-
@@ -236,7 +226,7 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->ID) or (!Args->Viewport)) return log.warning(ERR::NullArgs);
+   if ((!Args) or (Args->ID.empty()) or (!Args->Viewport)) return log.warning(ERR::NullArgs);
 
    if (auto tagref = find_href_tag(Self, Args->ID)) {
       svgState state(Self);
@@ -244,7 +234,7 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
       return ERR::Okay;
    }
    else {
-      log.warning("Symbol '%s' not found.", Args->ID);
+      log.warning("Symbol '%.*s' not found.", int(Args->ID.size()), Args->ID.data());
       return ERR::NotFound;
    }
 }

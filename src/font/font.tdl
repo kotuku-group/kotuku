@@ -46,14 +46,14 @@ module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timesta
     LINE = "-2: Terminate operation at the first line feed or word-wrap."
   })
 
-  klass("Font", { version=1, src="class_font.cpp", output="class_font_def.c", references={ 'ALIGN', 'RGB8' } }, [[
+  klass("Font", { version=1, src="class_font.cpp", output="class_font_def.c", references={ 'ALIGN', 'RGB8' }, extended=true }, [[
    double Point           # The Point/Height of the font (arbitrary size, non-exact)
    double GlyphSpacing    # Amount of spacing between characters (additional to normal horizontal spacing)
    obj(Bitmap) Bitmap     # Pointer to destination @Bitmap
-   cpp(str) String        # String for drawing etc
-   cpp(str) Path          # The location of the font file as derived from the name of the face.
-   cpp(str) Style         # The font style (Regular, Bold, Italic, Condensed, Light etc)
-   cpp(str) Face          # The face of the font
+   string String          # String for drawing etc
+   string Path            # The location of the font file as derived from the name of the face.
+   string Style           # The font style (Regular, Bold, Italic, Condensed, Light etc)
+   string Face            # The face of the font
    struct(RGB8) Outline   # Outline colour
    struct(RGB8) Underline # Underline colour
    struct(RGB8) Colour    # Fill colour

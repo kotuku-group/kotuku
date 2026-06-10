@@ -6,13 +6,13 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
   loadFile('./constants.tdl')
 
   struct("XMLAttrib", { type="XMLAttrib" }, [[
-   cpp(str) Name   # Name of the attribute
-   cpp(str) Value  # Value of the attribute
+   string Name   # Name of the attribute
+   string Value  # Value of the attribute
   ]],
   [[
    inline bool isContent() const { return Name.empty(); }
    inline bool isTag() const { return !Name.empty(); }
-   XMLAttrib(std::string pName, std::string pValue = "") : Name(pName), Value(pValue) { };
+   XMLAttrib(std::string_view pName, std::string_view pValue = "") : Name(pName), Value(pValue) { };
    XMLAttrib() = default;
   ]])
 
@@ -25,8 +25,8 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
     int(XTF) Flags   # Optional flags
     uint NamespaceID # Hash of namespace URI or 0 for no namespace
     int Reserved     # Private
-    cpp(array(struct(XMLAttrib))) Attribs # Array of attributes for this tag
-    cpp(array(struct(XTag))) Children   # Array of child tags
+    vector(struct(XMLAttrib)) Attribs # Array of attributes for this tag
+    vector(struct(XTag)) Children   # Array of child tags
   ]],
   [[
    XTag(int pID, int pLine = 0) :
@@ -51,11 +51,11 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
       return false;
    }
 
-   inline const std::string * attrib(const std::string &Name) const {
+   inline const std::string * attrib(std::string_view Name) const {
       for (unsigned a=1; a < Attribs.size(); a++) {
          if (kt::iequals(Attribs[a].Name, Name)) return &Attribs[a].Value;
       }
-      return NULL;
+      return nullptr;
    }
 
    inline std::string getContent() const {
@@ -106,11 +106,12 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
     { id=23, name="LoadSchema" }
   })
 
-  klass("XML", { src="xml_class.cpp", output="xml_class_def.c" }, [[
-    cpp(str) Path     # Location of the XML data file
-    cpp(str) DocType  # Root element name from DOCTYPE declaration
-    cpp(str) PublicID # Public identifier for external DTD
-    cpp(str) SystemID # System identifier for external DTD
+  klass("XML", { src="xml_class.cpp", output="xml_class_def.c", extended=true }, [[
+    string Path       # Location of the XML data file
+    string DocType    # Root element name from DOCTYPE declaration
+    string PublicID   # Public identifier for external DTD
+    string SystemID   # System identifier for external DTD
+    string ErrorMsg   # The most recent error message from an activity
     obj Source        # Alternative data source to specifying a `Path`
     int(XMF) Flags    # Optional user flags
     int Modified      # Modification timestamp
@@ -125,7 +126,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
    template <class T> inline ERR insertStatement(int Index, XMI Where, T Statement, XTag **Result) {
       int index_result;
       XTag *tag_result;
-      if (auto error = insertXML(Index, Where, to_cstring(Statement), &index_result); error IS ERR::Okay) {
+      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); error IS ERR::Okay) {
          error = getTag(index_result, &tag_result);
          *Result = tag_result;
          return error;
@@ -133,16 +134,14 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
       else return error;
    }
 
-   template <class T> inline ERR setAttribValue(int Tag, int Flags, T &&Attrib, int Value) {
-      auto attrib = to_cstring(Attrib);
+   template <class T> inline ERR setAttribValue(int Tag, XMS AttribID, T &&Attrib, int Value) {
       auto buffer = std::to_string(Value);
-      return setAttrib(Tag, Flags, attrib, buffer.c_str());
+      return setAttrib(Tag, AttribID, std::string_view(Attrib), buffer);
    }
 
-   template <class T> inline ERR setAttribValue(int Tag, int Flags, T &&Attrib, double Value) {
-      auto attrib = to_cstring(Attrib);
+   template <class T> inline ERR setAttribValue(int Tag, XMS AttribID, T &&Attrib, double Value) {
       auto buffer = std::to_string(Value);
-      return setAttrib(Tag, Flags, attrib, buffer.c_str());
+      return setAttrib(Tag, AttribID, std::string_view(Attrib), buffer);
    }
   ]])
 
@@ -154,7 +153,7 @@ struct XPathArrayStorage;]])
   struct("XPathValue", { type="XPathValue" }, [[
     int(XPVT) Type         # Identifies the type of value stored
     double    NumberValue  # Defined if the type is Number or Boolean
-    cpp(str)  StringValue  # Defined if the type is String
+    string  StringValue  # Defined if the type is String
   ]],
   [[
    kt::vector<XTag *> node_set; // Defined if the type is NodeSet
@@ -261,11 +260,11 @@ inline void UpdateAttrib(XTag &Tag, const std::string Name, const std::string Va
    if (CanCreate) Tag.Attribs.emplace_back(Name, Value);
 }
 
-inline void NewAttrib(XTag &Tag, const std::string Name, const std::string Value) {
+inline void NewAttrib(XTag &Tag, const std::string_view Name, const std::string_view Value) {
    Tag.Attribs.emplace_back(Name, Value);
 }
 
-inline void NewAttrib(XTag *Tag, const std::string Name, const std::string Value) {
+inline void NewAttrib(XTag *Tag, const std::string_view Name, const std::string_view Value) {
    Tag->Attribs.emplace_back(Name, Value);
 }
 

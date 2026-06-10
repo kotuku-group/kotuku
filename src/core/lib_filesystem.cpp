@@ -370,8 +370,8 @@ in an MP3 file.
 
 -INPUT-
 struct(FileInfo) Info: Pointer to a valid !FileInfo structure.
-cpp(strview) Name: The name of the tag, which must be declared in camel-case.
-cpp(strview) Value: The value to associate with the tag name.  If empty, any existing tag with a matching `Name` will be removed.
+strview Name: The name of the tag, which must be declared in camel-case.
+strview Value: The value to associate with the tag name.  If empty, any existing tag with a matching `Name` will be removed.
 
 -ERRORS-
 Okay:
@@ -421,7 +421,7 @@ If the queried path does not exist, a fail code is returned.  This behaviour mak
 candidate for testing the validity of a path string.
 
 -INPUT-
-cpp(strview) Path: The path to analyse.
+strview Path: The path to analyse.
 &int(LOC) Type: The result will be stored in the variable referred to by this parameter.  The return types are `DIRECTORY`, `FILE` and `VOLUME`.  Set this parameter to `NULL` if you are only interested in checking if the file exists.
 
 -ERRORS-
@@ -501,8 +501,8 @@ The targeted paths do not have to refer to an existing file or folder in order t
 comparison succeeds).
 
 -INPUT-
-cpp(strview) PathA: File location 1.
-cpp(strview) PathB: File location 2.
+strview PathA: File location 1.
+strview PathB: File location 2.
 
 -ERRORS-
 Okay: The file paths refer to the same file.
@@ -708,8 +708,8 @@ Valid values are `FFR::Okay` (copy the file), `FFR::Skip` (do not copy the file)
 completely and return `ERR::Cancelled` as an error code).
 
 -INPUT-
-cpp(strview) Source: The source location.
-cpp(strview) Dest:   The destination location.
+strview Source: The source location.
+strview Dest:   The destination location.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -746,8 +746,8 @@ file referenced at To does not exist, the link will be created without error, bu
 fail until the target file or folder exists.
 
 -INPUT-
-cpp(strview) From: The symbolic link will be created at the location specified here.
-cpp(strview) To:   The file that you are linking to is specified here.
+strview From: The symbolic link will be created at the location specified here.
+strview To:   The file that you are linking to is specified here.
 
 -ERRORS-
 Okay: The link was created successfully.
@@ -822,7 +822,7 @@ the file), `FFR::Skip` (do not delete the file) and `FFR::Abort` (abort the proc
 as an error code).
 
 -INPUT-
-cpp(strview) Path: String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.
+strview Path: String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -912,7 +912,7 @@ Calls to LoadFile() must be matched with a call to ~UnloadFile() to decrement th
 returns to zero, the file can be unloaded from the cache during the next resource collection phase.
 
 -INPUT-
-cpp(strview) Path: The location of the file to be cached.
+strview Path: The location of the file to be cached.
 int(LDF) Flags: Optional flags are specified here.
 &resource(CacheFile) Cache: A pointer to a !CacheFile structure is returned here if successful.
 
@@ -1040,7 +1040,7 @@ On Unix systems you can define the owner and group ID's for the new folder by ca
 function prior to CreateFolder().
 
 -INPUT-
-cpp(strview) Path: The location of the folder.
+strview Path: The location of the folder.
 int(PERMIT) Permissions: Security permissions to apply to the created Dir(s).  Set to `NULL` if only the current user should have access.
 
 -ERRORS-
@@ -1112,8 +1112,8 @@ Valid values are `FFR::Okay` (move the file), `FFR::Skip` (do not move the file)
 completely and return `ERR::Cancelled` as an error code).
 
 -INPUT-
-cpp(strview) Source: The source path.
-cpp(strview) Dest:   The destination path.
+strview Source: The source path.
+strview Dest:   The destination path.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -1148,7 +1148,7 @@ File path approximation is supported if the `Path` is prefixed with a `~` charac
 matched to `photo.jpg` in the same folder).
 
 -INPUT-
-cpp(strview) Path: The path of the file.
+strview Path: The path of the file.
 ^buf(ptr) Buffer: Pointer to a buffer that will receive the file content.
 bufsize BufferSize: The byte size of the `Buffer`.
 &int Result: The total number of bytes read into the `Buffer` will be returned here (optional).
@@ -1237,8 +1237,8 @@ ReadInfoTag() will read the value of a named tag in a !FileInfo structure.  The 
 
 -INPUT-
 struct(FileInfo) Info: Pointer to a valid !FileInfo structure.
-cpp(strview) Name: The name of the tag, which must be declared in camel-case as tags are case-sensitive.
-&cstr Value: The discovered string value is returned here if found.
+strview Name: The name of the tag, which must be declared in camel-case as tags are case-sensitive.
+&strview Value: The discovered string value is returned here if found.
 
 -ERRORS-
 Okay:
@@ -1246,24 +1246,22 @@ NullArgs:
 NotFound:
 
 -TAGS-
-object-owns-result, null-terminated-result, non-null-result, case-sensitive
+object-owns-result, null-terminated-result, case-sensitive
 
 *********************************************************************************************************************/
 
-ERR ReadInfoTag(FileInfo *Info, const std::string_view &Name, CSTRING *Value)
+ERR ReadInfoTag(FileInfo *Info, const std::string_view &Name, std::string_view *Value)
 {
-   if ((not Info) or (Name.empty()) or (not Value)) {
-      kt::Log log(__FUNCTION__);
-      return ERR::NullArgs;
-   }
+   if ((not Info) or (Name.empty()) or (not Value)) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    if ((Info->Tags) and (Info->Tags->contains(Name))) {
-      *Value = Info->Tags[0][Name].c_str();
+      *Value = Info->Tags[0][Name];
       return ERR::Okay;
    }
-   else *Value = nullptr;
-
-   return ERR::NotFound;
+   else {
+      *Value = std::string_view{};
+      return ERR::NotFound;
+   }
 }
 
 //********************************************************************************************************************

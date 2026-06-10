@@ -275,8 +275,7 @@ bmark.stats = function(Values:any):table
       local sample_n = #SortedValues
       if sample_n is 0 then return 0 end
       local index = math.ceil(Percentile * sample_n / 100) - 1
-      if index < 0 then index = 0 end
-      if index > sample_n - 1 then index = sample_n - 1 end
+      index = math.clamp(index, 0, sample_n - 1)
       return SortedValues[sample_n-index]
    end
 

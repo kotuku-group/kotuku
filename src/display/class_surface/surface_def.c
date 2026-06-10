@@ -228,6 +228,16 @@ static const struct MethodEntry clSurfaceMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SURFACE_NewPlacement(extSurface *Self) {
+   new (Self) extSurface;
+   return ERR::Okay;
+}
+
+static ERR SURFACE_FreePlacement(extSurface *Self) {
+   Self->~extSurface();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSurfaceActions[] = {
    { AC::Activate, SURFACE_Activate },
    { AC::Disable, SURFACE_Disable },
@@ -235,6 +245,7 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::Enable, SURFACE_Enable },
    { AC::Focus, SURFACE_Focus },
    { AC::Free, SURFACE_Free },
+   { AC::FreePlacement, SURFACE_FreePlacement },
    { AC::Hide, SURFACE_Hide },
    { AC::Init, SURFACE_Init },
    { AC::LostFocus, SURFACE_LostFocus },
@@ -244,6 +255,7 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::MoveToPoint, SURFACE_MoveToPoint },
    { AC::NewObject, SURFACE_NewObject },
    { AC::NewOwner, SURFACE_NewOwner },
+   { AC::NewPlacement, SURFACE_NewPlacement },
    { AC::Redimension, SURFACE_Redimension },
    { AC::Resize, SURFACE_Resize },
    { AC::SaveImage, SURFACE_SaveImage },

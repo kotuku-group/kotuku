@@ -63,9 +63,23 @@ CONTYPE glConsoleType  = CONTYPE::NONE;
 bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
-// NB: During shutdown, elements in glPrivateMemory are not erased but will have their fields cleared.
-// Can't use ankerl here because removal of elements is too slow.
-std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;
+
+// NB: During shutdown, elements in glMemory are not erased but will have their fields cleared.
+// Can't use ankerl here because it's unsuitable for high-churn collections.
+
+#ifdef RESOURCE_POOL
+// Node pools must be constructed before the maps that reference them (guaranteed here by declaration order within
+// this translation unit) and destroyed after them (reverse declaration order).
+NodePool glMemoryNodePool, glResourcesNodePool, glObjectsNodePool;
+PooledMap<MEMORYID, PrivateAddress> glMemory{0, PoolAllocator<std::pair<const MEMORYID, PrivateAddress>>(glMemoryNodePool)}; // Pointer stable collection
+PooledMap<RESOURCEID, ResourceRecord> glResources{0, PoolAllocator<std::pair<const RESOURCEID, ResourceRecord>>(glResourcesNodePool)}; // Pointer stable collection
+PooledMap<OBJECTID, ObjectRecord> glObjects{0, PoolAllocator<std::pair<const OBJECTID, ObjectRecord>>(glObjectsNodePool)}; // Pointer stable collection
+#else
+PooledMap<MEMORYID, PrivateAddress> glMemory; // Pointer stable collection
+PooledMap<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
+PooledMap<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
+#endif
+
 
 std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 
@@ -76,7 +90,6 @@ std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
 std::condition_variable_any cvObjects;
-std::condition_variable_any cvResources;
 
 std::mutex glmThreadRegistry;
 std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
@@ -96,9 +109,11 @@ OBJECTLOOKUP glObjectLookup; // Name lookups
 
 std::mutex glmPrint;
 std::recursive_mutex glmMemory;
+std::recursive_mutex glmResources; // For glResources
+std::recursive_mutex glmObjects; // For glObjects
 std::recursive_mutex glmMsgHandler;
 std::recursive_mutex glmAsyncActions;
-std::shared_timed_mutex glmObjectLookup;
+std::shared_timed_mutex glmObjectLookup; // For glObjectLookup
 std::recursive_timed_mutex glmTimer;
 std::timed_mutex glmClassDB;
 std::shared_timed_mutex glmFieldKeys;
@@ -110,8 +125,6 @@ ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
 ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB;
 ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
-std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory;
-std::unordered_map<OBJECTID, ankerl::unordered_dense::set<OBJECTID>> glObjectChildren;
 ankerl::unordered_dense::map<uint32_t, std::string> glFields;
 
 std::unordered_multimap<uint32_t, CLASSID> glWildClassMap;
@@ -130,12 +143,11 @@ APTR glJNIEnv = 0;
 std::atomic_ushort glFunctionID = 3333; // IDTYPE_FUNCTION
 int glStdErrFlags = 0;
 TIMER glCacheTimer = 0;
-int glMemoryFD = -1;
 int glValidateProcessID = 0;
 int glProcessID = 0;
 int glEUID = -1, glEGID = -1, glGID = -1, glUID = -1;
 int glWildClassMapTotal = 0;
-std::atomic_int glPrivateIDCounter = 500;
+std::atomic_int glResourceID = 500;
 std::atomic_int glMessageIDCount = 10000;
 std::atomic_int glGlobalIDCount = 1;
 int glEventMask = 0;
@@ -217,9 +229,6 @@ thread_local PERMIT glDefaultPermissions = PERMIT::NIL;
 thread_local int16_t tlDepth     = 0;
 thread_local int16_t tlLogStatus = 1;
 thread_local bool tlMainThread = false; // Will be set to TRUE on open, any other threads will remain FALSE.
-thread_local int16_t tlPreventSleep = 0;
-thread_local int16_t tlPublicLockCount = 0; // This variable is controlled by GLOBAL_LOCK() and can be used to check if locks are being held prior to sleeping.
-thread_local int16_t tlPrivateLockCount = 0; // Count of private *memory* locks held per-thread
 THREADID glMainThreadID = THREADID(0);
 
 Object glDummyObject;
@@ -244,13 +253,20 @@ objTime *glTime = nullptr;
 thread_local int16_t tlMsgRecursion = 0;
 thread_local TaskMessage *tlCurrentMsg = nullptr;
 
-ERR (*glMessageHandler)(struct Message *) = nullptr;
 void (*glVideoRecovery)(void) = nullptr;
 void (*glKeyboardRecovery)(void) = nullptr;
 
 #ifdef __ANDROID__
 static struct AndroidBase *AndroidBase = nullptr;
 #endif
+
+ResourceManager glResourceObject = {
+   "Object",
+   (ERR (*)(ResourceRecord &, APTR))&object_free,
+   &object_add_child,
+   &object_remove_child,
+   true
+};
 
 //********************************************************************************************************************
 

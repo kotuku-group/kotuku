@@ -17,7 +17,7 @@ matching class will be returned.
 The `ERR::Search` code is returned if a suitable class does not match the targeted file.
 
 -INPUT-
-cpp(strview) Path: The location of the object data.
+strview Path: The location of the object data.
 cid Filter:    Restrict the search to classes in this subset, or use `CLASSID::NIL` to search all classes.
 &cid Class:    Must refer to a `CLASSID` variable that will store the resulting class ID.
 &cid SubClass: Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).

@@ -19,7 +19,11 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
 
 // For use in requires statements
 template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcObject = std::is_base_of_v<Object, T>;
+template <typename T> concept pcComplete = requires { sizeof(T); };
+template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
+template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
+   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
+   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
 
 #ifndef DEFINE_ENUM_FLAG_OPERATORS
 template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
@@ -45,6 +49,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
    using underlying = std::underlying_type_t<T>;
    return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
 }
+
+constexpr int RESOURCE_ID_OFFSET = -1;
 
   ]==])
 
@@ -98,7 +104,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "READ",         "RENAME",        "RESET",        "RESIZE",      "SAVEIMAGE",    "SAVETOOBJECT",
     "SEEK",         "SETKEY",        "SHOW",         "TIMER",       "UNLOCK",       "NEXT",         "PREV",
     "WRITE",        "SETFIELD",      "CLIPBOARD",    "REFRESH",     "DISABLE",      "ENABLE",       "REDIMENSION",
-    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO")
+    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO",         "FREEPLACEMENT")
 
   flags("MHF", { comment="Internal options for requesting function tables from modules." },
     "STATIC: Keep the module code in memory",
@@ -283,11 +289,10 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "UNTRACKED: An object created with this flag will not be tracked back to the object that created it.",
     "INITIALISED: Read-only indicator if the object has been initialised.",
     "LOCAL: Classes can allocate local objects to stop them from being associated with the client.",
-    "FREE_ON_UNLOCK: Read-only indicator for when the object is marked for deletion.",
+    "FREE_ON_UNLOCK: Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.",
     "FREE: Read-only indicator for when the object is being freed.",
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
-    "COLLECT: Marked for garbage collection.",
     "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
@@ -322,7 +327,8 @@ constexpr bool defined(T flags, T test_flag) noexcept {
   enums("IDTYPE", { type="int", start=1, comment="Types for AllocateID()" },
     "MESSAGE: Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.",
     "GLOBAL: Global ID's have no specific association with anything.",
-    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field."
+    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field.",
+    "RESOURCE: Resource identifier for TrackResource()"
   )
 
   enums("TSTATE", { type="char", comment="Indicates the state of a process." },
@@ -605,6 +611,8 @@ constexpr T roundup(T Num, T Alignment) {
 
 } // namespace
 
+constexpr RESOURCEID RESOURCEID_INHERIT = 1;
+
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -651,25 +659,48 @@ class FloatRect {
   ]])
 
   struct('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
-     cpp(str) Name        # Program name
-     cpp(str) SystemPath  # Path to system files
-     cpp(str) ModulePath  # Path to module files
-     cpp(str) RootPath    # Kotuku root directory
+     string Name          # Program name
+     string SystemPath    # Path to system files
+     string ModulePath    # Path to module files
+     string RootPath      # Kotuku root directory
      cstr *Args           # Command-line arguments
-     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list.
-     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure.
+     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list
+     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure
      int MaxDepth         # Maximum debug depth
      int Detail           # Debug detail level (0 none - 9 trace)
      int ArgCount         # Total arguments in Args
   ]])
 
+  struct('ResourceRecord', { comment='Unified resource management record' }, [[
+     ptr Address               # Direct pointer to the resource (optional, can rely on ResourceID instead)
+     struct(*ResourceManager) Manager # Reference to the resource manager for this record
+     res ResourceID            # Unique identifier
+     oid OwnerID               # Owner of the resource
+     bool CollectOnUnlock      # Resource is locked; manager will collect immediately once unlocked
+     bool Terminating          # A FreeResource() call currently owns the destruction path
+     bool OwnerManagesChildren # True if the current OwnerID manages its child resources
+  ]],
+  [[
+   ResourceRecord() :
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+  ]])
+
+
   struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
      obj Object # Reference to an object to monitor.
   ]])
 
-  struct("ResourceManager", { comment="This structure must be placed at the start of any memory block allocated with the MEM::MANAGED flag.", restrict="c" }, [[
-     cstr Name             # The name of the resource.
-     fptr(error ptr) Free  # A function that will remove the resource's content when terminated.
+  struct("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
+     cstr Name             # The name of the resource
+     fptr(error struct(&ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated
+     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) AddChild # Optional function for tracking child resources
+     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) RemoveChild # Optional function to remove tracking of child resources
+     bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
   struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
@@ -688,7 +719,7 @@ using ModClose   = void (*)(OBJECTPTR);
 using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
 using ModOpen    = ERR (*)(OBJECTPTR);
 using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(CSTRING, int *, int *);
+using ModTest    = void (*)(std::string_view, int *, int *);
 
   ]])
 
@@ -699,7 +730,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     fptr(void obj) Close           # A function that will be called each time the module is closed.
     fptr(error obj) Open           # A function that will be called each time the module is opened.
     fptr(error) Expunge            # Reference to an expunge function to terminate the module.
-    fptr(void cstr &int &int) Test # A function that can run embedded unit tests in development builds.
+    fptr(void strview &int &int) Test # A function that can run embedded unit tests in development builds.
     cstr Name                      # Name of the module
     cstr Namespace                 # A reserved system-wide namespace for function names.
   ]],
@@ -745,28 +776,28 @@ using ModTest    = void (*)(CSTRING, int *, int *);
   ]])
 
   struct("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
-     large Instant          # Unix epoch microseconds at which the transition occurs.
-     cpp(str) Abbreviation  # Short name where available, e.g. GMT, BST, PST.
-     int OffsetBefore       # UTC offset in seconds before the transition.
-     int OffsetAfter        # UTC offset in seconds after the transition.
-     int DaylightSaving     # 1 if the resulting period observes daylight-saving time.
+     large Instant        # Unix epoch microseconds at which the transition occurs.
+     string Abbreviation  # Short name where available, e.g. GMT, BST, PST.
+     int OffsetBefore     # UTC offset in seconds before the transition.
+     int OffsetAfter      # UTC offset in seconds after the transition.
+     int DaylightSaving   # 1 if the resulting period observes daylight-saving time.
   ]],
   [[
    TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
   ]])
 
   struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
-     cpp(str) ZoneID        # Preferred public ID, e.g. Europe/London or UTC.
-     cpp(str) NativeID      # Host-native ID, e.g. GMT Standard Time on Windows.
-     cpp(str) Source        # "tzif", "win32", or "utc".
-     cpp(str) DataPath      # TZif path on Linux, otherwise empty.
-     cpp(str) Version       # TZDB/source version if available, otherwise empty.
-     cpp(array(struct(TimeZoneTransition))) Transitions # Transitions available for the requested range.
-     int BaseOffset         # Standard UTC offset in seconds.
-     short StartYear        # Inclusive requested start year.
-     short EndYear          # Inclusive requested end year.
-     char IsLocal           # 1 if ZoneID requested the local system zone.
-     char IsFallback        # 1 if UTC fallback was used.
+     string ZoneID      # Preferred public ID, e.g. Europe/London or UTC.
+     string NativeID    # Host-native ID, e.g. GMT Standard Time on Windows.
+     string Source      # "tzif", "win32", or "utc".
+     string DataPath    # TZif path on Linux, otherwise empty.
+     string Version     # TZDB/source version if available, otherwise empty.
+     vector(struct(TimeZoneTransition)) Transitions # Transitions available for the requested range.
+     int BaseOffset     # Standard UTC offset in seconds.
+     short StartYear    # Inclusive requested start year.
+     short EndYear      # Inclusive requested end year.
+     char IsLocal       # 1 if ZoneID requested the local system zone.
+     char IsFallback    # 1 if UTC fallback was used.
   ]],
   [[
    TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
@@ -852,11 +883,9 @@ using ModTest    = void (*)(CSTRING, int *, int *);
 
   struct("MemInfo", { type="meminfo" }, [[
     ptr  Start         # The starting address of the memory block (does not apply to shared blocks).
-    oid  ObjectID      # The object that owns the memory block.
     uint Size          # The size of the memory block.
     int(MEM) Flags     # The type of memory.
-    mem   MemoryID     # The unique ID for this block.
-    short AccessCount  # Total number of active locks on this block.
+    mem   MemoryID     # The unique resource ID for this block.
   ]])
 
   struct("MsgHandler", { restrict="c" }, [[
@@ -921,7 +950,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     large Size                 # The size of the file's content.
     large Timestamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
     struct(*FileInfo) Next     # Next structure in the list, or `NULL`.
-    cpp(str) Name              # The name of the file.
+    string Name                # The name of the file.
     int(RDF) Flags             # Additional flags to describe the file.
     int(PERMIT) Permissions    # Standard permission flags.
     int UserID                 # User  ID (Unix systems only).
@@ -1005,15 +1034,15 @@ using ModTest    = void (*)(CSTRING, int *, int *);
   ]]) -- [32/52]
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
-    cid ClassID          # Unique class identifier (hash of Name)
-    cid ParentID         # Parent class ID if this is a derived class
-    int(CCF) Category    # Assigned category
-    cpp(str) Name        # Name of the class
-    cpp(str) Path        # Path to the class file
-    cpp(str) Extension   # Wildcards for matching by file extension, e.g. `jpeg|jpg`
-    cpp(str) Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
-    cpp(str) Icon        # Icon reference in `group/name` format
-    cpp(str) Description # File description
+    cid ClassID        # Unique class identifier (hash of Name)
+    cid ParentID       # Parent class ID if this is a derived class
+    int(CCF) Category  # Assigned category
+    string Name        # Name of the class
+    string Path        # Path to the class file
+    string Extension   # Wildcards for matching by file extension, e.g. `jpeg|jpg`
+    string Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
+    string Icon        # Icon reference in `group/name` format
+    string Description # File description
   ]])
 
   c_insert([[
@@ -1040,7 +1069,6 @@ struct ScriptArg { // For use with sc::Exec
 ]])
 
   functionNames(nil,
-    "AccessMemory",
     "Action",
     "ActionList",
     "DeleteFile",
@@ -1049,8 +1077,7 @@ struct ScriptArg { // For use with sc::Exec
     "AllocMemory",
     "AccessObject",
     "CheckAction",
-    "CheckMemoryExists",
-    "CheckObjectExists",
+    "CheckResourceExists",
     "InitObject",
     "VirtualVolume",
     "CurrentContext",
@@ -1068,15 +1095,14 @@ struct ScriptArg { // For use with sc::Exec
     "ListChildren",
     "RegisterFD",
     "ResolvePath",
-    "MemoryIDInfo",
-    "MemoryPtrInfo",
+    "MemoryInfo",
+    "TrackResource",
     "NewObject",
     "NotifySubscribers",
     "CopyFile",
     "ProcessMessages",
     "IdentifyFile",
     "ReallocMemory",
-    "ReleaseMemory",
     "ResolveClassName",
     "SendMessage",
     "SetOwner",
@@ -1129,7 +1155,6 @@ struct ScriptArg { // For use with sc::Exec
     "ResolveUserID",
     "CreateLink",
     "ParentContext",
-    "SetResourceMgr",
     "WakeThread",
     "AsyncCancel",
     "AsyncPending",
@@ -1140,8 +1165,13 @@ struct ScriptArg { // For use with sc::Exec
 
 //********************************************************************************************************************
 
-template <class T> inline MEMORYID GetMemoryID(T &&A) {
-   return ((MEMORYID *)A)[-2];
+template <pcObjectPointer T> inline MEMORYID GetMemoryID(T) {
+   static_assert(not pcObjectPointer<T>, "GetMemoryID() cannot be called on object pointers; use Object->UID.");
+   return 0;
+}
+
+template <class T> requires (not pcObjectPointer<T>) inline MEMORYID GetMemoryID(T &&A) {
+   return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
 inline ERR DeregisterFD(HOSTHANDLE Handle) {
@@ -1168,18 +1198,16 @@ inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription
    return SubscribeTimer(Interval,&Callback,Subscription);
 }
 
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
+// This template leverages pcObject to be the preferred entry point for any Object type or derivation.
+
+template <pcObject T> inline ERR FreeResource(T *Object) {
+   if (not Object) return ERR::NullArgs;
+   return FreeResource(Object->UID);
 }
 
 inline ERR FreeResource(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return FreeResource(((int *)Address)[-2]);
-}
-
-inline ERR AllocMemory(int Size, MEM Flags, APTR Address) {
-   return AllocMemory(Size, Flags, (APTR *)Address, nullptr);
+   if (not Address) return ERR::NullArgs;
+   return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
@@ -1190,12 +1218,8 @@ template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
 }
 
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryIDInfo(ID,MemInfo,sizeof(struct MemInfo));
-}
-
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo) {
-   return MemoryPtrInfo(Address,MemInfo,sizeof(struct MemInfo));
+inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
+   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
@@ -1291,12 +1315,12 @@ typedef std::vector<obj_write> WRITE_TABLE;
     double ClassVersion    # Version of the class
     cstruct(*FieldArray) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
-    cpp(str) ClassName         # Name of the class
-    cpp(str) FileExtension     # File extension(s) supported by this class
-    cpp(str) FileDescription   # File description
-    cpp(str) FileHeader        # Internal file header for identifying the file
-    cpp(str) Path              # Module path to the class
-    cpp(str) Icon              # An icon that can be used to represent class data
+    string ClassName       # Name of the class
+    string FileExtension   # File extension(s) supported by this class
+    string FileDescription # File description
+    string FileHeader      # Internal file header for identifying the file
+    string Path            # Module path to the class
+    string Icon            # An icon that can be used to represent class data
     int Size               # Byte-size of the class when produced as an object
     int(CLF) Flags         # Special flags
     cid ClassID            # ID of this class
@@ -1316,11 +1340,13 @@ inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
 
-  klass("StorageDevice", { src="../classes/class_storagedevice.cpp" }, [[
+  klass("StorageDevice", { src="../classes/class_storagedevice.cpp", output="../classes/class_storagedevice_def.cpp" }, [[
     large(DEVICE) DeviceFlags  # Flags identifying the type of media
     large DeviceSize           # Size of the device
     large BytesFree            # Bytes available to the user
     large BytesUsed            # Bytes already used
+    string DeviceID            # A unique ID for the mounted device
+    string Volume              # The volume name of the device to query
   ]])
 
   methods("File", "Fl", {
@@ -1336,17 +1362,23 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Watch" }
   })
 
-  klass("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c" }, [[
+  klass("File", { version=1.2,
+    src="../classes/class_file.cpp",
+    output="../classes/class_file_def.c",
+    extended=true, references={ 'PERMIT' }
+  }, [[
     large     Position  # The current read/write byte position in a file.
+    string    Path      # The file path.
     int(FL)   Flags     # File flags and options.
     ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
   ]],
   nil,
   [[
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
    }
   ]])
 
@@ -1362,11 +1394,11 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Merge" }
   })
 
-  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c" }, [[
-    cpp(str) Path          # The location pointer
-    cpp(str) KeyFilter     # Enables key filtering, removing any unwanted keys on load.
-    cpp(str) GroupFilter   # Enables group filtering, removing any unwanted groups on load.
-    int(CNF) Flags         # Optional flags
+  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c", extended=true }, [[
+    string Path          # The location pointer
+    string KeyFilter     # Enables key filtering, removing any unwanted keys on load.
+    string GroupFilter   # Enables group filtering, removing any unwanted groups on load.
+    int(CNF) Flags       # Optional flags
   ]],
   nil,
   [[
@@ -1434,27 +1466,25 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   })
 
   klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
-    oid Target           # The object that script objects must be initialised to, e.g. for obj.new()
-    int(SCF) Flags       # Optional flags
-    error Error          # If an error occurred, this field will indicate the error number
-    int CurrentLine      # Current line being executed, or failed line if script execution terminated
-    int LineOffset       # An optional offset to use when reporting line numbers
+    string Path         # Location of the script
+    string Procedure    # Specifies a procedure name to be executed
+    string ErrorMessage # Human readable error string defined on failure
+    oid Target          # The object that script objects must be initialised to, e.g. for obj.new()
+    int(SCF) Flags      # Optional flags
+    error Error         # If an error occurred, this field will indicate the error number
+    int CurrentLine     # Current line being executed, or failed line if script execution terminated
+    int LineOffset      # An optional offset to use when reporting line numbers
   ]],
   [[
    int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars; // Global parameters
+   KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
-   char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string Path;              // File location of the script
    std::string String;
    std::string WorkingPath;
-   std::string ErrorMessage;
-   std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
-   char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
   ]])
 
@@ -1498,7 +1528,12 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=5, name="SetEnv" }
   })
 
-  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
+  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c", extended=true }, [[
+    string LaunchPath
+    string Name
+    string Location
+    string Path
+    string ProcessPath
     double TimeOut
     int(TSF) Flags
     int ReturnCode
@@ -1509,7 +1544,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=1, name="SetData" }
   })
 
-  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c" }, [[
+  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
    ptr   Data         # User data pointer.
    int   DataSize     # Size of user data.
    error Error        # Error code returned by the thread on completion.
@@ -1521,7 +1556,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=2, name="Test" }
   })
 
-  klass("Module", { src="../classes/class_module.cpp" }, [[
+  klass("Module", { src="../classes/class_module.cpp", extended=true }, [[
     cstruct(*Function) FunctionList # Array of functions
     ptr ModBase                     # Ptr to function jump table
     class(*RootModule) Root         # Shared details on the module
@@ -1588,7 +1623,8 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=14, name="Find" }
   })
 
-  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" }, output="../compression/class_compression_def.c" }, [[
+  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
+    output="../compression/class_compression_def.c", extended=true }, [[
     large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
     oid Output              # Reference to output object for user messages
     int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
@@ -1599,7 +1635,8 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     int WindowBits          # Window bits, currently applicable to the default (zlib) compression
   ]])
 
-  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp", output="../compression/class_compressed_stream_def.c" }, [[
+  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp",
+    output="../compression/class_compressed_stream_def.c", extended=true }, [[
     large TotalOutput  # Count of the total bytes that have been output.
     obj Input          # The object that is the source of the compressed data.
     obj Output         # The object that is the destination for the compressed data.
@@ -1617,7 +1654,7 @@ namespace kt {
    struct ActionMessage {
       OBJECTID ObjectID;  // The object that is to receive the action
       int  Time;
-      AC ActionID;        // ID of the action or method to execute
+      AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
 
       // Action arguments follow this structure in a buffer
@@ -1697,7 +1734,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr, nullptr) IS ERR::Okay) {
+   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;

@@ -1,16 +1,21 @@
 // This is a type-stable implementation of std::vector, for the purpose of ensuring that calls to size() and data()
-// will always return the correct value regardless of the underlying type.  Based on the work of Loki Astari.
+// will always return the correct value regardless of the underlying type.
 
 #pragma once
 
-#include <type_traits>
-#include <cstddef>
-#include <utility>
-#include <memory>
 #include <algorithm>
-#include <stdexcept>
-#include <iterator>
 #include <concepts>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <new>
+#include <type_traits>
+#include <utility>
 
 namespace kt {
 
@@ -30,70 +35,101 @@ public:
 
 private:
    static const size_type MIN_CAPACITY = 8;
-   size_type capacity;
+   size_type total_capacity;
    size_type length;
    T *elements;
 
-   struct Deleter {
-      void operator()(T* elements) const {
-         ::operator delete(elements);
+   struct BufferGuard {
+      T *data;
+      size_type allocated;
+      size_type constructed;
+
+      BufferGuard(T *Data, size_type Allocated) noexcept :
+         data(Data), allocated(Allocated), constructed(0)
+      {
+      }
+
+      ~BufferGuard() {
+         destroy_elements(data, constructed);
+         deallocate_storage(data, allocated);
+      }
+
+      void release() noexcept {
+         data        = nullptr;
+         allocated   = 0;
+         constructed = 0;
       }
    };
 
 public:
-   vector(size_type requested_capacity = MIN_CAPACITY) :
-      capacity(requested_capacity < MIN_CAPACITY ? MIN_CAPACITY : requested_capacity), length(0), elements(nullptr)
-   {
-      elements = (T*)(::operator new(sizeof(T) * capacity));
+   vector() noexcept : total_capacity(0), length(0), elements(nullptr) {
    }
 
-   template<std::input_iterator I> vector(I begin, I end) : capacity(std::distance(begin, end)), length(0) {
-      if (capacity < MIN_CAPACITY) capacity = MIN_CAPACITY;
-      elements = (T*)(::operator new(sizeof(T) * capacity));
-      for (auto i = begin; i != end; ++i) {
-         pushBackInternal(*i);
-      }
+   vector(size_type requested_capacity) : total_capacity(requested_capacity), length(0), elements(nullptr) {
+      elements = allocate_storage(total_capacity);
    }
 
-   vector(std::initializer_list<T> const& list) : vector(std::begin(list), std::end(list)) { }
+   template<std::input_iterator I> vector(I begin, I end) : vector() {
+      assign_from_range(begin, end);
+   }
+
+   vector(std::initializer_list<T> const &list) : vector(std::begin(list), std::end(list)) {
+   }
 
    ~vector() {
-      clearElements<T>();
-      ::operator delete(elements);
+      destroy_elements(elements, length);
+      deallocate_storage(elements, total_capacity);
    }
 
-   vector(vector const &copy) : capacity(copy.length), length(0) {
-      if (capacity < MIN_CAPACITY) capacity = MIN_CAPACITY;
-      elements = (T*)(::operator new(sizeof(T) * capacity));
-      std::uninitialized_copy(copy.elements, copy.elements + copy.length, elements);
-      length = copy.length;
+   vector(vector const &copy) : total_capacity(copy.length), length(0), elements(nullptr) {
+      elements = allocate_storage(total_capacity);
+      BufferGuard guard(elements, total_capacity);
+      construct_copy_range(guard, copy.element_at(0), copy.element_at(copy.length));
+      length = guard.constructed;
+      guard.release();
    }
 
-   vector& operator=(vector const &copy) {
-      if (this == &copy) return *this;
-      vector<T> tmp(copy); // Copy and Swap idiom
-      tmp.swap(*this);
+   vector & operator=(vector const &copy) {
+      if (this != &copy) {
+         vector<T> tmp(copy);
+         tmp.swap(*this);
+      }
       return *this;
    }
 
-   vector(vector &&move) : capacity(0), length(0), elements(nullptr) {
-      move.swap(*this);
+   vector(vector &&move) noexcept :
+      total_capacity(move.total_capacity), length(move.length), elements(move.elements)
+   {
+      move.total_capacity = 0;
+      move.length         = 0;
+      move.elements       = nullptr;
    }
 
-   vector& operator=(vector &&move) {
-      if (this == &move) return *this;
-      move.swap(*this);
+   vector & operator=(vector &&move) noexcept {
+      if (this != &move) {
+         destroy_elements(elements, length);
+         deallocate_storage(elements, total_capacity);
+
+         total_capacity = move.total_capacity;
+         length         = move.length;
+         elements       = move.elements;
+
+         move.total_capacity = 0;
+         move.length         = 0;
+         move.elements       = nullptr;
+      }
       return *this;
    }
 
-   void swap(vector &other) {
-      std::swap(capacity, other.capacity);
+   void swap(vector &other) noexcept {
+      std::swap(total_capacity, other.total_capacity);
       std::swap(length, other.length);
       std::swap(elements, other.elements);
    }
 
    inline size_type size() const { return length; }
-   inline bool      empty() const { return length == 0; }
+   inline size_type capacity() const { return total_capacity; }
+   inline bool      empty() const { return not length; }
    inline T* data() { return elements; }
    inline const T* data() const { return elements; }
 
@@ -109,9 +145,9 @@ public:
    inline const_iterator  begin() const { return elements;}
    inline const_riterator rbegin() const { return const_riterator(end());}
 
-   inline iterator        end() { return elements + length;}
+   inline iterator        end() { return elements ? elements + length : nullptr;}
    inline riterator       rend() { return riterator(begin());}
-   inline const_iterator  end() const { return elements + length;}
+   inline const_iterator  end() const { return elements ? elements + length : nullptr;}
    inline const_riterator rend() const { return const_riterator(begin());}
 
    inline const_iterator  cbegin() const { return begin();}
@@ -124,123 +160,81 @@ public:
    // Erasure
 
    inline iterator erase(const_iterator pos) {
-      return erase(pos, pos + 1);
+      return erase(pos, pos ? pos + 1 : pos);
    }
 
    iterator erase(const_iterator first, const_iterator last) {
-      if (first > last or first < begin() or last > end()) {
-         return const_cast<iterator>(first); // Invalid range, do nothing
-      }
+      if (not (first != last)) return const_cast<iterator>(first);
+      if (not length) return begin();
+      if (not iterator_inside_storage(first)) return const_cast<iterator>(first);
+      if (not iterator_inside_or_end(last)) return const_cast<iterator>(first);
+      if (last < first) return const_cast<iterator>(first);
 
-      auto start_pos = const_cast<iterator>(first);
-      auto num_erased = std::distance(first, last);
+      size_type index = size_type(first - begin());
+      size_type count = size_type(last - first);
+      if (not count) return begin() + index;
 
-      if (num_erased > 0) {
-         // Move elements to fill the gap
-         auto new_end = std::move(start_pos + num_erased, end(), start_pos);
-
-         // Destruct the now-moved-from objects at the end
-         for (iterator it = new_end; it != end(); ++it) {
-            it->~T();
+      if constexpr (std::is_nothrow_move_assignable_v<T>) {
+         for (size_type i = index; i < length - count; ++i) {
+            elements[i] = std::move(elements[i + count]);
          }
-
-         length -= num_erased;
+         destroy_elements(elements + length - count, count);
+         length -= count;
+      }
+      else {
+         vector<T> tmp(length - count);
+         for (size_type i = 0; i < index; ++i) {
+            tmp.push_back(elements[i]);
+         }
+         for (size_type i = index + count; i < length; ++i) {
+            tmp.push_back(elements[i]);
+         }
+         tmp.swap(*this);
       }
 
-      return start_pos;
+      return index < length ? begin() + index : end();
    }
 
    iterator insert(const_iterator pTarget, const T &pValue) {
-      size_type index = pTarget - begin();
-      if (length == capacity) {
-         // Re-evaluate index after reallocation
-         reserveCapacity(capacity * 2);
-         pTarget = begin() + index;
-      }
-
-      iterator target_iter = const_cast<iterator>(pTarget);
-
-      iterator old_end = end();
-
-      if (target_iter < old_end) {
-         new (old_end) T(std::move(*(old_end - 1)));
-         std::move_backward(target_iter, old_end - 1, old_end);
-         target_iter->~T();
-      }
-
-      new (target_iter) T(pValue);
-      length++;
-
-      return target_iter;
+      T value(pValue);
+      return insert_value(pTarget, std::move(value));
    }
 
    iterator insert(const_iterator pTarget, T &&pValue) {
-      size_type index = pTarget - begin();
-      if (length == capacity) {
-         reserveCapacity(capacity * 2);
-         pTarget = begin() + index;
-      }
-
-      iterator target_iter = const_cast<iterator>(pTarget);
-
-      iterator old_end = end();
-
-      if (target_iter < old_end) {
-         new (old_end) T(std::move(*(old_end - 1)));
-         std::move_backward(target_iter, old_end - 1, old_end);
-         target_iter->~T();
-      }
-
-      new (target_iter) T(std::move(pValue));
-      length++;
-
-      return target_iter;
+      T value(std::move(pValue));
+      return insert_value(pTarget, std::move(value));
    }
 
    void insert(const_iterator pTarget, const_iterator pStart, const_iterator pEnd) {
-      difference_type count = std::distance(pStart, pEnd);
-      if (count <= 0) {
+      if (not (pStart != pEnd)) return;
+      if (pEnd < pStart) return;
+
+      if (source_overlaps_storage(pStart, pEnd)) {
+         vector<T> copy(pStart, pEnd);
+         insert(pTarget, copy.begin(), copy.end());
          return;
       }
 
-      size_type index = pTarget - begin();
+      size_type index = iterator_index(pTarget);
+      size_type count = size_type(pEnd - pStart);
+      size_type new_length = checked_add(length, count);
+      size_type new_capacity = total_capacity;
+      if (new_length > new_capacity) new_capacity = new_length;
 
-      if (length + count > capacity) {
-         size_type new_capacity = capacity;
-         if (new_capacity < MIN_CAPACITY) new_capacity = MIN_CAPACITY;
-         while (new_capacity < length + count) {
-            new_capacity = new_capacity * 2;
-         }
-         reserveCapacity(new_capacity);
-         pTarget = begin() + index;
-      }
+      pointer new_elements = allocate_storage(new_capacity);
+      BufferGuard guard(new_elements, new_capacity);
 
-      iterator target_iter = const_cast<iterator>(pTarget);
-      iterator old_end = end();
-      size_type tail_count = size_type(old_end - target_iter);
-      size_type count_sz = size_type(count);
+      construct_existing_range(guard, element_at(0), element_at(index));
+      construct_copy_range(guard, pStart, pEnd);
+      construct_existing_range(guard, element_at(index), element_at(length));
 
-      if (tail_count > 0) {
-         if (count_sz <= tail_count) {
-            iterator move_from_start = old_end - count_sz;
-            std::uninitialized_move(move_from_start, old_end, old_end);
-            std::move_backward(target_iter, move_from_start, old_end);
-            iterator destroy_end = target_iter + count_sz;
-            for (iterator destroy_iter = target_iter; destroy_iter != destroy_end; ++destroy_iter) {
-               destroy_iter->~T();
-            }
-         } else {
-            iterator new_tail_start = target_iter + count_sz;
-            std::uninitialized_move(target_iter, old_end, new_tail_start);
-            for (iterator destroy_iter = target_iter; destroy_iter != old_end; ++destroy_iter) {
-               destroy_iter->~T();
-            }
-         }
-      }
+      destroy_elements(elements, length);
+      deallocate_storage(elements, total_capacity);
 
-      std::uninitialized_copy(pStart, pEnd, target_iter);
-
-      length += count_sz;
+      elements       = new_elements;
+      length         = new_length;
+      total_capacity = new_capacity;
+      guard.release();
    }
 
    // Comparison
@@ -252,90 +246,194 @@ public:
    }
 
    inline void push_back(value_type const &value) {
-      resize_if_required();
-      pushBackInternal(value);
+      T copy(value);
+      ensure_capacity_for(checked_add(length, size_type(1)));
+      moveBackInternal(std::move(copy));
    }
 
    inline void push_back(value_type &&value) {
-      resize_if_required();
-      moveBackInternal(std::move(value));
+      T moved(std::move(value));
+      ensure_capacity_for(checked_add(length, size_type(1)));
+      moveBackInternal(std::move(moved));
    }
 
    template<typename... Args> T & emplace_back(Args&&... args) {
-      resize_if_required();
-      return *new (elements + length++) T(std::forward<Args>(args)...);
+      ensure_capacity_for(checked_add(length, size_type(1)));
+      T *target = elements + length;
+      new (target) T(std::forward<Args>(args)...);
+      length += 1;
+      return *target;
    }
 
    inline void pop_back() {
-      --length;
+      length -= 1;
       elements[length].~T();
    }
 
    inline void reserve(size_type capacityUpperBound) {
-      if (capacityUpperBound > capacity) {
+      if (capacityUpperBound > total_capacity) {
          reserveCapacity(capacityUpperBound);
       }
    }
 
    void resize(size_type Count) {
       if (Count < length) {
-         // Shrink: destroy elements from Count to length
-         for (size_type i = Count; i < length; ++i) {
-            elements[i].~T();
-         }
+         destroy_elements(elements + Count, length - Count);
          length = Count;
       }
       else if (Count > length) {
-         // Grow: ensure capacity and default-construct new elements
-         if (Count > capacity) {
-            reserveCapacity(Count);
+         reserve(Count);
+         while (length < Count) {
+            new (elements + length) T();
+            length += 1;
          }
-         for (size_type i = length; i < Count; ++i) {
-            new (elements + i) T();
-         }
-         length = Count;
       }
    }
 
    void resize(size_type Count, const value_type &Value) {
       if (Count < length) {
-         // Shrink: destroy elements from Count to length
-         for (size_type i = Count; i < length; ++i) {
-            elements[i].~T();
-         }
+         destroy_elements(elements + Count, length - Count);
          length = Count;
       }
       else if (Count > length) {
-         // Grow: ensure capacity and copy-construct new elements
-         if (Count > capacity) {
-            reserveCapacity(Count);
+         reserve(Count);
+         while (length < Count) {
+            new (elements + length) T(Value);
+            length += 1;
          }
-         for (size_type i = length; i < Count; ++i) {
-            new (elements + i) T(Value);
-         }
-         length = Count;
       }
    }
 
    inline void clear() {
-      clearElements<T>();
+      destroy_elements(elements, length);
       length = 0;
    }
 
    // INTERNAL FUNCTIONALITY
 
 private:
-   inline void resize_if_required() {
-      if (length == capacity) {
-         reserveCapacity(capacity * 2);
+   static constexpr bool needs_aligned_storage() noexcept {
+      return alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+   }
+
+   static constexpr size_type max_size() noexcept {
+      return std::numeric_limits<size_type>::max() / sizeof(T);
+   }
+
+   [[noreturn]] static void length_failure() noexcept {
+      std::abort();
+   }
+
+   static size_type checked_add(size_type left, size_type right) noexcept {
+      if (left > std::numeric_limits<size_type>::max() - right) length_failure();
+      return left + right;
+   }
+
+   static void check_allocation_size(size_type count) noexcept {
+      if (count > max_size()) length_failure();
+   }
+
+   static pointer allocate_storage(size_type count) {
+      if (not count) return nullptr;
+      check_allocation_size(count);
+      size_type bytes = sizeof(T) * count;
+      if constexpr (needs_aligned_storage()) {
+         return (T *)(::operator new(bytes, std::align_val_t(alignof(T))));
+      }
+      else {
+         return (T *)(::operator new(bytes));
       }
    }
 
-   inline void reserveCapacity(size_type newCapacity) {
-      if (newCapacity < MIN_CAPACITY) newCapacity = MIN_CAPACITY;
-      vector<T> tmpBuffer(newCapacity);
-      simpleCopy<T>(tmpBuffer);
-      tmpBuffer.swap(*this);
+   static void deallocate_storage(pointer data, size_type) noexcept {
+      if (not data) return;
+      if constexpr (needs_aligned_storage()) {
+         ::operator delete(data, std::align_val_t(alignof(T)));
+      }
+      else {
+         ::operator delete(data);
+      }
+   }
+
+   static void destroy_elements(pointer data, size_type count) noexcept {
+      if constexpr (not std::is_trivially_destructible_v<T>) {
+         for (size_type i = count; i > 0; --i) {
+            data[i - 1].~T();
+         }
+      }
+   }
+
+   static size_type recommended_capacity(size_type required, size_type current) noexcept {
+      if (required > max_size()) length_failure();
+      if (required <= current) return current;
+
+      size_type next = current ? current : MIN_CAPACITY;
+      while (next < required) {
+         if (next > max_size() / 2) {
+            next = required;
+         }
+         else {
+            next *= 2;
+         }
+      }
+      return next;
+   }
+
+   template<std::input_iterator I> void assign_from_range(I begin, I end) {
+      if constexpr (std::forward_iterator<I>) {
+         auto count = size_type(std::distance(begin, end));
+         reserve(count);
+      }
+
+      for (auto i = begin; i != end; ++i) {
+         push_back(*i);
+      }
+   }
+
+   static void construct_copy_range(BufferGuard &guard, const_iterator first, const_iterator last) {
+      for (auto source = first; source != last; ++source) {
+         new (guard.data + guard.constructed) T(*source);
+         guard.constructed += 1;
+      }
+   }
+
+   static void construct_existing_range(BufferGuard &guard, iterator first, iterator last) {
+      if (not (first != last)) return;
+
+      if constexpr (std::is_trivially_copyable_v<T> and std::is_trivially_destructible_v<T>) {
+         size_type count = size_type(last - first);
+         if (count) {
+            std::memcpy(guard.data + guard.constructed, first, sizeof(T) * count);
+            guard.constructed += count;
+         }
+      }
+      else {
+         for (auto source = first; source != last; ++source) {
+            new (guard.data + guard.constructed) T(std::move_if_noexcept(*source));
+            guard.constructed += 1;
+         }
+      }
+   }
+
+   void ensure_capacity_for(size_type required) {
+      if (required > total_capacity) {
+         reserveCapacity(recommended_capacity(required, total_capacity));
+      }
+   }
+
+   void reserveCapacity(size_type newCapacity) {
+      if (newCapacity <= total_capacity) return;
+
+      pointer new_elements = allocate_storage(newCapacity);
+      BufferGuard guard(new_elements, newCapacity);
+      construct_existing_range(guard, element_at(0), element_at(length));
+
+      destroy_elements(elements, length);
+      deallocate_storage(elements, total_capacity);
+
+      elements       = new_elements;
+      total_capacity = newCapacity;
+      guard.release();
    }
 
    // Add new element to the end using placement new
@@ -350,65 +448,70 @@ private:
       ++length;
    }
 
-   // Optimizations that use SFINAE to only instantiate one of two versions of a function.
-   // simpleCopy()    Moves when no exceptions are guaranteed, otherwise copies.
-   // clearElements() When no destructor remove loop.
-   // copyAssign()    Avoid resource allocation when no exceptions guaranteed.
-   //                 ie. When copying integers reuse the elements if we can
-   //                 to avoid expensive resource allocation.
-
-   template<typename X> requires (!std::is_nothrow_move_constructible_v<X>)
-   void simpleCopy(vector<T>& dst) {
-      std::for_each(elements, elements + length, [&dst](T const &v) {
-         dst.pushBackInternal(v);
-      });
+   size_type iterator_index(const_iterator target) const noexcept {
+      if (not target) return 0;
+      return size_type(target - begin());
    }
 
-   template<typename X> requires std::is_nothrow_move_constructible_v<X>
-   void simpleCopy(vector<T>& dst) {
-      std::for_each(elements, elements + length, [&dst](T &v){
-         dst.moveBackInternal(std::move(v));
-      });
+   iterator element_at(size_type index) noexcept {
+      return elements ? elements + index : nullptr;
    }
 
-   template<typename X> requires (!std::is_trivially_destructible_v<X>)
-   void clearElements() {
-      for (size_type i = 0; i < length; ++i) {
-         elements[length - 1 - i].~T();
+   const_iterator element_at(size_type index) const noexcept {
+      return elements ? elements + index : nullptr;
+   }
+
+   bool iterator_inside_storage(const_iterator target) const noexcept {
+      return elements and (target >= begin()) and (target < end());
+   }
+
+   bool iterator_inside_or_end(const_iterator target) const noexcept {
+      return elements and (target >= begin()) and (target <= end());
+   }
+
+   bool source_overlaps_storage(const_iterator first, const_iterator last) const noexcept {
+      if ((not elements) or (not (first != last))) return false;
+      std::less<const_iterator> less;
+      return less(first, end()) and less(begin(), last);
+   }
+
+   template<typename U> iterator insert_value(const_iterator pTarget, U &&pValue) {
+      size_type index = iterator_index(pTarget);
+      size_type new_length = checked_add(length, size_type(1));
+
+      if ((new_length > total_capacity) or (not std::is_nothrow_move_constructible_v<T>) or
+            (not std::is_nothrow_move_assignable_v<T>)) {
+         size_type new_capacity = recommended_capacity(new_length, total_capacity);
+         pointer new_elements = allocate_storage(new_capacity);
+         BufferGuard guard(new_elements, new_capacity);
+
+         construct_existing_range(guard, element_at(0), element_at(index));
+         new (guard.data + guard.constructed) T(std::forward<U>(pValue));
+         guard.constructed += 1;
+         construct_existing_range(guard, element_at(index), element_at(length));
+
+         destroy_elements(elements, length);
+         deallocate_storage(elements, total_capacity);
+
+         elements       = new_elements;
+         length         = new_length;
+         total_capacity = new_capacity;
+         guard.release();
       }
-   }
-
-   // Trivially destructible objects can be reused without using the destructor.
-
-   template<typename X> requires std::is_trivially_destructible_v<X>
-   void clearElements() {
-   }
-
-   template<typename X> requires (std::is_nothrow_copy_constructible_v<X> and std::is_nothrow_destructible_v<X>)
-   void copyAssign(vector<X> &copy) {
-      // This function is only used if there is no chance of an exception being
-      // thrown during destruction or copy construction of the type T.
-
-      if (this == &copy) return;
-
-      if (capacity <= copy.length) { // Sufficient space available
-         clearElements<T>();     // Potentially does nothing but if required will call the destructor of all elements.
-
-         length = 0;
-         for (size_type i=0; i < copy.length; ++i) {
-            pushBackInternal(copy[i]);
-         }
+      else if (index >= length) {
+         new (elements + length) T(std::forward<U>(pValue));
+         length = new_length;
       }
       else {
-         vector<T> tmp(copy);
-         tmp.swap(*this);
+         new (elements + length) T(std::move_if_noexcept(elements[length - 1]));
+         for (size_type i = length - 1; i > index; --i) {
+            elements[i] = std::move_if_noexcept(elements[i - 1]);
+         }
+         elements[index] = std::forward<U>(pValue);
+         length = new_length;
       }
-   }
 
-   template<typename X> requires (!(std::is_nothrow_copy_constructible_v<X> and std::is_nothrow_destructible_v<X>))
-   void copyAssign(vector<X> &copy) {
-      vector<T> tmp(copy); // Copy and Swap idiom
-      tmp.swap(*this);
+      return begin() + index;
    }
 };
 

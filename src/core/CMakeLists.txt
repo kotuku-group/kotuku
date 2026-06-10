@@ -102,10 +102,11 @@ endif ()
 
 add_library (core)
 
-target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS")
+target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS" "RESOURCE_POOL")
 
 if (MSVC)
    target_compile_definitions (core PRIVATE "_CRT_NONSTDC_NO_DEPRECATE")
+   target_compile_options (core PRIVATE /MP) # Enable multi-processor compilation
 endif ()
 
 # These definitions tell the Core where the system files are installed.

@@ -457,11 +457,11 @@ class objFont : public Object {
 struct FontBase {
 #ifndef KOTUKU_STATIC
    ERR (*_GetList)(struct FontList **Result);
-   int (*_StringWidth)(objFont *Font, const std::string_view & String, int Chars);
+   int (*_StringWidth)(objFont *Font, const std::string_view &String, int Chars);
    int (*_CharWidth)(objFont *Font, uint32_t Char);
    ERR (*_RefreshFonts)(void);
-   ERR (*_SelectFont)(const std::string_view & Name, const std::string_view & Style, CSTRING *Path, FMETA *Meta);
-   ERR (*_ResolveFamilyName)(const std::string_view & String, CSTRING *Result);
+   ERR (*_SelectFont)(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta);
+   ERR (*_ResolveFamilyName)(const std::string_view &String, std::string_view *Result);
 #endif // KOTUKU_STATIC
 };
 
@@ -469,20 +469,20 @@ struct FontBase {
 extern struct FontBase *FontBase;
 namespace fnt {
 inline ERR GetList(struct FontList **Result) { return FontBase->_GetList(Result); }
-inline int StringWidth(objFont *Font, const std::string_view & String, int Chars) { return FontBase->_StringWidth(Font,String,Chars); }
+inline int StringWidth(objFont *Font, const std::string_view &String, int Chars) { return FontBase->_StringWidth(Font,String,Chars); }
 inline int CharWidth(objFont *Font, uint32_t Char) { return FontBase->_CharWidth(Font,Char); }
 inline ERR RefreshFonts(void) { return FontBase->_RefreshFonts(); }
-inline ERR SelectFont(const std::string_view & Name, const std::string_view & Style, CSTRING *Path, FMETA *Meta) { return FontBase->_SelectFont(Name,Style,Path,Meta); }
-inline ERR ResolveFamilyName(const std::string_view & String, CSTRING *Result) { return FontBase->_ResolveFamilyName(String,Result); }
+inline ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta) { return FontBase->_SelectFont(Name,Style,Path,Meta); }
+inline ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result) { return FontBase->_ResolveFamilyName(String,Result); }
 } // namespace
 #else
 namespace fnt {
 extern ERR GetList(struct FontList **Result);
-extern int StringWidth(objFont *Font, const std::string_view & String, int Chars);
+extern int StringWidth(objFont *Font, const std::string_view &String, int Chars);
 extern int CharWidth(objFont *Font, uint32_t Char);
 extern ERR RefreshFonts(void);
-extern ERR SelectFont(const std::string_view & Name, const std::string_view & Style, CSTRING *Path, FMETA *Meta);
-extern ERR ResolveFamilyName(const std::string_view & String, CSTRING *Result);
+extern ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta);
+extern ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result);
 } // namespace
 #endif // KOTUKU_STATIC
 

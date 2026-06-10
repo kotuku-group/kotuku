@@ -971,10 +971,10 @@ extern "C" HANDLE winLoadLibrary(LPCSTR Name)
 
 //********************************************************************************************************************
 
-extern "C" FARPROC winGetProcAddress(HMODULE Module, LPCSTR Name)
+extern "C" FARPROC winGetProcAddress(HMODULE Module, std::string_view Name)
 {
-   if (not Module) return GetProcAddress(GetModuleHandle(nullptr), Name);
-   else return GetProcAddress(Module, Name);
+   if (not Module) return GetProcAddress(GetModuleHandle(nullptr), std::string(Name).c_str());
+   else return GetProcAddress(Module, std::string(Name).c_str());
 }
 
 //********************************************************************************************************************

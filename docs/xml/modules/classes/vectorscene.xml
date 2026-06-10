@@ -91,10 +91,10 @@
     <method>
       <name>AddDef</name>
       <comment>Registers a named definition object within a scene graph.</comment>
-      <prototype>ERR sc::AddDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR Def)</prototype>
+      <prototype>ERR sc::AddDef(OBJECTPTR Object, STRVIEW Name, OBJECTPTR Def)</prototype>
       <tiriPrototype>err = AddDef(Name:str, Def:obj)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The unique name to associate with the definition.</param>
+        <param type="STRVIEW" name="Name">The unique name to associate with the definition.</param>
         <param type="OBJECTPTR" name="Def">Reference to the definition object.</param>
       </input>
       <description>
@@ -129,10 +129,10 @@
     <method>
       <name>FindDef</name>
       <comment>Search for a vector definition by name.</comment>
-      <prototype>ERR sc::FindDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR * Def)</prototype>
+      <prototype>ERR sc::FindDef(OBJECTPTR Object, STRVIEW Name, OBJECTPTR * Def)</prototype>
       <tiriPrototype>err, Def:obj = FindDef(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the definition.</param>
+        <param type="STRVIEW" name="Name">The name of the definition.</param>
         <param type="OBJECTPTR *" name="Def">A pointer to the definition object is returned here if discovered.</param>
       </input>
       <description>

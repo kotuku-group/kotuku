@@ -340,11 +340,10 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       XTag *morph_tag;
       error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:morph/>", &morph_tag);
 
-      std::string shape_id;
+      std::string_view shape_id;
       if ((error IS ERR::Okay) and (shape->get(FID_ID, shape_id) IS ERR::Okay) and not shape_id.empty()) {
          // NB: It is required that the shape has previously been registered as a definition, otherwise the url will refer to a dud tag.
-         char shape_ref[120];
-         snprintf(shape_ref, sizeof(shape_ref), "url(#%s)", shape_id.c_str());
+         auto shape_ref = std::format("url(#{})", shape_id);
          xml::NewAttrib(morph_tag, "xlink:href", shape_ref);
       }
 
@@ -485,6 +484,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       double x, y, *dx, *dy, *rotate, text_length;
       int total, i, weight;
       std::string str;
+      std::string_view sv;
       char buffer[1024];
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<text/>", &tag);
@@ -530,14 +530,14 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if ((error IS ERR::Okay) and ((error = Vector->get(FID_TextLength, text_length)) IS ERR::Okay) and (text_length))
          xml::NewAttrib(tag, "textLength", std::to_string(text_length));
 
-      if ((error IS ERR::Okay) and ((error = Vector->get(FID_Face, str)) IS ERR::Okay))
-         xml::NewAttrib(tag, "font-family", str);
+      if ((error IS ERR::Okay) and ((error = Vector->get(FID_Face, sv)) IS ERR::Okay))
+         xml::NewAttrib(tag, "font-family", sv);
 
       if ((error IS ERR::Okay) and ((error = Vector->get(FID_Weight, weight)) IS ERR::Okay) and (weight != 400))
          xml::NewAttrib(tag, "font-weight", std::to_string(weight));
 
-      if ((error IS ERR::Okay) and ((error = Vector->get(FID_String, str)) IS ERR::Okay))
-         error = XML->insertContent(tag->ID, XMI::CHILD, str.c_str(), nullptr);
+      if ((error IS ERR::Okay) and ((error = Vector->get(FID_String, sv)) IS ERR::Okay))
+         error = XML->insertContent(tag->ID, XMI::CHILD, sv, nullptr);
 
       // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
 

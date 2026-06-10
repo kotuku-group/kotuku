@@ -269,7 +269,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
       sample.Data = nullptr;
    }
-   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, &sample.Data) IS ERR::Okay) {
+   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) IS ERR::Okay) {
       copymem(Args->Data, sample.Data, Args->DataSize);
    }
    else return log.warning(ERR::AllocMemory);
@@ -397,7 +397,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
       if (sample.Loop2Start IS sample.Loop2End) sample.Loop2Type = LTYPE::NIL;
    }
 
-   if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, &sample.Data) != ERR::Okay) {
+   if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) != ERR::Okay) {
       return ERR::AllocMemory;
    }
 
@@ -541,8 +541,6 @@ static ERR AUDIO_Free(extAudio *Self)
 
 #endif
 
-   Self->~extAudio();
-
    return ERR::Okay;
 }
 
@@ -598,12 +596,6 @@ static ERR AUDIO_NewObject(extAudio *Self)
 
    load_config(Self);
 
-   return ERR::Okay;
-}
-
-static ERR AUDIO_NewPlacement(extAudio *Self)
-{
-   new (Self) extAudio;
    return ERR::Okay;
 }
 
@@ -899,7 +891,7 @@ Optional flags may be set as follows:
 
 -INPUT-
 int Index: The index of the mixer that you want to set.
-cstr Name: If the correct index number is unknown, the name of the mixer may be set here.
+strview Name: If the correct index number is unknown, the name of the mixer may be set here.
 int(SVF) Flags: Optional flags.
 int Channel: A specific channel to modify (e.g. `0` for left, `1` for right).  If `-1`, all channels are affected.
 double Volume: The volume to set for the mixer, from 0 to 1.0.  If `-1`, the current volume values are retained.
@@ -936,7 +928,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
    // Determine what mixer we are going to adjust
 
-   if (Args->Name) {
+   if (not Args->Name.empty()) {
       for (index=0; index < std::ssize(Self->Volumes); index++) {
          if (iequals(Args->Name, Self->Volumes[index].Name)) break;
       }
@@ -1053,7 +1045,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
    // Determine what mixer we are going to adjust
 
-   if (Args->Name) {
+   if (not Args->Name.empty()) {
       for (index=0; index < (int)Self->Volumes.size(); index++) {
          if (iequals(Args->Name, Self->Volumes[index].Name)) break;
       }
@@ -1474,7 +1466,7 @@ static void load_config(extAudio *Self)
 
 //********************************************************************************************************************
 
-#include "audio_def.c"
+#include "class_audio_def.c"
 
 static const FieldArray clAudioFields[] = {
    { "OutputRate",    FDF_INT|FDF_RI, nullptr, SET_OutputRate },

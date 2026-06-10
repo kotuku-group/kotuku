@@ -394,7 +394,8 @@ struct lua_ref {
 
 OBJECTPTR access_object(GCobject *);
 void load_include_for_class(lua_State *, objMetaClass *);
-ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *);
+ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *, int &,
+   CSTRING &);
 const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);
 [[maybe_unused]] int code_writer(lua_State *, CPTR, size_t, void *);
@@ -411,7 +412,7 @@ ERR named_struct_to_table(lua_State *, std::string_view, CPTR);
 void construct_struct_cpp_strings(const struct struct_record &, APTR);
 void destroy_struct_cpp_strings(const struct struct_record &, APTR);
 void make_struct_array(lua_State *, std::string_view, int, CPTR, int = 0);
-void make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *);
+ERR make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *);
 void make_struct_serial_array(lua_State *, std::string_view, int, CPTR);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
 void process_error(objScript *, CSTRING);
@@ -433,7 +434,7 @@ void release_object(GCobject *);
 void new_module(lua_State *, objModule *);
 ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
 ERR table_to_struct(lua_State *, std::string_view, APTR *);
-ERR keyvalue_to_table(lua_State *, const KEYVALUE *);
+void keyvalue_to_table(lua_State *, const KEYVALUE *);
 
 int fcmd_arg(lua_State *);
 int fcmd_msg(lua_State *);
@@ -495,8 +496,8 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
 {
    if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
       if ((Object) and (Object->classptr)) {
-         std::string call_name = std::format("{}.{}", Object->classptr->ClassName, Action ? Action : "Action");
-         raise_checked_call_error(Lua, Error, call_name.c_str());
+         luaL_error(Lua, Error, std::format("{}.{}() failed: {}", Object->classptr->ClassName,
+            Action ? Action : "Action", GetErrorMsg(Error)));
       }
       else raise_checked_call_error(Lua, Error, Action ? Action : "Action");
    }

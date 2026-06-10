@@ -13,6 +13,18 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    glBasePort = 19840  -- Base port for coexistence tests
    glTestTimeout = 4.0
 
+function freeNetworkObject(Object)
+   if Object then Object.free() end
+end
+
+function freeNetworkObjectTable(Objects)
+   if Objects then
+      for _, object in pairs(Objects) do
+         freeNetworkObject(object)
+      end
+   end
+end
+
 ------------------------------------------------------------------------------------------------------------------------
 -- Test UDP and TCP servers running simultaneously
 
@@ -111,6 +123,13 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
       end
    })
 
+   defer
+      freeNetworkObject(tcpClient)
+      freeNetworkObject(udpClient)
+      freeNetworkObject(tcpServer)
+      freeNetworkObject(udpServer)
+   end
+
    -- Send UDP message
 
    dest = struct.new('IPAddress')
@@ -193,6 +212,11 @@ end
       tcp1 = obj.new('netsocket', { address = '127.0.0.1', port = basePort + 2 }),
       udp2 = obj.new('netsocket', { flags = 'UDP' })
    }
+
+   defer
+      freeNetworkObjectTable(clients)
+      freeNetworkObjectTable(servers)
+   end
 
    dest = struct.new('IPAddress')
    check(mNet.StrToAddress('127.0.0.1', dest))

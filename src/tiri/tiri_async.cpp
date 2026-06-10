@@ -17,17 +17,12 @@ additional functionality in the future.
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
-#include <thread>
-#include <cassert>
 #include <mutex>
 
 #include "lib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "lj_object.h"
-#include "hashes.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -224,18 +219,27 @@ static int async_action(lua_State *Lua)
       // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
       lua_rotate(Lua, 1, -4);
       lua_pop(Lua, 4);
-      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
+      int arg_index = 0;
+      CSTRING error_msg = nullptr;
+      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(),
+            &result_count, arg_index, error_msg)) IS ERR::Okay) {
          if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
          else {
+            arg_buffer.reset();
             abort();
             luaL_error(Lua, "Actions that return results are not yet supported.");
          }
       }
       else {
+         arg_buffer.reset();
          abort();
-         luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
+         if (error_msg) {
+            if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
+            else luaL_error(Lua, error, "%s", error_msg);
+         }
+         else luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
       }
    }
    else { // No parameters.
@@ -330,18 +334,26 @@ static int async_method(lua_State *Lua)
             // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
             lua_rotate(Lua, 1, -4);
             lua_pop(Lua, 4);
-            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count)) IS ERR::Okay) {
+            int arg_index = 0;
+            CSTRING error_msg = nullptr;
+            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count, arg_index,
+                  error_msg)) IS ERR::Okay) {
                if (not result_count) {
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }
                else {
+                  argbuffer.reset();
                   abort();
                   luaL_error(Lua, "Methods that return results are not yet supported.");
                }
             }
             else {
-               abort();
-               luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
+               argbuffer.reset();
+               if (error_msg) {
+                  if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
+                  else luaL_error(Lua, error, "%s", error_msg);
+               }
+               else luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
             }
          }
          else { // No parameters.
@@ -374,7 +386,7 @@ static int async_wait(lua_State *Lua)
 
    // Collect object IDs from argument 1 into a zero-terminated array.
 
-   std::vector<OBJECTID> ids;
+   kt::vector<OBJECTID> ids;
 
    auto type = lua_type(Lua, 1);
    if (type IS LUA_TOBJECT) {
@@ -407,7 +419,7 @@ static int async_wait(lua_State *Lua)
          if (timeout_ms < 0) timeout_ms = -1;
       }
 
-      error = AsyncWait(ids.data(), ids.size(), timeout_ms);
+      error = AsyncWait(ids, timeout_ms);
 
       if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
    }
@@ -437,7 +449,7 @@ static int async_pending(lua_State *Lua)
 
 static int async_cancel(lua_State *Lua)
 {
-   std::vector<OBJECTID> ids;
+   kt::vector<OBJECTID> ids;
 
    auto type = lua_type(Lua, 1);
    if (type IS LUA_TOBJECT) {
@@ -462,7 +474,7 @@ static int async_cancel(lua_State *Lua)
 
    ERR error = ERR::Okay;
    if (not ids.empty()) {
-      error = AsyncCancel(ids.data(), int(ids.size()));
+      error = AsyncCancel(ids);
       if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
    }
 

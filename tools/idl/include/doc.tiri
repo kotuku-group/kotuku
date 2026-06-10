@@ -54,7 +54,8 @@ global glIgnoreList = {
    [AC_NewChild]    = true,
    [AC_NewObject]   = true,
    [AC_NewOwner]    = true,
-   [AC_NewPlacement] = true
+   [AC_NewPlacement] = true,
+   [AC_FreePlacement] = true
 }
 
 global function setAction(Action, Options)
@@ -757,10 +758,25 @@ global function docClass(Class)
    class_hash = string.format('%08x', Class.name:hash()):sub(-8)
    out ..= '    <id>' .. class_hash .. '</id>\n'
    out ..= '    <idstring>' .. Class.name:upper() .. '</idstring>\n'
-   cat = meta.get('$category')
-   if cat?? then
-      out ..= '    <category>' .. cat .. '</category>\n'
+
+   cat_name = choose meta.category from
+      CCF_COMMAND ->    'Command'
+      CCF_FILESYSTEM -> 'Filesystem'
+      CCF_GRAPHICS ->   'Graphics'
+      CCF_GUI ->        'GUI'
+      CCF_IO ->         'IO'
+      CCF_SYSTEM ->     'System'
+      CCF_TOOL ->       'Tool'
+      CCF_DATA ->       'Data'
+      CCF_AUDIO ->      'Audio'
+      CCF_MISC ->       'Misc'
+      CCF_NETWORK ->    'Network'
+      CCF_MULTIMEDIA -> 'Multimedia'
+      else -> nil
    end
+
+   if cat_name then out ..= '    <category>' .. cat_name .. '</category>\n' end
+
    if Class.include??      then out ..= '    <include>' .. Class.include .. '</include>\n' end
    if Class.date??         then out ..= '    <date>' .. Class.date .. '</date>\n' end
    if glModule.copyright?? then out ..= '    <copyright>' .. glModule.copyright:escXML() .. '</copyright>\n' end
@@ -782,39 +798,39 @@ global function docClass(Class)
 
    out ..= "  </info>\n"
 
-   if not table.empty(Class.sortedActions) then
-      out ..= "\n  <actions>\n"
+   if Class.sortedActions?? then
+      actions = ''
       for a in values(Class.sortedActions) do
          if (ignoreAction(glActions[a.name].id) != true) or a.description?? then
-            out ..= '    <action>\n'
-            out ..= '      <name>' .. a.name .. '</name>\n'
+            actions ..= '    <action>\n'
+            actions ..= '      <name>' .. a.name .. '</name>\n'
 
             if not a.comment then a.comment = glActions[a.name].comment end
-            if a.comment?? then out ..= '      <comment>' .. substituteReferences(a.comment:escXML(), Class) .. '</comment>\n' end
+            if a.comment?? then actions ..= '      <comment>' .. substituteReferences(a.comment:escXML(), Class) .. '</comment>\n' end
 
             if glActions[a.name].prototype?? then
-               out ..= '      <prototype>' .. glActions[a.name].prototype:escXML() .. '</prototype>\n'
+               actions ..= '      <prototype>' .. glActions[a.name].prototype:escXML() .. '</prototype>\n'
             end
 
             if glActions[a.name].tiriPrototype?? then
-               out ..= '      <tiriPrototype>' .. glActions[a.name].tiriPrototype:escXML() .. '</tiriPrototype>\n'
+               actions ..= '      <tiriPrototype>' .. glActions[a.name].tiriPrototype:escXML() .. '</tiriPrototype>\n'
             end
 
             if glActions[a.name].params?? then
-               out ..= '      <input>\n'
+               actions ..= '      <input>\n'
                for param in values(glActions[a.name].params) do
                   ref = ''
                   if param.lookup?? then ref = ' lookup="' .. param.lookup .. '"' end
                   assert(param.comment, 'No comment provided for ' .. Class.name .. '.' .. a.name .. '()\'s parameter "' .. param.name .. '"')
-                  out ..= "        <param type=\"" .. (param.docType ?? param.type):escXML() .. "\" name=\"" .. param.name .. '"' .. ref .. ">" .. substituteReferences(param.comment:escXML(), Class) .. "</param>\n"
+                  actions ..= "        <param type=\"" .. (param.docType ?? param.type):escXML() .. "\" name=\"" .. param.name .. '"' .. ref .. ">" .. substituteReferences(param.comment:escXML(), Class) .. "</param>\n"
                end
-               out ..= '      </input>\n'
+               actions ..= '      </input>\n'
             end
 
             if a.description?? then
-               out ..= '      <description>\n'
-               out ..= extractParagraph(a.description, Class, Class.references)
-               out ..= '\n      </description>\n'
+               actions ..= '      <description>\n'
+               actions ..= extractParagraph(a.description, Class, Class.references)
+               actions ..= '\n      </description>\n'
             end
 
             if not table.empty(a.results) then
@@ -824,18 +840,20 @@ global function docClass(Class)
                end
 
                if results?? then
-                  out ..= '      <result>\n' .. results .. '      </result>\n'
+                  actions ..= '      <result>\n' .. results .. '      </result>\n'
                end
             end
 
             if a.tags?? then
-               out ..= f'      <tags>{a.tags:concat(", "):escXML()}</tags>\n'
+               actions ..= f'      <tags>{a.tags:concat(", "):escXML()}</tags>\n'
             end
 
-            out ..= '    </action>\n\n'
+            actions ..= '    </action>\n\n'
          end
       end
-      out ..= '  </actions>\n'
+      if actions?? then
+         out ..= "\n  <actions>\n" .. actions .. '  </actions>\n'
+      end
    end
 
    if not table.empty(Class.methods) then

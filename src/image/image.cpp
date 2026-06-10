@@ -397,7 +397,6 @@ static ERR IMAGE_Free(extImage *Self)
    if (Self->prvFile) { FreeResource(Self->prvFile); Self->prvFile = nullptr; }
    if (Self->Bitmap)  { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
    if (Self->Mask)    { FreeResource(Self->Mask); Self->Mask = nullptr; }
-   Self->~extImage();
    return ERR::Okay;
 }
 
@@ -501,14 +500,7 @@ static ERR IMAGE_Init(extImage *Self)
 
 static ERR IMAGE_NewObject(extImage *Self)
 {
-   Self->Quality = 80; // 80% quality rating when saving
    return NewLocalObject(CLASSID::BITMAP, &Self->Bitmap);
-}
-
-static ERR IMAGE_NewPlacement(extImage *Self)
-{
-   new (Self) extImage;
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -675,7 +667,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    }
 
    if (alpha_mask or (bmp->BitsPerPixel IS 32) or (bmp->BytesPerPixel IS 2)) {
-      if ((error = AllocMemory(size_t(bmp->Width) * 4, MEM::DATA|MEM::NO_CLEAR, &row_buffer)) != ERR::Okay) {
+      if ((error = AllocMemory(size_t(bmp->Width) * 4, MEM::DATA|MEM::NO_CLEAR, (APTR *)&row_buffer)) != ERR::Okay) {
          goto exit;
       }
    }
@@ -1359,14 +1351,14 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
       if (PngHeight > 0) {
          if (row_size > (size_t(0x7fffffff) / size_t(PngHeight))) return ERR::DataSize;
          auto image_size = row_size * size_t(PngHeight);
-         if ((error = AllocMemory((int)image_size, MEM::DATA, &image_data)) != ERR::Okay) return error;
+         if ((error = AllocMemory((int)image_size, MEM::DATA, (APTR *)&image_data)) != ERR::Okay) return error;
       }
 
       if (source_height > PngHeight) {
-         if ((error = AllocMemory((int)row_size, MEM::DATA, &scratch_row)) != ERR::Okay) goto exit;
+         if ((error = AllocMemory((int)row_size, MEM::DATA, (APTR *)&scratch_row)) != ERR::Okay) goto exit;
       }
    }
-   else if ((error = AllocMemory((int)row_size, MEM::DATA|MEM::NO_CLEAR, &row)) != ERR::Okay) return error;
+   else if ((error = AllocMemory((int)row_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&row)) != ERR::Okay) return error;
 
    if (setjmp(png_jmpbuf(ReadPtr))) {
       error = ERR::Read;

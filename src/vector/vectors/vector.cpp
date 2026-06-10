@@ -46,15 +46,15 @@ void debug_tree(extVector *Vector, int &Level)
    Level++;
 
    for (auto v=Vector; v; v=(extVector *)v->Next) {
-      std::string dim;
+      int dim = 0;
       if (FindField(v, FID_Dimensions, nullptr)) v->get(strihash("Dimensions"), dim);
 
       if ((v->Class->BaseClassID IS CLASSID::VECTOR) and (v->Child)) {
          kt::Log blog(__FUNCTION__);
-         blog.branch(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim.c_str());
+         blog.branch(" #%d%s %s %s $%.8x", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim);
          debug_tree((extVector *)v->Child, Level);
       }
-      else log.msg(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim.c_str());
+      else log.msg(" #%d%s %s %s $%.8x", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim);
    }
 
    Level--;
@@ -350,7 +350,6 @@ static ERR VECTOR_Free(extVector *Self)
    delete Self->KeyboardSubscriptions; Self->KeyboardSubscriptions = nullptr;
    delete Self->FeedbackSubscriptions; Self->FeedbackSubscriptions = nullptr;
 
-   Self->~extVector();
    return ERR::Okay;
 }
 
@@ -566,30 +565,6 @@ static ERR VECTOR_MoveToFront(extVector *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTOR_NewPlacement(extVector *Self)
-{
-   new (Self) extVector;
-   Self->StrokeOpacity = 1.0;
-   Self->FillOpacity   = 1.0;
-   Self->Opacity       = 1.0;              // Overall opacity multiplier
-   Self->MiterLimit    = 4;                // SVG default is 4;
-   Self->LineJoin      = agg::miter_join_revert;  // SVG default is miter; the 'revert' version matches SVG rules
-   Self->LineCap       = agg::butt_cap;    // SVG default is butt
-   Self->InnerJoin     = agg::inner_miter; // AGG only
-   Self->NumericID     = 0x7fffffff;
-   Self->StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
-   Self->Visibility    = VIS::VISIBLE;
-   Self->FillRule      = VFR::NON_ZERO;
-   Self->ClipRule      = VFR::NON_ZERO;
-   Self->Dirty         = RC::DIRTY;
-   Self->TabOrder      = 255;
-   Self->ColourSpace   = VCS::INHERIT;
-   Self->ValidState    = true;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTOR_NewOwner(extVector *Self, struct acNewOwner *Args)
 {
    kt::Log log;
@@ -639,7 +614,7 @@ static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
    if (!Args) return ERR::NullArgs;
 
    VectorMatrix *transform;
-   if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, &transform) IS ERR::Okay) {
+   if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform) IS ERR::Okay) {
 
       transform->Vector = Self;
       transform->ScaleX = 1.0;
@@ -1402,13 +1377,13 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
       return ERR::Okay;
    }
 
-   CSTRING next;
+   std::string_view next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
       Self->FillString = Value;
 
-      if (next) {
-         if (*next IS ';') {
-            next++;
+      if (not next.empty()) {
+         if (next.starts_with(';')) {
+            next.remove_prefix(1);
             vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
             Self->FGFill = true;
          }
@@ -2242,9 +2217,9 @@ static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
 
    if (not Value.empty()) {
       Self->StrokeString = Value;
-      CSTRING next;
+      std::string_view next;
       vec::ReadPainter(Self->Scene, Self->StrokeString, &Self->Stroke, &next);
-      if (next) {
+      if (not next.empty()) {
          // SVG rules allow for a solid colour fallback to follow the initial painter reference.
          // This typically looks something like 'url(#thing) rgb(values)'
          VectorPainter fallback;

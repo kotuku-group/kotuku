@@ -327,7 +327,7 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
             buffersize = 4096;
             if (buffersize < in) buffersize = in + 1024;
 
-            if (AllocMemory(buffersize, MEM::STRING|MEM::NO_CLEAR, (APTR *)&glIconvBuffer, nullptr) != ERR::Okay) {
+            if (AllocMemory(buffersize, MEM::STRING|MEM::NO_CLEAR, (APTR *)&glIconvBuffer) != ERR::Okay) {
                tlContext = context;
                return nullptr;
             }
@@ -341,7 +341,7 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
             // Check/Expand the buffer size
 
             if (out+12 > buffersize) {
-               if (ReallocMemory(glIconvBuffer, buffersize + 4096, (APTR *)&glIconvBuffer, nullptr) != ERR::Okay) {
+               if (ReallocMemory(glIconvBuffer, buffersize + 4096, (APTR *)&glIconvBuffer) != ERR::Okay) {
                   tlContext = context;
                   return nullptr;
                }

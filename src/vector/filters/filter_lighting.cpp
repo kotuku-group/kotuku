@@ -653,22 +653,6 @@ void extLightingFX::draw()
    pool.wait();
 }
 
-//********************************************************************************************************************
-
-static ERR LIGHTINGFX_Free(extLightingFX *Self)
-{
-   Self->~extLightingFX();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR LIGHTINGFX_NewPlacement(extLightingFX *Self)
-{
-   new (Self) extLightingFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

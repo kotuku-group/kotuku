@@ -111,6 +111,9 @@ int AllocateID(IDTYPE Type)
    else if (Type IS IDTYPE::FUNCTION) {
       return ++glFunctionID;
    }
+   else if (Type IS IDTYPE::RESOURCE) {
+      return glResourceID++;
+   }
 
    return 0;
 }
@@ -454,7 +457,6 @@ int64_t GetResource(RES Resource)
          else return -1;
 
       case RES::CPU_SPEED: {
-         CSTRING line;
          static int cpu_mhz = 0;
 
          if (cpu_mhz) return cpu_mhz;
@@ -462,9 +464,10 @@ int64_t GetResource(RES Resource)
          auto file = objFile::create { fl::Path("drive1:proc/cpuinfo"), fl::Flags(FL::READ|FL::BUFFER) };
 
          if (file.ok()) {
-            while ((line = file->readLine())) {
+            std::string line;
+            while (file->readLine(line) IS ERR::Okay) {
                if (startswith("cpu MHz", line)) {
-                  if (auto value = strchr(line, ':')) cpu_mhz = int(strtod(value + 1, nullptr));
+                  if (auto value = strchr(line.c_str(), ':')) cpu_mhz = int(strtod(value + 1, nullptr));
                }
             }
          }
@@ -682,7 +685,7 @@ To read a resource path, use the ~GetSystemState() function.
 
 -INPUT-
 int(RP) PathType: The ID of the resource path to set.
-cpp(strview) Path: The new location to set for the resource path.
+strview Path: The new location to set for the resource path.
 
 -ERRORS-
 Okay:
@@ -1126,7 +1129,6 @@ ERR WakeThread(int Thread, int Stop)
    if (paused) {
       record->cv.notify_one();
       cvObjects.notify_all();   // Wake threads blocked in LockObject()
-      cvResources.notify_all(); // Wake threads blocked in AccessMemory()
    }
    return ERR::Okay;
 }

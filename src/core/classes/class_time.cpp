@@ -40,13 +40,13 @@ static ERR GET_Timestamp(objTime *, int64_t *);
 static ERR TIME_Query(objTime *);
 static ERR TIME_SetTime(objTime *);
 
-static ERR tzi_free(APTR Address)
+static ERR tzi_free(ResourceRecord &Resource, APTR Address)
 {
    ((struct TimeZoneInfo *)Address)->~TimeZoneInfo();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
-static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free };
+static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, nullptr, nullptr, false };
 
 static constexpr int TIMEZONE_MIN_YEAR = 1601;
 static constexpr int TIMEZONE_MAX_YEAR = 9999;
@@ -758,7 +758,7 @@ Returns normalised time-zone information for a named zone or for the host system
 !TimeZoneInfo resource includes the preferred public zone identifier, the host-native identifier, the data source,
 standard UTC offset and any transition records found within the requested inclusive year range.
 
-The `ZoneID` value may be `NULL` or empty to request the local system zone.  Explicit zone IDs support `UTC` aliases on
+The `ZoneID` value may be empty to request the local system zone.  Explicit zone IDs support `UTC` aliases on
 all platforms.  Linux builds also accept IANA zone names that resolve under `/usr/share/zoneinfo`.  Windows builds
 accept Windows native time-zone IDs and the IANA IDs that are mapped by the Core Windows time-zone wrapper.
 
@@ -770,7 +770,7 @@ Transition `Instant` values are UTC Unix epoch timestamps in microseconds.  `Off
 daylight-saving period.
 
 -INPUT-
-cstr ZoneID: Empty or NULL requests the local system zone.
+strview ZoneID: Zone identifier, or an empty string to request the local system zone.
 int StartYear: Inclusive first year.  Must be in the supported 1601-9999 range.
 int EndYear: Inclusive final year.  Must be >= StartYear, no later than 9999 and within 400 years of `StartYear`.
 !struct(*TimeZoneInfo) Info: Receives the allocated metadata and transition resource.  Release with ~Core.FreeResource() when no longer required.
@@ -800,11 +800,11 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (not valid_timezone_year_range(Args->StartYear, Args->EndYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
-   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA|MEM::MANAGED, (APTR *)&tz, nullptr) IS ERR::Okay) {
+   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA, (APTR *)&tz) IS ERR::Okay) {
       new (tz) struct TimeZoneInfo;
-      SetResourceMgr(tz, &glTimeZoneHandler);
+      TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler);
 
-      const std::string_view zone_id = Args->ZoneID ? std::string_view(Args->ZoneID) : std::string_view();
+      const std::string_view zone_id = Args->ZoneID;
       if (is_utc_zone(zone_id)) {
          fill_utc_info(*tz, Args->StartYear, Args->EndYear, zone_id.empty() ? 1 : 0, 0);
          Args->Info = tz;

@@ -14,13 +14,13 @@ extern ERR SetSSL(objNetSocket * NetSocket, const std::string_view & Command, co
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsAddressToStr[] = { { "Result", FD_STR|FD_ALLOC }, { "IPAddress:IPAddress", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsAddressToStr[] = { { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { "IPAddress:IPAddress", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsHostToLong[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsHostToShort[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsLongToHost[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
-FDEF argsSetSSL[] = { { "Error", FD_INT|FD_ERROR }, { "NetSocket", FD_OBJECTPTR }, { "Command", FD_CPP|FD_STR }, { "Value", FD_CPP|FD_STR }, { 0, 0 } };
+FDEF argsSetSSL[] = { { "Error", FD_INT|FD_ERROR }, { "NetSocket", FD_OBJECTPTR }, { "Command", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsShortToHost[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
-FDEF argsStrToAddress[] = { { "Error", FD_INT|FD_ERROR }, { "String", FD_CPP|FD_STR }, { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsStrToAddress[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)net::StrToAddress, "StrToAddress", argsStrToAddress },

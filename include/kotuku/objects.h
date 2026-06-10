@@ -37,6 +37,7 @@
 #define FDF_INIT        FD_INIT                 // Field can only be written prior to Init()
 #define FDF_SYSTEM      FD_SYSTEM
 #define FDF_ERROR       (FD_INT|FD_ERROR)
+#define FDF_VECTOR      (FD_CPP|FD_ARRAY)
 #define FDF_R           FD_READ
 #define FDF_W           FD_WRITE
 #define FDF_RW          (FD_READ|FD_WRITE)
@@ -275,7 +276,7 @@ struct Object { // Must be 64-bit aligned
    [[nodiscard]] CSTRING className();
 
    [[nodiscard]] inline bool collecting() { // Is object being freed or marked for collection?
-      return defined(NF::FREE|NF::COLLECT|NF::FREE_ON_UNLOCK);
+      return defined(NF::FREE|NF::FREE_ON_UNLOCK);
    }
 
    [[nodiscard]] inline bool terminating() { // Is object currently being freed?
@@ -515,13 +516,16 @@ struct Object { // Must be 64-bit aligned
          if (not field->readable()) return ERR::NoFieldAccess;
 
          auto flags = field->Flags;
+
+         if (flags & FD_ARRAY) return ERR::UnsupportedField;
+
          if (flags & FD_UNIT) {
             double num;
 
             if (auto error = get_unit<double>(target, *field, num); error IS ERR::Okay) {
                char buffer[64];
-               snprintf(buffer, sizeof(buffer), "%f", num);
-               Value.assign(buffer);
+               auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), num);
+               if (ec == std::errc()) Value.assign(buffer, ptr);
                return ERR::Okay;
             }
             else return error;
@@ -533,33 +537,6 @@ struct Object { // Must be 64-bit aligned
          APTR data = fv.second;
 
          if (fv.first != ERR::Okay) return fv.first;
-
-         if (flags & FD_ARRAY) {
-            if (flags & FD_CPP) {
-               array_size = ((kt::vector<int> *)data)->size();
-               data = ((kt::vector<int> *)data)->data();
-            }
-
-            if (array_size IS -1) return ERR::Failed; // Array sizing not supported by this field.
-
-            Value.clear();
-            if (array_size > 0) Value.reserve(size_t(array_size) * 8);
-            if (flags & FD_INT) {
-               auto array = (int *)data;
-               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
-            }
-            else if (flags & FD_BYTE) {
-               auto array = (uint8_t *)data;
-               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
-            }
-            else if (flags & FD_DOUBLE) {
-               auto array = (double *)data;
-               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
-            }
-
-            if (not Value.empty()) Value.pop_back(); // Remove trailing comma
-            return ERR::Okay;
-         }
 
          if (flags & FD_INT) {
             if (flags & FD_LOOKUP) {
@@ -581,7 +558,8 @@ struct Object { // Must be 64-bit aligned
                   Value.clear();
                   int v = ((int *)data)[0];
                   while (lookup->Name) {
-                     if (v & lookup->Value) {
+                     const auto mask = lookup->Value;
+                     if (((mask & (mask - 1)) IS 0) and (v & mask)) {
                         Value.append(lookup->Name);
                         Value.push_back('|');
                      }
@@ -598,8 +576,8 @@ struct Object { // Must be 64-bit aligned
          }
          else if (flags & FD_DOUBLE) {
             char buffer[64];
-            auto written = snprintf(buffer, sizeof(buffer), "%f", *((double *)data));
-            Value.assign(buffer, written);
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), *((double *)data));
+            if (ec == std::errc()) Value.assign(buffer, ptr);
          }
          else if (flags & FD_STRING) {
             if (field->GetValue) {
@@ -847,6 +825,13 @@ class Create {
    private:
       T *obj;
 
+      inline void freeObject() {
+         if (obj) {
+            FreeResource(obj->UID);
+            obj = nullptr;
+         }
+      }
+
    public:
       ERR error;
 
@@ -854,22 +839,14 @@ class Create {
       // you don't want this.
 
       template <typename... Args> static T * global(Args&&... Fields) {
-         kt::Create<T> object = { std::forward<Args>(Fields)... };
-         if (object.ok()) {
-            auto result = *object;
-            object.obj = nullptr;
-            return result;
-         }
+         kt::Create<T> object({ std::forward<Args>(Fields)... });
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
       inline static T * global(const std::initializer_list<FieldValue> Fields) {
          kt::Create<T> object(Fields);
-         if (object.ok()) {
-            auto result = *object;
-            object.obj = nullptr;
-            return result;
-         }
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
@@ -877,13 +854,13 @@ class Create {
 
       template <typename... Args> static T * local(Args&&... Fields) {
          kt::Create<T> object({ std::forward<Args>(Fields)... }, NF::LOCAL);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
       inline static T * local(const std::initializer_list<FieldValue> Fields) {
          kt::Create<T> object(Fields, NF::LOCAL);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
@@ -891,14 +868,32 @@ class Create {
 
       template <typename... Args> static T * untracked(Args&&... Fields) {
          kt::Create<T> object({ std::forward<Args>(Fields)... }, NF::UNTRACKED);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
       }
 
       inline static T * untracked(const std::initializer_list<FieldValue> Fields) {
          kt::Create<T> object(Fields, NF::UNTRACKED);
-         if (object.ok()) return *object;
+         if (object.ok()) return object.detach();
          else return nullptr;
+      }
+
+      Create(const Create &) = delete;
+      Create & operator=(const Create &) = delete;
+
+      Create(Create &&Other) noexcept : obj(Other.obj), error(Other.error) {
+         Other.obj = nullptr;
+      }
+
+      Create & operator=(Create &&Other) noexcept {
+         if (this != &Other) {
+            freeObject();
+            obj = Other.obj;
+            error = Other.error;
+            Other.obj = nullptr;
+         }
+
+         return *this;
       }
 
       // Create a scoped object that is not initialised.
@@ -924,7 +919,10 @@ class Create {
                      return;
                   }
                   else {
-                     target->lock();
+                     if ((error = target->lock()) != ERR::Okay) {
+                        error = log.warning(error);
+                        return;
+                     }
 
                      error = write_field_value(target, field, f);
 
@@ -951,23 +949,19 @@ class Create {
       }
 
       ~Create() {
-         if (obj) {
-            if (obj->initialised()) {
-               if (obj->defined(NF::UNTRACKED|NF::LOCAL))  {
-                  return; // Detected a successfully created unscoped object
-               }
-            }
-            FreeResource(obj->UID);
-            obj = nullptr;
-         }
+         freeObject();
       }
 
       T * operator->() { return obj; }; // Promotes underlying methods and fields
+      const T * operator->() const { return obj; };
       T * & operator*() { return obj; }; // To allow object pointer referencing when calling functions
 
-      inline bool ok() { return error IS ERR::Okay; }
+      [[nodiscard]] inline T * get() { return obj; }
+      [[nodiscard]] inline const T * get() const { return obj; }
 
-      inline T * detach() { // Return a direct pointer to the object and prevent automated destruction
+      [[nodiscard]] inline bool ok() const { return error IS ERR::Okay; }
+
+      [[nodiscard]] inline T * detach() { // Return a direct pointer to the object and prevent automated destruction
          T *result = obj;
          obj = nullptr;
          return result;
