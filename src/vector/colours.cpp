@@ -1,6 +1,4 @@
 
-#include <kotuku/modules/display.h>
-
 static const ankerl::unordered_dense::map<uint32_t, RGB8> glNamedColours = { // For vecReadPainter()
   { kt::strhash("none"),                 { 0, 0, 0, 0 } },
   { kt::strhash("aliceblue"),            { 240,248,255, 255 } },

@@ -112,7 +112,7 @@ typedef struct XMLAttrib {
    std::string Value;   // Value of the attribute
    inline bool isContent() const { return Name.empty(); }
    inline bool isTag() const { return !Name.empty(); }
-   XMLAttrib(std::string pName, std::string pValue = "") : Name(pName), Value(pValue) { };
+   XMLAttrib(std::string_view pName, std::string_view pValue = "") : Name(pName), Value(pValue) { };
    XMLAttrib() = default;
 } XMLATTRIB;
 
@@ -147,7 +147,7 @@ typedef struct XTag {
       return false;
    }
 
-   inline const std::string * attrib(const std::string &Name) const {
+   inline const std::string * attrib(std::string_view Name) const {
       for (unsigned a=1; a < Attribs.size(); a++) {
          if (kt::iequals(Attribs[a].Name, Name)) return &Attribs[a].Value;
       }
@@ -594,11 +594,11 @@ inline void UpdateAttrib(XTag &Tag, const std::string Name, const std::string Va
    if (CanCreate) Tag.Attribs.emplace_back(Name, Value);
 }
 
-inline void NewAttrib(XTag &Tag, const std::string Name, const std::string Value) {
+inline void NewAttrib(XTag &Tag, const std::string_view Name, const std::string_view Value) {
    Tag.Attribs.emplace_back(Name, Value);
 }
 
-inline void NewAttrib(XTag *Tag, const std::string Name, const std::string Value) {
+inline void NewAttrib(XTag *Tag, const std::string_view Name, const std::string_view Value) {
    Tag->Attribs.emplace_back(Name, Value);
 }
 

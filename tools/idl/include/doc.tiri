@@ -758,10 +758,25 @@ global function docClass(Class)
    class_hash = string.format('%08x', Class.name:hash()):sub(-8)
    out ..= '    <id>' .. class_hash .. '</id>\n'
    out ..= '    <idstring>' .. Class.name:upper() .. '</idstring>\n'
-   cat = meta.get('$category')
-   if cat?? then
-      out ..= '    <category>' .. cat .. '</category>\n'
+
+   cat_name = choose meta.category from
+      CCF_COMMAND ->    'Command'
+      CCF_FILESYSTEM -> 'Filesystem'
+      CCF_GRAPHICS ->   'Graphics'
+      CCF_GUI ->        'GUI'
+      CCF_IO ->         'IO'
+      CCF_SYSTEM ->     'System'
+      CCF_TOOL ->       'Tool'
+      CCF_DATA ->       'Data'
+      CCF_AUDIO ->      'Audio'
+      CCF_MISC ->       'Misc'
+      CCF_NETWORK ->    'Network'
+      CCF_MULTIMEDIA -> 'Multimedia'
+      else -> nil
    end
+
+   if cat_name then out ..= '    <category>' .. cat_name .. '</category>\n' end
+
    if Class.include??      then out ..= '    <include>' .. Class.include .. '</include>\n' end
    if Class.date??         then out ..= '    <date>' .. Class.date .. '</date>\n' end
    if glModule.copyright?? then out ..= '    <copyright>' .. glModule.copyright:escXML() .. '</copyright>\n' end

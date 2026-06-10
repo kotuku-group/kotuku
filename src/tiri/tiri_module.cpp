@@ -3,19 +3,13 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
-#include <inttypes.h>
 
 #include "lua.h"
-#include "lualib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "lj_object.h"
 #include "lj_str.h"
-#include "lib.h"
 
-#include "hashes.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -25,8 +19,6 @@
 #include <algorithm>
 #include <set>
 #include <mutex>
-#include <memory>
-#include <span>
 #include <new>
 
 template<class... Args> void RMSG(Args...) {

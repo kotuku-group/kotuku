@@ -908,7 +908,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
             }
          }
 
-         std::string name;
+         std::string_view name;
          CurrentTask()->get(FID_Name, name);
          HWND popover = 0;
          if (Self->PopOverID) {
@@ -919,7 +919,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
 
          if (not (Self->WindowHandle = (APTR)winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name.c_str(),
+               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name.data(),
                ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Self->Opacity, desktop))) {
             return log.warning(ERR::SystemCall);
          }

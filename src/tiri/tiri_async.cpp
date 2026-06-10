@@ -17,17 +17,12 @@ additional functionality in the future.
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
-#include <thread>
-#include <cassert>
 #include <mutex>
 
 #include "lib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "lj_object.h"
-#include "hashes.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 

@@ -23,13 +23,8 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 #define PRV_CLIENTSOCKET
 #define PRV_NETCLIENT
 
-#include <stdio.h>
-#include <sys/types.h>
 #include <unordered_set>
-#include <ctime>
 #include <type_traits>
-
-#include <string.h>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
@@ -54,11 +49,8 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
   #endif
 #endif
 
-#include <stack>
 #include <mutex>
 #include <shared_mutex>
-#include <span>
-#include <cstring>
 #include <thread>
 #include <optional>
 #include <string_view>
