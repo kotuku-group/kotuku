@@ -245,8 +245,7 @@ gui.dialog.message = function(Options)
       error('Dialog requires a message string.')
    end
 
-   if dlg_width < MIN_WIDTH then dlg_width = MIN_WIDTH end
-   if dlg_width > MAX_WIDTH then dlg_width = MAX_WIDTH end
+   dlg_width = math.clamp(dlg_width, MIN_WIDTH, MAX_WIDTH)
 
    self.window = gui.window({
       insideWidth  = dlg_width,

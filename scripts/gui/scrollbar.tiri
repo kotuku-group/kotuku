@@ -137,8 +137,7 @@ gui.scrollbar = function(Options)
          bar.sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
             slider_height = Viewport.height
             host_height   = self.vbar.sliderHostVP.height
-            if Y < 0 then Y = 0 end
-            if Y + slider_height > host_height then Y = host_height - slider_height end
+            Y = math.clamp(Y, 0, host_height - slider_height)
             if Viewport.y is Y then return end
 
             if (Y != self.vbar.slider.offset) or (slider_height != self.vbar.slider.size) then
@@ -163,8 +162,7 @@ gui.scrollbar = function(Options)
          bar.sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
             slider_width = Viewport.width
             host_width   = self.hbar.sliderHostVP.width
-            if X < 0 then X = 0 end
-            if X + slider_width > host_width then X = host_width - slider_width end
+            X = math.clamp(X, 0, host_width - slider_width)
             if Viewport.x is X then return end
 
             if (X != self.hbar.slider.offset) or (slider_width != self.hbar.slider.size) then
