@@ -811,7 +811,7 @@ retrydir:
 
       if ((Self->Flags & (FL::NEW|FL::READ|FL::WRITE)) != FL::NIL) {
          ERR error = acActivate(Self);
-         if (error IS ERR::Okay) error = acQuery(Self);
+         if (!error) error = acQuery(Self);
          return error;
       }
       else return acQuery(Self);

@@ -283,7 +283,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
             return ERR::Okay;
          }
          else {
-            if (error IS ERR::Okay) { // Nothing found
+            if (!error) { // Nothing found
                error = ERR::Search;
                Self->ErrorMsg = "No matching tag found";
             }
@@ -375,10 +375,10 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
             callback = C_FUNCTION(save_matching_tag, &opt);
             error = xq->search((objXML *)Self, callback, 0, XEF::NIL);
             if (error IS ERR::Terminate) error = ERR::Okay; // Terminate means a match was accepted
-            else if (error IS ERR::Okay) error = ERR::Search; // Nothing found
+            else if (!error) error = ERR::Search; // Nothing found
          }
 
-         if (error IS ERR::Okay) {
+         if (!error) {
             FreeResource(xq);
 
             if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) log.msg("Found tag %d, Attrib: %s", opt.tag_id, opt.attrib.c_str());
@@ -955,7 +955,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
             return error;
          }
          else {
-            if (error IS ERR::Okay) {
+            if (!error) {
                error = ERR::Search; // No match found
                Self->ErrorMsg = "XPath did not resolve to a valid location.";
             }
@@ -1613,7 +1613,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
             return ERR::Okay;
          }
          else {
-            if (error IS ERR::Okay) {
+            if (!error) {
                Self->ErrorMsg = "XPath did not resolve to a valid location.";
                error = ERR::Search;
             }

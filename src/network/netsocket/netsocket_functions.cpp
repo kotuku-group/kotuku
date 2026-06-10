@@ -343,7 +343,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    // Before feeding new data into the queue, the current buffer must be empty.
 
-   if ((error IS ERR::Okay) and Self->CloseAfterWrite and Self->WriteQueue.Buffer.empty() and
+   if ((!error) and Self->CloseAfterWrite and Self->WriteQueue.Buffer.empty() and
        (not network_platform().has_pending_write(Self->Handle))) {
       Self->InUse--;
       Self->OutgoingRecursion--;
@@ -351,7 +351,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
    }
 
-   if ((error IS ERR::Okay) and ((Self->WriteQueue.Buffer.empty()) or
+   if ((!error) and ((Self->WriteQueue.Buffer.empty()) or
        (Self->WriteQueue.Index >= Self->WriteQueue.Buffer.size()))) {
       if (Self->Outgoing.defined()) {
          if (Self->Outgoing.isC()) {

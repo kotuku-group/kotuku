@@ -1283,7 +1283,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
 
    ERR error = ERR::Okay;
    std::string result_name;
-   for (int a=1; (a < std::ssize(Tag.Attribs)) and (error IS ERR::Okay); a++) {
+   for (int a=1; (a < std::ssize(Tag.Attribs)) and (!error); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
@@ -2076,7 +2076,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, double Wid
    }
    else log.branch("%s", Path.c_str());
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (!(*Image = objImage::create::global(
          fl::Owner(Self->Scene->UID),
          fl::Path(Path),

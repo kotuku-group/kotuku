@@ -2213,7 +2213,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
    }
    else error = ERR::File;
 
-   if ((error IS ERR::Okay) and ((Self->Flags & SCIF::DETECT_LEXER) != SCIF::NIL)) {
+   if ((!error) and ((Self->Flags & SCIF::DETECT_LEXER) != SCIF::NIL)) {
       auto i = Path.find_last_of("/\\:");
       if (i != std::string::npos) Path.remove_prefix(i+1);
 

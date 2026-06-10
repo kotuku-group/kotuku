@@ -507,7 +507,7 @@ static ERR NETSOCKET_GetLocalIPAddress(extNetSocket *Self, struct ns::GetLocalIP
    if ((!Args) or (!Args->Address)) return log.warning(ERR::NullArgs);
 
    auto result = network_platform().get_local_ip(Self->Handle, *Args->Address);
-   if (result IS ERR::Okay) return ERR::Okay;
+   if (!result) return ERR::Okay;
    else return log.warning(result);
 }
 
@@ -893,7 +893,7 @@ static ERR write_connected_socket_data(T *Self, struct acWrite *Args, size_t Msg
       error = ERR::BufferOverflow;
    }
 
-   if ((error IS ERR::Okay) and (len >= size_t(Args->Length))) return ERR::Okay;
+   if ((!error) and (len >= size_t(Args->Length))) return ERR::Okay;
 
    bool ssl_read_blocked = false;
    bool ssl_write_blocked = false;
@@ -1087,7 +1087,7 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
    size_t bytes_to_send = Args->Length;
 
    auto error = network_platform().send_to(Self->Handle, Args->Data, bytes_to_send, dest_addr);
-   if (error IS ERR::Okay) Args->BytesSent = int(bytes_to_send);
+   if (!error) Args->BytesSent = int(bytes_to_send);
    return error;
 }
 

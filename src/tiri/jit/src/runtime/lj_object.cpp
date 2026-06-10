@@ -48,7 +48,7 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
       log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
 
       auto error = FreeResource(obj->uid);
-      if ((error IS ERR::Okay) or (error IS ERR::DoesNotExist)) {
+      if ((!error) or (error IS ERR::DoesNotExist)) {
          obj->uid = 0;
          obj->ptr = nullptr;
       }

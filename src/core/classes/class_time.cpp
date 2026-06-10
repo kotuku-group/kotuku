@@ -99,7 +99,7 @@ static ERR get_windows_timezone_info(std::string_view ZoneID, const int StartYea
 {
    rkTimeZoneInfo host_info;
    ERR error = winGetTimeZoneInfo(ZoneID, StartYear, EndYear, host_info);
-   if (error IS ERR::Okay) { }
+   if (!error) { }
    else return error;
 
    Info = TimeZoneInfo();
@@ -822,7 +822,7 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
          else error = ERR::Search;
 #endif
 
-         if (error IS ERR::Okay) {
+         if (!error) {
             Args->Info = tz;
             return ERR::Okay;
          }

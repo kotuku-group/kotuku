@@ -488,7 +488,7 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
          IocpReadCompletion completion;
          completion.Result = Error;
 
-         if ((Error IS ERR::Okay) and (Operation.BytesTransferred > 0)) {
+         if ((!Error) and (Operation.BytesTransferred > 0)) {
             if (Operation.Buffer) {
                completion.Buffer.resize(Operation.BytesTransferred);
                std::memcpy(completion.Buffer.data(), Operation.Buffer.get(), Operation.BytesTransferred);
@@ -522,7 +522,7 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
       Record.UdpReadPending = false;
       Record.ReadResult = Error;
 
-      if ((Error IS ERR::Okay) and (Operation.Buffer) and
+      if ((!Error) and (Operation.Buffer) and
           (Operation.AddressSize > 0) and (Operation.AddressSize <= int(IOCP_ENDPOINT_STORAGE_SIZE))) {
          IocpDatagram datagram;
          datagram.Buffer.resize(Operation.BytesTransferred);
@@ -664,7 +664,7 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
 
       auto target = completion_target(*record, Operation.Type);
 
-      if ((Operation.Type IS IocpOperationType::WRITE) and (Error IS ERR::Okay) and
+      if ((Operation.Type IS IocpOperationType::WRITE) and (!Error) and
           (BytesTransferred > 0) and (BytesTransferred < Operation.BufferSize)) {
          if (auto tail_error = post_write_tail(Operation, BytesTransferred); tail_error IS ERR::Okay) return;
          else Error = tail_error;
@@ -1422,7 +1422,7 @@ ERR iocp_complete_connect(WSW_SOCKET Socket)
       result = record->ConnectResult;
    }
 
-   if (result IS ERR::Okay) {
+   if (!result) {
       auto socket = socket_from_handle(Socket);
       if (setsockopt(socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0) IS SOCKET_ERROR) {
          return convert_error();
@@ -1635,7 +1635,7 @@ ERR iocp_receive(WSW_SOCKET Socket, void *Buffer, size_t Length, size_t &Receive
       }
       else {
          result = record->ReadResult;
-         if (result IS ERR::Okay) rearm_read = true;
+         if (!result) rearm_read = true;
       }
    }
 
@@ -1658,7 +1658,7 @@ ERR iocp_append_receive(WSW_SOCKET Socket, std::vector<uint8_t> &Buffer, size_t 
 
    std::vector<uint8_t> temp(Length);
    auto error = iocp_receive(Socket, temp.data(), temp.size(), Received);
-   if ((error IS ERR::Okay) and (Received > 0)) {
+   if ((!error) and (Received > 0)) {
       auto offset = Buffer.size();
       Buffer.resize(offset + Received);
       std::memcpy(Buffer.data() + offset, temp.data(), Received);
@@ -1793,7 +1793,7 @@ ERR iocp_receive_from(WSW_SOCKET Socket, void *Buffer, size_t BufferSize, size_t
       }
       else {
          result = record->ReadResult;
-         if ((result IS ERR::Okay) and (!record->UdpReadPending)) rearm_read = true;
+         if ((!result) and (!record->UdpReadPending)) rearm_read = true;
       }
    }
 

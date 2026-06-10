@@ -360,7 +360,7 @@ static ERR IMAGE_Activate(extImage *Self)
    }
    else error = decompress_png(Self, bmp, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height);
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (setjmp(png_jmpbuf(read_ptr))) {
          error = ERR::Read;
          goto exit;

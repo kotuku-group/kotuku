@@ -166,7 +166,7 @@ CSTRING GetErrorMsg(ERR Code)
    if ((int(Code) < glTotalMessages) and (int(Code) > 0)) {
       return glMessages[int(Code)];
    }
-   else if (Code IS ERR::Okay) return "Operation successful.";
+   else if (!Code) return "Operation successful.";
    else return "Unknown error code.";
 }
 

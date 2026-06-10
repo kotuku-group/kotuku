@@ -924,7 +924,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
       else error = log.warning(ERR::MissingClass);
    }
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       FUNCTION cb;
       if (Callback) cb = *Callback;
 
@@ -1616,12 +1616,12 @@ ERR InitObject(OBJECTPTR Object)
          error = cl->Base->ActionTable[int(AC::Init)].PerformAction(Object, nullptr);
       }
 
-      if (error IS ERR::Okay) {
+      if (!error) {
          if (cl->ActionTable[int(AC::Init)].PerformAction) {
             error = cl->ActionTable[int(AC::Init)].PerformAction(Object, nullptr);
          }
 
-         if (error IS ERR::Okay) Object->setFlag(NF::INITIALISED);
+         if (!error) Object->setFlag(NF::INITIALISED);
       }
 
       return error;
@@ -1646,7 +1646,7 @@ ERR InitObject(OBJECTPTR Object)
          }
          else error = ERR::Okay; // If no initialiser defined, auto-OK
 
-         if (error IS ERR::Okay) {
+         if (!error) {
             Object->setFlag(NF::INITIALISED);
 
             if (Object->isDerived()) {
@@ -1915,13 +1915,13 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          }
       }
 
-      if ((error IS ERR::Okay) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
+      if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
          if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
             log.warning(error);
          }
       }
 
-      if (error IS ERR::Okay) {
+      if (!error) {
          ((extMetaClass *)head->Class)->OpenCount++;
          if (mc->Base) mc->Base->OpenCount++;
 
@@ -2387,7 +2387,7 @@ void notify_resize(OBJECTPTR Object, ACTIONID Action, ERR Result, APTR Parameter
    auto Self = (objClassType *)CurrentContext();
 
    // Code here...
-   if ((Result IS ERR::Okay) and (Parameters)) {
+   if ((!Result) and (Parameters)) {
       auto resize = (struct acRedimension *)Parameters;
    }
 }

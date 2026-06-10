@@ -374,7 +374,7 @@ timer_cycle:
                   }), result) != ERR::Okay) result = ERR::Terminate;
                }
 
-               if (result IS ERR::Okay) { // If the message was handled, do not pass it to anyone else
+               if (!result) { // If the message was handled, do not pass it to anyone else
                   break;
                }
                else if (result IS ERR::Terminate) { // Terminate the ProcessMessages() loop, but don't quit the program
@@ -662,7 +662,7 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    glWFOList.clear();
 
    if (ObjectSignals) {
-      for (int i=0; ((error IS ERR::Okay) and (ObjectSignals[i].Object)); i++) {
+      for (int i=0; ((!error) and (ObjectSignals[i].Object)); i++) {
          kt::ScopedObjectLock lock(ObjectSignals[i].Object); // For thread safety
 
          if (lock.granted()) {
@@ -685,23 +685,23 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
       }
    }
 
-   if ((error IS ERR::Okay) and (not glWFOList.empty())) {
+   if ((!error) and (not glWFOList.empty())) {
       if (TimeOut < 0) { // No time-out will apply
-         while ((not glWFOList.empty()) and (error IS ERR::Okay)) {
+         while ((not glWFOList.empty()) and (!error)) {
             error = ProcessMessages(Flags, -1);
          }
       }
       else {
          auto current_time = PreciseTime();
          auto end_time = current_time + (TimeOut * 1000LL);
-         while ((not glWFOList.empty()) and (current_time < end_time) and (error IS ERR::Okay)) {
+         while ((not glWFOList.empty()) and (current_time < end_time) and (!error)) {
             log.detail("Waiting on %d objects.", (int)glWFOList.size());
             error = ProcessMessages(Flags, (end_time - current_time) / 1000LL);
             current_time = PreciseTime();
          }
       }
 
-      if ((error IS ERR::Okay) and (not glWFOList.empty())) error = ERR::TimeOut;
+      if ((!error) and (not glWFOList.empty())) error = ERR::TimeOut;
    }
    else {
       // At least one call to ProcessMessages() is needed (the caller's message loop may
@@ -765,7 +765,7 @@ ERR send_thread_msg(int Handle, MSGID Type, APTR Data, int Size)
 #else
    int64_t end_time = (PreciseTime() / 1000LL) + 10000LL;
    error = write_nonblock(Handle, &msg, sizeof(msg), end_time);
-   if ((error IS ERR::Okay) and (Data) and (Size > 0)) { // Write the main message.
+   if ((!error) and (Data) and (Size > 0)) { // Write the main message.
       error = write_nonblock(Handle, Data, Size, end_time);
    }
 #endif
@@ -784,7 +784,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
    int offset = 0;
    ERR error = ERR::Okay;
 
-   while ((offset < Size) and (error IS ERR::Okay)) {
+   while ((offset < Size) and (!error)) {
       int write_size = Size - offset;
       if (write_size > 1024) write_size = 1024;  // Limiting the size will make the chance of an EWOULDBLOCK error less likely.
       int len = write(Handle, (char *)Data+offset, write_size);
@@ -795,7 +795,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
          if ((errno IS EAGAIN) or (errno IS EWOULDBLOCK)) { // The write() failed because it would have blocked.  Try again!
             fd_set wfds;
             struct timeval tv;
-            while (((PreciseTime() / 1000LL) < EndTime) and (error IS ERR::Okay)) {
+            while (((PreciseTime() / 1000LL) < EndTime) and (!error)) {
                FD_ZERO(&wfds);
                FD_SET(Handle, &wfds);
                tv.tv_sec = (EndTime - (PreciseTime() / 1000LL)) / 1000LL;

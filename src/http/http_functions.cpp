@@ -209,7 +209,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
       Self->WriteBuffer.resize(Self->BufferSize + offset);
       error = acRead(Self->flInput, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
 
-      if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
+      if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
          Self->WriteBuffer.resize(client_bytes_written + offset);
       }
       else {
@@ -225,7 +225,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
          log.trace("All file content read (%d bytes) - freeing file.", (int)size);
          FreeResource(Self->flInput);
          Self->flInput = nullptr;
-         if (error IS ERR::Okay) error = ERR::Terminate;
+         if (!error) error = ERR::Terminate;
       }
    }
    else if (Self->InputObjectID) {
@@ -236,7 +236,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
          int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
          Self->WriteBuffer.resize(Self->BufferSize + offset);
          error = acRead(*object, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
-         if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
+         if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
             Self->WriteBuffer.resize(client_bytes_written + offset);
          }
          else {
@@ -256,7 +256,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
       log.warning("Method %d: No input fields are defined for me to send data to the server.", int(Self->Method));
    }
 
-   if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written > 0)) {
+   if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written > 0)) {
       int bytes_sent;
       ERR write_error;
       auto write_length = std::ssize(Self->WriteBuffer);

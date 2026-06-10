@@ -662,7 +662,7 @@ static void test_resolve_variable_callback()
          auto error = search_query_text(query, (extXML *)*xml, "/root/item[@id = $wanted]",
             &resolve_context, search_results);
 
-         bool matched = (error IS ERR::Okay) and (search_results.ids.size() IS 1) and (search_results.ids[0] IS "b");
+         bool matched = (!error) and (search_results.ids.size() IS 1) and (search_results.ids[0] IS "b");
          test_assert(matched, "ResolveVariable search callback",
             "Search() evaluation should accept callback-backed variables inside predicates");
          test_assert(resolve_context.call_count IS 1, "ResolveVariable search cache",

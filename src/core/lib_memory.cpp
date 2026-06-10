@@ -457,7 +457,7 @@ ERR FreeResource(RESOURCEID ResourceID)
       else error = free_private_memory_resource(ResourceID);
    }
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       std::lock_guard lock(glmResources);
       erase_resource(*resource);
    }

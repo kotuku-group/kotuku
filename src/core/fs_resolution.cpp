@@ -237,7 +237,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
    } // for()
 
    if (loop > 0) { // Note that loop starts at 10 and decrements to zero
-      if ((error IS ERR::Okay) and dest.empty()) return ERR::InvalidPath;
+      if ((!error) and dest.empty()) return ERR::InvalidPath;
       return error;
    }
    else return ERR::Loop;
@@ -439,7 +439,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
          return ERR::Loop;
       }
 
-      if (error IS ERR::Okay) return ERR::Okay;
+      if (!error) return ERR::Okay;
       else if ((Flags & RSF::NO_FILE_CHECK) != RSF::NIL) return ERR::Okay;
       else if (test_path(Dest, Flags) IS ERR::Okay) return ERR::Okay;
 

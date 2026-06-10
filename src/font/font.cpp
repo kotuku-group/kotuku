@@ -749,7 +749,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
       if (not iequals(Name, keys["Name"])) continue;
 
       auto error = get_font_path(keys, style_name, Path);
-      if (error IS ERR::Okay) {
+      if (!error) {
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }

@@ -236,3 +236,6 @@ enum class ERR : int32_t {
 
 #define ERF_Notified 1073741824
 
+constexpr bool operator!(ERR Error) noexcept {
+   return not int(Error);
+}

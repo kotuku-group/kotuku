@@ -2245,7 +2245,7 @@ static ERR SET_Path(extTask *Self, const std::string_view &Value)
    }
    else error = ERR::EmptyString;
 
-   if (error IS ERR::Okay) Self->Path.assign(new_path);
+   if (!error) Self->Path.assign(new_path);
 
    return error;
 }

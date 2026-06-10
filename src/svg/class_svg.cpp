@@ -387,18 +387,18 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
             else {
                double x, y, width, height;
 
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewX, x);
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewY, y);
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewWidth, width);
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewHeight, height);
+               if (!error) error = Self->Viewport->get(FID_ViewX, x);
+               if (!error) error = Self->Viewport->get(FID_ViewY, y);
+               if (!error) error = Self->Viewport->get(FID_ViewWidth, width);
+               if (!error) error = Self->Viewport->get(FID_ViewHeight, height);
 
-               if (error IS ERR::Okay) {
+               if (!error) {
                   char buffer[80];
                   snprintf(buffer, sizeof(buffer), "%g %g %g %g", x, y, width, height);
                   xml::NewAttrib(tag, "viewBox", buffer);
                }
 
-               if (error IS ERR::Okay) {
+               if (!error) {
                   auto dim = Self->Viewport->get<DMF>(FID_Dimensions);
                   if (dmf::hasAnyX(dim) and (Self->Viewport->get(FID_X, x) IS ERR::Okay))
                      set_dimension(tag, "x", x, dmf::hasScaledX(dim));
@@ -413,7 +413,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                      set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
                }
 
-               if (error IS ERR::Okay) {
+               if (!error) {
                   if ((error = save_svg_defs(Self, *xml, Self->Scene, index)) IS ERR::Okay) {
                      for (auto scan=((objVector *)Self->Viewport)->Child; scan; scan=scan->Next) {
                         save_svg_scan(Self, *xml, scan, index);

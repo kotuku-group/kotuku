@@ -180,7 +180,7 @@ static ERR parse_file(extConfig *Self, std::string_view Path)
    ERR error = ERR::Okay;
    std::string_view paths(Path);
 
-   while ((not paths.empty()) and (error IS ERR::Okay)) {
+   while ((not paths.empty()) and (!error)) {
       auto sep = paths.find_first_of(";|"); // Find the next separator
       auto current_path = (sep != std::string_view::npos) ? paths.substr(0, sep) : paths;
 
@@ -378,7 +378,7 @@ static ERR CONFIG_Init(extConfig *Self)
    ERR error = ERR::Okay;
    if (not Self->Path.empty()) {
       error = parse_file(Self, Self->Path);
-      if (error IS ERR::Okay) {
+      if (!error) {
          apply_filters(Self);
       }
    }

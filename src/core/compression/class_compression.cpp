@@ -351,7 +351,7 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
    if (Entry.DeflateMethod IS 0) {
       struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER-1 };
       ERR error = Action(AC::Read, Self->FileIO, &read);
-      if (error IS ERR::Okay) {
+      if (!error) {
          Self->Input[read.Result] = 0;
          DeleteFile(DestPath, nullptr);
          error = CreateLink(DestPath, (CSTRING)Self->Input);
@@ -801,7 +801,7 @@ if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
       }
    }
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
@@ -1466,7 +1466,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
    if (Self->OutputID) print(Self, "\nDecompression complete.");
 
 exit:
-   if ((error IS ERR::Okay) and (Self->FileIndex <= 0)) {
+   if ((!error) and (Self->FileIndex <= 0)) {
       log.msg("No files matched the path \"%.*s\".", int(Args->Path.size()), Args->Path.data());
       error = ERR::Search;
    }
@@ -1750,7 +1750,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
       }
       else error = ERR::DoesNotExist;
 
-      if (error IS ERR::Okay) { // Test the given location to see if it matches our supported file format (pkzip).
+      if (!error) { // Test the given location to see if it matches our supported file format (pkzip).
          int result;
          if (acRead(Self->FileIO, Self->Header, sizeof(Self->Header), &result) != ERR::Okay) return log.warning(ERR::Read);
 

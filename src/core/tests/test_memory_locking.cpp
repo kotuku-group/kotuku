@@ -166,7 +166,7 @@ static int run_owned_resource_cleanup_check(void)
    OBJECTPTR locked = nullptr;
    auto error = AccessObject(child_id, 1000, &locked);
    if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
-      if (error IS ERR::Okay) ReleaseObject(locked);
+      if (!error) ReleaseObject(locked);
       log.warning("AccessObject() returned %s for a child freed with its parent.", GetErrorMsg(error));
       return -1;
    }
@@ -240,7 +240,7 @@ static int run_access_object_checks(void)
 
    OBJECTPTR locked = nullptr;
    auto error = AccessObject(GetMemoryID(memory), 1000, &locked);
-   if (error IS ERR::Okay) {
+   if (!error) {
       ReleaseObject(locked);
       FreeResource(memory);
       log.warning("AccessObject() incorrectly accepted a memory resource ID.");
@@ -286,7 +286,7 @@ static int run_access_object_checks(void)
    object->clearFlag(NF::FREE_ON_UNLOCK);
    object->unpin();
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       ReleaseObject(locked);
       FreeResource(object);
       log.warning("AccessObject() accepted an object marked for deletion.");
@@ -303,7 +303,7 @@ static int run_access_object_checks(void)
    locked = nullptr;
    error = AccessObject(object_id, 1000, &locked);
    if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
-      if (error IS ERR::Okay) ReleaseObject(locked);
+      if (!error) ReleaseObject(locked);
       log.warning("AccessObject() returned %s for a freed object ID.", GetErrorMsg(error));
       return -1;
    }

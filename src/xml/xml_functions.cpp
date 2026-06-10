@@ -846,7 +846,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
          if (error IS ERR::NothingDone) { // Extract any additional content trapped between tags
             extract_content(Self, Tags.back().Children, State);
          }
-         else if (error IS ERR::Okay) { // Extract any new content caught in-between tags
+         else if (!error) { // Extract any new content caught in-between tags
             extract_content(Self, Tags.back().Children, State);
          }
          else return ERR::Failed;

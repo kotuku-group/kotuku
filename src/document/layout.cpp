@@ -524,7 +524,7 @@ CELL layout::lay_cell(bc_table *Table)
 
       layout sl(Self, cell.stream, *cell.viewport, Table->cell_padding);
       sl.m_depth = m_depth + 1;
-      if (auto error = sl.do_layout(&m_font, cell.width, cell.height, vertical_repass); not (error IS ERR::Okay)) {
+      if (auto error = sl.do_layout(&m_font, cell.width, cell.height, vertical_repass); error != ERR::Okay) {
          Self->Error = error;
          return CELL::ABORT;
       }
@@ -776,8 +776,7 @@ WRAP layout::lay_button(bc_button &Button)
       sl.m_depth = m_depth + 1;
 
       bool vertical_repass = false;
-      if (auto error = sl.do_layout(&m_font, Button.final_width, Button.final_height, vertical_repass);
-          not (error IS ERR::Okay)) {
+      if (auto error = sl.do_layout(&m_font, Button.final_width, Button.final_height, vertical_repass); error != ERR::Okay) {
          Self->Error = error;
          return WRAP::DO_NOTHING;
       }

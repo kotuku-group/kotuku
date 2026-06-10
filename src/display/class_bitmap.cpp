@@ -598,7 +598,7 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
    }
    else error = ERR::AllocMemory;
 
-   if (error IS ERR::Okay) { // Free the original data
+   if (!error) { // Free the original data
       if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
          FreeResource(Self->Data);
          Self->Data = nullptr;

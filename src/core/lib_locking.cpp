@@ -390,14 +390,14 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
 
    // Sanity check in case a thread called FreeResource() on the object before LockObject()
 
-   if ((error IS ERR::Okay) and (object->collecting())) {
+   if ((!error) and (object->collecting())) {
       ReleaseObject(object);
       error = ERR::MarkedForDeletion;
    }
 
    object->unpin(error != ERR::Okay);
 
-   if (error IS ERR::Okay) *Result = object;
+   if (!error) *Result = object;
    return error;
 }
 

@@ -202,7 +202,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
    }
 
 class_identified:
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (*ClassID != CLASSID::NIL) log.detail("File belongs to class $%.8x:$%.8x", (unsigned int)(*ClassID), SubClassID ? (unsigned int)(*SubClassID) : 0);
       else {
          log.detail("Failed to identify file \"%.*s\"", int(Path.size()), Path.data());

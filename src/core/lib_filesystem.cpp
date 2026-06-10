@@ -208,7 +208,7 @@ extern "C" FFR CALL_FEEDBACK(FUNCTION *Callback, FileFeedback *Feedback)
          { "FeedbackID", int(Feedback->FeedbackID) }
       }), error) != ERR::Okay) error = ERR::Function;
 
-      if (error IS ERR::Okay) {
+      if (!error) {
          kt::vector<std::string> *results;
          int size;
          if ((Callback->Context->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
@@ -989,10 +989,10 @@ ERR LoadFile(const std::string_view &Path, LDF Flags, CacheFile **Cache)
       if (file_size) {
          int result;
          error = file->read(loaded_cache->Data, file_size, &result);
-         if ((error IS ERR::Okay) and (file_size != result)) error = ERR::Read;
+         if ((!error) and (file_size != result)) error = ERR::Read;
       }
 
-      if (error IS ERR::Okay) {
+      if (!error) {
          const std::lock_guard<std::mutex> lock(glCacheLock);
          auto result = glCache.emplace(index, std::move(loaded_cache));
          auto cache  = result.first;
@@ -1719,7 +1719,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
          ProcessMessages(PMF::NIL, 0);
       } // while()
 
-      if ((Move) and (error IS ERR::Okay)) Action(fl::Delete::id, *srcfile, nullptr);
+      if ((Move) and (!error)) Action(fl::Delete::id, *srcfile, nullptr);
 
       return error;
    }
@@ -1771,7 +1771,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
         return ERR::Read;
       }
 
-      if ((Move) and (error IS ERR::Okay)) { // Delete the source
+      if ((Move) and (!error)) { // Delete the source
          return DeleteFile(src, nullptr);
       }
 
@@ -1994,7 +1994,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
          // If the sticky bits were set, we need to set them again because Linux sneakily turns off those bits when a
          // file is written (for security reasons).
 
-         if ((error IS ERR::Okay) and (permissions & (S_ISUID|S_ISGID))) {
+         if ((!error) and (permissions & (S_ISUID|S_ISGID))) {
             fchmod(dhandle, permissions);
          }
 #endif
@@ -2003,7 +2003,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
    }
    else return log.warning(ERR::FileNotFound);
 
-   if ((Move) and (error IS ERR::Okay)) { // Delete the source
+   if ((Move) and (!error)) { // Delete the source
       return DeleteFile(src, nullptr);
    }
    else return error;
@@ -2086,7 +2086,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
 
             // Copy everything under the folder to the destination
 
-            if (error IS ERR::Okay) {
+            if (!error) {
                Source.append(file->Name);
                fs_copydir(Source, Dest, Feedback, Callback, Move);
             }
@@ -2619,7 +2619,7 @@ restart:
    if (location.empty()) error = ResolvePath(Path, RSF::NO_FILE_CHECK, &location);
    else error = ERR::Okay;
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (not (winGetFreeDiskSpace(location[0], &bytes_free, &total_size))) {
          log.msg("Failed to read disk space for \"%s\" (%s)", location.c_str(), Path.data());
          Info->BytesFree  = -1;
@@ -2644,7 +2644,7 @@ restart:
       if (location.empty()) error = ResolvePath(Path, RSF::NO_FILE_CHECK, &location);
       else error = ERR::Okay;
 
-      if (error IS ERR::Okay) {
+      if (!error) {
          struct statfs fstat;
          int result = statfs(location.c_str(), &fstat);
 
@@ -2858,7 +2858,7 @@ ERR delete_tree(std::string &Path, FUNCTION *Callback, FileFeedback *Feedback)
       Path.resize(folder_len);
       Path.pop_back();
 
-      if ((error IS ERR::Okay) and (rmdir(Path.c_str()))) {
+      if ((!error) and (rmdir(Path.c_str()))) {
          log.error("rmdir(%s) error: %s", Path.c_str(), strerror(errno));
          return convert_errno(errno, ERR::SystemCall);
       }

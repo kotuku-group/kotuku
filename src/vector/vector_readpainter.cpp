@@ -665,7 +665,7 @@ ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, VectorPainte
       else error = parse_named_colour(log, iri, sep, Painter, result);
    }
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (Result and (not result.empty())) *Result = result;
    }
    return error;

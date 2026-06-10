@@ -892,7 +892,7 @@ ERR SetSSL(objNetSocket *Socket, const std::string_view &Command, const std::str
       case kt::strhash("EnableSSL"):
          if ((Socket->Flags & NSF::SSL) IS NSF::NIL) {
             auto error = (Socket->classID() IS CLASSID::NETSERVER) ? tls_setup_server((extNetServer *)Socket) : tls_setup_client((extNetSocket *)Socket);
-            if (error IS ERR::Okay) {
+            if (!error) {
                if (error = tls_connect((extNetSocket *)Socket); error IS ERR::Okay) {
                   Socket->Flags |= NSF::SSL;
                }

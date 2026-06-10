@@ -958,7 +958,7 @@ restart:
 
    if ((Self->CurrentState IS HGS::READING_HEADER) or (Self->CurrentState IS HGS::AUTHENTICATING)) {
       auto error = read_incoming_header(Self, Socket);
-      if (error IS ERR::Okay) goto restart; // Header read, process any remaining data
+      if (!error) goto restart; // Header read, process any remaining data
       else return error;
    }
    else if (Self->CurrentState IS HGS::READING_CONTENT) {

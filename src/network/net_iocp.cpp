@@ -455,7 +455,7 @@ public:
       int length = sizeof(endpoint.Storage);
 
       auto error = iocp_receive_from(Handle.socket(), Buffer, BufferSize, BytesRead, endpoint.Storage, &length);
-      if ((error IS ERR::Okay) and (BytesRead > 0)) {
+      if ((!error) and (BytesRead > 0)) {
          endpoint.Size = length;
          return endpoint_to_ip(endpoint_storage(endpoint), SourceAddress);
       }

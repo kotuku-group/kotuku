@@ -303,7 +303,7 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
    if (prv->Info.DeflateMethod IS 0) {
       ERR error = acRead(prv->FileStream, Args->Buffer, Args->Length, &Args->Result);
-      if (error IS ERR::Okay) Self->Position += Args->Result;
+      if (!error) Self->Position += Args->Result;
       return error;
    }
    else {

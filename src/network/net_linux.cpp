@@ -384,7 +384,7 @@ public:
    {
       std::vector<uint8_t> temp(Length);
       auto error = receive(Handle, temp.data(), temp.size(), Received);
-      if ((error IS ERR::Okay) and (Received > 0)) {
+      if ((!error) and (Received > 0)) {
          Buffer.insert(Buffer.end(), temp.begin(), temp.begin() + Received);
       }
       return error;

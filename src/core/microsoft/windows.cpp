@@ -2470,18 +2470,14 @@ extern ERR delete_tree(std::string &Path, FUNCTION *Callback, struct FileFeedbac
             Path.append(find.cFileName);
 
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-               ERR result = delete_tree(Path, Callback, Feedback);
-               if (not (result IS ERR::Okay)) {
+               if (auto result = delete_tree(Path, Callback, Feedback); result != ERR::Okay) {
                   FindClose(handle);
                   return result;
                }
             }
-            else {
-               ERR result = delete_file_helper(Path);
-               if (not (result IS ERR::Okay)) {
-                  FindClose(handle);
-                  return result;
-               }
+            else if (auto result = delete_file_helper(Path); result != ERR::Okay) {
+               FindClose(handle);
+               return result;
             }
          }
 

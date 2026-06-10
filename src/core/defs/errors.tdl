@@ -213,6 +213,12 @@ function declareErrors()
   constants("ERF", { comment="Special error flags" }, {
     Notified=0x40000000
   })
+
+  c_insert([[
+constexpr bool operator!(ERR Error) noexcept {
+   return not int(Error);
+}
+]])
 end
 
    if (glProgram is "idl-c") then

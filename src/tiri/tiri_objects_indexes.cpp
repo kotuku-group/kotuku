@@ -265,13 +265,9 @@ static int object_get(lua_State *Lua)
       }
 
       OBJECTPTR target;
-      if (fieldname.starts_with('$')) { // Get field as a string, good for CSV arrays, flags and lookups
-         fieldname.remove_prefix(1);
-         std::string buffer;
-         if (obj->get(fieldhash(fieldname), buffer) IS ERR::Okay) lua_pushlstring(Lua, buffer.c_str(), buffer.size());
-         else lua_pushvalue(Lua, 2); // Push the client's default value
+      if (fieldname.starts_with('$')) { // Deprecated feature
          release_object(def);
-         return 1;
+         luaL_error(Lua, "Invalid field name: %.*s", int(fieldname.size()), fieldname.data());
       }
       else if (auto field = FindField(obj, fieldhash(fieldname), &target)) {
          int result = 0;

@@ -4088,7 +4088,7 @@ XPathVal XPathEvaluator::handle_variable_reference(const XPathNode *Node, uint32
    XPathVal resolved_value;
    auto variable_name = Node->get_value_view();
    auto error = resolve_variable_value(variable_name, CurrentPrefix, resolved_value, Node);
-   if (error IS ERR::Okay) {
+   if (!error) {
       return resolved_value;
    }
    else if (error != ERR::Search) return XPathVal();

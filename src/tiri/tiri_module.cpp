@@ -291,7 +291,7 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
 
       AdjustLogLevel(-1);
 
-      if (error IS ERR::Okay) glLoadedConstants.insert(Module);
+      if (!error) glLoadedConstants.insert(Module);
    }
 
    return error;

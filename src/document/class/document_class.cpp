@@ -28,12 +28,12 @@ https://github.com/microsoft/win32-app-isolation is one potential way of doing t
 
 static void notify_disable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   if (Result IS ERR::Okay) acDisable(CurrentContext());
+   if (!Result) acDisable(CurrentContext());
 }
 
 static void notify_enable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   if (Result IS ERR::Okay) acEnable(CurrentContext());
+   if (!Result) acEnable(CurrentContext());
 }
 
 static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
@@ -374,7 +374,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;
-                     if (not (error IS ERR::Okay)) return error;
+                     if (error != ERR::Okay) return error;
                   }
                   else {
                      error_dialog("Clipboard Paste Error", ERR::AllocMemory);
@@ -1919,7 +1919,7 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
    if (auto error = DOCUMENT_ReadContent(Self, &read); error IS ERR::Okay) {
       error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
       FreeResource(read.Result);
-      if (error IS ERR::Okay) return ERR::Okay;
+      if (!error) return ERR::Okay;
       else return log.warning(ERR::Write);
    }
    else return error;
