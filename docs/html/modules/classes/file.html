@@ -92,7 +92,7 @@
 <p>If a file represents a symbolic link (indicated by the <code>SYMLINK</code> flag setting) then reading the Link field will return the link path.  No assurance is made as to the validity of the path.  If the path is not absolute, then the parent folder containing the link will need to be taken into consideration when calculating the path that the link refers to.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
                           <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Specifies the location of a file or folder.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field is required for initialisation and must either be in the format of a universal path string, or a path that is compatible with the host system.  The standard format for a universal path is <code>volume:folder/file</code>, for instance <code>kotuku:system/classes.bin</code>.</p>

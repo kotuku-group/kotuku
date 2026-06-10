@@ -289,13 +289,12 @@
 <div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
 <tr><th>MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
 <tr><th>MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
-<tr><th>MEM::MANAGED</th><td>Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</td></tr>
 <tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
 <tr><th>MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
 <tr><th>MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
-<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</td></tr>
+<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string, which aids diagnostics.</td></tr>
 <tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
-<tr><th>MEM::UNTRACKED</th><td>Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</td></tr>
+<tr><th>MEM::UNTRACKED</th><td>Prevents the memory block from being tracked back to the current context.</td></tr>
 <tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
 <tr><th>MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
 </tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
