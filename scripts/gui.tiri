@@ -16,12 +16,11 @@ _LIB[_NS] = {
 
 gui = _LIB[_NS]
 
-local rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
-local rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
-local rxNum      <const> = <{ regex.new([[\d+]]) }>
+rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
+rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
 
-local glStyleConfig = 'user:config/style.cfg'
-local glPainter = struct.new('VectorPainter')
+glStyleConfig = 'user:config/style.cfg'
+glPainter = struct.new('VectorPainter')
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -346,13 +345,12 @@ gui.strToRGB = function(Value:str):table
    try<trace>
       lVec.ReadPainter(nil, Value, glPainter)
       nrgb = glPainter.Colour
-      if nrgb.Red < 0 then nrgb.Red = 0 end
-      if nrgb.Red > 1 then nrgb.Red = 1 end
-      if nrgb.Green < 0 then nrgb.Green = 0 end
-      if nrgb.Green > 1 then nrgb.Green = 1 end
-      if nrgb.Blue < 0 then nrgb.Blue = 0 end
-      if nrgb.Blue > 1 then nrgb.Blue = 1 end
-      return setmetatable({ r=nrgb.red, g=nrgb.green, b=nrgb.blue, a=nrgb.alpha }, gui.mtRGB)
+      return setmetatable({
+         r = math.clamp(nrgb.red, 0, 1),
+         g = math.clamp(nrgb.green, 0, 1),
+         b = math.clamp(nrgb.blue, 0, 1),
+         a = nrgb.alpha
+      }, gui.mtRGB)
    except ex
       error(f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}')
    end
@@ -606,7 +604,7 @@ gui.setTheme = function(Object:obj, Theme:str):table
    return gui.themes[Theme]
 end
 
-local function modifyAlpha(Colour:str, Alpha:num):str
+function modifyAlpha(Colour:str, Alpha:num):str
    lVec.ReadPainter(nil, Colour, glPainter)
    nrgb = glPainter.Colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)

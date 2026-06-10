@@ -92,6 +92,44 @@ LJLIB_ASM(math_min)      LJLIB_REC(math_minmax IR_MIN)
 }
 LJLIB_ASM_(math_max)      LJLIB_REC(math_minmax IR_MAX)
 
+LJLIB_CF(math_clamp)      LJLIB_REC(.)
+{
+#if LJ_DUALNUM
+   lj_lib_checknumber(L, 1);
+   lj_lib_checknumber(L, 2);
+   lj_lib_checknumber(L, 3);
+
+   TValue* value_tv = L->base;
+   TValue* lower_tv = L->base + 1;
+   TValue* upper_tv = L->base + 2;
+
+   if (tvisint(value_tv) and tvisint(lower_tv) and tvisint(upper_tv)) {
+      int32_t result = intV(value_tv);
+      int32_t lower = intV(lower_tv);
+      int32_t upper = intV(upper_tv);
+      result = result > lower ? result : lower;
+      result = result < upper ? result : upper;
+      setintV(L->top - 1, result);
+   }
+   else {
+      lua_Number result = tvisint(value_tv) ? lua_Number(intV(value_tv)) : numV(value_tv);
+      lua_Number lower = tvisint(lower_tv) ? lua_Number(intV(lower_tv)) : numV(lower_tv);
+      lua_Number upper = tvisint(upper_tv) ? lua_Number(intV(upper_tv)) : numV(upper_tv);
+      result = result > lower ? result : lower;
+      result = result < upper ? result : upper;
+      setnumV(L->top - 1, result);
+   }
+#else
+   lua_Number result = lj_lib_checknum(L, 1);
+   lua_Number lower = lj_lib_checknum(L, 2);
+   lua_Number upper = lj_lib_checknum(L, 3);
+   result = result > lower ? result : lower;
+   result = result < upper ? result : upper;
+   setnumV(L->top - 1, result);
+#endif
+   return 1;
+}
+
 LJLIB_CF(math_round)
 {
    double num = lj_lib_checknum(L, 1);
@@ -238,6 +276,7 @@ extern int luaopen_math(lua_State* L)
    reg_iface_prototype("math", "ldexp", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "min", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
    reg_iface_prototype("math", "max", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
+   reg_iface_prototype("math", "clamp", { TiriType::Num }, { TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "round", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "random", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "randomSeed", {}, { TiriType::Num });

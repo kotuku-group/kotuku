@@ -289,14 +289,9 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       sensitive  = true,
       noIcons    = true,
       textAttrib = 'name',
-      itemSelected = function(View, Reason, Item)
+      itemSelected = function(View:table, Reason:str, Item:table)
          selection = Item.name
-         self.pointSize = tonumber(selection)
-         if self.pointSize < 4 then
-            self.pointSize = 4
-         elseif self.pointSize > 400 then
-            self.pointSize = 400
-         end
+         self.pointSize = math.clamp(selection, 4, 400)
          processing.collect()
          refreshExample()
       end
@@ -315,7 +310,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       sensitive    = true,
       noIcons      = true,
       textAttrib   = 'name',
-      itemSelected = function(View, Reason, Item)
+      itemSelected = function(View:table, Reason:str, Item:table)
          self.style = Item.name
          processing.collect()
          refreshExample()
