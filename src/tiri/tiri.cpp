@@ -191,9 +191,9 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   std::string module_name;
-   if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
-      if (auto error = load_include(Lua->script, module_name.c_str()); error != ERR::Okay) {
+   std::string_view module_name;
+   if (auto error = MetaClass->getModule(module_name); error IS ERR::Okay) {
+      if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }

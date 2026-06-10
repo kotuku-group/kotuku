@@ -221,6 +221,8 @@ void init_metaclass(void)
    sort_class_fields(&glMetaClass, glMetaClass.FieldLookup);
 
    glMetaClass.BaseCeiling = glMetaClass.FieldLookup.size();
+   
+   glMetaClass.Dictionary = glMetaClass.FieldLookup.data();
 
    glClassMap[CLASSID::METACLASS] = &glMetaClass;
 }
