@@ -125,6 +125,7 @@
       <error code="NoAction">The <code>Action</code> is not supported by the object's supporting class.</error>
       <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+      <error code="Notified">Unknown error code.</error>
     </result>
   </function>
 
@@ -515,6 +516,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     </description>
     <result type="ERR">
       <error code="Okay">The file paths refer to the same file.</error>
+      <error code="True">Operation successful.</error>
       <error code="False">The file paths refer to different files.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -789,6 +791,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">The resource was successfully freed or marked for delayed collection.</error>
+      <error code="Terminate">Termination requested</error>
       <error code="InUse">The resource is busy.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).</error>
       <error code="DoesNotExist">The specified memory block identifier is not valid or already freed.</error>
     </result>
@@ -971,6 +974,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
       <error code="Search">A suitable class could not be found for the data source.</error>
       <error code="FileNotFound">File not found</error>
       <error code="Read">Error reading data</error>
+      <error code="VirtualVolume">ResolvePath() failed to resolve the path because it is a virtual reference</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -993,8 +997,10 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <result type="ERR">
       <error code="Okay">The object was initialised.</error>
       <error code="LostClass">The object has lost its class reference</error>
+      <error code="NoSupport">Operation not supported</error>
       <error code="DoubleInit">Warning - Attempt to initialise a resource twice</error>
       <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised</error>
+      <error code="UseDerived">Requested to use a registered derived class (not an error)</error>
     </result>
   </function>
 
@@ -1271,8 +1277,10 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Terminate">A <code>MSGID::QUIT</code> message type was found on the message queue.</error>
+      <error code="NoSupport">Operation not supported</error>
       <error code="TimeOut">Function timed-out before successful completion</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="Recursion">Detected a recursive function call</error>
       <error code="OutsideMainThread">Operation permitted from the main thread only</error>
     </result>
@@ -1349,6 +1357,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Args">Invalid arguments passed to function</error>
       <error code="Read">Error reading data</error>
       <error code="InvalidPath">Invalid file or folder path detected</error>
+      <error code="VirtualVolume">ResolvePath() failed to resolve the path because it is a virtual reference</error>
       <error code="OpenFile">The file could not be opened</error>
     </result>
   </function>
@@ -1710,8 +1719,10 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="NoSupport">Operation not supported</error>
       <error code="SystemCorrupt">System corruption detected</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="OwnerPassThrough">Container pass through notification</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="Recursion">Detected a recursive function call</error>
     </result>
@@ -1895,12 +1906,13 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
     </input>
     <description>
-<p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
+<p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied <code>ResourceManager</code>.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
 <p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
 <p>A unique <code>ResourceID</code> can be obtained from <function>AllocateID</function> by using <code>IDTYPE::RESOURCE</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="InUse">Resource is in use</error>
       <error code="NullArgs"><code>ResourceID</code> is <code>0</code>, or <code>Manager</code> is <code>NULL</code> when registering a new resource.</error>
     </result>
   </function>
@@ -2023,6 +2035,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Terminate">Termination requested</error>
+      <error code="ExceptionThreshold">Termination requested</error>
       <error code="TimeOut">Function timed-out before successful completion</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="Recursion">Detected a recursive function call</error>
@@ -2050,6 +2063,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Cancelled">The thread has been requested to stop and cannot pause.</error>
+      <error code="Terminate">Termination requested</error>
     </result>
   </function>
 

@@ -271,8 +271,11 @@
       </description>
       <result>
         <error code="Okay">The new volume was applied successfully.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="OutOfRange">The <code>Volume</code> or <code>Index</code> is out of the acceptable range.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>blocking, mutates-object</tags>

@@ -315,12 +315,12 @@ method.
 -INPUT-
 int Line: The line number that you want to delete.  If negative, the last line will be deleted.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: The line was deleted.
 Args: The Line value was out of the valid range.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1041,7 +1041,7 @@ SelectColumn: Indicates the column position of a selection's beginning.
 If the user has selected an area of text, the starting column of that area will be indicated by this field.  If an area
 has not been selected, the value of the SelectColumn field is undefined.
 
-To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the #Flags field.
+To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the @Vector.Flags field.
 
 *********************************************************************************************************************/
 
@@ -1058,7 +1058,7 @@ SelectRow: Indicates the line position of a selection's beginning.
 If the user has selected an area of text, the starting row of that area will be indicated by this field.  If an area
 has not been selected, the value of the SelectRow field is undefined.
 
-To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the #Flags field.
+To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the @Vector.Flags field.
 
 *********************************************************************************************************************/
 
@@ -1308,9 +1308,8 @@ static ERR TEXT_SET_String(extVectorText *Self, const std::string_view &Value)
 -FIELD-
 TextLength: The expected length of the text after all computations have been taken into account.
 
-The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the
-#Width that is initially computed does not match this value, then the text will be scaled to match the
-TextLength.
+The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the computed
+text width does not match this value, then the text will be scaled to match the TextLength.
 
 *********************************************************************************************************************/
 

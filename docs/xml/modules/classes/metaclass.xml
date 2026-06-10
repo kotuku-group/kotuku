@@ -75,7 +75,7 @@
    { AC::NIL, nullptr }
 };
 </pre>
-<p>Note: Never refer to method ID's in an action list - the <fl>Methods</fl> field is provided for this purpose.</p>
+<p>Note: Never refer to method IDs in an action list - the <fl>Methods</fl> field is provided for this purpose.</p>
       </description>
     </field>
 

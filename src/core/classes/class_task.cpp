@@ -678,6 +678,8 @@ Okay
 MissingPath: The Location field has not been set.
 Failed
 TimeOut:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
+ProcessCreation
+
 -END-
 
 *********************************************************************************************************************/
@@ -1292,10 +1294,12 @@ Okay
 NullArgs
 DoesNotExist: The environment variable is undefined.
 NoSupport: The platform does not support environment variables.
--END-
+ExecViolation
+Syntax
 
 -TAGS-
 pure-query, caller-owns-result
+-END-
 
 *********************************************************************************************************************/
 
@@ -1575,10 +1579,10 @@ On Windows systems, the method uses `winTerminateApp()` with a timeout for proce
 
 -ERRORS-
 Okay
--END-
 
 -TAGS-
 blocking, mutates-object
+-END-
 
 *********************************************************************************************************************/
 
@@ -1643,10 +1647,12 @@ strview Value: The value to assign to the environment variable.  If empty, the v
 Okay
 NullArgs
 NoSupport: The platform does not support environment variables.
--END-
+Syntax
+TaskExecutionFailed
 
 -TAGS-
 mutates-object, copies-input
+-END-
 
 *********************************************************************************************************************/
 
@@ -2149,16 +2155,7 @@ string.  To illustrate, the following command-line string:
 
 <pre>1&gt; YourProgram PREFS MyPrefs -file "documents:readme.txt"</pre>
 
-Would be represented as follows:
-
-<pre>
-kt::vector&lt;std::string&gt; Args = {
-   "PREFS",
-   "MyPrefs",
-   "-file",
-   "documents:readme.txt"
-};
-</pre>
+Would be represented as a list containing `"PREFS"`, `"MyPrefs"`, `"-file"` and `"documents:readme.txt"`.
 
 The list is compatible with Tiri, and can be iterated as follows:
 

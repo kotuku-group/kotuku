@@ -86,6 +86,7 @@ int TotalArgs: The total number of parameters in the Args parameter.
 -ERRORS-
 Okay:
 Args:
+NullArgs
 
 -TAGS-
 mutates-object, callback-inlines, private

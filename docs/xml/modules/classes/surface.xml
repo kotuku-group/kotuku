@@ -275,6 +275,7 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Notified">Unknown error code.</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -298,6 +299,7 @@ the surface area first).</li>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="AccessMemory">Failed to access the internal surface list.</error>
+        <error code="Notified">Unknown error code.</error>
       </result>
       <tags>mutates-object</tags>
     </method>

@@ -821,6 +821,7 @@ int RetainData: Retains the compression data if `true`.
 Okay
 AllocMemory: Insufficient memory in recreating the bitmap data buffer.
 CreateObject: A Compression object could not be created.
+BufferOverflow
 
 -TAGS-
 mutates-object, creates-resource
@@ -928,6 +929,7 @@ Okay
 NothingDone: The content is already normalised.
 InvalidState: The Bitmap is not in the expected state (32-bit with an alpha channel).
 InvalidDimension: The clipping region is invalid.
+AllocMemory
 
 -TAGS-
 mutates-object
@@ -1852,6 +1854,8 @@ Args
 AllocMemory
 NoSupport
 UndefinedField
+Notified
+
 
 *********************************************************************************************************************/
 
@@ -2513,7 +2517,7 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-DataFlags: Defines the memory flags to use in allocating a bitmap's data area.
+DataFlags: Defines the memory flags to use when allocating a bitmap's data area.
 
 DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::DATA`,
 `MEM::VIDEO` and `MEM::TEXTURE`.
@@ -2527,7 +2531,7 @@ DrawUCPixel: Points to a C function that draws pixels to the bitmap using colour
 DrawUCPixel points to the active low-level pixel writer for packed colour or palette-index values.  It is intended for
 C callers that need direct pixel access.  No clipping or bounds checks are performed.
 
-The prototype of the DrawUCPixel function is `Function(*Bitmap, LONG X, LONG Y, uint32_t Colour)`.
+The prototype of the DrawUCPixel function is `Function(*Bitmap, LONG X, LONG Y, UINT Colour)`.
 
 The new pixel value is supplied in the `Colour` parameter.
 
@@ -2537,7 +2541,7 @@ DrawUCRIndex: Points to a C function that draws pixels to the bitmap in RGB form
 DrawUCRIndex points to the active low-level RGB pixel writer for a caller-supplied address inside #Data.  It is
 intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.
 
-The prototype of the DrawUCRIndex function is `Function(*Bitmap, uint8_t *Data, RGB8 *RGB)`.
+The prototype of the DrawUCRIndex function is `Function(*Bitmap, BYTE *Data, RGB8 *RGB)`.
 
 The Data parameter must point to a location within the Bitmap's graphical address space.  The new pixel value must be
 defined in the `RGB` parameter.
@@ -2693,7 +2697,7 @@ ReadUCRIndex: Points to a C function that reads pixels from the bitmap in RGB fo
 ReadUCRIndex points to the active low-level RGB pixel reader for a caller-supplied address inside #Data.  It is
 intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.
 
-The prototype of the ReadUCRIndex function is `Function(*Bitmap, uint8_t *Data, RGB8 *RGB)`.
+The prototype of the ReadUCRIndex function is `Function(*Bitmap, BYTE *Data, RGB8 *RGB)`.
 
 The `Data` parameter must point to a location within the Bitmap's graphical address space.  The pixel value will be
 returned in the `RGB` parameter.

@@ -531,6 +531,7 @@ Args
 NullArgs
 Failed
 BufferOverflow: The output buffer is not large enough.
+InvalidCompression
 
 -TAGS-
 mutates-input, mutates-object
@@ -602,6 +603,8 @@ Args:
 File: An error was encountered when trying to open the source file.
 NoPermission: The `READ_ONLY` flag has been set on the compression object.
 NoSupport: The derived class does not support this method.
+NullArgs
+MissingPath
 
 -TAGS-
 blocking, mutates-object, copies-input, callback-inlines
@@ -734,6 +737,7 @@ The level of compression is determined by the #CompressionLevel field value.
 -ERRORS-
 Okay
 Failed: Failed to initialise the decompression process.
+InvalidCompression
 
 -TAGS-
 mutates-object
@@ -829,6 +833,9 @@ NullArgs
 Args
 BufferOverflow: The output buffer is not large enough to contain the compressed data.
 Retry: Please recall the method using a larger output buffer.
+InvalidState
+AllocMemory
+Function
 
 -TAGS-
 mutates-input, mutates-object, callback-inlines
@@ -941,6 +948,8 @@ bufsize OutputSize: Size of the `Output` buffer (ignored if Output is `NULL`).
 Okay
 NullArgs
 BufferOverflow: The supplied Output buffer is not large enough (check the #MinOutputSize field for the minimum allowable size).
+FieldNotSet
+Function
 
 -TAGS-
 mutates-input, mutates-object, callback-inlines
@@ -1029,6 +1038,7 @@ has been processed, then call #DecompressStreamEnd().
 -ERRORS-
 Okay
 Failed: Failed to initialise the decompression process.
+InvalidCompression
 
 -TAGS-
 mutates-object
@@ -1086,6 +1096,7 @@ Okay
 NullArgs
 AllocMemory
 BufferOverflow: The output buffer is not large enough.
+Function
 
 -TAGS-
 mutates-input, mutates-object, callback-inlines
@@ -1225,6 +1236,8 @@ bufsize OutputSize: Size of the decompression buffer.
 Okay
 Args
 BufferOverflow: The output buffer is not large enough to hold the decompressed information.
+NullArgs
+InvalidCompression
 
 -TAGS-
 mutates-input, mutates-object
@@ -1293,6 +1306,11 @@ Seek
 Write: Failed to write uncompressed information to a destination file.
 Cancelled: The decompression process was cancelled by the feedback mechanism.
 Failed
+NoSupport
+Terminate
+Skip
+InvalidCompression
+Search
 
 -TAGS-
 blocking, mutates-object, callback-inlines
@@ -1498,6 +1516,10 @@ MissingPath
 Seek
 Write
 Failed
+NoSupport
+InvalidCompression
+Decompression
+Search
 
 -TAGS-
 blocking, mutates-object, updates-seek-index, callback-inlines
@@ -1896,6 +1918,8 @@ ptr(func) Callback: This callback function will be called with a pointer to a !C
 Okay
 NoSupport
 NullArgs
+Function
+WrongType
 
 -TAGS-
 pure-query, callback-inlines

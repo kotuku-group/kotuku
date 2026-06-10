@@ -67,6 +67,8 @@
       </description>
       <result>
         <error code="Okay">Proxy deleted.</error>
+        <error code="Failed">General failure</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
       <tags>blocking, mutates-object</tags>
     </method>
@@ -95,6 +97,7 @@ if (proxy.ok()) {
       <result>
         <error code="Okay">A proxy was discovered.</error>
         <error code="NoSearchResult">No matching proxy was discovered.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
       <tags>blocking, mutates-object</tags>
     </method>

@@ -679,6 +679,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Terminate">Termination requested</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="Function">A function call failed</error>
     </result>

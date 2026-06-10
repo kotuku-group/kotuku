@@ -279,7 +279,7 @@
       <type>INT</type>
       <description>
 <p>If the user has selected an area of text, the starting column of that area will be indicated by this field.  If an area has not been selected, the value of the SelectColumn field is undefined.</p>
-<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the #Flags field.</p>
+<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <class name="Vector" field="Flags">Vector.Flags</class> field.</p>
       </description>
     </field>
 
@@ -290,7 +290,7 @@
       <type>INT</type>
       <description>
 <p>If the user has selected an area of text, the starting row of that area will be indicated by this field.  If an area has not been selected, the value of the SelectRow field is undefined.</p>
-<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the #Flags field.</p>
+<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <class name="Vector" field="Flags">Vector.Flags</class> field.</p>
       </description>
     </field>
 
@@ -332,7 +332,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the #Width that is initially computed does not match this value, then the text will be scaled to match the TextLength.</p>
+<p>The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the computed text width does not match this value, then the text will be scaled to match the TextLength.</p>
       </description>
     </field>
 

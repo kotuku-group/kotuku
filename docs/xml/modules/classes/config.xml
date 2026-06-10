@@ -168,6 +168,7 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="AccessObject">The source configuration object could not be accessed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

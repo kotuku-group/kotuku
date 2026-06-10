@@ -543,6 +543,9 @@ NotInitialised: The HTTP object has not been initialised.
 FieldNotSet: Required fields are not set (e.g. destination for COPY/MOVE methods, or data source for POST/PUT methods).
 NoData: Input file is empty or has no data for POST/PUT operations.
 ConnectionRefused: The connection to the server was refused.
+Lock
+NoSecureSockets
+
 -END-
 
 *********************************************************************************************************************/

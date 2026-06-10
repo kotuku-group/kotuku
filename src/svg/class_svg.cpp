@@ -446,7 +446,7 @@ registered in the top-level @VectorScene object.
 <b>Supported formats:</b>
 <list type="bullet">
 <li>RGB values: `rgb(red, green, blue)`</li>
-<li>Hexadecimal notation: `#RRGGBB` or `#RGB`</li>
+<li>Hexadecimal notation: six-digit triplets or three-digit shorthand triplets</li>
 <li>Named colours: Standard SVG colour names</li>
 <li>URL references: `url(#gradientId)` for complex paint definitions</li>
 </list>

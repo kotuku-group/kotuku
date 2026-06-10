@@ -405,6 +405,8 @@ OutOfRange: The cursor ID is outside of acceptable range.
 AccessObject: Failed to access the mouse pointer.
 LockFailed
 NothingDone
+Args
+True
 
 -TAGS-
 mutates-object, blocking, case-insensitive

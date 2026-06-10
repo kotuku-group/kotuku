@@ -59,12 +59,19 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="File">File error, e.g. file not found</error>
         <error code="Search">The file could not be found.</error>
         <error code="FileNotFound">File not found</error>
         <error code="NoPermission">Permission was denied when accessing or creating the file.</error>
+        <error code="InvalidPath">Invalid file or folder path detected</error>
         <error code="SetField">An error occurred while updating the <fl>Path</fl> field.</error>
         <error code="MissingPath">The object is missing a path reference</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="VirtualVolume">ResolvePath() failed to resolve the path because it is a virtual reference</error>
         <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
+        <error code="CreateFile">A new file could not be created</error>
+        <error code="UseDerived">Requested to use a registered derived class (not an error)</error>
       </result>
     </action>
 
@@ -96,6 +103,8 @@
         <error code="OutOfRange">Invalid <code>Length</code> parameter.</error>
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
         <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="ExpectedFolder">The file object refers to a folder.</error>
       </result>
@@ -216,11 +225,14 @@
       </description>
       <result>
         <error code="Okay">File deleted successfully.</error>
+        <error code="Cancelled">Operation cancelled</error>
         <error code="Failed">The deletion attempt failed (specific condition not available).</error>
         <error code="NoPermission">The user does not have the necessary permissions to delete the file.</error>
         <error code="MissingPath">The object is missing a path reference</error>
         <error code="BufferOverflow">The file path string is too long.</error>
         <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="DeleteFile">Deletion of a folder or file failed (e.g. permissions, read-only media)</error>
         <error code="ReadOnly">The file is on a read-only filesystem.</error>
         <error code="Locked">The file is in use.</error>
       </result>
@@ -268,7 +280,9 @@
         <error code="Okay">Operation successful.</error>
         <error code="DirEmpty">The index has reached the end of the file list.</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="ExpectedFolder">The operation expected a folder path</error>
       </result>
       <tags>blocking, updates-seek-index, caller-owns-result</tags>
     </method>
@@ -294,6 +308,8 @@
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
         <error code="ObjectCorrupt">The internal file handle is missing.</error>
         <error code="BufferOverflow">The line is too long for the read routine (4096 byte limit).</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>blocking, updates-seek-index, object-owns-result, null-terminated-result, mutates-input</tags>
     </method>
@@ -350,6 +366,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>non-blocking, mutates-object, callback-held</tags>
     </method>

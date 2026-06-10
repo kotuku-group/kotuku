@@ -120,6 +120,7 @@ struct(ResourceManager) Manager: Resource manager used to release the resource.
 -ERRORS-
 Okay
 NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
+InUse
 
 -TAGS-
 retains-input, does-not-take-ownership, blocking, thread-safe
@@ -396,6 +397,7 @@ res ID: The unique identifier of the resource to be freed.
 Okay: The resource was successfully freed or marked for delayed collection.
 DoesNotExist: The specified memory block identifier is not valid or already freed.
 InUse: The resource is busy.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).
+Terminate
 
 -TAGS-
 closes-handle, blocking

@@ -107,6 +107,7 @@ obj(ClientSocket) Socket: The client socket to be disconnected.
 -ERRORS-
 Okay
 NullArgs
+WrongClass
 
 -TAGS-
 mutates-object, closes-handle

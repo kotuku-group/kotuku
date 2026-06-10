@@ -180,7 +180,7 @@
 <b>Supported formats:</b></p>
 <list type="bullet">
 <li>RGB values: <code>rgb(red, green, blue)</code></li>
-<li>Hexadecimal notation: <code>#RRGGBB</code> or <code>#RGB</code></li>
+<li>Hexadecimal notation: six-digit triplets or three-digit shorthand triplets</li>
 <li>Named colours: Standard SVG colour names</li>
 <li>URL references: <code>url(#gradientId)</code> for complex paint definitions</li>
 </list>

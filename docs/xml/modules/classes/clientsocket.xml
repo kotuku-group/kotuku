@@ -43,6 +43,7 @@
       <result>
         <error code="Okay">Read successful (if no data was on the socket, success is still indicated).</error>
         <error code="Failed">A permanent failure has occurred and socket has been closed.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="Disconnected">The socket connection is closed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

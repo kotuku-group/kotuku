@@ -232,15 +232,15 @@ At the time of writing, the provided object must belong to one of the following 
 strview Name: The unique name to associate with the definition.
 obj Def: Reference to the definition object.
 
--TAGS-
-mutates-object, retains-input
-
 -ERRORS-
 Okay
 NullArgs
 ResourceExists: The given name is already in use as a definition.
 InvalidObject: The definition is not an accepted object class.
 UnsupportedOwner: The definition is not owned by the scene.
+
+-TAGS-
+mutates-object, retains-input
 
 *********************************************************************************************************************/
 
@@ -301,11 +301,11 @@ Debug: Internal functionality for debugging.
 
 This internal method prints comprehensive information that describes the scene graph to the log.
 
--TAGS-
-private
-
 -ERRORS-
 Okay:
+
+-TAGS-
+private
 
 *********************************************************************************************************************/
 
@@ -374,13 +374,13 @@ Definitions are created with the #AddDef() method.
 strview Name: The name of the definition.
 &obj Def: A pointer to the definition object is returned here if discovered.
 
--TAGS-
-pure-query, object-owns-result
-
 -ERRORS-
 Okay
 NullArgs
 Search: A definition with the given Name was not found.
+
+-TAGS-
+pure-query, object-owns-result
 -END-
 
 *********************************************************************************************************************/
@@ -597,13 +597,13 @@ with `strhash()` and using that as the ID.
 int ID: The ID to search for.
 &obj Result: This parameter will be updated with the discovered vector, or `NULL` if not found.
 
--TAGS-
-pure-query, object-owns-result
-
 -ERRORS-
 Okay
 NullArgs
 Search: A vector with a matching ID was not found.
+
+-TAGS-
+pure-query, object-owns-result
 -END-
 
 *********************************************************************************************************************/
@@ -674,10 +674,8 @@ static ERR SET_Bitmap(extVectorScene *Self, objBitmap *Value)
 -FIELD-
 Defs: Obtain direct access to the SVG definition table.
 
-Reading the Defs field will return a direct pointer to the SVG definition table, which is declared as a key-value C++
-type:
-
-<pre>ankerl::unordered_dense::map&lt;std::string, OBJECTPTR&gt;</pre>
+Reading the Defs field returns direct access to the SVG definition table, which maps definition names to vector
+objects.
 
 Direct access is provided for internal use only and not for the benefit of client programs.
 

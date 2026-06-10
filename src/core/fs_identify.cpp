@@ -28,6 +28,7 @@ NullArgs
 Search: A suitable class could not be found for the data source.
 FileNotFound
 Read
+VirtualVolume
 
 -TAGS-
 blocking, path-resolved

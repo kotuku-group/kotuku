@@ -566,7 +566,7 @@ class objBitmap : public Object {
    int       PlaneMod;                                             // The differential between each bitmap plane.
    struct ClipRectangle Clip;                                      // Defines the bitmap's clipping region.
    int       Size;                                                 // The total size of the bitmap, in bytes.
-   MEM       DataFlags;                                            // Defines the memory flags to use in allocating a bitmap's data area.
+   MEM       DataFlags;                                            // Defines the memory flags to use when allocating a bitmap's data area.
    int       AmtColours;                                           // The maximum number of colours represented by the bitmap format.
    BMF       Flags;                                                // Optional flags.
    int       TransIndex;                                           // The transparent colour of the bitmap, represented as an index.

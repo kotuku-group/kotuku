@@ -421,6 +421,8 @@ This method will stop all sending and receiving of data over the socket.  This i
 -ERRORS-
 Okay
 Failed: Shutdown operation failed.
+SystemCall
+
 
 *********************************************************************************************************************/
 
@@ -597,6 +599,7 @@ Okay: Successfully joined the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
 Failed: Failed to join multicast group.
+NullArgs
 
 -TAGS-
 mutates-object
@@ -650,6 +653,7 @@ Okay: Successfully left the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
 Failed: Failed to leave multicast group.
+NullArgs
 
 -TAGS-
 mutates-object
@@ -705,6 +709,9 @@ NullArgs
 Disconnected: The socket connection is closed.
 InvalidState: The socket is not in a state that allows reading (e.g. during SSL handshake).
 Failed: A permanent failure has occurred and socket has been closed.
+Args
+Read
+
 
 *********************************************************************************************************************/
 
@@ -993,6 +1000,7 @@ Okay: Data was received successfully, or no data available.
 Args: Invalid arguments provided.
 NoSupport: Socket is not configured for UDP mode.
 BufferOverflow: Receive buffer is too small for the incoming packet.
+NullArgs
 
 -TAGS-
 non-blocking, mutates-input, mutates-object
@@ -1053,6 +1061,8 @@ NullArgs: Invalid arguments provided.
 OutOfRange: Invalid port number specified.
 InvalidState: Socket is not configured for UDP mode.
 NetworkUnreachable: The destination network is unreachable.
+Args
+DataSize
 
 -TAGS-
 non-blocking, consumes-input

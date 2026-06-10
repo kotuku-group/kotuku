@@ -196,6 +196,8 @@ Recursion:
 SystemLocked:
 Terminate: A `MSGID::QUIT` message type was found on the message queue.
 TimeOut:
+AccessObject
+NoSupport
 
 -TAGS-
 main-thread-only, blocking, callback-inlines
@@ -631,6 +633,7 @@ Recursion
 SystemLocked
 Terminate
 TimeOut
+ExceptionThreshold
 
 -TAGS-
 main-thread-only, blocking, callback-inlines

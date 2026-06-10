@@ -694,6 +694,7 @@ Okay:
 NullArgs:
 AccessObject:
 NoAction:        The `Action` is not supported by the object's supporting class.
+Notified
 
 -TAGS-
 mutates-object, blocking, callback-inlines
@@ -1582,6 +1583,8 @@ Okay: The object was initialised.
 LostClass
 DoubleInit
 ObjectCorrupt
+NoSupport
+UseDerived
 
 -TAGS-
 mutates-object, blocking, callback-inlines
@@ -2190,6 +2193,8 @@ NullArgs
 Recursion
 SystemCorrupt
 SystemLocked
+NoSupport
+OwnerPassThrough
 
 -TAGS-
 mutates-object, blocking, callback-inlines

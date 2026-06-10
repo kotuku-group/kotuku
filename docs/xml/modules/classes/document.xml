@@ -72,7 +72,10 @@
         <error code="Okay">Operation successful.</error>
         <error code="AllocMemory">The Document's memory buffer could not be expanded.</error>
         <error code="Mismatch">The data type that was passed to the action is not supported by the Document class.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Recursion">Detected a recursive function call</error>
       </result>
     </action>
 
@@ -185,6 +188,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, callback-held</tags>
@@ -344,6 +348,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">Operation successful, but no data was present for extraction.</error>
         <error code="OutOfRange">The Start index is not within the stream.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>pure-query, caller-owns-result, null-terminated-result</tags>
@@ -384,6 +389,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
@@ -405,6 +411,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

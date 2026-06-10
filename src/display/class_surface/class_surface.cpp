@@ -1068,6 +1068,7 @@ int(RNF) Flags: Private
 
 -ERRORS-
 Okay
+Notified
 
 -TAGS-
 mutates-object, private

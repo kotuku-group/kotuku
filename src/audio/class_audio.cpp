@@ -901,6 +901,9 @@ Okay: The new volume was applied successfully.
 Args
 NullArgs
 OutOfRange: The `Volume` or `Index` is out of the acceptable range.
+NoSupport
+NotInitialised
+Search
 
 -TAGS-
 blocking, mutates-object

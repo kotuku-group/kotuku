@@ -460,7 +460,7 @@ ActionArray clActions[] = {
 };
 </pre>
 
-Note: Never refer to method ID's in an action list - the #Methods field is provided for this purpose.
+Note: Never refer to method IDs in an action list - the #Methods field is provided for this purpose.
 
 *********************************************************************************************************************/
 

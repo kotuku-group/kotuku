@@ -528,6 +528,7 @@ ptr(func) Callback: Receives the match results.
 Okay: At least one match was found and processed.
 NullArgs: One or more required input arguments were null.
 Search: No matches were found.
+Terminate
 
 -TAGS-
 callback-inlines, does-not-take-ownership

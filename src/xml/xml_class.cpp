@@ -77,11 +77,11 @@ Clear: Completely clears all XML data and resets the object to its initial state
 The Clear action removes parsed XML content, namespace base URI mappings, DOCTYPE information, entity data, notation
 data and parser status.  The object remains usable and can receive new XML data afterwards.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay
+
+-TAGS-
+mutates-object
 -END-
 *********************************************************************************************************************/
 
@@ -121,9 +121,6 @@ local xml = obj.new('xml')
 local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 </code>
 
--TAGS-
-mutates-object, copies-input
-
 -ERRORS-
 Okay
 NullArgs
@@ -132,6 +129,9 @@ InvalidData
 Syntax
 Failed
 UnbalancedXML
+
+-TAGS-
+mutates-object, copies-input
 
 -END-
 
@@ -182,14 +182,14 @@ Compile and Evaluate functions in the XPath module.
 strview Statement: An XQuery expression to evaluate.
 ^&string Result: The evaluation result is returned here.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay
 NullArgs
 FieldNotSet
 NewObject
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -247,14 +247,15 @@ unrelated branches are discarded.
 -INPUT-
 strview XPath: XPath/XQuery expression that identifies the target tag to retain.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: The XML structure now contains only the first matched subtree.
 NullArgs: The XPath parameter was empty.
 Search: No matching tag could be found for the specified XPath expression.
 NewObject
+Terminate
+
+-TAGS-
+mutates-object
 
 -END-
 
@@ -332,15 +333,16 @@ strview Expression: A valid XQuery expression.
 ptr(func) Callback: Optional pointer to a callback function for processing multiple matches.
 &int Result: UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.
 
--TAGS-
-mutates-object, callback-inlines
-
 -ERRORS-
 Okay: A matching tag was found (or callback processing completed successfully).
 NullArgs: The Expression was empty.
 NoData: The XML document contains no data to search.
 Search: No matching tag could be found for the specified expression.
 NewObject
+Terminate
+
+-TAGS-
+mutates-object, callback-inlines
 
 -END-
 
@@ -430,13 +432,13 @@ int Index: The unique identifier of the XML tag to search.
 strview Attrib: The name of the attribute to retrieve.  If empty, the element's tag name is returned instead.
 ^&string Value: Receives the attribute value.  It is cleared if the specified attribute does not exist.
 
--TAGS-
-pure-query, case-insensitive
-
 -ERRORS-
 Okay: The attribute was successfully found and its value returned.
 NullArgs: Required arguments were not specified correctly.
 NotFound: Either the specified tag Index does not exist, or the named attribute was not found within the tag.
+
+-TAGS-
+pure-query, case-insensitive
 
 -END-
 
@@ -501,13 +503,13 @@ It is recommended that C++ programs bypass this method and access the !XMLAttrib
 int Index: The unique identifier of the XML element from which to extract content.
 ^&string Buffer: Receives the extracted content string.
 
--TAGS-
-pure-query
-
 -ERRORS-
 Okay: The content string was successfully extracted and copied to the buffer.
 NullArgs: Either the Buffer parameter was NULL or other required arguments were missing.
 NotFound: The tag identified by Index does not exist in the XML structure.
+
+-TAGS-
+pure-query
 
 -END-
 
@@ -548,13 +550,13 @@ Entity names are case-sensitive and must match exactly as declared.
 strview Name: The name of the entity to retrieve.  This must correspond to a parsed entity declaration.
 ^&string Value: Receives the resolved entity value on success.
 
--TAGS-
-pure-query, case-sensitive
-
 -ERRORS-
 Okay: The entity was found and its value returned.
 NullArgs: Either the Name was empty or Value parameter was NULL.
 Search: No matching entity could be found for the specified name.
+
+-TAGS-
+pure-query, case-sensitive
 
 -END-
 
@@ -585,13 +587,13 @@ This method retrieves the original namespace URI string for a given namespace UI
 uint NamespaceID: The UID of the namespace.
 ^&string Result: Receives the namespace URI.
 
--TAGS-
-pure-query
-
 -ERRORS-
 Okay: The namespace URI was successfully retrieved.
 NullArgs: Required arguments were not specified correctly.
 Search: No namespace found for the specified UID.
+
+-TAGS-
+pure-query
 
 -END-
 
@@ -624,13 +626,13 @@ returned as a single string separated by a single space.
 strview Name: The notation name to look up.
 ^&string Value: Receives the notation descriptor on success.
 
--TAGS-
-pure-query, case-sensitive
-
 -ERRORS-
 Okay: The notation was found and its descriptor returned.
 NullArgs: Either the Name was empty or Value parameter was NULL.
 Search: No matching notation could be found for the specified name.
+
+-TAGS-
+pure-query, case-sensitive
 
 -END-
 
@@ -662,13 +664,13 @@ prior to retrieval, and an `ERR::NotFound` error will be returned if it is inval
 int Index:  The index of the tag that is being retrieved.
 &struct(*XTag) Result: The !XTag is returned in this parameter.
 
--TAGS-
-pure-query, object-owns-result
-
 -ERRORS-
 Okay
 NullArgs
 NotFound: The Index is not recognised.
+
+-TAGS-
+pure-query, object-owns-result
 
 -END-
 
@@ -745,15 +747,15 @@ int(XMI) Where: Specifies the insertion position relative to the target element.
 strview Content: The text content to insert.  Special XML characters will be automatically escaped.
 &int Result: Pointer to an integer that will receive the unique identifier of the newly created content node.
 
--TAGS-
-mutates-object, copies-input
-
 -ERRORS-
 Okay: The content was successfully inserted and a new content node was created.
 NullArgs: Required parameters were NULL or not properly specified.
 NotFound: The target Index does not correspond to a valid XML element.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
 Args: The Where parameter specifies an invalid insertion position.
+
+-TAGS-
+mutates-object, copies-input
 
 -END-
 
@@ -814,9 +816,6 @@ int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag
 strview XML: An XML statement to parse.
 &int Result: The resulting tag index.
 
--TAGS-
-mutates-object, copies-input
-
 -ERRORS-
 Okay: The statement was added successfully.
 Args: The Where parameter specifies an invalid insertion position.
@@ -828,6 +827,9 @@ InvalidData
 Syntax
 Failed
 UnbalancedXML
+
+-TAGS-
+mutates-object, copies-input
 
 -END-
 
@@ -910,9 +912,6 @@ int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag
 strview XML: XML statement to parse and insert.
 &int Result: The index of the new tag is returned here.
 
--TAGS-
-mutates-object, copies-input
-
 -ERRORS-
 Okay: The XML statement was successfully inserted at the specified XPath location.
 NullArgs: Required parameters were NULL or not properly specified.
@@ -926,6 +925,10 @@ InvalidData
 Syntax
 Failed
 UnbalancedXML
+Terminate
+
+-TAGS-
+mutates-object, copies-input
 
 -END-
 
@@ -996,9 +999,6 @@ int Total: The total number of sibling tags, including the targeted tag, to move
 int DestIndex: The destination tag index.
 int(XMI) Where: Use `PREV` or `NEXT` to insert behind or ahead of the target tag.  Use `CHILD` or `CHILD_END` for a child insert.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: Tags were moved successfully.
 Args: Invalid parameter values were provided.
@@ -1006,6 +1006,9 @@ NullArgs: Required parameters were NULL or not properly specified.
 NotFound: Either the source or destination tag index does not exist.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
 SanityCheckFailed: An internal consistency check failed during the move operation.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1095,13 +1098,13 @@ efficiently throughout the XML document.
 strview URI: The namespace URI to register. Must not be empty.
 &uint Result: Pointer to an integer that will receive the UID for the namespace URI.
 
--TAGS-
-mutates-object, copies-input
-
 -ERRORS-
 Okay: The namespace was successfully registered.
 NullArgs: Required arguments were not specified correctly.
 Args: The URI could not be registered.
+
+-TAGS-
+mutates-object, copies-input
 
 -END-
 
@@ -1138,14 +1141,14 @@ Note: Removing tags will destabilise all cached address pointers that have been 
 int Index: Reference to the tag that will be removed.
 int Total: The total number of sibling tags to delete, including the indicated tag.  A value of one or less removes only the indicated tag and its children.  The requested range should stay within the available sibling sequence.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: The tag(s) were successfully removed.
 NullArgs: Required parameters were NULL or not properly specified.
 NotFound: The specified tag Index does not exist in the XML structure.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1206,14 +1209,15 @@ This method is volatile and will destabilise any cached address pointers that ha
 strview XPath: An XML path string.
 int Limit: The maximum number of matching tags to delete.  A value of one or zero removes only the indicated tag and its children.  A value of -1 removes all matching tags.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: The matching tag(s) or attribute(s) were successfully removed.
 NullArgs: Required parameters were NULL or not properly specified.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
 NoData: The XML document contains no data to process.
+Terminate
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1311,13 +1315,13 @@ strview Prefix: The namespace prefix to resolve.  Use an empty string for the de
 int TagID: The tag ID defining the starting scope for namespace resolution.
 &uint Result: Receives the resolved namespace URI hash.
 
--TAGS-
-pure-query
-
 -ERRORS-
 Okay: The prefix was successfully resolved.
 NullArgs: Required arguments were not specified correctly.
 Search: The prefix could not be resolved in any accessible scope, or TagID did not identify a tag.
+
+-TAGS-
+pure-query
 
 -END-
 
@@ -1369,14 +1373,14 @@ int Index: Index to a source tag for which serialisation will start.  Set to zer
 int(XMF) Flags: Use `INCLUDE_SIBLINGS` to include siblings of the tag found at Index.
 ^&string Result: The resulting string is returned in this parameter.
 
--TAGS-
-pure-query
-
 -ERRORS-
 Okay: The XML string was successfully serialised.
 NullArgs: Required parameters were NULL or not properly specified.
 NoData: No information has been loaded into the XML object.
 NotFound: The specified tag Index does not exist in the XML structure.
+
+-TAGS-
+pure-query
 
 -END-
 
@@ -1446,9 +1450,6 @@ int(XMS) Attrib: Attribute index to update, or `NEW`, `UPDATE`, `UPDATE_ONLY` or
 strview Name: New attribute name.  If empty during indexed updates, the name is not changed.  If Attrib is `UPDATE`, `UPDATE_ONLY` or `REMOVE`, this name is used to find the attribute.
 strview Value: String containing the new value for the attribute.
 
--TAGS-
-mutates-object, copies-input, case-insensitive
-
 -ERRORS-
 Okay
 NullArgs
@@ -1456,6 +1457,9 @@ Args
 OutOfRange: The `Attrib` value is outside the tag's attribute array.
 Search: The tag identified by `Index` or the attribute identified by `Name` could not be found.
 ReadOnly: The XML object is read-only.
+
+-TAGS-
+mutates-object, copies-input, case-insensitive
 -END-
 
 *********************************************************************************************************************/
@@ -1555,9 +1559,6 @@ Please note that making changes to the XML tree will render all previously obtai
 strview Key: XPath expression identifying the element or attribute to update.
 strview Value: New attribute or content value.
 
--TAGS-
-mutates-object, copies-input
-
 -ERRORS-
 Okay
 NullArgs
@@ -1565,6 +1566,10 @@ ReadOnly: Changes to the XML structure are not permitted.
 Search: Failed to find the tag referenced by the XPath.
 SanityCheckFailed
 NewObject
+Terminate
+
+-TAGS-
+mutates-object, copies-input
 
 -END-
 
@@ -1648,13 +1653,13 @@ This method assigns a namespace to an XML tag using the namespace's UID.
 int TagID: The unique identifier of the XML tag.
 int NamespaceID: The UID of the namespace to assign.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: The namespace was successfully assigned to the tag.
 NullArgs: Required arguments were not specified correctly.
 NotFound: The specified tag was not found.
+
+-TAGS-
+mutates-object
 
 -END-
 
@@ -1694,15 +1699,16 @@ strview XPath: Sort everything under the specified tag, or empty to sort the ent
 strview Sort: A sorting instruction string.
 int(XSF) Flags: Optional flags.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: The XML object was successfully sorted.
 NullArgs: Required parameters were NULL or not properly specified.
 Search: The provided XPath failed to locate a tag.
 ReadOnly: The XML object is in read-only mode and cannot be modified.
 NewObject
+Terminate
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2078,15 +2084,15 @@ schema metadata is available for validation and XQuery evaluation routines that 
 -INPUT-
 strview Path: File system path to the XML Schema (XSD) document.
 
--TAGS-
-blocking, mutates-object, creates-resource
-
 -ERRORS-
 Okay: Schema was successfully loaded and parsed.
 NullArgs: The Path argument was not provided.
 NoData: The schema document did not contain any parsable definitions.
 InvalidData: The schema document did not contain a usable root element.
 CreateObject: The file in Path could not be processed as XML content.
+
+-TAGS-
+blocking, mutates-object, creates-resource
 
 -END-
 
@@ -2132,15 +2138,15 @@ This method performs structural and simple type validation of the document using
 `ERR::Okay` when the document conforms to the schema.  Validation failures return an error and populate #ErrorMsg with
 the reason where available.
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay: Validation completed successfully.
 NoSupport: No schema has been loaded for this XML object.
 NoData: The XML document does not contain any parsed tags.
 Search: The schema does not define the root element present in the document.
 InvalidData: The document structure, namespace or element content failed schema validation.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/

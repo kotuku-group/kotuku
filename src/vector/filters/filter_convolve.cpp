@@ -519,7 +519,7 @@ static ERR CONVOLVEFX_Init(extConvolveFX *Self)
 Bias: Used to adjust the final result of each computed RGB value.
 
 After applying the #Matrix to the input image to yield a number and applying the #Divisor, the Bias value is added to
-each component.  One application of Bias is when it is desirable to have .5 gray value be the zero response of the
+each component.  One application of Bias is when it is desirable to have .5 grey value be the zero response of the
 filter.  The Bias value shifts the range of the filter.  This allows representation of values that would otherwise be
 clamped to 0 or 1.  The default is 0.
 
@@ -543,8 +543,8 @@ static ERR CONVOLVEFX_SET_Bias(extConvolveFX *Self, double Value)
 Divisor: Defines the divisor value in the convolution algorithm.
 
 After applying the #Matrix to the input image to yield a number, that number is divided by #Divisor to yield the
-final destination color value.  A divisor that is the sum of all the matrix values tends to have an evening effect
-on the overall color intensity of the result.  The default value is the sum of all values in #Matrix, with the
+final destination colour value.  A divisor that is the sum of all the matrix values tends to have an evening effect
+on the overall colour intensity of the result.  The default value is the sum of all values in #Matrix, with the
 exception that if the sum is zero, then the divisor is set to `1`.
 
 *********************************************************************************************************************/
@@ -569,7 +569,7 @@ static ERR CONVOLVEFX_SET_Divisor(extConvolveFX *Self, double Value)
 -FIELD-
 EdgeMode: Defines the behaviour of the convolve algorithm around the edges of the input image.
 
-The EdgeMode determines how to extend the input image with color values so that the matrix operations can be applied
+The EdgeMode determines how to extend the input image with colour values so that the matrix operations can be applied
 when the #Matrix is positioned at or near the edge of the input image.
 
 *********************************************************************************************************************/

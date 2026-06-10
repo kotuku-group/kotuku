@@ -213,6 +213,7 @@ ptr(func) Function: The function to call when the trigger activates.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
 
 -TAGS-
 mutates-object, callback-held
@@ -410,6 +411,10 @@ Okay
 NullArgs
 AllocMemory: The Document's memory buffer could not be expanded.
 Mismatch:    The data type that was passed to the action is not supported by the Document class.
+NotInitialised
+Recursion
+CreateObject
+
 -END-
 
 *********************************************************************************************************************/
@@ -554,6 +559,8 @@ strview String: Content to insert
 -ERRORS-
 Okay
 NullArgs
+Failed
+NoSupport
 
 -TAGS-
 mutates-object, private
@@ -1678,6 +1685,7 @@ NullArgs
 OutOfRange: The Start index is not within the stream.
 Args
 NoData: Operation successful, but no data was present for extraction.
+AllocMemory
 
 -TAGS-
 pure-query, caller-owns-result, null-terminated-result
@@ -1858,6 +1866,7 @@ ptr(func) Function: The function that is called when the trigger activates.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
 
 -TAGS-
 mutates-object
@@ -1948,6 +1957,7 @@ strview Name: The name of the link to select.  Leave empty if an `Index` is defi
 Okay
 NullArgs
 OutOfRange
+NoSupport
 
 -TAGS-
 mutates-object

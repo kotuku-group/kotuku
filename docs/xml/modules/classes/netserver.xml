@@ -101,6 +101,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongClass">An object is not of the required type</error>
       </result>
       <tags>mutates-object, closes-handle</tags>
     </method>

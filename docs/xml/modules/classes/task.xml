@@ -41,6 +41,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="Failed">General failure</error>
         <error code="TimeOut">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
+        <error code="ProcessCreation">Process creation has failed</error>
         <error code="MissingPath">The Location field has not been set.</error>
       </result>
     </action>
@@ -141,9 +142,11 @@
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
         <error code="DoesNotExist">The environment variable is undefined.</error>
+        <error code="Syntax">Invalid syntax detected</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="ExecViolation">Execution violation - function must be called from the task that owns the object</error>
       </result>
-      <tags>mutates-input</tags>
+      <tags>pure-query, caller-owns-result, mutates-input</tags>
     </method>
 
     <method>
@@ -159,6 +162,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -183,8 +187,11 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
+        <error code="Syntax">Invalid syntax detected</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="TaskExecutionFailed">Task or process execution has failed</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>
@@ -307,7 +314,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
-<p>This field specifies the name of the task or program that has been initialised. It is up to the developer of the program to set the Name which will appear in this field.  If there is no name for the task then the system may assign a randomly generated name.</p>
+<p>This field specifies the task's name, which may be derived from the source program's metadata, if available.</p>
       </description>
     </field>
 
@@ -330,14 +337,7 @@
       <description>
 <p>Command line arguments for a program can be defined here as a vector list, whereby each argument is an independent string.  To illustrate, the following command-line string:</p>
 <pre>1&gt; YourProgram PREFS MyPrefs -file &quot;documents:readme.txt&quot;</pre>
-<p>Would be represented as follows:</p>
-<pre>kt::vector&lt;std::string&gt; Args = {
-   &quot;PREFS&quot;,
-   &quot;MyPrefs&quot;,
-   &quot;-file&quot;,
-   &quot;documents:readme.txt&quot;
-};
-</pre>
+<p>Would be represented as a list containing <code>&quot;PREFS&quot;</code>, <code>&quot;MyPrefs&quot;</code>, <code>&quot;-file&quot;</code> and <code>&quot;documents:readme.txt&quot;</code>.</p>
 <p>The list is compatible with Tiri, and can be iterated as follows:</p>
 <pre>for index, value in processing.task().parameters do
    print(index, ' = ', value)

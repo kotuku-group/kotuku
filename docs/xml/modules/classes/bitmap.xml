@@ -183,6 +183,7 @@
         <error code="UndefinedField">A required field value is undefined</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Notified">Unknown error code.</error>
       </result>
     </action>
 
@@ -371,6 +372,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="AllocMemory">Insufficient memory in recreating the bitmap data buffer.</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
         <error code="CreateObject">A Compression object could not be created.</error>
       </result>
       <tags>mutates-object, creates-resource</tags>
@@ -388,6 +390,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NothingDone">The content is already normalised.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="InvalidDimension">The clipping region is invalid.</error>
         <error code="InvalidState">The Bitmap is not in the expected state (32-bit with an alpha channel).</error>
       </result>
@@ -666,7 +669,7 @@ unpackAlpha(Colour)
 
     <field>
       <name>DataFlags</name>
-      <comment>Defines the memory flags to use in allocating a bitmap's data area.</comment>
+      <comment>Defines the memory flags to use when allocating a bitmap's data area.</comment>
       <access read="R" write="I">Read/Init</access>
       <type lookup="MEM">MEM</type>
       <description>
@@ -683,7 +686,7 @@ unpackAlpha(Colour)
       <type prototype="void (*DrawUCPixel)(objBitmap *, int, int, uint32_t)">FUNCTION *</type>
       <description>
 <p>DrawUCPixel points to the active low-level pixel writer for packed colour or palette-index values.  It is intended for C callers that need direct pixel access.  No clipping or bounds checks are performed.</p>
-<p>The prototype of the DrawUCPixel function is <code>Function(*Bitmap, LONG X, LONG Y, uint32_t Colour)</code>.</p>
+<p>The prototype of the DrawUCPixel function is <code>Function(*Bitmap, LONG X, LONG Y, UINT Colour)</code>.</p>
 <p>The new pixel value is supplied in the <code>Colour</code> parameter.</p>
       </description>
     </field>
@@ -695,7 +698,7 @@ unpackAlpha(Colour)
       <type prototype="void (*DrawUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *)">FUNCTION *</type>
       <description>
 <p>DrawUCRIndex points to the active low-level RGB pixel writer for a caller-supplied address inside <fl>Data</fl>.  It is intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.</p>
-<p>The prototype of the DrawUCRIndex function is <code>Function(*Bitmap, uint8_t *Data, RGB8 *RGB)</code>.</p>
+<p>The prototype of the DrawUCRIndex function is <code>Function(*Bitmap, BYTE *Data, RGB8 *RGB)</code>.</p>
 <p>The Data parameter must point to a location within the Bitmap's graphical address space.  The new pixel value must be defined in the <code>RGB</code> parameter.</p>
 <p>There is no colour-index equivalent because callers can write indexed pixel bytes directly through <fl>Data</fl>.</p>
       </description>
@@ -817,7 +820,7 @@ unpackAlpha(Colour)
       <type prototype="void (*ReadUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *)">FUNCTION *</type>
       <description>
 <p>ReadUCRIndex points to the active low-level RGB pixel reader for a caller-supplied address inside <fl>Data</fl>.  It is intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.</p>
-<p>The prototype of the ReadUCRIndex function is <code>Function(*Bitmap, uint8_t *Data, RGB8 *RGB)</code>.</p>
+<p>The prototype of the ReadUCRIndex function is <code>Function(*Bitmap, BYTE *Data, RGB8 *RGB)</code>.</p>
 <p>The <code>Data</code> parameter must point to a location within the Bitmap's graphical address space.  The pixel value will be returned in the <code>RGB</code> parameter.</p>
 <p>There is no colour-index equivalent because callers can read indexed pixel bytes directly through <fl>Data</fl>.</p>
       </description>

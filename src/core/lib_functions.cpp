@@ -1022,6 +1022,7 @@ double Seconds: The number of seconds to wait for.  Fractional values are suppor
 -ERRORS-
 Okay:
 Cancelled: The thread has been requested to stop and cannot pause.
+Terminate
 
 -TAGS-
 blocking

@@ -420,7 +420,7 @@ static ERR SET_Method(extHTTP *Self, HTM Value)
 -FIELD-
 ObjectMode: The transfer mode used when passing data to a targeted object.
 
-ObjectMode defines the data transfer mode when #OutputObject field has been set for receiving incoming data.
+ObjectMode defines the data transfer mode when the #OutputObject field has been set for receiving incoming data.
 The default setting is `DATA::FEED`, which passes data through the data feed system (see also the #Datatype to define
 the type of data being sent to the object).  The alternative method is `READ_WRITE`, which uses the Write action to
 send data to the targeted object.

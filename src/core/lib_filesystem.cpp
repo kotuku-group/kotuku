@@ -508,6 +508,7 @@ strview PathB: File location 2.
 Okay: The file paths refer to the same file.
 False: The file paths refer to different files.
 NullArgs
+True
 
 -TAGS-
 blocking, path-resolved
@@ -1161,6 +1162,7 @@ OpenFile
 InvalidPath
 Read
 File
+VirtualVolume
 
 -TAGS-
 mutates-input, blocking, path-resolved

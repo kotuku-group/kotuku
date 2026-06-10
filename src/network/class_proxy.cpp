@@ -107,6 +107,8 @@ database on the success of this function.
 
 -ERRORS-
 Okay: Proxy deleted.
+Failed
+CreateObject
 
 -TAGS-
 blocking, mutates-object
@@ -189,6 +191,7 @@ int Enabled: Set to `true` to return only enabled proxies, `false` for disabled 
 -ERRORS-
 Okay: A proxy was discovered.
 NoSearchResult: No matching proxy was discovered.
+CreateObject
 
 -TAGS-
 blocking, mutates-object

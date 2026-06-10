@@ -465,6 +465,9 @@ NoPermission: The user does not have the necessary permissions to delete the fil
 ReadOnly: The file is on a read-only filesystem.
 Locked: The file is in use.
 BufferOverflow: The file path string is too long.
+DeleteFile
+Cancelled
+SystemCall
 
 -TAGS-
 blocking, mutates-object, closes-handle, callback-inlines
@@ -573,6 +576,14 @@ FileNotFound:
 ResolvePath:
 Search: The file could not be found.
 NoPermission: Permission was denied when accessing or creating the file.
+AllocMemory
+InvalidPath
+ExpectedFile
+UseDerived
+VirtualVolume
+CreateFile
+File
+
 
 *********************************************************************************************************************/
 
@@ -919,6 +930,8 @@ Okay
 Args
 NullArgs
 DirEmpty: The index has reached the end of the file list.
+ExpectedFolder
+CreateObject
 
 -TAGS-
 blocking, updates-seek-index, caller-owns-result
@@ -1000,6 +1013,9 @@ OutOfRange: Invalid `Length` parameter.
 FileReadFlag: The `FL::READ` flag was not specified on initialisation.
 ExpectedFolder: The file object refers to a folder.
 Failed: The file object refers to a folder, or the object is corrupt.
+ExpectedFile
+SystemCall
+
 -END-
 
 *********************************************************************************************************************/
@@ -1097,6 +1113,8 @@ Failed: The file object refers to a folder.
 ObjectCorrupt: The internal file handle is missing.
 BufferOverflow: The line is too long for the read routine (4096 byte limit).
 NoData: There is no more data left to read.
+NullArgs
+ExpectedFile
 
 -TAGS-
 blocking, updates-seek-index, object-owns-result, null-terminated-result
@@ -1416,6 +1434,7 @@ int Length: Limits the total amount of data to be streamed.
 Okay
 Args
 NoSupport: The file is not streamed.
+NullArgs
 
 -TAGS-
 non-blocking, mutates-object, callback-held

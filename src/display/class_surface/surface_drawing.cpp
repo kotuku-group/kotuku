@@ -392,6 +392,7 @@ int(EXF) Flags: Optional flags.
 
 -ERRORS-
 Okay
+Notified
 
 -TAGS-
 mutates-object
@@ -484,6 +485,7 @@ int Height: Height of the region to invalidate.
 -ERRORS-
 Okay:
 AccessMemory: Failed to access the internal surface list.
+Notified
 
 -TAGS-
 mutates-object

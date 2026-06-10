@@ -885,6 +885,7 @@ double Scale:  Set to 1.0 (recommended) to trace the path at a scale of 1 to 1.
 Okay
 NullArgs
 Function
+Terminate
 
 -TAGS-
 callback-inlines, updates-seek-index
