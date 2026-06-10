@@ -494,7 +494,7 @@ static ERR xq_document_object_exists(objXQuery *, std::string_view, const std::v
    OBJECTID object_id = 0;
    bool exists = false;
    if ((not object_name.empty()) and
-      (FindObject(object_name.c_str(), CLASSID::NIL, &object_id) IS ERR::Okay)) {
+      (!FindObject(object_name.c_str(), CLASSID::NIL, &object_id))) {
       exists = valid_objectid(Parser->Self, object_id) ? true : false;
    }
 
@@ -1324,7 +1324,7 @@ static ERR xq_select_to_print_text(const XPathValue &Value, std::string_view Fal
    OutText.clear();
 
    if (HasValue) {
-      if (auto err = xq_stringify_select_value(Value, OutText); err IS ERR::Okay) return ERR::Okay;
+      if (auto err = xq_stringify_select_value(Value, OutText); !err) return ERR::Okay;
    }
 
    OutText.assign(Fallback);

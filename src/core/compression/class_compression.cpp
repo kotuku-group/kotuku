@@ -788,7 +788,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    LONG len;
    LONG cmpsize = 0;
    UBYTE input[4096];
-   while ((error = acRead(file, input, sizeof(input), &len)) IS ERR::Okay) {
+   while (!(error = acRead(file, input, sizeof(input), &len))) {
       if (!len) break; // No more data to read.
 
       error = mtCompressStream(compress, input, len, &callback, NULL, 0);
@@ -802,7 +802,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    }
 
    if (!error) {
-      if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
+      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
       }
@@ -1799,8 +1799,8 @@ static ERR COMPRESSION_Init(extCompression *Self)
 
 static ERR COMPRESSION_NewObject(extCompression *Self)
 {
-   if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output) IS ERR::Okay) {
-      if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input) IS ERR::Okay) {
+   if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output)) {
+      if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input)) {
          Self->CompressionLevel = 60; // 60% compression by default
          Self->Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
          Self->MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k

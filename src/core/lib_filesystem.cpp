@@ -307,7 +307,7 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info)
          Info.Created.clear();
          Info.Modified.clear();
 
-         if ((error = vfs.GetInfo(path, Info)) IS ERR::Okay) {
+         if (!(error = vfs.GetInfo(path, Info))) {
             Info.Timestamp = calc_timestamp(&Info.Modified);
          }
 
@@ -1642,7 +1642,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
          if (glDefaultPermissions != PERMIT::NIL) CreateFolder(dest, glDefaultPermissions);
          else CreateFolder(dest, PERMIT::USER|PERMIT::GROUP);
 
-         if ((error = fs_copydir(srcbuffer, dest, &feedback, Callback, Move)) IS ERR::Okay) {
+         if (!(error = fs_copydir(srcbuffer, dest, &feedback, Callback, Move))) {
             // Delete the source if we are moving folders
             if (Move) return DeleteFile(srcbuffer, nullptr);
          }
@@ -1864,7 +1864,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       }
 
       std::string srcbuffer(src);
-      if ((error = fs_copydir(srcbuffer, dest, &feedback, Callback, Move)) IS ERR::Okay) {
+      if (!(error = fs_copydir(srcbuffer, dest, &feedback, Callback, Move))) {
          // Delete the source if we are moving folders
          if (Move) return DeleteFile(srcbuffer, nullptr);
       }
@@ -2027,7 +2027,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
 
    DirInfo *dir;
    if (auto error = OpenDir(Source, RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir); !error) {
-      while ((error = ScanDir(dir)) IS ERR::Okay) {
+      while (!(error = ScanDir(dir))) {
          FileInfo *file = dir->Info;
          if ((file->Flags & RDF::LINK) != RDF::NIL) {
             if ((vsrc.ReadLink) and (vdest.CreateLink)) {
@@ -2043,7 +2043,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
                }
 
                STRING link;
-               if ((error = vsrc.ReadLink(Source, &link)) IS ERR::Okay) {
+               if (!(error = vsrc.ReadLink(Source, &link))) {
                   DeleteFile(Dest, nullptr);
                   error = vdest.CreateLink(Dest, link);
                }

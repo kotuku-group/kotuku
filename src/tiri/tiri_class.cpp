@@ -377,7 +377,7 @@ static ERR TIRI_Activate(objScript *Self)
 
       Self->ActivationCount++;
 
-      if (Self->Error IS ERR::Okay) run_script(Self); // Will set Self->Error if there's an issue
+      if (!Self->Error) run_script(Self); // Will set Self->Error if there's an issue
 
       prv->Recurse--;
 
@@ -535,7 +535,7 @@ static ERR TIRI_Init(objScript *Self)
             objFile::create cache_file = { fl::Path(Self->CacheFile) };
             if (cache_file.ok()) {
                auto cache_error = cache_file->get(FID_Timestamp, cache_ts);
-               if (cache_error IS ERR::Okay) cache_error = cache_file->get(FID_Size, cache_size);
+               if (!cache_error) cache_error = cache_file->get(FID_Size, cache_size);
                if (cache_error != ERR::Okay) cache_ts = -1;
             }
          }
@@ -573,7 +573,7 @@ static ERR TIRI_Init(objScript *Self)
 
    auto prv = (prvTiri *)Self->DerivedPtr;
    if ((!error) and (not prv)) {
-      if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+      if (!AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr)) {
          prv = (prvTiri *)Self->DerivedPtr;
          new (prv) prvTiri;
       }
@@ -627,7 +627,7 @@ static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
 
 static ERR TIRI_NewObject(objScript *Self)
 {
-   if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr)) {
       auto prv = (prvTiri *)Self->DerivedPtr;
       new (prv) prvTiri;
       return ERR::Okay;

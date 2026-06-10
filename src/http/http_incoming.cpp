@@ -969,7 +969,7 @@ restart:
       std::string buffer;
       buffer.resize(512);
       int len;
-      if ((acRead(Socket, buffer.data(), buffer.size(), &len) IS ERR::Okay) and (len > 0)) {
+      if ((!acRead(Socket, buffer.data(), buffer.size(), &len)) and (len > 0)) {
          log.warning("WARNING: Received data whilst in state %d.", int(Self->CurrentState));
          log.warning("Content (%d bytes) Follows:\n%.80s", len, buffer.c_str());
       }

@@ -4664,7 +4664,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
+   if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;

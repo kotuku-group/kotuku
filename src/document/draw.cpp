@@ -530,7 +530,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                gen_scene_graph(*button.viewport, button.segments);
 
                double wx, wy;
-               if (position_widget(button, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy) IS ERR::Okay) {
+               if (!position_widget(button, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy)) {
                   Self->VPToEntity.emplace(button.viewport.id, vp_to_entity { &button });
                }
                break;
@@ -543,7 +543,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                if (!checkbox.label.empty()) {
                   if (checkbox.label_pos) {
                      // Right-sided labels can be integrated with the widget so that clicking affects state.
-                     if (position_widget(checkbox, segment, Viewport, stack_style.top(), x_advance, checkbox.label_width + checkbox.label_pad.px(*this), true, wx, wy) IS ERR::Okay) {
+                     if (!position_widget(checkbox, segment, Viewport, stack_style.top(), x_advance, checkbox.label_width + checkbox.label_pad.px(*this), true, wx, wy)) {
                         double x, y;
                         auto font = stack_style.top()->get_font();
                         const double avail_space = checkbox.final_height - font->metrics.Descent;
@@ -574,7 +574,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                      auto font = stack_style.top()->get_font();
                      auto x_label = x_advance;
                      x_advance += checkbox.label_width + checkbox.label_pos;
-                     if (position_widget(checkbox, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy) IS ERR::Okay) {
+                     if (!position_widget(checkbox, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy)) {
                         const double avail_space = checkbox.final_height - font->metrics.Descent;
                         double y = wy + avail_space - ((avail_space - font->metrics.Height) * 0.5);
 

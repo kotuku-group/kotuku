@@ -428,7 +428,7 @@ int64_t GetResource(RES Resource)
          char str[2048];
          int result;
          int64_t freemem = 0;
-         if (ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result) IS ERR::Okay) {
+         if (!ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result)) {
             int i = 0;
             while (i < result) {
                if (startswith("Cached", str+i)) freemem += strtoll(str+i, nullptr, 0) * 1024LL;

@@ -1299,7 +1299,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
 #endif // __xwindows__
 
-   if (lock_surface((extBitmap *)Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface((extBitmap *)Bitmap, SURFACE_WRITE)) {
       if (((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32)) { // 32-bit alpha blending support
          uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
 

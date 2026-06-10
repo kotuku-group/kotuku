@@ -211,12 +211,12 @@ extern "C" void end_of_stream(OBJECTPTR Object, int BytesRemaining)
 
    extAudio *audio;
    ERR error;
-   if ((error = NewObject(CLASSID::AUDIO, &audio)) IS ERR::Okay) {
+   if (!(error = NewObject(CLASSID::AUDIO, &audio))) {
       SetName(audio, "SystemAudio");
       SetOwner(audio, CurrentTask());
 
       if (!InitObject(audio)) {
-         if ((error = audio->activate()) IS ERR::Okay) {
+         if (!(error = audio->activate())) {
             Self->AudioID = audio->UID;
          }
          else FreeResource(audio);
@@ -379,7 +379,7 @@ static ERR SOUND_Activate(extSound *Self)
          }
          else return ERR::AccessObject;
       }
-      else if (AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
+      else if (!AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
          auto dc = deferred_call([&buffer] { FreeResource(buffer); });
 
          auto client_pos = Self->Position;

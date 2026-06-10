@@ -407,7 +407,7 @@ static int module_load(lua_State *Lua)
          }
 
          if (process_constants) {
-            if ((defs_error = process_module_defs(Lua->script, loaded_mod, modname)) IS ERR::Okay) {
+            if (!(defs_error = process_module_defs(Lua->script, loaded_mod, modname))) {
                glLoadedConstants.insert(modname);
             }
          }
@@ -1392,7 +1392,7 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                   }
                   else {
                      MemInfo meminfo;
-                     if (MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo) IS ERR::Okay) size = meminfo.Size;
+                     if (!MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo)) size = meminfo.Size;
                   }
 
                   if (size > 0) lua_pushlstring(prv->Lua, ((CSTRING *)var)[0], size);

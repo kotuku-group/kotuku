@@ -498,7 +498,7 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
    // A clip-path with an ID can only be added once (important when a clip-path is repeatedly referenced)
 
-   if (Self->Scene->findDef(id.c_str(), nullptr) IS ERR::Okay) return;
+   if (!Self->Scene->findDef(id.c_str(), nullptr)) return;
 
    objVector *clip;
    if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
@@ -2055,9 +2055,9 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, double Wid
 
             uint8_t *output;
             int size = strlen(val);
-            if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&output) IS ERR::Okay) {
+            if (!AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&output)) {
                int written;
-               if ((error = kt::Base64Decode(&state, val, size, output, &written)) IS ERR::Okay) {
+               if (!(error = kt::Base64Decode(&state, val, size, output, &written))) {
                   Path = "temp:svg.img";
                   if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
                      int result;
@@ -2142,7 +2142,7 @@ void svgState::proc_def_image(XTag &Tag) noexcept
 
       if ((!id.empty()) and (!src.empty())) {
          objImage *pic;
-         if (load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height) IS ERR::Okay) {
+         if (!load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height)) {
             image->set(FID_Image, pic);
             if (!InitObject(image)) {
                if (!Self->Cloning) {
@@ -3192,7 +3192,7 @@ ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
 
             if (href) {
                objVector *path;
-               if (Self->Scene->findDef(href->c_str(), (OBJECTPTR *)&path) IS ERR::Okay) {
+               if (!Self->Scene->findDef(href->c_str(), (OBJECTPTR *)&path)) {
                   anim.mpath = path;
                }
             }
@@ -3672,7 +3672,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_append_path: {
          // The append-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
-         if (Self->Scene->findDef(StrValue.c_str(), &other) IS ERR::Okay) Vector->setAppendPath(other);
+         if (!Self->Scene->findDef(StrValue.c_str(), &other)) Vector->setAppendPath(other);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }
@@ -3680,7 +3680,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_join_path: {
          // The join-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
-         if (Self->Scene->findDef(StrValue.c_str(), &other) IS ERR::Okay) {
+         if (!Self->Scene->findDef(StrValue.c_str(), &other)) {
             Vector->set(FID_AppendPath, other);
             Vector->setFlags(VF::JOIN_PATHS|Vector->Flags);
          }
@@ -3690,7 +3690,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_transition: {
          OBJECTPTR trans = nullptr;
-         if (Self->Scene->findDef(StrValue.c_str(), &trans) IS ERR::Okay) Vector->setTransition(trans);
+         if (!Self->Scene->findDef(StrValue.c_str(), &trans)) Vector->setTransition(trans);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }

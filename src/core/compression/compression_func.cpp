@@ -295,7 +295,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    }
 
    PERMIT permissions;
-   if (file->get(FID_Permissions, (int &)permissions) IS ERR::Okay) {
+   if (!file->get(FID_Permissions, (int &)permissions)) {
       if ((permissions & PERMIT::USER_READ) != PERMIT::NIL)   entry.Flags |= ZIP_UREAD;
       if ((permissions & PERMIT::GROUP_READ) != PERMIT::NIL)  entry.Flags |= ZIP_GREAD;
       if ((permissions & PERMIT::OTHERS_READ) != PERMIT::NIL) entry.Flags |= ZIP_OREAD;
@@ -485,7 +485,7 @@ static ERR fast_scan_zip(extCompression *Self)
 
    zipentry *list, *scan;
    int total_files = 0;
-   if (AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list) IS ERR::Okay) {
+   if (!AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list)) {
       log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
       if (acRead(Self->FileIO, list, tail.listsize, nullptr) != ERR::Okay) {
          FreeResource(list);

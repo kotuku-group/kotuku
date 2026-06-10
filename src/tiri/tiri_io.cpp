@@ -534,7 +534,7 @@ static int file_read(lua_State *Lua)
                      if (remaining > 0) {
                         std::string buffer(remaining, '\0');
                         int bytes_read;
-                        if (acRead(file, buffer.data(), remaining, &bytes_read) IS ERR::Okay) {
+                        if (!acRead(file, buffer.data(), remaining, &bytes_read)) {
                            buffer.resize(bytes_read);
                            lua_pushlstring(Lua, buffer.data(), bytes_read);
                         }
@@ -564,7 +564,7 @@ static int file_read(lua_State *Lua)
             if (bytes_to_read > 0) {
                std::string buffer(bytes_to_read, '\0');
                int bytes_read;
-               if (acRead(file, buffer.data(), bytes_to_read, &bytes_read) IS ERR::Okay and bytes_read > 0) {
+               if ((!acRead(file, buffer.data(), bytes_to_read, &bytes_read)) and bytes_read > 0) {
                   buffer.resize(bytes_read);
                   lua_pushlstring(Lua, buffer.data(), bytes_read);
                }
@@ -696,7 +696,7 @@ static int io_readAll(lua_State *Lua)
    if (file_size > 0) {
       std::string buffer(file_size, '\0');
       int bytes_read;
-      if (file->read(buffer.data(), file_size, &bytes_read) IS ERR::Okay and bytes_read IS file_size) {
+      if ((!file->read(buffer.data(), file_size, &bytes_read)) and bytes_read IS file_size) {
          lua_pushlstring(Lua, buffer.data(), bytes_read);
          return 1;
       }

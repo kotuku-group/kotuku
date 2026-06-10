@@ -363,12 +363,12 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {
                int size;
-               if ((error = file->get(FID_Size, size)) IS ERR::Okay) {
+               if (!(error = file->get(FID_Size, size))) {
                   if (size <= 0) return ERR::NoData;
 
                   if (auto buffer = new (std::nothrow) char[size+1]) {
                      int result;
-                     if ((error = file->read(buffer, size, &result)) IS ERR::Okay) {
+                     if (!(error = file->read(buffer, size, &result))) {
                         buffer[result] = 0;
                         error = Self->dataFeed(Self, DATA::TEXT, buffer, result);
                      }
@@ -1717,7 +1717,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
    else if (Args->Format IS DATA::RAW) {
       STRING output;
       auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
-      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output) IS ERR::Okay) {
+      if (!AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output)) {
          copymem(Self->Stream.data.data() + Args->Start, output, size);
          output[size] = 0;
          Args->Result = output;

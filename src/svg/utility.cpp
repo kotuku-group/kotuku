@@ -115,7 +115,7 @@ ERR svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
       if (Vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Failed;
 
       int total;
-      if (Vector->get(FID_FillColour, (float * &)RGB, total) IS ERR::Okay) {
+      if (!Vector->get(FID_FillColour, (float * &)RGB, total)) {
          if (RGB.Alpha != 0) return ERR::Okay;
       }
       Vector = (objVector *)Vector->Parent;
@@ -533,7 +533,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
          for (auto &inherit : Self->Inherit) {
             OBJECTPTR ref;
-            if (Self->Scene->findDef(inherit.ID.c_str(), &ref) IS ERR::Okay) {
+            if (!Self->Scene->findDef(inherit.ID.c_str(), &ref)) {
                inherit.Object->set(FID_Inherit, ref);
             }
             else log.warning("Failed to resolve ID %s for inheritance.", inherit.ID.c_str());

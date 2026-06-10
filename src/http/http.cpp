@@ -890,7 +890,7 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    // Buffer the HTTP command string to the socket (will write on connect if we're not connected already).
 
-   if (acWrite(Self->Socket, cstr.c_str(), cstr.length()) IS ERR::Okay) {
+   if (!acWrite(Self->Socket, cstr.c_str(), cstr.length())) {
       if (Self->Socket->State IS NTC::DISCONNECTED) {
          const auto server_host = Self->ProxyServer.empty() ? std::string_view(Self->Host) :
             std::string_view(Self->ProxyServer);

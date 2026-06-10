@@ -321,8 +321,8 @@ static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
 
    auto pic = objImage::create { fl::Width(width), fl::Height(height), fl::Flags(PCF::ALPHA|PCF::NEW) };
    if (pic.ok()) {
-      if ((error = Self->render(pic->Bitmap, 0, 0, width, height)) IS ERR::Okay) {
-         if ((error = acSaveImage(*pic, Args->Dest, Args->ClassID)) IS ERR::Okay) {
+      if (!(error = Self->render(pic->Bitmap, 0, 0, width, height))) {
+         if (!(error = acSaveImage(*pic, Args->Dest, Args->ClassID))) {
             return ERR::Okay;
          }
       }
@@ -372,10 +372,10 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
          int index = xml->Tags.back().ID;
 
          XTag *tag;
-         if ((error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>", &tag)) IS ERR::Okay) {
+         if (!(error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>", &tag))) {
             bool multiple_viewports = (Self->Scene->Viewport->Next) ? true : false;
             if (multiple_viewports) {
-               if ((error = save_svg_defs(Self, *xml, Self->Scene, index)) IS ERR::Okay) {
+               if (!(error = save_svg_defs(Self, *xml, Self->Scene, index))) {
                   for (auto scan=Self->Scene->Viewport; scan; scan=(objVectorViewport *)scan->Next) {
                      if (!scan->Child) continue; // Ignore dummy viewports with no content
                      save_svg_scan(Self, *xml, scan, index);
@@ -414,7 +414,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                }
 
                if (!error) {
-                  if ((error = save_svg_defs(Self, *xml, Self->Scene, index)) IS ERR::Okay) {
+                  if (!(error = save_svg_defs(Self, *xml, Self->Scene, index))) {
                      for (auto scan=((objVector *)Self->Viewport)->Child; scan; scan=scan->Next) {
                         save_svg_scan(Self, *xml, scan, index);
                      }

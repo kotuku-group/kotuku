@@ -758,7 +758,7 @@ ERR GeneratePath(const std::string_view &Sequence, APTR *Path)
    }
    else {
       std::vector<PathCommand> paths;
-      if ((error = read_path(paths, Sequence)) IS ERR::Okay) {
+      if (!(error = read_path(paths, Sequence))) {
          auto vector = new_simplevector();
          if (vector) {
             convert_to_aggpath(nullptr, paths, vector->mPath);

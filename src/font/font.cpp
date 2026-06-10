@@ -518,7 +518,7 @@ ERR GetList(FontList **Result)
       }
 
       FontList *list, *last_list = nullptr;
-      if (AllocMemory(size, MEM::DATA, (APTR *)&list) IS ERR::Okay) {
+      if (!AllocMemory(size, MEM::DATA, (APTR *)&list)) {
          auto buffer = (STRING)(list + groups->size());
          *Result = list;
 
@@ -1201,7 +1201,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
       for (auto &font : fonts) {
          file->seekStart(font.Offset);
-         if (file->read(Header, sizeof(winfnt_header_fields)) IS ERR::Okay) {
+         if (!file->read(Header, sizeof(winfnt_header_fields))) {
             Points.push_back(Header->nominal_point_size);
          }
       }

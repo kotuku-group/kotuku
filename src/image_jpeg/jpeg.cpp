@@ -360,7 +360,7 @@ static ERR JPEG_Query(extImage *Self)
    }
 
    acSeek(Self->prvFile, 0.0, SEEK::START);
-   if (AllocMemory(sizeof(struct jpeg_decompress_struct), MEM::DATA, (APTR *)&cinfo) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(struct jpeg_decompress_struct), MEM::DATA, (APTR *)&cinfo)) {
       auto bmp = Self->Bitmap;
       cinfo->err = jpeg_std_error((struct jpeg_error_mgr *)&jerr);
       jpeg_create_decompress(cinfo);

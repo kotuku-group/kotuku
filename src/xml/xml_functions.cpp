@@ -160,7 +160,7 @@ static void expand_entity_references(extXML *Self, std::string &Value,
             std::string resolved;
 
             // Only create string if resolution succeeds to avoid unnecessary allocation
-            if (resolve_entity_internal(Self, std::string(name_view), resolved, is_parameter, EntityStack, ParameterStack) IS ERR::Okay) {
+            if (!resolve_entity_internal(Self, std::string(name_view), resolved, is_parameter, EntityStack, ParameterStack)) {
                output.append(resolved);
             }
             else { // Reconstruct the original entity reference
@@ -1065,7 +1065,7 @@ static ERR parse_source(extXML *Self)
          buffer.resize(current_size + result); // Adjust to actual read size
       }
 
-      if (Self->ParseError IS ERR::Okay) {
+      if (!Self->ParseError) {
          Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view(buffer));
       }
    }

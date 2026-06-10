@@ -277,7 +277,7 @@ static ERR start_platform_connect(extNetSocket *Socket, const NetworkEndpoint &E
       Socket->setState(NTC::CONNECTING);
       network_platform().begin_connect_wait(Socket->Handle, &netsocket_connect, Socket);
    }
-   else if (connect_error IS ERR::Okay) {
+   else if (!connect_error) {
       log.trace("%s connect() successful.", Endpoint.Label);
       complete_socket_connect(Socket, network_platform().complete_connect(Socket->Handle));
    }
@@ -398,7 +398,7 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
          if (file.ok()) {
             auto size = file->get<size_t>(FID_Size);
             std::vector<int8_t> buf(size);
-            if (file->read(buf.data(), size) IS ERR::Okay) {
+            if (!file->read(buf.data(), size)) {
                return acWrite(Self, buf.data(), size, nullptr);
             }
             else return log.warning(ERR::Read);

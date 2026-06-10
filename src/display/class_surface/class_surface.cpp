@@ -78,7 +78,7 @@ void refresh_pointer(extSurface *Self)
 
 static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bitmap)
 {
-   if (AccessObject(DisplayID, 5000, (OBJECTPTR *)Display) IS ERR::Okay) {
+   if (!AccessObject(DisplayID, 5000, (OBJECTPTR *)Display)) {
       #ifdef _WIN32
       APTR winhandle;
       if (!Display[0]->get(FID_WindowHandle, winhandle)) {
@@ -677,7 +677,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
          int new_size = Self->CallbackSize + 10;
          if (new_size > 255) new_size = 255;
          SurfaceCallback *scb;
-         if (AllocMemory(sizeof(SurfaceCallback) * new_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&scb) IS ERR::Okay) {
+         if (!AllocMemory(sizeof(SurfaceCallback) * new_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&scb)) {
             copymem(Self->Callback, scb, sizeof(SurfaceCallback) * Self->CallbackCount);
 
             scb[Self->CallbackCount].Object   = context;
@@ -1618,7 +1618,7 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 
    int index = 0;
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acMove)];
-   while (ScanMessages(&index, MSGID::ACTION, msgbuffer, sizeof(msgbuffer)) IS ERR::Okay) {
+   while (!ScanMessages(&index, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS AC::MoveToPoint) and (action->ObjectID IS Self->UID)) {
@@ -2170,7 +2170,7 @@ static ERR SURFACE_ScheduleRedraw(extSurface *Self, struct drw::ScheduleRedraw *
       return ERR::Okay;
    }
 
-   if (SubscribeTimer(1.0 / double(refresh_rate), C_FUNCTION(redraw_timer), &Self->RedrawTimer) IS ERR::Okay) {
+   if (!SubscribeTimer(1.0 / double(refresh_rate), C_FUNCTION(redraw_timer), &Self->RedrawTimer)) {
       Self->RedrawScheduled = true;
       Self->RedrawRate = refresh_rate;
       return ERR::Okay;

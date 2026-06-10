@@ -2398,7 +2398,7 @@ static ERR delete_file_helper(const std::string &FilePath)
 
    auto error = GetLastError();
    if (error IS ERROR_ACCESS_DENIED) {
-      if (grant_delete_access(FilePath.c_str(), false) IS ERR::Okay) {
+      if (!grant_delete_access(FilePath.c_str(), false)) {
          if (DeleteFileA(FilePath.c_str())) return ERR::Okay;
          error = GetLastError();
       }
@@ -2428,7 +2428,7 @@ static ERR delete_directory_helper(const std::string &DirPath)
 
    auto error = GetLastError();
    if (error IS ERROR_ACCESS_DENIED) {
-      if (grant_delete_access(DirPath.c_str(), true) IS ERR::Okay) {
+      if (!grant_delete_access(DirPath.c_str(), true)) {
          if (RemoveDirectory(DirPath.c_str())) return ERR::Okay;
          error = GetLastError();
       }

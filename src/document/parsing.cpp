@@ -1282,7 +1282,7 @@ void parser::tag_body(const tag_view &Tag)
       switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_clip_path: {
             OBJECTPTR clip;
-            if (Self->Scene->findDef(Tag.Attribs[i].Value, &clip) IS ERR::Okay) {
+            if (!Self->Scene->findDef(Tag.Attribs[i].Value, &clip)) {
                Self->Page->set(FID_Mask, clip);
             }
             break;
@@ -1429,7 +1429,7 @@ void parser::tag_call(const tag_view &Tag)
             auto script_name_text = std::string(script_name);
 
             OBJECTID id;
-            if (FindObject(script_name_text, CLASSID::NIL, &id) IS ERR::Okay) script = (objScript *)GetObjectPtr(id);
+            if (!FindObject(script_name_text, CLASSID::NIL, &id)) script = (objScript *)GetObjectPtr(id);
 
             function.assign(function_ref.substr(i + 1));
          }
@@ -2601,7 +2601,7 @@ void parser::tag_script(const tag_view &Tag)
          // Reference an external script as the default for function calls
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             OBJECTID id;
-            if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id) IS ERR::Okay) {
+            if (!FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id)) {
                Self->DefaultScript = (objScript *)GetObjectPtr(id);
                return;
             }
@@ -3300,7 +3300,7 @@ void parser::tag_trigger(const tag_view &Tag)
 
       std::string args;
       if (!extract_script(Self, function_name, &script, function_name, args)) {
-         if (script->getProcedureID(function_name, &function_id) IS ERR::Okay) {
+         if (!script->getProcedureID(function_name, &function_id)) {
             Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, function_id));
          }
          else log_warning(&Tag, "doc.trigger-procedure-missing", attrib_name("function"),

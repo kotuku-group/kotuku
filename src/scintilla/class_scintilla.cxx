@@ -243,7 +243,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    OBJECTID id;
    if (!FindObject("glStyle", CLASSID::XML, &id)) {
       std::string buffer;
-      if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer) IS ERR::Okay) {
+      if (!acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer)) {
          read_rgb8(buffer, &glHighlight);
       }
    }
@@ -988,7 +988,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
 
 static ERR SCINTILLA_NewObject(extScintilla *Self, APTR)
 {
-   if (NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Self->Font) IS ERR::Okay) {
+   if (!NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Self->Font)) {
       Self->Font->setFace("courier:10");
       Self->LeftMargin  = 4;
       Self->RightMargin = 30;
@@ -2188,7 +2188,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
       else if (!file->get(FID_Size, size)) {
          if (size > 0) {
             if (size < 1024 * 1024 * 10) {
-               if (AllocMemory(size+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&str) IS ERR::Okay) {
+               if (!AllocMemory(size+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&str)) {
                   if (!acRead(file, str, size, &len)) {
                      str[len] = 0;
                      SCICALL(SCI_SETTEXT, str);

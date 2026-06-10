@@ -144,7 +144,7 @@ static ERR load_file(objXML *Self, std::string_view Path)
 {
    CacheFile *filecache;
 
-   if ((Self->ParseError = LoadFile(Path, LDF::NIL, &filecache)) IS ERR::Okay) { // loaded content is null terminated
+   if (!(Self->ParseError = LoadFile(Path, LDF::NIL, &filecache))) { // loaded content is null terminated
       Self->ParseError = txt_to_json(Self, std::string_view((CSTRING)filecache->Data, size_t(filecache->Size)));
       UnloadFile(filecache);
       return Self->ParseError;

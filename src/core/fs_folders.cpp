@@ -182,7 +182,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
          return ERR::DirEmpty;
       }
 
-      if ((error = vd.OpenDir(dir)) IS ERR::Okay) {
+      if (!(error = vd.OpenDir(dir))) {
          dir->prvVirtualID = vd.VirtualID;
          *Result = dir;
          return ERR::Okay;

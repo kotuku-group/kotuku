@@ -627,7 +627,7 @@ static ERR TEXT_SET_DX(extVectorText *Self, double *Values, int Elements)
    if (Self->txDX) { FreeResource(Self->txDX); Self->txDX = nullptr; Self->txTotalDX = 0; }
 
    if ((Values) and (Elements > 0)) {
-      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDX) IS ERR::Okay) {
+      if (!AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDX)) {
          copymem(Values, Self->txDX, Elements * sizeof(double));
          Self->txTotalDX = Elements;
          reset_path(Self);
@@ -658,7 +658,7 @@ static ERR TEXT_SET_DY(extVectorText *Self, double *Values, int Elements)
    if (Self->txDY) { FreeResource(Self->txDY); Self->txDY = nullptr; Self->txTotalDY = 0; }
 
    if ((Values) and (Elements > 0)) {
-      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDY) IS ERR::Okay) {
+      if (!AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDY)) {
          copymem(Values, Self->txDY, Elements * sizeof(double));
          Self->txTotalDY = Elements;
          reset_path(Self);
@@ -1207,7 +1207,7 @@ static ERR TEXT_SET_Rotate(extVectorText *Self, double *Values, int Elements)
 {
    if (Self->txRotate) { FreeResource(Self->txRotate); Self->txRotate = nullptr; Self->txTotalRotate = 0; }
 
-   if (AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txRotate) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txRotate)) {
       copymem(Values, Self->txRotate, Elements * sizeof(double));
       Self->txTotalRotate = Elements;
       reset_path(Self);

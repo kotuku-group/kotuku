@@ -267,7 +267,7 @@ public:
             return;
          }
 
-         if ((File->read(mData.data(), size, &result) IS ERR::Okay) and (result IS size)) {
+         if (!(File->read(mData.data(), size, &result)) and (result IS size)) {
             for (int16_t i=0; i < 256; i++) {
                if (!Chars[i].Width) continue;
 

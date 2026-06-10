@@ -614,7 +614,7 @@ static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
    if (!Args) return ERR::NullArgs;
 
    VectorMatrix *transform;
-   if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform)) {
 
       transform->Vector = Self;
       transform->ScaleX = 1.0;

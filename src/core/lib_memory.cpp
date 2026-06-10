@@ -558,7 +558,7 @@ ERR ProtectMemory(APTR Address, MEM Flags)
    if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
 
    MemInfo meminfo;
-   if (MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) IS ERR::Okay) {
+   if (!MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo))) {
       if ((meminfo.Flags & MEM::PROTECTED) IS MEM::NIL) {
          log.warning("Memory block at %p is not protected.", Address);
          return ERR::Args;

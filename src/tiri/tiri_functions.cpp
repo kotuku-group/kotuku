@@ -398,7 +398,7 @@ int fcmd_loadfile(lua_State *Lua)
       {
          int len, i;
          char header[256];
-         if (file->read(header, sizeof(header), &len) IS ERR::Okay) {
+         if (!file->read(header, sizeof(header), &len)) {
             if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
                recompile = false; // Do not recompile that which is already compiled
                for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++);

@@ -425,7 +425,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       auto error = ERR(-1);
       for (loop=10; loop > 0; loop--) {
          if ((j != std::string::npos) and (j > 1) and (Dest[j] IS ':')) { // Remaining ':' indicates more path resolution is required.
-            if ((error = resolve(Dest, buffer, Flags)) IS ERR::Okay) {
+            if (!(error = resolve(Dest, buffer, Flags))) {
                Dest.assign(buffer);
                j = Dest.find_first_of(":/"); // Reexamine the result for the presence of a colon.
             }
@@ -473,7 +473,7 @@ static ERR resolve_object_path(const std::string &Path, const std::string &Sourc
 
    if (!Path.empty()) {
       OBJECTID volume_id;
-      if (FindObject(Path.c_str(), CLASSID::NIL, &volume_id) IS ERR::Okay) {
+      if (!FindObject(Path.c_str(), CLASSID::NIL, &volume_id)) {
          OBJECTPTR object;
          if (!AccessObject(volume_id, 5000, &object)) {
             if ((!object->get(FID_ResolvePath, resolve_virtual)) and (resolve_virtual)) {

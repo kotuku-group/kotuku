@@ -498,7 +498,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       //log.function("TID: %d, Sleeping on #%d, Timeout: %d, Queue: %d, Locked By: %d", our_thread, Object->UID, Timeout, Object->Queue, Object->ThreadID);
 
       ERR error = ERR::TimeOut;
-      if (init_sleep(THREADID(Object->ThreadID), Object->UID, RT_OBJECT) IS ERR::Okay) { // Indicate that our thread is sleeping.
+      if (!init_sleep(THREADID(Object->ThreadID), Object->UID, RT_OBJECT)) { // Indicate that our thread is sleeping.
          auto record = get_thread_record();
          record->state.store(TSTATE::PAUSED, std::memory_order_release);
 

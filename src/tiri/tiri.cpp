@@ -682,7 +682,7 @@ int code_writer_id(lua_State *Lua, CPTR Data, size_t Size, void *FileID)
 
    kt::ScopedObjectLock file((MAXINT)FileID);
    if (file.granted()) {
-      if (acWrite(*file, (APTR)Data, Size) IS ERR::Okay) return 0;
+      if (!acWrite(*file, (APTR)Data, Size)) return 0;
    }
    log.warning("Failed writing %d bytes.", (int)Size);
    return 1;
@@ -695,7 +695,7 @@ int code_writer(lua_State *Lua, CPTR Data, size_t Size, OBJECTPTR File)
    if (Size <= 0) return 0; // Ignore bad size requests
 
    int result;
-   if (acWrite(File, (APTR)Data, Size, &result) IS ERR::Okay) {
+   if (!acWrite(File, (APTR)Data, Size, &result)) {
       if ((size_t)result != Size) {
          log.warning("Wrote %d bytes instead of %d.", result, (int)Size);
          return 1;

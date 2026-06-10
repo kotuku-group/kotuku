@@ -115,7 +115,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       }
 
       if (!cache->Data) {
-         if (AllocMemory(cache->LineWidth * canvas_height, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->BitmapData) IS ERR::Okay) {
+         if (!AllocMemory(cache->LineWidth * canvas_height, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->BitmapData)) {
             Self->DataSize = cache->LineWidth * canvas_height;
          }
          else return ERR::AllocMemory;
@@ -284,7 +284,7 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Va
    }
 
    objVector *src;
-   if (Self->Filter->Scene->findDef(Value.data(), (OBJECTPTR *)&src) IS ERR::Okay) {
+   if (!Self->Filter->Scene->findDef(Value.data(), (OBJECTPTR *)&src)) {
       if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
       Self->Source = src;
       SubscribeAction(src, AC::Free, C_FUNCTION(notify_free_source));

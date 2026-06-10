@@ -822,7 +822,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
 
          std::string name;
-         if ((CurrentTask()->get(FID_Name, name) IS ERR::Okay) and not name.empty()) {
+         if (!(CurrentTask()->get(FID_Name, name)) and not name.empty()) {
             XStoreName(XDisplay, Self->XWindowHandle, name.c_str());
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
@@ -2021,7 +2021,7 @@ ERR DISPLAY_Show(extDisplay *Self)
    objPointer *pointer;
    OBJECTID pointer_id;
    if (FindObject("SystemPointer", CLASSID::POINTER, &pointer_id) != ERR::Okay) {
-      if (NewObject(CLASSID::POINTER, NF::UNTRACKED, (OBJECTPTR *)&pointer) IS ERR::Okay) {
+      if (!NewObject(CLASSID::POINTER, NF::UNTRACKED, (OBJECTPTR *)&pointer)) {
          SetName(pointer, "SystemPointer");
          if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::SURFACE)) pointer->setSurface(Self->Owner->UID);
 
@@ -2432,7 +2432,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
          }
 
          STRING name;
-         if ((CurrentTask()->get(FID_Name, name) IS ERR::Okay) and (name)) {
+         if (!(CurrentTask()->get(FID_Name, name)) and (name)) {
             XStoreName(XDisplay, Self->XWindowHandle, name);
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");

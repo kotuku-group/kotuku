@@ -119,7 +119,7 @@ void clean_clipboard(void)
       LocalResource free_dir(dir);
 
       Regex *compiled;
-      if (rx::Compile("^\\d+(?:_text|_image|_file|_object)\\d*\\.\\d{3}$", REGEX::NIL, nullptr, &compiled) IS ERR::Okay) {
+      if (!rx::Compile("^\\d+(?:_text|_image|_file|_object)\\d*\\.\\d{3}$", REGEX::NIL, nullptr, &compiled)) {
          while (!ScanDir(dir)) {
             if (!rx::Match(compiled, dir->Info->Name, RMATCH::NIL, nullptr)) {
                if (dir->Info->Timestamp < yesterday) {
@@ -263,7 +263,7 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
    log.branch("Path: %s", path.c_str());
 
    std::vector<ClipItem> items = { path };
-   if (add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false) IS ERR::Okay) {
+   if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
       if (glHistoryLimit <= 1) return ERR::Okay;
    }
 
@@ -344,7 +344,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
       else return ERR::Lock;
    }
 
-   if (add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false) IS ERR::Okay) {
+   if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
       if (glHistoryLimit <= 1) return ERR::Okay;
    }
 
@@ -935,7 +935,7 @@ ERR create_clipboard_class(void)
       fl::Path(MOD_PATH));
 
    int pid;
-   if (CurrentTask()->get(FID_ProcessID, pid) IS ERR::Okay) glProcessID = std::to_string(pid);
+   if (!CurrentTask()->get(FID_ProcessID, pid)) glProcessID = std::to_string(pid);
 
    return clClipboard ? ERR::Okay : ERR::AddClass;
 }

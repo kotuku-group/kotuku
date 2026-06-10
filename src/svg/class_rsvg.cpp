@@ -73,7 +73,7 @@ static ERR RSVG_Init(extImage *Self)
 
    Self->Flags |= PCF::SCALABLE;
 
-   if (AllocMemory(sizeof(prvSVG), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(prvSVG), MEM::DATA, &Self->DerivedPtr)) {
       if ((Self->Flags & PCF::LAZY) != PCF::NIL) return ERR::Okay;
       return acActivate(Self);
    }
@@ -106,7 +106,7 @@ static ERR RSVG_Query(extImage *Self)
 
    objVectorScene *scene;
    ERR error;
-   if (((error = prv->SVG->get(FID_Scene, scene)) IS ERR::Okay) and (scene)) {
+   if ((!(error = prv->SVG->get(FID_Scene, scene))) and (scene)) {
       if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) {
          bmp->Flags |= BMF::ALPHA_CHANNEL;
          bmp->BitsPerPixel  = 32;

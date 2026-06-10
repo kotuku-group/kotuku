@@ -108,7 +108,7 @@ static void test_capture_groups(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 2: Capture groups\n");
    Regex *regex;
-   if (rx::Compile("(\\w+)@(\\w+)\\.(\\w+)", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(\\w+)@(\\w+)\\.(\\w+)", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
@@ -282,7 +282,7 @@ static void test_complex_email(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 9: Complex email pattern\n");
    Regex *regex;
-   if (rx::Compile("^([\\w._%+\\-]+)@([\\w.\\-]+)\\.([A-Za-z]{2,})$", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("^([\\w._%+\\-]+)@([\\w.\\-]+)\\.([A-Za-z]{2,})$", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
@@ -354,7 +354,7 @@ static void test_nested_capture_groups(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 12: Nested capture groups\n");
    Regex *regex;
-   if (rx::Compile("((\\w+)-(\\d+))", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("((\\w+)-(\\d+))", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
@@ -404,7 +404,7 @@ static void test_optional_groups(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 14: Optional capture groups\n");
    Regex *regex;
-   if (rx::Compile("(\\d+)(\\.\\d+)?", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(\\d+)(\\.\\d+)?", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
@@ -432,7 +432,7 @@ static void test_search_capture_normalisation(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 15: Search capture normalisation\n");
    Regex *regex;
-   if (rx::Compile("(a)?(b)", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(a)?(b)", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       ctx.input_text = "b";
       auto callback = C_FUNCTION(&search_callback, &ctx);
@@ -495,7 +495,7 @@ static void test_named_capture_lookup(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 17: Named capture lookup\n");
    Regex *regex;
-   if (rx::Compile("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})", REGEX::NIL, nullptr, &regex)) {
       kt::vector<int> indices;
 
       if (!rx::GetCaptureIndex(regex, "month", &indices)) {

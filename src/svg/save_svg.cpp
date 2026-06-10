@@ -12,7 +12,7 @@ static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Par
    std::string path;
    ERR error;
 
-   if ((error = Vector->get(FID_Sequence, path)) IS ERR::Okay) {
+   if (!(error = Vector->get(FID_Sequence, path))) {
       int new_index;
       error = XML->insertXML(Parent, XMI::CHILD_END, "<path/>", &new_index);
       if (!error) {
@@ -60,7 +60,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             if (!error) xml::NewAttrib(tag, "id", key);
 
             VUNIT units;
-            if ((!error) and (gradient->get(FID_Units, (int &)units) IS ERR::Okay)) {
+            if ((!error) and (!gradient->get(FID_Units, (int &)units))) {
                switch(units) {
                   case VUNIT::USERSPACE:    xml::NewAttrib(tag, "gradientUnits", "userSpaceOnUse"); break;
                   case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "gradientUnits", "objectBoundingBox"); break;
@@ -69,7 +69,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
 
             VSPREAD spread;
-            if ((!error) and (gradient->get(FID_SpreadMethod, (int &)spread) IS ERR::Okay)) {
+            if ((!error) and (!gradient->get(FID_SpreadMethod, (int &)spread))) {
                switch(spread) {
                   default:
                   case VSPREAD::PAD:     break; // Pad is the default SVG setting
@@ -116,7 +116,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                int total_stops, stop_index;
                if (!gradient->get(FID_Stops, stops, total_stops)) {
                   for (int s=0; (s < total_stops) and (!error); s++) {
-                     if ((error = XML->insertXML(def_index, XMI::CHILD_END, "<stop/>", &stop_index)) IS ERR::Okay) {
+                     if (!(error = XML->insertXML(def_index, XMI::CHILD_END, "<stop/>", &stop_index))) {
                         XTag *stop_tag;
                         error = XML->getTag(stop_index, &stop_tag);
                         if (!error) xml::NewAttrib(stop_tag, "offset", std::to_string(stops[s].Offset));
@@ -161,7 +161,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                set_dimension(tag, "height", filter->Height, dmf::hasScaledHeight(dim));
 
             VUNIT units;
-            if ((!error) and (filter->get(FID_Units, (int &)units) IS ERR::Okay)) {
+            if ((!error) and (!filter->get(FID_Units, (int &)units))) {
                switch(units) {
                   default:
                   case VUNIT::BOUNDING_BOX: break; // Default
@@ -169,7 +169,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
-            if ((!error) and (filter->get(FID_PrimitiveUnits, (int &)units) IS ERR::Okay)) {
+            if ((!error) and (!filter->get(FID_PrimitiveUnits, (int &)units))) {
                switch(units) {
                   default:
                   case VUNIT::USERSPACE:    break;
@@ -318,13 +318,13 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    }
 
    VFR fill_rule;
-   if ((!error) and (Vector->get(FID_FillRule, (int &)fill_rule) IS ERR::Okay)) {
+   if ((!error) and (!Vector->get(FID_FillRule, (int &)fill_rule))) {
       if (fill_rule IS VFR::EVEN_ODD) xml::NewAttrib(tag, "fill-rule", "evenodd");
    }
 
-   if ((!error) and ((error = Vector->get(FID_ID, str)) IS ERR::Okay) and not str.empty()) xml::NewAttrib(tag, "id", str);
+   if ((!error) and (!(error = Vector->get(FID_ID, str))) and not str.empty()) xml::NewAttrib(tag, "id", str);
 
-   if ((!error) and (!Vector->get(FID_Filter, str)) and not str.empty()) xml::NewAttrib(tag, "filter", str);
+   if ((!error) and (!(error = Vector->get(FID_Filter, str))) and not str.empty()) xml::NewAttrib(tag, "filter", str);
 
    VectorMatrix *transform;
    if ((!error) and (!Vector->get(FID_Transforms, transform)) and (transform)) {
@@ -527,16 +527,16 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
          xml::NewAttrib(tag, "rotate", buffer.str());
       }
 
-      if ((!error) and ((error = Vector->get(FID_TextLength, text_length)) IS ERR::Okay) and (text_length))
+      if ((!error) and (!(error = Vector->get(FID_TextLength, text_length))) and (text_length))
          xml::NewAttrib(tag, "textLength", std::to_string(text_length));
 
-      if ((!error) and ((error = Vector->get(FID_Face, sv)) IS ERR::Okay))
+      if ((!error) and (!(error = Vector->get(FID_Face, sv))))
          xml::NewAttrib(tag, "font-family", sv);
 
-      if ((!error) and ((error = Vector->get(FID_Weight, weight)) IS ERR::Okay) and (weight != 400))
+      if ((!error) and (!(error = Vector->get(FID_Weight, weight))) and (weight != 400))
          xml::NewAttrib(tag, "font-weight", std::to_string(weight));
 
-      if ((!error) and ((error = Vector->get(FID_String, sv)) IS ERR::Okay))
+      if ((!error) and (!(error = Vector->get(FID_String, sv))))
          error = XML->insertContent(tag->ID, XMI::CHILD, sv, nullptr);
 
       // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
@@ -551,11 +551,11 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORCLIP) {
       XTag *tag;
       std::string_view str;
-      if (((error = Vector->get(FID_ID, str)) IS ERR::Okay) and not str.empty()) { // The id is an essential requirement
+      if ((!(error = Vector->get(FID_ID, str))) and not str.empty()) { // The id is an essential requirement
          error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
 
          VUNIT units;
-         if (Vector->get(FID_Units, (int &)units) IS ERR::Okay) {
+         if (!Vector->get(FID_Units, (int &)units)) {
             switch(units) {
                default:
                case VUNIT::USERSPACE:    break; // Default

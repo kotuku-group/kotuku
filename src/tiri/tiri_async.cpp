@@ -221,8 +221,8 @@ static int async_action(lua_State *Lua)
       lua_pop(Lua, 4);
       int arg_index = 0;
       CSTRING error_msg = nullptr;
-      if ((error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(),
-            &result_count, arg_index, error_msg)) IS ERR::Okay) {
+      if (!(error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(),
+            &result_count, arg_index, error_msg))) {
          if (not result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
          }
@@ -336,8 +336,8 @@ static int async_method(lua_State *Lua)
             lua_pop(Lua, 4);
             int arg_index = 0;
             CSTRING error_msg = nullptr;
-            if ((error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count, arg_index,
-                  error_msg)) IS ERR::Okay) {
+            if (!(error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count, arg_index,
+                  error_msg))) {
                if (not result_count) {
                   error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
                }

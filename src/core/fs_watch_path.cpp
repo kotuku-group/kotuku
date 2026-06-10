@@ -83,8 +83,8 @@ ERR fs_watch_path(extFile *File)
 
    // The path_monitor() function will be called whenever the Path or its content is modified.
 
-   if ((error = winWatchFile(int(File->prvWatch->Flags), File->prvResolvedPath.c_str(), (File->prvWatch + 1), &handle, &winflags)) IS ERR::Okay) {
-      if ((error = RegisterFD(handle, RFD::READ, (void (*)(HOSTHANDLE, APTR))&path_monitor, File)) IS ERR::Okay) {
+   if (!(error = winWatchFile(int(File->prvWatch->Flags), File->prvResolvedPath.c_str(), (File->prvWatch + 1), &handle, &winflags))) {
+      if (!(error = RegisterFD(handle, RFD::READ, (void (*)(HOSTHANDLE, APTR))&path_monitor, File))) {
          File->prvWatch->Handle   = handle;
          File->prvWatch->WinFlags = winflags;
       }

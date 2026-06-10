@@ -331,7 +331,7 @@ static int object_getkey(lua_State *Lua)
       ERR error;
       if (auto obj = access_object(def)) {
          std::string buffer;
-         if ((error = acGetKey(obj, fieldname, buffer)) IS ERR::Okay) {
+         if (!(error = acGetKey(obj, fieldname, buffer))) {
             lua_pushstring(Lua, buffer);
          }
          release_object(def);
@@ -454,7 +454,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
       if (field->Flags & FD_CPP) {
          if (field->Flags & FD_STRING) {
             kt::vector<std::string> *values; // std::string doesn't work like standard primitives - at least not in MSVC - so it gets a special handler.
-            if ((error = obj->get(field->FieldID, values, total, false)) IS ERR::Okay) {
+            if (!(error = obj->get(field->FieldID, values, total, false))) {
                if (total <= 0) lua_pushnil(Lua);
                else make_array(Lua, AET::STR_CPP, total, values);
             }
@@ -462,7 +462,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
          else {
             // For kt::vector primitives we can just convert to a raw data array.
             kt::vector<APTR> *values; // The type doesn't matter.
-            if ((error = obj->get(field->FieldID, values, total, false)) IS ERR::Okay) {
+            if (!(error = obj->get(field->FieldID, values, total, false))) {
                if (total <= 0) lua_pushnil(Lua);
                else {
                   std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
@@ -471,7 +471,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
             }
          }
       }
-      else if ((error = obj->get(field->FieldID, list, total, false)) IS ERR::Okay) {
+      else if (!(error = obj->get(field->FieldID, list, total, false))) {
          if (total <= 0) lua_pushnil(Lua);
          else if (field->Flags & FD_STRING) {
             make_array(Lua, AET::CSTR, total, list);
@@ -504,7 +504,7 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
       auto field = (Field *)(Handle.Data);
       if (field->Arg) {
          APTR result;
-         if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) {
+         if (!(error = obj->get(field->FieldID, result))) {
             if (result) { // Structs are copied into standard Lua tables.
                if (field->Flags & FD_RESOURCE) {
                    push_struct(Lua->script, result, (CSTRING)field->Arg, (field->Flags & FD_ALLOC) ? TRUE : FALSE, TRUE);
@@ -532,7 +532,7 @@ static int object_get_string(lua_State *Lua, const obj_read &Handle, GCobject *D
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       std::string_view result;
-      if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) {
+      if (!(error = obj->get(field->FieldID, result))) {
          if (result.empty()) lua_pushnil(Lua);
          else lua_pushlstring(Lua, result.data(), result.size());
          if (field->Flags & FD_ALLOC) FreeResource(result.data());
@@ -551,7 +551,7 @@ static int object_get_ptr(lua_State *Lua, const obj_read &Handle, GCobject *Def)
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       APTR result;
-      if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) lua_pushlightuserdata(Lua, result);
+      if (!(error = obj->get(field->FieldID, result))) lua_pushlightuserdata(Lua, result);
       release_object(Def);
    }
    else error = ERR::AccessObject;
@@ -566,7 +566,7 @@ static int object_get_object(lua_State *Lua, const obj_read &Handle, GCobject *D
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       OBJECTPTR objval;
-      if ((error = obj->get(field->FieldID, objval)) IS ERR::Okay) {
+      if (!(error = obj->get(field->FieldID, objval))) {
          if (objval) push_object(Lua, objval);
          else lua_pushnil(Lua);
       }
@@ -584,7 +584,7 @@ static int object_get_double(lua_State *Lua, const obj_read &Handle, GCobject *D
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       double result;
-      if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) lua_pushnumber(Lua, result);
+      if (!(error = obj->get(field->FieldID, result))) lua_pushnumber(Lua, result);
       release_object(Def);
    }
    else error = ERR::AccessObject;
@@ -599,7 +599,7 @@ static int object_get_large(lua_State *Lua, const obj_read &Handle, GCobject *De
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       int64_t result;
-      if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) lua_pushnumber(Lua, result);
+      if (!(error = obj->get(field->FieldID, result))) lua_pushnumber(Lua, result);
       release_object(Def);
    }
    else error = ERR::AccessObject;
@@ -614,7 +614,7 @@ static int object_get_long(lua_State *Lua, const obj_read &Handle, GCobject *Def
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       int result;
-      if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) {
+      if (!(error = obj->get(field->FieldID, result))) {
          if (field->Flags & FD_OBJECT) push_object_id(Lua, result);
          else lua_pushinteger(Lua, result);
       }
@@ -632,7 +632,7 @@ static int object_get_ulong(lua_State *Lua, const obj_read &Handle, GCobject *De
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
       uint32_t result;
-      if ((error = obj->get(field->FieldID, (int &)result)) IS ERR::Okay) {
+      if (!(error = obj->get(field->FieldID, (int &)result))) {
          lua_pushnumber(Lua, result);
       }
       release_object(Def);

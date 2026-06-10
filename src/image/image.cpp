@@ -149,7 +149,7 @@ static ERR IMAGE_Activate(extImage *Self)
       file_opened = true;
    }
 
-   if (not ((error = Self->prvFile->seekStart(0)) IS ERR::Okay)) goto exit;
+   if ((error = Self->prvFile->seekStart(0)) != ERR::Okay) goto exit;
 
    // Allocate PNG structures
 
@@ -353,7 +353,7 @@ static ERR IMAGE_Activate(extImage *Self)
       };
 
       if (tmp_bitmap.ok()) {
-         if ((error = decompress_png(Self, *tmp_bitmap, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height)) IS ERR::Okay) {
+         if (!(error = decompress_png(Self, *tmp_bitmap, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height))) {
             error = gfx::CopyArea(*tmp_bitmap, bmp, BAF::DITHER, 0, 0, bmp->Width, bmp->Height, 0, 0);
          }
       }
@@ -469,7 +469,7 @@ static ERR IMAGE_Init(extImage *Self)
       if (!ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath)) {
          int result;
 
-         if (ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result) IS ERR::Okay) {
+         if (!ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result)) {
             Self->prvHeader[result] = 0;
 
             auto buffer = (uint8_t *)Self->prvHeader;
@@ -531,7 +531,7 @@ static ERR IMAGE_Query(extImage *Self)
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
    }
 
-   if (not ((error = Self->prvFile->seekStart(0)) IS ERR::Okay)) goto exit;
+   if ((error = Self->prvFile->seekStart(0)) != ERR::Okay) goto exit;
 
    // Allocate PNG structures
 

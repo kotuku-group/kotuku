@@ -139,7 +139,7 @@ ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 {
    // Lock the object via conventional means to guarantee thread safety.
    OBJECTPTR obj;
-   if (AccessObject(((OBJECTID *)Message)[0], 10000, &obj) IS ERR::Okay) {
+   if (!AccessObject(((OBJECTID *)Message)[0], 10000, &obj)) {
       // Use PermitTerminate to inform object_free() that the object can be terminated safely while the lock is held.
       obj->setFlag(NF::PERMIT_TERMINATE);
       FreeResource(obj);
@@ -1696,7 +1696,7 @@ ERR InitObject(OBJECTPTR Object)
             log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
             if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
                if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
-                  if ((error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr)) IS ERR::Okay) {
+                  if (!(error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr))) {
                      log.msg("Object class switched to derived class \"%s\".", Object->className());
                      Object->setFlag(NF::INITIALISED);
                      Object->ExtClass->OpenCount++;

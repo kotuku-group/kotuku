@@ -150,7 +150,7 @@ static bool parse_id3v1(objSound *Self)
    prv->File->seekEnd(sizeof(id3));
 
    int result;
-   if ((prv->File->read(&id3, sizeof(id3), &result) IS ERR::Okay) and (result IS sizeof(id3))) {
+   if ((!prv->File->read(&id3, sizeof(id3), &result)) and (result IS sizeof(id3))) {
       if (!strncmp("TAG", (STRING)&id3, 3)) {
          char buffer[sizeof(id3)];
 
@@ -325,7 +325,7 @@ static ERR MP3_Init(objSound *Self)
    }
 
    prvMP3 *prv;
-   if (AllocMemory(sizeof(prvMP3), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(prvMP3), MEM::DATA, &Self->DerivedPtr)) {
       prv = (prvMP3 *)Self->DerivedPtr;
       new (prv) prvMP3;
    }
@@ -352,7 +352,7 @@ static ERR MP3_Init(objSound *Self)
    // Process ID3V2 and Xing VBR headers if present.
 
    int result;
-   if (prv->File->read(prv->Input.data(), prv->Input.size(), &result) IS ERR::Okay) {
+   if (!prv->File->read(prv->Input.data(), prv->Input.size(), &result)) {
       if (auto id3size = detect_id3v2((const char *)prv->Input.data())) {
          log.msg("Detected ID3v2 header of %d bytes.", id3size);
          prv->SeekOffset = id3size;
@@ -677,7 +677,7 @@ static int64_t calc_length(objSound *Self, int ReduceEnd)
    prv->File->get(FID_Size, filesize);
 
    uint8_t *buffer;
-   if (AllocMemory(SIZE_BUFFER, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
+   if (!AllocMemory(SIZE_BUFFER, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
       // Load MP3 data from the file
 
       prv->File->seekStart(prv->SeekOffset);

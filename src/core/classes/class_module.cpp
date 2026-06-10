@@ -350,7 +350,7 @@ static ERR MODULE_Init(extModule *Self)
    if ((master = check_resident(Self, name))) {
       Self->Root = master;
    }
-   else if (NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&master) IS ERR::Okay) {
+   else if (!NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&master)) {
       master->Next = glModuleList; // Insert the RootModule at the start of the chain.
       if (glModuleList) glModuleList->Prev = master;
       glModuleList = master;
@@ -696,7 +696,7 @@ APTR build_jump_table(const Function *FList)
    log.trace("%d functions have been detected in the function list.", size);
 
    void **functions;
-   if (AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions) IS ERR::Okay) {
+   if (!AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions)) {
       for (int i=0; i < size; i++) functions[i] = FList[i].Address;
       functions[size] = nullptr;
       return functions;

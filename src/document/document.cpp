@@ -249,7 +249,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    OBJECTID style_id;
    if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
       std::string buffer;
-      if (acGetKey(GetObjectPtr(style_id), "/colours/@DocumentHighlight", buffer) IS ERR::Okay) {
+      if (!acGetKey(GetObjectPtr(style_id), "/colours/@DocumentHighlight", buffer)) {
          glHighlight.assign(buffer);
       }
    }

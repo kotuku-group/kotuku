@@ -335,11 +335,11 @@ static ERR FILE_BufferContent(extFile *Self)
          // Allocate a 1 MB memory block, read the stream into it, then reallocate the block to the correct size.
 
          uint8_t *buffer;
-         if (AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
+         if (!AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer)) {
             acSeekStart(Self, 0);
             acRead(Self, buffer, 1024 * 1024, &len);
             if (len > 0) {
-               if (AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer) IS ERR::Okay) {
+               if (!AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer)) {
                   copymem(buffer, Self->Buffer, len);
                   Self->Size = len;
                }
@@ -353,7 +353,7 @@ static ERR FILE_BufferContent(extFile *Self)
       // the file content is treated as a string.
 
       int8_t *buffer;
-      if (AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
+      if (!AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer)) {
          buffer[Self->Size] = 0;
          if (!acRead(Self, buffer, Self->Size, &len)) {
             Self->Buffer = buffer;
@@ -513,7 +513,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
          }
 
          ERR error;
-         if ((error = delete_tree(buffer, Args->Callback, &fb)) IS ERR::Okay);
+         if (!(error = delete_tree(buffer, Args->Callback, &fb)));
          else if (error != ERR::Cancelled) log.warning("Failed to delete folder \"%s\"", buffer.c_str());
 
          return error;
@@ -609,7 +609,7 @@ static ERR FILE_Init(extFile *Self)
       Self->Size = Self->Path.size() - 7;
 
       if (Self->Size > 0) {
-         if (AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer) IS ERR::Okay) {
+         if (!AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer)) {
             Self->Flags |= FL::READ|FL::WRITE;
             Self->Permissions |= PERMIT::HIDDEN;
             copymem(Self->Path.c_str() + 7, Self->Buffer, Self->Size);
@@ -875,7 +875,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
       #endif
 
       ERR error;
-      if ((error = fs_copy(src, newpath, Args->Callback, true)) IS ERR::Okay) {
+      if (!(error = fs_copy(src, newpath, Args->Callback, true))) {
          Self->Path.assign(newpath);
       }
       else log.warning("Failed to move %.*s to %s", int(src.size()), src.data(), newpath.c_str());
@@ -943,7 +943,7 @@ static ERR FILE_NextFile(extFile* Self, struct fl::Next *Args) // Not to be conf
    }
 
    ERR error;
-   if ((error = ScanDir(Self->prvList)) IS ERR::Okay) {
+   if (!(error = ScanDir(Self->prvList))) {
       std::string path(Self->Path);
       path.append(Self->prvList->Info->Name);
 
@@ -1184,7 +1184,7 @@ static ERR FILE_Rename(extFile *Self, struct acRename *Args)
    if ((Self->isFolder) or ((Self->Flags & FL::FOLDER) != FL::NIL)) {
       if (Self->Path.ends_with(':')) { // Renaming a volume
          std::string n(name, 0, name.find_first_of(":/\\"));
-         if (RenameVolume(Self->Path.c_str(), n.c_str()) IS ERR::Okay) {
+         if (!RenameVolume(Self->Path.c_str(), n.c_str())) {
             Self->Path = n + ":";
             return ERR::Okay;
          }
@@ -1532,14 +1532,14 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
    std::string_view resolve;
    ERR error;
-   if ((error = GET_ResolvedPath(Self, resolve)) IS ERR::Okay) {
+   if (!(error = GET_ResolvedPath(Self, resolve))) {
       auto vd = get_fs(resolve);
 
       if (vd.WatchPath) {
          #ifdef _WIN32
-         if (AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch) IS ERR::Okay) {
+         if (!AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch)) {
          #else
-         if (AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch) IS ERR::Okay) {
+         if (!AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch)) {
          #endif
             Self->prvWatch->VirtualID = vd.VirtualID;
             Self->prvWatch->Routine   = *Args->Callback;
@@ -1608,7 +1608,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
          if (Self->Position + Args->Length > Self->Size) {
             // Increase the size of the buffer to cater for the write.  A null byte (not included in the official size)
             // is always placed at the end.
-            if (ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer) IS ERR::Okay) {
+            if (!ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer)) {
                Self->Size = Self->Position + Args->Length;
                Self->Buffer[Self->Size] = 0;
             }
