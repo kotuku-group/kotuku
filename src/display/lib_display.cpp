@@ -53,7 +53,7 @@ ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
       if (!t_info) return ERR::AllocMemory;
    }
 
-   if (auto error = get_display_info(DisplayID, t_info); error IS ERR::Okay) {
+   if (auto error = get_display_info(DisplayID, t_info); !error) {
       *Result = t_info;
       return ERR::Okay;
    }
@@ -100,7 +100,7 @@ For internal use only.
 <pre>
 DisplayInfo info;
 clearmem(&info, sizeof(info));
-while (scrScanDisplayModes("depth=32", &info) IS ERR::Okay) {
+while (!scrScanDisplayModes("depth=32", &info)) {
    ...
 }
 </pre>

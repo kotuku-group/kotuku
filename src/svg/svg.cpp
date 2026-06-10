@@ -723,7 +723,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if (init_svg() != ERR::Okay) return ERR::AddClass;
 
-   if (objModule::load("image", &modImage) IS ERR::Okay) { // RSVG has a Image class dependency
+   if (!objModule::load("image", &modImage)) { // RSVG has a Image class dependency
       if (init_rsvg() != ERR::Okay) return ERR::AddClass;
    }
 

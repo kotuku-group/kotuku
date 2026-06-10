@@ -903,7 +903,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
          else {
             OBJECTID surface_id;
-            if (FindObject("SystemSurface", CLASSID::SURFACE, &surface_id) IS ERR::Okay) {
+            if (!FindObject("SystemSurface", CLASSID::SURFACE, &surface_id)) {
                if (surface_id IS Self->ownerID()) desktop = true;
             }
          }
@@ -1616,7 +1616,7 @@ static ERR DISPLAY_SetDisplay(extDisplay *Self, gfx::SetDisplay *Args)
 
    if (glX11.Manager) { // The video mode can only be changed with the XRandR extension
 #ifdef XRANDR_ENABLED
-      if ((glXRRAvailable) and (xr_set_display_mode(&width, &height) IS ERR::Okay)) {
+      if ((glXRRAvailable) and (!xr_set_display_mode(&width, &height))) {
          Self->RefreshRate = 0;
          Self->Width  = width;
          Self->Height = height;
@@ -2178,11 +2178,11 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
          std::string strdpi;
-         if (acGetKey(style.obj, "/interface/@dpi", strdpi) IS ERR::Okay) {
+         if (!acGetKey(style.obj, "/interface/@dpi", strdpi)) {
             *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->HDensity = *Value; // Store for future use.
             if (not Self->VDensity) Self->VDensity = Self->HDensity;
@@ -2248,11 +2248,11 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
          std::string strdpi;
-         if (acGetKey(style.obj, "/interface/@dpi", strdpi) IS ERR::Okay) {
+         if (!acGetKey(style.obj, "/interface/@dpi", strdpi)) {
             *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->VDensity = *Value;
             if (not Self->HDensity) Self->HDensity = Self->VDensity;

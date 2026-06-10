@@ -399,7 +399,7 @@ __export void Expunge(int16_t Force)
                if (mod_master->Expunge) {
                   kt::Log log(__FUNCTION__);
                   log.branch("Expunging %s module #%d.", mod_master->Name.c_str(), mod_master->UID);
-                  if (auto error = mod_master->Expunge(); error IS ERR::Okay) {
+                  if (auto error = mod_master->Expunge(); !error) {
                      ccount++;
                      if (FreeResource(mod_master) != ERR::Okay) {
                         log.warning("RootModule is corrupt");

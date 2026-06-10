@@ -118,7 +118,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <p>A compression object can manage only one compression stream at any given time.  If it is necessary to compress multiple streams at once, create a compression object for each individual stream.</p>
 <p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's derived class ID is stored for future reference.</p>
 <p>The following C code illustrates a simple means of compressing a file to another file using a stream:</p>
-<pre>if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
+<pre>if (auto error = mtCompressStreamStart(compress); !error) {
    LONG len;
    LONG cmpsize = 0;
    UBYTE input[4096];
@@ -135,7 +135,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       }
    }
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &amp;len);

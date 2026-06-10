@@ -843,7 +843,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
 
    if (auto err = query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
       std::string_view msg;
-      if (query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
+      if (!query->get(FID_ErrorMsg, msg)) {
          Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
             "XQuery error evaluating \"{}\": {}.", Expression, msg.empty() ? std::string_view("(none)") : msg);
       }
@@ -853,7 +853,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
 
    XPathValue *query_value = nullptr;
-   if ((query->get(FID_Result, query_value) IS ERR::Okay) and query_value) {
+   if ((!query->get(FID_Result, query_value)) and query_value) {
       raw_value = *query_value;
       have_raw_value = true;
       if (OutValue) *OutValue = raw_value;
@@ -869,7 +869,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
          if (raw_value.Type IS XPVT::Boolean) *OutBoolean = raw_value.NumberValue != 0.0;
          else {
             std::string boolean_text;
-            if ((xq_value_to_string(raw_value, boolean_text) IS ERR::Okay) and (iequals("true", boolean_text))) {
+            if ((!xq_value_to_string(raw_value, boolean_text)) and (iequals("true", boolean_text))) {
                *OutBoolean = true;
             }
          }
@@ -877,7 +877,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
    else {
       std::string_view result;
-      if (query->get(FID_ResultString, result) IS ERR::Okay) {
+      if (!query->get(FID_ResultString, result)) {
          if ((OutString) and not result.empty()) OutString->assign(result);
          if ((OutBoolean) and not result.empty() and iequals("true", result)) *OutBoolean = true;
       }
@@ -1718,7 +1718,7 @@ void parser::tag_print(const tag_view &Tag)
          // This option is only supported in unrestricted mode
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             CacheFile *cache;
-            if (LoadFile(Tag.Attribs[1].Value, LDF::NIL, &cache) IS ERR::Okay) {
+            if (!LoadFile(Tag.Attribs[1].Value, LDF::NIL, &cache)) {
                insert_text(Self, m_stream, m_index, std::string((CSTRING)cache->Data), (m_style.options & FSO::PREFORMAT) != FSO::NIL);
                UnloadFile(cache);
             }

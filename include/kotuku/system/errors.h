@@ -239,3 +239,4 @@ enum class ERR : int32_t {
 constexpr bool operator!(ERR Error) noexcept {
    return not int(Error);
 }
+

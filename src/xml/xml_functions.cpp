@@ -242,7 +242,7 @@ static bool read_quoted(extXML *Self, ParseState &State, std::string &Result,
             std::string name(State.cursor.data(), name_length);
             std::string resolved;
 
-            if (resolve_entity_internal(Self, name, resolved, is_parameter, EntityStack, ParameterStack) IS ERR::Okay) {
+            if (!resolve_entity_internal(Self, name, resolved, is_parameter, EntityStack, ParameterStack)) {
                buffer += resolved;
             }
             else {
@@ -1069,7 +1069,7 @@ static ERR parse_source(extXML *Self)
          Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view(buffer));
       }
    }
-   else if (LoadFile(Self->Path, LDF::NIL, &filecache) IS ERR::Okay) {
+   else if (!LoadFile(Self->Path, LDF::NIL, &filecache)) {
       Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view((char *)filecache->Data, filecache->Size));
       UnloadFile(filecache);
    }

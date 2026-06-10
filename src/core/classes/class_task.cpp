@@ -448,7 +448,7 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
 
    if ((action->ObjectID) and (action->ActionID != AC::NIL)) {
       OBJECTPTR obj;
-      if (auto error = AccessObject(action->ObjectID, 5000, &obj); error IS ERR::Okay) {
+      if (auto error = AccessObject(action->ObjectID, 5000, &obj); !error) {
          if (action->SendArgs IS false) {
             glCurrentActionMsg = action;
             Action(action->ActionID, obj, nullptr);
@@ -717,14 +717,14 @@ static ERR TASK_Activate(extTask *Self)
 
    if (not Self->LaunchPath.empty()) {
       std::string rpath;
-      if (ResolvePath(Self->LaunchPath, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+      if (!ResolvePath(Self->LaunchPath, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
          launchdir.assign(rpath);
       }
       else launchdir.assign(Self->LaunchPath);
    }
    else if ((Self->Flags & TSF::RESET_PATH) != TSF::NIL) {
       std::string rpath;
-      if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+      if (!ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
          launchdir.assign(rpath);
       }
       else launchdir.assign(Self->Location);
@@ -739,7 +739,7 @@ static ERR TASK_Activate(extTask *Self)
    std::ostringstream buffer;
    buffer << '"';
    std::string rpath;
-   if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+   if (!ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
       buffer << rpath;
    }
    else buffer << Self->Location;
@@ -756,7 +756,7 @@ static ERR TASK_Activate(extTask *Self)
          // Redirection argument detected
 
          auto sv = std::string_view(param.begin()+1, param.end());
-         if (ResolvePath(sv, RSF::NO_FILE_CHECK, &redirect_stdout) IS ERR::Okay) {
+         if (!ResolvePath(sv, RSF::NO_FILE_CHECK, &redirect_stdout)) {
             redirect_stderr.assign(redirect_stdout);
          }
 
@@ -902,7 +902,7 @@ static ERR TASK_Activate(extTask *Self)
          path = fallback_path;
       }
       std::string rpath;
-      if (ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+      if (!ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
          while (rpath.ends_with('/')) rpath.pop_back();
          buffer << shell_quote(rpath);
       }
@@ -918,7 +918,7 @@ static ERR TASK_Activate(extTask *Self)
    // Resolve the location of the executable (may contain an volume) and copy it to the command line buffer.
 
    std::string rpath;
-   if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+   if (!ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
       if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (not requested_shell)) buffer << shell_quote(rpath);
       else buffer << rpath;
    }
@@ -2034,9 +2034,9 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
    if (Value) {
       #ifdef __unix__
       fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL) | O_NONBLOCK);
-      if (auto error = RegisterFD(fileno(stdin), RFD::READ, &task_stdinput_callback, Self); error IS ERR::Okay) {
+      if (auto error = RegisterFD(fileno(stdin), RFD::READ, &task_stdinput_callback, Self); !error) {
       #elif _WIN32
-      if (auto error = RegisterFD(winGetStdInput(), RFD::READ, &task_stdinput_callback, Self); error IS ERR::Okay) {
+      if (auto error = RegisterFD(winGetStdInput(), RFD::READ, &task_stdinput_callback, Self); !error) {
       #endif
          Self->InputCallback = *Value;
       }
@@ -2223,7 +2223,7 @@ static ERR SET_Path(extTask *Self, const std::string_view &Value)
 
 #ifdef __unix__
          std::string path;
-         if (ResolvePath(new_path, RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
+         if (!ResolvePath(new_path, RSF::NO_FILE_CHECK, &path)) {
             if (chdir(path.c_str())) {
                error = ERR::InvalidPath;
                log.msg("Failed to switch current path to: %s", path.c_str());
@@ -2232,7 +2232,7 @@ static ERR SET_Path(extTask *Self, const std::string_view &Value)
          else error = log.warning(ERR::ResolvePath);
 #elif _WIN32
          std::string path;
-         if (ResolvePath(new_path, RSF::NO_FILE_CHECK|RSF::PATH, &path) IS ERR::Okay) {
+         if (!ResolvePath(new_path, RSF::NO_FILE_CHECK|RSF::PATH, &path)) {
             if (chdir(path.c_str())) {
                error = ERR::InvalidPath;
                log.msg("Failed to switch current path to: %s", path.c_str());

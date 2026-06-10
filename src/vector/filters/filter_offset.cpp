@@ -26,7 +26,7 @@ static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
    objBitmap *inBmp;
    int dx = int((double)Self->XOffset * Self->Filter->ClientVector->Transform.sx);
    int dy = int((double)Self->YOffset * Self->Filter->ClientVector->Transform.sy);
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+   if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
       gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height, dx, dy);
       return ERR::Okay;
    }

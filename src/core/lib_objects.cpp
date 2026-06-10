@@ -615,7 +615,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
       }
 
       ERR error;
-      if (error = LockObject(Object, 5000); error IS ERR::Okay) { // Access the object and process the action.
+      if (error = LockObject(Object, 5000); !error) { // Access the object and process the action.
          // Check for stop request before executing action
          if ((not is_stopping()) and (not is_cancelled())) {
             error = Action(ActionID, Object, ArgsSize ? (APTR)Parameters.data() : nullptr);
@@ -1148,7 +1148,7 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
    }
    else if (msg->Callback.isScript()) {
       auto script = msg->Callback.Context;
-      if (LockObject(script, 5000) IS ERR::Okay) {
+      if (!LockObject(script, 5000)) {
          sc::Call(msg->Callback, std::to_array<ScriptArg>({
             { "ActionID", int(msg->ActionID) },
             { "Object",   msg->ObjectID, FD_OBJECTID },
@@ -1689,9 +1689,9 @@ ERR InitObject(OBJECTPTR Object)
    if (use_derived) { // If ERR::UseDerived was set and the derived class was not registered, do not call IdentifyFile()
       log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
-   else if ((error IS ERR::NoSupport) and (Object->get(FID_Path, path) IS ERR::Okay) and (not path.empty())) {
+   else if ((error IS ERR::NoSupport) and (!Object->get(FID_Path, path)) and (not path.empty())) {
       CLASSID class_id, derived_id;
-      if (IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id) IS ERR::Okay) {
+      if (!IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id)) {
          if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
             log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
             if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
@@ -2017,7 +2017,7 @@ void NotifySubscribers(OBJECTPTR Object, ACTIONID ActionID, APTR Parameters, ERR
                if (Object->UID IS entry.ObjectID) UnsubscribeAction(Object, entry.ActionID);
                else {
                   OBJECTPTR obj;
-                  if (AccessObject(entry.ObjectID, 3000, &obj) IS ERR::Okay) {
+                  if (!AccessObject(entry.ObjectID, 3000, &obj)) {
                      UnsubscribeAction(obj, entry.ActionID);
                      ReleaseObject(obj);
                   }
@@ -2218,7 +2218,7 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
 
    ScopedObjectAccess objlock(Object);
 
-   if (CheckAction(Owner, AC::NewChild) IS ERR::Okay) {
+   if (!CheckAction(Owner, AC::NewChild)) {
       struct acNewChild newchild = { .Object = Object };
       if (auto error = Action(AC::NewChild, Owner, &newchild); error != ERR::NoSupport) {
          if (error != ERR::Okay) { // If the owner has passed the object through to another owner, return ERR::Okay, otherwise error.

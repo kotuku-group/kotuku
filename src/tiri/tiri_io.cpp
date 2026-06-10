@@ -97,7 +97,7 @@ static int io_open(lua_State *Lua)
          case 'r': flags |= FL::READ; break;
          case 'w': flags |= FL::WRITE | FL::NEW; break;
          case 'a':
-            if (AnalysePath(path, nullptr) IS ERR::Okay) flags |= FL::WRITE;
+            if (!AnalysePath(path, nullptr)) flags |= FL::WRITE;
             else flags |= FL::WRITE | FL::NEW;
             seek_end = true;
             break;  // Append mode - will seek to end after open
@@ -365,7 +365,7 @@ static int lines_iterator(lua_State *Lua)
    if (not file) return 0; // End iteration
 
    std::string line;
-   if (file->readLine(line) IS ERR::Okay) {
+   if (!file->readLine(line)) {
       lua_pushstring(Lua, line);
       return 1;
    }
@@ -498,7 +498,7 @@ static int file_read(lua_State *Lua)
       // Default to reading a line if no arguments
       if (nargs IS 1) {
          std::string line;
-         if (file->readLine(line) IS ERR::Okay) {
+         if (!file->readLine(line)) {
             lua_pushstring(Lua, line);
             return 1;
          }
@@ -517,7 +517,7 @@ static int file_read(lua_State *Lua)
                switch (format[1]) {
                   case 'n': { // Read a number
                      std::string line;
-                     if (file->readLine(line) IS ERR::Okay) {
+                     if (!file->readLine(line)) {
                         lua_pushnumber(Lua, std::strtod(line.c_str(), nullptr));
                      }
                      else lua_pushnil(Lua);
@@ -546,7 +546,7 @@ static int file_read(lua_State *Lua)
 
                   case 'l': { // Read a line (default behavior)
                      std::string line;
-                     if (file->readLine(line) IS ERR::Okay) lua_pushstring(Lua, line);
+                     if (!file->readLine(line)) lua_pushstring(Lua, line);
                      else lua_pushnil(Lua);
                      break;
                   }
@@ -641,7 +641,7 @@ static int file_seek(lua_State *Lua)
       else if (kt::iequals("cur", whence_str)) whence = SEEK::CURRENT;
       else if (kt::iequals("end", whence_str)) whence = SEEK::END;
 
-      if (acSeek(file, offset, whence) IS ERR::Okay) {
+      if (!acSeek(file, offset, whence)) {
          lua_pushnumber(Lua, file->Position);
          return 1;
       }

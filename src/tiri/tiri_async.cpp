@@ -271,7 +271,7 @@ static int async_method(lua_State *Lua)
    CSTRING method = nullptr;
    AC method_id = AC::NIL;
 
-   if ((gc_obj->classptr->get(FID_Methods, table, total_methods) IS ERR::Okay) and (table)) {
+   if ((!gc_obj->classptr->get(FID_Methods, table, total_methods)) and (table)) {
       bool found = false;
 
       if (type IS LUA_TSTRING) {

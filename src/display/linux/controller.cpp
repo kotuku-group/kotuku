@@ -368,9 +368,9 @@ ERR linuxGetControllerPorts(int &Value)
       auto &controller = glLinuxControllers[port];
 
       if (controller.fd >= 0) {
-         if (read_controller(controller, port) IS ERR::Okay) last_port = port;
+         if (!read_controller(controller, port)) last_port = port;
       }
-      else if (open_controller(port) IS ERR::Okay) last_port = port;
+      else if (!open_controller(port)) last_port = port;
    }
 
    Value = last_port + 1;

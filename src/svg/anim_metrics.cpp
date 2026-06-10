@@ -71,14 +71,14 @@ void anim_base::set_orig_value(svgState &State)
 
          case SVF_fill: {
             std::string_view val;
-            if ((obj->get(FID_Fill, val) IS ERR::Okay) and not val.empty()) target_attrib_orig = val;
+            if ((!obj->get(FID_Fill, val)) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_fill;
             break;
          }
 
          case SVF_stroke: {
             std::string_view val;
-            if ((obj->get(FID_Stroke, val) IS ERR::Okay) and not val.empty()) target_attrib_orig = val;
+            if ((!obj->get(FID_Stroke, val)) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_stroke;
             break;
          }
@@ -97,7 +97,7 @@ void anim_base::set_orig_value(svgState &State)
 
          default: {
             std::string buffer;
-            if (obj->get(fid, buffer) IS ERR::Okay) target_attrib_orig.assign(buffer);
+            if (!obj->get(fid, buffer)) target_attrib_orig.assign(buffer);
          }
       }
    }
@@ -461,7 +461,7 @@ FRGB anim_base::get_colour_value(objVector &Vector, FIELD Field)
    else if (not by.empty()) {
       float *colour;
       int elements;
-      if ((Vector.get(Field, colour, elements) IS ERR::Okay) and (elements IS 4)) {
+      if ((!Vector.get(Field, colour, elements)) and (elements IS 4)) {
          from_col.Colour = { colour[0], colour[1], colour[2], colour[3] };
          vec::ReadPainter(nullptr, to, &to_col, nullptr);
          to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + colour[0], 0.0, 1.0);

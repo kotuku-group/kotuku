@@ -205,7 +205,7 @@ static ERR NETSERVER_SET_SSLCertificate(extNetServer *Self, const std::string_vi
       kt::Log log;
 
       LOC type;
-      if ((AnalysePath(Value, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+      if ((!AnalysePath(Value, &type)) and (type IS LOC::FILE)) {
          if (ssl_certificate_format(Value) != SSLCERTFORMAT::NIL) {
             Self->SSLCertificate.assign(Value);
          }
@@ -242,7 +242,7 @@ static ERR NETSERVER_SET_SSLPrivateKey(extNetServer *Self, const std::string_vie
       kt::Log log;
 
       LOC type;
-      if ((AnalysePath(Value, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+      if ((!AnalysePath(Value, &type)) and (type IS LOC::FILE)) {
          if (ssl_private_key_format(Value) != SSLCERTFORMAT::NIL) {
             Self->SSLPrivateKey.assign(Value);
          }
@@ -483,7 +483,7 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetServer *Self)
    }
 
    if (not client_ip) {
-      if (NewObject(CLASSID::NETCLIENT, &client_ip) IS ERR::Okay) {
+      if (!NewObject(CLASSID::NETCLIENT, &client_ip)) {
          if (InitObject(client_ip) != ERR::Okay) {
             FreeResource(client_ip);
             network_platform().close_socket(clientfd);
@@ -525,10 +525,10 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetServer *Self)
    // Socket Management
 
    extClientSocket *client_socket;
-   if (NewObject(CLASSID::CLIENTSOCKET, &client_socket) IS ERR::Okay) {
+   if (!NewObject(CLASSID::CLIENTSOCKET, &client_socket)) {
       client_socket->Handle = clientfd;
       client_socket->Client = client_ip;
-      if (InitObject(client_socket) IS ERR::Okay) {
+      if (!InitObject(client_socket)) {
          // Note that if the connection is over SSL then handshaking won't have
          // completed yet, in which case the connection feedback will be sent in a later state change.
 

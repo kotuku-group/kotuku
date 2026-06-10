@@ -84,10 +84,10 @@
 <p>The following example searches for all proxies available for use on port 80 (HTTP).</p>
 <pre>objProxy::create proxy;
 if (proxy.ok()) {
-   if (prxFind(*proxy, 80) IS ERR::Okay) {
+   if (!prxFind(*proxy, 80)) {
       do {
          ...
-      } while (prxFindNext(*proxy) IS ERR::Okay);
+      } while (!prxFindNext(*proxy));
    }
 }
 </pre>

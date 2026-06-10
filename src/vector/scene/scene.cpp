@@ -314,7 +314,7 @@ static ERR VECTORSCENE_Debug(extVectorScene *Self)
    kt::Log log("debug_tree");
 
    kt::vector<ChildEntry> list;
-   if ((ListChildren(Self->UID, &list) IS ERR::Okay) and (list.size() > 1)) {
+   if ((!ListChildren(Self->UID, &list)) and (list.size() > 1)) {
       log.msg("Scene #%d has %d children:", Self->UID, int(std::ssize(list)-1));
       for (auto &rec : list) {
          auto obj = GetObjectPtr(rec.ObjectID);
@@ -476,7 +476,7 @@ static ERR VECTORSCENE_Free(extVectorScene *Self, APTR Args)
 
    if (Self->SurfaceID) {
       OBJECTPTR surface;
-      if (AccessObject(Self->SurfaceID, 5000, &surface) IS ERR::Okay) {
+      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
          UnsubscribeAction(surface, AC::NIL);
          ReleaseObject(surface);
       }

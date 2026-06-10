@@ -141,7 +141,7 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
       path.assign(Self->Name);
 
       std::string volume;
-      if (ResolvePath(path, RSF::APPROXIMATE, &volume) IS ERR::Okay) {
+      if (!ResolvePath(path, RSF::APPROXIMATE, &volume)) {
          path.assign(volume);
       }
       else {
@@ -470,7 +470,7 @@ static ERR MODULE_Init(extModule *Self)
 
 exit:
    if (error != ERR::Okay) { // Free allocations if an error occurred
-      if ((error & ERR::Notified) IS ERR::Okay) log.msg("\"%s\" failed: %s", Self->Name.c_str(), GetErrorMsg(error));
+      if (!(error & ERR::Notified)) log.msg("\"%s\" failed: %s", Self->Name.c_str(), GetErrorMsg(error));
       error &= ~(ERR::Notified);
 
       if (root_mod) {

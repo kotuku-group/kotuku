@@ -253,7 +253,7 @@ struct FunctionField argsResize[] = {
 <p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (AllocMemory(1000, MEM::DATA, &amp;address) IS ERR::Okay) {
+if (!AllocMemory(1000, MEM::DATA, &amp;address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -1090,7 +1090,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <description>
 <p>This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
 <pre>MemInfo info;
-if (MemoryInfo(memid, &amp;info) IS ERR::Okay) {
+if (!MemoryInfo(memid, &amp;info)) {
    log.msg(&quot;Memory block #%d is %d bytes large.&quot;, info.MemoryID, info.Size);
 }
 </pre>
@@ -1812,7 +1812,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
    auto Self = (objClassType *)CurrentContext();
 
    // Code here...
-   if ((Result IS ERR::Okay) and (Parameters)) {
+   if ((!Result) and (Parameters)) {
       auto resize = (struct acRedimension *)Parameters;
    }
 }

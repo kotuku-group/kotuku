@@ -324,7 +324,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
    auto i = Path.find_first_of("&#?");
    if (i != std::string::npos) Path.erase(i);
 
-   if (AnalysePath(Path, nullptr) IS ERR::Okay) {
+   if (!AnalysePath(Path, nullptr)) {
       auto task = CurrentTask();
       task->setPath(Path);
 
@@ -500,7 +500,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       Self->Page->setMask(nullptr); // Reset the clipping mask if it was defined by <body>
 
       kt::vector<ChildEntry> list;
-      if (ListChildren(Self->Page->UID, &list) IS ERR::Okay) {
+      if (!ListChildren(Self->Page->UID, &list)) {
          for (auto it=list.rbegin(); it != list.rend(); it++) FreeResource(it->ObjectID);
       }
    }
@@ -508,7 +508,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
    if ((Self->View) and (Self->Page)) {
       // Client generated objects can appear in the View if <svg placement="background"/> was used.
       kt::vector<ChildEntry> list;
-      if (ListChildren(Self->View->UID, &list) IS ERR::Okay) {
+      if (!ListChildren(Self->View->UID, &list)) {
          for (auto child=list.rbegin(); child != list.rend(); child++) {
             if (child->ObjectID != Self->Page->UID) FreeResource(child->ObjectID);
          }
@@ -896,7 +896,7 @@ void ui_link::exec(extDocument *Self)
 
       if (origin.type IS LINK::FUNCTION) {
          std::string function_name, args;
-         if (extract_script(Self, origin.ref, nullptr, function_name, args) IS ERR::Okay) {
+         if (!extract_script(Self, origin.ref, nullptr, function_name, args)) {
             params.emplace("on-click", function_name);
          }
       }
@@ -916,7 +916,7 @@ void ui_link::exec(extDocument *Self)
 
    if (origin.type IS LINK::FUNCTION) { // function is in the format 'function()' or 'script.function()'
       std::string function_name, fargs;
-      if (extract_script(Self, origin.ref, &script, function_name, fargs) IS ERR::Okay) {
+      if (!extract_script(Self, origin.ref, &script, function_name, fargs)) {
          std::vector<ScriptArg> sa;
 
          if (!origin.args.empty()) {
@@ -974,7 +974,7 @@ void ui_link::exec(extDocument *Self)
             if (end != std::string::npos) identify_path = identify_path.substr(0, end);
 
             auto identify_text = std::string(identify_path);
-            if (IdentifyFile(identify_text, CLASSID::NIL, &class_id, &derived_id) IS ERR::Okay) {
+            if (!IdentifyFile(identify_text, CLASSID::NIL, &class_id, &derived_id)) {
                if (class_id IS CLASSID::DOCUMENT) {
                   Self->set(FID_Path, lk);
 

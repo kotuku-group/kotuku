@@ -213,7 +213,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (AllocMemory(1000, MEM::DATA, &address) IS ERR::Okay) {
+if (!AllocMemory(1000, MEM::DATA, &address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -476,7 +476,7 @@ following example illustrates correct use of this function:
 
 <pre>
 MemInfo info;
-if (MemoryInfo(memid, &info) IS ERR::Okay) {
+if (!MemoryInfo(memid, &info)) {
    log.msg("Memory block #%d is %d bytes large.", info.MemoryID, info.Size);
 }
 </pre>
@@ -641,7 +641,7 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
 
    // Allocate the new memory block and copy the data across
 
-   if (AllocMemory(NewSize, meminfo.Flags, Memory) IS ERR::Okay) {
+   if (!AllocMemory(NewSize, meminfo.Flags, Memory)) {
       auto copysize = (NewSize < meminfo.Size) ? NewSize : meminfo.Size;
       copymem(Address, *Memory, copysize);
       FreeResource(Address);

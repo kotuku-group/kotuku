@@ -200,11 +200,11 @@ static double global_point_size(void)
    if (not glPointSet) {
       kt::Log log(__FUNCTION__);
       OBJECTID style_id;
-      if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
+      if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
          kt::ScopedObjectLock<objXML> style(style_id, 3000);
          if (style.granted()) {
             std::string pointsize;
-            if (acGetKey(style.obj, "/interface/@fontsize", pointsize) IS ERR::Okay) {
+            if (!acGetKey(style.obj, "/interface/@fontsize", pointsize)) {
                glDefaultPoint = strtod(pointsize.c_str(), nullptr);
                if (glDefaultPoint < 6) glDefaultPoint = 6;
                else if (glDefaultPoint > 80) glDefaultPoint = 80;
@@ -388,7 +388,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       }
 
       ConfigGroups *groups;
-      if (not ((glConfig->get(FID_Data, groups) IS ERR::Okay) and (not groups->empty()))) {
+      if (not ((!glConfig->get(FID_Data, groups)) and (not groups->empty()))) {
          log.error("Failed to build a database of valid fonts.");
          cleanup();
          return ERR::Failed;
@@ -502,7 +502,7 @@ ERR GetList(FontList **Result)
 
    size_t size = 0;
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) IS ERR::Okay) {
+   if (!glConfig->get(FID_Data, groups)) {
       for (auto & [group, keys] : groups[0]) {
          size += sizeof(FontList) + keys["Name"].size() + 1 + keys["Styles"].size() + 1;
          if (keys.contains("Alias")) size += keys["Alias"].size() + 1;
@@ -819,7 +819,7 @@ ERR RefreshFonts(void)
    //    Styles = Bold,Bold Italic,Italic,Regular
 
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) IS ERR::Okay) {
+   if (!glConfig->get(FID_Data, groups)) {
       for (auto & [group, keys] : *groups) {
          std::list <std::string> styles;
          for (auto & [k, v] : keys) {
@@ -968,13 +968,13 @@ static void scan_truetype_folder(objConfig *Config)
    log.branch("Scanning for truetype fonts.");
 
    std::string ttpath;
-   if (ResolvePath("fonts:truetype/", RSF::NO_FILE_CHECK|RSF::PATH, &ttpath) IS ERR::Okay) {
+   if (!ResolvePath("fonts:truetype/", RSF::NO_FILE_CHECK|RSF::PATH, &ttpath)) {
       DirInfo *dir;
-      if (OpenDir(ttpath, RDF::FILE, &dir) IS ERR::Okay) {
+      if (!OpenDir(ttpath, RDF::FILE, &dir)) {
          LocalResource free_dir(dir);
 
          auto ttpath_len = ttpath.size();
-         while (ScanDir(dir) IS ERR::Okay) {
+         while (!ScanDir(dir)) {
             ttpath.resize(ttpath_len);
             ttpath.append(dir->Info->Name);
 
@@ -1102,17 +1102,17 @@ static void scan_fixed_folder(objConfig *Config)
    log.branch("Scanning for fixed fonts.");
 
    DirInfo *dir;
-   if (OpenDir("fonts:fixed/", RDF::FILE, &dir) IS ERR::Okay) {
+   if (!OpenDir("fonts:fixed/", RDF::FILE, &dir)) {
       LocalResource free_dir(dir);
 
-      while (ScanDir(dir) IS ERR::Okay) {
+      while (!ScanDir(dir)) {
          std::string location("fonts:fixed/");
          location.append(dir->Info->Name);
 
          winfnt_header_fields header;
          std::vector<uint16_t> points;
          std::string facename;
-         if (analyse_bmp_font(location, &header, facename, points) IS ERR::Okay) {
+         if (!analyse_bmp_font(location, &header, facename, points)) {
             log.detail("Detected font file \"%.*s\", name: %s", int(location.size()), location.data(), facename.c_str());
 
             if (facename.empty()) continue;

@@ -699,8 +699,8 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
       std::string srcfolder(src, pathlen); // Extract the path without the file name
 
       DirInfo *dir;
-      if (OpenDir(srcfolder, RDF::FILE, &dir) IS ERR::Okay) {
-         while (ScanDir(dir) IS ERR::Okay) {
+      if (!OpenDir(srcfolder, RDF::FILE, &dir)) {
+         while (!ScanDir(dir)) {
             FileInfo *scan = dir->Info;
             if (wildcmp(filename, scan->Name)) {
                auto folder = src.substr(0, pathlen);
@@ -784,7 +784,7 @@ the stream.  We recommend that the compression object's derived class ID is stor
 The following C code illustrates a simple means of compressing a file to another file using a stream:
 
 <pre>
-if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
+if (auto error = mtCompressStreamStart(compress); !error) {
    LONG len;
    LONG cmpsize = 0;
    UBYTE input[4096];
@@ -1380,7 +1380,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
          if (destpath.ends_with('/') or destpath.ends_with('\\')) {
             LOC result;
-            if ((AnalysePath(destpath, &result) IS ERR::Okay) and (result IS LOC::DIRECTORY)) {
+            if ((!AnalysePath(destpath, &result)) and (result IS LOC::DIRECTORY)) {
                Self->FileIndex++;
                continue;
             }
@@ -1727,7 +1727,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
    else {
       ERR error = ERR::Okay;
       LOC type;
-      bool exists = ((AnalysePath(path, &type) IS ERR::Okay) and (type IS LOC::FILE));
+      bool exists = ((!AnalysePath(path, &type)) and (type IS LOC::FILE));
 
       if (exists) {
          kt::Create<objFile> file({

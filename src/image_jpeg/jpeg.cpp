@@ -223,7 +223,7 @@ static ERR JPEG_Activate(extImage *Self)
       bmp->BitsPerPixel = 32;
    }
 
-   if (acQuery(bmp) IS ERR::Okay) {
+   if (!acQuery(bmp)) {
       if (InitObject(bmp) != ERR::Okay) {
          jpeg_destroy_decompress(&cinfo);
          return ERR::Init;
@@ -320,14 +320,14 @@ static ERR JPEG_Init(extImage *Self)
       if (!Self->Bitmap->Height) Self->Bitmap->Height = Self->DisplayHeight;
 
       if ((Self->Bitmap->Width) and (Self->Bitmap->Height)) {
-         if (InitObject(Self->Bitmap) IS ERR::Okay) {
+         if (!InitObject(Self->Bitmap)) {
             return ERR::Okay;
          }
          else return log.warning(ERR::Init);
       }
       else return log.warning(ERR::FieldNotSet);
    }
-   else if (Self->get(FID_Header, buffer) IS ERR::Okay) {
+   else if (!Self->get(FID_Header, buffer)) {
       if ((buffer[0] IS 0xff) and (buffer[1] IS 0xd8) and (buffer[2] IS 0xff) and
           ((buffer[3] IS 0xe0) or (buffer[3] IS 0xe1) or (buffer[3] IS 0xfe))) {
          log.msg("The file is a JPEG image.");

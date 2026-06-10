@@ -641,7 +641,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 #ifdef _WIN32
    {
       std::string libpath;
-      if (ResolvePath("modules:lib", RSF::NO_FILE_CHECK, &libpath) IS ERR::Okay) {
+      if (!ResolvePath("modules:lib", RSF::NO_FILE_CHECK, &libpath)) {
          winSetDllDirectory(libpath.c_str());
       }
       else log.trace("Failed to resolve modules:lib");
@@ -1200,7 +1200,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    #else
       SetVolume("templates", "scripts:templates/", "misc/openbook", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("config", "system:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
-      if (AnalysePath("kotuku:bin/", nullptr) IS ERR::Okay) { // Bin is the location of the tiri and kotuku binaries
+      if (!AnalysePath("kotuku:bin/", nullptr)) { // Bin is the location of the tiri and kotuku binaries
          SetVolume("bin", "kotuku:bin/", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       else SetVolume("bin", "kotuku:", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
@@ -1443,7 +1443,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 #ifndef KOTUKU_STATIC
    // Change glModulePath to an absolute path to optimise the loading of modules.
    std::string mpath;
-   if (ResolvePath("modules:", RSF::NO_FILE_CHECK, &mpath) IS ERR::Okay) {
+   if (!ResolvePath("modules:", RSF::NO_FILE_CHECK, &mpath)) {
       glModulePath.assign(mpath);
    }
 #endif

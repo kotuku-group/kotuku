@@ -350,7 +350,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
 
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SVG)) {
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
-      if ((mc->get(FID_ActionTable, actions) IS ERR::Okay) and (actions)) {
+      if ((!mc->get(FID_ActionTable, actions)) and (actions)) {
          if ((actions[int(AC::SaveToObject)]) and (actions[int(AC::SaveToObject)] != (APTR)SVG_SaveToObject)) {
             return actions[int(AC::SaveToObject)](Self, Args);
          }
@@ -400,16 +400,16 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
 
                if (!error) {
                   auto dim = Self->Viewport->get<DMF>(FID_Dimensions);
-                  if (dmf::hasAnyX(dim) and (Self->Viewport->get(FID_X, x) IS ERR::Okay))
+                  if (dmf::hasAnyX(dim) and (!Self->Viewport->get(FID_X, x)))
                      set_dimension(tag, "x", x, dmf::hasScaledX(dim));
 
-                  if (dmf::hasAnyY(dim) and (Self->Viewport->get(FID_Y, y) IS ERR::Okay))
+                  if (dmf::hasAnyY(dim) and (!Self->Viewport->get(FID_Y, y)))
                      set_dimension(tag, "y", y, dmf::hasScaledY(dim));
 
-                  if (dmf::hasAnyWidth(dim) and (Self->Viewport->get(FID_Width, width) IS ERR::Okay))
+                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->get(FID_Width, width)))
                      set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
 
-                  if (dmf::hasAnyHeight(dim) and (Self->Viewport->get(FID_Height, height) IS ERR::Okay))
+                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->get(FID_Height, height)))
                      set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
                }
 

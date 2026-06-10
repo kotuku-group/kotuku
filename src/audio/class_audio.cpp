@@ -131,7 +131,7 @@ static ERR AUDIO_Activate(extAudio *Self)
    Self->MixBufferSize = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
    Self->MixElements   = SAMPLE(Self->MixBufferSize / mixbitsize);
 
-   if (AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer) IS ERR::Okay) {
+   if (!AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer)) {
       // Configure the mixing system
 
       bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;
@@ -269,7 +269,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
       sample.Data = nullptr;
    }
-   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) IS ERR::Okay) {
+   else if (!AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data)) {
       copymem(Args->Data, sample.Data, Args->DataSize);
    }
    else return log.warning(ERR::AllocMemory);
@@ -1409,13 +1409,13 @@ static void load_config(extAudio *Self)
       config->read("AUDIO", "BitDepth", Self->BitDepth);
 
       int value;
-      if (config->read("AUDIO", "Periods", value) IS ERR::Okay) SET_Periods(Self, value);
-      if (config->read("AUDIO", "PeriodSize", value) IS ERR::Okay) SET_PeriodSize(Self, value);
+      if (!config->read("AUDIO", "Periods", value)) SET_Periods(Self, value);
+      if (!config->read("AUDIO", "PeriodSize", value)) SET_PeriodSize(Self, value);
       if (config->read("AUDIO", "Device", Self->Device) != ERR::Okay) Self->Device = "default";
 
       std::string str;
       Self->Flags |= ADF::STEREO;
-      if (config->read("AUDIO", "Stereo", str) IS ERR::Okay) {
+      if (!config->read("AUDIO", "Stereo", str)) {
          if (iequals("FALSE", str)) Self->Flags &= ~ADF::STEREO;
       }
 
@@ -1425,7 +1425,7 @@ static void load_config(extAudio *Self)
       // Find the mixer section, then load the mixer information
 
       ConfigGroups *groups;
-      if (config->get(FID_Data, groups) IS ERR::Okay) {
+      if (!config->get(FID_Data, groups)) {
          for (auto& [group, keys] : groups[0]) {
             if (iequals("MIXER", group)) {
                Self->Volumes.clear();

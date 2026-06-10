@@ -582,7 +582,7 @@ void move_layer(extSurface *Self, int X, int Y)
       if (ScopedObjectLock<objDisplay> display(Self->DisplayID, 2000); display.granted()) {
          // Subtract the host window's LeftMargin and TopMargin as MoveToPoint() is based on the coordinates of the window frame.
 
-         if (acMoveToPoint(*display, X - display->LeftMargin, Y - display->TopMargin, 0, MTF::X|MTF::Y) IS ERR::Okay) {
+         if (!acMoveToPoint(*display, X - display->LeftMargin, Y - display->TopMargin, 0, MTF::X|MTF::Y)) {
             Self->X = X;
             Self->Y = Y;
             UpdateSurfaceRecord(Self);

@@ -287,7 +287,7 @@ timer_cycle:
                   relock = true;
                   error = routine(nullptr, elapsed, current_time, timer->Routine.Meta);
                }
-               else if (AccessObject(timer->SubscriberID, 50, &subscriber) IS ERR::Okay) {
+               else if (!AccessObject(timer->SubscriberID, 50, &subscriber)) {
                   kt::SwitchContext context(subscriber);
 
                   auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;

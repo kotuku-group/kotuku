@@ -722,7 +722,7 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
    if (Value.empty()) return ERR::InvalidValue;
 
    std::string_view name;
-   if (fnt::ResolveFamilyName(Value, &name) IS ERR::Okay) {
+   if (!fnt::ResolveFamilyName(Value, &name)) {
       Self->txFamily = name.empty() ? "Noto Sans" : name;
    }
    else Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
@@ -830,7 +830,7 @@ static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
    }
 
    std::string_view next;
-   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
+   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); !error) {
       Self->FillString = Value;
 
       if (not next.empty()) {
@@ -1461,7 +1461,7 @@ static ERR reset_font(extVectorText *Vector, bool Force)
    if ((not Vector->initialised()) and (not Force)) return ERR::NotInitialised;
 
    kt::Log log;
-   if (auto error = get_font(log, Vector->txFamily, Vector->txFontStyle, Vector->txWeight, Vector->txFontSize, &Vector->txHandle); error IS ERR::Okay) {
+   if (auto error = get_font(log, Vector->txFamily, Vector->txFontStyle, Vector->txWeight, Vector->txFontSize, &Vector->txHandle); !error) {
       if (Vector->txHandle->type IS CF_BITMAP) {
          Vector->txBitmapFont = ((bmp_font *)Vector->txHandle)->font;
          Vector->txFontSize = std::trunc(double(Vector->txBitmapFont->Height) * (DISPLAY_DPI / 72.0));
@@ -2108,7 +2108,7 @@ static ERR init_text(void)
    FID_FreetypeFace = strihash("FreetypeFace");
 
    OBJECTID id;
-   if (FindObject("cfgSystemFonts", CLASSID::CONFIG, &id) IS ERR::Okay) {
+   if (!FindObject("cfgSystemFonts", CLASSID::CONFIG, &id)) {
       glFontConfig = (objConfig *)GetObjectPtr(id);
    }
 

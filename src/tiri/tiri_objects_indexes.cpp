@@ -212,7 +212,7 @@ static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
          OBJECTID id;
          std::string_view name;
          if (auto error = lua_string_view(Lua, ValueIndex, name); error != ERR::Okay) return error;
-         if (FindObject(name, CLASSID::NIL, &id) IS ERR::Okay) {
+         if (!FindObject(name, CLASSID::NIL, &id)) {
             return Object->set(Field->FieldID, id);
          }
          else {
@@ -306,7 +306,7 @@ static int object_get(lua_State *Lua)
       else { // Revert to getKey() if the class supports it failed
          std::string buffer;
 
-         if ((acGetKey(obj, fieldname, buffer) IS ERR::Okay) and (not buffer.empty())) {
+         if ((!acGetKey(obj, fieldname, buffer)) and (not buffer.empty())) {
             lua_pushstring(Lua, buffer);
          }
          else lua_pushvalue(Lua, 2); // Push the client's default value

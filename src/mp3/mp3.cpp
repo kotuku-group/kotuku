@@ -627,7 +627,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
       }
 
       int active;
-      if (Self->get(FID_Active, active) IS ERR::Okay) {
+      if (!Self->get(FID_Active, active)) {
          if (active) {
             log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
             Self->deactivate();

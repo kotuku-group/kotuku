@@ -1573,7 +1573,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
             return ERR::Okay;
          #else
             APTR functionbase;
-            if (module->get(FID_ModBase, functionbase) IS ERR::Okay) {
+            if (!module->get(FID_ModBase, functionbase)) {
                if (Module) *Module = module;
                if (Functions) ((APTR *)Functions)[0] = functionbase;
                return ERR::Okay;
@@ -1752,7 +1752,7 @@ template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
    struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
+   if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native == std::endian::little) {
             *Result = ((T *)data)[0];
@@ -1776,7 +1776,7 @@ template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
    struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
+   if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native == std::endian::little) {
             switch(sizeof(T)) {

@@ -584,9 +584,9 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
    }
 
    APTR buffer;
-   if (AllocMemory(Self->Size, MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
+   if (!AllocMemory(Self->Size, MEM::NO_CLEAR, &buffer)) {
       int result;
-      if (glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result) IS ERR::Okay) {
+      if (!glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result)) {
          if (AllocMemory(result, MEM::NO_CLEAR, (APTR *)&Self->prvCompress) IS ERR::Okay) {
             copymem(buffer, Self->prvCompress, result);
          }
@@ -1238,7 +1238,7 @@ static ERR BITMAP_Init(extBitmap *Self)
          }
          else if (!Self->x11.XShmImage) {
             log.detail("Allocating a memory based XImage.");
-            if (alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid) IS ERR::Okay) {
+            if (!alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid)) {
                Self->prvAFlags |= BF_DATA;
 
                init_x11_image(Self, glX11ShmImage);
@@ -1306,7 +1306,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             log.warning("Support for MEM::TEXTURE not included yet.");
             return ERR::NoSupport;
          }
-         else if (AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data) IS ERR::Okay) {
+         else if (!AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data)) {
             Self->prvAFlags |= BF_DATA;
          }
          else return ERR::AllocMemory;
@@ -1321,7 +1321,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
-         if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+         if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data)) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1737,7 +1737,7 @@ static ERR BITMAP_Query(extBitmap *Self)
          Self->BitsPerPixel  = 32;
          Self->BytesPerPixel = 4;
 #if 1
-         if (FindObject("SystemDisplay", CLASSID::DISPLAY, &display_id) IS ERR::Okay) {
+         if (!FindObject("SystemDisplay", CLASSID::DISPLAY, &display_id)) {
             if (ScopedObjectLock<objDisplay> display(display_id, 3000); display.granted()) {
                Self->AmtColours    = display->Bitmap->AmtColours;
                Self->BytesPerPixel = display->Bitmap->BytesPerPixel;

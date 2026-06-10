@@ -440,7 +440,7 @@ static ERR IMAGE_Init(extImage *Self)
       if (!Self->Bitmap->Height) Self->Bitmap->Height = Self->DisplayHeight;
 
       if ((Self->Bitmap->Width) and (Self->Bitmap->Height)) {
-         if (InitObject(Self->Bitmap) IS ERR::Okay) {
+         if (!InitObject(Self->Bitmap)) {
             if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) Self->Flags &= ~(PCF::ALPHA|PCF::MASK);
 
             if ((Self->Flags & (PCF::ALPHA|PCF::MASK)) != PCF::NIL) {
@@ -466,7 +466,7 @@ static ERR IMAGE_Init(extImage *Self)
 
       // Test the given path to see if it matches our supported file format.
 
-      if (ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath) IS ERR::Okay) {
+      if (!ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath)) {
          int result;
 
          if (ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result) IS ERR::Okay) {
@@ -944,7 +944,7 @@ static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
       if (!mc) return log.warning(ERR::NoSupport);
 
-      if ((mc->get(FID_ActionTable, routine) IS ERR::Okay) and (routine)) {
+      if ((!mc->get(FID_ActionTable, routine)) and (routine)) {
          if ((routine[int(AC::SaveToObject)]) and (routine[int(AC::SaveToObject)] != (APTR)IMAGE_SaveToObject)) {
             return routine[int(AC::SaveToObject)](Self, Args);
          }

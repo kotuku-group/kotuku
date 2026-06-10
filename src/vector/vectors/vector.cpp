@@ -1378,7 +1378,7 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
    }
 
    std::string_view next;
-   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
+   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); !error) {
       Self->FillString = Value;
 
       if (not next.empty()) {

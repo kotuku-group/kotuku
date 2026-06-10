@@ -370,7 +370,7 @@ static ERR TIRI_Activate(objScript *Self)
 
             if (lua_pcall(prv->Lua, 0, 0, 0)) {
                process_error(Self, "Activation");
-               if ((error = Self->Error) IS ERR::Okay) error = ERR::Failed;
+               if (!(error = Self->Error)) error = ERR::Failed;
             }
          }
       }
@@ -582,7 +582,7 @@ static ERR TIRI_Init(objScript *Self)
 
    if ((!error) and (prv->SaveCompiled = compile)) {
       DateTime *dt;
-      if (src_file->get(FID_Date, dt) IS ERR::Okay) prv->CacheDate = *dt;
+      if (!src_file->get(FID_Date, dt)) prv->CacheDate = *dt;
       src_file->get(FID_Permissions, (int &)prv->CachePermissions);
    }
 
@@ -1009,7 +1009,7 @@ static ERR run_script(objScript *Self)
          #ifndef NDEBUG
             kt::vector<std::string> *list;
             int total_procedures;
-            if (GET_Procedures(Self, &list, &total_procedures) IS ERR::Okay) {
+            if (!GET_Procedures(Self, &list, &total_procedures)) {
                for (int i=0; i < total_procedures; i++) log.trace("%s", list[0][i]);
             }
          #endif

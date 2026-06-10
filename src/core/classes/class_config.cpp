@@ -237,7 +237,7 @@ static ERR CONFIG_DataFeed(extConfig *Self, struct acDataFeed *Args)
 
    if (Args->Datatype IS DATA::TEXT) {
       auto buf = (Args->Size > 0) ? std::string_view((CSTRING)Args->Buffer, Args->Size) : std::string_view((CSTRING)Args->Buffer);
-      if (auto error = parse_config(Self, buf); error IS ERR::Okay) {
+      if (auto error = parse_config(Self, buf); !error) {
          apply_filters(Self);
       }
       else return error;
@@ -538,7 +538,7 @@ static ERR CONFIG_SaveSettings(extConfig *Self)
       };
 
       if (file.ok()) {
-         if (Self->saveToObject(*file) IS ERR::Okay) Self->CRC = crc;
+         if (!Self->saveToObject(*file)) Self->CRC = crc;
          return ERR::Okay;
       }
       else return ERR::File;

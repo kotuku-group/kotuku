@@ -115,13 +115,13 @@ void clean_clipboard(void)
    int64_t yesterday = now - (24 * 60LL * 60LL);
 
    DirInfo *dir;
-   if (OpenDir("clipboard:", RDF::FILE|RDF::DATE, &dir) IS ERR::Okay) {
+   if (!OpenDir("clipboard:", RDF::FILE|RDF::DATE, &dir)) {
       LocalResource free_dir(dir);
 
       Regex *compiled;
       if (rx::Compile("^\\d+(?:_text|_image|_file|_object)\\d*\\.\\d{3}$", REGEX::NIL, nullptr, &compiled) IS ERR::Okay) {
-         while (ScanDir(dir) IS ERR::Okay) {
-            if (rx::Match(compiled, dir->Info->Name, RMATCH::NIL, nullptr) IS ERR::Okay) {
+         while (!ScanDir(dir)) {
+            if (!rx::Match(compiled, dir->Info->Name, RMATCH::NIL, nullptr)) {
                if (dir->Info->Timestamp < yesterday) {
                   std::string path("clipboard:");
                   path.append(dir->Info->Name);
@@ -179,7 +179,7 @@ static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Ite
    std::basic_stringstream<char16_t> list;
    for (auto &item : Items) {
       std::string path;
-      if (ResolvePath(item.Path, RSF::NIL, &path) IS ERR::Okay) {
+      if (!ResolvePath(item.Path, RSF::NIL, &path)) {
          list << utf8_to_utf16(path, true) << char16_t(0);
       }
    }
@@ -382,7 +382,7 @@ static ERR CLIPBOARD_AddText(objClipboard *Self, struct clip::AddText *Args)
    if (not Args) return log.warning(ERR::NullArgs);
    if (Args->String.empty()) return ERR::Okay;
 
-   if (add_text_to_host(Self, Args->String) IS ERR::Okay) {
+   if (!add_text_to_host(Self, Args->String)) {
       if (glHistoryLimit <= 1) return ERR::Okay;
    }
 
@@ -402,7 +402,7 @@ Clear deletes the generated clipboard cache and removes all clip records tracked
 static ERR CLIPBOARD_Clear(objClipboard *Self)
 {
    std::string path;
-   if (ResolvePath("clipboard:", RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
+   if (!ResolvePath("clipboard:", RSF::NO_FILE_CHECK, &path)) {
       DeleteFile(path, nullptr);
       CreateFolder(path, PERMIT::READ|PERMIT::WRITE);
    }
@@ -452,7 +452,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       }
 
       std::vector<ClipItem> items = { std::string("clipboard:") + glProcessID + "_text" + std::to_string(glCounter++) + std::string(".000") };
-      if (auto error = add_clip(CLIPTYPE::TEXT, items); error IS ERR::Okay) {
+      if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
          auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
          if (file.ok()) {
             if (file->write(Args->Buffer, Args->Size, 0) != ERR::Okay) return log.warning(ERR::Write);
@@ -765,7 +765,7 @@ static ERR add_clip(std::string_view String)
    log.branch();
 
    std::vector<ClipItem> items = { std::string("clipboard:") + glProcessID + "_text" + std::to_string(glCounter++) + ".000" };
-   if (auto error = add_clip(CLIPTYPE::TEXT, items); error IS ERR::Okay) {
+   if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
       kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
       if (file.ok()) {
          if (auto error = file->write(String.data(), int(String.size()), 0); error != ERR::Okay) return log.warning(error);

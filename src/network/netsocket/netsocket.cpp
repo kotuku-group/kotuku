@@ -222,7 +222,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
    }
 
    IPAddress server_ip;
-   if (net::StrToAddress(Self->Address, &server_ip) IS ERR::Okay) { // The address is an IP string, no resolution is necessary
+   if (!net::StrToAddress(Self->Address, &server_ip)) { // The address is an IP string, no resolution is necessary
       std::vector<IPAddress> list;
       list.emplace_back(server_ip);
       connect_name_resolved(Self, ERR::Okay, "", list);

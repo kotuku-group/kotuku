@@ -838,9 +838,9 @@ This dual testing approach ensures comprehensive coverage at both the internal i
 
 if (auto xml = objXML::create { fl::Path("document.xml") }; xml.ok()) {
    XPathParseResult *query;
-   if (xp::Compile(*xml, "//book[@price < 20]/title", &query) IS ERR::Okay) {
+   if (!xp::Compile(*xml, "//book[@price < 20]/title", &query)) {
       XPathValue *result;
-      if (xp::Evaluate(*xml, query, &result) IS ERR::Okay) {
+      if (!xp::Evaluate(*xml, query, &result)) {
          // Process result node set
          for (auto *node : result->node_set) {
             log.msg("Found: %s", node->name());
@@ -858,14 +858,14 @@ if (auto xml = objXML::create { fl::Path("document.xml") }; xml.ok()) {
 // C++ example - process each matching node
 static ERR process_book(objXML *XML, int TagID, CSTRING Attrib) {
    XTag *tag;
-   if (XML->getTag(TagID, &tag) IS ERR::Okay) {
+   if (!XML->getTag(TagID, &tag)) {
       log.msg("Processing book: %s", tag->getContent().c_str());
    }
    return ERR::Okay;
 }
 
 XPathParseResult *query;
-if (xp::Compile(xml, "//book[@category='fiction']", &query) IS ERR::Okay) {
+if (!xp::Compile(xml, "//book[@category='fiction']", &query)) {
    FUNCTION callback = C_FUNCTION(process_book);
    xp::Query(xml, query, &callback);
    FreeResource(query);

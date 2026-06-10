@@ -47,7 +47,7 @@ static std::optional<std::string> get_context_directory(const XPathContext &Cont
 {
    if ((Context.xml) and (not Context.xml->Path.empty())) {
       std::string resolved;
-      if (ResolvePath(Context.xml->Path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) {
+      if (!ResolvePath(Context.xml->Path, RSF::NO_FILE_CHECK, &resolved)) {
          fs::path base_path(resolved);
          base_path = base_path.parent_path();
          return base_path.string();
@@ -71,7 +71,7 @@ static bool resolve_resource_location(const XPathContext &Context, const std::st
    if (URI.empty()) return false;
    if (is_string_uri(URI)) { Resolved = URI; return true; }
 
-   if (ResolvePath(URI, RSF::NO_FILE_CHECK, &Resolved) IS ERR::Okay) {
+   if (!ResolvePath(URI, RSF::NO_FILE_CHECK, &Resolved)) {
       return true;
    }
    else Resolved = URI;
@@ -279,7 +279,7 @@ XPathVal XPathFunctionLibrary::function_doc_available(const std::vector<XPathVal
    // TODO: Testing validity of URI's needs to be supported by the File class.
 
    LOC file_type;
-   if (AnalysePath(resolved, &file_type) IS ERR::Okay) {
+   if (!AnalysePath(resolved, &file_type)) {
       return XPathVal(true);
    }
 

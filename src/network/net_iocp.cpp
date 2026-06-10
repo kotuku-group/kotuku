@@ -543,7 +543,7 @@ public:
       if (!Config) return ERR::NullArgs;
 
       ConfigGroups *groups;
-      if (Config->get(FID_Data, groups) IS ERR::Okay) {
+      if (!Config->get(FID_Data, groups)) {
          std::vector<std::string> host_groups;
          for (const auto &[group, keys] : groups[0]) {
             if (keys.contains("Host")) host_groups.push_back(group);
@@ -564,7 +564,7 @@ public:
       bool enabled = (strtol(value.c_str(), nullptr, 0) > 0);
 
       std::string servers;
-      if ((task->getEnv(HKEY_PROXY "ProxyServer", servers) IS ERR::Okay) and (not servers.empty())) {
+      if ((!task->getEnv(HKEY_PROXY "ProxyServer", servers)) and (not servers.empty())) {
          log.msg("Host has defined default proxies: %s", servers.c_str());
 
          auto proxy_entries = parse_proxy_string(servers, enabled);

@@ -202,7 +202,7 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
       // It is then accessible permanently under that name.
 
       extVectorGradient *gradient;
-      if (NewObject(CLASSID::VECTORGRADIENT, &gradient) IS ERR::Okay) {
+      if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
          SetOwner(gradient, Scene);
          gradient->setFields(
             fl::Name(lookup),
@@ -216,7 +216,7 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
          if (gradient->Colours) delete gradient->Colours;
          gradient->Colours = new (std::nothrow) GradientColours(map_lookup->second, 0);
 
-         if (InitObject(gradient) IS ERR::Okay) {
+         if (!InitObject(gradient)) {
             Scene->addDef(lookup.c_str(), gradient);
             Painter->Gradient = gradient;
          }

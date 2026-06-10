@@ -465,7 +465,7 @@ int64_t GetResource(RES Resource)
 
          if (file.ok()) {
             std::string line;
-            while (file->readLine(line) IS ERR::Okay) {
+            while (!file->readLine(line)) {
                if (startswith("cpu MHz", line)) {
                   if (auto value = strchr(line.c_str(), ':')) cpu_mhz = int(strtod(value + 1, nullptr));
                }

@@ -62,7 +62,7 @@ static ERR RSVG_Init(extImage *Self)
    char *buffer;
 
    if (wildcmp("*.svg|*.svgz", path));
-   else if (Self->get(FID_Header, buffer) IS ERR::Okay) {
+   else if (!Self->get(FID_Header, buffer)) {
       if (strisearch("<svg", buffer) >= 0) {
       }
       else return ERR::NoSupport;
@@ -96,7 +96,7 @@ static ERR RSVG_Query(extImage *Self)
 
    if (!prv->SVG) {
       std::string_view path;
-      if (Self->get(FID_Path, path) IS ERR::Okay) {
+      if (!Self->get(FID_Path, path)) {
          if ((prv->SVG = objSVG::create::local(fl::Path(path)))) {
          }
          else return log.warning(ERR::CreateObject);
@@ -180,9 +180,9 @@ static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
          if (InitObject(Self->Bitmap) != ERR::Okay) return ERR::Init;
       }
 
-      if (Action(AC::Resize, Self->Bitmap, Args) IS ERR::Okay) {
+      if (!Action(AC::Resize, Self->Bitmap, Args)) {
          objVectorScene *scene;
-         if ((prv->SVG->get(FID_Scene, scene) IS ERR::Okay) and (scene)) {
+         if ((!prv->SVG->get(FID_Scene, scene)) and (scene)) {
             scene->setPageWidth(Self->Bitmap->Width);
             scene->setPageHeight(Self->Bitmap->Height);
 

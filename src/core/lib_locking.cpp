@@ -48,7 +48,7 @@ private:
          WINHANDLE expected = WINHANDLE(0);
          WINHANDLE new_lock;
 
-         if (alloc_public_waitlock(&new_lock, nullptr) IS ERR::Okay) {
+         if (!alloc_public_waitlock(&new_lock, nullptr)) {
             if (thread_locks[index].compare_exchange_weak(expected, new_lock, std::memory_order_acquire)) {
                kt::Log log("ThreadLockManager");
                log.trace("Allocated thread-lock #%d for thread #%d", index, get_thread_id());
@@ -363,7 +363,7 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
    *Result = nullptr;
 
    if (ObjectID IS glMetaClass.UID) { // Access to the MetaClass requires this special case handler.
-      if (auto error = LockObject(&glMetaClass, MilliSeconds); error IS ERR::Okay) {
+      if (auto error = LockObject(&glMetaClass, MilliSeconds); !error) {
          *Result = &glMetaClass;
          return ERR::Okay;
       }

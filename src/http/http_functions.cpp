@@ -317,7 +317,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
          log.detail("Sequential input stream has uploaded %" PRId64 "/%" PRId64 " bytes.", Self->Index, Self->ContentLength);
 
          std::string filepath;
-         if (parse_file(Self, filepath) IS ERR::Okay) {
+         if (!parse_file(Self, filepath)) {
             if ((Self->flInput = objFile::create::local(fl::Path(filepath), fl::Flags(FL::READ)))) {
                goto continue_upload;
             }

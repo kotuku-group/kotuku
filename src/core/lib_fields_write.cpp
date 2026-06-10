@@ -289,7 +289,7 @@ static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
 
          if (op != OP_OVERWRITE) {
             int current_flags;
-            if (auto error = Object->get<int>(Field->FieldID, current_flags); error IS ERR::Okay) {
+            if (auto error = Object->get<int>(Field->FieldID, current_flags); !error) {
                if (op IS OP_OR) int64 = current_flags | int64;
                else if (op IS OP_AND) int64 = current_flags & int64;
             }

@@ -220,7 +220,7 @@ extern ERR init_search(void);
 static bool read_rgb8(std::string_view Value, RGB8 *RGB)
 {
    VectorPainter painter;
-   if (vec::ReadPainter(nullptr, Value, &painter, nullptr) IS ERR::Okay) {
+   if (!vec::ReadPainter(nullptr, Value, &painter, nullptr)) {
       RGB->Red   = int(painter.Colour.Red   * 255.0);
       RGB->Green = int(painter.Colour.Green * 255.0);
       RGB->Blue  = int(painter.Colour.Blue  * 255.0);
@@ -241,14 +241,14 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (objModule::load("vector", &modVector, &VectorBase) != ERR::Okay) return ERR::InitModule;
 
    OBJECTID id;
-   if (FindObject("glStyle", CLASSID::XML, &id) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &id)) {
       std::string buffer;
       if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer) IS ERR::Okay) {
          read_rgb8(buffer, &glHighlight);
       }
    }
 
-   if (init_search() IS ERR::Okay) {
+   if (!init_search()) {
       return create_scintilla();
    }
    else return ERR::AddClass;
@@ -291,7 +291,7 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
    dc.Datatype = DATA::REQUEST;
    dc.Buffer   = &request;
    dc.Size     = sizeof(request);
-   if (Action(AC::DataFeed, Args->Source, &dc) IS ERR::Okay) {
+   if (!Action(AC::DataFeed, Args->Source, &dc)) {
       // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
    }
 }
@@ -1231,7 +1231,7 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
 
    ERR error;
    APTR buffer;
-   if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
+   if (!AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &buffer)) {
       SCICALL(SCI_GETTEXT, len+1, (const char *)buffer);
       error = acWrite(Args->Dest, buffer, len, nullptr);
       FreeResource(buffer);
@@ -2137,7 +2137,7 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
    }
 
    OBJECTPTR dialog;
-   if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
+   if (!NewObject(CLASSID::SCRIPT, &dialog)) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");
@@ -2155,10 +2155,10 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
       }
       else acSetKey(dialog, "message", Message);
 
-      if ((InitObject(dialog) IS ERR::Okay) and (acActivate(dialog) IS ERR::Okay)) {
+      if ((!InitObject(dialog)) and (!acActivate(dialog))) {
          kt::vector<std::string> *results;
          int size;
-         if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
+         if ((!dialog->get(FID_Results, results, size)) and (size > 0)) {
             dialog_id = strtol((*results)[0].c_str(), nullptr, 0);
          }
       }
@@ -2176,7 +2176,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
 
    if (auto file = objFile::create::local(fl::Flags(FL::READ), fl::Path(Path))) {
       if ((file->Flags & FL::STREAM) != FL::NIL) {
-         if (file->startStream(Self->UID, FL::READ, 0) IS ERR::Okay) {
+         if (!file->startStream(Self->UID, FL::READ, 0)) {
             acClear(Self);
 
             SubscribeAction(file, AC::Write, C_FUNCTION(notify_write));
@@ -2185,11 +2185,11 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
          }
          else error = ERR::Failed;
       }
-      else if (file->get(FID_Size, size) IS ERR::Okay) {
+      else if (!file->get(FID_Size, size)) {
          if (size > 0) {
             if (size < 1024 * 1024 * 10) {
                if (AllocMemory(size+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&str) IS ERR::Okay) {
-                  if (acRead(file, str, size, &len) IS ERR::Okay) {
+                  if (!acRead(file, str, size, &len)) {
                      str[len] = 0;
                      SCICALL(SCI_SETTEXT, str);
                      SCICALL(SCI_EMPTYUNDOBUFFER);

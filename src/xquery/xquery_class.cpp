@@ -69,7 +69,7 @@ Compiling and evaluating queries:
 objXQuery::create query { statement="/bookstore/book[@price &lt; 10]/title" };
 if (query.ok()) {
    XPathValue *result;
-   if (query-&gt;evaluate(xml) IS ERR::Okay) {
+   if (!query-&gt;evaluate(xml)) {
       log.msg("Got: %s", query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
    }
 }

@@ -96,7 +96,7 @@ static ERR process_args(void)
 {
    kt::Log log("Origo");
 
-   if ((glTask->get(FID_Parameters, glArgs) IS ERR::Okay) and (glArgs)) {
+   if ((!glTask->get(FID_Parameters, glArgs)) and (glArgs)) {
       kt::vector<std::string> &args = *glArgs;
       for (unsigned i=0; i < args.size(); i++) {
          if (kt::iequals(args[i], "--help") or kt::iequals(args[i], "help")) { // Print help for the user
@@ -207,7 +207,7 @@ extern "C" int main(int argc, char **argv)
    glTask = CurrentTask();
 
    int result = 0;
-   if (process_args() IS ERR::Okay) {
+   if (!process_args()) {
       if (glBackstage) {
          objModule::load("backstage");
       }
@@ -220,7 +220,7 @@ extern "C" int main(int argc, char **argv)
       }
       else if (not glTargetFile.empty()) {
          std::string_view path;
-         if (glTask->get(FID_Path, path) IS ERR::Okay) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
+         if (!glTask->get(FID_Path, path)) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
          else log.error("No working path.");
 
          LOC type;
@@ -244,7 +244,7 @@ extern "C" int main(int argc, char **argv)
 
          LOC type;
          static objCompression *glPackageArchive;
-         if ((AnalysePath(pkg_path, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((!AnalysePath(pkg_path, &type)) and (type IS LOC::FILE)) {
             // Create a "package:" volume and attempt to run "package:main.tiri"
             if ((glPackageArchive = objCompression::create::local(fl::Path(pkg_path), fl::ArchiveName("package"), fl::Flags(CMF::READ_ONLY)))) {
                if (SetVolume("package", "archive:package/", "filetypes/archive", "", "", VOLUME::REPLACE|VOLUME::HIDDEN) != ERR::Okay) return -1;
@@ -254,7 +254,7 @@ extern "C" int main(int argc, char **argv)
             else return -1;
          }
          else { // Check for main.tiri
-            if ((AnalysePath("main.tiri", &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+            if ((!AnalysePath("main.tiri", &type)) and (type IS LOC::FILE)) {
                result = (int)exec_source("main.tiri", glTime, glProcedure);
             }
             else {

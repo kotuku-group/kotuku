@@ -490,7 +490,7 @@ static ERR tls_setup_client(extNetSocket *Self)
 
          std::string path;
          if (!cert_loaded) {
-            if (ResolvePath("config:ssl/ca-bundle.crt", RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
+            if (!ResolvePath("config:ssl/ca-bundle.crt", RSF::NO_FILE_CHECK, &path)) {
                if (SSL_CTX_load_verify_locations(glClientSSL, path.c_str(), nullptr)) {
                   cert_loaded = true;
                }

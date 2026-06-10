@@ -211,7 +211,7 @@ extern "C" FFR CALL_FEEDBACK(FUNCTION *Callback, FileFeedback *Feedback)
       if (!error) {
          kt::vector<std::string> *results;
          int size;
-         if ((Callback->Context->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
+         if ((!Callback->Context->get(FID_Results, results, size)) and (size > 0)) {
             return FFR(strtol((*results)[0].c_str(), nullptr, 0));
          }
          else return FFR::OKAY;
@@ -291,7 +291,7 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info)
       log.traceBranch("%.*s", int(Path.size()), Path.data());
 
       std::string path;
-      if (auto error = ResolvePath(Path, RSF::NIL, &path); error IS ERR::Okay) {
+      if (auto error = ResolvePath(Path, RSF::NIL, &path); !error) {
          auto vfs = get_fs(path);
 
          if (not vfs.GetInfo) return log.warning(ERR::NoSupport);
@@ -470,7 +470,7 @@ ERR AnalysePath(const std::string_view &Path, LOC *PathType)
    }
 
    std::string test_path;
-   if (ResolvePath(path, flags, &test_path) IS ERR::Okay) {
+   if (!ResolvePath(path, flags, &test_path)) {
       log.trace("Testing path type for '%s'", test_path.c_str());
 
       auto vd = get_fs(test_path);
@@ -777,8 +777,8 @@ ERR CreateLink(const std::string_view &From, const std::string_view &To)
 #ifdef _WIN32
 
    std::string src, dest;
-   if (ResolvePath(From, RSF::NO_FILE_CHECK, &src) IS ERR::Okay) {
-      if (ResolvePath(To, RSF::NO_FILE_CHECK, &dest) IS ERR::Okay) {
+   if (!ResolvePath(From, RSF::NO_FILE_CHECK, &src)) {
+      if (!ResolvePath(To, RSF::NO_FILE_CHECK, &dest)) {
          return winCreateLink(src.c_str(), dest.c_str());
       }
       else return ERR::ResolvePath;
@@ -788,8 +788,8 @@ ERR CreateLink(const std::string_view &From, const std::string_view &To)
 #else
 
    std::string src, dest;
-   if (ResolvePath(From, RSF::NO_FILE_CHECK, &src) IS ERR::Okay) {
-      if (ResolvePath(To, RSF::NO_FILE_CHECK, &dest) IS ERR::Okay) {
+   if (!ResolvePath(From, RSF::NO_FILE_CHECK, &src)) {
+      if (!ResolvePath(To, RSF::NO_FILE_CHECK, &dest)) {
          auto err = symlink(dest.c_str(), src.c_str());
 
          if (not err) return ERR::Okay;
@@ -850,7 +850,7 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
    if (Path.ends_with(':')) return DeleteVolume(Path);
 
    std::string resolve;
-   if (ResolvePath(Path, RSF::NIL, &resolve) IS ERR::Okay) {
+   if (!ResolvePath(Path, RSF::NIL, &resolve)) {
       auto vd = get_fs(resolve);
       if (vd.Delete) return vd.Delete(resolve, nullptr);
       else return ERR::NoSupport;
@@ -1068,7 +1068,7 @@ ERR CreateFolder(const std::string_view &Path, PERMIT Permissions)
    }
 
    std::string resolve;
-   if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolve) IS ERR::Okay) {
+   if (!ResolvePath(Path, RSF::NO_FILE_CHECK, &resolve)) {
       auto vd = get_fs(resolve);
       if (vd.CreateFolder) return vd.CreateFolder(resolve, Permissions);
       else return ERR::NoSupport;
@@ -1188,7 +1188,7 @@ ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, 
    if (BytesRead) *BytesRead = 0;
 
    std::string res_path;
-   if (auto error = ResolvePath(path, RSF::CHECK_VIRTUAL | (approx ? RSF::APPROXIMATE : RSF::NIL), &res_path); error IS ERR::Okay) {
+   if (auto error = ResolvePath(path, RSF::CHECK_VIRTUAL | (approx ? RSF::APPROXIMATE : RSF::NIL), &res_path); !error) {
       if (res_path.starts_with("/dev/")) return ERR::InvalidPath;
       else if (auto handle = open(res_path.c_str(), O_RDONLY|O_NONBLOCK|O_LARGEFILE|WIN32OPEN, nullptr); handle != -1) {
          if (auto result = read(handle, Buffer, BufferSize); result IS -1) {
@@ -1276,7 +1276,7 @@ static ERR test_path(std::string &Path, RSF Flags)
    if (auto vd = get_virtual(Path)) {
       if (vd->TestPath) {
          LOC type;
-         if (vd->TestPath(Path, Flags, &type) IS ERR::Okay) {
+         if (!vd->TestPath(Path, Flags, &type)) {
             return ERR::Okay;
          }
          else return ERR::FileNotFound;
@@ -1320,7 +1320,7 @@ static ERR test_path(std::string &Path, RSF Flags)
       #endif
 
       if ((Flags & RSF::APPROXIMATE) != RSF::NIL) {
-         if (findfile(Path) IS ERR::Okay) return ERR::Okay;
+         if (!findfile(Path)) return ERR::Okay;
       }
       #ifdef __unix__
       else if (not lstat64(Path.c_str(), &info)) {
@@ -1582,7 +1582,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
    log.trace("Copy: %s TO %s", src.c_str(), dest.c_str());
 
-   if (CompareResolvedPaths(src, dest) IS ERR::Okay) {
+   if (!CompareResolvedPaths(src, dest)) {
       log.trace("The source and destination refer to the same location.");
       if (Move) return ERR::IdenticalPaths; // Move fails if source and dest are identical, since the source is not deleted
       else return ERR::Okay; // Copy succeeds if source and dest are identical
@@ -2026,7 +2026,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
    if ((not Dest.ends_with('/')) and (not Dest.ends_with('\\')) and (not Dest.ends_with(':'))) Dest.append("/");
 
    DirInfo *dir;
-   if (auto error = OpenDir(Source, RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir); error IS ERR::Okay) {
+   if (auto error = OpenDir(Source, RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir); !error) {
       while ((error = ScanDir(dir)) IS ERR::Okay) {
          FileInfo *file = dir->Info;
          if ((file->Flags & RDF::LINK) != RDF::NIL) {
@@ -2122,7 +2122,7 @@ PERMIT get_parent_permissions(std::string_view Path, int *UserID, int *GroupID)
 
       if (not folder.empty()) {
          FileInfo info;
-         if (get_file_info(folder, info) IS ERR::Okay) {
+         if (!get_file_info(folder, info)) {
             if (UserID) *UserID = info.UserID;
             if (GroupID) *GroupID = info.GroupID;
             return info.Permissions;
@@ -2394,7 +2394,7 @@ ERR fs_testpath(std::string &Path, RSF Flags, LOC *Type)
 {
    if (Path.ends_with(':')) {
       std::string str;
-      if (ResolvePath(Path, RSF::NIL, &str) IS ERR::Okay) {
+      if (!ResolvePath(Path, RSF::NIL, &str)) {
          if (Type) *Type = LOC::VOLUME;
          return ERR::Okay;
       }

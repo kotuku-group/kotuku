@@ -1635,7 +1635,7 @@ static void layout_doc(extDocument *Self)
    else {
       acResize(Self->Page, Self->CalcWidth, Self->PageHeight, 0);
 
-      if (l.gen_scene_init(Self->Page) IS ERR::Okay) {
+      if (!l.gen_scene_init(Self->Page)) {
          l.gen_scene_graph(Self->Page, l.m_segments);
       }
 
@@ -2450,7 +2450,7 @@ font_entry * bc_font::layout_font(layout &Layout)
    // Check the cache for this font
 
    std::string_view resolved_face;
-   if (fnt::ResolveFamilyName(face, &resolved_face) IS ERR::Okay) {
+   if (!fnt::ResolveFamilyName(face, &resolved_face)) {
       face.assign(resolved_face);
    }
 
@@ -2464,7 +2464,7 @@ font_entry * bc_font::layout_font(layout &Layout)
    }
 
    APTR new_handle = nullptr;
-   if (vec::GetFontHandle(face, style, 400, pixel_size, &new_handle) IS ERR::Okay) {
+   if (!vec::GetFontHandle(face, style, 400, pixel_size, &new_handle)) {
       std::lock_guard lk(glFontsMutex);
 
       if (auto it = glFontIndexCache.find(cache_key); it != glFontIndexCache.end()) {

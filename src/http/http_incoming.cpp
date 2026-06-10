@@ -211,7 +211,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                   Socket->Flags |= NSF::DISABLE_SERVER_VERIFY;
                }
 
-               if (net::SetSSL(Socket, "EnableSSL", "") IS ERR::Okay) {
+               if (!net::SetSSL(Socket, "EnableSSL", "")) {
                   Self->setCurrentState(HGS::COMPLETED);
                   return acActivate(Self);
                }
@@ -817,7 +817,7 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       LOC type;
 
       if ((Self->Flags & HTF::RESUME) != HTF::NIL) {
-         if ((AnalysePath(Self->OutputFile, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((!AnalysePath(Self->OutputFile, &type)) and (type IS LOC::FILE)) {
             flags = FL::NIL;
          }
          else flags = FL::NEW;

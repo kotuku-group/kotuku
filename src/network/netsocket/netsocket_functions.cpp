@@ -141,7 +141,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       log.traceBranch("Windows SSL handshake in progress, reading raw data.");
       size_t result;
       std::vector<uint8_t> buffer;
-      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 32768, result); error IS ERR::Okay) {
+      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 32768, result); !error) {
          tls_handshake_received(Self, buffer.data(), int(buffer.size()));
 
          if ((Self->State != NTC::CONNECTED) or (!ssl_has_decrypted_data(Self->TLS.Handle) and !ssl_has_encrypted_data(Self->TLS.Handle))) {

@@ -689,7 +689,7 @@ Converts an IPv4 or an IPv6 address in string format to an !IPAddress structure.
 
 <pre>
 struct IPAddress addr;
-if (StrToAddress("127.0.0.1", &addr) IS ERR::Okay) {
+if (!StrToAddress("127.0.0.1", &addr)) {
    ...
 }
 </pre>
@@ -893,7 +893,7 @@ ERR SetSSL(objNetSocket *Socket, const std::string_view &Command, const std::str
          if ((Socket->Flags & NSF::SSL) IS NSF::NIL) {
             auto error = (Socket->classID() IS CLASSID::NETSERVER) ? tls_setup_server((extNetServer *)Socket) : tls_setup_client((extNetSocket *)Socket);
             if (!error) {
-               if (error = tls_connect((extNetSocket *)Socket); error IS ERR::Okay) {
+               if (error = tls_connect((extNetSocket *)Socket); !error) {
                   Socket->Flags |= NSF::SSL;
                }
                else tls_disconnect((extNetSocket*)Socket);

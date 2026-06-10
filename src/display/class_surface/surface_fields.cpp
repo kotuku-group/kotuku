@@ -15,7 +15,7 @@ available in the display surface list.
 static ERR GET_BitsPerPixel(extSurface *Self, int *Value)
 {
    SURFACEINFO *info;
-   if (gfx::GetSurfaceInfo(Self->UID, &info) IS ERR::Okay) {
+   if (!gfx::GetSurfaceInfo(Self->UID, &info)) {
       *Value = info->BitsPerPixel;
    }
    else *Value = 0;
@@ -98,7 +98,7 @@ static ERR SET_Drag(extSurface *Self, OBJECTID Value)
 {
    if (Value) {
       auto callback = C_FUNCTION(consume_input_events);
-      if (gfx::SubscribeInput(&callback, Self->UID, JTYPE::MOVEMENT|JTYPE::BUTTON, 0, &Self->InputHandle) IS ERR::Okay) {
+      if (!gfx::SubscribeInput(&callback, Self->UID, JTYPE::MOVEMENT|JTYPE::BUTTON, 0, &Self->InputHandle)) {
          Self->DragID = Value;
          return ERR::Okay;
       }

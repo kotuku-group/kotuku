@@ -231,7 +231,7 @@ static ERR FILE_Activate(extFile *Self)
       if ((Self->Flags & FL::NEW) != FL::NIL) {
          // Attempt to create the necessary directories that might be required for this new file.
 
-         if (check_paths(path, Self->Permissions) IS ERR::Okay) {
+         if (!check_paths(path, Self->Permissions)) {
             Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
          }
 
@@ -330,7 +330,7 @@ static ERR FILE_BufferContent(extFile *Self)
       // If the file has no size, it could be a stream (or simply empty).  This routine handles this situation.
 
       char ch;
-      if (acRead(Self, &ch, 1, &len) IS ERR::Okay) {
+      if (!acRead(Self, &ch, 1, &len)) {
          Self->Flags |= FL::STREAM;
          // Allocate a 1 MB memory block, read the stream into it, then reallocate the block to the correct size.
 
@@ -355,7 +355,7 @@ static ERR FILE_BufferContent(extFile *Self)
       int8_t *buffer;
       if (AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
          buffer[Self->Size] = 0;
-         if (acRead(Self, buffer, Self->Size, &len) IS ERR::Okay) {
+         if (!acRead(Self, buffer, Self->Size, &len)) {
             Self->Buffer = buffer;
          }
          else {
@@ -483,7 +483,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
       // Check if the Path is a volume
 
       if (Self->Path.ends_with(':')) {
-         if (DeleteVolume(Self->Path) IS ERR::Okay) {
+         if (!DeleteVolume(Self->Path)) {
             #ifdef __unix__
                closedir((DIR *)Self->Stream);
             #endif
@@ -496,7 +496,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
       // Delete the folder and its contents
 
       std::string_view path;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          std::string buffer(path);
 
          #ifdef __unix__
@@ -524,7 +524,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
       log.branch("Delete File: %s", Self->Path.c_str());
 
       std::string_view path;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          std::string buffer(path);
          if (buffer.ends_with('/') or buffer.ends_with('\\')) buffer.pop_back();
 
@@ -660,7 +660,7 @@ static ERR FILE_Init(extFile *Self)
       // If the file already exists, pull the permissions from it.  Otherwise use a default set of permissions (if
       // possible, inherit permissions from the file's folder).
 
-      if (((Self->Flags & FL::NEW) != FL::NIL) and (get_file_info(Self->Path, info) IS ERR::Okay)) {
+      if (((Self->Flags & FL::NEW) != FL::NIL) and (!get_file_info(Self->Path, info))) {
          log.msg("Using permissions of the original file.");
          Self->Permissions |= info.Permissions;
       }
@@ -782,7 +782,7 @@ retrydir:
 
       if ((Self->Flags & FL::NEW) != FL::NIL) {
          log.msg("Making dir \"%s\", Permissions: $%.8x", Self->prvResolvedPath.c_str(), int(Self->Permissions));
-         if (CreateFolder(Self->prvResolvedPath, Self->Permissions) IS ERR::Okay) {
+         if (!CreateFolder(Self->prvResolvedPath, Self->Permissions)) {
             #ifdef __unix__
                if (not (Self->Stream = opendir(Self->prvResolvedPath.c_str()))) {
                   log.warning("Failed to open the folder after creating it.");
@@ -887,7 +887,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
          if (Self->Handle != -1) { close(Self->Handle); Self->Handle = -1; }
       #endif
 
-      if (auto error = fs_copy(src, dest, Args->Callback, true); error IS ERR::Okay) {
+      if (auto error = fs_copy(src, dest, Args->Callback, true); !error) {
          Self->Path.assign(dest);
          return ERR::Okay;
       }
@@ -1194,7 +1194,7 @@ static ERR FILE_Rename(extFile *Self, struct acRename *Args)
          std::string n(Self->Path, 0, Self->Path.find_last_of(":/\\"));
          n.append(name, 0, name.find_last_of("/\\:"));
 
-         if (fs_copy(Self->Path, n, nullptr, true) IS ERR::Okay) {
+         if (!fs_copy(Self->Path, n, nullptr, true)) {
             if (not n.ends_with('/')) Self->Path = n + "/";
             else Self->Path = n;
             return ERR::Okay;
@@ -1213,7 +1213,7 @@ static ERR FILE_Rename(extFile *Self, struct acRename *Args)
          if (Self->Handle != -1) { close(Self->Handle); Self->Handle = -1; }
       #endif
 
-      if (fs_copy(Self->Path, n, nullptr, true) IS ERR::Okay) {
+      if (!fs_copy(Self->Path, n, nullptr, true)) {
          Self->Path = n;
          return ERR::Okay;
       }
@@ -1329,7 +1329,7 @@ static ERR FILE_SetDate(extFile *Self, struct fl::SetDate *Args)
 
    #ifdef _WIN32
       std::string_view path;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          auto result = winSetFileTime(path.data(), Self->isFolder,
             Args->Year, Args->Month, Args->Day, Args->Hour, Args->Minute, Args->Second);
 
@@ -1344,7 +1344,7 @@ static ERR FILE_SetDate(extFile *Self, struct fl::SetDate *Args)
    #elif __unix__
 
       std::string_view path;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          struct tm time;
          time.tm_year  = Args->Year - 1900;
          time.tm_mon   = Args->Month - 1;
@@ -1722,7 +1722,7 @@ static ERR GET_Created(extFile *Self, DateTime **Value)
    else {
       std::string_view path;
       ERR error;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          char buffer[512];
          int len = strcopy(path.data(), buffer, std::min(sizeof(buffer), path.length()));
          if ((buffer[len-1] IS '/') or (buffer[len-1] IS '\\')) buffer[len-1] = 0;
@@ -1800,7 +1800,7 @@ static ERR GET_Date(extFile *Self, DateTime **Value)
    else {
       std::string_view path;
       ERR error;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          char buffer[512];
          int len = strcopy(path.data(), buffer, std::min(sizeof(buffer), path.length()));
          if ((buffer[len-1] IS '/') or (buffer[len-1] IS '\\')) buffer[len-1] = 0;
@@ -1840,7 +1840,7 @@ ERR SET_Date(extFile *Self, DateTime *Date)
 
 #ifdef _WIN32
    std::string_view path;
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       if (winSetFileTime(path.data(), Self->isFolder, Date->Year, Date->Month, Date->Day, Date->Hour, Date->Minute, Date->Second)) {
          Self->Flags |= FL::RESET_DATE;
          return ERR::Okay;
@@ -1854,7 +1854,7 @@ ERR SET_Date(extFile *Self, DateTime *Date)
    std::string_view path;
    time_t datetime;
    struct utimbuf utm;
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       struct tm time;
       time.tm_year  = Date->Year - 1900;
       time.tm_mon   = Date->Month - 1;
@@ -2014,7 +2014,7 @@ static ERR GET_Icon(extFile *Self, std::string_view &Value)
 
    FileInfo info;
    bool link = false;
-   if (get_file_info(Self->Path, info) IS ERR::Okay) {
+   if (!get_file_info(Self->Path, info)) {
       if ((info.Flags & RDF::LINK) != RDF::NIL) link = true;
 
       if ((info.Flags & RDF::VIRTUAL) != RDF::NIL) { // Virtual drives can specify custom icons, even for folders
@@ -2057,7 +2057,7 @@ static ERR GET_Icon(extFile *Self, std::string_view &Value)
       // Use IdentifyFile() to see if this file can be associated with a class
 
       CLASSID class_id, derived_id;
-      if (IdentifyFile(Self->Path, CLASSID::NIL, &class_id, &derived_id) IS ERR::Okay) {
+      if (!IdentifyFile(Self->Path, CLASSID::NIL, &class_id, &derived_id)) {
          if (glClassDB.contains(derived_id)) {
             auto &record = glClassDB[derived_id];
             if (not record.Icon.empty()) icon = record.Icon;
@@ -2106,7 +2106,7 @@ static ERR GET_Link(extFile *Self, std::string_view &Value)
 
    if ((Self->Flags & FL::LINK) != FL::NIL) {
       std::string path;
-      if (ResolvePath(Self->Path, RSF::NIL, &path) IS ERR::Okay) {
+      if (!ResolvePath(Self->Path, RSF::NIL, &path)) {
          if (path.ends_with('/')) path.pop_back();
          int i;
          char buffer[512];
@@ -2239,7 +2239,7 @@ static ERR GET_Permissions(extFile *Self, PERMIT *Value)
    // process could always have changed the permission flags.
 
    std::string_view path;
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       auto i = path.find_last_of(":/\\");
       if ((i != std::string::npos) and (i < path.length()-1) and (path[i+1] IS '.')) Self->Permissions = PERMIT::HIDDEN;
       else Self->Permissions = PERMIT::NIL;
@@ -2265,7 +2265,7 @@ static ERR GET_Permissions(extFile *Self, PERMIT *Value)
 #elif _WIN32
 
    std::string_view path;
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       winGetAttrib(path.data(), (int *)(Value)); // Supports PERMIT::HIDDEN/ARCHIVE/OFFLINE/READ/WRITE
       return ERR::Okay;
    }
@@ -2326,7 +2326,7 @@ static ERR set_permissions(extFile *Self, PERMIT Permissions)
       // File represents a folder
 
       std::string_view path;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          int flags = 0;
          if ((Permissions & PERMIT::READ) != PERMIT::NIL)  flags |= S_IRUSR;
          if ((Permissions & PERMIT::WRITE) != PERMIT::NIL) flags |= S_IWUSR;
@@ -2358,7 +2358,7 @@ static ERR set_permissions(extFile *Self, PERMIT Permissions)
    log.branch("$%.8x", int(Permissions));
 
    std::string_view path;
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       ERR error;
       if (winSetAttrib(path.data(), int(Permissions))) error = log.warning(ERR::SystemCall);
       else error = ERR::Okay;
@@ -2449,7 +2449,7 @@ static ERR GET_Size(extFile *Self, int64_t *Size)
    }
 
    std::string_view path;
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       struct stat64 stats;
       if (not stat64(path.data(), &stats)) {
          *Size = stats.st_size;
@@ -2485,7 +2485,7 @@ static ERR SET_Size(extFile *Self, int64_t Size)
 #ifdef _WIN32
    std::string_view path;
 
-   if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+   if (!GET_ResolvedPath(Self, path)) {
       if (winSetEOF(path.data(), Size)) {
          acSeek(Self, 0.0, SEEK::END);
          Self->Size = Size;
@@ -2522,7 +2522,7 @@ static ERR SET_Size(extFile *Self, int64_t Size)
 
          // Seek past the file boundary and write a single byte to expand the file.  Yes, it's legal and works.
 
-         if (auto error = GET_ResolvedPath(Self, path); error IS ERR::Okay) {
+         if (auto error = GET_ResolvedPath(Self, path); !error) {
             struct statfs fstat;
             if (statfs(path.data(), &fstat) != -1) {
                if (Size < (int64_t)fstat.f_bavail * (int64_t)fstat.f_bsize) {
@@ -2595,7 +2595,7 @@ static ERR GET_Timestamp(extFile *Self, int64_t *Value)
    }
    else {
       std::string_view path;
-      if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
+      if (!GET_ResolvedPath(Self, path)) {
          struct stat64 stats;
          if (not stat64(path.data(), &stats)) {
             if (auto local = localtime(&stats.st_mtime)) {

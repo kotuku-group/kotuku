@@ -349,7 +349,7 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
    log.traceBranch("Tag: %d", Tag.ID);
 
    OBJECTPTR trans;
-   if (NewObject(CLASSID::VECTORTRANSITION, &trans) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORTRANSITION, &trans)) {
       trans->setFields(
          fl::Owner(Self->Scene->UID), // All clips belong to the root page to prevent hierarchy issues.
          fl::Name("SVGTransition")
@@ -369,7 +369,7 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
          if (stops.size() >= 2) {
             trans->set(FID_Stops, stops);
 
-            if (InitObject(trans) IS ERR::Okay) {
+            if (!InitObject(trans)) {
                if (!Self->Cloning) Self->Scene->addDef(id.c_str(), trans);
                track_object(Self, trans);
                return;
@@ -418,7 +418,7 @@ void svgState::proc_clippath(XTag &Tag) noexcept
 
    if (Self->Scene->findDef(id.c_str(), nullptr) != ERR::Okay) {
       objVector *clip;
-      if (NewObject(CLASSID::VECTORCLIP, &clip) IS ERR::Okay) {
+      if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
          clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGClip"));
 
          if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
@@ -428,7 +428,7 @@ void svgState::proc_clippath(XTag &Tag) noexcept
             else if (iequals("objectBoundingBox", units)) clip->set(FID_Units, int(VUNIT::BOUNDING_BOX));
          }
 
-         if (InitObject(clip) IS ERR::Okay) {
+         if (!InitObject(clip)) {
             svgState state(Self);
 
             // Valid child elements for clip-path are:
@@ -501,14 +501,14 @@ void svgState::proc_mask(XTag &Tag) noexcept
    if (Self->Scene->findDef(id.c_str(), nullptr) IS ERR::Okay) return;
 
    objVector *clip;
-   if (NewObject(CLASSID::VECTORCLIP, &clip) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
       clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGMask"),
          fl::Flags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES),
          fl::Units(units));
 
       if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
 
-      if (InitObject(clip) IS ERR::Okay) {
+      if (!InitObject(clip)) {
          svgState state(Self);
          auto vp = clip->get<OBJECTPTR>(FID_Viewport);
          state.process_children(Tag, vp);
@@ -554,7 +554,7 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -587,7 +587,7 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -658,7 +658,7 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) return ERR::Okay;
+   if (!fx->init()) return ERR::Okay;
    else {
       FreeResource(fx);
       return log.warning(ERR::Init);
@@ -743,7 +743,7 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcep
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -844,7 +844,7 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -877,9 +877,9 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             VectorPainter painter;
             if (iequals("currentColor", val)) {
                FRGB rgb;
-               if (current_colour(Self->Scene->Viewport, rgb) IS ERR::Okay) fx->set(FID_Colour, rgb);
+               if (!current_colour(Self->Scene->Viewport, rgb)) fx->set(FID_Colour, rgb);
             }
-            else if (vec::ReadPainter(nullptr, val, &painter, nullptr) IS ERR::Okay) fx->set(FID_Colour, painter.Colour);
+            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) fx->set(FID_Colour, painter.Colour);
             break;
          }
 
@@ -969,7 +969,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1027,7 +1027,7 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1067,7 +1067,7 @@ ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
 
       if (Tag.hasChildTags()) {
@@ -1160,7 +1160,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
       else log.warning("Unrecognised feComponentTransfer child node '%s'", child.name());
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1261,7 +1261,7 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1292,9 +1292,9 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_flood_colour: {
             VectorPainter painter;
             if (iequals("currentColor", val)) {
-               if (current_colour(Self->Scene->Viewport, painter.Colour) IS ERR::Okay) error = fx->set(FID_Colour, painter.Colour);
+               if (!current_colour(Self->Scene->Viewport, painter.Colour)) error = fx->set(FID_Colour, painter.Colour);
             }
-            else if (vec::ReadPainter(nullptr, val, &painter, nullptr) IS ERR::Okay) error = fx->set(FID_Colour, painter.Colour);
+            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) error = fx->set(FID_Colour, painter.Colour);
             break;
          }
 
@@ -1312,7 +1312,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1370,7 +1370,7 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1414,7 +1414,7 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (fx->init() IS ERR::Okay) {
+   if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
    }
@@ -1470,7 +1470,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
 
       if (vector) {
          fx->set(FID_SourceName, ref);
-         if (error = fx->init(); error IS ERR::Okay) {
+         if (error = fx->init(); !error) {
             if (!result_name.empty()) parse_result(Self, fx, result_name);
             return ERR::Okay;
          }
@@ -1595,7 +1595,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
    objVectorFilter *filter;
    std::string id;
 
-   if (NewObject(CLASSID::VECTORFILTER, &filter) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORFILTER, &filter)) {
       filter->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGFilter"),
          fl::Units(VUNIT::BOUNDING_BOX), fl::ColourSpace(VCS::LINEAR_RGB));
 
@@ -1654,7 +1654,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
          }
       }
 
-      if ((!id.empty()) and (filter->init() IS ERR::Okay)) {
+      if ((!id.empty()) and (!filter->init())) {
          SetName(filter, id.c_str());
 
          for (auto child : Tag.Children) {
@@ -1710,7 +1710,7 @@ void svgState::proc_pattern(XTag &Tag) noexcept
    objVectorPattern *pattern;
    std::string id;
 
-   if (NewObject(CLASSID::VECTORPATTERN, &pattern) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORPATTERN, &pattern)) {
       SetOwner(pattern, Self->Scene);
 
       // NOTE: In SVG 1.0 the default pattern units value is 'userSpaceOnUse'; from 1.1 it changed to 'objectBoundingBox'.
@@ -1805,7 +1805,7 @@ void svgState::proc_pattern(XTag &Tag) noexcept
          log.trace("Failed to create a valid definition.");
       }
 
-      if (InitObject(pattern) IS ERR::Okay) {
+      if (!InitObject(pattern)) {
          // Child vectors for the pattern need to be instantiated and belong to the pattern's Viewport.
          svgState state(Self);
          for (auto tag : children) {
@@ -1831,14 +1831,14 @@ ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVecto
    objVector *vector;
 
    Result = nullptr;
-   if (auto error = NewObject(VectorID, &vector); error IS ERR::Okay) {
+   if (auto error = NewObject(VectorID, &vector); !error) {
       SetOwner(vector, Parent);
       svgState state = *this;
       state.applyStateToVector(vector);
       state.applyTag(Tag); // Apply all attribute values to the current state.
       state.process_attrib(Tag, vector);
 
-      if (vector->init() IS ERR::Okay) {
+      if (!vector->init()) {
          state.process_shape_children(Tag, vector);
          Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(vector->UID) });
          Result = vector;
@@ -1907,21 +1907,21 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
          break;
 
       case SVF_line:
-         if (auto error = proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); error IS ERR::Okay) {
+         if (auto error = proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); !error) {
             Vector->set(FID_Closed, FALSE);
             break;
          }
          else return error;
 
       case SVF_polyline:
-         if (auto error = proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); error IS ERR::Okay) {
+         if (auto error = proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); !error) {
             Vector->set(FID_Closed, FALSE);
             break;
          }
          else return error;
 
       case SVF_text: {
-         if (proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector) IS ERR::Okay) {
+         if (!proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector)) {
             if (!Tag.Children.empty()) {
                std::string_view existing_str;
                Vector->get(FID_String, existing_str);
@@ -1979,7 +1979,7 @@ static bool has_kotuku_volume(const std::string &Path)
 
    // AnalysePath() confirms that the leading "<volume>:" prefix names a registered Kotuku volume.
    LOC type = LOC::NIL;
-   const bool is_volume = (AnalysePath(volume, &type) IS ERR::Okay) and (type IS LOC::VOLUME);
+   const bool is_volume = (!AnalysePath(volume, &type)) and (type IS LOC::VOLUME);
 
    const std::lock_guard<std::mutex> lock(cache_lock);
    volume_cache[volume] = is_volume;
@@ -2104,7 +2104,7 @@ void svgState::proc_def_image(XTag &Tag) noexcept
    std::string id, src;
    FUNIT width, height;
 
-   if (NewObject(CLASSID::VECTORIMAGE, &image) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORIMAGE, &image)) {
       image->setFields(fl::Owner(Self->Scene->UID),
          fl::Name("SVGImage"),
          fl::Units(VUNIT::BOUNDING_BOX),
@@ -2144,7 +2144,7 @@ void svgState::proc_def_image(XTag &Tag) noexcept
          objImage *pic;
          if (load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height) IS ERR::Okay) {
             image->set(FID_Image, pic);
-            if (InitObject(image) IS ERR::Okay) {
+            if (!InitObject(image)) {
                if (!Self->Cloning) {
                   Self->Scene->addDef(id.c_str(), image);
                   track_object(Self, image);
@@ -2243,7 +2243,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
    // require a filled rectangle to reference the image).  In practice this doesn't seem necessary, as the image
    // object supports built-in viewport concepts like preserveAspectRatio.
 
-   if (auto error = NewObject(CLASSID::VECTORRECTANGLE, &Vector); error IS ERR::Okay) {
+   if (auto error = NewObject(CLASSID::VECTORRECTANGLE, &Vector); !error) {
       SetOwner(Vector, Parent);
       applyStateToVector(Vector);
 
@@ -2258,7 +2258,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
       Vector->set(FID_Fill, "url(#" + id + ")");
 
-      if (Vector->init() IS ERR::Okay) {
+      if (!Vector->init()) {
          process_shape_children(Tag, Vector);
          Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(Vector->UID) });
          return ERR::Okay;
@@ -2534,7 +2534,7 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       }
 
       if (need_group) {
-         if (NewObject(CLASSID::VECTORGROUP, &group) IS ERR::Okay) {
+         if (!NewObject(CLASSID::VECTORGROUP, &group)) {
             SetOwner(group, Parent);
             Parent = group;
             group->init();
@@ -2729,13 +2729,13 @@ void svgState::proc_link(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
    // Vectors within <a> will be assigned to a group purely because it's easier for us to manage them that way.
 
    objVector *group;
-   if (NewObject(CLASSID::VECTORGROUP, &group) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORGROUP, &group)) {
       SetOwner(group, Parent);
 
       process_children(Tag, group);
 
       kt::vector<ChildEntry> list;
-      if (ListChildren(group->UID, &list) IS ERR::Okay) {
+      if (!ListChildren(group->UID, &list)) {
          for (auto &child : list) {
             auto obj = (objVector *)GetObjectPtr(child.ObjectID);
             obj->subscribeInput(JTYPE::BUTTON, C_FUNCTION(link_event, link.get()));
@@ -2743,7 +2743,7 @@ void svgState::proc_link(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
          Self->Links.emplace_back(std::move(link));
       }
 
-      if ((!Self->Links.empty()) and (group->init() IS ERR::Okay)) Vector = group;
+      if ((!Self->Links.empty()) and (!group->init())) Vector = group;
       else FreeResource(group);
    }
 }
@@ -2794,7 +2794,7 @@ void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noe
             state.applyTag(Tag);
             state.process_attrib(Tag, group);
 
-            if (group->init() IS ERR::Okay) {
+            if (!group->init()) {
                Vector = group;
                Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(group->UID) });
 
@@ -2826,7 +2826,7 @@ void svgState::proc_group(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noex
    state.process_attrib(Tag, group);
    state.process_children(Tag, group);
 
-   if (group->init() IS ERR::Okay) {
+   if (!group->init()) {
       Vector = group;
       Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(group->UID) });
    }
@@ -2936,7 +2936,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          case SVF_mask: {
             OBJECTPTR clip;
             auto ref = uri_name(val);
-            if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) viewport->set(FID_Mask, clip);
+            if (!Self->Scene->findDef(ref, &clip)) viewport->set(FID_Mask, clip);
             else log.warning("Unable to find mask '%s'", val.c_str());
             break;
          }
@@ -2944,7 +2944,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          case SVF_clip_path: {
             OBJECTPTR clip;
             auto ref = uri_name(val);
-            if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) viewport->set(FID_Mask, clip);
+            if (!Self->Scene->findDef(ref, &clip)) viewport->set(FID_Mask, clip);
             else log.warning("Unable to find clip-path '%s'", val.c_str());
             break;
          }
@@ -2987,7 +2987,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
    }
 
    if (viewport->initialised()) Vector = viewport;
-   else if (viewport->init() IS ERR::Okay) Vector = viewport;
+   else if (!viewport->init()) Vector = viewport;
    else FreeResource(viewport);
 }
 
@@ -3803,7 +3803,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_stroke:
          if (iequals("currentColor", StrValue)) {
             FRGB rgb;
-            if (current_colour(Vector, rgb) IS ERR::Okay) Vector->set(FID_StrokeColour, rgb);
+            if (!current_colour(Vector, rgb)) Vector->set(FID_StrokeColour, rgb);
          }
          else set_paint_server(Vector, FID_Stroke, StrValue);
          break;
@@ -3811,7 +3811,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_fill:
          if (iequals("currentColor", StrValue)) {
             FRGB rgb;
-            if (current_colour(Vector, rgb) IS ERR::Okay) Vector->set(FID_FillColour, rgb);
+            if (!current_colour(Vector, rgb)) Vector->set(FID_FillColour, rgb);
          }
          else set_paint_server(Vector, FID_Fill, StrValue);
          break;
@@ -3838,7 +3838,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_mask: {
          OBJECTPTR clip;
          auto ref = uri_name(StrValue);
-         if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) {
+         if (!Self->Scene->findDef(ref, &clip)) {
             Vector->set(FID_Mask, clip);
          }
          else {
@@ -3851,7 +3851,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_clip_path: {
          OBJECTPTR clip;
          auto ref = uri_name(StrValue);
-         if (Self->Scene->findDef(ref, &clip) IS ERR::Okay) {
+         if (!Self->Scene->findDef(ref, &clip)) {
             Vector->set(FID_Mask, clip);
          }
          else {

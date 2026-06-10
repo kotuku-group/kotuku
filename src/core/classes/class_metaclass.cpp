@@ -1291,8 +1291,8 @@ void scan_classes(void)
 
    DirInfo *dir;
    int total = 0;
-   if (OpenDir("modules:", RDF::QUALIFY, &dir) IS ERR::Okay) {
-      while (ScanDir(dir) IS ERR::Okay) {
+   if (!OpenDir("modules:", RDF::QUALIFY, &dir)) {
+      while (!ScanDir(dir)) {
          FileInfo *list = dir->Info;
 
          if ((list->Flags & RDF::FILE) != RDF::NIL) {

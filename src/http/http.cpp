@@ -1030,7 +1030,7 @@ static ERR HTTP_Init(extHTTP *Self)
 
    if (!Self->ProxyDefined) {
       std::lock_guard<std::mutex> proxy_lock(glProxyMutex);
-      if ((glProxy) and (glProxy->find(Self->Port, true) IS ERR::Okay)) {
+      if ((glProxy) and (!glProxy->find(Self->Port, true))) {
          Self->ProxyServer = glProxy->Server;
          Self->ProxyPort   = glProxy->ServerPort; // NB: Default is usually 8080
 

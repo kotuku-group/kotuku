@@ -108,7 +108,7 @@ static ERR FONT_Init(extFont *Self)
 
    if (Self->Path.empty()) {
       std::string path;
-      if (auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta); error IS ERR::Okay) {
+      if (auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta); !error) {
          error = Self->set(FID_Path, path);
          if (error != ERR::Okay) return error;
       }
@@ -315,7 +315,7 @@ static ERR SET_Face(extFont *Self, const std::string_view &Value)
       std::string_view final_name;
       auto i = Value.find(':');
       auto face = Value.substr(0, i);
-      if (auto error = fnt::ResolveFamilyName(face, &final_name); error IS ERR::Okay) {
+      if (auto error = fnt::ResolveFamilyName(face, &final_name); !error) {
          Self->Face.assign(final_name);
       }
       else return error;

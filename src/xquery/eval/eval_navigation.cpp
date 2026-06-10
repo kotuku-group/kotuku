@@ -293,12 +293,12 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
       XTag *lookup_scope = Scope ? Scope : context.context_node;
       int tag_id = lookup_scope ? lookup_scope->ID : 0;
 
-      if (xml->resolvePrefix(prefix_string, tag_id, namespace_hash) IS ERR::Okay) {
+      if (!xml->resolvePrefix(prefix_string, tag_id, namespace_hash)) {
          return namespace_hash;
       }
 
       if (lookup_scope and context.context_node and (lookup_scope != context.context_node)) {
-         if (xml->resolvePrefix(prefix_string, context.context_node->ID, namespace_hash) IS ERR::Okay) {
+         if (!xml->resolvePrefix(prefix_string, context.context_node->ID, namespace_hash)) {
             return namespace_hash;
          }
       }
