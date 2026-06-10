@@ -5,14 +5,11 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
 #include <inttypes.h>
 
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "hashes.h"
-#include "defs.h"
 #include "lj_proto_registry.h"
 
 enum {
@@ -640,9 +637,9 @@ static int file_seek(lua_State *Lua)
       auto offset = luaL_optnumber(Lua, 3, 0);
 
       auto whence = SEEK::CURRENT;
-      if (iequals("set", whence_str)) whence = SEEK::START;
-      else if (iequals("cur", whence_str)) whence = SEEK::CURRENT;
-      else if (iequals("end", whence_str)) whence = SEEK::END;
+      if (kt::iequals("set", whence_str)) whence = SEEK::START;
+      else if (kt::iequals("cur", whence_str)) whence = SEEK::CURRENT;
+      else if (kt::iequals("end", whence_str)) whence = SEEK::END;
 
       if (acSeek(file, offset, whence) IS ERR::Okay) {
          lua_pushnumber(Lua, file->Position);

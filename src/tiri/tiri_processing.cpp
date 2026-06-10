@@ -3,18 +3,14 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <format>
-#include <inttypes.h>
 #include <mutex>
 #include <utility>
 
 #include "lib.h"
 #include "lua.h"
-#include "lualib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "lj_object.h"
 #include "hashes.h"
 #include "defs.h"
 #include "lj_proto_registry.h"

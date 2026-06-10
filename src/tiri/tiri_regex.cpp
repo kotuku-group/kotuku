@@ -12,7 +12,6 @@ Examples:
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
 #include <kotuku/strings.hpp>
 #include <string>
@@ -26,7 +25,6 @@ Examples:
 #include "lj_str.h"
 #include "lj_gc.h"
 #include "lj_proto_registry.h"
-#include "hashes.h"
 #include "defs.h"
 
 struct regex_callback {

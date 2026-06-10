@@ -28,29 +28,20 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/xml.h>
-#include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
 #include <kotuku/strings.hpp>
 
-#include <inttypes.h>
 #include <format>
 #include <vector>
 #include <iterator>
-#include <mutex>
 
 #include "lua.h"
-#include "lualib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "parser/parser.h"
 #include "lj_bc.h"
 #include "lj_array.h"
 #include "lj_gc.h"
-#include "lj_object.h"
-
-#include "hashes.h"
 
 JUMPTABLE_CORE
 JUMPTABLE_REGEX

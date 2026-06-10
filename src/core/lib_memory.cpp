@@ -10,8 +10,6 @@ Name: Memory
 
 *********************************************************************************************************************/
 
-#include <stdlib.h> // Contains free(), malloc() etc
-
 #ifdef _WIN32
 #include <malloc.h> // For _aligned_malloc, _aligned_free
 #endif

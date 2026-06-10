@@ -469,7 +469,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
       xml->setFlags(XMF::NAMESPACE_AWARE|XMF::WELL_FORMED);
 
       objTask *task = CurrentTask();
-      std::string working_path;
+      std::string_view working_path;
 
       if (Path) {
          if (wildcmp("*.svgz", Path)) {

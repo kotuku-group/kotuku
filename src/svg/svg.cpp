@@ -17,6 +17,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #define PRV_SVG
 #include <unordered_map>
 #include <string>
+#include <format>
 #include <sstream>
 #include <charconv>
 #include <list>

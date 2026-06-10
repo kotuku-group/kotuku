@@ -1,6 +1,7 @@
 -- XQuery module loading integration tests
 
    include 'xml'
+   include 'xquery'
 
 @BeforeAll
 function init(State)
@@ -85,7 +86,7 @@ end
 
    -- Verify feature flags include ModuleImports
 
-   assert(string.find(xq.get("$featureFlags"), 'ModuleImports', 0, true), "Expected feature flags to include ModuleImports")
+   assert(xq.featureFlags has XQF_MODULE_IMPORTS,  "Expected feature flags to include XQF_MODULE_IMPORTS")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

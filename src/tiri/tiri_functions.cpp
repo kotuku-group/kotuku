@@ -4,12 +4,9 @@
 #define PRV_TIRI_MODULE
 
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
 
-#include <inttypes.h>
 #include <format>
-#include <mutex>
 #include <algorithm>
 #include <string_view>
 #include <utility>
@@ -17,7 +14,6 @@
 
 #include "lua.h"
 #include "lj_obj.h"
-#include "lj_str.h"
 #include "parser/parser_diagnostics.h"
 
 #include "hashes.h"

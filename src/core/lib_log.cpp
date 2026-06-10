@@ -32,7 +32,6 @@ Log levels are:
 #endif
 
 #include <stdarg.h>
-#include <fcntl.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>

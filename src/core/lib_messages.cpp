@@ -24,12 +24,6 @@ Name: Messages
 #include <sys/wait.h>
 #endif
 
-#ifdef _WIN32
-#include <time.h>
-#include <stdlib.h>
-#include <stdio.h>
-#endif
-
 #include "defs.h"
 
 #include <deque>
