@@ -4013,7 +4013,7 @@ class objModule : public Object {
             return ERR::Okay;
          #else
             APTR functionbase;
-            if (module->get(FID_ModBase, functionbase) IS ERR::Okay) {
+            if (!module->get(FID_ModBase, functionbase)) {
                if (Module) *Module = module;
                if (Functions) ((APTR *)Functions)[0] = functionbase;
                return ERR::Okay;
@@ -4664,7 +4664,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
+   if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;
@@ -4682,7 +4682,7 @@ template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
    struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
+   if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native == std::endian::little) {
             *Result = ((T *)data)[0];
@@ -4706,7 +4706,7 @@ template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
    struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
+   if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native == std::endian::little) {
             switch(sizeof(T)) {

@@ -209,8 +209,7 @@ static ERR SET_Path(extDocument *Self, const std::string_view &Value)
       Self->Path = newpath;
 
       if (Self->initialised()) {
-         auto error = load_doc(Self, Self->Path, true);
-         if (not (error IS ERR::Okay)) Self->Error = error;
+         if (auto error = load_doc(Self, Self->Path, true); error != ERR::Okay) Self->Error = error;
          Self->Viewport->draw();
       }
 

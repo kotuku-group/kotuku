@@ -207,16 +207,16 @@ extern "C" void end_of_stream(OBJECTPTR Object, int BytesRemaining)
 {
    kt::Log log;
 
-   if (FindObject("SystemAudio", CLASSID::AUDIO, &Self->AudioID) IS ERR::Okay) return ERR::Okay;
+   if (!FindObject("SystemAudio", CLASSID::AUDIO, &Self->AudioID)) return ERR::Okay;
 
    extAudio *audio;
    ERR error;
-   if ((error = NewObject(CLASSID::AUDIO, &audio)) IS ERR::Okay) {
+   if (!(error = NewObject(CLASSID::AUDIO, &audio))) {
       SetName(audio, "SystemAudio");
       SetOwner(audio, CurrentTask());
 
-      if (InitObject(audio) IS ERR::Okay) {
-         if ((error = audio->activate()) IS ERR::Okay) {
+      if (!InitObject(audio)) {
+         if (!(error = audio->activate())) {
             Self->AudioID = audio->UID;
          }
          else FreeResource(audio);
@@ -369,7 +369,7 @@ static ERR SOUND_Activate(extSound *Self)
 
          kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 250);
          if (audio.granted()) {
-            if (Action(snd::AddStream::id, *audio, &stream) IS ERR::Okay) {
+            if (!Action(snd::AddStream::id, *audio, &stream)) {
                Self->Handle = stream.Result;
             }
             else {
@@ -379,14 +379,14 @@ static ERR SOUND_Activate(extSound *Self)
          }
          else return ERR::AccessObject;
       }
-      else if (AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
+      else if (!AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
          auto dc = deferred_call([&buffer] { FreeResource(buffer); });
 
          auto client_pos = Self->Position;
          if (Self->Position) Self->seekStart(0); // Ensure we're reading the entire sample from the start
 
          int result;
-         if (Self->read(buffer, Self->Length, &result) IS ERR::Okay) {
+         if (!Self->read(buffer, Self->Length, &result)) {
             if (result != Self->Length) log.warning("Expected %d bytes, read %d", Self->Length, result);
 
             Self->seekStart(client_pos);
@@ -418,7 +418,7 @@ static ERR SOUND_Activate(extSound *Self)
 
             kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 250);
             if (audio.granted()) {
-               if (Action(snd::AddSample::id, *audio, &add) IS ERR::Okay) {
+               if (!Action(snd::AddSample::id, *audio, &add)) {
                   Self->Handle = add.Result;
                }
                else {
@@ -475,7 +475,7 @@ static ERR SOUND_Activate(extSound *Self)
 
       snd::MixStop(*audio, Self->ChannelIndex);
 
-      if (snd::MixSample(*audio, Self->ChannelIndex, Self->Handle) IS ERR::Okay) {
+      if (!snd::MixSample(*audio, Self->ChannelIndex, Self->Handle)) {
          if (snd::MixVolume(*audio, Self->ChannelIndex, Self->Volume) != ERR::Okay) return log.warning(ERR::Failed);
          if (snd::MixPan(*audio, Self->ChannelIndex, Self->Pan) != ERR::Okay) return log.warning(ERR::Failed);
          if (snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback) != ERR::Okay) return log.warning(ERR::Failed);
@@ -680,7 +680,7 @@ static ERR SOUND_Init(extSound *Self)
    if (!(Self->ChannelIndex = glSoundChannels[Self->AudioID])) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
       if (audio.granted()) {
-         if (audio->openChannels(audio->MaxChannels, &Self->ChannelIndex) IS ERR::Okay) {
+         if (!audio->openChannels(audio->MaxChannels, &Self->ChannelIndex)) {
             glSoundChannels[Self->AudioID] = Self->ChannelIndex;
          }
          else {
@@ -784,7 +784,7 @@ static ERR SOUND_Init(extSound *Self)
    if (!(Self->ChannelIndex = glSoundChannels[Self->AudioID])) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
       if (audio.granted()) {
-         if (audio->openChannels(audio->MaxChannels, &Self->ChannelIndex) IS ERR::Okay) {
+         if (!audio->openChannels(audio->MaxChannels, &Self->ChannelIndex)) {
             glSoundChannels[Self->AudioID] = Self->ChannelIndex;
          }
          else {
@@ -847,11 +847,11 @@ static ERR SOUND_Init(extSound *Self)
 
    pos = Self->File->get<int>(FID_Position);
 #if 0
-   if (find_chunk(Self, Self->File, "cue ") IS ERR::Okay) {
+   if (!find_chunk(Self, Self->File, "cue ")) {
       data_p += 32;
       fl::ReadLE(Self->File, &info.loopstart);
       // if the next chunk is a LIST chunk, look for a cue length marker
-      if (find_chunk(Self, Self->File, "LIST") IS ERR::Okay) {
+      if (!find_chunk(Self, Self->File, "LIST")) {
          if (!strncmp (data_p + 28, "mark", 4)) {
             data_p += 24;
             fl::ReadLE(Self->File, &i);	// samples in loop
@@ -951,7 +951,7 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
       auto mclass = (objMetaClass *)FindClass(Args->ClassID);
 
       ERR (**routine)(OBJECTPTR, APTR);
-      if ((mclass->get(FID_ActionTable, routine) IS ERR::Okay) and (routine)) {
+      if ((!mclass->get(FID_ActionTable, routine)) and (routine)) {
          if (routine[int(AC::SaveToObject)]) {
             return routine[int(AC::SaveToObject)](Self, Args);
          }

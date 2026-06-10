@@ -118,7 +118,7 @@ static bool compile_docs_filter(const BackstageRequest &Request, const char *Nam
    if ((filter IS Request.queryParams.end()) or filter->second.empty()) return true;
 
    std::string error_message;
-   if (not (rx::Compile(filter->second, REGEX::NIL, &error_message, Result) IS ERR::Okay)) {
+   if (not (!rx::Compile(filter->second, REGEX::NIL, &error_message, Result))) {
       Response.status = 400;
       Response.contentType = "text/plain";
       Response.body = "Invalid ";

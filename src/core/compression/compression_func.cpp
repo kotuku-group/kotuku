@@ -100,7 +100,7 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
       // Convert the file date stamp into a DOS time stamp for zip
 
       DateTime *tm;
-      if (file->get(FID_Date, tm) IS ERR::Okay) {
+      if (!file->get(FID_Date, tm)) {
          if (tm->Year < 1980) entry.Timestamp = 0x00210000;
          else entry.Timestamp = ((tm->Year-1980)<<25) | (tm->Month<<21) | (tm->Day<<16) | (tm->Hour<<11) | (tm->Minute<<5) | (tm->Second>>1);
       }
@@ -133,8 +133,8 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
    // Enter the directory and compress its contents
 
    DirInfo *dir;
-   if (OpenDir(Location, RDF::FILE|RDF::FOLDER|RDF::QUALIFY, &dir) IS ERR::Okay) {
-      while (ScanDir(dir) IS ERR::Okay) { // Recurse for each directory in the list
+   if (!OpenDir(Location, RDF::FILE|RDF::FOLDER|RDF::QUALIFY, &dir)) {
+      while (!ScanDir(dir)) { // Recurse for each directory in the list
          FileInfo *scan = dir->Info;
          if (((scan->Flags & RDF::FOLDER) != RDF::NIL) and ((scan->Flags & RDF::LINK) IS RDF::NIL)) {
             std::string location = Location + scan->Name;
@@ -280,7 +280,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    std::string_view symlink;
    if (((Self->Flags & CMF::NO_LINKS) IS CMF::NIL) and ((file->Flags & FL::LINK) != FL::NIL)) {
-      if (file->get(FID_Link, symlink) IS ERR::Okay) {
+      if (!file->get(FID_Link, symlink)) {
          log.msg("Note: File \"%s\" is a symbolic link to \"%.*s\"", filename.c_str(), int(symlink.size()), symlink.data());
          entry.Flags |= ZIP_LINK;
       }
@@ -289,13 +289,13 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    // Convert the file date stamp into a DOS time stamp for zip
 
    DateTime *time;
-   if (file->get(FID_Date, time) IS ERR::Okay) {
+   if (!file->get(FID_Date, time)) {
       if (time->Year < 1980) entry.Timestamp = 0x00210000;
       else entry.Timestamp = ((time->Year-1980)<<25) | (time->Month<<21) | (time->Day<<16) | (time->Hour<<11) | (time->Minute<<5) | (time->Second>>1);
    }
 
    PERMIT permissions;
-   if (file->get(FID_Permissions, (int &)permissions) IS ERR::Okay) {
+   if (!file->get(FID_Permissions, (int &)permissions)) {
       if ((permissions & PERMIT::USER_READ) != PERMIT::NIL)   entry.Flags |= ZIP_UREAD;
       if ((permissions & PERMIT::GROUP_READ) != PERMIT::NIL)  entry.Flags |= ZIP_GREAD;
       if ((permissions & PERMIT::OTHERS_READ) != PERMIT::NIL) entry.Flags |= ZIP_OREAD;
@@ -332,7 +332,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    }
    else {
       struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER };
-      while ((Action(AC::Read, *file, &read) IS ERR::Okay) and (read.Result > 0)) {
+      while ((!Action(AC::Read, *file, &read)) and (read.Result > 0)) {
          Self->Zip.next_in  = Self->Input;
          Self->Zip.avail_in = read.Result;
 
@@ -432,7 +432,7 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
    double writepos = File->Offset;
 
    struct acRead read = { Self->Input, SIZE_COMPRESSION_BUFFER };
-   while ((Action(AC::Read, Self->FileIO, &read) IS ERR::Okay) and (read.Result > 0)) {
+   while ((!Action(AC::Read, Self->FileIO, &read)) and (read.Result > 0)) {
       if (acSeekStart(Self->FileIO, writepos) != ERR::Okay) return log.warning(ERR::Seek);
       struct acWrite write = { Self->Input, read.Result };
       if (Action(AC::Write, Self->FileIO, &write) != ERR::Okay) return log.warning(ERR::Write);
@@ -485,7 +485,7 @@ static ERR fast_scan_zip(extCompression *Self)
 
    zipentry *list, *scan;
    int total_files = 0;
-   if (AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list) IS ERR::Okay) {
+   if (!AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list)) {
       log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
       if (acRead(Self->FileIO, list, tail.listsize, nullptr) != ERR::Okay) {
          FreeResource(list);
@@ -573,7 +573,7 @@ static ERR scan_zip(extCompression *Self)
 
    int type, result;
    int total_files = 0;
-   while (fl::ReadLE(Self->FileIO, &type) IS ERR::Okay) {
+   while (!fl::ReadLE(Self->FileIO, &type)) {
       if (type IS 0x04034b50) {
          // PKZIP file header entry detected
 

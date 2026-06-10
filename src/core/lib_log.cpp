@@ -216,8 +216,8 @@ Log message formatting follows the same guidelines as the `printf()` function.
 The following example will print the default width of a @Display object to the log.
 
 <pre>
-if (NewObject(CLASSID::DISPLAY, &display) IS ERR::Okay) {
-   if (display->init(display) IS ERR::Okay) {
+if (!NewObject(CLASSID::DISPLAY, &display)) {
+   if (!display->init(display)) {
       VLogF(VLF::API, "Demo","The width of the display is: %d", display-&gt;Width);
    }
    FreeResource(display);

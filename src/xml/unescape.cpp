@@ -350,7 +350,7 @@ static void xml_unescape(extXML *Self, std::string &String)
             }
             else if ((Self->Flags & XMF::PARSE_ENTITY) != XMF::NIL) {
                std::string resolved;
-               if (Self->resolveEntity(lookup, resolved) IS ERR::Okay) {
+               if (!Self->resolveEntity(lookup, resolved)) {
                   String.replace(c, end - c, resolved);
                   // TODO: Rescan the inserted text to handle nested entity references.
                }

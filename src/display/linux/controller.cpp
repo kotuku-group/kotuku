@@ -288,7 +288,7 @@ static ERR find_primary_controller(int &Port)
       if (controller.fd >= 0) {
          // Cached descriptors still need to be read because a device can disconnect after being selected previously.
          const auto error = read_controller(controller, port);
-         if (error IS ERR::Okay) {
+         if (!error) {
             Port = port;
             glPrimaryPort = port;
             return ERR::Okay;
@@ -301,7 +301,7 @@ static ERR find_primary_controller(int &Port)
       else {
          // Unopened ports are probed in order, allowing Port=-1 to bind to the first controller that can be accessed.
          const auto error = open_controller(port);
-         if (error IS ERR::Okay) {
+         if (!error) {
             Port = port;
             glPrimaryPort = port;
             return ERR::Okay;
@@ -368,9 +368,9 @@ ERR linuxGetControllerPorts(int &Value)
       auto &controller = glLinuxControllers[port];
 
       if (controller.fd >= 0) {
-         if (read_controller(controller, port) IS ERR::Okay) last_port = port;
+         if (!read_controller(controller, port)) last_port = port;
       }
-      else if (open_controller(port) IS ERR::Okay) last_port = port;
+      else if (!open_controller(port)) last_port = port;
    }
 
    Value = last_port + 1;

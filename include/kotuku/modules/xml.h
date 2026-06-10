@@ -233,7 +233,7 @@ class objXML : public Object {
    template <class T> inline ERR insertStatement(int Index, XMI Where, T Statement, XTag **Result) {
       int index_result;
       XTag *tag_result;
-      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); error IS ERR::Okay) {
+      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); !error) {
          error = getTag(index_result, &tag_result);
          *Result = tag_result;
          return error;

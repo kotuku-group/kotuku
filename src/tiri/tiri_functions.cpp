@@ -205,7 +205,7 @@ int fcmd_subscribe_event(lua_State *Lua)
    APTR handle;
    lua_settop(Lua, 2);
    auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); error IS ERR::Okay) {
+   if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); !error) {
       auto prv = (prvTiri *)Lua->script->DerivedPtr;
       prv->EventList.emplace_back(client_function, event_id, handle);
       lua_pushinteger(Lua, int(error)); // 1: Error code
@@ -354,7 +354,7 @@ int fcmd_loadfile(lua_State *Lua)
       }
       else {
          std::string_view wp;
-         if (Lua->script->get(FID_WorkingPath, wp) IS ERR::Okay) src.insert(0, wp);
+         if (!Lua->script->get(FID_WorkingPath, wp)) src.insert(0, wp);
       }
    }
 
@@ -398,7 +398,7 @@ int fcmd_loadfile(lua_State *Lua)
       {
          int len, i;
          char header[256];
-         if (file->read(header, sizeof(header), &len) IS ERR::Okay) {
+         if (!file->read(header, sizeof(header), &len)) {
             if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
                recompile = false; // Do not recompile that which is already compiled
                for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++);
@@ -414,7 +414,7 @@ int fcmd_loadfile(lua_State *Lua)
 
       // Resolve the full path for the chunk name (needed for import statement path resolution)
       std::string resolved_path;
-      if (ResolvePath(src, RSF::NIL, &resolved_path) IS ERR::Okay) {
+      if (!ResolvePath(src, RSF::NIL, &resolved_path)) {
          // Use resolved path for chunk name
       }
       else resolved_path = src;  // Fall back to original if resolution fails

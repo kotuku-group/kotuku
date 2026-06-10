@@ -113,7 +113,7 @@ static void update_dpi(void)
 
    if (current_time - last_update > 3000000LL) {
       DisplayInfo *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      if (!gfx::GetDisplayInfo(0, &display)) {
          last_update = PreciseTime();
          if ((display->VDensity >= 72) and (display->HDensity >= 72)) {
             glDisplayVDPI = display->VDensity;
@@ -446,7 +446,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    std::string family(Family.empty() ? "*" : Family);
    if (not family.ends_with("*")) family.append(",*");
    std::string_view final_name;
-   if (fnt::ResolveFamilyName(family, &final_name) IS ERR::Okay) family.assign(final_name);
+   if (!fnt::ResolveFamilyName(family, &final_name)) family.assign(final_name);
 
    std::string style(Style);
    if ((Weight) and (Weight != 400)) {
@@ -458,7 +458,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
    std::string location;
    FMETA meta = FMETA::NIL;
-   if (auto error = fnt::SelectFont(family, style, &location, &meta); error IS ERR::Okay) {
+   if (auto error = fnt::SelectFont(family, style, &location, &meta); !error) {
       if ((meta & FMETA::SCALED) IS FMETA::NIL) { // Bitmap font
          auto key = strihash(style + ":" + std::to_string(point_size) + ":" + location);
 
@@ -488,7 +488,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
 
          if (!glFreetypeFonts.contains(key)) {
             std::string resolved;
-            if (ResolvePath(location, RSF::NIL, &resolved) IS ERR::Okay) {
+            if (!ResolvePath(location, RSF::NIL, &resolved)) {
                FT_Face ftface;
                FT_Open_Args openargs = { .flags = FT_OPEN_PATHNAME, .pathname = resolved.data() };
                if (FT_Open_Face(glFTLibrary, &openargs, 0, &ftface)) {

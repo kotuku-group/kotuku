@@ -28,12 +28,12 @@ https://github.com/microsoft/win32-app-isolation is one potential way of doing t
 
 static void notify_disable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   if (Result IS ERR::Okay) acDisable(CurrentContext());
+   if (!Result) acDisable(CurrentContext());
 }
 
 static void notify_enable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   if (Result IS ERR::Okay) acEnable(CurrentContext());
+   if (!Result) acEnable(CurrentContext());
 }
 
 static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
@@ -166,7 +166,7 @@ static ERR DOCUMENT_Activate(extDocument *Self)
    log.branch();
 
    kt::vector<ChildEntry> list;
-   if (ListChildren(Self->UID, &list) IS ERR::Okay) {
+   if (!ListChildren(Self->UID, &list)) {
       for (unsigned i=0; i < list.size(); i++) {
          kt::ScopedObjectLock obj(list[i].ObjectID);
          if (obj.granted()) acActivate(*obj);
@@ -277,7 +277,7 @@ static ERR DOCUMENT_CallFunction(extDocument *Self, doc::CallFunction *Args)
 
    objScript *script;
    std::string function_name, args;
-   if (auto error = extract_script(Self, Args->Function, &script, function_name, args); error IS ERR::Okay) {
+   if (auto error = extract_script(Self, Args->Function, &script, function_name, args); !error) {
       return script->exec(function_name.c_str(), Args->Args, Args->TotalArgs);
    }
    else return error;
@@ -330,7 +330,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
          objClipboard::create clipboard = { };
          if (clipboard.ok()) {
-            if (auto error = clipboard->addText(buffer); error IS ERR::Okay) {
+            if (auto error = clipboard->addText(buffer); !error) {
                // Delete the highlighted document if the CUT mode was used
                if (Args->Mode IS CLIPMODE::CUT) {
                   //delete_selection(Self);
@@ -357,24 +357,24 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
       objClipboard::create clipboard = { };
       if (clipboard.ok()) {
          kt::vector<std::string> files;
-         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr); error IS ERR::Okay) {
+         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr); !error) {
             if (files.empty()) return ERR::NoData;
 
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {
                int size;
-               if ((error = file->get(FID_Size, size)) IS ERR::Okay) {
+               if (!(error = file->get(FID_Size, size))) {
                   if (size <= 0) return ERR::NoData;
 
                   if (auto buffer = new (std::nothrow) char[size+1]) {
                      int result;
-                     if ((error = file->read(buffer, size, &result)) IS ERR::Okay) {
+                     if (!(error = file->read(buffer, size, &result))) {
                         buffer[result] = 0;
                         error = Self->dataFeed(Self, DATA::TEXT, buffer, result);
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;
-                     if (not (error IS ERR::Okay)) return error;
+                     if (error != ERR::Okay) return error;
                   }
                   else {
                      error_dialog("Clipboard Paste Error", ERR::AllocMemory);
@@ -1717,7 +1717,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
    else if (Args->Format IS DATA::RAW) {
       STRING output;
       auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
-      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output) IS ERR::Okay) {
+      if (!AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output)) {
          copymem(Self->Stream.data.data() + Args->Start, output, size);
          output[size] = 0;
          Args->Result = output;
@@ -1770,7 +1770,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
          // The refresh trigger can return ERR::Skip to prevent a complete reload of the document.
 
          ERR error;
-         if (sc::Call(trigger, error) IS ERR::Okay) {
+         if (!sc::Call(trigger, error)) {
             if (error IS ERR::Skip) {
                log.msg("The refresh request has been handled by an event trigger.");
                Self->Processing--;
@@ -1916,10 +1916,10 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
    log.branch("Destination: %d", Args->Dest->UID);
 
    doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), nullptr };
-   if (auto error = DOCUMENT_ReadContent(Self, &read); error IS ERR::Okay) {
+   if (auto error = DOCUMENT_ReadContent(Self, &read); !error) {
       error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
       FreeResource(read.Result);
-      if (error IS ERR::Okay) return ERR::Okay;
+      if (!error) return ERR::Okay;
       else return log.warning(ERR::Write);
    }
    else return error;

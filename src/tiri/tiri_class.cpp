@@ -66,7 +66,7 @@ static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::
    Buffer.resize(read_size);
 
    auto error = ReadFileToBuffer(Path, Buffer.data(), read_size, &bytes_read);
-   if (error IS ERR::Okay) {
+   if (!error) {
       Buffer.resize(bytes_read);
       if (BytesRead) *BytesRead = bytes_read;
    }
@@ -370,14 +370,14 @@ static ERR TIRI_Activate(objScript *Self)
 
             if (lua_pcall(prv->Lua, 0, 0, 0)) {
                process_error(Self, "Activation");
-               if ((error = Self->Error) IS ERR::Okay) error = ERR::Failed;
+               if (!(error = Self->Error)) error = ERR::Failed;
             }
          }
       }
 
       Self->ActivationCount++;
 
-      if (Self->Error IS ERR::Okay) run_script(Self); // Will set Self->Error if there's an issue
+      if (!Self->Error) run_script(Self); // Will set Self->Error if there's an issue
 
       prv->Recurse--;
 
@@ -520,7 +520,7 @@ static ERR TIRI_Init(objScript *Self)
 
       if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
          error = src_file->get(FID_Timestamp, src_ts);
-         if (error IS ERR::Okay) error = src_file->get(FID_Size, src_size);
+         if (!error) error = src_file->get(FID_Size, src_size);
       }
       else error = ERR::File;
 
@@ -535,7 +535,7 @@ static ERR TIRI_Init(objScript *Self)
             objFile::create cache_file = { fl::Path(Self->CacheFile) };
             if (cache_file.ok()) {
                auto cache_error = cache_file->get(FID_Timestamp, cache_ts);
-               if (cache_error IS ERR::Okay) cache_error = cache_file->get(FID_Size, cache_size);
+               if (!cache_error) cache_error = cache_file->get(FID_Size, cache_size);
                if (cache_error != ERR::Okay) cache_ts = -1;
             }
          }
@@ -545,15 +545,15 @@ static ERR TIRI_Init(objScript *Self)
                log.msg("Using cache '%s'", Self->CacheFile.c_str());
                int len = 0;
                error = read_file_to_string(Self->CacheFile, cache_size, Self->String, &len);
-               if (error IS ERR::Okay) loaded = len > 0;
+               if (!error) loaded = len > 0;
             }
          }
       }
 
-      if ((error IS ERR::Okay) and (not loaded)) {
+      if ((!error) and (not loaded)) {
          int len = 0;
          error = read_file_to_string(Self->Path, src_size, Self->String, &len);
-         if (error IS ERR::Okay) {
+         if (!error) {
             // Unicode BOM handler - in case the file starts with a BOM header.
             auto content = check_bom(Self->String);
             if (content.data() != Self->String.data()) Self->String.assign(content);
@@ -572,17 +572,17 @@ static ERR TIRI_Init(objScript *Self)
    // Allocate private structure if not done by NewObject().
 
    auto prv = (prvTiri *)Self->DerivedPtr;
-   if ((error IS ERR::Okay) and (not prv)) {
-      if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+   if ((!error) and (not prv)) {
+      if (!AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr)) {
          prv = (prvTiri *)Self->DerivedPtr;
          new (prv) prvTiri;
       }
       else error = ERR::AllocMemory;
    }
 
-   if ((error IS ERR::Okay) and (prv->SaveCompiled = compile)) {
+   if ((!error) and (prv->SaveCompiled = compile)) {
       DateTime *dt;
-      if (src_file->get(FID_Date, dt) IS ERR::Okay) prv->CacheDate = *dt;
+      if (!src_file->get(FID_Date, dt)) prv->CacheDate = *dt;
       src_file->get(FID_Permissions, (int &)prv->CachePermissions);
    }
 
@@ -627,7 +627,7 @@ static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
 
 static ERR TIRI_NewObject(objScript *Self)
 {
-   if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr)) {
       auto prv = (prvTiri *)Self->DerivedPtr;
       new (prv) prvTiri;
       return ERR::Okay;
@@ -1009,7 +1009,7 @@ static ERR run_script(objScript *Self)
          #ifndef NDEBUG
             kt::vector<std::string> *list;
             int total_procedures;
-            if (GET_Procedures(Self, &list, &total_procedures) IS ERR::Okay) {
+            if (!GET_Procedures(Self, &list, &total_procedures)) {
                for (int i=0; i < total_procedures; i++) log.trace("%s", list[0][i]);
             }
          #endif

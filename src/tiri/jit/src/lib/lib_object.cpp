@@ -307,7 +307,7 @@ READ_TABLE * get_read_table(objMetaClass *Class)
 
    MethodEntry *methods;
    int total_methods;
-   if (Class->get(FID_Methods, methods, total_methods) IS ERR::Okay) {
+   if (!Class->get(FID_Methods, methods, total_methods)) {
       auto methods_span = std::span(methods, total_methods);
       for (auto &method : methods_span | std::views::drop(1)) {
          if (method.MethodID != AC::NIL) {
@@ -319,7 +319,7 @@ READ_TABLE * get_read_table(objMetaClass *Class)
 
    Field *dict;
    int total_dict;
-   if (Class->get(FID_Dictionary, dict, total_dict) IS ERR::Okay) {
+   if (!Class->get(FID_Dictionary, dict, total_dict)) {
       auto dict_span = std::span(dict, total_dict);
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & FDF_R; })) {
          auto hash = field.FieldID;
@@ -377,7 +377,7 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
    WRITE_TABLE &jmp = Class->WriteTable;
    Field *dict;
    int total_dict;
-   if (Class->get(FID_Dictionary, dict, total_dict) IS ERR::Okay) {
+   if (!Class->get(FID_Dictionary, dict, total_dict)) {
       auto dict_span = std::span(dict, total_dict);
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & (FD_W|FD_I); })) {
          char ch[2] = { field.Name[0], 0 };
@@ -499,7 +499,7 @@ extern int object_newindex(lua_State *Lua)
       MethodEntry *table;
       int total_methods;
       ACTIONID action_id;
-      if ((mc->get(FID_Methods, table, total_methods) IS ERR::Okay) and (table)) {
+      if ((!mc->get(FID_Methods, table, total_methods)) and (table)) {
          for (int i=1; i < total_methods; i++) {
             if ((table[i].Name) and (iequals(action, table[i].Name))) {
                action_id = table[i].MethodID;
@@ -539,7 +539,7 @@ LJLIB_CF(object_new)
    else luaL_error(L, ERR::Mismatch, "String or ID expected for class name, got '%s'.", lua_typename(L, type));
 
    OBJECTPTR obj;
-   if (auto error = NewObject(class_id, objflags, &obj); error IS ERR::Okay) {
+   if (auto error = NewObject(class_id, objflags, &obj); !error) {
       if (L->script->TargetID) {
          ScopedObjectLock new_owner(L->script->TargetID);
          if (new_owner.granted()) SetOwner(obj, *new_owner);
@@ -627,7 +627,7 @@ LJLIB_CF(object_find)
          else return 0;
       }
 
-      if (FindObject(object_name, class_id, &object_id) IS ERR::Okay) {
+      if (!FindObject(object_name, class_id, &object_id)) {
          return object_find_ptr(L, GetObjectPtr(object_id));
       }
       else log.detail("Unable to find object '%s'", object_name);
@@ -724,7 +724,7 @@ static int object_newchild(lua_State *Lua)
    }
 
    OBJECTPTR obj;
-   if (auto error = NewObject(class_id, objflags, &obj); error IS ERR::Okay) {
+   if (auto error = NewObject(class_id, objflags, &obj); !error) {
       ScopedObjectLock new_owner(Lua->script->TargetID);
       if (new_owner.granted()) SetOwner(obj, *new_owner);
       else luaL_error(Lua, ERR::LockFailed);
@@ -806,7 +806,7 @@ static int object_children(lua_State *Lua)
    else class_id = CLASSID::NIL;
 
    kt::vector<ChildEntry> list;
-   if (ListChildren(def->uid, &list) IS ERR::Okay) {
+   if (!ListChildren(def->uid, &list)) {
       int index = 0;
       auto id = std::make_unique<int[]>(list.size());
       for (auto &rec : list) {
@@ -888,7 +888,7 @@ static int object_subscribe(lua_State *Lua)
 
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
-   if (auto error = SubscribeAction(obj, action_id, &callback); error IS ERR::Okay) {
+   if (auto error = SubscribeAction(obj, action_id, &callback); !error) {
       auto prv = (prvTiri *)Lua->script->DerivedPtr;
       auto &acsub = prv->ActionList.emplace_back();
 

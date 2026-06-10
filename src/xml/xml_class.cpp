@@ -204,26 +204,26 @@ static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
    log.branch("");
 
    objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
       xq->set(FID_Statement, Args->Statement);
-      if (auto error = xq->init(); error IS ERR::Okay) {
-         if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
+      if (auto error = xq->init(); !error) {
+         if (error = xq->evaluate(Self, 0, XEF::NIL); !error) {
             std::string_view result;
-            if (xq->get(FID_ResultString, result) IS ERR::Okay) Args->Result->assign(result);
+            if (!xq->get(FID_ResultString, result)) Args->Result->assign(result);
             else error = ERR::FieldNotSet;
             FreeResource(xq);
             return error;
          }
          else {
             std::string_view sv;
-            if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+            if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             return error;
          }
       }
       else {
          std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -267,9 +267,9 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
    if ((not Args) or Args->XPath.empty()) return log.warning(ERR::NullArgs);
 
    objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
       xq->set(FID_Statement, Args->XPath);
-      if (auto error = xq->init(); error IS ERR::Okay) {
+      if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
          if (error = xq->search(Self, callback, 0, XEF::NIL); error IS ERR::Terminate) {
@@ -283,13 +283,13 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
             return ERR::Okay;
          }
          else {
-            if (error IS ERR::Okay) { // Nothing found
+            if (!error) { // Nothing found
                error = ERR::Search;
                Self->ErrorMsg = "No matching tag found";
             }
             else {
                std::string_view str;
-               if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
+               if (!xq->get(FID_ErrorMsg, str)) Self->ErrorMsg = str;
             }
             FreeResource(xq);
             return error;
@@ -297,7 +297,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
       }
       else {
          std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -359,10 +359,10 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
    if (Self->Tags.empty()) return ERR::NoData;
 
    objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
       xq->set(FID_Statement, Args->Expression);
 
-      if (auto error = xq->init(); error IS ERR::Okay) {
+      if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
 
          FUNCTION callback;
@@ -375,10 +375,10 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
             callback = C_FUNCTION(save_matching_tag, &opt);
             error = xq->search((objXML *)Self, callback, 0, XEF::NIL);
             if (error IS ERR::Terminate) error = ERR::Okay; // Terminate means a match was accepted
-            else if (error IS ERR::Okay) error = ERR::Search; // Nothing found
+            else if (!error) error = ERR::Search; // Nothing found
          }
 
-         if (error IS ERR::Okay) {
+         if (!error) {
             FreeResource(xq);
 
             if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) log.msg("Found tag %d, Attrib: %s", opt.tag_id, opt.attrib.c_str());
@@ -387,7 +387,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
          }
          else {
             std::string_view sv;
-            if ((xq->get(FID_ErrorMsg, sv) IS ERR::Okay) and (not sv.empty())) Self->ErrorMsg.assign(sv);
+            if ((!xq->get(FID_ErrorMsg, sv)) and (not sv.empty())) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             if ((Args->Callback) and (error IS ERR::Search)) return ERR::Okay;
             else return error;
@@ -395,7 +395,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
       }
       else {
          std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -941,27 +941,27 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
    log.branch("Insert: %d, XPath: %.*s", int(Args->Where), int(Args->XPath.size()), Args->XPath.data());
 
    objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
       xq->set(FID_Statement, Args->XPath);
-      if (auto error = xq->init(); error IS ERR::Okay) {
+      if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
          if (error = xq->search((objXML *)Self, callback, 0, XEF::NIL); error IS ERR::Terminate) {
             xml::InsertXML insert { .Index = opt.tag_id, .Where = Args->Where, .XML = Args->XML };
-            if (error = XML_InsertXML(Self, &insert); error IS ERR::Okay) {
+            if (error = XML_InsertXML(Self, &insert); !error) {
                Args->Result = insert.Result;
             }
             FreeResource(xq);
             return error;
          }
          else {
-            if (error IS ERR::Okay) {
+            if (!error) {
                error = ERR::Search; // No match found
                Self->ErrorMsg = "XPath did not resolve to a valid location.";
             }
             else {
                std::string_view sv;
-               if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+               if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
             }
             FreeResource(xq);
             return error;
@@ -969,7 +969,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
       }
       else {
          std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -1233,9 +1233,9 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
    else if (not limit) limit = 1;
 
    objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
       xq->set(FID_Statement, Args->XPath);
-      if (auto error = xq->init(); error IS ERR::Okay) {
+      if (auto error = xq->init(); !error) {
          while (limit > 0) {
             matching_tag_opt opt;
             auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -1268,7 +1268,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
       }
       else {
          std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -1348,7 +1348,7 @@ static ERR XML_SaveToObject(extXML *Self, struct acSaveToObject *Args)
    log.traceBranch("To: %d", Args->Dest->UID);
 
    std::string str;
-   if (auto error = Self->serialise(0, XMF::READABLE|XMF::INCLUDE_SIBLINGS, str); error IS ERR::Okay) {
+   if (auto error = Self->serialise(0, XMF::READABLE|XMF::INCLUDE_SIBLINGS, str); !error) {
       if (acWrite(Args->Dest, str.c_str(), int(str.size()), nullptr) != ERR::Okay) error = ERR::Write;
       return error;
    }
@@ -1578,9 +1578,9 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
    if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    objXQuery *xq;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
       xq->set(FID_Statement, std::string_view(Args->Key));
-      if (auto error = xq->init(); error IS ERR::Okay) {
+      if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
          if (error = xq->search((objXML *)Self, callback, 0, XEF::NIL); error IS ERR::Terminate) {
@@ -1613,13 +1613,13 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
             return ERR::Okay;
          }
          else {
-            if (error IS ERR::Okay) {
+            if (!error) {
                Self->ErrorMsg = "XPath did not resolve to a valid location.";
                error = ERR::Search;
             }
             else {
                std::string_view sv;
-               if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+               if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
             }
             log.warning("Failed to find '%.*s'", int(Args->Key.size()), Args->Key.data());
@@ -1628,7 +1628,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
       }
       else {
          std::string_view sv;
-         if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          log.msg("Failed to compile '%.*s'", int(Args->Key.size()), Args->Key.data());
          return error;
@@ -1723,14 +1723,14 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
    }
    else {
       objXQuery *xq;
-      if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
+      if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
          xq->set(FID_Statement, Args->XPath);
-         if (auto error = xq->init(); error IS ERR::Okay) {
+         if (auto error = xq->init(); !error) {
             matching_tag_opt opt;
             auto callback = C_FUNCTION(save_matching_tag, &opt.tag_id);
             if (error = xq->search((objXML *)Self, callback, 0, XEF::NIL); error != ERR::Terminate) {
                std::string_view sv;
-               if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+               if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
                return log.warning(ERR::Search);
             }
@@ -1741,7 +1741,7 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
          }
          else {
             std::string_view sv;
-            if (xq->get(FID_ErrorMsg, sv) IS ERR::Okay) Self->ErrorMsg.assign(sv);
+            if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             return log.warning(error);
          }

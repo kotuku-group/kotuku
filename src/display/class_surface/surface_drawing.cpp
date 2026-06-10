@@ -324,7 +324,7 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
 
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acDraw)];
    int msgindex = 0;
-   while (ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer)) IS ERR::Okay) {
+   while (!ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS drw::InvalidateRegion::id) and (action->ObjectID IS Self->UID)) {
@@ -407,7 +407,7 @@ static ERR SURFACE_ExposeToDisplay(extSurface *Self, struct drw::ExposeToDisplay
 
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
    int msgindex = 0;
-   while (ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer)) IS ERR::Okay) {
+   while (!ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS drw::ExposeToDisplay::id) and (action->ObjectID IS Self->UID)) {
@@ -505,7 +505,7 @@ static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegi
 
    int msgindex = 0;
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
-   while (ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer)) IS ERR::Okay) {
+   while (!ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
       if ((action->ActionID IS drw::InvalidateRegion::id) and (action->ObjectID IS Self->UID)) {
          if (action->SendArgs IS TRUE) {
@@ -582,7 +582,7 @@ void move_layer(extSurface *Self, int X, int Y)
       if (ScopedObjectLock<objDisplay> display(Self->DisplayID, 2000); display.granted()) {
          // Subtract the host window's LeftMargin and TopMargin as MoveToPoint() is based on the coordinates of the window frame.
 
-         if (acMoveToPoint(*display, X - display->LeftMargin, Y - display->TopMargin, 0, MTF::X|MTF::Y) IS ERR::Okay) {
+         if (!acMoveToPoint(*display, X - display->LeftMargin, Y - display->TopMargin, 0, MTF::X|MTF::Y)) {
             Self->X = X;
             Self->Y = Y;
             UpdateSurfaceRecord(Self);

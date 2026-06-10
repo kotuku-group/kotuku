@@ -788,7 +788,7 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    objlist.sort([](const OBJECTID &a, const OBJECTID &b) { return (a < b); });
 
    OBJECTID *result;
-   if (AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result)) {
       int i = 0;
       for (const auto & id : objlist) result[i++] = id;
       *Array = result;
@@ -1291,8 +1291,8 @@ void scan_classes(void)
 
    DirInfo *dir;
    int total = 0;
-   if (OpenDir("modules:", RDF::QUALIFY, &dir) IS ERR::Okay) {
-      while (ScanDir(dir) IS ERR::Okay) {
+   if (!OpenDir("modules:", RDF::QUALIFY, &dir)) {
+      while (!ScanDir(dir)) {
          FileInfo *list = dir->Info;
 
          if ((list->Flags & RDF::FILE) != RDF::NIL) {

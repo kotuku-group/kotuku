@@ -115,7 +115,7 @@ class freetype_font {
                      kt::ScopedObjectLock<objConfig> config(glFontConfig, 500);
                      if (config.granted()) {
                         ConfigGroups *groups;
-                        if (glFontConfig->get(FID_Data, groups) IS ERR::Okay) {
+                        if (!glFontConfig->get(FID_Data, groups)) {
                            for (auto & [group, keys] : groups[0]) {
                               if (kt::iequals(group, font->face->family_name)) {
                                  if (auto it = keys.find("LineSpacing"); it != keys.end()) {

@@ -78,10 +78,10 @@ void refresh_pointer(extSurface *Self)
 
 static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bitmap)
 {
-   if (AccessObject(DisplayID, 5000, (OBJECTPTR *)Display) IS ERR::Okay) {
+   if (!AccessObject(DisplayID, 5000, (OBJECTPTR *)Display)) {
       #ifdef _WIN32
       APTR winhandle;
-      if (Display[0]->get(FID_WindowHandle, winhandle) IS ERR::Okay) {
+      if (!Display[0]->get(FID_WindowHandle, winhandle)) {
          Display[0]->Bitmap->setHandle(winGetDC(winhandle));
       }
       #endif
@@ -101,7 +101,7 @@ static void release_video(objDisplay *Display)
       Display->Bitmap->get(FID_Handle, surface);
 
       APTR winhandle;
-      if (Display->get(FID_WindowHandle, winhandle) IS ERR::Okay) {
+      if (!Display->get(FID_WindowHandle, winhandle)) {
          winReleaseDC(winhandle, surface);
       }
 
@@ -295,7 +295,7 @@ static void expose_buffer(const SURFACELIST &list, int Limit, int Index, int Sca
 
    objDisplay *display;
    objBitmap *video_bmp;
-   if (access_video(DisplayID, &display, &video_bmp) IS ERR::Okay) {
+   if (!access_video(DisplayID, &display, &video_bmp)) {
       video_bmp->Clip.Left   = Left   - list[iscr].Left; // Ensure that the coords are relative to the display bitmap (important for Windows, X11)
       video_bmp->Clip.Top    = Top    - list[iscr].Top;
       video_bmp->Clip.Right  = Right  - list[iscr].Left;
@@ -493,7 +493,7 @@ static void notify_redimension_parent(OBJECTPTR Object, ACTIONID ActionID, ERR R
    }
    else {
       DisplayInfo *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      if (!gfx::GetDisplayInfo(0, &display)) {
          parentwidth  = display->Width;
          parentheight = display->Height;
       }
@@ -677,7 +677,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
          int new_size = Self->CallbackSize + 10;
          if (new_size > 255) new_size = 255;
          SurfaceCallback *scb;
-         if (AllocMemory(sizeof(SurfaceCallback) * new_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&scb) IS ERR::Okay) {
+         if (!AllocMemory(sizeof(SurfaceCallback) * new_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&scb)) {
             copymem(Self->Callback, scb, sizeof(SurfaceCallback) * Self->CallbackCount);
 
             scb[Self->CallbackCount].Object   = context;
@@ -1300,7 +1300,7 @@ static ERR SURFACE_Init(extSurface *Self)
          // Alignment adjustments
 
          DisplayInfo *display;
-         if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+         if (!gfx::GetDisplayInfo(0, &display)) {
             if ((Self->Align & ALIGN::LEFT) != ALIGN::NIL) { Self->X = 0; Self->setX(Self->X); }
             else if ((Self->Align & ALIGN::RIGHT) != ALIGN::NIL) { Self->X = display->Width - Self->Width; Self->setX(Self->X); }
             else if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) { Self->X = (display->Width - Self->Width) / 2; Self->setX(Self->X); }
@@ -1425,7 +1425,7 @@ static ERR SURFACE_Init(extSurface *Self)
    else {
       if (Self->BitsPerPixel >= 8) {
          DisplayInfo *info;
-         if (gfx::GetDisplayInfo(Self->DisplayID, &info) IS ERR::Okay) {
+         if (!gfx::GetDisplayInfo(Self->DisplayID, &info)) {
             if (info->BitsPerPixel != Self->BitsPerPixel) require_store = true;
          }
       }
@@ -1618,7 +1618,7 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 
    int index = 0;
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acMove)];
-   while (ScanMessages(&index, MSGID::ACTION, msgbuffer, sizeof(msgbuffer)) IS ERR::Okay) {
+   while (!ScanMessages(&index, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS AC::MoveToPoint) and (action->ObjectID IS Self->UID)) {
@@ -2146,7 +2146,7 @@ static ERR SURFACE_ScheduleRedraw(extSurface *Self, struct drw::ScheduleRedraw *
          // Prefer to use the display refresh rate.  Note: Refresh rate should not be a determining factor for animation
          // frame rates - the client application is responsible for making that determination with the user.
          DisplayInfo *info;
-         if (gfx::GetDisplayInfo(Self->DisplayID, &info) IS ERR::Okay) {
+         if (!gfx::GetDisplayInfo(Self->DisplayID, &info)) {
             if (info->RefreshRate > 255) Self->RefreshRate = 255;
             else Self->RefreshRate = info->RefreshRate;
          }
@@ -2170,7 +2170,7 @@ static ERR SURFACE_ScheduleRedraw(extSurface *Self, struct drw::ScheduleRedraw *
       return ERR::Okay;
    }
 
-   if (SubscribeTimer(1.0 / double(refresh_rate), C_FUNCTION(redraw_timer), &Self->RedrawTimer) IS ERR::Okay) {
+   if (!SubscribeTimer(1.0 / double(refresh_rate), C_FUNCTION(redraw_timer), &Self->RedrawTimer)) {
       Self->RedrawScheduled = true;
       Self->RedrawRate = refresh_rate;
       return ERR::Okay;
@@ -2217,21 +2217,21 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
    CLASSID class_id = (Args->ClassID IS CLASSID::NIL) ? CLASSID::IMAGE : Args->ClassID;
 
    objImage *img;
-   if (NewObject(class_id, &img) IS ERR::Okay) {
+   if (!NewObject(class_id, &img)) {
       img->setFlags(PCF::NEW);
       img->Bitmap->setWidth(Self->Width);
       img->Bitmap->setHeight(Self->Height);
 
       objDisplay *display;
       objBitmap *video_bmp;
-      if (access_video(Self->DisplayID, &display, &video_bmp) IS ERR::Okay) {
+      if (!access_video(Self->DisplayID, &display, &video_bmp)) {
          img->Bitmap->setBitsPerPixel(video_bmp->BitsPerPixel);
          img->Bitmap->setBytesPerPixel(video_bmp->BytesPerPixel);
          img->Bitmap->setType(video_bmp->Type);
          release_video(display);
       }
 
-      if (InitObject(img) IS ERR::Okay) {
+      if (!InitObject(img)) {
          // Scan through the surface list and copy each buffer to our image
 
          const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
@@ -2264,7 +2264,7 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
             }
          }
 
-         if (Action(AC::SaveImage, img, Args) IS ERR::Okay) { // Save the image to disk
+         if (!Action(AC::SaveImage, img, Args)) { // Save the image to disk
             FreeResource(img);
             return ERR::Okay;
          }
@@ -2353,7 +2353,7 @@ static ERR SURFACE_Show(extSurface *Self)
 
    if (!Self->ParentID) {
       kt::ScopedObjectLock display(Self->DisplayID);
-      if (acShow(*display) IS ERR::Okay) {
+      if (!acShow(*display)) {
          Self->Flags |= RNF::VISIBLE;
          if (Self->hasFocus()) acFocus(*display);
       }
@@ -2542,7 +2542,7 @@ static ERR consume_input_events(const InputEvent *Events, int Handle)
 
                glAnchorX  = event->X;
                glAnchorY  = event->Y;
-               if (gfx::LockCursor(Self->UID) IS ERR::Okay) Self->DragStatus = DRAG::ANCHOR;
+               if (!gfx::LockCursor(Self->UID)) Self->DragStatus = DRAG::ANCHOR;
                else Self->DragStatus = DRAG::NORMAL;
             }
          }

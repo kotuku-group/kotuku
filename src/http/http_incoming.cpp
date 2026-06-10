@@ -211,7 +211,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                   Socket->Flags |= NSF::DISABLE_SERVER_VERIFY;
                }
 
-               if (net::SetSSL(Socket, "EnableSSL", "") IS ERR::Okay) {
+               if (!net::SetSSL(Socket, "EnableSSL", "")) {
                   Self->setCurrentState(HGS::COMPLETED);
                   return acActivate(Self);
                }
@@ -817,7 +817,7 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       LOC type;
 
       if ((Self->Flags & HTF::RESUME) != HTF::NIL) {
-         if ((AnalysePath(Self->OutputFile, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((!AnalysePath(Self->OutputFile, &type)) and (type IS LOC::FILE)) {
             flags = FL::NIL;
          }
          else flags = FL::NEW;
@@ -958,7 +958,7 @@ restart:
 
    if ((Self->CurrentState IS HGS::READING_HEADER) or (Self->CurrentState IS HGS::AUTHENTICATING)) {
       auto error = read_incoming_header(Self, Socket);
-      if (error IS ERR::Okay) goto restart; // Header read, process any remaining data
+      if (!error) goto restart; // Header read, process any remaining data
       else return error;
    }
    else if (Self->CurrentState IS HGS::READING_CONTENT) {
@@ -969,7 +969,7 @@ restart:
       std::string buffer;
       buffer.resize(512);
       int len;
-      if ((acRead(Socket, buffer.data(), buffer.size(), &len) IS ERR::Okay) and (len > 0)) {
+      if ((!acRead(Socket, buffer.data(), buffer.size(), &len)) and (len > 0)) {
          log.warning("WARNING: Received data whilst in state %d.", int(Self->CurrentState));
          log.warning("Content (%d bytes) Follows:\n%.80s", len, buffer.c_str());
       }

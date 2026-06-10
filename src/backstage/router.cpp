@@ -196,7 +196,7 @@ static BackstageHttpResponse dispatch_route_request(objClientSocket *Client, con
       BackstageResponse response;
       auto error = route.handler(request, response);
 
-      if (error IS ERR::Okay) return BackstageHttpResponse::from_route(response);
+      if (!error) return BackstageHttpResponse::from_route(response);
       if (error IS ERR::NoSupport) return BackstageHttpResponse::plain(501, "Not Implemented");
       return BackstageHttpResponse::plain(500, "Internal Server Error");
    }

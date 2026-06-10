@@ -144,7 +144,7 @@ static ERR load_file(objXML *Self, std::string_view Path)
 {
    CacheFile *filecache;
 
-   if ((Self->ParseError = LoadFile(Path, LDF::NIL, &filecache)) IS ERR::Okay) { // loaded content is null terminated
+   if (!(Self->ParseError = LoadFile(Path, LDF::NIL, &filecache))) { // loaded content is null terminated
       Self->ParseError = txt_to_json(Self, std::string_view((CSTRING)filecache->Data, size_t(filecache->Size)));
       UnloadFile(filecache);
       return Self->ParseError;
@@ -176,7 +176,7 @@ static ERR JSON_Init(objXML *Self)
    // TODO: A back-door to get the Statement string directly from the XML object would be useful
 
    std::string_view statement;
-   if (Self->get(FID_Statement, statement) IS ERR::Okay) {
+   if (!Self->get(FID_Statement, statement)) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
@@ -245,7 +245,7 @@ static ERR txt_to_json(objXML *Self, std::string_view Text)
          if (extract_item(Self->LineNo, &str, root.Children, tag_id) != ERR::Okay) {
             return log.warning(ERR::Syntax);
          }
-      } while (next_item(Self->LineNo, str) IS ERR::Okay);
+      } while (!next_item(Self->LineNo, str));
    }
 
    if (*str != '}') {
@@ -518,7 +518,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
                log.warning("Aborting parsing of JSON statement.");
                return ERR::Syntax;
             }
-         } while (next_item(Line, str) IS ERR::Okay);
+         } while (!next_item(Line, str));
 
          while ((*str) and (*str != '}')) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
 

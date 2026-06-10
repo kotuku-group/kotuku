@@ -97,7 +97,7 @@ static ERR PTR_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
    APTR xwin;
    OBJECTPTR surface;
 
-   if (AccessObject(Self->SurfaceID, 5000, &surface) IS ERR::Okay) {
+   if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
       surface->get(FID_WindowHandle, xwin);
       ReleaseObject(surface);
 
@@ -208,7 +208,7 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
 
       if (Self->Buttons[bi].LastClicked) {
          int absx, absy;
-         if (get_surface_abs(Self->Buttons[bi].LastClicked, &absx, &absy, 0, 0) IS ERR::Okay) {
+         if (!get_surface_abs(Self->Buttons[bi].LastClicked, &absx, &absy, 0, 0)) {
             uiflags |= Self->DragSourceID ? JTYPE::DRAG_ITEM : JTYPE::NIL;
 
             if ((std::abs(Self->X - Self->LastReleaseX) > Self->ClickSlop) or
@@ -430,7 +430,7 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
             double sy = Self->Y + DRAG_YOFFSET;
             if (Self->DragParent) {
                int absx, absy;
-               if (gfx::GetSurfaceCoords(Self->DragParent, nullptr, nullptr, &absx, &absy, nullptr, nullptr) IS ERR::Okay) {
+               if (!gfx::GetSurfaceCoords(Self->DragParent, nullptr, nullptr, &absx, &absy, nullptr, nullptr)) {
                   sx -= absx;
                   sy -= absy;
                }
@@ -441,7 +441,7 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
          }
 
          int absx, absy;
-         if (get_surface_abs(Self->Buttons[0].LastClicked, &absx, &absy, 0, 0) IS ERR::Okay) {
+         if (!get_surface_abs(Self->Buttons[0].LastClicked, &absx, &absy, 0, 0)) {
             auto uiflags = Self->DragSourceID ? JTYPE::DRAG_ITEM : JTYPE::NIL;
 
             // Send the movement message to the last clicked object
@@ -528,7 +528,7 @@ static ERR PTR_Hide(extPointer *Self)
       APTR xwin;
       OBJECTPTR surface;
 
-      if (AccessObject(Self->SurfaceID, 5000, &surface) IS ERR::Okay) {
+      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
          surface->get(FID_WindowHandle, xwin);
          XDefineCursor(XDisplay, (Window)xwin, GetX11Cursor(Self->CursorID));
          ReleaseObject(surface);
@@ -630,10 +630,10 @@ static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
 #ifdef __xwindows__
    OBJECTPTR surface;
 
-   if (auto error = AccessObject(Self->SurfaceID, 3000, &surface); error IS ERR::Okay) {
+   if (auto error = AccessObject(Self->SurfaceID, 3000, &surface); !error) {
       APTR xwin;
 
-      if (surface->get(FID_WindowHandle, xwin) IS ERR::Okay) {
+      if (!surface->get(FID_WindowHandle, xwin)) {
          if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
          if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
          if (Self->X < 0) Self->X = 0;
@@ -649,7 +649,7 @@ static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
 #elif _WIN32
    OBJECTPTR surface;
 
-   if (auto error = AccessObject(Self->SurfaceID, 3000, &surface); error IS ERR::Okay) {
+   if (auto error = AccessObject(Self->SurfaceID, 3000, &surface); !error) {
       if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
       if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
       if (Self->X < 0) Self->X = 0;
@@ -1208,7 +1208,7 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
                input.X = Self->OverX;
                input.Y = Self->OverY;
             }
-            else if (get_surface_abs(Self->Buttons[i].LastClicked, &surface_x, &surface_y, 0, 0) IS ERR::Okay) {
+            else if (!get_surface_abs(Self->Buttons[i].LastClicked, &surface_x, &surface_y, 0, 0)) {
                input.X = Self->X - surface_x;
                input.Y = Self->Y - surface_y;
             }

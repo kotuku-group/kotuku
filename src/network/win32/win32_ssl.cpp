@@ -172,7 +172,7 @@ template <class T> ERR tls_receive_encrypted(T *Self)
    size_t bytes_received = 0;
 
    auto error = network_platform().receive(Self->Handle, buffer.data(), buffer.size(), bytes_received);
-   if ((error IS ERR::Okay) and (bytes_received > 0)) {
+   if ((!error) and (bytes_received > 0)) {
       if (auto ssl_error = ssl_queue_encrypted_input(Self->TLS.Handle, buffer.data(), int(bytes_received));
           ssl_error != SSL_OK) {
          if (ssl_error IS SSL_ERROR_BUFFER_OVERFLOW) {

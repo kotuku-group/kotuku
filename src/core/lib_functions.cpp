@@ -166,7 +166,7 @@ CSTRING GetErrorMsg(ERR Code)
    if ((int(Code) < glTotalMessages) and (int(Code) > 0)) {
       return glMessages[int(Code)];
    }
-   else if (Code IS ERR::Okay) return "Operation successful.";
+   else if (!Code) return "Operation successful.";
    else return "Unknown error code.";
 }
 
@@ -428,7 +428,7 @@ int64_t GetResource(RES Resource)
          char str[2048];
          int result;
          int64_t freemem = 0;
-         if (ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result) IS ERR::Okay) {
+         if (!ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result)) {
             int i = 0;
             while (i < result) {
                if (startswith("Cached", str+i)) freemem += strtoll(str+i, nullptr, 0) * 1024LL;
@@ -465,7 +465,7 @@ int64_t GetResource(RES Resource)
 
          if (file.ok()) {
             std::string line;
-            while (file->readLine(line) IS ERR::Okay) {
+            while (!file->readLine(line)) {
                if (startswith("cpu MHz", line)) {
                   if (auto value = strchr(line.c_str(), ':')) cpu_mhz = int(strtod(value + 1, nullptr));
                }

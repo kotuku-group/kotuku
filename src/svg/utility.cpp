@@ -102,7 +102,7 @@ ERR svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 {
    if (!m_color.empty()) {
       VectorPainter painter;
-      if (vec::ReadPainter(nullptr, m_color, &painter, nullptr) IS ERR::Okay) {
+      if (!vec::ReadPainter(nullptr, m_color, &painter, nullptr)) {
          RGB = painter.Colour;
          return ERR::Okay;
       }
@@ -115,7 +115,7 @@ ERR svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
       if (Vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Failed;
 
       int total;
-      if (Vector->get(FID_FillColour, (float * &)RGB, total) IS ERR::Okay) {
+      if (!Vector->get(FID_FillColour, (float * &)RGB, total)) {
          if (RGB.Alpha != 0) return ERR::Okay;
       }
       Vector = (objVector *)Vector->Parent;
@@ -209,7 +209,7 @@ static CSTRING folder(extSVG *Self)
 
    // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
 
-   if (ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder) IS ERR::Okay) {
+   if (!ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder)) {
       if (auto last = Self->Folder.find_last_of("/\\"); last != std::string::npos) {
          Self->Folder.resize(last + 1);
          return Self->Folder.c_str();
@@ -225,7 +225,7 @@ static void parse_transform(objVector *Vector, const std::string Value, int Tag)
 {
    if ((Vector->Class->BaseClassID IS CLASSID::VECTOR) and (!Value.empty())) {
       VectorMatrix *matrix;
-      if (Vector->newMatrix(&matrix, false) IS ERR::Okay) {
+      if (!Vector->newMatrix(&matrix, false)) {
          vec::ParseTransform(matrix, Value);
          matrix->Tag = Tag;
       }
@@ -465,7 +465,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
    objXML *xml;
    ERR error = ERR::Okay;
-   if (NewLocalObject(CLASSID::XML, &xml) IS ERR::Okay) {
+   if (!NewLocalObject(CLASSID::XML, &xml)) {
       xml->setFlags(XMF::NAMESPACE_AWARE|XMF::WELL_FORMED);
 
       objTask *task = CurrentTask();
@@ -507,7 +507,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
       }
       else if (Buffer) xml->setStatement(Buffer);
 
-      if (InitObject(xml) IS ERR::Okay) {
+      if (!InitObject(xml)) {
          Self->SVGVersion = 1.0;
 
          Self->XML = xml;
@@ -533,7 +533,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
          for (auto &inherit : Self->Inherit) {
             OBJECTPTR ref;
-            if (Self->Scene->findDef(inherit.ID.c_str(), &ref) IS ERR::Okay) {
+            if (!Self->Scene->findDef(inherit.ID.c_str(), &ref)) {
                inherit.Object->set(FID_Inherit, ref);
             }
             else log.warning("Failed to resolve ID %s for inheritance.", inherit.ID.c_str());
@@ -613,7 +613,7 @@ static void update_dpi(void)
 
    if (current_time - last_update > 3000000LL) {
       DisplayInfo *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      if (!gfx::GetDisplayInfo(0, &display)) {
          last_update = PreciseTime();
          if ((display->VDensity >= 72) and (display->HDensity >= 72)) {
             glDisplayVDPI = display->VDensity;

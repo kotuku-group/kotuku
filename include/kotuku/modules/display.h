@@ -584,7 +584,7 @@ class objBitmap : public Object {
       if (BitsPerPixel > 8) return packPixel(RGB);
       else {
          uint32_t result;
-         if (getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result) IS ERR::Okay) {
+         if (!getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result)) {
             return result;
          }
          else return 0;

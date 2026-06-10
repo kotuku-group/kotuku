@@ -282,7 +282,7 @@ static int regex_extract(lua_State *Lua)
    auto flags = RMATCH(luaL_optint(Lua, 3, int(RMATCH::NIL)));
    auto meta  = regex_callback { Lua };
    auto cb    = C_FUNCTION(match_extract, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb)) {
       return meta.total_captures;
    }
    else return 0;
@@ -306,7 +306,7 @@ static int regex_findFirst(lua_State *Lua)
    auto flags = RMATCH(luaL_optint(Lua, 3, int(RMATCH::NIL)));
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_first, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb)) {
       // Adjust the returned position to account for the starting offset
       lua_pushinteger(Lua, int(start) + meta.result_index);
       lua_pushinteger(Lua, int(start) + meta.result_index + meta.result_len);
@@ -336,7 +336,7 @@ static int regex_findAll_iter(lua_State *Lua)
 
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_first, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text + current_pos, text_len - current_pos), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text + current_pos, text_len - current_pos), flags, &cb)) {
       auto match_pos = current_pos + meta.result_index;
       auto match_len = meta.result_len;
 
@@ -392,7 +392,7 @@ static int regex_match(lua_State *Lua)
 
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_one, &meta);
-   if (rx::Match(r->regex_obj, std::string_view(text, text_len), flags, &cb) IS ERR::Okay) {
+   if (!rx::Match(r->regex_obj, std::string_view(text, text_len), flags, &cb)) {
       return 1;
    }
    else {
@@ -423,7 +423,7 @@ static int regex_search(lua_State *Lua)
    meta.results = results;
    auto cb = C_FUNCTION(match_many, &meta);
 
-   if (rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb)) {
       // Adjust array length to actual match count
       results->len = MSize(meta.result_index);
       return 1;
@@ -497,7 +497,7 @@ static int regex_test(lua_State *Lua)
 
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_none, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb)) {
       lua_pushboolean(Lua, true);
       return 1;
    }

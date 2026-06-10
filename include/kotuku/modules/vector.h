@@ -3484,11 +3484,9 @@ class objVector : public Object {
 
    inline ERR getStrokeWidth(double &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      SetObjectContext(this, field, AC::NIL);
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
-      RestoreObjectContext();
       return error;
    }
 

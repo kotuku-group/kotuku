@@ -584,10 +584,10 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
    }
 
    APTR buffer;
-   if (AllocMemory(Self->Size, MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
+   if (!AllocMemory(Self->Size, MEM::NO_CLEAR, &buffer)) {
       int result;
-      if (glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result) IS ERR::Okay) {
-         if (AllocMemory(result, MEM::NO_CLEAR, (APTR *)&Self->prvCompress) IS ERR::Okay) {
+      if (!glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result)) {
+         if (!AllocMemory(result, MEM::NO_CLEAR, (APTR *)&Self->prvCompress)) {
             copymem(buffer, Self->prvCompress, result);
          }
          else error = ERR::ReallocMemory;
@@ -598,7 +598,7 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
    }
    else error = ERR::AllocMemory;
 
-   if (error IS ERR::Okay) { // Free the original data
+   if (!error) { // Free the original data
       if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
          FreeResource(Self->Data);
          Self->Data = nullptr;
@@ -839,7 +839,7 @@ static ERR BITMAP_Decompress(extBitmap *Self, struct bmp::Decompress *Args)
    // accesses the Data address following attempted decompression.
 
    if (!Self->Data) {
-      if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
+      if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data)) {
          Self->prvAFlags |= BF_DATA;
       }
       else return log.warning(ERR::AllocMemory);
@@ -942,7 +942,7 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    if (!glDemultiply) {
       const std::lock_guard<std::mutex> lock(mutex);
       if (!glDemultiply) {
-         if (AllocMemory(256 * 256, MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&glDemultiply) IS ERR::Okay) {
+         if (!AllocMemory(256 * 256, MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&glDemultiply)) {
             for (int a=1; a <= 255; a++) {
                for (int i=0; i <= 255; i++) {
                   glDemultiply[(a<<8) + i] = (i * 0xff) / a;
@@ -1231,14 +1231,14 @@ static ERR BITMAP_Init(extBitmap *Self)
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
 
          if (glHeadless) {
-            if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
+            if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data)) {
                Self->prvAFlags |= BF_DATA;
             }
             else return log.warning(ERR::AllocMemory);
          }
          else if (!Self->x11.XShmImage) {
             log.detail("Allocating a memory based XImage.");
-            if (alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid) IS ERR::Okay) {
+            if (!alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid)) {
                Self->prvAFlags |= BF_DATA;
 
                init_x11_image(Self, glX11ShmImage);
@@ -1278,7 +1278,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             Self->prvAFlags |= BF_WINVIDEO;
             if (!(Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
          }
-         else if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data) IS ERR::Okay) {
+         else if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data)) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1306,7 +1306,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             log.warning("Support for MEM::TEXTURE not included yet.");
             return ERR::NoSupport;
          }
-         else if (AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data) IS ERR::Okay) {
+         else if (!AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data)) {
             Self->prvAFlags |= BF_DATA;
          }
          else return ERR::AllocMemory;
@@ -1321,7 +1321,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
-         if (AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data) IS ERR::Okay) {
+         if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data)) {
             Self->prvAFlags |= BF_DATA;
          }
          else return log.warning(ERR::AllocMemory);
@@ -1737,7 +1737,7 @@ static ERR BITMAP_Query(extBitmap *Self)
          Self->BitsPerPixel  = 32;
          Self->BytesPerPixel = 4;
 #if 1
-         if (FindObject("SystemDisplay", CLASSID::DISPLAY, &display_id) IS ERR::Okay) {
+         if (!FindObject("SystemDisplay", CLASSID::DISPLAY, &display_id)) {
             if (ScopedObjectLock<objDisplay> display(display_id, 3000); display.granted()) {
                Self->AmtColours    = display->Bitmap->AmtColours;
                Self->BytesPerPixel = display->Bitmap->BytesPerPixel;
@@ -1935,7 +1935,7 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
       if ((size <= Self->Size) and (size / Self->Size > 0.5)) { // Do nothing when shrinking unless able to save considerable resources
          size = Self->Size;
       }
-      else if (AllocMemory(size, Self->DataFlags|MEM::NO_CLEAR, (APTR *)&data) IS ERR::Okay) {
+      else if (!AllocMemory(size, Self->DataFlags|MEM::NO_CLEAR, (APTR *)&data)) {
          if (Self->Data) FreeResource(Self->Data);
          Self->Data = data;
       }
@@ -2067,7 +2067,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    else pcx.NumPlanes = 3;
 
    size = width * height * pcx.NumPlanes;
-   if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer) IS ERR::Okay) {
+   if (!AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
       auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
       if (write_error != ERR::Okay) {
          FreeResource(buffer);

@@ -128,7 +128,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
    if ((Self->SourceType IS VSF::REFERENCE) and (Self->Input)) {
       objBitmap *copy_bmp;
-      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); error IS ERR::Okay) {
+      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); !error) {
          gfx::CopyArea(inBmp, copy_bmp, BAF::NIL,
             inBmp->Clip.Left,
             inBmp->Clip.Top,

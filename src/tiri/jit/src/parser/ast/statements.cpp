@@ -1129,7 +1129,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    lua_State *L = &this->ctx.lua();
 
    std::string resolved_path;
-   if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path) IS ERR::Okay) {
+   if (!ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path)) {
       Path = resolved_path;
    }
 
@@ -1397,7 +1397,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
          else check_path = std::string(string_value);
       }
 
-      condition_result = (AnalysePath(check_path, nullptr) IS ERR::Okay);
+      condition_result = (!AnalysePath(check_path, nullptr));
    }
    else return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, ident_token, "Unknown @if condition: " + std::string(condition_name));
 

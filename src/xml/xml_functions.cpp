@@ -160,7 +160,7 @@ static void expand_entity_references(extXML *Self, std::string &Value,
             std::string resolved;
 
             // Only create string if resolution succeeds to avoid unnecessary allocation
-            if (resolve_entity_internal(Self, std::string(name_view), resolved, is_parameter, EntityStack, ParameterStack) IS ERR::Okay) {
+            if (!resolve_entity_internal(Self, std::string(name_view), resolved, is_parameter, EntityStack, ParameterStack)) {
                output.append(resolved);
             }
             else { // Reconstruct the original entity reference
@@ -242,7 +242,7 @@ static bool read_quoted(extXML *Self, ParseState &State, std::string &Result,
             std::string name(State.cursor.data(), name_length);
             std::string resolved;
 
-            if (resolve_entity_internal(Self, name, resolved, is_parameter, EntityStack, ParameterStack) IS ERR::Okay) {
+            if (!resolve_entity_internal(Self, name, resolved, is_parameter, EntityStack, ParameterStack)) {
                buffer += resolved;
             }
             else {
@@ -846,7 +846,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
          if (error IS ERR::NothingDone) { // Extract any additional content trapped between tags
             extract_content(Self, Tags.back().Children, State);
          }
-         else if (error IS ERR::Okay) { // Extract any new content caught in-between tags
+         else if (!error) { // Extract any new content caught in-between tags
             extract_content(Self, Tags.back().Children, State);
          }
          else return ERR::Failed;
@@ -1065,11 +1065,11 @@ static ERR parse_source(extXML *Self)
          buffer.resize(current_size + result); // Adjust to actual read size
       }
 
-      if (Self->ParseError IS ERR::Okay) {
+      if (!Self->ParseError) {
          Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view(buffer));
       }
    }
-   else if (LoadFile(Self->Path, LDF::NIL, &filecache) IS ERR::Okay) {
+   else if (!LoadFile(Self->Path, LDF::NIL, &filecache)) {
       Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view((char *)filecache->Data, filecache->Size));
       UnloadFile(filecache);
    }

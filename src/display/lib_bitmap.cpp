@@ -509,7 +509,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
             Dest->Clip.Right  = DestX + Width;
             Dest->Clip.Top    = DestY;
             Dest->Clip.Bottom = DestY + Height;
-            if (lock_surface(dest, SURFACE_READ|SURFACE_WRITE) IS ERR::Okay) {
+            if (!lock_surface(dest, SURFACE_READ|SURFACE_WRITE)) {
                auto srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
 
                while (Height > 0) {
@@ -638,8 +638,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
       // 32-bit alpha blending support
 
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             uint8_t red, green, blue, *dest_lookup;
             uint16_t alpha;
 
@@ -875,8 +875,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
       // Transparent colour copying.  In this mode, the alpha component of individual source pixels is ignored
 
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Transparent mask with translucent pixels (consistent blend level)
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
@@ -966,8 +966,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
       return ERR::Okay;
    }
    else { // Straight copy operation
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Translucent draw
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
@@ -1299,7 +1299,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
 #endif // __xwindows__
 
-   if (lock_surface((extBitmap *)Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface((extBitmap *)Bitmap, SURFACE_WRITE)) {
       if (((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32)) { // 32-bit alpha blending support
          uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
 
@@ -1645,7 +1645,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
 
    // Standard rectangle data support
 
-   if (lock_surface(Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface(Bitmap, SURFACE_WRITE)) {
       if (!Bitmap->Data) {
          unlock_surface(Bitmap);
          return;

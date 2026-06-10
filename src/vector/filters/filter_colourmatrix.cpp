@@ -172,7 +172,7 @@ public:
    }
 
    void rotateHue(double degrees) {
-      if (initHue() IS ERR::Okay) {
+      if (!initHue()) {
          apply(preHue->matrix);
          rotateBlue(degrees);
          apply(postHue->matrix);

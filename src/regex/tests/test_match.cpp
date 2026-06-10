@@ -79,11 +79,11 @@ static void test_basic_single_character(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("Test 1: Basic single character match\n");
    Regex *regex;
-   if (rx::Compile("a", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("a", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
-      if (auto error = rx::Match(regex, "apple", RMATCH::NIL, &callback); error IS ERR::Okay) {
+      if (auto error = rx::Match(regex, "apple", RMATCH::NIL, &callback); !error) {
          if (not ctx.match_found) {
             log_success("No single character match");
             PassedTests++;
@@ -108,11 +108,11 @@ static void test_capture_groups(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 2: Capture groups\n");
    Regex *regex;
-   if (rx::Compile("(\\w+)@(\\w+)\\.(\\w+)", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(\\w+)@(\\w+)\\.(\\w+)", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
-      if (rx::Match(regex, "user@example.com", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Match(regex, "user@example.com", RMATCH::NIL, &callback)) {
          if (ctx.capture_count IS 4) {
             // Expecting: "user@example.com", "user", "example", "com"
             log_success("Capture groups");
@@ -134,11 +134,11 @@ static void test_case_insensitive(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 3: Case insensitive match\n");
    Regex *regex;
-   if (rx::Compile("hello", REGEX::ICASE, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("hello", REGEX::ICASE, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, "HELLO WORLD", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "HELLO WORLD", RMATCH::NIL, &callback)) {
          if (ctx.match_found) {
             log_success("Case insensitive match");
             PassedTests++;
@@ -159,7 +159,7 @@ static void test_no_match_scenario(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 4: No match scenario\n");
    Regex *regex;
-   if (rx::Compile("xyz", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("xyz", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
@@ -181,11 +181,11 @@ static void test_digit_matching(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 5: Digit pattern matching\n");
    Regex *regex;
-   if (rx::Compile("\\d+", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("\\d+", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, "abc123def", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "abc123def", RMATCH::NIL, &callback)) {
          if ((ctx.match_found) and (ctx.captures[0] IS "123")) {
             log_success("Digit pattern matching");
             PassedTests++;
@@ -206,11 +206,11 @@ static void test_word_boundaries(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 6: Word boundary matching\n");
    Regex *regex;
-   if (rx::Compile("\\bword\\b", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("\\bword\\b", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, "a word here", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "a word here", RMATCH::NIL, &callback)) {
          if (ctx.match_found) {
             log_success("Word boundary matching");
             PassedTests++;
@@ -231,12 +231,12 @@ static void test_prefix_suffix(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 7: Prefix and suffix extraction\n");
    Regex *regex;
-   if (rx::Compile("middle", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("middle", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       ctx.input_text = "start middle end";
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, ctx.input_text, RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, ctx.input_text, RMATCH::NIL, &callback)) {
          if ((ctx.prefix_str IS "start ") and (ctx.suffix_str IS " end")) {
             log_success("Prefix and suffix extraction");
             PassedTests++;
@@ -257,11 +257,11 @@ static void test_empty_pattern(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 8: Empty pattern\n");
    Regex *regex;
-   if (rx::Compile("", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
-      if (auto error = rx::Match(regex, "anything", RMATCH::NIL, &callback); error IS ERR::Okay) {
+      if (auto error = rx::Match(regex, "anything", RMATCH::NIL, &callback); !error) {
          log_fail(__FUNCTION__, "Expected match failure");
       }
       else if (error != ERR::Search) log_fail(__FUNCTION__, std::format("Match returned error: {}", GetErrorMsg(error)));
@@ -282,11 +282,11 @@ static void test_complex_email(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 9: Complex email pattern\n");
    Regex *regex;
-   if (rx::Compile("^([\\w._%+\\-]+)@([\\w.\\-]+)\\.([A-Za-z]{2,})$", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("^([\\w._%+\\-]+)@([\\w.\\-]+)\\.([A-Za-z]{2,})$", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
-      if (rx::Match(regex, "test.user+tag@example.co.uk", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Match(regex, "test.user+tag@example.co.uk", RMATCH::NIL, &callback)) {
          if ((ctx.capture_count IS 4) and (ctx.captures[1] IS "test.user+tag") and (ctx.captures[2] IS "example.co") and (ctx.captures[3] IS "uk")) {
             log_success("Complex email pattern");
             PassedTests++;
@@ -307,11 +307,11 @@ static void test_multiline_mode(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 10: Multiline mode\n");
    Regex *regex;
-   if (rx::Compile("^line", REGEX::MULTILINE, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("^line", REGEX::MULTILINE, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, "first\nline two", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "first\nline two", RMATCH::NIL, &callback)) {
          if (ctx.match_found) {
             log_success("Multiline mode");
             PassedTests++;
@@ -332,7 +332,7 @@ static void test_not_begin_of_line(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 11: RMATCH::NOT_BEGIN_OF_LINE flag\n");
    Regex *regex;
-   if (rx::Compile("^hello", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("^hello", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
@@ -354,11 +354,11 @@ static void test_nested_capture_groups(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 12: Nested capture groups\n");
    Regex *regex;
-   if (rx::Compile("((\\w+)-(\\d+))", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("((\\w+)-(\\d+))", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
-      if (rx::Match(regex, "item-42", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Match(regex, "item-42", RMATCH::NIL, &callback)) {
          if ((ctx.capture_count IS 4) and (ctx.captures[1] IS "item-42") and (ctx.captures[2] IS "item") and (ctx.captures[3] IS "42")) {
             log_success("Nested capture groups");
             PassedTests++;
@@ -379,11 +379,11 @@ static void test_unicode_support(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 13: Unicode text matching\n");
    Regex *regex;
-   if (rx::Compile("café", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("café", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, "I love café au lait", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "I love café au lait", RMATCH::NIL, &callback)) {
          if (ctx.match_found) {
             log_success("Unicode text matching");
             PassedTests++;
@@ -404,11 +404,11 @@ static void test_optional_groups(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 14: Optional capture groups\n");
    Regex *regex;
-   if (rx::Compile("(\\d+)(\\.\\d+)?", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(\\d+)(\\.\\d+)?", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       auto callback = C_FUNCTION(&match_callback, &ctx);
 
-      if (rx::Match(regex, "42", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Match(regex, "42", RMATCH::NIL, &callback)) {
          if ((ctx.capture_count IS 3)
             and (ctx.captures[0] IS "42")
             and (ctx.captures[1] IS "42")
@@ -432,12 +432,12 @@ static void test_search_capture_normalisation(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 15: Search capture normalisation\n");
    Regex *regex;
-   if (rx::Compile("(a)?(b)", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(a)?(b)", REGEX::NIL, nullptr, &regex)) {
       TestContext ctx;
       ctx.input_text = "b";
       auto callback = C_FUNCTION(&search_callback, &ctx);
 
-      if (rx::Search(regex, "b", RMATCH::NIL, &callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "b", RMATCH::NIL, &callback)) {
          if ((ctx.match_total IS 1)
             and (ctx.capture_count IS 3)
             and (ctx.captures[0] IS "b")
@@ -462,11 +462,11 @@ static void test_search_match_flags(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 16: Search RMATCH flag handling\n");
    Regex *regex;
-   if (rx::Compile("\\bworld", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("\\bworld", REGEX::NIL, nullptr, &regex)) {
       TestContext baseline_ctx;
       auto baseline_callback = C_FUNCTION(&search_callback, &baseline_ctx);
 
-      if (rx::Search(regex, "world stage", RMATCH::NIL, &baseline_callback) IS ERR::Okay) {
+      if (!rx::Search(regex, "world stage", RMATCH::NIL, &baseline_callback)) {
          if (not baseline_ctx.match_found) {
             log_fail(__FUNCTION__, "Baseline search did not report a match");
          }
@@ -495,10 +495,10 @@ static void test_named_capture_lookup(int &TotalTests, int &PassedTests)
    TotalTests++;
    printf("\nTest 17: Named capture lookup\n");
    Regex *regex;
-   if (rx::Compile("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})", REGEX::NIL, nullptr, &regex) IS ERR::Okay) {
+   if (!rx::Compile("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})", REGEX::NIL, nullptr, &regex)) {
       kt::vector<int> indices;
 
-      if (rx::GetCaptureIndex(regex, "month", &indices) IS ERR::Okay) {
+      if (!rx::GetCaptureIndex(regex, "month", &indices)) {
          if ((indices.size() IS 1) and (indices[0] IS 2)) {
             if (rx::GetCaptureIndex(regex, "missing", &indices) IS ERR::Search) {
                if (indices.empty()) {

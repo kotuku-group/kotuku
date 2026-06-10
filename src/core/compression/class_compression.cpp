@@ -351,7 +351,7 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
    if (Entry.DeflateMethod IS 0) {
       struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER-1 };
       ERR error = Action(AC::Read, Self->FileIO, &read);
-      if (error IS ERR::Okay) {
+      if (!error) {
          Self->Input[read.Result] = 0;
          DeleteFile(DestPath, nullptr);
          error = CreateLink(DestPath, (CSTRING)Self->Input);
@@ -699,8 +699,8 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
       std::string srcfolder(src, pathlen); // Extract the path without the file name
 
       DirInfo *dir;
-      if (OpenDir(srcfolder, RDF::FILE, &dir) IS ERR::Okay) {
-         while (ScanDir(dir) IS ERR::Okay) {
+      if (!OpenDir(srcfolder, RDF::FILE, &dir)) {
+         while (!ScanDir(dir)) {
             FileInfo *scan = dir->Info;
             if (wildcmp(filename, scan->Name)) {
                auto folder = src.substr(0, pathlen);
@@ -784,11 +784,11 @@ the stream.  We recommend that the compression object's derived class ID is stor
 The following C code illustrates a simple means of compressing a file to another file using a stream:
 
 <pre>
-if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
+if (auto error = mtCompressStreamStart(compress); !error) {
    LONG len;
    LONG cmpsize = 0;
    UBYTE input[4096];
-   while ((error = acRead(file, input, sizeof(input), &len)) IS ERR::Okay) {
+   while (!(error = acRead(file, input, sizeof(input), &len))) {
       if (!len) break; // No more data to read.
 
       error = mtCompressStream(compress, input, len, &callback, NULL, 0);
@@ -801,8 +801,8 @@ if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
       }
    }
 
-   if (error IS ERR::Okay) {
-      if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
+   if (!error) {
+      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
       }
@@ -1380,7 +1380,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
          if (destpath.ends_with('/') or destpath.ends_with('\\')) {
             LOC result;
-            if ((AnalysePath(destpath, &result) IS ERR::Okay) and (result IS LOC::DIRECTORY)) {
+            if ((!AnalysePath(destpath, &result)) and (result IS LOC::DIRECTORY)) {
                Self->FileIndex++;
                continue;
             }
@@ -1466,7 +1466,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
    if (Self->OutputID) print(Self, "\nDecompression complete.");
 
 exit:
-   if ((error IS ERR::Okay) and (Self->FileIndex <= 0)) {
+   if ((!error) and (Self->FileIndex <= 0)) {
       log.msg("No files matched the path \"%.*s\".", int(Args->Path.size()), Args->Path.data());
       error = ERR::Search;
    }
@@ -1727,7 +1727,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
    else {
       ERR error = ERR::Okay;
       LOC type;
-      bool exists = ((AnalysePath(path, &type) IS ERR::Okay) and (type IS LOC::FILE));
+      bool exists = ((!AnalysePath(path, &type)) and (type IS LOC::FILE));
 
       if (exists) {
          kt::Create<objFile> file({
@@ -1750,7 +1750,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
       }
       else error = ERR::DoesNotExist;
 
-      if (error IS ERR::Okay) { // Test the given location to see if it matches our supported file format (pkzip).
+      if (!error) { // Test the given location to see if it matches our supported file format (pkzip).
          int result;
          if (acRead(Self->FileIO, Self->Header, sizeof(Self->Header), &result) != ERR::Okay) return log.warning(ERR::Read);
 
@@ -1799,8 +1799,8 @@ static ERR COMPRESSION_Init(extCompression *Self)
 
 static ERR COMPRESSION_NewObject(extCompression *Self)
 {
-   if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output) IS ERR::Okay) {
-      if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input) IS ERR::Okay) {
+   if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output)) {
+      if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input)) {
          Self->CompressionLevel = 60; // 60% compression by default
          Self->Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
          Self->MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k

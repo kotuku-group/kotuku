@@ -149,7 +149,7 @@ static ERR IMAGE_Activate(extImage *Self)
       file_opened = true;
    }
 
-   if (not ((error = Self->prvFile->seekStart(0)) IS ERR::Okay)) goto exit;
+   if ((error = Self->prvFile->seekStart(0)) != ERR::Okay) goto exit;
 
    // Allocate PNG structures
 
@@ -353,14 +353,14 @@ static ERR IMAGE_Activate(extImage *Self)
       };
 
       if (tmp_bitmap.ok()) {
-         if ((error = decompress_png(Self, *tmp_bitmap, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height)) IS ERR::Okay) {
+         if (!(error = decompress_png(Self, *tmp_bitmap, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height))) {
             error = gfx::CopyArea(*tmp_bitmap, bmp, BAF::DITHER, 0, 0, bmp->Width, bmp->Height, 0, 0);
          }
       }
    }
    else error = decompress_png(Self, bmp, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height);
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (setjmp(png_jmpbuf(read_ptr))) {
          error = ERR::Read;
          goto exit;
@@ -440,7 +440,7 @@ static ERR IMAGE_Init(extImage *Self)
       if (!Self->Bitmap->Height) Self->Bitmap->Height = Self->DisplayHeight;
 
       if ((Self->Bitmap->Width) and (Self->Bitmap->Height)) {
-         if (InitObject(Self->Bitmap) IS ERR::Okay) {
+         if (!InitObject(Self->Bitmap)) {
             if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) Self->Flags &= ~(PCF::ALPHA|PCF::MASK);
 
             if ((Self->Flags & (PCF::ALPHA|PCF::MASK)) != PCF::NIL) {
@@ -466,10 +466,10 @@ static ERR IMAGE_Init(extImage *Self)
 
       // Test the given path to see if it matches our supported file format.
 
-      if (ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath) IS ERR::Okay) {
+      if (!ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath)) {
          int result;
 
-         if (ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result) IS ERR::Okay) {
+         if (!ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result)) {
             Self->prvHeader[result] = 0;
 
             auto buffer = (uint8_t *)Self->prvHeader;
@@ -531,7 +531,7 @@ static ERR IMAGE_Query(extImage *Self)
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
    }
 
-   if (not ((error = Self->prvFile->seekStart(0)) IS ERR::Okay)) goto exit;
+   if ((error = Self->prvFile->seekStart(0)) != ERR::Okay) goto exit;
 
    // Allocate PNG structures
 
@@ -944,7 +944,7 @@ static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
       if (!mc) return log.warning(ERR::NoSupport);
 
-      if ((mc->get(FID_ActionTable, routine) IS ERR::Okay) and (routine)) {
+      if ((!mc->get(FID_ActionTable, routine)) and (routine)) {
          if ((routine[int(AC::SaveToObject)]) and (routine[int(AC::SaveToObject)] != (APTR)IMAGE_SaveToObject)) {
             return routine[int(AC::SaveToObject)](Self, Args);
          }

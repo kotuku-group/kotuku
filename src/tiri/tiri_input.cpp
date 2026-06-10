@@ -78,7 +78,7 @@ static void key_event(evKey *, int, struct finput *);
 
          lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, list->Callback); // +1 Reference to callback
          lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, list->InputValue); // +1 Optional input value registered by the Tiri client
-         if (named_struct_to_table(prv->Lua, "InputEvent", Events) IS ERR::Okay) { // +1 Input message
+         if (!named_struct_to_table(prv->Lua, "InputEvent", Events)) { // +1 Input message
             if (lua_pcall(prv->Lua, 2, 0, 0)) {
                process_error(Self, "Input DataFeed Callback");
             }

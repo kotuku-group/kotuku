@@ -153,7 +153,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
    if ((Flags & (RDF::FOLDER|RDF::FILE)) IS RDF::NIL) Flags |= RDF::FOLDER|RDF::FILE;
 
    std::string resolved_path;
-   if (auto error = ResolvePath(Path.empty() ? ":" : Path, RSF::NIL, &resolved_path); error IS ERR::Okay) {
+   if (auto error = ResolvePath(Path.empty() ? ":" : Path, RSF::NIL, &resolved_path); !error) {
       auto vd = get_fs(resolved_path);
 
       extDirInfo *dir;
@@ -182,7 +182,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
          return ERR::DirEmpty;
       }
 
-      if ((error = vd.OpenDir(dir)) IS ERR::Okay) {
+      if (!(error = vd.OpenDir(dir))) {
          dir->prvVirtualID = vd.VirtualID;
          *Result = dir;
          return ERR::Okay;

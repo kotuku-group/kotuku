@@ -116,7 +116,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
       return error;
    }
 #endif
-   if (NewObject(derived_id != CLASSID::NIL ? derived_id : class_id, &glScript) IS ERR::Okay) {
+   if (!NewObject(derived_id != CLASSID::NIL ? derived_id : class_id, &glScript)) {
       glScript->setTarget(glTarget ? glTarget->UID : CurrentTaskID());
       glScript->setPath(TargetFile);
 
@@ -159,8 +159,8 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
       int64_t start_time = 0;
       if (ShowTime) start_time = PreciseTime();
 
-      if (auto error = InitObject(glScript); error IS ERR::Okay) {
-         if (auto error = acActivate(glScript); error IS ERR::Okay) {
+      if (auto error = InitObject(glScript); !error) {
+         if (auto error = acActivate(glScript); !error) {
             std::string_view msg;
             if (ShowTime) { // Print the execution time of the script
                auto start_seconds = (double)start_time / 1000000.0;
@@ -170,7 +170,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
             if (glScript->Error != ERR::Okay) {
                if (GetResource(RES::LOG_LEVEL) <= 1) {
-                  if ((glScript->get(FID_ErrorMessage, msg) IS ERR::Okay) and not msg.empty()) {
+                  if ((!glScript->get(FID_ErrorMessage, msg)) and not msg.empty()) {
                      printf("%.*s\n", int(msg.size()), msg.data());
                   }
                   else if (glScript->Error IS ERR::Exception) {
@@ -182,7 +182,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
                return glScript->Error;
             }
 
-            if ((glScript->get(FID_ErrorMessage, msg) IS ERR::Okay) and not msg.empty()) {
+            if ((!glScript->get(FID_ErrorMessage, msg)) and not msg.empty()) {
                if (GetResource(RES::LOG_LEVEL) <= 1) {
                   printf("Script returned error message: %.*s\n", int(msg.size()), msg.data());
                }

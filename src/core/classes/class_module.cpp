@@ -141,7 +141,7 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
       path.assign(Self->Name);
 
       std::string volume;
-      if (ResolvePath(path, RSF::APPROXIMATE, &volume) IS ERR::Okay) {
+      if (!ResolvePath(path, RSF::APPROXIMATE, &volume)) {
          path.assign(volume);
       }
       else {
@@ -350,7 +350,7 @@ static ERR MODULE_Init(extModule *Self)
    if ((master = check_resident(Self, name))) {
       Self->Root = master;
    }
-   else if (NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&master) IS ERR::Okay) {
+   else if (!NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&master)) {
       master->Next = glModuleList; // Insert the RootModule at the start of the chain.
       if (glModuleList) glModuleList->Prev = master;
       glModuleList = master;
@@ -470,7 +470,7 @@ static ERR MODULE_Init(extModule *Self)
 
 exit:
    if (error != ERR::Okay) { // Free allocations if an error occurred
-      if ((error & ERR::Notified) IS ERR::Okay) log.msg("\"%s\" failed: %s", Self->Name.c_str(), GetErrorMsg(error));
+      if (!(error & ERR::Notified)) log.msg("\"%s\" failed: %s", Self->Name.c_str(), GetErrorMsg(error));
       error &= ~(ERR::Notified);
 
       if (root_mod) {
@@ -696,7 +696,7 @@ APTR build_jump_table(const Function *FList)
    log.trace("%d functions have been detected in the function list.", size);
 
    void **functions;
-   if (AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions) IS ERR::Okay) {
+   if (!AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions)) {
       for (int i=0; i < size; i++) functions[i] = FList[i].Address;
       functions[size] = nullptr;
       return functions;

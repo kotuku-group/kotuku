@@ -319,7 +319,7 @@ a comma.
 
 static ERR POLY_SET_Points(extVectorPoly *Self, const std::string_view &Value)
 {
-   if (auto error = read_points(Self, Value); error IS ERR::Okay) {
+   if (auto error = read_points(Self, Value); !error) {
       reset_path(Self);
       return ERR::Okay;
    }

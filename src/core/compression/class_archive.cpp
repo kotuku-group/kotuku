@@ -202,7 +202,7 @@ static ERR ARCHIVE_Init(extFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr)) {
       auto prv = (prvFileArchive *)Self->DerivedPtr;
       new (prv) prvFileArchive;
 
@@ -232,7 +232,7 @@ static ERR ARCHIVE_Init(extFile *Self)
 
             if (it != prv->Archive->Files.end()) {
                prv->Info = *it;
-               if ((error = Self->activate()) IS ERR::Okay) {
+               if (!(error = Self->activate())) {
                   error = Self->query();
                }
             }
@@ -303,7 +303,7 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
    if (prv->Info.DeflateMethod IS 0) {
       ERR error = acRead(prv->FileStream, Args->Buffer, Args->Length, &Args->Result);
-      if (error IS ERR::Okay) Self->Position += Args->Result;
+      if (!error) Self->Position += Args->Result;
       return error;
    }
    else {
@@ -648,7 +648,7 @@ static ERR test_path(std::string &Path, RSF Flags, LOC *Type)
 
    if ((error != ERR::Okay) and ((Flags & RSF::APPROXIMATE) != RSF::NIL)) {
       file_path.append(".*");
-      if ((error = cmp->find(file_path.c_str(), TRUE, TRUE, &item)) IS ERR::Okay) {
+      if (!(error = cmp->find(file_path.c_str(), TRUE, TRUE, &item))) {
          // Point the path to the discovered item
          if (auto i = Path.find('/'); i != std::string::npos) {
             Path.resize(i + 1);

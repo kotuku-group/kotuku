@@ -241,7 +241,7 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Name)
 {
    OBJECTPTR root;
-   if (auto error = module->get(FID_Root, root); error IS ERR::Okay) {
+   if (auto error = module->get(FID_Root, root); !error) {
       struct ModHeader *header;
       if ((error = root->get(FID_Header, header)) != ERR::Okay) return error;
       if (not header) return ERR::NoData;
@@ -291,7 +291,7 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
 
       AdjustLogLevel(-1);
 
-      if (error IS ERR::Okay) glLoadedConstants.insert(Module);
+      if (!error) glLoadedConstants.insert(Module);
    }
 
    return error;
@@ -407,7 +407,7 @@ static int module_load(lua_State *Lua)
          }
 
          if (process_constants) {
-            if ((defs_error = process_module_defs(Lua->script, loaded_mod, modname)) IS ERR::Okay) {
+            if (!(defs_error = process_module_defs(Lua->script, loaded_mod, modname))) {
                glLoadedConstants.insert(modname);
             }
          }
@@ -447,7 +447,7 @@ static int module_tostring(lua_State *Lua)
 {
    if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
       std::string_view name;
-      if (mod->Module->get(FID_Name, name) IS ERR::Okay) {
+      if (!mod->Module->get(FID_Name, name)) {
          lua_pushstring(Lua, name);
       }
       else lua_pushnil(Lua);
@@ -710,7 +710,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
             // We set this up here, then convert the resulting values to a Tiri array when the function returns.
             cpp_array_result result_ref = { };
-            if (auto error = make_cpp_array_result(argtype, &result_ref); error IS ERR::Okay) {
+            if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
                cpp_arrays.push_back(std::move(result_ref));
                arg_values[in]  = buffer + j;
@@ -1125,7 +1125,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                // Convert Lua table to C struct
                lua_pushvalue(Lua, i); // Duplicate table for table_to_struct (consumes stack)
                APTR struct_data;
-               if (table_to_struct(Lua, args[i].Name, &struct_data) IS ERR::Okay) {
+               if (!table_to_struct(Lua, args[i].Name, &struct_data)) {
                   auto def = glStructs.find(std::string_view(args[i].Name));
                   if (def != glStructs.end()) allocated_structs.push_back({ struct_data, &def->second });
                   else allocated_structs.push_back({ struct_data, nullptr });
@@ -1392,7 +1392,7 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                   }
                   else {
                      MemInfo meminfo;
-                     if (MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo) IS ERR::Okay) size = meminfo.Size;
+                     if (!MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo)) size = meminfo.Size;
                   }
 
                   if (size > 0) lua_pushlstring(prv->Lua, ((CSTRING *)var)[0], size);

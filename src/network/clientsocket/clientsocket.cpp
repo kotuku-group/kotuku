@@ -62,7 +62,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
        if (Self->State IS NTC::HANDSHAKING) {
           log.trace("Windows SSL handshake in progress, reading raw data.");
           ERR error = network_platform().receive(Self->Handle, Buffer, BufferSize, *Result);
-          if ((error IS ERR::Okay) and (*Result > 0)) {
+          if ((!error) and (*Result > 0)) {
              tls_handshake_received(Self, Buffer, *Result);
           }
           return error;
@@ -192,7 +192,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
          std::array<char, 4096> buffer;
          size_t bytes_received;
          ERR error = network_platform().receive(client->Handle, buffer.data(), buffer.size(), bytes_received);
-         if ((error IS ERR::Okay) and (bytes_received > 0)) {
+         if ((!error) and (bytes_received > 0)) {
             SSL_ERROR_CODE accept_result = ssl_accept(client->TLS.Handle, buffer.data(), bytes_received);
             auto flush_error = tls_flush_output(client);
             if ((flush_error != ERR::Okay) and (flush_error != ERR::BufferOverflow)) {
@@ -374,7 +374,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
       }
    }
 
-   if ((error IS ERR::Okay) and (ClientSocket->CloseAfterWrite) and (ClientSocket->WriteQueue.Buffer.empty()) and
+   if ((!error) and (ClientSocket->CloseAfterWrite) and (ClientSocket->WriteQueue.Buffer.empty()) and
        (not network_platform().has_pending_write(ClientSocket->Handle))) {
       ClientSocket->CloseAfterWrite = false;
       disconnect(ClientSocket);
@@ -385,7 +385,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
 
    // Before feeding new data into the queue, the current buffer must be empty.
 
-   if ((error IS ERR::Okay) and ((ClientSocket->WriteQueue.Buffer.empty()) or
+   if ((!error) and ((ClientSocket->WriteQueue.Buffer.empty()) or
        (ClientSocket->WriteQueue.Index >= ClientSocket->WriteQueue.Buffer.size()))) {
       // Fetch more data
 

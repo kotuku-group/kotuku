@@ -162,7 +162,7 @@ void doc_menu::refresh()
    double view_height = doc_height;
 
    DisplayInfo *display;
-   if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+   if (!gfx::GetDisplayInfo(0, &display)) {
       if (view_height > display->Height * 0.25) view_height = display->Height * 0.25;
    }
 
@@ -175,13 +175,13 @@ void doc_menu::refresh()
       m_view->setFields(fl::Height(view_height));
 
       objVectorViewport *doc_page, *doc_view;
-      if (m_doc->get(FID_Page, doc_page) IS ERR::Okay) {
-         if (m_doc->get(FID_View, doc_view) IS ERR::Okay) {
+      if (!m_doc->get(FID_Page, doc_page)) {
+         if (!m_doc->get(FID_View, doc_view)) {
             m_scroll.init((extDocument *)CurrentContext(), doc_page, doc_view);
             m_scroll.m_auto_adjust_view_size = false;
 
             OBJECTPTR clip;
-            if (m_scene->findDef("PageClip", &clip) IS ERR::Okay) {
+            if (!m_scene->findDef("PageClip", &clip)) {
                doc_page->set(FID_Mask, clip);
             }
          }
