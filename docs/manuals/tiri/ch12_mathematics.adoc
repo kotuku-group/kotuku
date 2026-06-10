@@ -345,6 +345,23 @@ math.max(3.5, 3.2)     -- 3.5
 math.max(7)             -- 7
 ----
 
+[discrete]
+==== math.clamp()
+
+[.api]`result = math.clamp(Value, Lower, Upper)`
+
+Constrains `Value` to the inclusive range [`Lower`, `Upper`] and returns the result.  Values below `Lower` are raised to `Lower` and values above `Upper` are lowered to `Upper`; values already within the range are returned unchanged.  It is functionally equivalent to `math.min(math.max(Value, Lower), Upper)`.
+
+All three arguments are required.  If the bounds are supplied in reverse order (`Lower` greater than `Upper`), `Upper` takes precedence and is always returned.
+
+[source,tiri]
+----
+math.clamp(-5, 0, 10)      -- 0
+math.clamp(5, 0, 10)       -- 5
+math.clamp(15, 0, 10)      -- 10
+math.clamp(1.25, 0.5, 1.5) -- 1.25
+----
+
 [[sec-random-numbers]]
 === Random Numbers
 indexterm:[random numbers] The pseudo-random number generator uses a Tausworthe algorithm with a period of 2^223.  The generator is seeded with a fixed seed at startup; call `math.randomSeed()` to set a specific seed for reproducible sequences.
