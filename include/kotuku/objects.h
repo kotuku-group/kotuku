@@ -84,7 +84,7 @@ inline ERR write_field_value(OBJECTPTR Target, struct Field *FieldPtr, const Fie
 }
 
 namespace dmf { // Helper functions for DMF flags
-inline bool has(DMF Value, DMF Flags) { return (Value & Flags) != DMF::NIL; }
+[[nodiscard]] inline bool has(DMF Value, DMF Flags) { return (Value & Flags) != DMF::NIL; }
 
 [[nodiscard]] inline bool hasX(DMF Value) { return (Value & DMF::FIXED_X) != DMF::NIL; }
 [[nodiscard]] inline bool hasY(DMF Value) { return (Value & DMF::FIXED_Y) != DMF::NIL; }
@@ -136,7 +136,7 @@ class ScopedObjectAccess {
       ScopedObjectAccess(const ScopedObjectAccess &) = delete;
       ScopedObjectAccess & operator=(const ScopedObjectAccess &) = delete;
       inline ~ScopedObjectAccess();
-      inline bool granted() { return error IS ERR::Okay; }
+      inline bool granted() const { return error IS ERR::Okay; }
       inline void release();
 };
 
@@ -158,25 +158,23 @@ class SharedObjectAccess {
       SharedObjectAccess(const SharedObjectAccess &) = delete;
       SharedObjectAccess & operator=(const SharedObjectAccess &) = delete;
       inline ~SharedObjectAccess();
-      inline bool granted() { return error IS ERR::Okay; }
+      inline bool granted() const { return error IS ERR::Okay; }
       inline void release();
 };
 
 //********************************************************************************************************************
-// For testing if type T can be matched to an FD flag.
+// For testing if type T can be matched to an FD flag.  All integral types are mapped by size so that types without
+// an explicit branch (e.g. uint32_t, int16_t) cannot fall through to the pointer/struct default.
 
-template <class T> inline int FIELD_TYPECHECK()     { return FD_PTR|FD_STRUCT|FD_STRING; }
-template <> inline int FIELD_TYPECHECK<double>()    { return FD_DOUBLE; }
-template <> inline int FIELD_TYPECHECK<bool>()      { return FD_INT; }
-template <> inline int FIELD_TYPECHECK<int>()       { return FD_INT; }
-template <> inline int FIELD_TYPECHECK<int64_t>()   { return FD_INT64; }
-template <> inline int FIELD_TYPECHECK<uint64_t>()  { return FD_INT64; }
-template <> inline int FIELD_TYPECHECK<float>()     { return FD_FLOAT; }
-template <> inline int FIELD_TYPECHECK<OBJECTPTR>() { return FD_PTR; }
-template <> inline int FIELD_TYPECHECK<APTR>()      { return FD_PTR; }
-template <> inline int FIELD_TYPECHECK<CSTRING>()   { return FD_STRING; }
-template <> inline int FIELD_TYPECHECK<STRING>()    { return FD_STRING; }
-template <> inline int FIELD_TYPECHECK<std::string>() { return FD_STRING|FD_CPP; }
+template <class T> [[nodiscard]] constexpr int FIELD_TYPECHECK() {
+   if constexpr (std::is_same_v<T, double>) return FD_DOUBLE;
+   else if constexpr (std::is_same_v<T, float>) return FD_FLOAT;
+   else if constexpr (std::is_integral_v<T>) return (sizeof(T) > 4) ? FD_INT64 : FD_INT;
+   else if constexpr (std::is_same_v<T, std::string>) return FD_STRING|FD_CPP;
+   else if constexpr (std::is_same_v<T, CSTRING> or std::is_same_v<T, STRING>) return FD_STRING;
+   else if constexpr (std::is_same_v<T, OBJECTPTR> or std::is_same_v<T, APTR>) return FD_PTR;
+   else return FD_PTR|FD_STRUCT|FD_STRING;
+}
 
 //********************************************************************************************************************
 
@@ -194,7 +192,7 @@ inline void RestoreObjectContext() { SetObjectContext(nullptr, nullptr, AC::NIL)
 // state of the object's superset, it is not strictly necessary to acquire a lock.  Writeable values are managed with
 // atomics and the rest are considered read-only, making many operating patterns safe.
 
-struct Object { // Must be 64-bit aligned
+struct alignas(8) Object { // Must be 64-bit aligned
    union {
       objMetaClass *Class;          // [Public] Class pointer
       class extMetaClass *ExtClass; // [Private] Internal version of the class pointer
@@ -217,10 +215,10 @@ struct Object { // Must be 64-bit aligned
    Object() : Class(nullptr), DerivedPtr(nullptr), CreatorMeta(nullptr), Owner(nullptr), NotifyFlags(0),
       ActionDepth(0), Queue(0), SleepQueue(0), RefCount(0), UID(0), Flags(0), ThreadID(0), Name("") { }
 
-   [[nodiscard]] inline bool initialised() { return Flags.load(std::memory_order_relaxed) & uint32_t(NF::INITIALISED); }
-   [[nodiscard]] inline bool defined(NF pFlags) { return Flags.load(std::memory_order_relaxed) & uint32_t(pFlags); }
+   [[nodiscard]] inline bool initialised() const { return Flags.load(std::memory_order_relaxed) & uint32_t(NF::INITIALISED); }
+   [[nodiscard]] inline bool defined(NF pFlags) const { return Flags.load(std::memory_order_relaxed) & uint32_t(pFlags); }
    [[nodiscard]] inline bool isDerived();
-   [[nodiscard]] inline OBJECTID ownerID() { return Owner ? Owner->UID : 0; }
+   [[nodiscard]] inline OBJECTID ownerID() const { return Owner ? Owner->UID : 0; }
    [[nodiscard]] inline CLASSID classID();
    [[nodiscard]] inline CLASSID baseClassID();
    [[nodiscard]] inline NF flags() { return NF(Flags.load(std::memory_order_relaxed)); }
@@ -250,21 +248,26 @@ struct Object { // Must be 64-bit aligned
    }
 
    inline void unpin(bool FreeIfReady = false) {
+      // CAS loop saturates at zero; a plain load-check-decrement would allow two racing threads to underflow the
+      // counter.  The release on a successful decrement pairs with acquire zero checks before destruction.
       auto ref_count = RefCount.load(std::memory_order_relaxed);
+      while (ref_count > 0) {
+         if (RefCount.compare_exchange_weak(ref_count, uint8_t(ref_count - 1), std::memory_order_release,
+               std::memory_order_relaxed)) break;
+      }
       #ifndef NDEBUG
       if (ref_count IS 0) {
          kt::Log("unpin").warning("Unbalanced unpin() on object #%d (%s) - RefCount is already 0.", UID, className());
          DEBUG_BREAK
       }
       #endif
-      if (ref_count > 0) RefCount.fetch_sub(1, std::memory_order_relaxed);
       if (FreeIfReady) freeIfReady();
    }
 
-   [[nodiscard]] inline bool isPinned() { return RefCount.load(std::memory_order_relaxed) > 0; }
+   [[nodiscard]] inline bool isPinned() const { return RefCount.load(std::memory_order_acquire) > 0; }
 
    inline bool freeIfReady() {
-      auto ref_count = RefCount.load(std::memory_order_relaxed);
+      auto ref_count = RefCount.load(std::memory_order_acquire);
       auto queue = Queue.load(std::memory_order_relaxed);
       if ((ref_count IS 0) and (queue IS 0) and defined(NF::FREE_ON_UNLOCK)) {
          FreeResource(this->UID);
@@ -275,11 +278,11 @@ struct Object { // Must be 64-bit aligned
 
    [[nodiscard]] CSTRING className();
 
-   [[nodiscard]] inline bool collecting() { // Is object being freed or marked for collection?
+   [[nodiscard]] inline bool collecting() const { // Is object being freed or marked for collection?
       return defined(NF::FREE|NF::FREE_ON_UNLOCK);
    }
 
-   [[nodiscard]] inline bool terminating() { // Is object currently being freed?
+   [[nodiscard]] inline bool terminating() const { // Is object currently being freed?
       return defined(NF::FREE);
    }
 
@@ -327,7 +330,7 @@ struct Object { // Must be 64-bit aligned
       return Queue > 0;
    }
 
-   [[nodiscard]] inline bool hasOwner(OBJECTID ID) { // Return true if ID has ownership.
+   [[nodiscard]] inline bool hasOwner(OBJECTID ID) const { // Return true if ID has ownership.
       auto obj = this->Owner;
       while ((obj) and (obj->UID != ID)) obj = obj->Owner;
       return obj ? true : false;
@@ -397,7 +400,12 @@ struct Object { // Must be 64-bit aligned
       Object *target;
       struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value, 1);
+      if constexpr (std::is_integral_v<T> and (sizeof(T) < sizeof(int))) {
+         // Promote small integrals to int so that WriteValue does not read 4 bytes from a 1 or 2 byte value.
+         const int promoted = int(Value);
+         return field->WriteValue(target, field, FD_INT, &promoted, 1);
+      }
+      else return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value, 1);
    }
 
    inline ERR set(FIELD FieldID, const FUNCTION *Value) {
@@ -469,7 +477,7 @@ struct Object { // Must be 64-bit aligned
       return error;
    }
 
-   inline std::pair<ERR, APTR> get_field_value(Object *Object, struct Field &Field, int8_t Buffer[8], int &ArraySize) {
+   inline std::pair<ERR, APTR> get_field_value(Object *Object, struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)], int &ArraySize) {
       if (Field.GetValue) {
          SetObjectContext(Object, &Field, AC::NIL);
          auto get_field = (ERR (*)(APTR, APTR, int &))Field.GetValue;
@@ -487,8 +495,6 @@ struct Object { // Must be 64-bit aligned
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
          if (not field->readable()) return ERR::NoFieldAccess;
-
-         ScopedObjectAccess objlock(target);
 
          auto flags = field->Flags;
 
@@ -512,6 +518,7 @@ struct Object { // Must be 64-bit aligned
 
    inline ERR get(FIELD FieldID, std::string &Value) { // Retrieve field as a string, supports type conversion.
       Object *target;
+      Value.clear(); // Guarantees that no path can return a stale result in Value
       if (auto field = FindField(this, FieldID, &target)) {
          if (not field->readable()) return ERR::NoFieldAccess;
 
@@ -705,9 +712,11 @@ struct Object { // Must be 64-bit aligned
    };
 
    template <class T> T get(FIELD FieldID) requires std::is_same_v<T, std::string> {
-      std::string_view result;
+      // Delegates to the std::string getter so that numeric, flag and unit conversions behave identically to
+      // get(FIELD, std::string &).  The string_view getter is unsuitable here as it only supports string fields.
+      std::string result;
       get(FieldID, result);
-      return std::string(result);
+      return result;
    };
 
    template <class T> T get(FIELD FieldID) requires std::is_enum_v<T> {
@@ -795,7 +804,7 @@ struct Object { // Must be 64-bit aligned
       return ERR::Okay;
    }
 
-} __attribute__ ((aligned (8)));
+};
 
 namespace kt {
 
@@ -954,7 +963,8 @@ class Create {
 
       T * operator->() { return obj; }; // Promotes underlying methods and fields
       const T * operator->() const { return obj; };
-      T * & operator*() { return obj; }; // To allow object pointer referencing when calling functions
+      T * operator*() { return obj; };
+      const T * operator*() const { return obj; };
 
       [[nodiscard]] inline T * get() { return obj; }
       [[nodiscard]] inline const T * get() const { return obj; }
