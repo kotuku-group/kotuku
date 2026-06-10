@@ -40,3 +40,4 @@ static const struct ActionArray clStorageDeviceActions[] = {
    { AC::NewPlacement, STORAGEDEVICE_NewPlacement },
    { AC::NIL, nullptr }
 };
+
