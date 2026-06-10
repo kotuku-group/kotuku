@@ -1,26 +1,46 @@
 #!/usr/bin/env origo
 --[[
-Particle Benchmark
-
-Parameters:
-  mode: primitive; directvector; vector
+Particle Graphics Benchmark
 --]]
 
    import 'gui'
    import 'gui/window'
+   import 'options'
    include 'display'
    include 'vector'
 
    lVec = mVec
 
    local glWinWidth, glWinHeight, glColours, glMode, glWindow, glSurface, glParticles, glViewport, glScene
-   local glTimerHandle, glFPS, glPrinted
+   local glTimerHandle, glFPS, glPrinted, glArgs
    local PI = math.pi
    glFrameStats = { avg = 0, best = 0, times = array<int> }
 
-   MODE_PRIMITIVE    = 1 -- Tests the speed of drawing primitive rectangles (this will be much faster than drawVector() but is useful for comparative purposes)
-   MODE_VECTOR       = 2 -- Tests the speed of drawing circles via the scene graph and VectorEllipse objects
-   MODE_DIRECTVECTOR = 3 -- Tests the drawing speed of DrawPath() and bypasses the scene graph.
+   MODE_PRIMITIVE    <const> = 1 -- Tests the speed of drawing primitive rectangles (this will be much faster than drawVector() but is useful for comparative purposes)
+   MODE_VECTOR       <const> = 2 -- Tests the speed of drawing circles via the scene graph and VectorEllipse objects
+   MODE_DIRECTVECTOR <const> = 3 -- Tests the drawing speed of DrawPath() and bypasses the scene graph.
+
+   glParser = options({
+      name        = 'Particle Benchmark',
+      cmdName     = 'benchmark_particles',
+      description = 'Benchmark particle rendering with primitive, direct vector, or scene graph drawing.',
+      autoHelp    = false,
+      epilog      = [[
+Examples:
+  origo examples/benchmark_particles.tiri mode=vector maxParticles=1000
+  origo examples/benchmark_particles.tiri mode=directvector
+]],
+      args        = array<table> {
+         { name = 'mode', type = 'enum', default = 'vector',
+           choices = array<string> { 'primitive', 'directvector', 'vector' },
+           comment = 'Drawing mode to benchmark.' },
+         { names = array<string> { 'maxParticles', 'maxparticles' }, type = 'int', default = 500,
+           comment = 'Number of particles to simulate; values below 100 are raised to 100.' }
+      }
+   })
+
+   glArgs = glParser.process()
+   if glArgs is nil then return end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Render vector paths directly, bypassing the scene graph.
@@ -42,11 +62,14 @@ end
 function drawPrimitive(Surface, Bitmap)
    glWinWidth, glWinHeight = Surface.width, Surface.height
 
-   start = mSys.PreciseTime()
-   for p in values(glParticles) do
-      col = p.colour
-      err, pixel = Bitmap.mtGetColour(col.r, col.g, col.b, 255)
-      Bitmap.mtDrawRectangle(p.x-p.radius, p.y-p.radius, p.radius*2, p.radius*2, pixel, BAF_FILL)
+   local start
+   with Bitmap do
+      start = mSys.PreciseTime()
+      for p in values(glParticles) do
+         col = p.colour
+         err, pixel = Bitmap.mtGetColour(col.r, col.g, col.b, 255)
+         Bitmap.mtDrawRectangle(p.x-p.radius, p.y-p.radius, p.radius*2, p.radius*2, pixel, BAF_FILL)
+      end
    end
 
    glFrameStats.times:push(mSys.PreciseTime() - start)
@@ -73,6 +96,7 @@ function newParticle()
       })
    elseif glMode is MODE_DIRECTVECTOR then
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
+      local err
       err, particle.path = lVec.GenerateEllipse(particle.x, particle.y, particle.radius, particle.radius, 0)
    elseif glMode is MODE_PRIMITIVE then
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
@@ -222,7 +246,7 @@ end
 -- There are three versions of this benchmark:
 
 function setBenchmarkMode()
-   glMode = choose arg('mode', 'vector') from
+   glMode = choose glArgs.mode from
       'primitive' -> MODE_PRIMITIVE
       'directvector' -> MODE_DIRECTVECTOR
       else -> MODE_VECTOR
@@ -259,7 +283,7 @@ end
 
       glSurface.mtAddCallback(drawDirectVector)
 
-      glColours = array<table> {
+      glColours = array<object> {
         obj.new('VectorColour', { red=0.8,   green=0,   blue=0 }),
         obj.new('VectorColour', { red=1.0,   green=0.8, blue=0 }),
         obj.new('VectorColour', { red=0.666, green=1.0, blue=0 }),
@@ -271,7 +295,7 @@ end
       error('Unknown benchmark mode')
    end
 
-   max = tonumber(arg('maxParticles',500))
+   max = glArgs.maxParticles
    if max < 100 then max = 100 end
    glParticles = array<table, max>
    for i=0,#glParticles-1 do
