@@ -54,7 +54,8 @@ global glIgnoreList = {
    [AC_NewChild]    = true,
    [AC_NewObject]   = true,
    [AC_NewOwner]    = true,
-   [AC_NewPlacement] = true
+   [AC_NewPlacement] = true,
+   [AC_FreePlacement] = true
 }
 
 global function setAction(Action, Options)

@@ -86,12 +86,18 @@ static ERR BITMAP_NewPlacement(extBitmap *Self) {
    return ERR::Okay;
 }
 
+static ERR BITMAP_FreePlacement(extBitmap *Self) {
+   Self->~extBitmap();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clBitmapActions[] = {
    { AC::Clear, BITMAP_Clear },
    { AC::CopyData, BITMAP_CopyData },
    { AC::Draw, BITMAP_Draw },
    { AC::Flush, BITMAP_Flush },
    { AC::Free, BITMAP_Free },
+   { AC::FreePlacement, BITMAP_FreePlacement },
    { AC::Init, BITMAP_Init },
    { AC::Lock, BITMAP_Lock },
    { AC::NewObject, BITMAP_NewObject },

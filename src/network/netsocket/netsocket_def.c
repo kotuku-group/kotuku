@@ -44,10 +44,16 @@ static ERR NETSOCKET_NewPlacement(extNetSocket *Self) {
    return ERR::Okay;
 }
 
+static ERR NETSOCKET_FreePlacement(extNetSocket *Self) {
+   Self->~extNetSocket();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetSocketActions[] = {
    { AC::DataFeed, NETSOCKET_DataFeed },
    { AC::Disable, NETSOCKET_Disable },
    { AC::Free, NETSOCKET_Free },
+   { AC::FreePlacement, NETSOCKET_FreePlacement },
    { AC::FreeWarning, NETSOCKET_FreeWarning },
    { AC::Init, NETSOCKET_Init },
    { AC::NewPlacement, NETSOCKET_NewPlacement },

@@ -27,10 +27,15 @@ static ERR SCRIPT_NewPlacement(objScript *Self) {
    return ERR::Okay;
 }
 
+static ERR SCRIPT_FreePlacement(objScript *Self) {
+   Self->~objScript();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clScriptActions[] = {
    { AC::Activate, SCRIPT_Activate },
    { AC::DataFeed, SCRIPT_DataFeed },
-   { AC::Free, SCRIPT_Free },
+   { AC::FreePlacement, SCRIPT_FreePlacement },
    { AC::GetKey, SCRIPT_GetKey },
    { AC::Init, SCRIPT_Init },
    { AC::NewPlacement, SCRIPT_NewPlacement },

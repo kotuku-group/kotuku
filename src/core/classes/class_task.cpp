@@ -126,30 +126,6 @@ static ERR TASK_AddArgument(extTask *, struct task::AddArgument *);
 static ERR TASK_Expunge(extTask *);
 static ERR TASK_Quit(extTask *);
 
-static const FieldDef clFlags[] = {
-   { "Wait",       TSF::WAIT },
-   { "Shell",      TSF::SHELL },
-   { "ResetPath",  TSF::RESET_PATH },
-   { "Privileged", TSF::PRIVILEGED },
-   { "LogAll",     TSF::VERBOSE },
-   { "Quiet",      TSF::QUIET },
-   { "Attached",   TSF::ATTACHED },
-   { "Detached",   TSF::DETACHED },
-   { "Pipe",       TSF::PIPE },
-   { nullptr, 0 }
-};
-
-static const ActionArray clActions[] = {
-   { AC::Activate,      TASK_Activate },
-   { AC::Free,          TASK_Free },
-   { AC::GetKey,        TASK_GetKey },
-   { AC::NewPlacement,  TASK_NewPlacement },
-   { AC::SetKey,        TASK_SetKey },
-   { AC::Init,          TASK_Init },
-   { AC::Write,         TASK_Write },
-   { AC::NIL, nullptr }
-};
-
 #include "class_task_def.c"
 
 //********************************************************************************************************************
@@ -1278,7 +1254,6 @@ static ERR TASK_Free(extTask *Self)
    if (Self->MsgThreadCallback) { FreeResource(Self->MsgThreadCallback); Self->MsgThreadCallback  = nullptr; }
    if (Self->MsgThreadAction)   { FreeResource(Self->MsgThreadAction);   Self->MsgThreadAction    = nullptr; }
 
-   Self->~extTask();
    return ERR::Okay;
 }
 
@@ -2432,7 +2407,7 @@ static const FieldArray clFields[] = {
    { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "ProcessPath",     FDF_CPPSTRING|FDF_R },
    { "TimeOut",         FDF_DOUBLE|FDF_RW },
-   { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clFlags },
+   { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clTaskFlags },
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },
    { "ProcessID",       FDF_INT|FDF_RI },
    // Virtual fields
@@ -2462,7 +2437,7 @@ extern ERR add_task_class(void)
       fl::FileDescription("Executable File"),
       fl::FileHeader("[0:$4d5a]|[0:$7f454c46]"),
       fl::Icon("items/launch"),
-      fl::Actions(clActions),
+      fl::Actions(clTaskActions),
       fl::Methods(clTaskMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(extTask)),

@@ -219,14 +219,6 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR REMAPFX_Free(extRemapFX *Self)
-{
-   Self->~extRemapFX();
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

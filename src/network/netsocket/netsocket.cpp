@@ -397,14 +397,11 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
          auto file = objFile::create({ fl::Path(CSTRING(Args->Buffer)), fl::Flags(FL::READ) });
          if (file.ok()) {
             auto size = file->get<size_t>(FID_Size);
-            int8_t *buf;
-            if (AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buf) IS ERR::Okay) {
-               kt::LocalResource resource(buf);
-               if (file->read(buf, size) IS ERR::Okay) {
-                  return acWrite(Self, buf, size, nullptr);
-               }
-               else return log.warning(ERR::Read);
+            std::vector<int8_t> buf(size);
+            if (file->read(buf.data(), size) IS ERR::Okay) {
+               return acWrite(Self, buf.data(), size, nullptr);
             }
+            else return log.warning(ERR::Read);
          }
          else return log.warning(ERR::File);
       }
@@ -459,9 +456,6 @@ static ERR NETSOCKET_Free(extNetSocket *Self)
 #endif
 
    free_socket(Self);
-
-   if (Self->classID() IS CLASSID::NETSERVER) ((extNetServer *)Self)->~extNetServer();
-   else Self->~extNetSocket();
    return ERR::Okay;
 }
 

@@ -43,9 +43,15 @@ static ERR VECTORVIEWPORT_NewPlacement(extVectorViewport *Self) {
    return ERR::Okay;
 }
 
+static ERR VECTORVIEWPORT_FreePlacement(extVectorViewport *Self) {
+   Self->~extVectorViewport();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorViewportActions[] = {
    { AC::Clear, VECTORVIEWPORT_Clear },
    { AC::Free, VECTORVIEWPORT_Free },
+   { AC::FreePlacement, VECTORVIEWPORT_FreePlacement },
    { AC::Init, VECTORVIEWPORT_Init },
    { AC::Move, VECTORVIEWPORT_Move },
    { AC::MoveToPoint, VECTORVIEWPORT_MoveToPoint },

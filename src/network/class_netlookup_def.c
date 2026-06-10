@@ -23,8 +23,14 @@ static ERR NETLOOKUP_NewPlacement(extNetLookup *Self) {
    return ERR::Okay;
 }
 
+static ERR NETLOOKUP_FreePlacement(extNetLookup *Self) {
+   Self->~extNetLookup();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetLookupActions[] = {
    { AC::Free, NETLOOKUP_Free },
+   { AC::FreePlacement, NETLOOKUP_FreePlacement },
    { AC::FreeWarning, NETLOOKUP_FreeWarning },
    { AC::NewPlacement, NETLOOKUP_NewPlacement },
    { AC::NIL, nullptr }

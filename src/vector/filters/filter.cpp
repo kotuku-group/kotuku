@@ -621,8 +621,6 @@ static ERR VECTORFILTER_Free(extVectorFilter *Self)
 
    if (Self->SourceGraphic) { FreeResource(Self->SourceGraphic); Self->SourceGraphic = nullptr; }
    if (Self->SourceScene)   { FreeResource(Self->SourceScene);   Self->SourceScene = nullptr; }
-
-   Self->~extVectorFilter();
    return ERR::Okay;
 }
 

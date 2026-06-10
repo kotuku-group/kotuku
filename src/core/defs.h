@@ -446,36 +446,23 @@ class extFile : public objFile {
       std::string prvLink;
    #endif
    int64_t Size;
-   int64_t ProgressTime;
    #ifdef _WIN32
       int  Stream;
    #else
       APTR  Stream;
    #endif
    struct rkWatchPath *prvWatch;
-   OBJECTPTR ProgressDialog;
    struct DirInfo *prvList;
    PERMIT Permissions;
    bool   isFolder;
-   int   Handle;         // Native system file handle
+   int    Handle;         // Native system file handle
 
    extFile() {
       Handle = -1;
       Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
    }
-};
 
-class extConfig : public objConfig {
-   public:
-   using create = kt::Create<extConfig>;
-   uint32_t CRC;   // CRC32, for determining if config data has been altered
-};
-
-class extStorageDevice : public objStorageDevice {
-   public:
-   using create = kt::Create<extStorageDevice>;
-   std::string DeviceID;   // Unique ID for the filesystem, if available
-   std::string Volume;
+   ~extFile();
 };
 
 class extThread : public objThread {

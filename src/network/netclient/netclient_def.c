@@ -5,8 +5,13 @@ static ERR NETCLIENT_NewPlacement(objNetClient *Self) {
    return ERR::Okay;
 }
 
+static ERR NETCLIENT_FreePlacement(objNetClient *Self) {
+   Self->~objNetClient();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetClientActions[] = {
-   { AC::Free, NETCLIENT_Free },
+   { AC::FreePlacement, NETCLIENT_FreePlacement },
    { AC::Init, NETCLIENT_Init },
    { AC::NewPlacement, NETCLIENT_NewPlacement },
    { AC::NIL, nullptr }

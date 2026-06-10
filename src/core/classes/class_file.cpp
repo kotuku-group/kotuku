@@ -542,53 +542,6 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
    }
 }
 
-//********************************************************************************************************************
-
-static ERR FILE_Free(extFile *Self)
-{
-   kt::Log log;
-
-   if (Self->prvWatch) Action(fl::Watch::id, Self, nullptr);
-
-#ifdef _WIN32
-   std::string path;
-   if ((Self->Flags & FL::RESET_DATE) != FL::NIL) {
-      // If we have to reset the date, get the file path
-      log.trace("Resetting the file date.");
-      ResolvePath(Self->Path, RSF::NIL, &path);
-   }
-#endif
-
-   if (Self->ProgressDialog) { FreeResource(Self->ProgressDialog); Self->ProgressDialog = nullptr; }
-   if (Self->prvList) { FreeResource(Self->prvList); Self->prvList = nullptr; }
-   if (Self->Buffer)  { FreeResource(Self->Buffer); Self->Buffer = nullptr; }
-
-   if (Self->Handle != -1) {
-      if (close(Self->Handle) IS -1) {
-         #ifdef __unix__
-            log.warning("Unix filesystem error: %s", strerror(errno));
-         #endif
-      }
-      Self->Handle = -1;
-   }
-
-   if (Self->Stream) {
-      #ifdef __unix__
-         closedir((DIR *)Self->Stream);
-      #endif
-      Self->Stream = 0;
-   }
-
-#ifdef _WIN32
-   if (((Self->Flags & FL::RESET_DATE) != FL::NIL) and (not path.empty())) {
-      winResetDate(path.data());
-   }
-#endif
-
-   Self->~extFile();
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -ACTION-
@@ -2713,33 +2666,47 @@ static ERR SET_User(extFile *Self, int Value)
 
 //********************************************************************************************************************
 
-static const FieldDef PermissionFlags[] = {
-   { "Read",         PERMIT::READ },
-   { "Write",        PERMIT::WRITE },
-   { "Exec",         PERMIT::EXEC },
-   { "Executable",   PERMIT::EXEC },
-   { "Delete",       PERMIT::DELETE },
-   { "Hidden",       PERMIT::HIDDEN },
-   { "Archive",      PERMIT::ARCHIVE },
-   { "Password",     PERMIT::PASSWORD },
-   { "UserID",       PERMIT::USERID },
-   { "GroupID",      PERMIT::GROUPID },
-   { "OthersRead",   PERMIT::OTHERS_READ },
-   { "OthersWrite",  PERMIT::OTHERS_WRITE },
-   { "OthersExec",   PERMIT::OTHERS_EXEC },
-   { "OthersDelete", PERMIT::OTHERS_DELETE },
-   { "GroupRead",    PERMIT::GROUP_READ },
-   { "GroupWrite",   PERMIT::GROUP_WRITE },
-   { "GroupExec",    PERMIT::GROUP_EXEC },
-   { "GroupDelete",  PERMIT::GROUP_DELETE },
-   { "AllRead",      PERMIT::ALL_READ },
-   { "AllWrite",     PERMIT::ALL_WRITE },
-   { "AllExec",      PERMIT::ALL_EXEC },
-   { "UserRead",     PERMIT::READ },
-   { "UserWrite",    PERMIT::WRITE },
-   { "UserExec",     PERMIT::EXEC },
-   { nullptr, 0 }
-};
+extFile::~extFile() {
+   kt::Log log;
+
+   if (prvWatch) Action(fl::Watch::id, this, nullptr);
+
+#ifdef _WIN32
+   std::string path;
+   if ((Flags & FL::RESET_DATE) != FL::NIL) {
+      // If we have to reset the date, get the file path
+      log.trace("Resetting the file date.");
+      ResolvePath(Path, RSF::NIL, &path);
+   }
+#endif
+
+   if (prvList) { FreeResource(prvList); prvList = nullptr; }
+   if (Buffer)  { FreeResource(Buffer); Buffer = nullptr; }
+
+   if (Handle != -1) {
+      if (close(Handle) IS -1) {
+         #ifdef __unix__
+            log.warning("Unix filesystem error: %s", strerror(errno));
+         #endif
+      }
+      Handle = -1;
+   }
+
+   if (Stream) {
+      #ifdef __unix__
+         closedir((DIR *)Stream);
+      #endif
+      Stream = 0;
+   }
+
+#ifdef _WIN32
+   if (((Flags & FL::RESET_DATE) != FL::NIL) and (not path.empty())) {
+      winResetDate(path.data());
+   }
+#endif
+}
+
+//********************************************************************************************************************
 
 #include "class_file_def.c"
 
@@ -2753,7 +2720,7 @@ static const FieldArray FileFields[] = {
    { "Created",      FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Created, nullptr, "DateTime" },
    { "Handle",       FDF_INT64|FDF_R|FDF_PURE,      GET_Handle },
    { "Icon",         FDF_CPPSTRING|FDF_R,  GET_Icon },
-   { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &PermissionFlags },
+   { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &clFilePERMIT },
    { "ResolvedPath", FDF_CPPSTRING|FDF_R,  GET_ResolvedPath },
    { "Size",         FDF_INT64|FDF_RW,     GET_Size, SET_Size },
    { "Timestamp",    FDF_INT64|FDF_R,      GET_Timestamp },

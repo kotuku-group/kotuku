@@ -36,8 +36,14 @@ static ERR NETSERVER_NewPlacement(extNetServer *Self) {
    return ERR::Okay;
 }
 
+static ERR NETSERVER_FreePlacement(extNetServer *Self) {
+   Self->~extNetServer();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetServerActions[] = {
    { AC::Free, NETSERVER_Free },
+   { AC::FreePlacement, NETSERVER_FreePlacement },
    { AC::Init, NETSERVER_Init },
    { AC::NewObject, NETSERVER_NewObject },
    { AC::NewPlacement, NETSERVER_NewPlacement },

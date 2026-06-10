@@ -5,9 +5,14 @@ static ERR CONVOLVEFX_NewPlacement(extConvolveFX *Self) {
    return ERR::Okay;
 }
 
+static ERR CONVOLVEFX_FreePlacement(extConvolveFX *Self) {
+   Self->~extConvolveFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clConvolveFXActions[] = {
    { AC::Draw, CONVOLVEFX_Draw },
-   { AC::Free, CONVOLVEFX_Free },
+   { AC::FreePlacement, CONVOLVEFX_FreePlacement },
    { AC::Init, CONVOLVEFX_Init },
    { AC::NewPlacement, CONVOLVEFX_NewPlacement },
    { AC::NIL, nullptr }

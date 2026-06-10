@@ -404,7 +404,6 @@ static ERR XQUERY_Free(extXQuery *Self)
       Self->ResolveVariable.clear();
    }
 
-   Self->~extXQuery();
    return ERR::Okay;
 }
 

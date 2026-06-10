@@ -5,8 +5,14 @@ static ERR DISPLACEMENTFX_NewPlacement(extDisplacementFX *Self) {
    return ERR::Okay;
 }
 
+static ERR DISPLACEMENTFX_FreePlacement(extDisplacementFX *Self) {
+   Self->~extDisplacementFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clDisplacementFXActions[] = {
    { AC::Draw, DISPLACEMENTFX_Draw },
+   { AC::FreePlacement, DISPLACEMENTFX_FreePlacement },
    { AC::NewObject, DISPLACEMENTFX_NewObject },
    { AC::NewPlacement, DISPLACEMENTFX_NewPlacement },
    { AC::NIL, nullptr }

@@ -1693,6 +1693,23 @@ struct OpenInfo {
    int     ArgCount;                  // Total arguments in Args
 };
 
+struct ResourceRecord {
+   APTR     Address;                    // Direct pointer to the resource (optional, can rely on ResourceID instead)
+   struct ResourceManager * Manager;    // Reference to the resource manager for this record
+   RESOURCEID ResourceID;               // Unique identifier
+   OBJECTID OwnerID;                    // Owner of the resource
+   bool     CollectOnUnlock;            // Resource is locked; manager will collect immediately once unlocked
+   bool     Terminating;                // A FreeResource() call currently owns the destruction path
+   bool     OwnerManagesChildren;       // True if the current OwnerID manages its child resources
+   ResourceRecord() :
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+};
+
 struct ObjectSignal {
    OBJECTPTR Object;    // Reference to an object to monitor.
 };
@@ -2767,9 +2784,11 @@ class objStorageDevice : public Object {
    using create = kt::Create<objStorageDevice>;
 
    DEVICE  DeviceFlags;   // These read-only flags identify the type of device and its features.
-   int64_t DeviceSize;    // The storage size of the device in bytes, without accounting for the file system format.
-   int64_t BytesFree;     // Total amount of storage space that is available, measured in bytes.
-   int64_t BytesUsed;     // Total amount of storage space in use.
+   int64_t DeviceSize;    // Total storage capacity of the resolved volume, measured in bytes.
+   int64_t BytesFree;     // Amount of storage space available to the current user, measured in bytes.
+   int64_t BytesUsed;     // Amount of storage space in use, measured in bytes.
+   std::string DeviceID;  // Unique device identifier for the mounted volume, when available.
+   std::string Volume;    // The volume name of the device to query.
 
    // Action stubs
 
@@ -2798,17 +2817,13 @@ class objStorageDevice : public Object {
    }
 
    inline ERR getDevice(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->DeviceID;
+      return ERR::Okay;
    }
 
    inline ERR getVolume(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      Value = this->Volume;
+      return ERR::Okay;
    }
 
 

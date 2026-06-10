@@ -5,8 +5,14 @@ static ERR MORPHOLOGYFX_NewPlacement(extMorphologyFX *Self) {
    return ERR::Okay;
 }
 
+static ERR MORPHOLOGYFX_FreePlacement(extMorphologyFX *Self) {
+   Self->~extMorphologyFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clMorphologyFXActions[] = {
    { AC::Draw, MORPHOLOGYFX_Draw },
+   { AC::FreePlacement, MORPHOLOGYFX_FreePlacement },
    { AC::NewObject, MORPHOLOGYFX_NewObject },
    { AC::NewPlacement, MORPHOLOGYFX_NewPlacement },
    { AC::NIL, nullptr }

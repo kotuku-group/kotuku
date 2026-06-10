@@ -246,6 +246,7 @@ end
 global glTypes = {
    hhandle = 'l',
    mem     = 'l',
+   res     = 'l',
    int     = 'l',
    uint    = 'ul',
    ptr     = 'p',
@@ -269,7 +270,8 @@ global glTypes = {
    eid     = 'l',
    fid     = 'x',
    struct  = 'e',
-   resource = 'e'
+   resource = 'e' ,
+   bool     = 'c'
 }
 
 global function cType(Field:table, Origin:str):table

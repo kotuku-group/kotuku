@@ -5,9 +5,15 @@ static ERR TURBULENCEFX_NewPlacement(extTurbulenceFX *Self) {
    return ERR::Okay;
 }
 
+static ERR TURBULENCEFX_FreePlacement(extTurbulenceFX *Self) {
+   Self->~extTurbulenceFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clTurbulenceFXActions[] = {
    { AC::Draw, TURBULENCEFX_Draw },
    { AC::Free, TURBULENCEFX_Free },
+   { AC::FreePlacement, TURBULENCEFX_FreePlacement },
    { AC::Init, TURBULENCEFX_Init },
    { AC::NewObject, TURBULENCEFX_NewObject },
    { AC::NewPlacement, TURBULENCEFX_NewPlacement },

@@ -77,8 +77,14 @@ static ERR FILTEREFFECT_NewPlacement(extFilterEffect *Self) {
    return ERR::Okay;
 }
 
+static ERR FILTEREFFECT_FreePlacement(extFilterEffect *Self) {
+   Self->~extFilterEffect();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clFilterEffectActions[] = {
    { AC::Free, FILTEREFFECT_Free },
+   { AC::FreePlacement, FILTEREFFECT_FreePlacement },
    { AC::Init, FILTEREFFECT_Init },
    { AC::MoveToBack, FILTEREFFECT_MoveToBack },
    { AC::MoveToFront, FILTEREFFECT_MoveToFront },

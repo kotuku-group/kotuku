@@ -350,7 +350,6 @@ static ERR VECTOR_Free(extVector *Self)
    delete Self->KeyboardSubscriptions; Self->KeyboardSubscriptions = nullptr;
    delete Self->FeedbackSubscriptions; Self->FeedbackSubscriptions = nullptr;
 
-   Self->~extVector();
    return ERR::Okay;
 }
 

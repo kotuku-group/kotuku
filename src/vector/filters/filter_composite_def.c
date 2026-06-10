@@ -5,8 +5,14 @@ static ERR COMPOSITEFX_NewPlacement(extCompositeFX *Self) {
    return ERR::Okay;
 }
 
+static ERR COMPOSITEFX_FreePlacement(extCompositeFX *Self) {
+   Self->~extCompositeFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clCompositeFXActions[] = {
    { AC::Draw, COMPOSITEFX_Draw },
+   { AC::FreePlacement, COMPOSITEFX_FreePlacement },
    { AC::Init, COMPOSITEFX_Init },
    { AC::NewObject, COMPOSITEFX_NewObject },
    { AC::NewPlacement, COMPOSITEFX_NewPlacement },

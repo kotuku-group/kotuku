@@ -671,6 +671,26 @@ class FloatRect {
      int ArgCount         # Total arguments in Args
   ]])
 
+  struct('ResourceRecord', { comment='Unified resource management record' }, [[
+     ptr Address               # Direct pointer to the resource (optional, can rely on ResourceID instead)
+     struct(*ResourceManager) Manager # Reference to the resource manager for this record
+     res ResourceID            # Unique identifier
+     oid OwnerID               # Owner of the resource
+     bool CollectOnUnlock      # Resource is locked; manager will collect immediately once unlocked
+     bool Terminating          # A FreeResource() call currently owns the destruction path
+     bool OwnerManagesChildren # True if the current OwnerID manages its child resources
+  ]],
+  [[
+   ResourceRecord() :
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
+      Terminating(false), OwnerManagesChildren(false) { };
+  ]])
+
+
   struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
      obj Object # Reference to an object to monitor.
   ]])
@@ -1320,11 +1340,13 @@ inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
 
-  klass("StorageDevice", { src="../classes/class_storagedevice.cpp" }, [[
+  klass("StorageDevice", { src="../classes/class_storagedevice.cpp", output="../classes/class_storagedevice_def.cpp" }, [[
     large(DEVICE) DeviceFlags  # Flags identifying the type of media
     large DeviceSize           # Size of the device
     large BytesFree            # Bytes available to the user
     large BytesUsed            # Bytes already used
+    string DeviceID            # A unique ID for the mounted device
+    string Volume              # The volume name of the device to query
   ]])
 
   methods("File", "Fl", {
@@ -1340,7 +1362,11 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Watch" }
   })
 
-  klass("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c", extended=true }, [[
+  klass("File", { version=1.2,
+    src="../classes/class_file.cpp",
+    output="../classes/class_file_def.c",
+    extended=true, references={ 'PERMIT' }
+  }, [[
     large     Position  # The current read/write byte position in a file.
     string    Path      # The file path.
     int(FL)   Flags     # File flags and options.

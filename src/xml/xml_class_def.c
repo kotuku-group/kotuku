@@ -79,10 +79,15 @@ static ERR XML_NewPlacement(extXML *Self) {
    return ERR::Okay;
 }
 
+static ERR XML_FreePlacement(extXML *Self) {
+   Self->~extXML();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clXMLActions[] = {
    { AC::Clear, XML_Clear },
    { AC::DataFeed, XML_DataFeed },
-   { AC::Free, XML_Free },
+   { AC::FreePlacement, XML_FreePlacement },
    { AC::Init, XML_Init },
    { AC::NewPlacement, XML_NewPlacement },
    { AC::Reset, XML_Reset },

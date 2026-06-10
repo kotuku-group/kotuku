@@ -333,7 +333,7 @@ class GuardedObject {
 };
 
 //********************************************************************************************************************
-// As for GuardedObject, but works with any memory-based resource type.
+// As for GuardedObject, but works with any resource type.
 
 template <class T = void, class C = std::atomic_int>
 class GuardedResource {

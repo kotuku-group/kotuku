@@ -256,7 +256,6 @@ static ERR NETLOOKUP_Free(extNetLookup *Self)
       Self->Callback.Type = CALL::NIL;
    }
 
-   Self->~extNetLookup();
    return ERR::Okay;
 }
 

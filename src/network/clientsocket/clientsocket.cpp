@@ -472,7 +472,6 @@ static ERR CLIENTSOCKET_Free(extClientSocket *Self)
       }
    }
 
-   Self->~extClientSocket();
    return ERR::Okay;
 }
 

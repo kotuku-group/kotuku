@@ -6,15 +6,15 @@
     <name>StorageDevice</name>
     <type>class</type>
     <module>Core</module>
-    <comment>Queries the meta data of file system volumes.</comment>
+    <comment>Queries metadata for file system volumes.</comment>
     <version>1</version>
     <id>b2355092</id>
     <idstring>STORAGEDEVICE</idstring>
     <category>System</category>
     <copyright>Paul Manias 1996-2026</copyright>
     <description>
-<p>The StorageDevice class returns the meta data of file system volumes.  A reference to an existing volume is required in the <fl>Volume</fl> field in order to make a successful analysis.  If the volume name cannot be resolved, initialisation will fail.</p>
-<p>Following initialisation, all meta fields describing the volume are readable for further information.</p></description>
+<p>The StorageDevice class returns metadata for mounted file system volumes.  Set <fl>Volume</fl> before initialisation to identify the volume to query.  If the volume name cannot be resolved, initialisation will fail.</p>
+<p>After initialisation, the read-only fields describe the resolved volume.  Values that depend on host or device support can remain unavailable; unknown byte counts are reported as <code>-1</code>, and <fl>DeviceID</fl> is empty if no identifier is available.</p></description>
     <source>
       <file path="../classes/">class_storagedevice.cpp</file>
     </source>
@@ -23,19 +23,22 @@
   <fields>
     <field>
       <name>BytesFree</name>
-      <comment>Total amount of storage space that is available, measured in bytes.</comment>
+      <comment>Amount of storage space available to the current user, measured in bytes.</comment>
       <access read="R">Read</access>
       <type>INT64</type>
+      <description>
+<p>The available storage space reported by the host file system is indicated in this field.  A value of <code>-1</code> indicates that the amount could not be determined for the selected volume.</p>
+      </description>
     </field>
 
     <field>
       <name>BytesUsed</name>
-      <comment>Total amount of storage space in use.</comment>
+      <comment>Amount of storage space in use, measured in bytes.</comment>
       <access read="R">Read</access>
       <type>INT64</type>
       <description>
-<p>The total amount of storage space used by the device is indicated in this field.</p>
-<p>Please note that storage usage is typically measured in terms of blocks.  For instance a block size of 512 bytes will mean that this field will be a multiple of 512.  Two files of 1 byte each on such a file system would take up 1024 bytes of space and not 2.</p>
+<p>The amount of storage space used on the volume is indicated in this field.  A value of <code>0</code> can indicate that usage could not be determined for the selected volume.</p>
+<p>Please note that storage usage is typically measured in terms of blocks.  For instance, a block size of 512 bytes will mean that this field is a multiple of 512.  Two files of 1 byte each on such a file system would take up 1024 bytes of space and not 2.</p>
       </description>
     </field>
 
@@ -51,31 +54,31 @@
 
     <field>
       <name>DeviceID</name>
-      <comment>A unique ID for the mounted device (platform dependent, <code>NULL</code> if unavailable).</comment>
-      <access read="G">Get</access>
+      <comment>Unique device identifier for the mounted volume, when available.</comment>
+      <access read="R">Read</access>
       <type>STRING</type>
       <description>
-<p>If a volume expresses a unique device identifier such as a factory serial number, it will be readable from this field.</p>
+<p>If a volume exposes a unique device identifier such as a factory serial number, it will be readable from this field. The field is empty when the selected volume or file system driver does not provide an identifier.</p>
       </description>
     </field>
 
     <field>
       <name>DeviceSize</name>
-      <comment>The storage size of the device in bytes, without accounting for the file system format.</comment>
+      <comment>Total storage capacity of the resolved volume, measured in bytes.</comment>
       <access read="R">Read</access>
       <type>INT64</type>
       <description>
-<p>This field indicates the storage size of the device.  It does not reflect the available space determined by the device's file system, which will typically be measurably smaller than this value.</p>
+<p>This field indicates the total byte capacity reported by the host file system for the selected volume.  It does not reflect the remaining writable space; use <fl>BytesFree</fl> for that value.  A value of <code>-1</code> indicates that capacity could not be determined.</p>
       </description>
     </field>
 
     <field>
       <name>Volume</name>
       <comment>The volume name of the device to query.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
-<p>Set the Volume field prior to initialisation for that volume to be queried by the object.  The standard volume string format is <code>name:</code>, but omitting the colon or defining complete file system paths when writing this field is also acceptable.  Any characters following a colon will be stripped automatically with no ongoing functional impact.</p>
+<p>Set the Volume field prior to initialisation so that the object can query the selected volume.  The standard volume string format is <code>name:</code>, but omitting the colon or defining complete file system paths when writing this field is also acceptable.  Any characters following a colon are stripped automatically, and the stored value is normalised to include the trailing colon.</p>
       </description>
     </field>
 

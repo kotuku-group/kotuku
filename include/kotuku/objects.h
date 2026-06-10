@@ -582,7 +582,8 @@ struct Object { // Must be 64-bit aligned
                   Value.clear();
                   int v = ((int *)data)[0];
                   while (lookup->Name) {
-                     if (v & lookup->Value) {
+                     const auto mask = lookup->Value;
+                     if (((mask & (mask - 1)) IS 0) and (v & mask)) {
                         Value.append(lookup->Name);
                         Value.push_back('|');
                      }

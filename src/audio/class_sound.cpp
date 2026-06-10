@@ -622,7 +622,6 @@ static ERR SOUND_Free(extSound *Self)
 
    if (Self->File) { FreeResource(Self->File); Self->File = nullptr; }
 
-   Self->~extSound();
    return ERR::Okay;
 }
 

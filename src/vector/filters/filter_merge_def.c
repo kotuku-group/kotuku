@@ -5,9 +5,15 @@ static ERR MERGEFX_NewPlacement(extMergeFX *Self) {
    return ERR::Okay;
 }
 
+static ERR MERGEFX_FreePlacement(extMergeFX *Self) {
+   Self->~extMergeFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clMergeFXActions[] = {
    { AC::Draw, MERGEFX_Draw },
    { AC::Free, MERGEFX_Free },
+   { AC::FreePlacement, MERGEFX_FreePlacement },
    { AC::NewPlacement, MERGEFX_NewPlacement },
    { AC::NIL, nullptr }
 };

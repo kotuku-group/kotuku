@@ -18,14 +18,6 @@ NetClient objects are intended to be created from the network interfacing code e
 
 *********************************************************************************************************************/
 
-static ERR NETCLIENT_Free(objNetClient *Self)
-{
-   Self->~objNetClient();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR NETCLIENT_Init(objNetClient *Self)
 {
    if (Self->Owner->baseClassID() != CLASSID::NETSOCKET) {

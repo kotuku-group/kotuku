@@ -12,7 +12,13 @@ static ERR COMPRESSEDSTREAM_NewPlacement(extCompressedStream *Self) {
    return ERR::Okay;
 }
 
+static ERR COMPRESSEDSTREAM_FreePlacement(extCompressedStream *Self) {
+   Self->~extCompressedStream();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clCompressedStreamActions[] = {
+   { AC::FreePlacement, COMPRESSEDSTREAM_FreePlacement },
    { AC::NewPlacement, COMPRESSEDSTREAM_NewPlacement },
    { AC::NIL, nullptr }
 };

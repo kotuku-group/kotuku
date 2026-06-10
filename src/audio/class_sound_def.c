@@ -22,12 +22,18 @@ static ERR SOUND_NewPlacement(extSound *Self) {
    return ERR::Okay;
 }
 
+static ERR SOUND_FreePlacement(extSound *Self) {
+   Self->~extSound();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSoundActions[] = {
    { AC::Activate, SOUND_Activate },
    { AC::Deactivate, SOUND_Deactivate },
    { AC::Disable, SOUND_Disable },
    { AC::Enable, SOUND_Enable },
    { AC::Free, SOUND_Free },
+   { AC::FreePlacement, SOUND_FreePlacement },
    { AC::GetKey, SOUND_GetKey },
    { AC::Init, SOUND_Init },
    { AC::NewPlacement, SOUND_NewPlacement },

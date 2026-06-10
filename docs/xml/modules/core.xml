@@ -3281,6 +3281,16 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Col" type="struct RGB8" size="256">RGB Palette</field>
     </struct>
 
+    <struct name="ResourceRecord" comment="Unified resource management record">
+      <field name="Address" type="APTR">Direct pointer to the resource (optional, can rely on ResourceID instead)</field>
+      <field name="Manager" type="struct ResourceManager *">Reference to the resource manager for this record</field>
+      <field name="ResourceID" type="RESOURCEID">Unique identifier</field>
+      <field name="OwnerID" type="OBJECTID">Owner of the resource</field>
+      <field name="CollectOnUnlock" type="BOOL">Resource is locked; manager will collect immediately once unlocked</field>
+      <field name="Terminating" type="BOOL">A FreeResource() call currently owns the destruction path</field>
+      <field name="OwnerManagesChildren" type="BOOL">True if the current OwnerID manages its child resources</field>
+    </struct>
+
     <struct name="SystemState" comment="Returned by the GetSystemState() function.">
       <field name="Platform" type="CSTRING">String-based field indicating the user's platform.  Currently returns <code>Native</code>, <code>Windows</code>, <code>OSX</code> or <code>Linux</code>.</field>
       <field name="IDL" type="CSTRING">The Core module's compressed IDL string</field>

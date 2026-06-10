@@ -58,6 +58,11 @@ static ERR DOCUMENT_NewPlacement(extDocument *Self) {
    return ERR::Okay;
 }
 
+static ERR DOCUMENT_FreePlacement(extDocument *Self) {
+   Self->~extDocument();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clDocumentActions[] = {
    { AC::Activate, DOCUMENT_Activate },
    { AC::Clear, DOCUMENT_Clear },
@@ -68,6 +73,7 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::Enable, DOCUMENT_Enable },
    { AC::Focus, DOCUMENT_Focus },
    { AC::Free, DOCUMENT_Free },
+   { AC::FreePlacement, DOCUMENT_FreePlacement },
    { AC::GetKey, DOCUMENT_GetKey },
    { AC::Init, DOCUMENT_Init },
    { AC::NewObject, DOCUMENT_NewObject },

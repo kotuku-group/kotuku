@@ -5,8 +5,14 @@ static ERR OFFSETFX_NewPlacement(extOffsetFX *Self) {
    return ERR::Okay;
 }
 
+static ERR OFFSETFX_FreePlacement(extOffsetFX *Self) {
+   Self->~extOffsetFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clOffsetFXActions[] = {
    { AC::Draw, OFFSETFX_Draw },
+   { AC::FreePlacement, OFFSETFX_FreePlacement },
    { AC::NewPlacement, OFFSETFX_NewPlacement },
    { AC::NIL, nullptr }
 };

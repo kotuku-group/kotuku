@@ -49,6 +49,30 @@ is recommended as the default naming format.
 #include "../defs.h"
 #include <kotuku/main.h>
 
+class extConfig;
+static uint32_t calc_crc(extConfig *Self);
+
+class extConfig : public objConfig {
+   public:
+   using create = kt::Create<extConfig>;
+   uint32_t CRC;   // CRC32, for determining if config data has been altered
+
+   ~extConfig() {
+      if ((Flags & CNF::AUTO_SAVE) != CNF::NIL) {
+         if (not Path.empty()) {
+            auto crc = calc_crc(this);
+
+            if ((not crc) or (crc != CRC)) {
+               kt::Log().msg("Auto-saving changes to \"%s\" (CRC: %d : %d)", Path.c_str(), CRC, crc);
+
+               objFile::create file = { fl::Path(Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::NIL) };
+               saveToObject(*file);
+            }
+         }
+      }
+   }
+};
+
 class FilterConfig {
    public:
    bool reverse = false;
@@ -56,7 +80,6 @@ class FilterConfig {
    std::string name;
    std::vector<std::string> values;
 };
-
 
 static ERR CONFIG_SaveSettings(extConfig *);
 
@@ -307,29 +330,6 @@ Flush: Diverts to #SaveSettings().
 static ERR CONFIG_Flush(extConfig *Self)
 {
    return CONFIG_SaveSettings(Self);
-}
-
-//********************************************************************************************************************
-
-static ERR CONFIG_Free(extConfig *Self)
-{
-   kt::Log log;
-
-   if ((Self->Flags & CNF::AUTO_SAVE) != CNF::NIL) {
-      if (not Self->Path.empty()) {
-         auto crc = calc_crc(Self);
-
-         if ((not crc) or (crc != Self->CRC)) {
-            log.msg("Auto-saving changes to \"%s\" (CRC: %d : %d)", Self->Path.c_str(), Self->CRC, crc);
-
-            objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::NIL) };
-            Self->saveToObject(*file);
-         }
-      }
-   }
-
-   Self->~extConfig();
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

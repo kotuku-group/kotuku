@@ -5,9 +5,15 @@ static ERR SOURCEFX_NewPlacement(extSourceFX *Self) {
    return ERR::Okay;
 }
 
+static ERR SOURCEFX_FreePlacement(extSourceFX *Self) {
+   Self->~extSourceFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clSourceFXActions[] = {
    { AC::Draw, SOURCEFX_Draw },
    { AC::Free, SOURCEFX_Free },
+   { AC::FreePlacement, SOURCEFX_FreePlacement },
    { AC::Init, SOURCEFX_Init },
    { AC::NewObject, SOURCEFX_NewObject },
    { AC::NewPlacement, SOURCEFX_NewPlacement },

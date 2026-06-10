@@ -5,9 +5,15 @@ static ERR COLOURFX_NewPlacement(extColourFX *Self) {
    return ERR::Okay;
 }
 
+static ERR COLOURFX_FreePlacement(extColourFX *Self) {
+   Self->~extColourFX();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clColourFXActions[] = {
    { AC::Draw, COLOURFX_Draw },
    { AC::Free, COLOURFX_Free },
+   { AC::FreePlacement, COLOURFX_FreePlacement },
    { AC::Init, COLOURFX_Init },
    { AC::NewObject, COLOURFX_NewObject },
    { AC::NewPlacement, COLOURFX_NewPlacement },
