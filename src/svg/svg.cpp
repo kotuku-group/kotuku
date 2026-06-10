@@ -19,20 +19,16 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <string>
 #include <format>
 #include <sstream>
-#include <charconv>
 #include <list>
 #include <variant>
-#include <algorithm>
 #include <cfloat>
 #include <kotuku/main.h>
-#include <kotuku/modules/image.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/strings.hpp>
 #include "svg_def.c"
 #include <katana.h>
-#include <math.h>
 #include "../link/base64.h"
 #include "../xml/uri_utils.h"
 
