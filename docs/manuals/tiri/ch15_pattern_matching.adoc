@@ -1,0 +1,549 @@
+// VERIFIED: 2026-02-12
+
+[[ch-pattern-matching]]
+== Pattern Matching (Choose Expression)
+indexterm:[pattern matching] indexterm:[choose expressions] The `choose...from` expression provides structured pattern matching for selecting a result value or executing a branch based on the shape or value of an input.  It replaces verbose `if`/`elseif` chains with a concise, declarative syntax.
+
+[source,tiri]
+----
+choose Scrutinee from
+   Pattern [when Guard] -> Result
+   ...
+   [else -> Result]
+end
+----
+
+The scrutinee expression is evaluated exactly once.  Cases are tested in declaration order; the first matching case executes its result and no further cases are evaluated.  `choose` is usable in both expression and statement contexts.
+
+[[sec-choose-expressions]]
+=== Choose Expressions
+[discrete]
+==== Syntax
+
+indexterm:[choose expressions] A `choose` expression begins with the `choose` keyword, followed by a scrutinee expression, the `from` keyword, one or more case arms, and `end`.  Each case arm consists of a pattern, an optional `when` guard, the `\->` arrow, and a result.
+
+[source,tiri]
+----
+result = choose status from
+   200 -> 'OK'
+   404 -> 'Not Found'
+   else -> 'Unknown'
+end
+----
+
+[discrete]
+==== Scrutinee Evaluation
+
+The runtime evaluates the scrutinee exactly once.  Subsequent case comparisons test against this stored value.  The scrutinee accepts any expression: variables, arithmetic, function calls, method calls, ternary expressions, and `??` coalescing.
+
+[source,tiri]
+----
+result = choose getValue() from  -- getValue() called once
+   'target' -> 'found'
+   else -> 'not found'
+end
+
+result = choose a + b from
+   15 -> 'fifteen'
+   else -> 'other'
+end
+----
+
+[discrete]
+==== Expression Context
+
+When `choose` appears in an assignment, return statement, function argument, table constructor, or other expression position, it produces a value.  If no case matches and no `else` is present, the result is `nil`:
+
+[source,tiri]
+----
+x = choose code from 200 -> 'OK' else -> 'Error' end
+
+return choose code from
+   200 -> 'OK'
+   else -> 'Error'
+end
+
+process(choose mode from
+   'fast' -> 1
+   else -> 0
+end)
+
+t = {
+   label = choose code from
+      200 -> 'ok'
+      else -> 'error'
+   end
+}
+----
+
+[discrete]
+==== Statement Context
+
+When `choose` appears as a standalone statement, results can be assignments or function calls.  The expression produces no value in the enclosing scope:
+
+[source,tiri]
+----
+choose action from
+   'save' -> result = 'saved'
+   'load' -> result = 'loaded'
+   else -> error('Invalid action')
+end
+----
+
+Statement results support compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `..=`, `??=`, `?=`) and multi-target assignment (`a, b = expr1, expr2`).
+
+[discrete]
+==== The else Branch
+
+The `else` branch matches when no preceding case matched.  It must be the final case; placing cases after `else` produces a parse error.  An `else`-only `choose` is valid and always matches:
+
+[source,tiri]
+----
+result = choose value from
+   else -> 'always this'
+end
+----
+
+If `else` is omitted and no case matches, `choose` produces `nil` in expression context and takes no action in statement context.
+
+[discrete]
+==== First-Match-Wins
+
+Cases are evaluated in declaration order.  When multiple cases match the scrutinee, the first match wins.  Subsequent cases are not tested:
+
+[source,tiri]
+----
+result = choose 42 from
+   _ -> 'wildcard'   -- matches first
+   42 -> 'literal'   -- never reached
+   else -> 'else'    -- never reached
+end
+-- result is 'wildcard'
+----
+
+[discrete]
+==== Short-Circuit Evaluation
+
+Only the result expression of the matching case is evaluated.  Non-matching result expressions and guards for non-matching patterns are never executed:
+
+[source,tiri]
+----
+result = choose 1 from
+   1 -> compute_a()     -- evaluated
+   2 -> compute_b()     -- not evaluated
+   else -> compute_c()  -- not evaluated
+end
+----
+
+[discrete]
+==== Nesting
+
+`choose` expressions nest to arbitrary depth.  A nested `choose` can appear in the result position of an outer case:
+
+[source,tiri]
+----
+msg = choose status from
+   200 -> 'OK'
+   else -> choose retry_count from
+      0 -> 'Failed (no retry)'
+      else -> 'Failed (will retry)'
+   end
+end
+----
+
+[discrete]
+==== Result Expressions
+
+Results can be any expression: arithmetic, function calls, method calls, table constructors, string concatenation, or nested `choose` expressions:
+
+[source,tiri]
+----
+result = choose x from
+   10 -> x * 2 + 5
+   20 -> double(x)
+   30 -> { value = x, label = 'thirty' }
+   else -> nil
+end
+----
+
+[[sec-guards]]
+=== Guards
+indexterm:[guards] A `when` clause adds a conditional guard to a case arm.  The guard expression is evaluated only after the pattern has matched.  If the guard evaluates to a falsey value, the case is skipped and evaluation proceeds to the next case.
+
+[discrete]
+==== Syntax
+
+[source,tiri]
+----
+Pattern when GuardExpression -> Result
+----
+
+`GuardExpression` is any expression that produces a boolean-compatible value.
+
+[discrete]
+==== Semantics
+
+The guard is not evaluated unless the pattern matches.  This guarantees that guard side effects do not occur for non-matching patterns:
+
+[source,tiri]
+----
+evaluated = false
+function check()
+   evaluated = true
+   return true
+end
+
+result = choose 'no match' from
+   'match' when check() -> 'guarded'
+   else -> 'else'
+end
+-- evaluated is false: pattern did not match, guard was not called
+----
+
+[discrete]
+==== Guard with Literal Patterns
+
+Guards refine literal matches by adding runtime conditions:
+
+[source,tiri]
+----
+result = choose status from
+   200 when priority > 3 -> 'high priority OK'
+   200 -> 'normal OK'
+   else -> 'other'
+end
+----
+
+When `priority` is 1, the first case matches the pattern (200) but fails the guard.  Evaluation falls through to the second case, which matches without a guard.
+
+[discrete]
+==== Guard with Table Patterns
+
+Guards can test fields not included in the table pattern's structural match:
+
+[source,tiri]
+----
+icon = choose notification from
+   { type = 'message' } when notification.unread -> 'icon-unread'
+   { type = 'message' } when notification.priority > 5 -> 'icon-priority'
+   { type = 'message' } -> 'icon-inbox'
+   else -> 'icon-default'
+end
+----
+
+[discrete]
+==== Guard with Wildcard Patterns
+
+A wildcard pattern with a guard is equivalent to a conditional branch:
+
+[source,tiri]
+----
+result = choose value from
+   _ when value > 100 -> 'large'
+   _ when value > 50 -> 'medium'
+   else -> 'small'
+end
+----
+
+[discrete]
+==== Complex Guard Expressions
+
+Guards accept any expression, including arithmetic, function calls, and nested `choose`:
+
+[source,tiri]
+----
+result = choose data from
+   {} when data.x + data.y > 25 -> 'sum large'
+   {} when data.x * data.y > 100 -> 'product large'
+   else -> 'small'
+end
+----
+
+[[sec-matching-patterns]]
+=== Matching Patterns
+[discrete]
+==== Literal Patterns
+
+indexterm:[patterns, matching] Literal patterns match using `is` semantics (identity comparison with no implicit type coercion).  Supported literal types: numbers (including negative and floating-point), strings, booleans (`true`, `false`), and `nil`.
+
+[source,tiri]
+----
+result = choose value from
+   42      -> 'number'
+   -3.14   -> 'negative float'
+   'hello' -> 'string'
+   true    -> 'boolean'
+   nil     -> 'nil'
+   else    -> 'other'
+end
+----
+
+No implicit type coercion occurs.  The string `'1'` does not match the number `1`:
+
+[source,tiri]
+----
+result = choose '1' from
+   1   -> 'number'  -- does not match
+   '1' -> 'string'  -- matches
+end
+----
+
+[discrete]
+==== Wildcard Pattern
+
+The underscore `_` matches any value, including `nil`.  It performs no comparison and always succeeds if reached:
+
+[source,tiri]
+----
+result = choose nil from
+   _ -> 'matched'  -- matches nil
+end
+----
+
+Place wildcard patterns after more specific patterns.  A wildcard as the first case matches unconditionally, making subsequent cases unreachable.
+
+[discrete]
+==== Relational Patterns
+
+Relational patterns compare the scrutinee against an expression using a relational operator.  Supported operators: `<`, `\<=`, `>`, `>=`.
+
+[source,tiri]
+----
+category = choose score from
+   < 30 -> 'low'
+   < 60 -> 'medium'
+   < 90 -> 'high'
+   else -> 'exceptional'
+end
+----
+
+The expression after the operator accepts constants, variables, parenthesised expressions, and function calls:
+
+[source,tiri]
+----
+result = choose value from
+   < getThreshold() -> 'below'
+   < (MAX - OFFSET) -> 'middle'
+   else -> 'above'
+end
+----
+
+Order matters with relational patterns.  Place narrower ranges before wider ranges.  A `< 60` case placed before `< 30` makes the `< 30` case unreachable for values below 30.
+
+[discrete]
+==== Table Patterns
+
+Table patterns match using open-record semantics.  The pattern specifies a subset of keys and their expected values.  Extra keys on the scrutinee are ignored.  Matching is shallow: values are compared using `is` semantics.
+
+[source,tiri]
+----
+result = choose event from
+   { type = 'click', button = 'left' } -> 'left click'
+   { type = 'click' } -> 'other click'
+   { type = 'keydown' } -> 'key event'
+   else -> 'unknown'
+end
+----
+
+The empty table pattern `{}` matches any table value but does not match non-table values (`nil`, strings, numbers, booleans):
+
+[source,tiri]
+----
+result = choose value from
+   {} -> 'is a table'
+   else -> 'not a table'
+end
+----
+
+A table pattern applied to a `nil` or non-table scrutinee fails and proceeds to the next case.
+
+Table patterns do not support nested structural matching.  Use guards or nested `choose` expressions to test nested table fields:
+
+[source,tiri]
+----
+result = choose data from
+   {} when data.user and data.user.name is 'Alice' -> 'found Alice'
+   else -> 'not found'
+end
+----
+
+[discrete]
+==== Tuple Patterns
+
+Tuple patterns match multiple values simultaneously.  The scrutinee is a parenthesised comma-separated list of expressions, and each case provides a corresponding tuple of patterns.
+
+[source,tiri]
+----
+movement = choose (dx, dy) from
+   (0, 0) -> 'standing'
+   (0, _) -> 'vertical'
+   (_, 0) -> 'horizontal'
+   else -> 'diagonal'
+end
+----
+
+All expressions in the scrutinee tuple are evaluated exactly once.  Each position in the tuple pattern is matched independently; all positions must match for the case to succeed.
+
+[discrete]
+===== Arity
+
+The number of elements in every tuple pattern must match the arity of the scrutinee tuple.  An arity mismatch produces a compile-time error.  A parenthesised single expression `(x)` is a grouping operator, not a tuple; a tuple requires at least one comma: `(x, y)`.
+
+[discrete]
+===== Function Return Tuples
+
+When the scrutinee is a function call returning multiple values, the compiler infers the arity from the first tuple pattern:
+
+[source,tiri]
+----
+function getCoords()
+   return 10, 20
+end
+
+result = choose getCoords() from
+   (0, 0) -> 'origin'
+   (10, 20) -> 'specific point'
+   else -> 'other'
+end
+----
+
+[discrete]
+===== Three-Element Tuples
+
+Tuples of three or more elements follow the same rules:
+
+[source,tiri]
+----
+result = choose (1, 2, 3) from
+   (0, 0, 0) -> 'origin'
+   (1, _, _) -> 'x is 1'
+   (_, 2, _) -> 'y is 2'
+   else -> 'other'
+end
+----
+
+[discrete]
+===== Mixed Types in Tuples
+
+Each position can hold a different type:
+
+[source,tiri]
+----
+result = choose ('error', 404) from
+   ('success', _) -> 'success'
+   ('error', 404) -> 'not found'
+   ('error', _) -> 'other error'
+   else -> 'unknown'
+end
+----
+
+[discrete]
+==== Comparison Semantics
+
+All pattern matching uses `is` semantics for equality.  Key implications:
+
+* No implicit type coercion (`'1'` does not match `1`).
+* `NaN` does not match any literal numeric pattern (`NaN is NaN` evaluates to `false`).  Use the wildcard `_` or a guard to handle `NaN`.
+* Table patterns compare field values with `is`, not deep equality.
+
+[discrete]
+==== Errors
+
+The following conditions produce compile-time errors:
+
+[cols="1,3a",options="header"]
+|===
+|Condition |Error
+
+|Missing `from`
+|Expected `from` keyword after scrutinee expression.
+
+|Missing `\->`
+|Expected `\->` arrow after pattern.
+
+|`else` not last
+|Cases after `else` are unreachable.
+
+|Tuple arity mismatch
+|Tuple pattern arity does not match scrutinee arity.
+
+|Tuple pattern on single value
+|Tuple patterns require a tuple scrutinee.
+|===
+
+No runtime errors are produced by pattern matching itself.  A non-matching `choose` without `else` produces `nil` in expression context.
+
+[[sec-practical-examples]]
+=== Practical Examples
+
+.HTTP Status Classification
+[source,tiri]
+----
+function describe_status(Code:num)
+   return choose Code from
+      < 200 -> 'informational'
+      < 300 -> 'success'
+      < 400 -> 'redirect'
+      < 500 -> 'client error'
+      < 600 -> 'server error'
+      else -> 'unknown'
+   end
+end
+----
+
+.Event Dispatch
+[source,tiri]
+----
+function handle_event(Event:table)
+   return choose Event from
+      { type = 'click', button = 'left' } -> 'left click'
+      { type = 'click', button = 'right' } -> 'right click'
+      { type = 'click' } -> 'other click'
+      { type = 'keydown' } when Event.key is 'Enter' -> 'enter'
+      { type = 'keydown' } -> 'key pressed'
+      else -> 'unknown event'
+   end
+end
+----
+
+.State Machine Transitions
+[source,tiri]
+----
+function next_state(Current:str, Action:str)
+   return choose (Current, Action) from
+      ('idle', 'start') -> 'running'
+      ('running', 'pause') -> 'paused'
+      ('running', 'stop') -> 'idle'
+      ('paused', 'resume') -> 'running'
+      ('paused', 'stop') -> 'idle'
+      else -> Current
+   end
+end
+----
+
+.Accumulation in Loops
+[source,tiri]
+----
+count = 0
+for i in {0 to 6} do
+   count += choose values[i] from
+      1 -> 1
+      else -> 0
+   end
+end
+----
+
+.Icon Selection with Guards
+[source,tiri]
+----
+function get_icon(Notification:table)
+   return choose Notification from
+      { type = 'message', unread = true } -> 'icon-inbox-unread'
+      { type = 'message' } when Notification.priority > 5 -> 'icon-priority'
+      { type = 'message' } -> 'icon-inbox'
+      { type = 'alert' } -> 'icon-alert'
+      nil -> 'icon-none'
+      else -> 'icon-default'
+   end
+end
+----

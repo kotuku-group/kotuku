@@ -1,0 +1,297 @@
+// VERIFIED: 2026-02-10
+// UPDATED: 2026-05-24 — Added regex string shorthand (r'...') to String Literals section.
+
+[[ch-basic-syntax]]
+== Basic Syntax
+indexterm:[syntax] indexterm:[lexical conventions] This chapter defines the lexical structure of Tiri: how source text is decomposed into tokens, and the rules governing comments, identifiers, keywords, literals, statements, and blocks.
+
+[[sec-comments]]
+=== Comments
+indexterm:[comments] The lexer discards all comment text.  Comments have no effect on program behaviour.  Tiri supports three comment forms.
+
+==== Single-Line Comments
+
+A double-hyphen `--` starts a short comment that continues to the end of the line:
+
+[source,tiri]
+----
+-- This is a comment
+x = 10  -- This is also a comment
+----
+
+==== Long Comments
+
+A long comment begins with `--[[` and ends with `]]`:
+
+[source,tiri]
+----
+--[[
+This comment spans
+multiple lines.
+]]
+----
+
+Long comments support level-matching delimiters using `=` signs between the brackets.  The number of `=` signs in the opening delimiter must match the closing delimiter:
+
+[source,tiri]
+----
+--[=[
+This long comment can contain ]] without terminating,
+because the closing delimiter must be ]=].
+]=]
+----
+
+The lexer discards a newline immediately following the opening delimiter.
+
+<<<
+[[sec-identifiers-and-keywords]]
+=== Identifiers & Keywords
+[[sec-identifiers]]
+==== Identifiers
+
+indexterm:[identifiers] indexterm:[keywords] indexterm:[reserved words] An identifier is a name used to refer to variables, functions, fields, and other user-defined entities.
+
+identifier::
+Any sequence of ASCII letters (`A`-`Z`, `a`-`z`), digits (`0`-`9`), underscores (`_`), and bytes in the range 128-255.  An identifier must not begin with a digit.
+
+Identifiers are case-sensitive.  `count`, `Count`, and `COUNT` are three distinct identifiers.
+
+[source,ebnf]
+----
+identifier = (letter | "_" | high_byte) { letter | digit | "_" | high_byte } ;
+letter     = "A"..."Z" | "a"..."z" ;
+digit      = "0"..."9" ;
+high_byte  = ? any byte with value 128..255 ? ;
+----
+
+The high-byte rule permits UTF-8 encoded characters in identifiers.
+
+The single underscore `_` is the blank identifier.  It is a valid target for assignment and is used to explicitly discard values.
+
+[[sec-keywords]]
+==== Keywords
+
+The following words are reserved and cannot be used as identifiers:
+
+[cols="5*^"]
+|===
+|`and`     |`as`       |`break`    |`check`    |`choose`
+|`continue`|`defer`    |`do`       |`else`     |`elseif`
+|`end`     |`enum`     |`except`   |`false`    |`for`
+|`from`    |`function` |`global`   |`has`      |`if`
+|`import`  |`in`       |`is`       |`local`    |`namespace`
+|`nil`     |`not`      |`or`       |`raise`    |`repeat`
+|`return`  |`success`  |`then`     |`thunk`    |`true`
+|`try`     |`until`    |`when`     |`while`    |`with`
+|===
+
+Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid identifiers.
+
+[[sec-statements-and-blocks]]
+=== Statements & Blocks
+==== Statements
+
+indexterm:[statements] indexterm:[blocks] A statement forms the basic unit of execution.  Tiri supports assignment statements, function calls, control-flow statements, and declarations.
+
+Statements are separated by line breaks or semicolons.  Semicolons are optional and carry no semantic weight; the parser consumes them without effect.
+
+[%unbreakable]
+[source,tiri]
+----
+x = 1
+y = 2
+z = x + y; print(z)
+----
+
+==== Blocks
+
+A block is a sequence of zero or more statements that forms a scope.  Blocks appear as the bodies of control-flow constructs and functions, delimited by keyword pairs:
+
+[source,tiri]
+----
+if x > 0 then
+   print('positive')    -- block: if ... end
+end
+
+function greet(Name)
+   print(f'Hello {Name}')  -- block: function ... end
+end
+
+do
+   temp = compute()     -- block: do ... end
+end
+----
+
+The keyword pairs `if`/`end`, `while`/`end`, `repeat`/`until`, `for`/`end`, `do`/`end`, `function`/`end`, and `try`/`end` each introduce a block.  Variables declared within a block are local to that block.  See <<ch-variables-and-scoping>> for scoping rules.
+
+==== Top-Level Execution
+
+A Tiri script has no entry-point function.  The entire script body is a block that executes top-to-bottom:
+
+[source,tiri]
+----
+name = 'World'
+print(f'Hello, {name}!')
+----
+
+[[sec-lexical-conventions]]
+=== Lexical Conventions
+
+==== Character Set
+
+Tiri source files are sequences of bytes.  The lexer operates on individual bytes: ASCII characters (0-127) define the language syntax, while bytes in the range 128-255 are valid identifier characters.  This permits UTF-8 encoded identifiers without explicit Unicode support in the lexer.
+
+==== Whitespace
+
+The lexer treats spaces (U+0020), horizontal tabs (U+0009), carriage returns (U+000D), and newlines (U+000A) as whitespace.  Whitespace separates tokens and is otherwise ignored outside of string literals.
+
+Tiri is a free-form language.  Line breaks have no syntactic significance; statements are not terminated by newlines.
+
+==== Numeric Literals
+
+Numeric literals represent integer and floating-point values.
+
+Integer literals:::
+
+[source,tiri]
+----
+42
+0xff
+0xBEEF
+----
+
+Decimal integers are sequences of digits.  Hexadecimal integers begin with `0x` or `0X` followed by hexadecimal digits (`0`-`9`, `a`-`f`, `A`-`F`).
+
+Floating-point literals:::
+
+[source,tiri]
+----
+3.14
+1.5e-2
+0.5E+10
+0x1.8p3
+----
+
+A decimal point or exponent marker (`e` or `E`) produces a floating-point value.  Hexadecimal floating-point literals use `p` or `P` as a binary exponent marker (power of 2).
+
+When a numeric literal is immediately followed by `to` or `into`, the lexer recognises a range expression.  This permits range expressions such as `{1 to 10}`.
+
+==== String Literals
+
+String literals are sequences of characters enclosed in matching delimiters.  Tiri provides short strings, long strings, and interpolated strings.
+
+===== Short Strings
+
+Short strings are delimited by single quotes or double quotes.  They must not span multiple lines.  Single quotes are the preferred default.
+
+[source,tiri]
+----
+'Hello, world!'
+"Hello, world!"
+----
+
+The following escape sequences are recognised within short strings:
+
+[cols="2,5a",options="header"]
+|===
+|Escape   |Meaning
+
+|`\a`     |Bell (U+0007)
+|`\b`     |Backspace (U+0008)
+|`\f`     |Form feed (U+000C)
+|`\n`     |Newline (U+000A)
+|`\r`     |Carriage return (U+000D)
+|`\t`     |Horizontal tab (U+0009)
+|`\v`     |Vertical tab (U+000B)
+|`\\`     |Backslash
+|`\"`     |Double quote
+|`\'`     |Single quote
+|`\xHH`   |Byte value from two hexadecimal digits
+|`\u{HHH}`|Unicode code point (1-6 hex digits), emitted as UTF-8
+|`\ddd`   |Byte value from up to three decimal digits (0-255)
+|`\z`     |Skip all following whitespace (including newlines)
+|`\` + newline|Embeds a newline character
+|===
+
+An unrecognised escape sequence raises a lexer error.
+
+===== Long Strings
+
+Long strings are delimited by `[[` and `]]` and can span multiple lines.  The lexer does not process escape sequences within long strings.
+
+[source,tiri]
+----
+msg = [[
+This string spans
+multiple lines verbatim.
+]]
+----
+
+The lexer discards a newline immediately following the opening `[[`.
+
+Level-matching delimiters use `=` signs between the brackets, allowing the string to contain unmatched bracket sequences:
+
+[source,tiri]
+----
+code = [=[
+text with ]] in it
+]=]
+----
+
+The number of `=` signs in the opening delimiter must match the closing delimiter exactly.
+
+===== Interpolated Strings (F-Strings)
+
+An `f` prefix before a short string enables expression interpolation.  Expressions enclosed in `{` and `}` are evaluated and converted to strings via `tostring()`:
+
+[source,tiri]
+----
+name = 'Alice'
+greeting = f'Hello, {name}!'
+result = f'{a} + {b} = {a + b}'
+----
+
+Literal braces are produced by doubling: `{{` produces `{` and `}}` produces `}`.
+
+F-strings support single-quote and double-quote delimiters.  Long-string syntax (`f[[...]]`) is not supported.  Empty or whitespace-only expressions (`{}`, `{   }`) are syntax errors.
+
+See <<ch-strings>> for additional string operations.
+
+[[sec-regex-strings]]
+===== Regex Strings
+
+An `r` prefix before a short string or long string creates a compiled regular expression object.  The expression `r'...'` is equivalent to `regex.new('...')`, but the content is treated as a raw string: backslash sequences are not interpreted as escape characters, so regex metacharacters such as `\d`, `\w`, and `\s` do not require doubling.
+
+[source,tiri]
+----
+digits = r'\d+'          -- equivalent to regex.new([[\d+]])
+word   = r"\w+"          -- double quotes also accepted
+ws     = r[[\s+]]        -- long-bracket form
+level  = r[=[\d{2}]=]    -- levelled long-bracket form
+----
+
+All four delimiter forms -- single-quoted, double-quoted, long-bracket, and levelled long-bracket -- are supported.  The resulting value is a regex object, not a string.  Methods can be chained directly on the literal:
+
+[source,tiri]
+----
+r'\d+'.test('abc123')    -- true
+----
+
+If the pattern is syntactically invalid, an exception is thrown at runtime during compilation of the regex object.
+
+See <<ch-regular-expressions>> for the full regex API.
+
+==== Case Sensitivity
+
+Tiri is case-sensitive throughout.  Identifiers, keywords, and library names all distinguish between upper-case and lower-case letters.  `and` is a keyword; `And` is an identifier.
+
+==== Zero-Based Indexing
+
+All indexing operations use zero-based indices.  The first element of a table or array is at index 0, and string positions start at 0.  This applies uniformly to all standard library functions and language constructs.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+print(t[0])   -- 'a'
+print(t[1])   -- 'b'
+----

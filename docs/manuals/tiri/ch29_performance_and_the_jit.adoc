@@ -1,0 +1,683 @@
+[[ch-performance-and-the-jit]]
+== Performance & the JIT
+indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the JIT (Just-In-Time) compiler as of March 2026 and is not part of the language specification.
+
+Tiri executes on a tracing JIT compiler derived from LuaJIT 2.1.  Understanding the JIT compilation model is essential for writing high-performance Tiri code.  This chapter describes the compilation pipeline, the `jit` library API, tuneable parameters, and common performance pitfalls.
+
+[[sec-how-the-jit-works]]
+=== How the JIT Works
+indexterm:[JIT, traces] Tiri code begins execution in an interpreter.  The JIT compiler monitors executing code and compiles frequently executed paths — called _hot paths_ — into native machine code.
+
+==== The Trace Compiler
+
+The JIT compiler uses a _tracing_ architecture rather than a method-based one.  Instead of compiling entire functions, it records linear execution paths through the program and compiles those paths into optimised native code.
+
+The compilation pipeline has four stages:
+
+. **Interpretation** — bytecode executes in the interpreter.  A counter tracks loop iterations and function call frequency.
+. **Trace recording** — when a loop body executes enough times to trigger the hot-loop threshold, the JIT begins recording.  It captures the bytecode stream as SSA IR (Static Single Assignment Intermediate Representation), inserting type guards for every observed value type.
+. **Optimisation** — the recorded IR passes through optimisation phases (see <<sec-jit-options>>).
+. **Code generation** — platform-specific machine code is emitted and linked into the running program.  Future iterations of the same path execute the compiled trace directly.
+
+==== Side Exits and Side Traces
+
+Each type guard in a compiled trace is a potential _side exit_.  When a guard fails at runtime — for example, a variable that was a number during recording is now a string — execution exits the trace and returns to the interpreter at that point.
+
+If the same side exit is taken `hotexit` times (default: 10), the JIT compiler records a _side trace_ starting from that exit.  Up to `tryside` attempts (default: 4) are made to compile each side trace.  A root trace supports up to `maxside` side traces (default: 100).
+
+==== Trace Linking
+
+Compiled traces are linked together to form an execution graph.  Link types include:
+
+[cols="1,4a",options="header"]
+|===
+|Link Type |Description
+
+|`loop`
+|Trace loops back to its own entry point.
+
+|`root`
+|Trace links to a different root trace.
+
+|`tail-recursion`
+|Trace performs a tail-recursive call.
+
+|`up-recursion`
+|Trace links up the recursion chain.
+
+|`down-recursion`
+|Trace links down into a recursive call.
+
+|`return`
+|Trace returns to the interpreter.
+
+|`stitch`
+|Trace is stitched to another trace at a function call boundary.
+
+|`interpreter`
+|Trace falls back to the interpreter.
+|===
+
+==== Trace Abort
+
+Trace recording aborts if any of the following limits are exceeded:
+
+[cols="2,1,4a",options="header"]
+|===
+|Parameter |Default |Description
+
+|`maxrecord`
+|4000
+|Maximum IR instructions per trace.
+
+|`maxirconst`
+|500
+|Maximum IR constants per trace.
+
+|`maxsnap`
+|500
+|Maximum snapshots (potential exit points) per trace.
+
+|`maxtrace`
+|1000
+|Maximum total traces in cache.
+|===
+
+Recording also aborts on encountering operations that the JIT compiler does not support (NYI — Not Yet Implemented).
+
+[[sec-type-annotations-for-performance]]
+=== Type Annotations for Performance
+indexterm:[type annotations, performance] The JIT compiler achieves peak performance when types are stable across loop iterations.  Every type change at a guard causes a side exit, and repeated type instability prevents trace compilation entirely.
+
+Type annotations (see <<ch-annotations-and-preprocessing>>) provide metadata that the compiler uses for type inference and validation.  While the JIT does not consume annotations directly, the parser's type analysis pass uses them to detect type inconsistencies at compile time — before code ever reaches the JIT.
+
+Write type-stable code to maximise JIT effectiveness:
+
+.Type-stable: all values are numbers throughout the loop
+[source,tiri]
+----
+total = 0
+for i in {0 to 999} do
+   total += i * 2.5
+end
+----
+
+.Type-unstable: 'value' changes type, causing guard failures
+[source,tiri]
+----
+value:any = 0
+for i in {0 to 999} do
+   if i > 500 then
+      value = 'overflow'   -- type changes from number to string
+   else
+      value = i * 2
+   end
+end
+----
+
+[[sec-arrays-vs-tables-performance]]
+=== Arrays vs. Tables
+indexterm:[arrays, performance] indexterm:[tables, performance] Arrays and tables serve different purposes and have distinct performance characteristics.
+
+==== Arrays
+
+Arrays are strongly typed, contiguous data structures with a fixed element type determined at creation time.  Supported element types include byte, int16, int32, int64, float, double, pointer, string, table, array, any, struct, and object types.
+
+* **Indexing** — O(1) direct memory access by offset.  No hashing or lookup required.
+* **Iteration** — sequential memory access benefits from CPU cache locality.
+* **JIT compilation** — the fixed element type eliminates type guards during indexed access, producing tighter compiled traces.
+* **Growth** — arrays grow dynamically but may require reallocation and copy when capacity is exceeded.
+
+==== Tables
+
+Tables are general-purpose associative containers with an integer array section and a hash section.
+
+* **Integer key access** — O(1) for keys within the array section; O(1) amortised for hash section lookups.
+* **String key access** — O(1) amortised via string interning and hash lookup.
+* **Iteration** — traverses both array and hash sections; less cache-friendly than array iteration.
+* **JIT compilation** — the JIT must insert type guards for every value access because table values are dynamically typed.
+
+==== Choosing Between Them
+
+Use arrays for homogeneous, numerically indexed data where performance matters — particle systems, vertex buffers, large data sets.  Use tables for heterogeneous records, configuration, and cases where arbitrary key types are required.
+
+[source,tiri]
+----
+-- Array: ideal for homogeneous numeric data
+scores = array(100, 'int32')
+for i in {0 to 99} do
+   scores[i] = i * 10
+end
+
+-- Table: ideal for structured records
+config = { width = 800, height = 600, title = 'My App' }
+----
+
+[[sec-the-jit-library]]
+=== The `jit` Library
+indexterm:[library, jit] The `jit` library provides programmatic control over the JIT compiler.  It is always available and requires no explicit import.
+
+[discrete]
+==== jit.on()
+
+[.api]`jit.on([Target], [Recursive])`
+
+Enables JIT compilation.  If called with no arguments, enables the JIT engine globally.  If `Target` is a function, enables JIT compilation for that function.  If `Recursive` is `true`, enables compilation for all sub-functions of `Target`; if `false`, enables only for direct sub-functions.
+
+[source,tiri]
+----
+jit.on()              -- enable globally
+jit.on(myFunc)        -- enable for myFunc only
+jit.on(myFunc, true)  -- enable for myFunc and all sub-functions
+----
+
+[discrete]
+==== jit.off()
+
+[.api]`jit.off([Target], [Recursive])`
+
+Disables JIT compilation.  Arguments behave identically to `jit.on()`.  Disabling the JIT for a function forces it to execute in the interpreter.
+
+[source,tiri]
+----
+jit.off()             -- disable globally
+jit.off(myFunc)       -- disable for myFunc only
+----
+
+[discrete]
+==== jit.flush()
+
+[.api]`jit.flush([Target])`
+
+Flushes compiled traces.  If called with no arguments, flushes all traces and resets the JIT engine.  If `Target` is a number, flushes the trace with that trace number.  If `Target` is a function, flushes traces associated with that function.
+
+[source,tiri]
+----
+jit.flush()           -- flush all traces
+jit.flush(42)         -- flush trace number 42
+jit.flush(myFunc)     -- flush traces for myFunc
+----
+
+[discrete]
+==== jit.status()
+
+[.api]`enabled, flags = jit.status()`
+
+Returns whether the JIT is enabled and a table of CPU feature flags and optimisation flags.  Each key in the table is a flag name (e.g. `'SSE3'`, `'fold'`, `'cse'`) and the value is a boolean indicating whether that flag is active.
+
+[source,tiri]
+----
+enabled, flags = jit.status()
+print(enabled)        -- true
+print(flags.SSE3)     -- true (if SSE3 is available)
+print(flags.fold)     -- true (if fold optimisation is enabled)
+----
+
+[discrete]
+==== jit.attach()
+
+[.api]`jit.attach(Callback, Event)`
+
+Attaches `Callback` to a VM event.  `Event` is a string naming the event type.  Calling `jit.attach(Callback)` without an event string detaches the callback from all events.
+
+This function is intended for profilers and diagnostic tools.  Attached callbacks execute in the interpreter and are not JIT-compiled.
+
+==== Event Types
+
+[cols="1,4a",options="header"]
+|===
+|Event |Description
+
+|`"trace"`
+|Fires during trace lifecycle events.  The callback receives `(Reason, pass:[...])` where `Reason` is one of `"start"`, `"stop"`, `"flush"`, or `"abort"`.  For `"start"`, additional arguments are `(TraceNo, Func, PC)` and, if a side trace, `(Parent, ExitNo)`.  For `"stop"`, additional arguments are `(TraceNo, Func)`.  For `"abort"`, additional arguments are `(TraceNo, Func, PC, ErrorObject, ErrorInfo)`.  `"flush"` has no additional arguments.
+
+|`"record"`
+|Fires when a bytecode instruction is recorded into a trace.  The callback receives `(TraceNo, Func, PC, FrameDepth)` — the trace number, function being recorded, bytecode position, and the current frame stack depth.
+
+|`"texit"`
+|Fires when a compiled trace exits back to the interpreter.  The callback receives `(TraceNo, ExitNo, NumGPRs, NumFPRs, pass:[...]GPRValues, pass:[...]FPRValues)` — the trace number, exit point taken, register counts, and register values at the point of exit.
+
+|`"bc"`
+|Fires when a function prototype is compiled during script parsing.  The callback receives `(Proto)` — the compiled function prototype.
+|===
+
+[source,tiri]
+----
+-- Count trace events
+trace_events = 0
+function trace_handler(Reason, TraceNo)
+   trace_events++
+end
+
+jit.attach(trace_handler, "trace")
+-- ... run code that triggers tracing ...
+jit.attach(trace_handler)  -- detach
+----
+
+[[sec-jit-utilities]]
+=== JIT Utilities
+indexterm:[JIT, utilities] The `jit.util` sub-table provides low-level introspection into compiled traces and function bytecode.  These functions are intended for profilers, debuggers, and diagnostic tools.
+
+[discrete]
+==== jit.util.funcInfo()
+
+[.api]`info = jit.util.funcInfo(Func, [PC])`
+
+Returns a table of reflective information about `Func`.  If `Func` is a Tiri function, the table contains bytecode metadata.  If `Func` is a C function, only address and upvalue count are returned.  `PC` optionally selects a specific bytecode position.
+
+For Tiri functions, the returned table contains:
+
+[cols="2,1,4a",options="header"]
+|===
+|Field |Type |Description
+
+|`lineDefined`
+|number
+|First source line of the function.
+
+|`lastLineDefined`
+|number
+|Last source line of the function.
+
+|`stackSlots`
+|number
+|Frame size in stack slots.
+
+|`params`
+|number
+|Number of fixed parameters.
+
+|`byteCodes`
+|number
+|Number of bytecode instructions.
+
+|`gcConsts`
+|number
+|Number of GC (Garbage Collector) constants.
+
+|`nConsts`
+|number
+|Number of numeric constants.
+
+|`upvalues`
+|number
+|Number of upvalues.
+
+|`currentLine`
+|number
+|Source line at `PC` (if `PC` is within range).
+
+|`isVarArg`
+|boolean
+|Whether the function accepts variadic arguments.
+
+|`children`
+|boolean
+|Whether the function contains inner function definitions.
+
+|`source`
+|string
+|Source file name.
+
+|`loc`
+|string
+|Human-readable source location string.
+
+|`proto`
+|proto
+|The function prototype object.
+|===
+
+For C functions:
+
+[cols="2,1,4a",options="header"]
+|===
+|Field |Type |Description
+
+|`ffid`
+|number
+|Fast function ID (if applicable).
+
+|`addr`
+|number
+|C function pointer address.
+
+|`upvalues`
+|number
+|Number of upvalues.
+|===
+
+[discrete]
+==== jit.util.funcBC()
+
+[.api]`ins, mode = jit.util.funcBC(Func, PC)`
+
+Returns the raw bytecode instruction word and its mode byte at position `PC` in `Func`.  Returns nothing if `PC` is out of range.
+
+[discrete]
+==== jit.util.funcK()
+
+[.api]`value = jit.util.funcK(Func, Idx)`
+
+Returns the constant at index `Idx` in the prototype of `Func`.  Non-negative indices access numeric constants; negative indices access GC constants.  Returns nothing if the index is out of range.
+
+[discrete]
+==== jit.util.funcUName()
+
+[.api]`name = jit.util.funcUName(Func, Idx)`
+
+Returns the name of the upvalue at index `Idx` in the prototype of `Func`.  Returns nothing if the index is out of range.
+
+[discrete]
+==== jit.util.traceInfo()
+
+[.api]`info = jit.util.traceInfo(TraceNo)`
+
+Returns a table of high-level information about the compiled trace numbered `TraceNo`.  Returns nothing if the trace does not exist.
+
+[cols="2,1,4a",options="header"]
+|===
+|Field |Type |Description
+
+|`nins`
+|number
+|Number of IR instructions in the trace.
+
+|`nk`
+|number
+|Number of IR constants in the trace.
+
+|`link`
+|number
+|Trace number this trace links to.
+
+|`nexit`
+|number
+|Number of exit points (snapshots).
+
+|`linktype`
+|string
+|Link type: `'none'`, `'root'`, `'loop'`, `'tail-recursion'`, `'up-recursion'`, `'down-recursion'`, `'interpreter'`, `'return'`, or `'stitch'`.
+
+|`tryStores`
+|number
+|Try materialisation stores emitted while recording this trace.
+
+|`trySkippedStores`
+|number
+|Try materialisation stores skipped by tracking.
+
+|`tryEnterStores`
+|number
+|Forced stores emitted at try-block entry.
+
+|`tryEnterSnapRemoved`
+|number
+|Snapshot entries removed near try-block entry.
+|===
+
+[discrete]
+==== jit.util.traceIR()
+
+[.api]`mode, ot, op1, op2, prev = jit.util.traceIR(TraceNo, Idx)`
+
+Returns the IR instruction metadata at index `Idx` in trace `TraceNo`.  `mode` encodes the operand modes, `ot` is the opcode and type, `op1` and `op2` are operands, and `prev` is the previous instruction in the same chain.  Returns nothing if the index is out of range.
+
+[discrete]
+==== jit.util.traceK()
+
+[.api]`value, type, slot = jit.util.traceK(TraceNo, Idx)`
+
+Returns the IR constant at index `Idx` in trace `TraceNo`.  `type` is the IR type number.  `slot` is returned only for slot-referenced constants.
+
+[discrete]
+==== jit.util.traceSnap()
+
+[.api]`snap = jit.util.traceSnap(TraceNo, SnapNo)`
+
+Returns a table describing snapshot `SnapNo` in trace `TraceNo`.  Index 0 contains the snapshot reference, index 1 contains the slot count, and subsequent entries contain packed slot map data.
+
+[discrete]
+==== jit.util.traceMC()
+
+[.api]`mcode, addr, loop = jit.util.traceMC(TraceNo)`
+
+Returns the machine code for trace `TraceNo` as a binary string, the address of the machine code in memory, and the loop entry offset.  Returns nothing if the trace has no machine code.
+
+[discrete]
+==== jit.util.traceExitStub()
+
+[.api]`addr = jit.util.traceExitStub([TraceNo], ExitNo)`
+
+Returns the address of the exit stub for the given exit number.  On architectures with per-group exit stubs, only `ExitNo` is required.  On other architectures, both `TraceNo` and `ExitNo` are required.
+
+[discrete]
+==== jit.util.irCallAddr()
+
+[.api]`addr = jit.util.irCallAddr(Idx)`
+
+Returns the C function address associated with IR call index `Idx`.
+
+[[sec-jit-options]]
+=== JIT Options
+[discrete]
+==== jit.opt.start()
+
+[.api]`jit.opt.start([pass:[...]Flags])`
+
+indexterm:[JIT, options] Configures JIT optimisation levels, flags, and parameters.  If called with no arguments, resets to the default optimisation level (level 3).  Each argument is a string specifying a level, flag, or parameter.
+
+==== Optimisation Levels
+
+A single digit `'0'` through `'3'` sets a predefined combination of optimisation flags:
+
+[cols="1,6a",options="header"]
+|===
+|Level |Flags Enabled
+
+|`0`
+|No optimisations.
+
+|`1`
+|`fold`, `cse`, `dce`.
+
+|`2`
+|Level 1 + `narrow`, `loop`.
+
+|`3`
+|Level 2 + `fwd`, `dse`, `abc`, `sink`, `fuse`.  This is the default.
+|===
+
+==== Optimisation Flags
+
+Individual flags are enabled with `+flag` or the bare flag name, and disabled with `-flag` or `noflag`.
+
+[cols="2,5a",options="header"]
+|===
+|Flag |Description
+
+|`fold`
+|Constant folding and simplification.
+
+|`cse`
+|Common subexpression elimination.
+
+|`dce`
+|Dead code elimination.
+
+|`narrow`
+|Narrowing of number types to integers where safe.
+
+|`loop`
+|Loop optimisations.
+
+|`fwd`
+|Load forwarding and store-to-load propagation.
+
+|`dse`
+|Dead store elimination.
+
+|`abc`
+|Array bounds check elimination.
+
+|`sink`
+|Allocation sinking — delays object allocation until a side exit requires it.
+
+|`fuse`
+|Instruction fusion — combines adjacent operations into single machine instructions.
+|===
+
+[source,tiri]
+----
+jit.opt.start(3)               -- reset to default (level 3)
+jit.opt.start(2, '-loop')      -- level 2 without loop optimisation
+jit.opt.start('+fold', '+cse') -- enable specific flags only
+----
+
+==== Tuneable Parameters
+
+Parameters are set with `'name=value'` strings.  All values are non-negative integers.
+
+[cols="2,1,5a",options="header"]
+|===
+|Parameter |Default |Description
+
+|`maxtrace`
+|1000
+|Maximum number of traces in the trace cache.
+
+|`maxrecord`
+|4000
+|Maximum IR instructions recorded per trace.
+
+|`maxirconst`
+|500
+|Maximum IR constants per trace.
+
+|`maxside`
+|100
+|Maximum side traces per root trace.
+
+|`maxsnap`
+|500
+|Maximum snapshots per trace.
+
+|`minstitch`
+|0
+|Minimum IR instructions for a stitched trace.
+
+|`hotloop`
+|56
+|Iterations before a loop is considered hot.
+
+|`hotexit`
+|10
+|Taken side exits before a side trace is compiled.
+
+|`tryside`
+|4
+|Compilation attempts per side trace.
+
+|`instunroll`
+|4
+|Maximum unroll factor for unstable loops.
+
+|`loopunroll`
+|15
+|Maximum unroll for loop operations in side traces.
+
+|`callunroll`
+|3
+|Maximum unroll for recursive calls.
+
+|`recunroll`
+|2
+|Minimum unroll for true recursion.
+
+|`sizemcode`
+|32 or 64
+|Size of each machine code area in KB.  Default is 64 on 64-bit platforms and Windows, 32 elsewhere.
+
+|`maxmcode`
+|512
+|Maximum total size of all machine code areas in KB.
+|===
+
+[source,tiri]
+----
+jit.opt.start('hotloop=100')      -- require more iterations before tracing
+jit.opt.start('maxtrace=2000')    -- increase trace cache size
+jit.opt.start(3, 'hotloop=100')   -- combine level and parameter
+----
+
+[[sec-common-performance-pitfalls]]
+=== Common Performance Pitfalls
+==== Type Instability
+
+The most significant JIT performance issue is type instability within hot loops.  When a variable changes type between iterations, the JIT inserts a guard that fails on subsequent iterations, causing repeated side exits and preventing effective compilation.
+
+[source,tiri]
+----
+-- Pitfall: mixed types in accumulator
+result = 0
+for i in {0 to 999} do
+   result = (i > 500) ? tostring(i) :> i   -- type changes mid-loop
+end
+----
+
+Ensure that variables within hot loops maintain a consistent type throughout all iterations.
+
+==== Global Variable Access in Hot Paths
+
+Accessing global variables requires a hash table lookup on every access.  In performance-critical loops, cache globals in local variables.
+
+[source,tiri]
+----
+-- Slow: global lookup every iteration
+for i in {0 to 999} do
+   math.sin(i)
+end
+
+-- Fast: cached local
+sin = math.sin
+for i in {0 to 999} do
+   sin(i)
+end
+----
+
+==== String Concatenation in Loops
+
+Each string concatenation allocates a new string object.  Building strings incrementally in a loop creates O(n) allocations and copies.
+
+[source,tiri]
+----
+-- Slow: O(n) allocations
+result = ''
+for i in {0 to 999} do
+   result ..= tostring(i)
+end
+
+-- Fast: collect into table, join once
+parts = {}
+for i in {0 to 999} do
+   parts[i] = tostring(i)
+end
+result = table.concat(parts)
+----
+
+==== NYI Operations
+
+Certain operations are not yet implemented in the JIT compiler.  When the trace recorder encounters a NYI operation, it aborts recording and the code falls back to the interpreter.  Common NYI triggers include:
+
+* `pairs()` and `next()` iteration — use `ipairs()`, `values()`, or numeric `for` loops where possible.
+* `table.sort()` with complex comparison functions.
+
+Use `jit.off()` on functions that unavoidably contain NYI operations to prevent the JIT from repeatedly attempting and failing to compile them.
+
+==== Excessive Trace Flushes
+
+Calling `jit.flush()` discards all compiled traces, forcing recompilation.  Avoid flushing in production code unless responding to a specific need such as code hot-reloading.
+
+==== Deep Nesting and Long Traces
+
+Deeply nested function calls and very long loop bodies generate large traces that may exceed `maxrecord` or `maxsnap` limits, causing trace aborts.  Refactor deeply nested hot paths into smaller functions to help the JIT produce shorter, more focused traces.

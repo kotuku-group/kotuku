@@ -1,0 +1,99 @@
+// VERIFIED: 2026-02-10
+
+[[ch-introduction]]
+== Introduction
+[[sec-what-is-tiri]]
+=== What Is Tiri?
+
+indexterm:[Tiri] indexterm:[Kōtuku] Tiri is a programming language derived from Lua and built on the LuaJIT virtual machine.  It is the primary programming interface for the Kōtuku application framework, and has evolved to fully accommodate Kōtuku's object model such that the two are fully co-dependent.
+
+The Tiri engine features a hard fork of the LuaJIT virtual machine and retains the core execution model -- a register-based virtual machine with trace-compiled JIT -- while rewriting large portions of the engine and extending the language with features absent from standard Lua.  These changes include zero-based indexing, compound assignment operators, true exception handling, annotations, string interpolation, ranges, regex support, contiguous arrays and much more.  As many Lua constructs are removed or replaced, any pre-existing assumptions about Lua semantics should be discarded when learning Tiri.
+
+Tiri does not maintain backwards compatibility with Lua.  Code written for standard Lua or LuaJIT requires migration.  See <<appendix-migration-from-lua>> for a comprehensive guide.
+
+[[sec-design-goals]]
+=== Design Goals
+
+Minimalism::
+We want developers to be able to write code quickly and with minimal boilerplate.  Type inference eliminates explicit type declarations.  Safe navigation, compound operators, and string interpolation reduce verbosity.  Less code also gives way to more optimisation opportunities for the compiler and virtual machine.
+
+Simplicity::
+Tiri needed to be easy to learn and understand, with a minimal set of core concepts.  Using Lua as a foundational language and maintaining its core principles of simplicity and flexibility was a natural choice.
+
+Intuitiveness::
+Ensure logical, consistent syntax and semantics.  Lua features that conflicted with these goals were removed rather than preserved.  Behaviours are largely predictable and consistent across different constructs, with few special cases or exceptions to learn.
+
+Interoperability::
+Tiri has seamless access to all Kōtuku C++ APIs and can interact with C++ classes.  The Kōtuku API documentation is the same for C++ as it is for Tiri, without language-specific translations.  Host system abstraction eliminates the battle of needing to interact with POSIX or Win32 APIs when needing to engage in system-level programming.
+
+Performance::
+Good design can maximise execution speed for code produced by the compiler and virtual machine.  Features such as arrays enable faster processing of sequential data.  The type system permits more efficient code paths with added type safety guarantees.  Under-the-hood changes, such as the switch to 64-bit exclusive design, new opcodes and a re-written parser, allow for more efficient execution and better optimisation opportunities.
+
+[[sec-installing-kotuku]]
+=== Installing Tiri and Kōtuku
+
+Tiri forms an integral part of the Kōtuku framework, and there is no standalone Tiri distribution.  Installing Kōtuku will provide access to the Tiri runtime and tools, including the `origo` executable, which serves as the Tiri interpreter and application launcher.
+
+Pre-built packages are available from the Kōtuku website.  To build from source, clone the repository and follow the platform-specific build instructions in the Kōtuku documentation.
+
+After installation, verify the environment by running:
+
+[source,bash]
+----
+origo --version
+----
+
+This prints the version string, git commit hash, and build type.
+
+[[sec-running-scripts]]
+=== Running Scripts
+indexterm:[scripts, running] indexterm:[Origo] Execute a Tiri script by passing its path to `origo`:
+
+[source,bash]
+----
+origo myscript.tiri
+----
+
+Named arguments are passed as key-value pairs after the script path:
+
+[source,bash]
+----
+origo myscript.tiri name='John' surname=Bloggs
+----
+
+These arguments are accessible within the script as pre-defined local variables.
+
+To enable diagnostic log output, append `--log-warning` for warnings or `--log-api` for detailed API-level logging.
+Log output is directed to standard error.  Run `origo --help` for the full list of available options.
+
+[[sec-hello-world]]
+=== Hello World
+
+The following script prints a message to standard output:
+
+[source,tiri]
+----
+print('Hello, world')
+----
+
+Save this as `hello.tiri` and run it with `origo hello.tiri` to see the output:
+
+[source]
+----
+Hello, world
+----
+
+Notice that no entry-point function was declared in the script.  Tiri scripts execute top-to-bottom and the script body is the main program.
+
+[[sec-file-recognition]]
+=== File Recognition
+
+Tiri source files use the `.tiri` file extension.  To completely avoid ambiguity, script files can also start with an optional shebang line and the official identification comment:
+
+[source,tiri]
+----
+#!/usr/bin/env origo
+-- $TIRI
+----
+
+Th `$TIRI` marker allows tools, editors, and the runtime to distinguish Tiri scripts where they might not have access to the file name.

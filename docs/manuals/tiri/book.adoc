@@ -1,0 +1,168 @@
+// This manual is governed by the style guide rules specified in AGENTS.md in this folder.  Please refer to that document before making modifications.
+
+= Tiri Reference Manual: {copyright}
+Paul Manias
+:doctype: book
+:copyright: © 2026 Paul Manias.  All rights reserved.
+:pdf-themesdir: {docdir}
+:pdf-theme: tiri-theme.yml
+:imagesdir: images/
+:title-logo-image: image:tiri.svg[Tiri,200]
+:source-highlighter: rouge
+:source-language: lua
+:icons: font
+:revnumber: 0.2
+:revdate: May 2026
+:revremark: Draft
+:toc: macro
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 3
+:index:
+
+toc::[]
+
+[preface]
+== Foreword
+
+// TODO: Add foreword content here.
+
+[preface]
+== Acknowledgements
+
+The following projects and their contributors have my deepest gratitude for their contributions to the open source eco-sphere.  Tiri would not be possible without them:
+
+LuaJIT::
+Mike Pall +
+https://luajit.org/
+
+Lua::
+Roberto Ierusalimschy, Luiz Henrique de Figueiredo, Waldemar Celes +
+https://www.lua.org/
+
+Antigrain Geometry Library::
+Maxim Shemanarev +
+https://en.wikipedia.org/wiki/Anti-Grain_Geometry
+
+SRELL Std::Regex-Like Library::
+Nozomu Katoo +
+https://www.akenotsuki.com/misc/srell/en/
+
+ZLib Compression Library::
+Jean-loup Gailly and Mark Adler +
+https://zlib.net/
+
+The FreeType project::
+David Turner, Robert Wilhelm, and Werner Lemberg +
+https://www.freetype.org/
+
+Katana CSS Parser::
+https://github.com/hackers-painters/katana-parser
+
+
+// Part I: Language Fundamentals
+
+= Language Fundamentals
+
+include::ch01_introduction.adoc[]
+
+include::ch02_basic_syntax.adoc[]
+
+include::ch03_types_and_values.adoc[]
+
+include::ch04_variables_and_scoping.adoc[]
+
+include::ch05_operators.adoc[]
+
+include::ch06_control_flow.adoc[]
+
+include::ch07_functions.adoc[]
+
+// Part II: Data Structures
+
+= Data Structures
+
+include::ch08_strings.adoc[]
+
+include::ch09_tables.adoc[]
+
+include::ch10_arrays.adoc[]
+
+include::ch11_ranges.adoc[]
+
+include::ch12_mathematics.adoc[]
+
+// Part III: Intermediate Language Features
+
+= Intermediate Language Features
+
+include::ch13_error_handling.adoc[]
+
+include::ch14_resource_management.adoc[]
+
+include::ch15_pattern_matching.adoc[]
+
+include::ch16_type_system.adoc[]
+
+include::ch17_regular_expressions.adoc[]
+
+include::ch18_result_management.adoc[]
+
+include::ch19_script_organisation.adoc[]
+
+// Part IV: Kōtuku Integration
+
+= Kōtuku Integration
+
+include::ch20_the_object_system.adoc[]
+
+include::ch21_modules_and_structures.adoc[]
+
+include::ch22_processing_and_events.adoc[]
+
+include::ch23_file_io.adoc[]
+
+include::ch24_input_handling.adoc[]
+
+include::ch25_threading.adoc[]
+
+// Part V: Advanced Topics
+
+= Advanced Topics
+
+include::ch26_metatables_and_metamethods.adoc[]
+
+include::ch27_annotations_and_preprocessing.adoc[]
+
+include::ch28_the_debug_library.adoc[]
+
+include::ch29_performance_and_the_jit.adoc[]
+
+include::ch30_logging_and_diagnostics.adoc[]
+
+// Part VI: Tools
+
+= Tools
+
+include::ch31_origo.adoc[]
+
+include::ch32_tiri_lsp.adoc[]
+
+// Appendices
+
+= Appendices
+
+include::appendix_a_migration_from_lua.adoc[]
+
+include::appendix_b_operator_precedence.adoc[]
+
+include::appendix_c_error_code_reference.adoc[]
+
+include::appendix_d_reserved_words.adoc[]
+
+include::appendix_e_standard_library_quick_reference.adoc[]
+
+include::appendix_f_glossary.adoc[]
+
+[index]
+== Index

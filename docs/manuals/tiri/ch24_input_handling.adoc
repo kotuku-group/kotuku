@@ -1,0 +1,687 @@
+// VERIFIED: 2026-02-15
+
+[[ch-input-handling]]
+== Input Handling
+indexterm:[input handling] Kōtuku provides a unified input handling model for pointer devices (mice, trackpads, touchscreens, graphics tablets) and keyboards.  Input events are dispatched during the processing loop (see <<ch-processing-and-events>>) and delivered to registered callbacks.
+
+Two subscription models exist:
+
+* **Vector-level subscriptions** attach directly to a `VectorViewport` or `Vector` object.  Events are filtered by the vector's clipping region and coordinates are transformed into the vector's local coordinate system.  This is the preferred model for GUI programming.
+* **Global subscriptions** use the `input` namespace to receive raw device events, optionally filtered by a `Surface`.  These are lower-level and typically used to interface with the host system (Windows or Linux display).
+
+Both models have a dependency on the `display` module:
+
+[source,tiri]
+----
+include 'display'
+----
+
+[[sec-subscribing-to-input]]
+=== Subscribing to Input
+[discrete]
+[[sec-vector-input-subscriptions]]
+==== Vector Input Subscriptions
+
+indexterm:[input subscriptions] Calling `mtSubscribeInput()` on any `Vector` or `VectorViewport` object creates a subscription for pointer and device events scoped to that vector's clipping region.
+
+[.api]`viewport.mtSubscribeInput(Mask, Callback)`
+
+`Mask` is a combination of `JTYPE` flags that define which event categories to receive.  `Callback` is a function that receives the vector and an `InputEvent` chain.
+
+The `Callback` prototype is `function(Viewport, Event)`.  `Event` is the first node of a linked list of `InputEvent` structures.  Traverse the chain by following the `next` field until it is `nil`:
+
+[source,tiri]
+----
+viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT,
+   function(Viewport, Msg)
+      while Msg do
+         if Msg.type is JET_BUTTON_1 then
+            if Msg.value > 0 then
+               print(f'Click at {Msg.x}, {Msg.y}') <1>
+            end
+         elseif Msg.type is JET_ABS_XY then
+            print(f'Move to {Msg.x}, {Msg.y}')
+         end
+         Msg = Msg.next
+      end
+   end)
+----
+<1> Coordinates in `x` and `y` are relative to the subscribing vector's coordinate system.  `absX` and `absY` are always relative to the top-left corner of the display.
+
+To receive pointer crossing events (`JET_CROSSED_IN` and `JET_CROSSED_OUT`), include `JTYPE_CROSSING` in the mask:
+
+[source,tiri]
+----
+viewport.mtSubscribeInput(JTYPE_CROSSING,
+   function(Viewport, Msg)
+      while Msg do
+         if Msg.type is JET_CROSSED_IN then
+            -- Pointer entered the viewport
+         elseif Msg.type is JET_CROSSED_OUT then
+            -- Pointer left the viewport
+         end
+         Msg = Msg.next
+      end
+   end)
+----
+
+[discrete]
+===== JTYPE Mask Flags
+
+The following flags control which event categories the subscription receives.  Combine flags with the bitwise OR operator.
+
+[cols="1,3a",options="header"]
+|===
+|Flag |Description
+
+|`JTYPE_BUTTON`
+|Physical button press and release events.
+
+|`JTYPE_MOVEMENT`
+|X/Y coordinate movement.  Does not include extended movement such as mouse wheel rotation.
+
+|`JTYPE_EXT_MOVEMENT`
+|Extended movement events including mouse wheel rotation and pen tilt.
+
+|`JTYPE_CROSSING`
+|Pointer entering (`CROSSED_IN`) and leaving (`CROSSED_OUT`) the vector's clipping area.
+
+|`JTYPE_REPEATED`
+|Repeated events generated when a button is held down.
+
+|`JTYPE_DBL_CLICK`
+|Double-click events.
+
+|`JTYPE_DRAGGED`
+|Set on button release if the pointer moved more than a few pixels between press and release.
+
+|`JTYPE_DRAG_ITEM`
+|Set when the pointer is click-dragging an object.
+|===
+
+[discrete]
+===== JET Event Types
+
+Each `InputEvent` carries a `type` field set to one of the following `JET` constants.
+
+[cols="1,3a",options="header"]
+|===
+|Constant |Description
+
+|`JET_BUTTON_1`
+|Left mouse button.  `value` ranges from `0` (released) to `1.0` (fully depressed).  Alias: `JET_LMB`
+
+|`JET_BUTTON_2`
+|Right mouse button.  Alias: `JET_RMB`
+
+|`JET_BUTTON_3`
+|Middle mouse button.  Alias: `JET_MMB`
+
+|`JET_BUTTON_4` pass:[...] `JET_BUTTON_10`
+|Additional buttons.
+
+|`JET_ABS_XY`
+|Indicates a change in pointer coordinates.  Both (x,y) relative values and (absX,absY) absolute values are defined.
+
+|`JET_WHEEL`
+|Mouse wheel rotation.  `value` reflects the number of clicks rotated.
+
+|`JET_WHEEL_TILT`
+|Tilting mouse wheel.  `value` ranges from `-1.0` to `+1.0` (left to right).
+
+|`JET_CROSSED_IN`
+|Pointer entered the monitored area.  Requires `JTYPE_CROSSING` in the mask.
+
+|`JET_CROSSED_OUT`
+|Pointer left the monitored area.  Requires `JTYPE_CROSSING` in the mask.
+
+|`JET_PRESSURE`
+|Pen/touch pressure.  `value` ranges from `0` (none) to `1.0` (normal) or higher.
+
+|`JET_PEN_TILT_XY`
+|Pen tilt angle.  `0` is pointing down directly with nib at bottom, `0.5` is 90 degrees, `1.0` is inversed (eraser at bottom).
+
+|`JET_DISPLAY_EDGE`
+|The input occurred at the edge of the display.
+|===
+
+[discrete]
+===== InputEvent Fields
+
+Each node in the event chain exposes the following fields.
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`next`
+|InputEvent
+|Next event in the chain, or `nil`.
+
+|`type`
+|JET
+|The event type constant.
+
+|`value`
+|number
+|Value associated with the event type (e.g. button pressure, wheel clicks).
+
+|`flags`
+|JTYPE
+|Broad category flags for the event.  Automatically set on delivery.
+
+|`timestamp`
+|integer
+|Precise timestamp of the event.
+
+|`x`
+|number
+|Horizontal position relative to the subscribing vector's coordinate system.  When a button is held, coordinates remain relative to the surface that received the initial press.
+
+|`y`
+|number
+|Vertical position relative to the subscribing vector's coordinate system.
+
+|`absX`
+|number
+|Absolute horizontal position relative to the display's top-left corner.
+
+|`absY`
+|number
+|Absolute vertical position relative to the display's top-left corner.
+
+|`overID`
+|integer
+|Object ID of the surface directly under the pointer.
+
+|`recipientID`
+|integer
+|Object ID of the surface the event is addressed to.
+
+|`deviceID`
+|integer
+|Object ID of the hardware device that generated the event.
+|===
+
+[discrete]
+==== Feedback Subscriptions
+
+The `mtSubscribeFeedback()` method monitors focus state changes on a vector.
+
+[.api]`viewport.mtSubscribeFeedback(Mask, Callback)`
+
+`Mask` is a combination of `FM` flags.  `Callback` receives the vector and the specific event that occurred.
+
+[source,tiri]
+----
+viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS,
+   function(Viewport, Event)
+      if Event is FM_HAS_FOCUS then
+         -- This vector gained focus
+      elseif Event is FM_CHILD_HAS_FOCUS then
+         -- A child of this vector gained focus
+      elseif Event is FM_LOST_FOCUS then
+         -- This vector lost focus
+      end
+   end)
+----
+
+[cols="1,3a",options="header"]
+|===
+|Flag |Description
+
+|`FM_HAS_FOCUS`
+|The vector gained the user focus.
+
+|`FM_CHILD_HAS_FOCUS`
+|A child of the vector gained the user focus.
+
+|`FM_LOST_FOCUS`
+|The vector lost the user focus.
+
+|`FM_PATH_CHANGED`
+|The vector's path has been modified or affected by a transform.
+|===
+
+To remove a feedback subscription, call `mtSubscribeFeedback()` again with the same callback and an empty mask.  Alternatively, call `raise ERR_Terminate` in the callback.
+
+[discrete]
+==== Global Input Subscriptions
+
+The `input.subscribe()` function creates a subscription for raw device events at the display level.
+
+[.api]`handle = input.subscribe(Mask, [SurfaceFilter], [DeviceFilter], Callback)`
+
+`Mask` uses the same `JTYPE` flags as vector subscriptions.  `SurfaceFilter` restricts events to those targeting a specific `Surface` (pass `nil` to receive all).  `DeviceFilter` is reserved for future use and must be set to `0`.
+
+The callback prototype is `function(Handle, Event)`.  `Handle` is the input subscription object.  `Event` is the first node of an `InputEvent` chain.
+
+[source,tiri]
+----
+handle = input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0,
+   function(Handle, Msg)
+      while Msg do
+         if Msg.type is JET_BUTTON_1 then
+            if Msg.value > 0 then
+               print('Left button pressed')
+            else
+               print('Left button released')
+            end
+         end
+         Msg = Msg.next
+      end
+   end)
+----
+
+Global subscriptions do not transform coordinates to a vector's local space.  `x` and `y` are relative to the surface that the pointer is over, or the surface that received the initial button press while a button is held.
+
+[[sec-keyboard-input]]
+=== Keyboard Input
+indexterm:[keyboard input] Keyboard events are handled separately from pointer events.  Two subscription mechanisms are available.
+
+[discrete]
+==== Vector Keyboard Subscriptions
+
+The `mtSubscribeKeyboard()` method on a `Vector` or `VectorViewport` receives keyboard events when the vector or one of its children has the user focus.
+
+[.api]`viewport.mtSubscribeKeyboard(Callback)`
+
+The `Callback` prototype is `function(Viewport, Qualifiers, Code, Unicode)`.
+
+[cols="1,1,3a",options="header"]
+|===
+|Parameter |Type |Description
+
+|`Viewport`
+|object
+|The vector that owns the subscription.
+
+|`Qualifiers`
+|integer
+|Bitfield of `KQ` flags describing the key state and active modifiers.
+
+|`Code`
+|integer
+|A `KEY` constant identifying the physical key.
+
+|`Unicode`
+|integer
+|The Unicode code-point produced by the key after applying the user's keymap.  Zero for non-printable keys.
+|===
+
+A minimal keyboard handler:
+
+[source,tiri]
+----
+viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
+   if (Qualifiers & KQ_PRESSED) is 0 then return end
+
+   if Code is KEY_ENTER then
+      print('Enter pressed')
+   elseif Unicode > 0 then
+      print(f'Character: {string.char(Unicode)}')
+   end
+end)
+----
+
+To end the subscription, return `ERR_Terminate` from the callback.
+
+[discrete]
+==== Global Keyboard Subscriptions
+
+The `input.keyboard()` function creates a keyboard subscription independent of any vector.
+
+[.api]`handle = input.keyboard([SurfaceFilter], Callback)`
+
+`SurfaceFilter` is an optional `Surface` object or ID.  When set, the callback fires only when that surface has the user focus.  Pass `nil` to receive all keyboard events regardless of focus.
+
+The `Callback` prototype is `function(Handle, SurfaceID, Qualifiers, Code, Unicode)`.  `Handle` is the input subscription object.  `SurfaceID` is the surface that was specified at subscription time (or `0` for global subscriptions).  `Qualifiers`, `Code` and `Unicode` are identical to the vector keyboard callback.
+
+[source,tiri]
+----
+handle = input.keyboard(nil,
+   function(Handle, SurfaceID, Qualifiers, Code, Unicode)
+      if (Qualifiers & KQ_PRESSED) is 0 then return end
+      print(f'Key code {Code}, unicode {Unicode}')
+   end)
+----
+
+[discrete]
+==== Qualifier Flags (KQ)
+
+The `Qualifiers` parameter is a bitfield.  Test individual flags with the bitwise AND operator.
+
+[cols="1,3a",options="header"]
+|===
+|Flag |Description
+
+|`KQ_PRESSED`
+|The key is being pressed or held.
+
+|`KQ_RELEASED`
+|The key is being released.
+
+|`KQ_REPEAT`
+|This is a repeated event from a held key.
+
+|`KQ_L_SHIFT`, `KQ_R_SHIFT`
+|Left or right Shift is held.
+
+|`KQ_SHIFT`
+|Either Shift key is held.  Synonym for `KQ_L_SHIFT \| KQ_R_SHIFT`.
+
+|`KQ_L_CONTROL`, `KQ_R_CONTROL`
+|Left or right Control is held.
+
+|`KQ_CTRL`
+|Either Control key is held.  Synonym for `KQ_L_CONTROL \| KQ_R_CONTROL`.
+
+|`KQ_L_ALT`, `KQ_R_ALT`
+|Left or right Alt is held.
+
+|`KQ_ALT`
+|Either Alt key is held.  Synonym for `KQ_L_ALT \| KQ_R_ALT`.
+
+|`KQ_ALTGR`
+|AltGr key is held.  Synonym for `KQ_R_ALT`.
+
+|`KQ_L_COMMAND`, `KQ_R_COMMAND`
+|Left or right Command/Logo key is held.
+
+|`KQ_COMMAND`
+|Either Command key is held.  Synonym for `KQ_L_COMMAND \| KQ_R_COMMAND`.
+
+|`KQ_CAPS_LOCK`
+|Caps Lock is active.
+
+|`KQ_NUM_LOCK`
+|Num Lock is active.
+
+|`KQ_SCR_LOCK`
+|Scroll Lock is active.
+
+|`KQ_NUM_PAD`
+|The key originates from the numeric keypad.
+
+|`KQ_NOT_PRINTABLE`
+|The key does not produce a printable character.
+
+|`KQ_DEAD_KEY`
+|The key is affected by a previously pressed dead key (accents, diacritics).
+|===
+
+Convenience groups:
+
+* `KQ_QUALIFIERS` = `KQ_SHIFT | KQ_COMMAND | KQ_ALT | KQ_CTRL`
+* `KQ_INSTRUCTION_KEYS` = `KQ_ALT | KQ_CTRL`
+* `KQ_INFO` = `KQ_REPEAT | KQ_RELEASED | KQ_PRESSED | KQ_NOT_PRINTABLE | KQ_CAPS_LOCK`
+
+[discrete]
+==== Key Codes (KEY)
+
+The `Code` parameter identifies the physical key independent of the user's keymap.  Common constants:
+
+[cols="1,1a",options="header"]
+|===
+|Constant |Key
+
+|`KEY_A` pass:[...] `KEY_Z`
+|Letter keys
+
+|`KEY_ZERO` pass:[...] `KEY_NINE`
+|Number row keys
+
+|`KEY_F1` pass:[...] `KEY_F20`
+|Function keys
+
+|`KEY_SPACE`
+|Spacebar
+
+|`KEY_ENTER`
+|Enter/Return
+
+|`KEY_NP_ENTER`
+|Numpad Enter
+
+|`KEY_TAB`
+|Tab
+
+|`KEY_ESCAPE`
+|Escape
+
+|`KEY_BACKSPACE`
+|Backspace
+
+|`KEY_DELETE`
+|Delete
+
+|`KEY_INSERT`
+|Insert
+
+|`KEY_HOME`
+|Home
+
+|`KEY_END`
+|End
+
+|`KEY_PAGE_UP`
+|Page Up
+
+|`KEY_PAGE_DOWN`
+|Page Down
+
+|`KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`
+|Arrow keys
+
+|`KEY_L_SHIFT`, `KEY_R_SHIFT`
+|Shift keys
+
+|`KEY_L_CONTROL`, `KEY_R_CONTROL`
+|Control keys
+
+|`KEY_L_ALT`, `KEY_R_ALT`
+|Alt keys
+
+|`KEY_CAPS_LOCK`
+|Caps Lock
+
+|`KEY_NUM_LOCK`
+|Num Lock
+
+|`KEY_NP_0` pass:[...] `KEY_NP_9`
+|Numpad digits
+
+|`KEY_NP_PLUS`, `KEY_NP_MINUS`, `KEY_NP_MULTIPLY`, `KEY_NP_DIVIDE`
+|Numpad operators
+|===
+
+[discrete]
+==== Keyboard Input Example
+
+The following example displays typed characters in a window:
+
+[source,tiri]
+----
+include 'display'
+import 'gui/window'
+
+win = gui.window({
+   title  = 'Keyboard Demo',
+   width  = 400,
+   height = 200,
+   center = true,
+   quit   = true
+})
+
+viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+
+text = viewport.new('VectorText', {
+   string = 'Press a key', face = 'Noto Sans', fontSize = 60,
+   y = 50, x = 10, fill = 'rgb(0,0,0)'
+})
+
+glChars = ''
+viewport.mtSubscribeKeyboard(function(Viewport, Flags, Value, Unicode)
+   if Unicode > 0 then
+      glChars ..= string.char(Unicode)
+      glChars = glChars:substr(-10)
+   end
+   text.string = f'Flags: {string.format("0x%x", Flags)}\nCode: {Value}\n{glChars}'
+   viewport.acDraw()
+end)
+
+win:show()
+processing.sleep()
+----
+
+[[sec-drag-and-drop]]
+=== Drag and Drop
+indexterm:[drag and drop] Kōtuku supports two forms of dragging: **viewport dragging** (moving a viewport around the scene) and **data dropping** (transferring data between objects via the clipboard).
+
+[discrete]
+==== Viewport Dragging
+
+A `VectorViewport` can be made draggable by setting its `dragCallback` field.  When the user clicks and drags the viewport, the callback receives the desired target coordinates.
+
+[.api]`viewport.dragCallback = function(Viewport, X, Y, [OriginX], [OriginY])`
+
+[cols="1,1,3a",options="header"]
+|===
+|Parameter |Type |Description
+
+|`Viewport`
+|object
+|The viewport being dragged.
+
+|`X`
+|number
+|Proposed horizontal position.
+
+|`Y`
+|number
+|Proposed vertical position.
+
+|`OriginX`
+|number
+|The viewport's `x` position at the start of the drag.
+
+|`OriginY`
+|number
+|The viewport's `y` position at the start of the drag.
+|===
+
+For unimpeded dragging, set the viewport's position to match the incoming coordinates:
+
+[source,tiri]
+----
+viewport.dragCallback = function(Viewport, X, Y)
+   Viewport.x = X
+   Viewport.y = Y
+   Viewport.acDraw()
+end
+----
+
+To constrain dragging to a single axis:
+
+[source,tiri]
+----
+-- Horizontal only
+slider.dragCallback = function(Viewport, X, Y)
+   Viewport.x = X
+   Viewport.acDraw()
+end
+----
+
+Setting `dragCallback` to `nil` disables dragging.
+
+The associated `VectorScene` must be linked to a `Surface` for drag detection to function.
+
+[discrete]
+==== Data Dropping
+
+Dropping data between objects is supported by the `Clipboard` class.  The protocol consists of three parts: a drag source that provides data, a drop target that accepts it, and the `input.requestItem()` function to mediate the transfer.
+
+[discrete]
+===== Creating a Drag Source
+
+Create a `Clipboard` with the `DragDrop` flag and a `requestHandler` that provides data on demand:
+
+[source,tiri]
+----
+clipboard = obj.new('clipboard', {
+   flags = '!DragDrop',
+   requestHandler = function(Clipboard, Requester, Item, Datatypes)
+      if Datatypes[0] is DATA_FILE then
+         Requester.acDataFeed(Clipboard, DATA_RECEIPT, receiptXML)
+      end
+   end
+})
+clipboard.detach()
+----
+
+[discrete]
+===== Requesting Dropped Data
+
+When a drop event is received, use `input.requestItem()` to retrieve data from the source.
+
+[.api]`input.requestItem(Source, Item, DataType, Callback)`
+
+[cols="1,1,3a",options="header"]
+|===
+|Parameter |Type |Description
+
+|`Source`
+|object/integer
+|The source object providing data.
+
+|`Item`
+|integer
+|The item identifier from the drop event.
+
+|`DataType`
+|string
+|The requested data type: `'text'`, `'file'`, `'image'`, `'xml'`, `'raw'`, `'audio'`, `'content'`.
+
+|`Callback`
+|function
+|Receives the resulting data items.
+|===
+
+[source,tiri]
+----
+input.requestItem(source, item, 'file',
+   function(Items)
+      for entry in values(Items) do
+         if 'file' is entry.item then
+            print(f'Received file: {entry.path}')
+         end
+      end
+   end)
+----
+
+[[sec-unsubscribing]]
+=== Unsubscribing
+[discrete]
+==== Vector Subscriptions
+
+indexterm:[input subscriptions, unsubscribing] Vector input subscriptions created with `mtSubscribeInput()` are removed by calling the method again with the same callback and an empty mask.  Alternatively, `raise ERR_Terminate` in the callback to end the subscription immediately.
+
+Vector keyboard subscriptions created with `mtSubscribeKeyboard()` are removed by returning `ERR_Terminate` from the callback.
+
+Feedback subscriptions created with `mtSubscribeFeedback()` are removed by calling the method again with the same callback and an empty mask, or with `raise ERR_Terminate`.
+
+[discrete]
+==== Global Subscriptions
+
+Global subscriptions created with `input.subscribe()` or `input.keyboard()` return an input handle object.  Call `unsubscribe()` on the handle to remove the subscription and release associated resources.
+
+[source,tiri]
+----
+handle = input.subscribe(JTYPE_BUTTON, nil, 0,
+   function(Handle, Msg)
+      -- Process events...
+   end)
+
+-- Later, when the subscription is no longer needed:
+handle.unsubscribe()
+----

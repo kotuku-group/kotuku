@@ -1,0 +1,609 @@
+// VERIFIED: 2026-02-14
+
+[[ch-processing-and-events]]
+== Processing & Events
+indexterm:[processing loop] indexterm:[events] Kōtuku is an event-driven framework.  Programs interact with the system by entering a processing loop that dispatches messages, fires timers, and monitors signals.  This chapter defines the `processing` interface, the event subsystem, and the available garbage collector controls.
+
+All processing functions are accessed through the `processing` namespace.
+
+[[sec-the-processing-loop]]
+=== The Processing Loop
+indexterm:[processing loop] A Tiri script that creates a GUI or performs asynchronous I/O must enter the processing loop to receive and dispatch messages.  The loop is entered by calling `processing.sleep()`.
+
+==== processing.sleep()
+
+[.api]`err = processing.sleep([Seconds])`
+
+Enters the processing loop.  While sleeping, the runtime dispatches queued messages, fires timer callbacks, and processes platform events (window repaints, input, network I/O).  Returns an `ERR` code indicating the reason for waking.
+
+`Seconds` specifies the maximum time to sleep in seconds.  If omitted or negative, the call blocks indefinitely until a quit message is received or all monitored signals fire.  A value of `0` processes all outstanding messages and returns immediately.
+
+[source,tiri]
+----
+-- Block until the user closes the window
+processing.sleep()
+
+-- Process outstanding messages without blocking
+processing.sleep(0)
+
+-- Sleep for up to 5 seconds, wake early on signal
+processing.sleep(5.0)
+----
+
+The garbage collector runs a full collection cycle on entry to `processing.sleep()` before the runtime begins waiting for events.  Exceptions apply if `Seconds` is `0` or the garbage collector is disabled by the script.
+
+🔥Encapsulating processing.sleep() in a `try` statement will promote errors to exceptions.
+
+.Processing loop architecture
+image::processing_loop.svg[]
+
+[discrete]
+==== Return Codes
+
+[cols="1,3a",options="header"]
+|===
+|Code |Meaning
+
+|`ERR_Okay`
+|All monitored signals fired, or messages were processed successfully.
+
+|`ERR_Terminate`
+|A MSGID_QUIT message was received.  The script is expected to exit.
+
+|`ERR_Timeout`
+|The specified timeout elapsed before all signals fired.
+|===
+
+[discrete]
+==== Application Pattern
+
+A standard Tiri application creates its user interface, then enters the processing loop.  The loop returns when the user closes the main window:
+
+[source,tiri]
+----
+include 'display'
+import 'gui/window'
+
+win = gui.window({
+   title   = 'Hello',
+   width   = 400,
+   height  = 300,
+   center  = true,
+   quit    = true
+})
+
+win:show()
+processing.sleep()
+----
+
+==== processing.halt()
+
+[.api]`processing.halt(Seconds)`
+
+Blocks the calling process for `Seconds` seconds while dispatching messages in the background.  Unlike `processing.sleep()`, the call cannot be woken early by a signal — it always runs for the full duration.
+
+`Seconds` must be a non-negative number.  A value of `0` processes all outstanding messages and returns immediately.
+
+The garbage collector runs a full collection cycle before sleeping, unless `Seconds` is `0` or the garbage collector has been disabled.
+
+Raises an exception if `Seconds` is not a number, or if it is negative.
+
+[source,tiri]
+----
+-- Block for exactly 3 seconds
+processing.halt(3.0)
+
+-- Process outstanding messages without blocking
+processing.halt(0)
+----
+
+[[sec-processing-callbacks]]
+[%breakable]
+=== Processing Callbacks
+==== processing.delayedCall()
+
+[.api]`processing.delayedCall(Function)`
+
+indexterm:[processing callbacks] Schedules `Function` to execute on the next message processing cycle inside `processing.sleep()`.  The function receives no arguments and its return value is discarded.
+
+Use `processing.delayedCall()` when an operation must not execute immediately — for instance, freeing an object from within its own callback, or deferring work that depends on the current event cycle completing first.
+
+Raises an exception if `Function` is not a function value.  The exception message describes the type mismatch.
+
+[source,tiri]
+----
+processing.delayedCall(function()
+   print('Executed on the next processing cycle.')
+end)
+----
+
+The scheduled function executes exactly once.  To schedule recurring work, call `processing.delayedCall()` again from within the callback.
+
+==== processing.task()
+
+[.api]`task = processing.task()`
+
+Returns a Kōtuku object representing the current task (process).  The returned object provides access to task-level properties such as process priority.  The object is detached: it references an external resource and is not owned by the script.
+
+[source,tiri]
+----
+task = processing.task()
+task.priority = 15
+----
+
+[[sec-signals]]
+=== Signals
+indexterm:[signals] Signals provide a lightweight synchronisation mechanism for waking a sleeping script.  A signal is a boolean flag on a Kōtuku object that transitions from _cleared_ to _raised_ when the object's `Signal` action is invoked.  There are no limitations on the class of object that can be used for signalling.
+
+[discrete]
+==== Default Signal Behaviour
+
+When `processing.sleep()` is called without a custom processing object, it monitors the script object itself for a signal.  Any code — including callbacks and other threads — can wake the sleeping script by calling `processing.signal()`:
+
+[source,tiri]
+----
+-- In a callback or event handler:
+processing.signal()
+
+-- The sleeping processing.sleep() call returns with ERR_Okay
+----
+
+[discrete]
+==== Custom Signal Lists
+
+For thread synchronisation or multi-object coordination, create a processing object with a list of objects to monitor.  The call to `sleep()` returns only when _all_ listed objects have been signalled or the timeout elapses.
+
+==== processing.new()
+
+[.api]`proc = processing.new([Options])`
+
+Creates a processing object.  `Options` is an optional table with the following fields:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`timeout`
+|number
+|Maximum sleep duration in seconds.  Defaults to indefinite (`-1`).
+
+|`signals`
+|array<object>
+|An array of Kōtuku objects to monitor for signals.  If omitted or empty, the script object itself is monitored.
+|===
+
+Raises an exception if an entry in the `signals` table is not a valid object reference, or if an unrecognised option is provided.
+
+[source,tiri]
+----
+objects = array<object> { obj.new('time', { }), obj.new('time', { }) }
+
+proc = processing.new({
+   timeout = 5.0,
+   signals = objects
+})
+
+err = proc.sleep()
+----
+
+The processing object exposes the following methods:
+
+[cols="1,3a",options="header"]
+|===
+|Method |Description
+
+|`proc.sleep([Seconds])`
+|Enters the processing loop with the configured signal list.  `Seconds` overrides the timeout set in `processing.new()`.
+
+|`proc.signal()`
+|Raises the signal on the script object.  This has no effect if the processing object was created with a custom `signals` list, because the script object is not in the monitored set.
+
+|`proc.flush()`
+|Clears the signal flag on the script object and on every object in the `signals` list.
+|===
+
+==== processing.signal()
+
+[.api]`processing.signal()`
+
+Raises the signal flag on the script object, waking any `processing.sleep()` call that is monitoring it.
+
+==== processing.flush()
+
+[.api]`processing.flush()`
+
+Clears the signal flag on the script object.  Use this to reset signal state before entering a new `sleep()` cycle, particularly after a timeout where signals may remain pending.
+
+[discrete]
+==== Signalling from Threads
+
+A common pattern uses signals to synchronise a worker thread with the main script.  The thread performs its work and then signals one or more objects to wake the main thread:
+
+[source,tiri]
+----
+files = array<object> { <1>
+   obj.new('file', { ... })
+}
+
+script = obj.new('script', {
+   statement=[[ msg('Thread is now in session.') ]] <2>
+})
+
+script.setKey('Files', files:join(',')) <2>
+
+thread.script(script,
+   function() <3>
+      files:each(function(Object:obj)
+         Object.acSignal()
+      end)
+   end)
+
+proc = processing.new({ timeout = 10.0, signals = files })
+choose proc.sleep() from
+   ERR_Okay -> print('All signals received.')
+   ERR_Timeout -> print('Timed out waiting for signals.')
+   else -> print('Unexpected error.')
+end
+----
+<1> Storing all objects that need to be processed in an array is a simple and effective processing pattern.
+<2> Tiri threads are parsed separately to their parent block in order to maintain a safety barrier.  This prevents use of shared variables, but we can use `setKey()` and `obj.find()` to create safe references to the worker objects.
+<3> The termination handler (the second argument to `thread.script()`) executes in the parent scope and can signal objects directly.
+
+[[sec-the-event-subsystem]]
+=== The Event Subsystem
+indexterm:[events, subsystem] The event subsystem broadcasts system-wide notifications between all processes.  Events are identified by a hierarchical string in the format `group.subgroup.name`.  Tiri scripts can subscribe to events and receive callbacks when they are broadcast.
+
+Events are dispatched during the processing loop (<<sec-the-processing-loop>>).  A script must be inside `processing.sleep()` to receive event callbacks.
+
+==== subscribeEvent()
+
+[.api]`handle, error = subscribeEvent(EventName, Callback)`
+
+Subscribes to the event identified by `EventName`.  Returns a handle for later unsubscription, and an `ERR` code.  If the subscription fails, `handle` is `nil`.
+
+`EventName` is a string in the format `group.subgroup.name`.  A single-character wildcard `pass:[*]` is permitted in the subgroup and name positions to match all events within that level.
+
+`Callback` receives one argument: the numeric event identifier.
+
+[source,tiri]
+----
+handle, err = subscribeEvent('filesystem.volume.created', function(EventID)
+   print(f'Volume event received: {EventID}')
+end)
+----
+
+[discrete]
+===== Event Groups
+
+[cols="1,3a",options="header"]
+|===
+|Group |Description
+
+|`filesystem`
+|File system changes (volume creation, deletion, file modifications).
+
+|`network`
+|Network state changes.
+
+|`system`
+|System-level events (task creation, shutdown).
+
+|`gui`
+|Graphical user interface events.
+
+|`display`
+|Display and monitor events.
+
+|`io`
+|Input/output device events.
+
+|`hardware`
+|Hardware state changes.
+
+|`audio`
+|Audio subsystem events.
+
+|`user`
+|User-defined application events.
+
+|`power`
+|Power management events (sleep, wake, battery).
+
+|`class`
+|Class registration events.
+
+|`app`
+|Application-level events.
+|===
+
+Raises an exception if the group name is not recognised.
+
+[discrete]
+===== Wildcard Subscriptions
+
+Use `pass:[*]` in the subgroup or name position to receive a broader set of events:
+
+[source,tiri]
+----
+-- Listen for all filesystem events
+handle, err = subscribeEvent('filesystem.*.*', function(EventID)
+   print('Filesystem event received.')
+end)
+----
+
+==== unsubscribeEvent()
+
+[.api]`unsubscribeEvent(Handle)`
+
+Removes the event subscription identified by `Handle`.  The handle must have been returned by a prior call to `subscribeEvent()`.  After unsubscription, the runtime discards the callback and releases associated resources.
+
+[source,tiri]
+----
+unsubscribeEvent(handle)
+----
+
+All event subscriptions are automatically cleaned up when the script terminates.
+
+[[sec-timers-and-scheduling]]
+=== Timers & Scheduling
+indexterm:[timers] indexterm:[scheduling] Reliable timer subscriptions are available through the system core, `mSys`.  Timers fire callbacks at regular intervals during the processing loop.
+
+==== mSys.SubscribeTimer()
+
+[.api]`err, handle = mSys.SubscribeTimer(Interval, Callback)`
+
+Creates a timer subscription that calls `Callback` at the specified `Interval` (in seconds).  Returns an error code and a handle for later modification or removal.
+
+The `Callback` function receives three arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Parameter |Type |Description
+
+|`Subscriber`
+|object
+|The subscribing object (your script).
+
+|`Elapsed`
+|integer
+|Microseconds elapsed since the last call.
+
+|`CurrentTime`
+|integer
+|The current `PreciseTime()` value at the moment the callback fires.
+|===
+
+To cancel the subscription from within the callback, call `check ERR_Terminate`.
+
+[source,tiri]
+----
+-- Fire a callback roughly every 10 milliseconds
+err, timerHandle = mSys.SubscribeTimer(0.01,
+   function(Subscriber, Elapsed, CurrentTime)
+      -- Perform periodic work
+      print(f'Elapsed: {Elapsed} µs')
+   end)
+----
+
+Timer callbacks are dispatched by the event processing loop in `processing.sleep()`.  Small intervals require frequent message processing to maintain reliable timing.
+
+TIP: Timing calculations take into account the amount of time spent in the callback.  If the interval is 1 second and the callback takes 400ms to execute, the next execution cycle will be in 600ms.
+
+==== mSys.UpdateTimer()
+
+[.api]`err = mSys.UpdateTimer(Handle, Interval)`
+
+Modifies an existing timer subscription.  `Handle` is the value returned by `mSys.SubscribeTimer()`.  Setting `Interval` to `0` removes the subscription entirely.
+
+[source,tiri]
+----
+-- Change the timer interval to 0.5 seconds
+mSys.UpdateTimer(timerHandle, 0.5)
+
+-- Remove the timer subscription
+mSys.UpdateTimer(timerHandle, 0)
+----
+
+[discrete]
+==== Timer Patterns
+
+[discrete]
+===== Animation and Rendering
+
+Timers are commonly used for animation loops.  The following pattern drives a particle simulation at high frequency:
+
+[source,tiri]
+----
+function animate(Subscriber, Elapsed, CurrentTime)
+   -- Update positions and redraw
+   viewport.acDraw()
+end
+
+err, animTimer = mSys.SubscribeTimer(0.001, animate)
+
+window:show()
+processing.sleep()
+----
+
+[discrete]
+===== Self-Cancelling Timers
+
+A timer can cancel itself by calling `raise ERR_Terminate` from the callback (the exception will be handled without impacting the script):
+
+[source,tiri]
+----
+err, handle = mSys.SubscribeTimer(1.0,
+   function(Subscriber, Elapsed, CurrentTime)
+      print('This fires once, then cancels.')
+      raise ERR_Terminate
+   end)
+----
+
+[discrete]
+===== Adjusting Timer Intervals
+
+Call `mSys.UpdateTimer()` to dynamically adjust the interval, for example to reset the elapsed counter after a delay phase:
+
+[source,tiri]
+----
+err, handle = mSys.SubscribeTimer(1*fps,
+   function(Subscriber, Elapsed, CurrentTime)
+      if delayComplete then
+         mSys.UpdateTimer(handle, 1*fps)  -- Reset the elapsed counter
+      end
+   end)
+----
+
+[discrete]
+==== One-Shot Deferred Execution
+
+Use `processing.delayedCall()` (<<sec-processing-callbacks>>) to schedule a function for execution on the next processing cycle.  This is the equivalent of a zero-delay timer.
+
+[discrete]
+==== Timeout-Based Coordination
+
+For simple periodic work that does not require a dedicated callback, use a loop around `processing.halt()`:
+
+[source,tiri]
+----
+while true do
+   processing.halt(1.0)
+   -- Perform periodic work every second
+   print('Tick.')
+end
+----
+
+Using `processing.halt()` ensures the loop runs for the full timeout on every iteration and cannot be interrupted by signals.
+
+Combine `processing.new()` with a timeout to implement deadline-based waiting:
+
+[source,tiri]
+----
+proc = processing.new({ timeout = 30.0, signals = { download_obj } })
+err = proc.sleep()
+
+if err is ERR_Timeout then
+   print('Download did not complete within 30 seconds.')
+end
+----
+
+[[sec-garbage-collector-control]]
+=== Garbage Collector Control
+indexterm:[garbage collector] The `processing` namespace provides functions to control and query the Tiri garbage collector.  The collector runs automatically by default, reclaiming memory used by unreachable values.
+
+==== processing.collect()
+
+[.api]`result = processing.collect([Mode], [Options])`
+
+Triggers a garbage collection cycle.  Returns an integer whose meaning depends on `Mode`.
+
+`Mode` is an optional string selecting the collection strategy:
+
+[cols="1,3a",options="header"]
+|===
+|Mode |Description
+
+|`'full'`
+|Performs a complete collection cycle.  This is the default if `Mode` is omitted.
+
+|`'step'`
+|Performs an incremental collection step.  Returns `1` if collection is not finished, `0` if finished.
+|===
+
+`Options` is an optional table with the following field:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`stepSize`
+|integer
+|Controls the size of an incremental step (only used with `'step'` mode).
+|===
+
+Raises an exception if `Mode` is not a recognised string.
+
+[source,tiri]
+----
+-- Full collection (default)
+processing.collect()
+
+-- Incremental step
+result = processing.collect('step', { stepSize = 100 })
+----
+
+NOTE: `processing.sleep()` automatically performs a full collection on entry.  Explicit calls to `processing.collect()` are only necessary when fine-grained memory management is required outside the processing loop.
+
+==== processing.stopCollector()
+
+[.api]`processing.stopCollector()`
+
+Stops the automatic garbage collector.  No automatic collection occurs until `processing.startCollector()` is called.  Manual collection via `processing.collect()` remains available.
+
+==== processing.startCollector()
+
+[.api]`processing.startCollector()`
+
+Restarts the automatic garbage collector if it was previously stopped.
+
+==== processing.gcStats()
+
+[.api]`stats = processing.gcStats()`
+
+Returns a table containing garbage collector statistics.
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`memoryKB`
+|integer
+|Memory usage in kilobytes.
+
+|`memoryBytes`
+|integer
+|Remainder bytes.  Total bytes = `memoryKB` × 1024 + `memoryBytes`.
+
+|`memoryMB`
+|number
+|Total memory usage in megabytes (convenience field).
+
+|`isRunning`
+|boolean
+|`true` if the automatic collector is running.
+
+|`pause`
+|integer
+|Current pause multiplier controlling collection frequency.  Default is `200`.
+
+|`stepMul`
+|integer
+|Current step multiplier controlling collection speed.  Default is `200`.
+|===
+
+[source,tiri]
+----
+stats = processing.gcStats()
+print(f'Memory: {stats.memoryMB} MB, GC running: {stats.isRunning}')
+----
+
+[discrete]
+==== Memory Monitoring Example
+
+[source,tiri]
+----
+before = processing.gcStats().memoryMB
+
+t = {}
+for i in {0 to 10000} do
+   t[i] = string.rep('x', 100)
+end
+
+after = processing.gcStats().memoryMB
+print(f'Allocated: {after - before} MB')
+
+t = nil
+processing.collect()
+final = processing.gcStats().memoryMB
+print(f'After collection: {final} MB')
+----

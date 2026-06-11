@@ -1,0 +1,592 @@
+// VERIFIED: 2026-03-06
+
+[[ch-the-debug-library]]
+== The Debug Library
+indexterm:[library, debug] The `debug` library provides introspection and manipulation of the Tiri runtime environment.  It exposes internal state that is not accessible through normal language constructs: stack frames, local variables, upvalues, metatables, hooks, and source file tracking.  The library is always available and requires no explicit import.
+
+All `debug` functions operate on the runtime state of the currently executing programme.  Using them in production code is discouraged; they exist to support debuggers, profilers, testing frameworks, and diagnostic tools.
+
+[[sec-introspection]]
+=== Introspection
+[discrete]
+==== debug.getInfo()
+
+[.api]`info = debug.getInfo(Target, [What])`
+
+Returns a table containing information about a function or stack level.  `Target` is either a function value or a number representing a stack level (0 = `getInfo` itself, 1 = the function that called `getInfo`, and so on).  `What` is an optional string specifying which fields to populate; it defaults to `'flnSu'`.
+
+[source,tiri]
+----
+info = debug.getInfo(1, 'Sln')
+print(f'{info.source}:{info.currentLine}')
+----
+
+Each character in `What` selects a group of fields:
+
+[cols="1,5a",options="header"]
+|===
+|Character |Fields populated
+
+|`S`
+|`source`, `shortSource`, `lineDefined`, `lastLineDefined`, `what`, `fileIndex`
+
+|`l`
+|`currentLine`
+
+|`u`
+|`nups`, `nParams`, `isVarArg`
+
+|`n`
+|`name`, `nameWhat`
+
+|`f`
+|`func` (the function itself)
+
+|`L`
+|`activeLines` (table of valid line numbers)
+|===
+
+The returned table contains the following fields:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`source`
+|string
+|Source file name or identifier.
+
+|`shortSource`
+|string
+|Abbreviated source name for error messages.
+
+|`lineDefined`
+|integer
+|Line where the function definition starts.
+
+|`lastLineDefined`
+|integer
+|Line where the function definition ends.
+
+|`what`
+|string
+|Function type: `'Tiri'`, `'C'`, or `'main'`.
+
+|`fileIndex`
+|integer
+|Index into the file source array (see <<sec-file-source-tracking>>).  Present only for Tiri functions when the `S` option is used.
+
+|`currentLine`
+|integer
+|Line being executed at the time of the call.
+
+|`name`
+|string
+|Function name, if available.
+
+|`nameWhat`
+|string
+|How the name was resolved: `'global'`, `'local'`, `'method'`, `'field'`, or `''`.
+
+|`nups`
+|integer
+|Number of upvalues.
+
+|`nParams`
+|integer
+|Number of fixed parameters.
+
+|`isVarArg`
+|boolean
+|`true` if the function accepts a variable number of arguments.
+
+|`func`
+|function
+|The function itself.
+
+|`activeLines`
+|table
+|A table whose keys are line numbers containing executable code.
+|===
+
+Returns `nil` if `Target` is a stack level that does not exist.  Throws an error if `What` contains an invalid character.
+
+[discrete]
+==== debug.getLocal()
+
+[.api]`name, value = debug.getLocal(Level, Index)`
+
+[.api]`name = debug.getLocal(Func, Index)`
+
+Returns the name and value of a local variable at `Level` in the call stack.  `Index` is 0-based.  Negative indices access vararg parameters.  Returns `nil` if `Index` is out of range.
+
+When passed a function instead of a level, only the name of the parameter at `Index` is returned (useful for introspecting parameter names without executing the function).
+
+[source,tiri]
+----
+function example(a, b)
+   c = a + b
+   name, val = debug.getLocal(1, 0)   -- 'a'
+   print(f'{name} = {val}')
+end
+----
+
+Throws an error if `Level` is out of range.
+
+[discrete]
+==== debug.setLocal()
+
+[.api]`name = debug.setLocal(Level, Index, Value)`
+
+Sets the value of a local variable at `Level` in the call stack.  `Index` is 0-based.  Returns the name of the variable, or `nil` if `Index` is out of range.  The new value takes effect immediately in the running frame.
+
+[source,tiri]
+----
+function example()
+   x = 10
+   debug.setLocal(1, 0, 99)   -- x is now 99
+end
+----
+
+Throws an error if `Level` is out of range.
+
+[discrete]
+==== debug.getRegistry()
+
+[.api]`table = debug.getRegistry()`
+
+Returns the registry table, a pre-defined table used internally by C code to store values that must persist but are not accessible from Tiri code under normal operation.
+
+[[sec-upvalue-access]]
+=== Upvalue Access
+indexterm:[upvalues] Upvalues are external local variables captured by a closure.  The functions in this section inspect and modify upvalue storage directly.  All upvalue indices are 0-based.
+
+[discrete]
+==== debug.getUpvalue()
+
+[.api]`name, value = debug.getUpvalue(Func, Index)`
+
+Returns the name and value of the upvalue at `Index` in `Func`.  For C functions, the name is always `''`.  Returns `nil` if `Index` is out of range.
+
+[source,tiri]
+----
+counter = 0
+function increment()
+   counter++
+end
+name, val = debug.getUpvalue(increment, 0)
+print(f'{name} = {val}')   -- 'counter = 0'
+----
+
+[discrete]
+==== debug.setUpvalue()
+
+[.api]`name = debug.setUpvalue(Func, Index, Value)`
+
+Sets the value of the upvalue at `Index` in `Func`.  Returns the name of the upvalue, or `nil` if `Index` is out of range.  The new value is visible to all closures that share this upvalue.
+
+[discrete]
+==== debug.upvalueID()
+
+[.api]`id = debug.upvalueID(Func, Index)`
+
+Returns a unique light userdata identifier for the upvalue at `Index` in `Func`.  Two upvalues share storage if and only if their IDs are identical.
+
+[source,tiri]
+----
+shared = 0
+function f1() shared++ end
+function f2() shared++ end
+print(debug.upvalueID(f1, 0) is debug.upvalueID(f2, 0))   -- true
+----
+
+Throws an error if `Index` is out of range.
+
+[discrete]
+==== debug.upvalueJoin()
+
+[.api]`debug.upvalueJoin(Func1, N1, Func2, N2)`
+
+Makes upvalue `N1` of `Func1` share storage with upvalue `N2` of `Func2`.  After this call, modifying either upvalue affects both closures.  Both `Func1` and `Func2` must be Tiri functions (not C functions).
+
+[source,tiri]
+----
+function makeCounter()
+   n = 0
+   return function() n++; return n end
+end
+
+c1 = makeCounter()
+c2 = makeCounter()
+debug.upvalueJoin(c1, 0, c2, 0)   -- c1 and c2 now share 'n'
+c1()
+print(c2())   -- 2
+----
+
+Throws an error if either function is a C function or if an index is out of range.
+
+[[sec-metatable-access]]
+=== Metatable Access
+[discrete]
+==== debug.getMetatable()
+
+[.api]`mt = debug.getMetatable(Object)`
+
+indexterm:[metatables] Returns the metatable of `Object`, or `nil` if it has no metatable.  Unlike the standard `getmetatable()`, this function bypasses the `__metatable` metamethod and always returns the raw metatable.
+
+[discrete]
+==== debug.setMetatable()
+
+[.api]`Object = debug.setMetatable(Object, Table)`
+
+Sets the metatable of `Object` to `Table` (which may be `nil` to remove the metatable).  Returns `Object`.  Bypasses `__metatable` protection.
+
+[source,tiri]
+----
+t = {}
+debug.setMetatable(t, { __tostring = function() return 'custom' end })
+print(tostring(t))   -- 'custom'
+----
+
+[[sec-environment-access]]
+=== Environment Access
+
+[discrete]
+==== debug.getEnv()
+
+[.api]`env = debug.getEnv(Object)`
+
+Returns the environment table of `Object`, which may be a function or userdata.  For functions, this is the table used for global variable resolution.
+
+[source,tiri]
+----
+function myFunc() end
+env = debug.getEnv(myFunc)
+print(env is _G)   -- true
+----
+
+[discrete]
+==== debug.setEnv()
+
+[.api]`Object = debug.setEnv(Object, Table)`
+
+Sets the environment table of `Object` to `Table`.  Returns `Object`.  Throws an error if the environment cannot be set (e.g. for C functions).
+
+[source,tiri]
+----
+function sandboxed() return print end
+sandbox = { print = print }
+debug.setEnv(sandboxed, sandbox)
+----
+
+[[sec-hooks]]
+=== Hooks
+indexterm:[debug hooks] Debug hooks allow a callback function to be invoked at specific execution events.  Only one hook may be active at a time.
+
+[discrete]
+==== debug.setHook()
+
+[.api]`debug.setHook(Hook, Mask, [Count])`
+
+[.api]`debug.setHook()`
+
+Sets `Hook` as the debug hook function.  `Mask` is a string of characters specifying when the hook is called.  `Count`, if greater than zero, also triggers the hook after every `Count` VM instructions.  Calling `setHook` with no arguments disables the hook.
+
+Available mask characters:
+
+[cols="1,5a",options="header"]
+|===
+|Mask |Event
+
+|`c`
+|The hook is called on every function call.
+
+|`r`
+|The hook is called on every function return.
+
+|`l`
+|The hook is called on every new source line.
+|===
+
+The hook function receives two arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Argument |Type |Description
+
+|`Event`
+|string
+|One of `'call'`, `'return'`, `'line'`, `'count'`, or `'tail return'`.
+
+|`Line`
+|integer or nil
+|The current line number for `'line'` events; `nil` for other events.
+|===
+
+[source,tiri]
+----
+debug.setHook(function(event, line)
+   if event is 'line' then
+      print(f'executing line {line}')
+   end
+end, 'l')
+
+x = 1   -- triggers line hook
+y = 2   -- triggers line hook
+
+debug.setHook()   -- disable
+----
+
+[discrete]
+==== debug.getHook()
+
+[.api]`hook, mask, count = debug.getHook()`
+
+Returns the current hook function, mask string, and count.  Returns `nil, '', 0` if no hook is set.
+
+[[sec-tracebacks]]
+=== Tracebacks
+[discrete]
+==== debug.traceback()
+
+[.api]`str = debug.traceback([Message, [Level]])`
+
+indexterm:[tracebacks] Returns a string with a traceback of the call stack.  If `Message` is provided, it is prepended to the traceback.  `Level` specifies the stack level at which to start (defaults to 1, the function calling `traceback`).
+
+[source,tiri]
+----
+print(debug.traceback('error occurred'))
+-- error occurred
+-- stack traceback:
+--    script.tiri:5: in function 'doWork'
+--    script.tiri:10: in main chunk
+----
+
+If `Message` is not a string and is not `nil`, the value is returned unchanged.
+
+[[sec-user-values]]
+=== User Values
+
+User values associate a Tiri table with a userdata object, providing a mechanism for attaching script-managed state to C-created objects.
+
+[discrete]
+==== debug.getUserValue()
+
+[.api]`table = debug.getUserValue(Userdata)`
+
+Returns the table associated with `Userdata`, or `nil` if the argument is not a userdata.
+
+[discrete]
+==== debug.setUserValue()
+
+[.api]`Userdata = debug.setUserValue(Userdata, Table)`
+
+Associates `Table` with `Userdata`.  Returns `Userdata`.  Throws an error if the first argument is not a userdata or the second is not a table.
+
+[[sec-file-source-tracking]]
+=== File Source Tracking
+[discrete]
+==== debug.fileSources()
+
+[.api]`array = debug.fileSources()`
+
+Returns an array of all registered file sources for the current script execution.  Each entry is a table describing one source file in the programme.
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`index`
+|integer
+|File index.  The main script file is always 0.  Index 255 is the overflow fallback.
+
+|`path`
+|string
+|Full resolved path to the source file.
+
+|`filename`
+|string
+|Short filename for error display.
+
+|`namespace`
+|string
+|Declared namespace, or an empty string if none.
+
+|`firstLine`
+|integer
+|First line number in the unified line space.
+
+|`totalLines`
+|integer
+|Total number of lines in the source file.
+
+|`parentIndex`
+|integer
+|Index of the file that imported this one (0 for the main file).
+
+|`importLine`
+|integer
+|Line in the parent where the import occurred (0 for the main file).
+
+|`isOverflow`
+|boolean
+|`true` if this is the overflow fallback entry (index 255).
+|===
+
+[source,tiri]
+----
+for src in values(debug.fileSources()) do
+   print(f'[{src.index}] {src.filename} ({src.totalLines} lines)')
+end
+----
+
+The main script file is always at index 0.  Imported files are assigned indices 1--254 in the order they are first encountered.  Importing the same file multiple times returns the same index.
+
+The `fileIndex` field returned by `debug.getInfo()` (with the `S` option) corresponds to indices in this array.
+
+[[sec-validation-and-diagnostics]]
+[%unbreakable]
+=== Validation & Diagnostics
+[discrete%unbreakable]
+==== debug.validate()
+
+[.api]`result = debug.validate(Code, [Flags])`
+
+Parses `Code` as a Tiri statement without executing it.  Returns a table describing the parse result.
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`success`
+|boolean
+|`true` if no errors were found.
+
+|`diagnostics`
+|array
+|Array of diagnostic entries (see below).
+
+|`tips`
+|array
+|Array of code improvement hints (see below).
+|===
+
+Each entry in the `diagnostics` array contains:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`line`
+|integer
+|0-based line number.
+
+|`column`
+|integer
+|0-based column number.
+
+|`endColumn`
+|integer
+|0-based end column.
+
+|`severity`
+|integer
+|0 = Info, 1 = Warning, 2 = Error.
+
+|`code`
+|string
+|Error code, e.g. `'UnexpectedToken'`, `'ExpectedIdentifier'`.
+
+|`message`
+|string
+|Human-readable error description.
+|===
+
+Each entry in the `tips` array contains:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`line`
+|integer
+|0-based line number.
+
+|`column`
+|integer
+|0-based column number.
+
+|`endColumn`
+|integer
+|0-based end column.
+
+|`severity`
+|integer
+|Always 3 (Hint).
+
+|`priority`
+|integer
+|1 = critical, 2 = medium, 3 = low.
+
+|`category`
+|string
+|Hint category, e.g. `'performance'`, `'code-quality'`.
+
+|`message`
+|string
+|Human-readable improvement suggestion.
+|===
+
+[source,tiri]
+----
+result = debug.validate([[local x = !!!]])
+
+if not result.success then
+   for d in values(result.diagnostics) do
+      print(f'line {d.line}: [{d.code}] {d.message}')
+   end
+end
+----
+
+The optional `Flags` parameter is a string reserved for future use.  The default value `'s'` performs syntax-only parsing.
+
+[discrete]
+==== debug.locality()
+
+[.api]`result = debug.locality(Name, [Level])`
+
+Returns a string indicating how the variable `Name` is resolved at `Level` in the call stack.  `Level` defaults to 1 (the caller's frame).  The search order is: locals, then upvalues, then globals.
+
+Possible return values:
+
+[cols="1,3a",options="header"]
+|===
+|Value |Meaning
+
+|`'local'`
+|`Name` is a local variable in the specified frame.
+
+|`'upvalue'`
+|`Name` is an upvalue of the function at the specified frame.
+
+|`'global'`
+|`Name` exists in the global table.
+
+|`'nil'`
+|`Name` is not found in any scope.
+|===
+
+[source,tiri]
+----
+x = 10
+print(debug.locality('x'))       -- 'local'
+print(debug.locality('print'))   -- 'global'
+print(debug.locality('foo'))     -- 'nil'
+----
+
+A global variable whose value is `nil` is indistinguishable from a variable that does not exist; both return `'nil'`.
+
+[discrete]
+==== debug.anno
+
+The `debug.anno` sub-table provides programmatic access to the annotation system at runtime.  For a full description of annotation syntax and the `debug.anno` API, see <<sec-the-debug-anno-interface>>.

@@ -1,0 +1,565 @@
+// VERIFIED: 2026-02-12
+// UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
+// UPDATED: 2026-05-23 - Updated range literal syntax from {start..stop}/{start...stop} to {start to stop}/{start into stop} (commit 9e5ba300)
+// UPDATED: 2026-05-23 - Added stepped range literal support with `by` clause (commit 377df4dd)
+
+[[ch-ranges]]
+== Ranges
+indexterm:[ranges] Ranges are immutable, 32-bit integer-only sequences that express numeric intervals.  They are primarily used for iteration, slicing, and membership testing.  Two construction styles are supported: a `range()` constructor function and a brace-based literal syntax.
+
+Ranges report their type as `range`.
+
+[source,tiri]
+----
+r = {0 to 5}
+type(r)           -- 'range'
+----
+
+[[sec-range-constructors]]
+=== Range Constructors
+==== Constructor Function
+
+[.api]`r = range(Start, Stop, [Inclusive], [Step])`
+
+indexterm:[ranges, constructors] Creates a range from `Start` to `Stop`.  The `Stop` value is exclusive by default, unless `Inclusive` is `true`.
+
+If `Step` is omitted, the step is inferred from direction: `1` when `Start` pass:[&lt;=] `Stop`, `-1` when `Start > Stop`.  An explicit `Step` must be a non-zero integer.
+
+[%unbreakable]
+[source,tiri]
+----
+range(0, 5)             -- exclusive: 0, 1, 2, 3, 4
+range(0, 5, true)       -- inclusive: 0, 1, 2, 3, 4, 5
+range(0, 10, false, 2)  -- stepped:   0, 2, 4, 6, 8
+range(10, 0)            -- reverse:   10, 9, 8, ..., 1
+range(10, 0, true, -2)  -- reverse stepped: 10, 8, 6, 4, 2, 0
+----
+
+==== Literal Syntax
+
+Range literals use braces with the `to` and `into` keywords, and an optional `by` clause for explicit stepping:
+
+- `{Start to Stop}` -- exclusive range (stop not included).
+- `{Start into Stop}` -- inclusive range (stop included).
+- `{Start to Stop by Step}` -- exclusive range with explicit step.
+- `{Start into Stop by Step}` -- inclusive range with explicit step.
+
+[source,tiri]
+----
+{0 to 5}            -- exclusive: 0, 1, 2, 3, 4
+{0 into 5}          -- inclusive: 0, 1, 2, 3, 4, 5
+{10 to 1}           -- reverse exclusive: 10, 9, 8, ..., 2
+{5 into 1}          -- reverse inclusive: 5, 4, 3, 2, 1
+{-5 to -1}          -- negative: -5, -4, -3, -2
+{0 to 10 by 2}      -- stepped exclusive: 0, 2, 4, 6, 8
+{10 into 0 by -2}   -- stepped reverse: 10, 8, 6, 4, 2, 0
+----
+
+Reverse ranges (where `Start > Stop`) automatically infer a negative step when no `by` clause is present.  Variables and expressions are supported in all positions.
+
+[source,tiri]
+----
+a = 3
+b = 8
+r = {a to b}              -- equivalent to range(3, 8)
+r = {a + 1 to b * 2}      -- expressions supported
+r = {a to b by 2}         -- stepped with variables
+----
+
+The `to`, `into` and `by` keywords are contextual separators -- they remain available as ordinary identifiers outside the separator position within a range literal.
+
+Literal ranges are fully equivalent to the constructor:
+
+[source,tiri]
+----
+assert({0 to 5} is range(0, 5))
+assert({0 into 5} is range(0, 5, true))
+assert({0 to 10 by 2} is range(0, 10, false, 2))
+----
+
+The `by` clause enforces two constraints at runtime: the step must be a non-zero integer.  Violating either raises an error.
+
+Invalid literal operands (non-numeric or `nil`) raise an error at runtime.
+
+==== Properties
+
+The following immutable properties are available for reading on all range objects:
+
+[cols="1,3a",options="header"]
+|===
+|Property |Description
+
+|`start`
+|Start value (always included).
+
+|`stop`
+|Stop value (included only when `r.inclusive` is `true`).
+
+|`step`
+|Step increment (positive for forward, negative for reverse).
+
+|`inclusive`
+|`true` if stop is included, `false` otherwise.
+
+|`length`
+|Number of elements.  Equivalent to `#r`.
+|===
+
+[source,tiri]
+----
+r = range(0, 10, false, 2)
+r.start       -- 0
+r.stop        -- 10
+r.step        -- 2
+r.inclusive   -- false
+r.length      -- 5
+#r            -- 5
+----
+
+==== Equality
+
+Two ranges are equal when all four fields (`start`, `stop`, `step`, `inclusive`) match:
+
+[source,tiri]
+----
+range(0, 5) is range(0, 5)         -- true
+range(0, 5) is range(0, 5, true)   -- false
+range(0, 10, false, 2) is range(0, 10, false, 3) -- false
+----
+
+==== String Representation
+
+`tostring()` produces a brace-delimited representation using the `to`/`into` keywords.  A `by` clause is included when the step differs from the inferred default:
+
+[source,tiri]
+----
+tostring({0 to 5})           -- '{0 to 5}'
+tostring({0 into 5})         -- '{0 into 5}'
+tostring({10 to 0})          -- '{10 to 0}'
+tostring({0 to 10 by 2})     -- '{0 to 10 by 2}'
+tostring({10 into 0 by -2})  -- '{10 into 0 by -2}'
+----
+
+==== range.new()
+
+[.api]`r = range.new(Start, Stop, [Inclusive], [Step])`
+
+Equivalent to the `range()` constructor function.  An error is raised if any of the arguments are invalid for the following reasons:
+
+* Non-integer `Start` or `Stop`
+* `nil` or non-numeric `Start` or `Stop`
+* `Step` is zero
+* Non-integer `Step`
+
+[[sec-iteration-with-ranges]]
+=== Iteration with Ranges
+indexterm:[ranges, iteration] Ranges integrate with Tiri's generic `for` loop.  When a range literal appears directly in the loop header, the parser optimises it to a numeric for loop when all operands are constants.
+
+[source,tiri]
+----
+for i in {1 to 6} do
+   print(i)            -- 1, 2, 3, 4, 5
+end
+
+for i in {5 into 1} do
+   print(i)            -- 5, 4, 3, 2, 1
+end
+
+for i in {0 to 10 by 2} do
+   print(i)            -- 0, 2, 4, 6, 8
+end
+
+for i in {10 into 0 by -2} do
+   print(i)            -- 10, 8, 6, 4, 2, 0
+end
+----
+
+==== Anonymous Loops
+
+When no loop variable is needed, it can be omitted:
+
+[source,tiri]
+----
+count = 0
+for {0 to 10} do
+   count++
+end
+-- count is 10
+----
+
+==== Variable and Constructor Ranges
+
+When iterating over a range stored in a variable or created with the constructor, call it to obtain the iterator triple:
+
+[source,tiri]
+----
+r = {0 to 5}
+sum = 0
+for i in r() do
+   sum += i
+end
+-- sum is 10
+
+for i in range(0, 10, false, 2)() do
+   print(i)   -- 0, 2, 4, 6, 8
+end
+----
+
+Using a range variable directly (without calling it) raises an error.
+
+==== Empty and Single-Element Ranges
+
+An exclusive range where `start` equals `stop` is empty and the loop body does not execute:
+
+[%unbreakable]
+[source,tiri]
+----
+for i in {5 to 5} do
+   print(i)   -- never reached
+end
+----
+
+An inclusive range where `start` equals `stop` iterates once:
+
+[%unbreakable]
+[source,tiri]
+----
+for i in {5 into 5} do
+   print(i)   -- 5
+end
+----
+
+[%breakable]
+[[sec-range-slicing]]
+=== Range Slicing
+[discrete]
+==== range.slice()
+
+[.api]`result = range.slice(Object, Range)`
+
+indexterm:[ranges, slicing] Slices a string, table, or array using `Range` to select elements.  Returns a value of the same type as `Object`.  This function is the underlying implementation for the `obj[{range}]` index syntax.
+
+[source,tiri]
+----
+-- String slicing
+s = 'Hello, World!'
+range.slice(s, {0 to 5})      -- 'Hello'
+range.slice(s, {-6 into -1})  -- 'World!'
+
+-- Table slicing
+t = {10, 20, 30, 40, 50}
+range.slice(t, {1 to 4})      -- {20, 30, 40}
+
+-- Stepped slicing
+range.slice(t, {0 into 4 by 2})   -- {10, 30, 50}
+
+-- Reverse slicing
+range.slice(t, {4 into 0})    -- {50, 40, 30, 20, 10}
+----
+
+Raises an error if `Object` is not a string, table, or array.
+
+[discrete]
+==== range.toArray()
+
+[.api]`arr = r:toArray()`
+
+Returns the range as an integer array containing all values in the sequence.  The array preserves the range's direction and step.
+
+[source,tiri]
+----
+{0 to 5}:toArray()                -- array: {0, 1, 2, 3, 4}
+{0 into 5}:toArray()              -- array: {0, 1, 2, 3, 4, 5}
+range(0, 10, false, 2):toArray()  -- array: {0, 2, 4, 6, 8}
+{5 into 0}:toArray()              -- array: {5, 4, 3, 2, 1, 0}
+----
+
+==== Index Syntax
+
+Strings, tables, and arrays support range objects as indices directly:
+
+[source,tiri]
+----
+s = 'Hello, World!'
+s[{0 to 5}]       -- 'Hello'
+s[{7 to 12}]      -- 'World'
+
+t = {10, 20, 30, 40, 50}
+t[{1 to 4}]       -- {20, 30, 40}
+----
+
+==== Negative Indices
+
+Negative indices count backwards from the end: `-1` is the last element, `-2` the second-to-last.  The exclusive/inclusive semantics of the range operator are preserved with negative indices.  `to` remains exclusive and `into` remains inclusive.
+
+[source,tiri]
+----
+s = 'Hello, World!'
+s[{-6 into -1}]   -- 'World!'  (inclusive)
+s[{-6 to -1}]     -- 'World'   (exclusive)
+
+t = {10, 20, 30, 40, 50}
+t[{-2 into -1}]   -- {40, 50}  (inclusive)
+t[{-2 to -1}]     -- {40}      (exclusive)
+t[{-3 into 4}]    -- {30, 40, 50}
+----
+
+==== Reverse Slicing
+
+Ranges where `start` is greater than `stop` produce reversed results.  The direction is auto-detected.
+
+[source,tiri]
+----
+s = 'abcdef'
+s[{5 into 0}]     -- 'fedcba'
+s[{5 to 0}]       -- 'fedcb'
+
+t = {10, 20, 30, 40, 50}
+t[{4 into 0}]     -- {50, 40, 30, 20, 10}
+t[{3 to 1}]       -- {40, 30}
+----
+
+==== Stepped Slicing
+
+Range literals support an optional `by` clause for stepped slicing:
+
+[source,tiri]
+----
+s = 'abcdef'
+s[{0 to 6 by 2}]       -- 'ace'
+s[{5 into 0 by -2}]    -- 'fdb'
+
+t = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+t[{0 into 9 by 2}]     -- {0, 2, 4, 6, 8}
+t[{9 into 0 by -2}]    -- {9, 7, 5, 3, 1}
+----
+
+==== Edge Cases
+
+- Indices beyond the object length are clamped to valid bounds.
+- Exclusive ranges where `start` equals `stop` return an empty string or empty table.
+- Inclusive single-element ranges return the corresponding character or element.
+- Ranges entirely beyond the object length return an empty string or empty table.
+
+[[sec-membership-testing]]
+=== Membership Testing
+indexterm:[ranges, membership testing] The `in` operator tests whether a value belongs to a range.  The test respects the range's inclusive/exclusive semantics and step alignment.
+
+[source,tiri]
+----
+5 in {0 to 10}         -- true
+10 in {0 to 10}        -- false (exclusive)
+10 in {0 into 10}      -- true  (inclusive)
+-1 in {0 to 10}        -- false (below start)
+4 in {0 to 10 by 2}    -- true  (on step boundary)
+5 in {0 to 10 by 2}    -- false (not on step boundary)
+----
+
+`in` can be used anywhere a boolean expression is expected:
+
+[source,tiri]
+----
+if 5 in {0 to 10} then
+   print('in range')
+end
+----
+
+==== Step Alignment
+
+When a range has a step other than 1, the `in` operator checks that the value falls on a step boundary:
+
+[source,tiri]
+----
+r = range(0, 10, false, 2)   -- 0, 2, 4, 6, 8
+0 in r    -- true
+2 in r    -- true
+3 in r    -- false (not on step boundary)
+8 in r    -- true
+10 in r   -- false (exclusive)
+----
+
+[discrete]
+==== contains()
+
+[.api]`result = r:contains(Value)`
+
+Returns `true` if `Value` is an integer within the range and aligned to the step.  Returns `false` for non-integer or non-numeric values.
+
+[source,tiri]
+----
+r = {0 to 10}
+r:contains(5)     -- true
+r:contains(10)    -- false (exclusive)
+r:contains(1.5)   -- false (non-integer)
+----
+
+The `in` operator uses `contains()` internally.
+
+[[sec-functional-iteration]]
+=== Functional Iteration
+indexterm:[ranges, functional iteration] Ranges provide functional programming methods for transforming, filtering, and querying numeric sequences.  All functional methods that accept a callback pass the current value as the sole argument.
+
+[discrete]
+==== each()
+
+[.api]`r = r:each(Callback)`
+
+Calls `Callback(Value)` for each value in the range.  Returns the original range for chaining.
+
+[source,tiri]
+----
+sum = 0
+r = {1 to 6}
+r:each(Value => sum += Value)
+-- sum is 15
+----
+
+The callback can return `false` to terminate early.  Returning `true` or `nil` continues iteration.
+
+[source,tiri]
+----
+sum = 0
+r = {1 to 100}
+r:each(function(Value)
+   if Value > 5 then return false end
+   sum += Value
+end)
+-- sum is 15
+----
+
+The return value enables chaining:
+
+[%unbreakable]
+[source,tiri]
+----
+r = {1 to 6}
+r:each(Value => print(Value))
+ :each(Value => process(Value))
+----
+
+The `each()` method also works with constructor-based ranges:
+
+[%unbreakable]
+[source,tiri]
+----
+range(0, 10, false, 2):each(Value => print(Value))
+----
+
+[discrete]
+==== filter()
+
+[.api]`arr = r:filter(Predicate)`
+
+Returns an array containing only values for which `Predicate(Value)` returns a truthy value.  Returns an empty array if no values match or the range is empty.
+
+[%unbreakable]
+[source,tiri]
+----
+evens = {1 to 10}:filter(i => i % 2 is 0)
+-- {2, 4, 6, 8}
+----
+
+[discrete]
+==== map()
+
+[.api]`arr = r:map(Transform)`
+
+Returns an array where each element is the result of `Transform(Value)`.  The transform function can return any type.  Returns an empty array if the range is empty.
+
+[source,tiri]
+----
+squares = {1 into 5}:map(i => i * i)
+-- {1, 4, 9, 16, 25}
+
+labels = {1 to 4}:map(i => 'Item ' .. tostring(i))
+-- {'Item 1', 'Item 2', 'Item 3'}
+----
+
+[discrete]
+==== reduce()
+
+[.api]`result = r:reduce(Initial, Reducer)`
+
+Folds all values into a single accumulated result.  `Reducer(Accumulator, Value)` is called for each value, threading the accumulator from left to right.  Returns `Initial` unchanged if the range is empty.
+
+[source,tiri]
+----
+sum = {1 into 5}:reduce(0, (acc, i) => acc + i)
+-- 15
+
+factorial = {1 into 5}:reduce(1, (acc, i) => acc * i)
+-- 120
+----
+
+[discrete]
+==== take()
+
+[.api]`arr = r:take(Count)`
+
+Returns an integer array containing the first `Count` values from the range.  If `Count` exceeds the range length, returns all available values.  If `Count` is zero or negative, returns an empty array.
+
+[source,tiri]
+----
+{1 to 100}:take(5)    -- {1, 2, 3, 4, 5}
+{10 to 0}:take(3)     -- {10, 9, 8}
+{1 to 4}:take(10)     -- {1, 2, 3}
+----
+
+[discrete]
+==== any()
+
+[.api]`result = r:any(Predicate)`
+
+Returns `true` if `Predicate(Value)` returns a truthy value for at least one element.  Short-circuits on the first match.  Returns `false` on an empty range.
+
+[source,tiri]
+----
+{1 to 10}:any(i => i > 5)     -- true
+{1 to 10}:any(i => i > 100)   -- false
+----
+
+[discrete]
+==== all()
+
+[.api]`result = r:all(Predicate)`
+
+Returns `true` if `Predicate(Value)` returns a truthy value for every element.  Short-circuits on the first failure.  Returns `true` on an empty range (vacuous truth).
+
+[source,tiri]
+----
+{1 to 10}:all(i => i > 0)   -- true
+{1 to 10}:all(i => i < 5)   -- false
+----
+
+[discrete]
+==== find()
+
+[.api]`result = r:find(Predicate)`
+
+Returns the first value for which `Predicate(Value)` returns a truthy value, or `nil` if no match is found.  Returns `nil` on an empty range.
+
+[source,tiri]
+----
+{1 to 10}:find(i => i > 5)         -- 6
+{1 to 10}:find(i => i % 2 is 0)    -- 2
+{10 to 0}:find(i => i < 5)         -- 4
+{1 to 10}:find(i => i > 100)       -- nil
+----
+
+==== Method Return Types
+
+[cols="1,2a",options="header"]
+|===
+|Method |Returns
+
+|`each()`    |The original range (for chaining).
+|`filter()`  |Array of matching values.
+|`map()`     |Array of transformed values.
+|`reduce()`  |Single value (type determined by reducer).
+|`take()`    |Integer array.
+|`any()`     |Boolean.
+|`all()`     |Boolean.
+|`find()`    |Value or `nil`.
+|===
+
+NOTE: Methods that return arrays (`filter`, `map`, `take`) cannot be chained with range methods, as arrays are not ranges.  Use `reduce()` directly on a range for aggregation that requires a single pass.

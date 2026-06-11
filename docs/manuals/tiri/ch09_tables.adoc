@@ -1,0 +1,538 @@
+// VERIFIED: 2026-02-11
+// UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
+
+[[ch-tables]]
+== Tables
+indexterm:[tables] Tables are the primary compound data structure in Tiri.  A table is a mutable, unordered map of key-value pairs.  No type restrictions are imposed on table values.  Setting a key's value to `nil` removes that entry from the table.  Tables are used to represent records, dictionaries, configuration maps, and ad-hoc objects.
+
+Tables are reference types.  Assigning a table to another variable creates a second reference to the same underlying data, not a copy.  Two distinct tables are never equal, even if they contain identical entries; `is` compares identity, not content.
+
+[source,tiri]
+----
+t = { name = 'Alice', age = 30 }
+a = t
+a.name = 'Bob'
+print(t.name)   -- 'Bob' (same table)
+----
+
+Tables have two internal regions: an _array part_ that stores sequential integer keys starting from 0, and a _hash part_ that stores all other keys (strings, non-sequential integers, and mixed types).  The `#` operator returns the length of the array part only; hash entries are not counted.
+
+For sequential data storage, the dedicated `array` type (see <<ch-arrays>>) provides more efficient memory layout.
+
+[%breakable]
+[[sec-table-fundamentals]]
+=== Table Fundamentals
+==== Table Constructors
+
+indexterm:[tables, fundamentals] Tables are created with the `{}` constructor syntax.  A constructor can contain a mix of positional values (assigned to sequential integer keys starting from 0) and explicit key-value pairs.
+
+[source,tiri]
+----
+empty = {} <1>
+seq   = { 10, 20, 30 } <2>
+rec   = { name = 'Alice', age = 30 } <3>
+mixed = { 'a', 'b', x = 10, y = 20 } <4>
+----
+<1> Empty table
+<2> Sequential: seq[0]=10, seq[1]=20, seq[2]=30
+<3> Record with string keys
+<4> Both sequential and named entries
+
+Explicit keys use the `key = value` syntax for string keys and `[expression] = value` for computed keys:
+
+[source,tiri]
+----
+t = {
+   name  = 'settings',
+   [0]   = 'first',
+   [1+1] = 'computed'
+}
+----
+
+A trailing comma after the last entry is permitted.
+
+==== Length Operator
+
+The `#` operator returns the count of sequential integer keys starting from index 0.  It counts only the array part of the table; string-keyed and non-sequential entries are excluded.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+#t              -- 3
+
+t.name = 'test'
+#t              -- 3 (hash entries not counted)
+----
+
+==== Pre-allocation
+
+[.api]`t = table.new(ArraySize, HashSize)`
+
+Creates an empty table with pre-allocated capacity for `ArraySize` sequential entries and `HashSize` hash entries.  Pre-allocation avoids incremental resizing when the final size is known in advance.  The returned table is empty; the capacity hint does not affect the reported length.
+
+[source,tiri]
+----
+t = table.new(100, 10)
+#t   -- 0
+----
+
+==== Identity and Equality
+
+Tables use identity comparison.  The `is` operator returns `true` only when both operands reference the same table object.  Two tables with identical content but distinct identities are not equal.
+
+[source,tiri]
+----
+a = { x = 1 }
+b = { x = 1 }
+c = a
+
+a is c   -- true  (same object)
+a is b   -- false (distinct objects, same content)
+----
+
+Custom equality can be defined with the `__eq` metamethod (see <<ch-metatables-and-metamethods>>).
+
+[[sec-accessing-and-modifying]]
+=== Accessing & Modifying
+
+==== Field Access
+
+Table values are read and written using dot syntax for string keys and bracket syntax for all key types:
+
+[source,tiri]
+----
+t = { name = 'Alice', age = 30 }
+
+t.name         -- 'Alice'
+t['name']      -- 'Alice'
+t.age          -- 30
+
+t.name = 'Bob'
+t['score'] = 100
+----
+
+Accessing a key that does not exist returns `nil`.  Setting a key's value to `nil` removes that entry from the table.
+
+[source,tiri]
+----
+t = { a = 1, b = 2 }
+t.c          -- nil (key does not exist)
+t.a = nil    -- removes key 'a'
+----
+
+==== Numeric Indexing
+
+Sequential elements are accessed by their zero-based integer index:
+
+[source,tiri]
+----
+t = { 10, 20, 30 }
+t[0]   -- 10
+t[1]   -- 20
+t[2]   -- 30
+t[10]  -- nil (out of bounds)
+----
+
+==== Nested Access
+
+Chained field access and bracket indexing can be combined freely:
+
+[source,tiri]
+----
+cfg = {}
+table.insert(cfg, { apple = 'banana', orange = 'lemon' })
+cfg[0].apple     -- 'banana'
+cfg[0]['orange'] -- 'lemon'
+----
+
+[[sec-raw-access]]
+==== Raw Access
+
+The `rawget()`, `rawset()`, and `rawlen()` functions bypass metamethods entirely.
+
+[.api]`value = rawget(Table, Key)`
+
+Returns the value at `Key` without invoking the `__index` metamethod.  Returns `nil` if the key is not present.
+
+[.api]`rawset(Table, Key, Value)`
+
+Sets `Key` to `Value` without invoking the `__newindex` metamethod.  Returns the table.
+
+[.api]`length = rawlen(Table)`
+
+Returns the raw length of the array part without invoking the `__len` metamethod.
+
+[[sec-iteration]]
+=== Iteration
+indexterm:[tables, iteration] Tiri provides four iterator functions for traversing tables in `for` loops.
+
+==== pairs()
+
+[.api]`for key, value in pairs(Table) do pass:[...] end`
+
+Iterates over all entries in `Table`, including both the array part and the hash part.  The iteration order over non-integer keys is unspecified and may vary between runs.  Integer keys are visited in ascending order.
+
+Supports the `__pairs` metamethod for custom iteration.
+
+[source,tiri]
+----
+t = { 'a', 'b', x = 10, y = 20 }
+for k, v in pairs(t) do
+   print(k, v)
+end
+-- 0  a
+-- 1  b
+-- x  10  (order of x, y unspecified)
+-- y  20
+----
+
+==== ipairs()
+
+[.api]`for index, value in ipairs(Table) do ... end`
+
+Iterates over the array part of `Table` in sequential order, starting at index 0.  Stops at the first `nil` gap in the sequence.
+
+Supports the `__ipairs` metamethod for custom iteration.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+for i, v in ipairs(t) do
+   print(i, v)
+end
+-- 0  a
+-- 1  b
+-- 2  c
+----
+
+==== values()
+
+[.api]`for value in values(Table) do pass:[...] end`
+
+Iterates over all entries in `Table`, yielding only values and ignoring keys.
+
+[source,tiri]
+----
+scores = { alice = 95, bob = 82, carol = 91 }
+for score in values(scores) do
+   print(score)
+end
+----
+
+==== keys()
+
+[.api]`for key in keys(Table) do pass:[...] end`
+
+Iterates over all entries in `Table`, yielding only keys and ignoring values.
+
+[source,tiri]
+----
+config = { debug = true, verbose = false, timeout = 30 }
+for name in keys(config) do
+   print(name)
+end
+----
+
+[[sec-table-library]]
+=== Table Library
+indexterm:[library, table] All table library functions are accessed through the `table` namespace.
+
+[[sec-table-insert]]
+==== table.insert()
+
+[.api]`table.insert(Table, [Pos,] Value)`
+
+Inserts `Value` into the array part of `Table`.  If `Pos` is omitted, appends `Value` after the last element.  If `Pos` is given, inserts at that index and shifts subsequent elements upward by one position.
+
+[source,tiri]
+----
+t = {}
+table.insert(t, 'a')
+table.insert(t, 'b')
+table.insert(t, 'c')
+-- t = {'a', 'b', 'c'}
+
+table.insert(t, 1, 'x')
+-- t = {'a', 'x', 'b', 'c'}  (shifted from index 1)
+
+table.insert(t, 0, 'z')
+-- t = {'z', 'a', 'x', 'b', 'c'}  (shifted from index 0)
+----
+
+[[sec-table-remove]]
+==== table.remove()
+
+[.api]`value = table.remove(Table, [Pos])`
+
+Removes and returns the element at `Pos`.  If `Pos` is omitted, removes the last element.  Remaining elements shift downward to fill the gap.
+
+Returns `nil` if the table is empty or `Pos` is out of bounds.  The table is not modified in either case.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd' }
+
+table.remove(t)      -- returns 'd'; t = {'a', 'b', 'c'}
+table.remove(t, 0)   -- returns 'a'; t = {'b', 'c'}
+table.remove(t, 10)  -- returns nil; t unchanged
+----
+
+[[sec-table-move]]
+==== table.move()
+
+[.api]`dest = table.move(Table, Start, End, Target, [DestTable])`
+
+Copies elements from `Table[Start]` through `Table[End]` (inclusive) to positions starting at `Target` in `DestTable`.  If `DestTable` is omitted, the source table is used as the destination.  Returns the destination table.
+
+Handles overlapping source and destination regions correctly.  If `Start` exceeds `End`, no elements are copied.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd', 'e' }
+table.move(t, 0, 2, 3)
+-- t[3]='a', t[4]='b', t[5]='c'
+
+src = { 10, 20, 30 }
+dst = {}
+table.move(src, 0, 2, 0, dst)
+-- dst = {10, 20, 30}
+----
+
+[[sec-table-concat]]
+==== table.concat()
+
+[.api]`str = table.concat(Table, [Sep, Start, End])`
+
+Concatenates the array elements of `Table` into a single string.  `Sep` is inserted between each element if specified.  `Start` and `End` define the index range (defaulting to `0` to `#Table - 1` inclusive).
+
+Elements must be strings or numbers.  Raises an error if an element of any other type is encountered within the specified range.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+table.concat(t)            -- 'abc'
+table.concat(t, ', ')      -- 'a, b, c'
+
+t = { 1, 2, 3, 4, 5 }
+table.concat(t, '-')       -- '1-2-3-4-5'
+
+t = { 'a', 'b', 'c', 'd', 'e' }
+table.concat(t, ',', 1, 3)   -- 'b,c,d'
+----
+
+[[sec-table-sort]]
+==== table.sort()
+
+[.api]`table.sort(Table, [Comparator])`
+
+Sorts the array part of `Table` in place.  The default comparator uses the `<` operator (ascending order).  A custom `Comparator` function receives two elements and returns `true` if the first must precede the second.
+
+[source,tiri]
+----
+t = { 5, 3, 1, 4, 2 }
+table.sort(t)
+-- t = {1, 2, 3, 4, 5}
+
+t = { 1, 5, 3, 2, 4 }
+table.sort(t, function(a, b) return a > b end)
+-- t = {5, 4, 3, 2, 1}
+----
+
+[[sec-table-sortByKeys]]
+==== table.sortByKeys()
+
+[.api]`for key, value in table.sortByKeys(Table, [Comparator]) do pass:[...] end`
+
+Returns an iterator that yields key-value pairs from `Table` in sorted key order.  The default comparator uses ascending order.  A custom `Comparator` controls the sort order.
+
+[source,tiri]
+----
+t = { b = 2, a = 1, c = 3 }
+for k, v in table.sortByKeys(t) do
+   print(k, v)
+end
+-- a  1
+-- b  2
+-- c  3
+
+for k, v in table.sortByKeys(t, function(a, b) return a > b end) do
+   print(k, v)
+end
+-- c  3
+-- b  2
+-- a  1
+----
+
+[[sec-table-clear]]
+==== table.clear()
+
+[.api]`table.clear(Table)`
+
+Removes all entries from `Table`, including both the array part and the hash part.  After clearing, `#Table` is 0 and `table.empty(Table)` returns `true`.  Values tracked by the garbage collector are released.
+
+[[sec-table-empty]]
+==== table.empty()
+
+[.api]`result = table.empty(Table)`
+
+Returns `true` if `Table` contains no entries in either the array part or the hash part.  Treats `nil` as an empty table.
+
+[[sec-table-slice]]
+==== table.slice()
+
+[.api]`result = table.slice(Table, Range)`
+
+Returns a new table containing the elements of `Table` selected by `Range`.  Supports all range features including step values, negative indices, and reverse iteration.  See <<sec-table-slicing-with-ranges>> for the full semantics.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+table.slice(t, {1 to 4})             -- {20, 30, 40}
+table.slice(t, range(0, 7, true, 2)) -- {10, 30, 50, 70}
+----
+
+[[sec-table-toXML]]
+==== table.toXML()
+
+[.api]`str = table.toXML(Table)`
+
+Converts `Table` to an XML string.  String-keyed entries become attributes.  Numeric-keyed entries become child content.  Table-valued entries become nested elements.
+
+Boolean `true` values render as bare attributes.  Numeric attribute values are unquoted.  String attribute values are double-quoted and XML-escaped.  Child text content is XML-escaped.  Empty tables render as self-closing elements (`<tag/>`).  Elements with children use abbreviated closing tags (`</>`).  An empty input table produces an empty string.
+
+[source,tiri]
+----
+table.toXML({ item = {} })
+-- '<item/>'
+
+table.toXML({ item = { name = 'test', value = '42' } })
+-- '<item name="test" value="42"/>'
+
+table.toXML({ item = { [0] = 'hello' } })
+-- '<item>hello</>'
+
+table.toXML({ item = { [0] = 'a&b' } })
+-- '<item>a&amp;b</>'
+----
+
+[[sec-table-slicing-with-ranges]]
+=== Table Slicing with Ranges
+indexterm:[tables, slicing] indexterm:[ranges, table slicing] Tables support range objects as indices to extract subsequences.  Indexing is zero-based and follows inclusive/exclusive semantics consistent with string slicing (see <<sec-string-slicing-with-ranges>>).  Table slices always return a new table containing copies of the selected elements; modifying the result does not affect the original.
+
+==== Exclusive and Inclusive Ranges
+
+The `to` keyword creates an exclusive range (stop index not included).  The `into` keyword creates an inclusive range (stop index included).
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+
+t[{1 to 4}]     -- {20, 30, 40} (exc. indices 1, 2, 3)
+t[{1 into 3}]   -- {20, 30, 40} (inc. indices 1, 2, 3)
+t[{0 to 5}]     -- {10, 20, 30, 40, 50} (full table)
+----
+
+==== Negative Indices
+
+Negative indices count backwards from the end of the table: `-1` is the last element, `-2` the second-to-last.  The exclusive/inclusive semantics of the range operator are preserved with negative indices.  `to` remains exclusive and `into` remains inclusive.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+
+t[{-3 into -1}]  -- {30, 40, 50}  (inclusive)
+t[{-3 to -1}]    -- {30, 40}      (exclusive)
+t[{-2 into -1}]  -- {40, 50}      (inclusive)
+t[{-2 to -1}]    -- {40}          (exclusive)
+t[{1 into -1}]   -- {20, 30, 40, 50}
+----
+
+==== Reverse Slicing
+
+Ranges where the start index is greater than the stop index produce reversed subsequences.  The direction is auto-detected from the resolved indices.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+
+t[{4 to 0}]     -- {50, 40, 30, 20} (reverse exclusive)
+t[{4 into 0}]   -- {50, 40, 30, 20, 10} (reverse inclusive)
+t[{3 to 1}]     -- {40, 30} (reverse partial)
+----
+
+==== Step Support
+
+Range literals support an optional `by` clause for stepped slicing.  The `range()` constructor can also be used.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50, 60, 70 }
+
+t[{0 into 6 by 2}]          -- {10, 30, 50, 70}
+t[{6 into 0 by -2}]         -- {70, 50, 30, 10}
+
+r = range(0, 7, true, 2)
+table.slice(t, r)            -- {10, 30, 50, 70}
+----
+
+==== Out-of-Bounds and Empty Ranges
+
+- Indices beyond the table length are clamped to valid bounds.
+- Exclusive ranges where `start` equals `stop` return an empty table.
+- Ranges entirely beyond the table length return an empty table.
+- Slicing an empty table returns an empty table.
+
+[source,tiri]
+----
+t = { 10, 20, 30 }
+
+t[{0 to 10}]    -- {10, 20, 30} (end clamped)
+t[{-10 to 3}]   -- {10, 20, 30} (start clamped)
+t[{2 to 2}]     -- {} (empty exclusive range)
+t[{5 to 10}]    -- {} (beyond table length)
+----
+
+[[sec-tables-vs-arrays]]
+=== Tables vs. Arrays
+indexterm:[tables, arrays comparison] indexterm:[arrays, tables comparison] Tables and arrays serve different purposes.  The following comparison summarises the key distinctions.
+
+[cols="2,3a,3a",options="header"]
+|===
+|Property |Table |Array
+
+|Type
+|`'table'`
+|`'array'`
+
+|Element types
+|Mixed (any value as key or value)
+|Homogeneous (single declared element type)
+
+|Storage
+|Hash part + array part
+|Contiguous typed buffer
+
+|Key types
+|Strings, integers, and any non-`nil` value
+|Integer indices only
+
+|Indexing
+|Zero-based (array part)
+|Zero-based
+
+|`#` operator
+|Length of array part only
+|Total element count
+
+|Mutability
+|Mutable (entries added/removed freely)
+|Mutable (elements modified; resizable)
+
+|Identity
+|Reference type; `is` compares identity
+|Reference type; `is` compares identity
+|===
+
+The `ipairs()`, `pairs()`, and `values()` functions work identically on both types.  Numeric indexing behaves the same way.  Code that iterates with these functions is compatible with tables and arrays interchangeably.
+
+Use tables when keys are strings or mixed types, or when representing records and dictionaries.  Use arrays when storing sequential data of a uniform type, especially for numerical computation or when interoperating with C/C++ interfaces.
