@@ -300,32 +300,12 @@ static ERR THREAD_SetData(extThread *Self, struct th::SetData *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-Callback: A function reference that will be called when the thread is started.
+Callback: This function will be called when the thread finishes.
 
 Set a function reference here to receive a notification when the thread finishes processing.  The
 callback will be executed in the context of the main program loop to minimise resource locking issues.
 
 The prototype for the callback routine is `void Callback(objThread *Thread)`.
-
-*********************************************************************************************************************/
-
-static ERR GET_Callback(extThread *Self, FUNCTION * &Value)
-{
-   if (Self->Callback.defined()) {
-      Value = &Self->Callback;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Callback(extThread *Self, FUNCTION *Value)
-{
-   if (Value) Self->Callback = *Value;
-   else Self->Callback.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Data: Pointer to initialisation data for the thread.
@@ -355,7 +335,7 @@ Flags: Optional flags can be defined here.
 Lookup: THF
 
 -FIELD-
-Routine: A function reference that will be called when the thread is started.
+Routine: This function will be called when the thread starts.
 
 The routine that will be executed when the thread is activated must be specified here.  The function prototype is
 `ERR routine(objThread *Thread)`.
@@ -364,24 +344,6 @@ When the routine is called, a reference to the thread object is passed as a para
 finished processing, the resulting error code will be stored in the thread object's #Error field.
 
 *********************************************************************************************************************/
-
-static ERR GET_Routine(extThread *Self, FUNCTION * &Value)
-{
-   if (Self->Routine.defined()) {
-      Value = &Self->Routine;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Routine(extThread *Self, FUNCTION *Value)
-{
-   if (Value) Self->Routine = *Value;
-   else Self->Routine.clear();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
 
 extThread::~extThread()
 {
@@ -399,13 +361,12 @@ extThread::~extThread()
 #include "class_thread_def.c"
 
 static const FieldArray clFields[] = {
+   { "Callback",  FDF_FUNCTION|FDF_RW },
+   { "Routine",   FDF_FUNCTION|FDF_RW },
    { "Data",      FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Data },
    { "DataSize",  FDF_INT|FDF_R },
    { "Error",     FDF_INT|FDF_R },
    { "Flags",     FDF_INT|FDF_RI, nullptr, nullptr, &clThreadFlags },
-   // Virtual fields
-   { "Callback",  FDF_FUNCTION|FDF_RW|FDF_PURE, GET_Callback, SET_Callback },
-   { "Routine",   FDF_FUNCTION|FDF_RW|FDF_PURE, GET_Routine, SET_Routine },
    END_FIELD
 };
 

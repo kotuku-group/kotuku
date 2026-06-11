@@ -3913,10 +3913,12 @@ class objThread : public Object {
 
    using create = kt::Create<objThread>;
 
-   APTR Data;       // Pointer to initialisation data for the thread.
-   int  DataSize;   // The size of the buffer referenced in the Data field.
-   ERR  Error;      // Reflects the error code returned by the thread routine.
-   THF  Flags;      // Optional flags can be defined here.
+   FUNCTION Callback;    // This function will be called when the thread finishes.
+   FUNCTION Routine;     // This function will be called when the thread starts.
+   APTR     Data;        // Pointer to initialisation data for the thread.
+   int      DataSize;    // The size of the buffer referenced in the Data field.
+   ERR      Error;       // Reflects the error code returned by the thread routine.
+   THF      Flags;       // Optional flags can be defined here.
 
    // Action stubs
 
@@ -3929,6 +3931,16 @@ class objThread : public Object {
    }
 
    // Customised field getting
+
+   inline ERR getCallback(FUNCTION * &Value) noexcept {
+      Value = &this->Callback;
+      return ERR::Okay;
+   }
+
+   inline ERR getRoutine(FUNCTION * &Value) noexcept {
+      Value = &this->Routine;
+      return ERR::Okay;
+   }
 
    inline ERR getData(APTR * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[6];
@@ -3952,37 +3964,23 @@ class objThread : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getRoutine(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
 
    // Customised field setting
+
+   inline ERR setCallback(const FUNCTION &Value) noexcept {
+      this->Callback = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setRoutine(const FUNCTION &Value) noexcept {
+      this->Routine = Value;
+      return ERR::Okay;
+   }
 
    inline ERR setFlags(const THF Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Flags = Value;
       return ERR::Okay;
-   }
-
-   inline ERR setCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
-   }
-
-   inline ERR setRoutine(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };

@@ -287,6 +287,8 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
          else
             output(Indent .. 'Value = *((std::string *)(((int8_t *)this) + {offset}));')
          end
+      elseif Field.flags has FD_FUNCTION then
+         output(Indent .. f'Value = ((FUNCTION *)(((int8_t *)this) + {offset}));')
       else
          output(Indent .. f'Value = *(({FieldType} *)(((int8_t *)this) + {offset}));')
       end
@@ -300,7 +302,11 @@ end
 
 function outputDirectFieldGetter(Field:table, FieldName:str, FidName:str, FieldType:str, Indent:str)
    outputFieldGetSignature(Field, FidName, FieldType)
-   output(Indent .. f'Value = this->{FieldName};')
+   if Field.flags has FD_FUNCTION then
+      output(Indent .. f'Value = &this->{FieldName};')
+   else
+      output(Indent .. f'Value = this->{FieldName};')
+   end
    output(Indent .. 'return ERR::Okay;')
 end
 
@@ -354,6 +360,8 @@ function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
       output(f'   template <class T> inline ERR set{FidName}({FieldType} Value) noexcept {{')
    elseif Field.flags has FD_STRING then
       output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
+   elseif Field.flags has FD_FUNCTION then
+      output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
    else
       output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
    end

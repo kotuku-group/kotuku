@@ -473,8 +473,6 @@ class extThread : public objThread {
    std::jthread::id ThreadID;
    std::jthread *CPPThread;
    std::atomic_int InterruptThreadID = 0; // Internal thread ID used by WakeThread() for cooperative shutdown
-   FUNCTION Routine;
-   FUNCTION Callback;
    std::atomic_bool Active;
 
    ~extThread();

@@ -1545,10 +1545,12 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
   })
 
   klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
-   ptr   Data         # User data pointer.
-   int   DataSize     # Size of user data.
-   error Error        # Error code returned by the thread on completion.
-   int(THF) Flags     # Optional flags.
+    func  Callback     # This function will be called when the thread finishes
+    func  Routine      # This function will be called when the thread starts
+    ptr   Data         # User data pointer
+    int   DataSize     # Size of user data
+    error Error        # Error code returned by the thread on completion
+    int(THF) Flags     # Optional flags
   ]])
 
   methods("Module", "Mod", {
