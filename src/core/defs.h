@@ -476,6 +476,8 @@ class extThread : public objThread {
    FUNCTION Routine;
    FUNCTION Callback;
    std::atomic_bool Active;
+
+   ~extThread();
 };
 
 class extTask : public objTask {
@@ -491,14 +493,14 @@ class extTask : public objTask {
    FUNCTION OutputCallback;
    FUNCTION ExitCallback;
    FUNCTION InputCallback;
-   MsgHandler *MsgAction;
-   MsgHandler *MsgFree;
-   MsgHandler *MsgDebug;
-   MsgHandler *MsgWaitForObjects;
-   MsgHandler *MsgQuit;
-   MsgHandler *MsgEvent;
-   MsgHandler *MsgThreadCallback;
-   MsgHandler *MsgThreadAction;
+   LocalResource MsgAction;
+   LocalResource MsgFree;
+   LocalResource MsgDebug;
+   LocalResource MsgWaitForObjects;
+   LocalResource MsgQuit;
+   LocalResource MsgEvent;
+   LocalResource MsgThreadCallback;
+   LocalResource MsgThreadAction;
 
    #ifdef __unix__
       int InFD = -1;       // stdin FD for receiving output from launched task

@@ -46,16 +46,6 @@ if (thread.ok()) thread-&gt;activate();
       </description>
     </action>
 
-    <action>
-      <name>Free</name>
-      <comment>Remove the object and its resources.</comment>
-      <prototype>ERR FreeResource(*Object)</prototype>
-      <tiriPrototype>err = Object.acFree()</tiriPrototype>
-      <description>
-<p>Terminating a thread object will destroy the object unless the thread is currently active.  If an attempt to free an active thread is made then it will be marked for termination so as to avoid the risk of system corruption.</p>
-      </description>
-    </action>
-
   </actions>
 
   <methods>

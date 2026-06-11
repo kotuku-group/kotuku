@@ -345,6 +345,8 @@ function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then -- kt::vector
          output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
+      elseif FieldType is 'const struct RGB8' then
+         output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
       else
          output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
       end

@@ -230,28 +230,6 @@ static ERR THREAD_Deactivate(extThread *Self)
    return ERR::Okay;
 }
 
-/*********************************************************************************************************************
--ACTION-
-Free: Remove the object and its resources.
-
-Terminating a thread object will destroy the object unless the thread is currently active.  If an attempt to free
-an active thread is made then it will be marked for termination so as to avoid the risk of system corruption.
--END-
-*********************************************************************************************************************/
-
-static ERR THREAD_Free(extThread *Self)
-{
-   if ((Self->Data) and (Self->DataSize > 0)) {
-      FreeResource(Self->Data);
-      Self->Data = nullptr;
-      Self->DataSize = 0;
-   }
-
-   if (Self->CPPThread) { delete Self->CPPThread; Self->CPPThread = nullptr; }
-
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 static ERR THREAD_FreeWarning(extThread *Self)
@@ -263,13 +241,6 @@ static ERR THREAD_FreeWarning(extThread *Self)
       Self->Flags |= THF::AUTO_FREE;
       return ERR::InUse;
    }
-}
-
-//********************************************************************************************************************
-
-static ERR THREAD_Init(extThread *Self)
-{
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -409,6 +380,21 @@ static ERR SET_Routine(extThread *Self, FUNCTION *Value)
    else Self->Routine.clear();
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+
+extThread::~extThread()
+{
+   if ((Data) and (DataSize > 0)) {
+      FreeResource(Data);
+      Data = nullptr;
+      DataSize = 0;
+   }
+
+   if (CPPThread) { delete CPPThread; CPPThread = nullptr; }
+}
+
+//********************************************************************************************************************
 
 #include "class_thread_def.c"
 

@@ -3759,9 +3759,7 @@ class objTask : public Object {
 
    inline ERR getAffinityMask(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
       return error;
    }
 
