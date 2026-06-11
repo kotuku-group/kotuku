@@ -222,22 +222,51 @@ class ScopedObjectLock {
 //
 // Usage: kt::LocalResource resource(thing)
 
-template <class T>
 class LocalResource {
    private:
-      MEMORYID id;
-   public:
-      LocalResource(T Resource) {
-         static_assert(std::is_pointer<T>::value, "The resource value must be a pointer");
-         id = ((int *)Resource)[RESOURCE_ID_OFFSET];
-      }
-      ~LocalResource() { FreeResource(id); }
+      MEMORYID id = 0;
 
-      // Copying or moving would result in a double-free of the resource.
+   public:
+      LocalResource() noexcept = default;
+
+      explicit LocalResource(MEMORYID ResourceID) noexcept : id(ResourceID) { }
+
+      template <class P>
+         requires std::is_pointer_v<P>
+      explicit LocalResource(P Resource) noexcept :
+         id(Resource ? ((MEMORYID *)Resource)[RESOURCE_ID_OFFSET] : 0) { }
+
+      ~LocalResource() { reset(); }
+
       LocalResource(const LocalResource &) = delete;
       LocalResource & operator=(const LocalResource &) = delete;
-      LocalResource(LocalResource &&) = delete;
-      LocalResource & operator=(LocalResource &&) = delete;
+
+      LocalResource(LocalResource &&Other) noexcept : id(Other.id) {
+         Other.id = 0;
+      }
+
+      LocalResource & operator=(LocalResource &&Other) noexcept {
+         if (this != &Other) {
+            reset();
+            id = Other.id;
+            Other.id = 0;
+         }
+         return *this;
+      }
+
+      void reset(MEMORYID ResourceID = 0) noexcept {
+         if (id) FreeResource(id);
+         id = ResourceID;
+      }
+
+      template <class P>
+         requires std::is_pointer_v<P>
+      void reset(P Resource) noexcept {
+         reset(Resource ? ((MEMORYID *)Resource)[RESOURCE_ID_OFFSET] : 0);
+      }
+
+      [[nodiscard]] MEMORYID get() const noexcept { return id; }
+      [[nodiscard]] explicit operator bool() const noexcept { return id != 0; }
 };
 
 //********************************************************************************************************************

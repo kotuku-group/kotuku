@@ -1543,28 +1543,36 @@ static ERR TASK_Init(extTask *Self)
 
       // Initialise message handlers so that the task can process messages.
 
+      MsgHandler *handler;
       FUNCTION call;
       call.Type = CALL::STD_C;
       call.Routine = (APTR)msg_action;
-      AddMsgHandler(MSGID::ACTION, &call, &Self->MsgAction);
+      AddMsgHandler(MSGID::ACTION, &call, &handler);
+      Self->MsgAction.reset(handler);
 
       call.Routine = (APTR)msg_free;
-      AddMsgHandler(MSGID::FREE, &call, &Self->MsgFree);
+      AddMsgHandler(MSGID::FREE, &call, &handler);
+      Self->MsgFree.reset(handler);
 
       call.Routine = (APTR)msg_quit;
-      AddMsgHandler(MSGID::QUIT, &call, &Self->MsgQuit);
+      AddMsgHandler(MSGID::QUIT, &call, &handler);
+      Self->MsgQuit.reset(handler);
 
       call.Routine = (APTR)msg_waitforobjects;
-      AddMsgHandler(MSGID::WAIT_FOR_OBJECTS, &call, &Self->MsgWaitForObjects);
+      AddMsgHandler(MSGID::WAIT_FOR_OBJECTS, &call, &handler);
+      Self->MsgWaitForObjects.reset(handler);
 
       call.Routine = (APTR)msg_event; // lib_events.c
-      AddMsgHandler(MSGID::EVENT, &call, &Self->MsgEvent);
+      AddMsgHandler(MSGID::EVENT, &call, &handler);
+      Self->MsgEvent.reset(handler);
 
       call.Routine = (APTR)msg_threadcallback; // class_thread.c
-      AddMsgHandler(MSGID::THREAD_CALLBACK, &call, &Self->MsgThreadCallback);
+      AddMsgHandler(MSGID::THREAD_CALLBACK, &call, &handler);
+      Self->MsgThreadCallback.reset(handler);
 
       call.Routine = (APTR)msg_threadaction; // lib_objects.cpp
-      AddMsgHandler(MSGID::THREAD_ACTION, &call, &Self->MsgThreadAction);
+      AddMsgHandler(MSGID::THREAD_ACTION, &call, &handler);
+      Self->MsgThreadAction.reset(handler);
 
       log.msg("Process Path: %s", Self->ProcessPath.c_str());
       log.msg("Working Path: %s", Self->Path.c_str());
@@ -2407,8 +2415,6 @@ process to return.  The time out is defined in seconds.
 
 extTask::~extTask()
 {
-   kt::Log log;
-
 #ifdef __unix__
    check_incoming(this);
 
@@ -2431,16 +2437,6 @@ extTask::~extTask()
    if (Platform) { winFreeProcess(Platform); Platform = nullptr; }
    if (InputCallback.defined()) RegisterFD(winGetStdInput(), RFD::READ|RFD::REMOVE, &task_stdinput_callback, this);
 #endif
-
-   if (MessageMID)        { FreeResource(MessageMID);        MessageMID         = 0; }
-   if (MsgAction)         { FreeResource(MsgAction);         MsgAction          = nullptr; }
-   if (MsgDebug)          { FreeResource(MsgDebug);          MsgDebug           = nullptr; }
-   if (MsgWaitForObjects) { FreeResource(MsgWaitForObjects); MsgWaitForObjects  = nullptr; }
-   if (MsgQuit)           { FreeResource(MsgQuit);           MsgQuit            = nullptr; }
-   if (MsgFree)           { FreeResource(MsgFree);           MsgFree            = nullptr; }
-   if (MsgEvent)          { FreeResource(MsgEvent);          MsgEvent           = nullptr; }
-   if (MsgThreadCallback) { FreeResource(MsgThreadCallback); MsgThreadCallback  = nullptr; }
-   if (MsgThreadAction)   { FreeResource(MsgThreadAction);   MsgThreadAction    = nullptr; }
 }
 
 //********************************************************************************************************************
@@ -2458,7 +2454,7 @@ static const FieldArray clFields[] = {
    { "ProcessID",       FDF_INT|FDF_RI },
    // Virtual fields
    { "Actions",         FDF_VIRTUAL|FDF_POINTER|FDF_R|FDF_PURE,      GET_Actions },
-   { "AffinityMask",    FDF_VIRTUAL|FDF_INT64|FDF_RW,                GET_AffinityMask, SET_AffinityMask },
+   { "AffinityMask",    FDF_VIRTUAL|FDF_INT64|FDF_RW|FDF_PURE,       GET_AffinityMask, SET_AffinityMask },
    { "Args",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,             nullptr, SET_Args },
    { "Keys",            FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R,  GET_Keys },
    { "ErrorCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_ErrorCallback,   SET_ErrorCallback }, // STDERR

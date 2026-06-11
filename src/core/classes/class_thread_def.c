@@ -25,10 +25,8 @@ static ERR THREAD_FreePlacement(extThread *Self) {
 static const struct ActionArray clThreadActions[] = {
    { AC::Activate, THREAD_Activate },
    { AC::Deactivate, THREAD_Deactivate },
-   { AC::Free, THREAD_Free },
    { AC::FreePlacement, THREAD_FreePlacement },
    { AC::FreeWarning, THREAD_FreeWarning },
-   { AC::Init, THREAD_Init },
    { AC::NewPlacement, THREAD_NewPlacement },
    { AC::NIL, nullptr }
 };

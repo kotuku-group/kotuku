@@ -473,9 +473,9 @@ class extThread : public objThread {
    std::jthread::id ThreadID;
    std::jthread *CPPThread;
    std::atomic_int InterruptThreadID = 0; // Internal thread ID used by WakeThread() for cooperative shutdown
-   FUNCTION Routine;
-   FUNCTION Callback;
    std::atomic_bool Active;
+
+   ~extThread();
 };
 
 class extTask : public objTask {
@@ -491,14 +491,14 @@ class extTask : public objTask {
    FUNCTION OutputCallback;
    FUNCTION ExitCallback;
    FUNCTION InputCallback;
-   MsgHandler *MsgAction;
-   MsgHandler *MsgFree;
-   MsgHandler *MsgDebug;
-   MsgHandler *MsgWaitForObjects;
-   MsgHandler *MsgQuit;
-   MsgHandler *MsgEvent;
-   MsgHandler *MsgThreadCallback;
-   MsgHandler *MsgThreadAction;
+   LocalResource MsgAction;
+   LocalResource MsgFree;
+   LocalResource MsgDebug;
+   LocalResource MsgWaitForObjects;
+   LocalResource MsgQuit;
+   LocalResource MsgEvent;
+   LocalResource MsgThreadCallback;
+   LocalResource MsgThreadAction;
 
    #ifdef __unix__
       int InFD = -1;       // stdin FD for receiving output from launched task

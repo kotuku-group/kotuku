@@ -71,7 +71,7 @@ Examples:
    import './include/utils'
    import './include/parser'
    import './include/types'
-   import './include/functions'
+   import './include/client_functions'
    import './include/doc'
    import './include/actions'
    import './include/output'
