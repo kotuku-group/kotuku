@@ -24,6 +24,18 @@ equal to the alpha channel.
 
 -END-
 
+**********************************************************************************************************************
+
+TODO: The current implementation computes each output pixel's min/max over the full kernel span, costing O(radius)
+per pixel even with the SSE2 fast path.  The van Herk/Gil-Werman algorithm would reduce this to O(1) per pixel
+regardless of radius: divide each row (or column) into segments of length `2 * radius + 1`, precompute running
+min/max prefixes and suffixes within each segment, then form each output as `op(suffix[x - radius],
+prefix[x + radius])` - three operations per pixel in total.  The two extra prefix/suffix buffers need only cover a
+single row/column at a time, and the technique combines well with the existing SIMD span helpers since prefix and
+suffix accumulation are themselves 16-byte vectorisable.  Worthwhile if profiling shows large-radius morphology as
+a bottleneck; for small radii (1-3, the common SVG case) the present approach is likely faster due to its lower
+setup cost.
+
 *********************************************************************************************************************/
 
 class extMorphologyFX : public extFilterEffect {
@@ -35,6 +47,58 @@ class extMorphologyFX : public extFilterEffect {
    int RadiusX, RadiusY;
    MOP Operator;
 };
+
+//********************************************************************************************************************
+// Computes the component-wise min or max of a single pixel's kernel span.  Spans are expressed as a start/end pixel
+// pair with a byte step between each pixel: the horizontal pass steps by 4 within a row, the vertical pass steps by
+// the row stride within a column.  Min/max is applied per byte, so channel ordering is irrelevant.
+
+static void morph_span_scalar(const uint8_t *Start, const uint8_t *End, int Step, bool Dilate, uint8_t *Out)
+{
+   if (Dilate) {
+      uint8_t m0 = 0, m1 = 0, m2 = 0, m3 = 0;
+      for (auto pix = Start; pix <= End; pix += Step) {
+         if (pix[0] > m0) m0 = pix[0];
+         if (pix[1] > m1) m1 = pix[1];
+         if (pix[2] > m2) m2 = pix[2];
+         if (pix[3] > m3) m3 = pix[3];
+      }
+      Out[0] = m0; Out[1] = m1; Out[2] = m2; Out[3] = m3;
+   }
+   else {
+      uint8_t m0 = 255, m1 = 255, m2 = 255, m3 = 255;
+      for (auto pix = Start; pix <= End; pix += Step) {
+         if (pix[0] < m0) m0 = pix[0];
+         if (pix[1] < m1) m1 = pix[1];
+         if (pix[2] < m2) m2 = pix[2];
+         if (pix[3] < m3) m3 = pix[3];
+      }
+      Out[0] = m0; Out[1] = m1; Out[2] = m2; Out[3] = m3;
+   }
+}
+
+#ifdef FILTER_SSE2
+
+// As for morph_span_scalar(), but computes four consecutive output pixels (16 bytes) at once.  The caller must
+// guarantee that Start through End+15 are valid reads and that Out has 16 writable bytes.
+
+static void morph_span_sse2(const uint8_t *Start, const uint8_t *End, int Step, bool Dilate, uint8_t *Out)
+{
+   auto acc = _mm_loadu_si128((const __m128i *)Start);
+   if (Dilate) {
+      for (auto pix = Start + Step; pix <= End; pix += Step) {
+         acc = _mm_max_epu8(acc, _mm_loadu_si128((const __m128i *)pix));
+      }
+   }
+   else {
+      for (auto pix = Start + Step; pix <= End; pix += Step) {
+         acc = _mm_min_epu8(acc, _mm_loadu_si128((const __m128i *)pix));
+      }
+   }
+   _mm_storeu_si128((__m128i *)Out, acc);
+}
+
+#endif
 
 /*********************************************************************************************************************
 -ACTION-
@@ -48,11 +112,6 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    const int canvasHeight = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
 
    if (canvasWidth * canvasHeight > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
-
-   const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
-   const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
-   const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
-   const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
 
    objBitmap *inBmp;
    if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
@@ -86,117 +145,67 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
    uint8_t *input = inBmp->Data + (inBmp->Clip.Top * inBmp->LineWidth) + (inBmp->Clip.Left * inBmp->BytesPerPixel);
 
-   if (Self->RadiusX > 0) { // Top-to-bottom dilate
+   const bool dilate = Self->Operator IS MOP::DILATE;
+
+   if (Self->RadiusX > 0) { // Horizontal pass
       auto radius = Self->RadiusX;
       if (canvasWidth - 1 < radius) radius = canvasWidth - 1;
 
-      const uint8_t *endinput  = input + (radius * 4);
-      const uint8_t *inputline = input;
+      for (int y=0; y < canvasHeight; y++) {
+         const uint8_t *in_row = input + (y * inBmp->LineWidth);
+         uint8_t *out = out_line + (y * out_linewidth);
 
-      for (int x=0; x < canvasWidth; ++x) {
-         const uint8_t *in  = inputline;
-         const uint8_t *end = endinput;
-         auto out         = out_line;
-
-         if (Self->Operator IS MOP::DILATE) {
-            for (int y = 0; y < canvasHeight; ++y) {
-               uint8_t maxB = 0, maxG = 0, maxR = 0, maxA = 0;
-               for (const uint8_t *pix=in; pix <= end; pix += 4) {
-                  if (pix[B] > maxB) maxB = pix[B];
-                  if (pix[G] > maxG) maxG = pix[G];
-                  if (pix[R] > maxR) maxR = pix[R];
-                  if (pix[A] > maxA) maxA = pix[A];
-               }
-               out[R] = maxR; out[G] = maxG; out[B] = maxB; out[A] = maxA;
-
-               out += out_linewidth;
-               in  += inBmp->LineWidth;
-               end += inBmp->LineWidth;
-            }
-         }
-         else { // ERODE
-            for (int y = 0; y < canvasHeight; ++y) {
-               uint8_t minB = 255, minG = 255, minR = 255, minA = 255;
-               for (const uint8_t *p=in; p <= end; p += 4) {
-                  if (p[B] < minB) minB = p[B];
-                  if (p[G] < minG) minG = p[G];
-                  if (p[R] < minR) minR = p[R];
-                  if (p[A] < minA) minA = p[A];
-               }
-               out[R] = minR; out[G] = minG; out[B] = minB; out[A] = minA;
-
-               out += out_linewidth;
-               in  += inBmp->LineWidth;
-               end += inBmp->LineWidth;
-            }
+         int x = 0;
+#ifdef FILTER_SSE2
+         // Left border pixels have a clamped kernel and are processed individually.
+         for (; (x < radius) and (x < canvasWidth); x++) {
+            morph_span_scalar(in_row + (std::max(0, x - radius)<<2), in_row + (std::min(canvasWidth - 1, x + radius)<<2),
+               4, dilate, out + (x<<2));
          }
 
-         if (x >= radius) inputline += 4;
-         if (x + radius < canvasWidth - 1) endinput += 4;
-         out_line += 4;
+         // Interior pixels are processed four at a time; the kernels of all four must be within the row.
+         for (; x + 3 + radius <= canvasWidth - 1; x += 4) {
+            morph_span_sse2(in_row + ((x - radius)<<2), in_row + ((x + radius)<<2), 4, dilate, out + (x<<2));
+         }
+#endif
+         for (; x < canvasWidth; x++) {
+            morph_span_scalar(in_row + (std::max(0, x - radius)<<2), in_row + (std::min(canvasWidth - 1, x + radius)<<2),
+               4, dilate, out + (x<<2));
+         }
       }
    }
 
-   if (Self->RadiusY > 0) { // Left-to-right dilate
+   if (Self->RadiusY > 0) { // Vertical pass
       auto radius = Self->RadiusY;
       if (canvasHeight - 1 < radius) radius = canvasHeight - 1;
 
-      const uint8_t *endinput;
-      const uint8_t *inputline;
-      int inwidth;
-
+      const uint8_t *src;
+      int src_stride;
       if (buffer_as_input) {
-         endinput  = buffer + (radius * (canvasWidth * 4));
-         inputline = buffer;
-         inwidth   = canvasWidth * 4;
+         src = buffer;
+         src_stride = canvasWidth * 4;
       }
       else {
-         endinput  = input + (radius * inBmp->LineWidth); // Inner-loop will stop when reaching endinput
-         inputline = input;
-         inwidth   = inBmp->LineWidth;
+         src = input;
+         src_stride = inBmp->LineWidth;
       }
 
-      out_line = (uint8_t *)(Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth));
-      out_linewidth = Self->Target->LineWidth;
+      auto dest = (uint8_t *)(Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth));
 
       for (int y=0; y < canvasHeight; y++) {
-         const uint8_t *in = inputline;
-         const uint8_t *end = endinput;
-         auto out = out_line;
+         const uint8_t *start_row = src + (std::max(0, y - radius) * src_stride);
+         const uint8_t *end_row   = src + (std::min(canvasHeight - 1, y + radius) * src_stride);
+         uint8_t *out = dest + (y * Self->Target->LineWidth);
 
-         if (Self->Operator IS MOP::DILATE) {
-            for (int x=0; x < canvasWidth; x++) {
-               uint8_t maxB = 0, maxG = 0, maxR = 0, maxA = 0;
-               for (const uint8_t *pix=in; pix <= end; pix += inwidth) {
-                  if (pix[B] > maxB) maxB = pix[B];
-                  if (pix[G] > maxG) maxG = pix[G];
-                  if (pix[R] > maxR) maxR = pix[R];
-                  if (pix[A] > maxA) maxA = pix[A];
-               }
-               out[R] = maxR; out[G] = maxG; out[B] = maxB; out[A] = maxA;
-               out += 4;
-               in  += 4;
-               end += 4;
-            }
+         int x = 0;
+#ifdef FILTER_SSE2
+         for (; x + 4 <= canvasWidth; x += 4) {
+            morph_span_sse2(start_row + (x<<2), end_row + (x<<2), src_stride, dilate, out + (x<<2));
          }
-         else { // ERODE
-            for (int x=0; x < canvasWidth; x++) {
-               uint8_t minB = 255, minG = 255, minR = 255, minA = 255;
-               for (const uint8_t *pix=in; pix <= end; pix += inwidth) {
-                  if (pix[B] < minB) minB = pix[B];
-                  if (pix[G] < minG) minG = pix[G];
-                  if (pix[R] < minR) minR = pix[R];
-                  if (pix[A] < minA) minA = pix[A];
-               }
-               out[R] = minR; out[G] = minG; out[B] = minB; out[A] = minA;
-               out += 4;
-               in  += 4;
-               end += 4;
-            }
+#endif
+         for (; x < canvasWidth; x++) {
+            morph_span_scalar(start_row + (x<<2), end_row + (x<<2), src_stride, dilate, out + (x<<2));
          }
-         if (y >= radius) inputline += inwidth;
-         if (y + radius < canvasHeight - 1) endinput += inwidth;
-         out_line += Self->Target->LineWidth;
       }
    }
 

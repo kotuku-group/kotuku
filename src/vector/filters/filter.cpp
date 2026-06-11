@@ -122,6 +122,24 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
 }
 
 //********************************************************************************************************************
+// SSE2 is guaranteed on all x86-64 targets and 32-bit builds with /arch:SSE2 or better.  Filter effects use
+// FILTER_SSE2 to guard their SIMD rendering paths, falling back to scalar code on other architectures.
+
+#if defined(__SSE2__)
+   #define FILTER_SSE2 1
+#elif defined(_M_X64)
+   #define FILTER_SSE2 1
+#elif defined(_M_IX86_FP)
+   #if _M_IX86_FP >= 2
+      #define FILTER_SSE2 1
+   #endif
+#endif
+
+#ifdef FILTER_SSE2
+#include <emmintrin.h>
+#endif
+
+//********************************************************************************************************************
 
 #include "filter_effect.cpp"
 #include "filter_blur.cpp"
