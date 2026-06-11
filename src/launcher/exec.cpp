@@ -12,7 +12,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
    FindClass(CLASSID::TIRI);
 
    CLASSID class_id, derived_id;
-   if (kt::startswith("STRING:", TargetFile)) {
+   if (TargetFile.starts_with("STRING:")) {
       derived_id = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
@@ -26,7 +26,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
    if (glSandbox) {
       kt::vector<std::string> *params = nullptr;
-      glTask->get(FID_Parameters, params);
+      glTask->get(FID_Parameters, &params);
 
       #ifdef _WIN32
          IntegrityLevel il = get_integrity_level();

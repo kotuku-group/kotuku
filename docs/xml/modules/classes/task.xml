@@ -357,7 +357,7 @@
     <field>
       <name>Parameters</name>
       <comment>Command line arguments (list format).</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>Command line arguments for a program can be defined here as a vector list, whereby each argument is an independent string.  To illustrate, the following command-line string:</p>

@@ -342,7 +342,13 @@ end
 -- Emit the opening signature for a direct-assignment field setter.
 
 function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
-   if FieldType is 'T &&' then
+   if Field.flags has FD_ARRAY then
+      if Field.flags has FD_CPP then -- kt::vector
+         output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
+      else
+         output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
+      end
+   elseif FieldType is 'T &&' then
       output(f'   template <class T> inline ERR set{FidName}({FieldType} Value) noexcept {{')
    elseif Field.flags has FD_STRING then
       output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')

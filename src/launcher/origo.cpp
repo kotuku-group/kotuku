@@ -92,60 +92,77 @@ end
 
 //********************************************************************************************************************
 
+constexpr uint32_t ARG_HELP1       = kt::strhash("--help");
+constexpr uint32_t ARG_HELP2       = kt::strhash("help");
+constexpr uint32_t ARG_VERSION     = kt::strhash("--version");
+constexpr uint32_t ARG_VERIFY      = kt::strhash("--verify");
+constexpr uint32_t ARG_SANDBOX     = kt::strhash("--sandbox");
+constexpr uint32_t ARG_TIME        = kt::strhash("--time");
+constexpr uint32_t ARG_DIALOG      = kt::strhash("--dialog");
+constexpr uint32_t ARG_RELAUNCH    = kt::strhash("--relaunch");
+constexpr uint32_t ARG_BACKSTAGE   = kt::strhash("--backstage");
+constexpr uint32_t ARG_PROCEDURE   = kt::strhash("--procedure");
+constexpr uint32_t ARG_STATEMENT   = kt::strhash("--statement");
+constexpr uint32_t ARG_JIT_OPTIONS = kt::strhash("--jit-options");
+constexpr uint32_t ARG_LOG_FILE    = kt::strhash("--log-file");
+constexpr uint32_t ARG_C           = kt::strhash("-c");
+constexpr uint32_t ARG_E           = kt::strhash("-e");
+
 static ERR process_args(void)
 {
    kt::Log log("Origo");
 
-   if ((!glTask->get(FID_Parameters, glArgs)) and (glArgs)) {
+   if ((!glTask->get(FID_Parameters, &glArgs)) and (glArgs)) {
       kt::vector<std::string> &args = *glArgs;
       for (unsigned i=0; i < args.size(); i++) {
-         if (kt::iequals(args[i], "--help") or kt::iequals(args[i], "help")) { // Print help for the user
+         auto hash = kt::strhash(args[i]);
+         if (hash IS ARG_HELP1 or hash IS ARG_HELP2) { // Print help for the user
             printf("%s", glHelp.c_str());
             return ERR::Terminate;
          }
-         else if (kt::iequals(args[i], "--version")) { // Print version information
+         else if (hash IS ARG_VERSION) { // Print version information
             printf("%s\n", KOTUKU_VERSION);
             printf("%s:%s\n", KOTUKU_GIT_BRANCH, KOTUKU_GIT_COMMIT);
             printf("Build Type: %s\n", KOTUKU_BUILD_TYPE);
             return ERR::Terminate;
          }
-         else if (kt::iequals(args[i], "--verify")) { // Dummy option for verifying installs
+         else if (hash IS ARG_VERIFY) { // Dummy option for verifying installs
             return ERR::Terminate;
          }
-         else if (kt::iequals(args[i], "--sandbox")) {
+         else if (hash IS ARG_SANDBOX) {
             glSandbox = true;
          }
-         else if (kt::iequals(args[i], "--time")) {
+         else if (hash IS ARG_TIME) {
             glTime = true;
          }
-         else if (kt::iequals(args[i], "--dialog")) {
+         else if (hash IS ARG_DIALOG) {
             // Display a file dialog for choosing a script manually
             glDialog = true;
          }
-         else if (kt::iequals(args[i], "--relaunch")) {
+         else if (hash IS ARG_RELAUNCH) {
             // Internal argument to detect relaunching at an altered security level
             glRelaunched = true;
          }
-         else if (kt::iequals(args[i], "--backstage")) {
+         else if (hash IS ARG_BACKSTAGE) {
             glBackstage = true;
             if (i + 1 < args.size()) {
                if (atoi(args[i+1].c_str()) > 0) i++; // Port is optional
             }
          }
-         else if (kt::iequals(args[i], "--procedure")) {
+         else if (hash IS ARG_PROCEDURE) {
             if (i + 1 < args.size()) {
                glProcedure.assign(args[i+1]);
                i++;
             }
          }
-         else if (kt::iequals(args[i], "--statement") or (kt::iequals(args[i], "-c")) or (kt::iequals(args[i], "-e"))) {
+         else if (hash IS ARG_STATEMENT or hash IS ARG_C or hash IS ARG_E) {
             // NB: The support for -c and -e exists only for AI agents that like to use this syntax for whatever reason...
             if (i + 1 < args.size()) {
                glStatement.assign(args[i+1]);
                i++;
             }
          }
-         else if ((kt::iequals(args[i], "--jit-options")) or (kt::iequals(args[i], "--log-file"))) {
+         else if (hash IS ARG_JIT_OPTIONS or hash IS ARG_LOG_FILE) {
             // For some system parameters we need to skip the next argument.
             if (i + 1 < args.size()) i++;
          }
@@ -227,7 +244,7 @@ extern "C" int main(int argc, char **argv)
          if ((AnalysePath(glTargetFile, &type) != ERR::Okay) or (type != LOC::FILE)) {
             printf("File '%s' does not exist.\n", glTargetFile.c_str());
          }
-         else result = int(exec_source(glTargetFile.c_str(), glTime, glProcedure));
+         else result = int(exec_source(glTargetFile, glTime, glProcedure));
       }
       else {
          // Engage default behaviour if no parameters have been specified

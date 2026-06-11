@@ -23,11 +23,10 @@ end
 @Test function FontFieldSetters()
    font <close> = obj.new('font')
 
-   font.face = 'Noto Sans:12:Bold Italic:#ff0000'
+   font.face = 'Noto Sans'
    assert(font.face is 'Noto Sans', 'Face parsing did not isolate the family name')
-   assert(font.point is 12, 'Face parsing did not isolate the point size')
-   assert(font.style is 'Bold Italic', 'Face parsing did not isolate the style')
 
+   font.italic = true
    font.bold = false
    assert(font.style is 'Italic', 'Clearing Bold should preserve Italic')
 

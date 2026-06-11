@@ -3628,15 +3628,16 @@ class objTask : public Object {
 
    using create = kt::Create<objTask>;
 
-   std::string LaunchPath;    // Launched executables will start in the path specified here.
-   std::string Name;          // Name of the task.
-   std::string Location;      // Location of an executable file to launch.
-   std::string Path;          // The current working folder of the active process.
-   std::string ProcessPath;   // The path of the executable that is associated with the task.
-   double TimeOut;            // Limits the amount of time to wait for a launched process to return.
-   TSF    Flags;              // Optional flags.
-   int    ReturnCode;         // The task's return code can be retrieved following execution.
-   int    ProcessID;          // Reflects the process ID when an executable is launched.
+   std::string LaunchPath;                // Launched executables will start in the path specified here.
+   std::string Name;                      // Name of the task.
+   std::string Location;                  // Location of an executable file to launch.
+   std::string Path;                      // The current working folder of the active process.
+   std::string ProcessPath;               // The path of the executable that is associated with the task.
+   double TimeOut;                        // Limits the amount of time to wait for a launched process to return.
+   kt::vector<std::string> Parameters;    // Command line arguments (list format).
+   TSF    Flags;                          // Optional flags.
+   int    ReturnCode;                     // The task's return code can be retrieved following execution.
+   int    ProcessID;                      // Reflects the process ID when an executable is launched.
 
    // Action stubs
 
@@ -3727,6 +3728,11 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getParameters(kt::vector<std::string> * &Value) noexcept {
+      Value = (kt::vector<std::string> *)(((int8_t *)this) + 256);
+      return ERR::Okay;
+   }
+
    inline ERR getFlags(TSF &Value) noexcept {
       Value = this->Flags;
       return ERR::Okay;
@@ -3765,13 +3771,6 @@ class objTask : public Object {
       auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getParameters(kt::vector<std::string> * &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3839,6 +3838,11 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setParameters(const kt::vector<std::string> &Value) noexcept {
+      this->Parameters = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setFlags(const TSF Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Flags = Value;
@@ -3863,12 +3867,7 @@ class objTask : public Object {
 
    inline ERR setArgs(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x00804200, &Value, 1);
-   }
-
-   inline ERR setParameters(const kt::vector<std::string> *Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, 0x00905300, Value, int(Value->size()));
+      return field->WriteValue(this, field, 0x00804208, &Value, 1);
    }
 
    inline ERR setErrorCallback(const FUNCTION Value) noexcept {

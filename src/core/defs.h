@@ -482,7 +482,6 @@ class extTask : public objTask {
    public:
    using create = kt::Create<extTask>;
    ankerl::unordered_dense::map<std::string, std::string, CaseInsensitiveHash, CaseInsensitiveEqual> Fields; // Variable field storage
-   kt::vector<std::string> Parameters; // Arguments (string array)
    kt::vector<std::string> Keys; // List of keys in Fields
    uint64_t AffinityMask;  // CPU affinity mask for process/thread binding
    MEMORYID MessageMID;

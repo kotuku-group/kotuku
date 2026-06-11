@@ -1534,6 +1534,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     string Path
     string ProcessPath
     double TimeOut
+    vector(string) Parameters
     int(TSF) Flags
     int ReturnCode
     int ProcessID    # Native process ID of the activated task

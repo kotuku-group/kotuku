@@ -480,7 +480,7 @@ class objXML : public Object {
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, 0x00804320, &Value, 1);
+      return field->WriteValue(this, field, 0x00804328, &Value, 1);
    }
 
 };

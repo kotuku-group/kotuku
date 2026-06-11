@@ -337,6 +337,8 @@ struct alignas(8) Object { // Must be 64-bit aligned
    }
 
    private:
+   // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
+   // reflected in the error code.
    inline ERR resolve_write_field(FIELD FieldID, Object *&Target, struct Field *&FieldPtr, bool Array) {
       if (not (FieldPtr = FindField(this, FieldID, &Target))) return ERR::UnsupportedField;
       if ((Array) and not (FieldPtr->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
@@ -378,7 +380,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
       struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
 
-      if (field->Flags & FD_CPP) return field->WriteValue(target, field, FD_ARRAY|Type, &Value, std::ssize(Value));
+      if (field->Flags & FD_CPP) return field->WriteValue(target, field, FDF_VECTOR|Type, &Value, std::ssize(Value));
       else return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
    }
 
@@ -642,6 +644,27 @@ struct alignas(8) Object { // Must be 64-bit aligned
       else return ERR::UnsupportedField;
    }
 
+   template <class T> ERR get(FIELD FieldID, kt::vector<T> **Value) {
+      Object *target;
+      if (auto field = FindField(this, FieldID, &target)) {
+         if (not field->readable()) return ERR::NoFieldAccess;
+
+         if (field->GetValue) {
+            int array_size;
+            SetObjectContext(target, field, AC::NIL);
+            auto get_field = (ERR (*)(APTR, kt::vector<T> **, int &))field->GetValue;
+            auto error = get_field(target, Value, array_size);
+            RestoreObjectContext();
+            return error;
+         }
+         else {
+            *Value = ((kt::vector<T> *)(((int8_t *)target) + field->Offset));
+            return ERR::Okay;
+         }
+      }
+      else return ERR::UnsupportedField;
+   }
+
    template <class T> ERR get(FIELD FieldID, T &Value) requires pcPointer<T> {
       Object *target;
       Value = nullptr;
@@ -753,7 +776,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          }
          else data = *((T **)(((int8_t *)target) + field->Offset));
 
-         if (field->Flags & FD_CPP) {
+         if (field->Flags & FD_CPP) {// Source is kt::vector<>
             auto vec = (kt::vector<APTR> *)data; // Data type doesn't matter, we just need the size().
             Result = data; // Return a generic kt::vector<>, the caller must cast to the correct type.
             Elements = vec->size();

@@ -1133,7 +1133,7 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
                field_alignment = alignof(int64_t);
             }
             else {
-               log.warning("Invalid field flags for %s: $%.8x.", field.Name, field.Flags);
+               log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
                field_size = 0;
                field_alignment = 0;
             }

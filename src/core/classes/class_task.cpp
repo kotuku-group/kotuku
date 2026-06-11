@@ -2191,24 +2191,6 @@ for index, value in processing.task().parameters do
 end
 </pre>
 
-*********************************************************************************************************************/
-
-static ERR GET_Parameters(extTask *Self, kt::vector<std::string> **Value, int *Elements)
-{
-   *Value = &Self->Parameters;
-   *Elements = Self->Parameters.size();
-   return ERR::Okay;
-}
-
-static ERR SET_Parameters(extTask *Self, const kt::vector<std::string> *Value, int Elements)
-{
-   if (Value) Self->Parameters = *Value;
-   else Self->Parameters.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 ProcessID: Reflects the process ID when an executable is launched.
 
@@ -2428,7 +2410,7 @@ extTask::~extTask()
    kt::Log log;
 
 #ifdef __unix__
-   check_incoming();
+   check_incoming(this);
 
    if (InFD != -1) {
       RegisterFD(InFD, RFD::REMOVE, nullptr, nullptr);
@@ -2470,22 +2452,22 @@ static const FieldArray clFields[] = {
    { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "ProcessPath",     FDF_CPPSTRING|FDF_R },
    { "TimeOut",         FDF_DOUBLE|FDF_RW },
+   { "Parameters",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
    { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clTaskFlags },
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },
    { "ProcessID",       FDF_INT|FDF_RI },
    // Virtual fields
-   { "Actions",        FDF_POINTER|FDF_R|FDF_PURE,  GET_Actions },
-   { "AffinityMask",   FDF_INT64|FDF_RW,   GET_AffinityMask, SET_AffinityMask },
-   { "Args",           FDF_CPPSTRING|FDF_W, nullptr, SET_Args },
-   { "Keys",           FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_Keys },
-   { "Parameters",     FDF_VECTOR|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Parameters, SET_Parameters },
-   { "ErrorCallback",  FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
-   { "ExitCallback",   FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_ExitCallback,    SET_ExitCallback },
-   { "InputCallback",  FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN
-   { "OutputCallback", FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_OutputCallback,  SET_OutputCallback }, // STDOUT
-   { "Priority",       FDF_INT|FDF_RW,         GET_Priority, SET_Priority },
+   { "Actions",         FDF_VIRTUAL|FDF_POINTER|FDF_R|FDF_PURE,      GET_Actions },
+   { "AffinityMask",    FDF_VIRTUAL|FDF_INT64|FDF_RW,                GET_AffinityMask, SET_AffinityMask },
+   { "Args",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,             nullptr, SET_Args },
+   { "Keys",            FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R,  GET_Keys },
+   { "ErrorCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
+   { "ExitCallback",    FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_ExitCallback,    SET_ExitCallback },
+   { "InputCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN
+   { "OutputCallback",  FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_OutputCallback,  SET_OutputCallback }, // STDOUT
+   { "Priority",        FDF_VIRTUAL|FDF_INT|FDF_RW,                  GET_Priority, SET_Priority },
    // Synonyms
-   { "Src",            FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Location, SET_Location },
+   { "Src",             FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Location, SET_Location },
    END_FIELD
 };
 
