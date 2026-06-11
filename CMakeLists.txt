@@ -1037,7 +1037,7 @@ add_subdirectory (src/xquery)
 add_subdirectory (src/json)
 add_subdirectory (src/regex)
 
-add_subdirectory (src/launcher)
+add_subdirectory (src/origo)
 
 add_subdirectory (apps)
 add_subdirectory (tools/tiri_lsp)
