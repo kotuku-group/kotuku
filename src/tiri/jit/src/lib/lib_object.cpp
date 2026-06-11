@@ -24,20 +24,17 @@
 #include "lj_str.h"
 #include "lj_meta.h"
 #include "lj_object.h"
+#include "lj_array.h"
 #include "lj_proto_registry.h"
 #include "lib.h"
 
-#include <cstdio>
-#include <cstring>
 #include <algorithm>
 #include <string_view>
 #include <ranges>
-#include <cassert>
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
 
 #include "../../defs.h"
-#include "../../hashes.h"
 
 #define LJLIB_MODULE_object
 
@@ -558,8 +555,6 @@ LJLIB_CF(object_new)
          lua_pushnil(L);
          while (lua_next(L, 2) != 0) {
             if ((field_name = luaL_checkstring(L, -2))) {
-               //if (field_name[0] IS '_') return acSetKey(obj, field_name+1, lua_tostring(Lua, ValueIndex));
-
                if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner;
                else field_error = set_object_field(L, obj, fieldhash(field_name), -1);
             }
@@ -740,20 +735,17 @@ static int object_newchild(lua_State *Lua)
       if (set_object_field(Lua, obj, fieldhash("owner"), lua_gettop(Lua)) != ERR::Okay) {
          FreeResource(obj);
          luaL_error(Lua, ERR::SetField);
-         return 0;
       }
 
       lua_pop(Lua, 1);
 
       if (lua_istable(Lua, 2)) {
          ERR field_error = ERR::Okay;
-         CSTRING field_name = nullptr;
+         std::string_view field_name;
          lua_pushnil(Lua);
          while (lua_next(Lua, 2) != 0) {
-            if ((field_name = luaL_checkstring(Lua, -2))) {
-               //if (field_name[0] IS '_') return acSetKey(obj, field_name+1, lua_tostring(Lua, ValueIndex));
-
-               if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner;
+            if (field_name = luaL_checkstring(Lua, -2); not field_name.empty()) {
+               if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner; // Setting the owner field in this situation is illegal
                else field_error = set_object_field(Lua, obj, fieldhash(field_name), -1);
             }
             else field_error = ERR::UnsupportedField;
@@ -769,13 +761,9 @@ static int object_newchild(lua_State *Lua)
             FreeResource(obj);
 
             if (field_error != ERR::Okay) {
-               luaL_error(Lua, field_error, "Failed to set field '%s', error: %s", field_name, GetErrorMsg(field_error));
+               luaL_error(Lua, field_error, "Failed to set field '%.*s', error: %s", int(field_name.size()), field_name.data(), GetErrorMsg(field_error));
             }
-            else {
-               log.warning("Failed to Init() object '%s', error: %s", class_name, GetErrorMsg(error));
-               luaL_error(Lua, ERR::Init);
-            }
-            return 0;
+            else luaL_error(Lua, ERR::Init, "Failed to Init() object '%s', error: %s", class_name, GetErrorMsg(error));
          }
       }
 

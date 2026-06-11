@@ -8,7 +8,7 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
   cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
 
-  privateNames({ "ScriptArg", "CoreBase", "RootModule" })
+  privateNames({ "ScriptArg", "CoreBase" })
 
   priority([==[
 #ifndef NDEBUG
@@ -735,7 +735,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
   ]],
   [[
    STRUCTS *StructDefs;
-   class RootModule *Root;
+   class objRootModule *Root;
 
    ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
       CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
@@ -1534,6 +1534,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     string Path
     string ProcessPath
     double TimeOut
+    vector(string) Parameters
     int(TSF) Flags
     int ReturnCode
     int ProcessID    # Native process ID of the activated task
@@ -1558,8 +1559,9 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
   klass("Module", { src="../classes/class_module.cpp", extended=true }, [[
     cstruct(*Function) FunctionList # Array of functions
     ptr ModBase                     # Ptr to function jump table
-    class(*RootModule) Root         # Shared details on the module
+    obj(RootModule) Root            # Shared details on the module
     struct(*ModHeader) Header       # For creating in-memory modules only.
+    string Name                     # Name of the module
     int(MOF) Flags                  # Optional flags
   ]],
   nil,

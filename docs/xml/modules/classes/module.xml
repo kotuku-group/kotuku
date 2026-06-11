@@ -122,10 +122,10 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
     <field>
       <name>Name</name>
       <comment>The name of the module.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
-<p>This string pointer specifies the name of the module.  This name will be used to load the module from the <code>modules:</code> folder, so this field actually reflects part of the module file name.  It is also possible to specify sub-directories before the module name itself - this could become more common in module loading in future.</p>
+<p>This string specifies the name of the module, which doubles as its location when loaded from the <code>system:modules/</code> folder.  It is permissible to specify sub-directories before the module name itself - this could become more common in module loading in future.</p>
 <p>It is critical that file extensions do not appear in the Name string, e.g. <code>display.dll</code> as not all systems may use a <code>.dll</code> extension.</p>
       </description>
     </field>

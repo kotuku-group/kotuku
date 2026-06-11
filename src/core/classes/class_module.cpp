@@ -85,16 +85,15 @@ static STRUCTS glStructures = {
 
 #include "../idl.h"
 
-static RootModule glCoreRoot;
+static objRootModule glCoreRoot;
 struct ModHeader glCoreHeader(nullptr, nullptr, nullptr, nullptr, nullptr, glIDL, &glStructures, "core", "Sys");
 
-static RootModule * check_resident(extModule *, std::string_view);
+static objRootModule * check_resident(extModule *, std::string_view);
 static void free_module(MODHANDLE handle);
 
 //********************************************************************************************************************
 
 static ERR GET_Defs(extModule *, std::string_view &);
-static ERR GET_Name(extModule *, std::string_view &);
 
 static ERR SET_Header(extModule *, struct ModHeader *);
 static ERR SET_Name(extModule *, const std::string_view &);
@@ -110,19 +109,19 @@ static const FieldArray glModuleFields[] = {
    { "ModBase",      FDF_POINTER|FDF_R },
    { "Root",         FDF_OBJECT|FDF_R, nullptr, nullptr, "RootModule" }, // Not intended for client use
    { "Header",       FDF_POINTER|FDF_STRUCT|FDF_RI, nullptr, SET_Header, "ModHeader" }, // For creating virtual modules only
+   { "Name",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Name },
    { "Flags",        FDF_INT|FDF_RI, nullptr, nullptr, &clFlags },
    // Virtual fields
    { "Defs",         FDF_CPPSTRING|FDF_R|FDF_PURE, GET_Defs },
-   { "Name",         FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Name, SET_Name },
    END_FIELD
 };
 
 static ERR MODULE_Init(extModule *);
-static ERR MODULE_Free(extModule *);
+static ERR MODULE_FreePlacement(extModule *);
 static ERR MODULE_NewPlacement(extModule *);
 
 static const ActionArray glModuleActions[] = {
-   { AC::Free, MODULE_Free },
+   { AC::Free, MODULE_FreePlacement },
    { AC::Init, MODULE_Init },
    { AC::NewPlacement, MODULE_NewPlacement },
    { AC::NIL, nullptr }
@@ -131,7 +130,7 @@ static const ActionArray glModuleActions[] = {
 //********************************************************************************************************************
 
 #ifndef KOTUKU_STATIC
-static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
+static ERR load_mod(extModule *Self, objRootModule *Root, struct ModHeader **Table)
 {
    kt::Log log(__FUNCTION__);
    std::string path;
@@ -152,7 +151,7 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
 
    if (path.empty()) {
       #ifdef __unix__
-         if (!glModulePath.empty()) { // If no specific module path is defined, default to the system path and tack on the modules/ suffix.
+         if (not glModulePath.empty()) { // If no specific module path is defined, default to the system path and tack on the modules/ suffix.
             path.assign(glModulePath);
             if (path.back() != '/') path.push_back('/');
          }
@@ -168,11 +167,11 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
          path.append(Self->Name);
 
       #elif _WIN32
-         if (!glModulePath.empty()) {
+         if (not glModulePath.empty()) {
             path = glModulePath;
             if ((path.back() != '\\') and (path.back() != '/')) path.push_back('\\');
          }
-         else if (!glSystemPath.empty()) {
+         else if (not glSystemPath.empty()) {
             path = glSystemPath;
             if ((path.back() != '\\') and (path.back() != '/')) path.push_back('\\');
             path += "lib\\";
@@ -220,7 +219,7 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
 
       if ((Root->LibraryBase = dlopen(path.c_str(), ((Self->Flags & MOF::LINK_LIBRARY) != MOF::NIL) ? (RTLD_LAZY|RTLD_GLOBAL) : RTLD_LAZY))) {
          if ((Self->Flags & MOF::LINK_LIBRARY) IS MOF::NIL) {
-            if (!(*Table = (struct ModHeader *)dlsym(Root->LibraryBase, "ModHeader"))) {
+            if (not (*Table = (struct ModHeader *)dlsym(Root->LibraryBase, "ModHeader"))) {
                log.warning("The 'ModHeader' structure is missing from module %s.", path.c_str());
                return ERR::NotFound;
             }
@@ -235,8 +234,8 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
 
       if ((Root->LibraryBase = winLoadLibrary(path.c_str()))) {
          if ((Self->Flags & MOF::LINK_LIBRARY) IS MOF::NIL) {
-            if (!(*Table = (struct ModHeader *)winGetProcAddress(Root->LibraryBase, "ModHeader"))) {
-               if (!(*Table = (struct ModHeader *)winGetProcAddress(Root->LibraryBase, "_ModHeader"))) {
+            if (not (*Table = (struct ModHeader *)winGetProcAddress(Root->LibraryBase, "ModHeader"))) {
+               if (not (*Table = (struct ModHeader *)winGetProcAddress(Root->LibraryBase, "_ModHeader"))) {
                   log.warning("The 'ModHeader' structure is missing from module %s.", path.c_str());
                   return ERR::NotFound;
                }
@@ -259,65 +258,32 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
 
 //********************************************************************************************************************
 
-ERR ROOTMODULE_Free(RootModule *Self)
+ERR ROOTMODULE_FreePlacement(objRootModule *Self)
 {
-   if (Self->Table) Self->Table->Root = nullptr; // Remove the DLL's reference to the master.
-
-   // Note that the order in which we perform the following actions is very important.
-
-   if (Self->CoreBase) { FreeResource(Self->CoreBase); Self->CoreBase = nullptr; }
-
-   // Free the module's segment/code area
-
-   if ((!Self->NoUnload) and ((Self->Flags & MHF::STATIC) IS MHF::NIL)) {
-      free_module(Self->LibraryBase);
-      Self->LibraryBase = nullptr;
-   }
-
-   if (auto lock = std::unique_lock{glmGeneric, 200ms}) {
-      // Patch the gap
-      if (Self->Prev) Self->Prev->Next = Self->Next;
-      else glModuleList = Self->Next;
-
-      if (Self->Next) Self->Next->Prev = Self->Prev;
-   }
-
-   Self->~RootModule();
+   Self->~objRootModule();
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR ROOTMODULE_NewPlacement(RootModule *Self)
+static ERR ROOTMODULE_NewPlacement(objRootModule *Self)
 {
-   new (Self) RootModule;
+   new (Self) objRootModule;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR ROOTMODULE_GET_Header(RootModule *Self, struct ModHeader **Value)
+static ERR ROOTMODULE_GET_Header(objRootModule *Self, struct ModHeader **Value)
 {
    *Value = Self->Header;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// This action sends a CLOSE command to the module, then frees the personally assigned module structure.  Note that the
-// module code will be left resident in memory as it belongs to the RootModule, not the Module.  See Expunge()
-// in the Core for further details.
 
-static ERR MODULE_Free(extModule *Self)
+static ERR MODULE_FreePlacement(extModule *Self)
 {
-   // Call the Module's Close procedure
-
-   if (Self->Root) {
-      if (Self->Root->OpenCount > 0) Self->Root->OpenCount--;
-      if (Self->Root->Close)         Self->Root->Close(Self);
-      Self->Root = nullptr;
-   }
-
-   if (Self->prvMBMemory) { FreeResource(Self->prvMBMemory); Self->prvMBMemory = nullptr; }
    Self->~extModule();
    return ERR::Okay;
 }
@@ -330,11 +296,11 @@ static ERR MODULE_Init(extModule *Self)
    ERR error = ERR::ModuleValidation;
    bool root_mod = false;
 
-   if (!Self->Name[0]) return log.warning(ERR::FieldNotSet);
+   if (Self->Name.empty()) return log.warning(ERR::FieldNotSet);
 
    // Check if the module is resident.  If not, we need to load and prepare the module for a shared environment.
 
-   std::string_view name = std::string_view(Self->Name);
+   std::string_view name(Self->Name);
    if (auto i = name.find_last_of(":/\\"); i != std::string::npos) {
       name.remove_prefix(i+1);
    }
@@ -345,7 +311,7 @@ static ERR MODULE_Init(extModule *Self)
 
    log.trace("Finding module %s (%s)", Self->Name.c_str(), name.data());
 
-   RootModule *master;
+   objRootModule *master;
    struct ModHeader *table = nullptr;
    if ((master = check_resident(Self, name))) {
       Self->Root = master;
@@ -385,8 +351,8 @@ static ERR MODULE_Init(extModule *Self)
       Self->Root = master;
 
       if (table) {
-         if (!table->Init) { log.warning(ERR::ModuleMissingInit); goto exit; }
-         if (!table->Name) { log.warning(ERR::ModuleMissingName); goto exit; }
+         if (not table->Init) { log.warning(ERR::ModuleMissingInit); goto exit; }
+         if (not table->Name) { log.warning(ERR::ModuleMissingName); goto exit; }
 
          master->Header  = table;
          master->Table   = table;
@@ -451,7 +417,7 @@ static ERR MODULE_Init(extModule *Self)
 
    #ifndef KOTUKU_STATIC
    if (Self->FunctionList) {
-      if (!(Self->ModBase = build_jump_table(Self->FunctionList))) {
+      if (not (Self->ModBase = build_jump_table(Self->FunctionList))) {
          goto exit;
       }
       Self->prvMBMemory = Self->ModBase;
@@ -520,13 +486,13 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
 {
    kt::Log log;
 
-   if ((!Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
    #ifdef KOTUKU_STATIC
    if ((Args->Address = winGetProcAddress(nullptr, Args->Name))) {
    #else
-   if ((!Self->Root) or (!Self->Root->LibraryBase)) return ERR::FieldNotSet;
+   if ((not Self->Root) or (not Self->Root->LibraryBase)) return ERR::FieldNotSet;
    if ((Args->Address = winGetProcAddress(Self->Root->LibraryBase, Args->Name))) {
    #endif
       return ERR::Okay;
@@ -540,7 +506,7 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
    #ifdef KOTUKU_STATIC
    if ((Args->Address = dlsym(RTLD_DEFAULT, symbol_name.c_str()))) {
    #else
-   if ((!Self->Root) or (!Self->Root->LibraryBase)) return ERR::FieldNotSet;
+   if ((not Self->Root) or (not Self->Root->LibraryBase)) return ERR::FieldNotSet;
    if ((Args->Address = dlsym(Self->Root->LibraryBase, symbol_name.c_str()))) {
    #endif
       return ERR::Okay;
@@ -629,7 +595,7 @@ than on solid media.
 
 static ERR SET_Header(extModule *Self, struct ModHeader *Value)
 {
-   if (!Value) return ERR::NullArgs;
+   if (not Value) return ERR::NullArgs;
    Self->Header = Value;
    return ERR::Okay;
 }
@@ -655,20 +621,13 @@ If the module is unloaded at any time then the jump table becomes invalid.
 -FIELD-
 Name: The name of the module.
 
-This string pointer specifies the name of the module.  This name will be used to load the module from the `modules:`
-folder, so this field actually reflects part of the module file name.  It is also possible to specify
-sub-directories before the module name itself - this could become more common in module loading in future.
+This string specifies the name of the module, which doubles as its location when loaded from the `system:modules/`
+folder.  It is permissible to specify sub-directories before the module name itself - this could become more common in module loading in future.
 
 It is critical that file extensions do not appear in the Name string, e.g. `display.dll` as not all systems
 may use a `.dll` extension.
 
 **********************************************************************************************************************/
-
-static ERR GET_Name(extModule *Self, std::string_view &Value)
-{
-   Value = Self->Name;
-   return ERR::Okay;
-}
 
 static ERR SET_Name(extModule *Self, const std::string_view &Name)
 {
@@ -686,23 +645,17 @@ static ERR SET_Name(extModule *Self, const std::string_view &Name)
 #ifndef KOTUKU_STATIC
 APTR build_jump_table(const Function *FList)
 {
-   if (!FList) return nullptr;
-
-   kt::Log log(__FUNCTION__);
+   if (not FList) return nullptr;
 
    int size;
    for (size=0; FList[size].Address; size++);
 
-   log.trace("%d functions have been detected in the function list.", size);
-
-   void **functions;
-   if (!AllocMemory((size+1) * sizeof(APTR), MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&functions)) {
+   if (auto functions = (void **)malloc((size+1) * sizeof(APTR))) {
       for (int i=0; i < size; i++) functions[i] = FList[i].Address;
       functions[size] = nullptr;
       return functions;
    }
-   else log.warning(ERR::AllocMemory);
-   return nullptr;
+   else return nullptr;
 }
 #endif
 
@@ -710,12 +663,12 @@ APTR build_jump_table(const Function *FList)
 // Searches the system for a RootModule header that matches the Module details.  The module must have been
 // loaded into memory in order for this function to return successfully.
 
-static RootModule * check_resident(extModule *Self, const std::string_view ModuleName)
+static objRootModule * check_resident(extModule *Self, const std::string_view ModuleName)
 {
    static bool kminit = false;
 
    if (iequals("core", ModuleName)) {
-      if (!kminit) {
+      if (not kminit) {
          kminit = true;
          // NB: The Object constructor clears all values initially.
          glCoreRoot.Class         = glRootModuleClass;
@@ -753,7 +706,7 @@ static void free_module(MODHANDLE handle)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!handle) return;
+   if (not handle) return;
 
    log.traceBranch("%p", handle);
 
@@ -772,12 +725,53 @@ static void free_module(MODHANDLE handle)
 }
 
 //********************************************************************************************************************
+// Destroying a module sends a close command.  Note that the module code will be left resident in memory as it
+// belongs to the RootModule, not the Module.  See Expunge() in the Core for further details.
+
+extModule::~extModule() {
+   // Call the Module's Close procedure
+
+   if (Root) {
+      if (Root->OpenCount > 0) Root->OpenCount--;
+      if (Root->Close)         Root->Close(this);
+      Root = nullptr;
+   }
+
+   if (prvMBMemory) { free(prvMBMemory); prvMBMemory = nullptr; }
+}
+
+//********************************************************************************************************************
+
+objRootModule::~objRootModule() {
+   if (Table) Table->Root = nullptr; // Remove the DLL's reference to the master.
+
+   // Note that the order in which we perform the following actions is very important.
+
+   if (CoreBase) { free(CoreBase); CoreBase = nullptr; }
+
+   // Free the module's segment/code area
+
+   if ((not NoUnload) and ((Flags & MHF::STATIC) IS MHF::NIL)) {
+      free_module(LibraryBase);
+      LibraryBase = nullptr;
+   }
+
+   if (auto lock = std::unique_lock{glmGeneric, 200ms}) {
+      // Patch the gap
+      if (Prev) Prev->Next = Next;
+      else glModuleList = Next;
+
+      if (Next) Next->Prev = Prev;
+   }
+}
+
+//********************************************************************************************************************
 
 static const FunctionField argsResolveSymbol[] = { { "Name", FD_CPP|FD_STR }, { "Address", FD_PTR|FD_RESULT }, { nullptr, 0 } };
 static const FunctionField argsTest[] = {
    { "Options", FD_CPP|FD_STR },
-   { "Passed", FD_INT|FD_RESULT },
-   { "Total", FD_INT|FD_RESULT },
+   { "Passed",  FD_INT|FD_RESULT },
+   { "Total",   FD_INT|FD_RESULT },
    { nullptr, 0 }
 };
 
@@ -795,8 +789,8 @@ static const FieldArray glRootModuleFields[] = {
 };
 
 static const ActionArray glRootModuleActions[] = {
-   { AC::Free, ROOTMODULE_Free },
-   { AC::NewPlacement, ROOTMODULE_NewPlacement },
+   { AC::FreePlacement, ROOTMODULE_FreePlacement },
+   { AC::NewPlacement,  ROOTMODULE_NewPlacement },
    { AC::NIL, nullptr }
 };
 
@@ -804,7 +798,7 @@ static const ActionArray glRootModuleActions[] = {
 
 extern ERR add_module_class(void)
 {
-   if (!(glModuleClass = extMetaClass::create::global(
+   if (not (glModuleClass = extMetaClass::create::global(
       fl::BaseClassID(CLASSID::MODULE),
       fl::ClassVersion(VER_MODULE),
       fl::Name("Module"),
@@ -818,7 +812,7 @@ extern ERR add_module_class(void)
       fl::Size(sizeof(extModule)),
       fl::Path("modules:core")))) return ERR::AddClass;
 
-   if (!(glRootModuleClass = extMetaClass::create::global(
+   if (not (glRootModuleClass = extMetaClass::create::global(
       fl::BaseClassID(CLASSID::ROOTMODULE),
       fl::ClassVersion(1.0),
       fl::Name("RootModule"),
@@ -826,7 +820,7 @@ extern ERR add_module_class(void)
       fl::Category(CCF::SYSTEM),
       fl::Actions(glRootModuleActions),
       fl::Fields(glRootModuleFields),
-      fl::Size(sizeof(RootModule)),
+      fl::Size(sizeof(objRootModule)),
       fl::Path("modules:core")))) return ERR::AddClass;
 
    return ERR::Okay;

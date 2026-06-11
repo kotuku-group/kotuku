@@ -158,12 +158,6 @@ external leading or descent.</li>
       <type>STRING</type>
       <description>
 <p>The name of an installed font face must be specified before initialisation unless <fl>Path</fl> is set directly.  A list of available faces can be obtained from <function module="Font">GetList</function>.</p>
-<p>The face string can include optional point size, style and colour values in the form <code>face:pointsize:style:colour</code>. Omitted middle values may be left empty.</p>
-<p>Here are some examples:</p>
-<pre>Noto Sans:12:Bold Italic:#ff0000
-Courier:10.6
-Charter:120%::255,128,255
-</pre>
 <p>Multiple font faces can be specified in CSV format, e.g. <code>Sans Serif,Noto Sans</code>.  Names are resolved from left to right.</p>
       </description>
     </field>

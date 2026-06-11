@@ -235,7 +235,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    kt::vector<std::string> *pargs;
    auto task = CurrentTask();
-   if ((!task->get(FID_Parameters, pargs)) and (pargs)) {
+   if ((!task->get(FID_Parameters, &pargs)) and (pargs)) {
       kt::vector<std::string> &args = *pargs;
       for (int i=0; i < std::ssize(args); i++) {
          if (kt::startswith(args[i], "--jit-options")) {

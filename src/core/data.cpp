@@ -132,7 +132,7 @@ std::unordered_multimap<uint32_t, CLASSID> glWildClassMap;
 std::vector<FDRecord> glRegisterFD;
 std::vector<TaskRecord> glTasks;
 
-class RootModule  *glModuleList  = nullptr;
+class objRootModule  *glModuleList  = nullptr;
 struct OpenInfo   glOpenInfo;
 struct MsgHandler *glMsgHandlers = nullptr, *glLastMsgHandler = 0;
 
