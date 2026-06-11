@@ -264,6 +264,7 @@ class extAudio : public objAudio {
    inline void finish(AudioChannel &Channel, bool Notify);
 
    extAudio() = default;
+   ~extAudio();
 
    private:
       double mixerLag;
@@ -277,15 +278,15 @@ class extSound : public objSound {
    uint8_t  PlatformData[64];   // Data area for holding platform/hardware specific information
    #endif
    ankerl::unordered_dense::map<std::string, std::string> Tags;
-   objFile *File;
+   std::unique_ptr<objFile, DeleteObject<objFile>> File;
    std::string Path;
-   TIMER  StreamTimer;        // Timer to regularly trigger for provisioning streaming data.
-   TIMER  PlaybackTimer;      // Timer to trigger when playback ends.
+   TIMER StreamTimer;        // Timer to regularly trigger for provisioning streaming data.
+   TIMER PlaybackTimer;      // Timer to trigger when playback ends.
    int   Format;             // The format of the sound data
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
    std::string NoteString;
-   bool   Active;             // True once the sound is registered with the audio driver or mixer.
+   bool  Active;             // True once the sound is registered with the audio driver or mixer.
 
    extSound() {
       Compression = 50;     // 50% compression by default
@@ -295,4 +296,6 @@ class extSound : public objSound {
       Note        = NOTE_C; // Standard pitch
       Stream      = STREAM::SMART;
    }
+
+   ~extSound();
 };

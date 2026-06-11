@@ -32,6 +32,7 @@ static bool glAssetManagerFree = false;
 constexpr int LEN_ASSETS = 7; // "assets:" length
 
 static ERR ASSET_Delete(objFile *, APTR);
+static ERR ASSET_Free(objFile *);
 static ERR ASSET_Init(objFile *, APTR);
 static ERR ASSET_Move(objFile *, struct mtFileMove *);
 static ERR ASSET_Read(objFile *, struct acRead *);
@@ -211,6 +212,25 @@ void free_asset_class(void)
 static ERR ASSET_Delete(objFile *Self)
 {
    return ERR::NoSupport; // Asset files cannot be deleted.
+}
+
+//********************************************************************************************************************
+
+static ERR ASSET_Free(objFile *Self)
+{
+   if (auto prv = (prvFileAsset *)Self->DerivedPtr) {
+      if (prv->Asset) {
+         AAsset_close(prv->Asset);
+         prv->Asset = nullptr;
+      }
+
+      if (prv->Dir) {
+         AAssetDir_close(prv->Dir);
+         prv->Dir = nullptr;
+      }
+   }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

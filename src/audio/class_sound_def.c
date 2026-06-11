@@ -32,7 +32,6 @@ static const struct ActionArray clSoundActions[] = {
    { AC::Deactivate, SOUND_Deactivate },
    { AC::Disable, SOUND_Disable },
    { AC::Enable, SOUND_Enable },
-   { AC::Free, SOUND_Free },
    { AC::FreePlacement, SOUND_FreePlacement },
    { AC::GetKey, SOUND_GetKey },
    { AC::Init, SOUND_Init },

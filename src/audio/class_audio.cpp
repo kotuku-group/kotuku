@@ -519,33 +519,6 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
 //********************************************************************************************************************
 
-static ERR AUDIO_Free(extAudio *Self)
-{
-   if ((Self->Flags & ADF::AUTO_SAVE) != ADF::NIL) Self->saveSettings();
-
-   if (Self->Timer) { UpdateTimer(Self->Timer, 0); Self->Timer = nullptr; }
-
-   glSoundChannels.erase(Self->UID);
-
-   acDeactivate(Self);
-
-   if (Self->MixBuffer) { FreeResource(Self->MixBuffer); Self->MixBuffer = nullptr; }
-
-#ifdef ALSA_ENABLED
-
-   free_alsa(Self);
-
-#elif _WIN32
-
-   dsCloseDevice();
-
-#endif
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR AUDIO_Init(extAudio *Self)
 {
    kt::Log log;
@@ -1469,22 +1442,46 @@ static void load_config(extAudio *Self)
 
 //********************************************************************************************************************
 
+extAudio::~extAudio() {
+   if ((Flags & ADF::AUTO_SAVE) != ADF::NIL) saveSettings();
+
+   if (Timer) { UpdateTimer(Timer, 0); Timer = nullptr; }
+
+   glSoundChannels.erase(UID);
+
+   acDeactivate(this);
+
+   if (MixBuffer) FreeResource(MixBuffer);
+
+#ifdef ALSA_ENABLED
+
+   free_alsa(this);
+
+#elif _WIN32
+
+   dsCloseDevice();
+
+#endif
+}
+
+//********************************************************************************************************************
+
 #include "class_audio_def.c"
 
 static const FieldArray clAudioFields[] = {
    { "OutputRate",    FDF_INT|FDF_RI, nullptr, SET_OutputRate },
    { "InputRate",     FDF_INT|FDF_RI },
-   { "Quality",       FDF_INT|FDF_RW,    nullptr, SET_Quality },
+   { "Quality",       FDF_INT|FDF_RW,      nullptr, SET_Quality },
    { "Flags",         FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clAudioFlags },
-   { "BitDepth",      FDF_INT|FDF_RI,    nullptr, SET_BitDepth },
-   { "Periods",       FDF_INT|FDF_RI,    nullptr, SET_Periods },
-   { "PeriodSize",    FDF_INT|FDF_RI,    nullptr, SET_PeriodSize },
+   { "BitDepth",      FDF_INT|FDF_RI,      nullptr, SET_BitDepth },
+   { "Periods",       FDF_INT|FDF_RI,      nullptr, SET_Periods },
+   { "PeriodSize",    FDF_INT|FDF_RI,      nullptr, SET_PeriodSize },
    // VIRTUAL FIELDS
    { "Device",        FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Device, SET_Device },
-   { "MixerLag",      FDF_DOUBLE|FDF_R,   GET_MixerLag },
-   { "MasterVolume",  FDF_DOUBLE|FDF_RW|FDF_PURE,  GET_MasterVolume, SET_MasterVolume },
-   { "Mute",          FDF_INT|FDF_RW,    GET_Mute, SET_Mute },
-   { "Stereo",        FDF_INT|FDF_RW|FDF_PURE,    GET_Stereo, SET_Stereo },
+   { "MixerLag",      FDF_DOUBLE|FDF_R,               GET_MixerLag },
+   { "MasterVolume",  FDF_DOUBLE|FDF_RW|FDF_PURE,     GET_MasterVolume, SET_MasterVolume },
+   { "Mute",          FDF_INT|FDF_RW,                 GET_Mute, SET_Mute },
+   { "Stereo",        FDF_INT|FDF_RW|FDF_PURE,        GET_Stereo, SET_Stereo },
    END_FIELD
 };
 

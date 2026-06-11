@@ -45,7 +45,6 @@ static ERR AUDIO_FreePlacement(extAudio *Self) {
 static const struct ActionArray clAudioActions[] = {
    { AC::Activate, AUDIO_Activate },
    { AC::Deactivate, AUDIO_Deactivate },
-   { AC::Free, AUDIO_Free },
    { AC::FreePlacement, AUDIO_FreePlacement },
    { AC::Init, AUDIO_Init },
    { AC::NewObject, AUDIO_NewObject },

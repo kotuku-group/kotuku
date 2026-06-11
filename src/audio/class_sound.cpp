@@ -75,7 +75,7 @@ static const std::array<double, 12> glScale = {
 
 static OBJECTPTR clSound = nullptr;
 
-static ERR find_chunk(extSound *, objFile *, std::string_view);
+static ERR find_chunk(objFile *, std::string_view);
 #ifdef USE_WIN32_PLAYBACK
 static ERR win32_audio_stream(extSound *, int64_t, int64_t);
 #endif
@@ -594,37 +594,6 @@ static ERR SOUND_Enable(extSound *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR SOUND_Free(extSound *Self)
-{
-   if (Self->StreamTimer)   { UpdateTimer(Self->StreamTimer, 0); Self->StreamTimer = 0; }
-   if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
-
-   if (Self->OnStop.isScript()) {
-      UnsubscribeAction(Self->OnStop.Context, AC::Free);
-      Self->OnStop.clear();
-   }
-
-#if defined(USE_WIN32_PLAYBACK)
-   if (!Self->Handle) sndFree((PlatformData *)Self->PlatformData);
-#endif
-
-   Self->deactivate();
-
-   if ((Self->Handle) and (Self->AudioID)) {
-      kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
-      if (audio.granted()) {
-         audio->removeSample(Self->Handle);
-         Self->Handle = 0;
-      }
-   }
-
-   if (Self->File) { FreeResource(Self->File); Self->File = nullptr; }
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 GetKey: Retrieve custom key values.
@@ -702,9 +671,11 @@ static ERR SOUND_Init(extSound *Self)
    // Load the sound file's header and test it to see if it matches our supported file format.
 
    if (!Self->File) {
-      if (!(Self->File = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
+      auto file = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE));
+      if (!file) {
          return log.warning(ERR::File);
       }
+      Self->File.reset(file);
    }
    else Self->File->seekStart(0);
 
@@ -712,16 +683,15 @@ static ERR SOUND_Init(extSound *Self)
 
    if ((std::string_view((char *)Self->Header, 4) != "RIFF") or
        (std::string_view((char *)Self->Header + 8, 4) != "WAVE")) {
-      FreeResource(Self->File);
-      Self->File = nullptr;
+      Self->File.reset();
       return ERR::NoSupport;
    }
 
    // Read the RIFF header
 
    Self->File->seekStart(12);
-   if (fl::ReadLE(Self->File, &id) != ERR::Okay) return ERR::Read; // Contains the characters "fmt "
-   if (fl::ReadLE(Self->File, &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
+   if (fl::ReadLE(Self->File.get(), &id) != ERR::Okay) return ERR::Read; // Contains the characters "fmt "
+   if (fl::ReadLE(Self->File.get(), &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
 
    WAVEFormat WAVE;
    int result;
@@ -738,11 +708,11 @@ static ERR SOUND_Init(extSound *Self)
 
    // Look for the "data" chunk
 
-   if (find_chunk(Self, Self->File, "data") != ERR::Okay) {
+   if (find_chunk(Self->File.get(), "data") != ERR::Okay) {
       return log.warning(ERR::Read);
    }
 
-   if (fl::ReadLE(Self->File, &Self->Length) != ERR::Okay) return ERR::Read; // Length of audio data in this chunk
+   if (fl::ReadLE(Self->File.get(), &Self->Length) != ERR::Okay) return ERR::Read; // Length of audio data in this chunk
 
    if (Self->Length & 1) Self->Length++;
 
@@ -809,9 +779,11 @@ static ERR SOUND_Init(extSound *Self)
    // Load the sound file's header and test it to see if it matches our supported file format.
 
    if (!Self->File) {
-      if (!(Self->File = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
+      auto file = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE));
+      if (!file) {
          return log.warning(ERR::File);
       }
+      Self->File.reset(file);
    }
    else Self->File->seekStart(0);
 
@@ -819,16 +791,15 @@ static ERR SOUND_Init(extSound *Self)
 
    if ((std::string_view((char *)Self->Header, 4) != "RIFF") or
        (std::string_view((char *)Self->Header + 8, 4) != "WAVE")) {
-      FreeResource(Self->File);
-      Self->File = nullptr;
+      Self->File.reset();
       return ERR::NoSupport;
    }
 
    // Read the FMT header
 
    Self->File->seek(12, SEEK::START);
-   if (fl::ReadLE(Self->File, &id) != ERR::Okay) return ERR::Read; // Contains the characters "fmt "
-   if (fl::ReadLE(Self->File, &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
+   if (fl::ReadLE(Self->File.get(), &id) != ERR::Okay) return ERR::Read; // Contains the characters "fmt "
+   if (fl::ReadLE(Self->File.get(), &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
 
    WAVEFormat WAVE;
    if ((Self->File->read(&WAVE, len, &result) != ERR::Okay) or (result < len)) {
@@ -847,11 +818,11 @@ static ERR SOUND_Init(extSound *Self)
 
    pos = Self->File->get<int>(FID_Position);
 #if 0
-   if (!find_chunk(Self, Self->File, "cue ")) {
+   if (!find_chunk(Self->File.get(), "cue ")) {
       data_p += 32;
       fl::ReadLE(Self->File, &info.loopstart);
       // if the next chunk is a LIST chunk, look for a cue length marker
-      if (!find_chunk(Self, Self->File, "LIST")) {
+      if (!find_chunk(Self->File.get(), "LIST")) {
          if (!strncmp (data_p + 28, "mark", 4)) {
             data_p += 24;
             fl::ReadLE(Self->File, &i);	// samples in loop
@@ -865,13 +836,13 @@ static ERR SOUND_Init(extSound *Self)
 
    // Look for the "data" chunk
 
-   if (find_chunk(Self, Self->File, "data") != ERR::Okay) {
+   if (find_chunk(Self->File.get(), "data") != ERR::Okay) {
       return log.warning(ERR::Read);
    }
 
    // Setup the sound structure
 
-   fl::ReadLE(Self->File, &Self->Length); // Length of audio data in this chunk
+   fl::ReadLE(Self->File.get(), &Self->Length); // Length of audio data in this chunk
 
    Self->DataOffset = Self->File->get<int>(FID_Position);
 
@@ -1654,7 +1625,7 @@ static ERR SOUND_SET_Volume(extSound *Self, double Value)
 
 //********************************************************************************************************************
 
-static ERR find_chunk(extSound *Self, objFile *File, std::string_view ChunkName)
+static ERR find_chunk(objFile *File, std::string_view ChunkName)
 {
    while (true) {
       char chunk[4];
@@ -1665,8 +1636,8 @@ static ERR find_chunk(extSound *Self, objFile *File, std::string_view ChunkName)
 
       if (ChunkName IS std::string_view(chunk, 4)) return ERR::Okay;
 
-      fl::ReadLE(Self->File, &len); // Length of data in this chunk
-      Self->File->seekCurrent(len);
+      fl::ReadLE(File, &len); // Length of data in this chunk
+      File->seekCurrent(len);
    }
 }
 
@@ -1695,6 +1666,34 @@ static ERR win32_audio_stream(extSound *Self, int64_t Elapsed, int64_t CurrentTi
    return ERR::Okay;
 }
 #endif
+
+//********************************************************************************************************************
+
+extSound::~extSound() {
+   if (StreamTimer)   UpdateTimer(StreamTimer, 0);
+   if (PlaybackTimer) UpdateTimer(PlaybackTimer, 0);
+
+   if (OnStop.isScript()) {
+      UnsubscribeAction(OnStop.Context, AC::Free);
+      OnStop.clear();
+   }
+
+#ifdef USE_WIN32_PLAYBACK
+   if (!Handle) sndFree((::PlatformData *)PlatformData);
+#endif
+
+   deactivate();
+
+   if ((Handle) and (AudioID)) {
+      kt::ScopedObjectLock<extAudio> audio(AudioID);
+      if (audio.granted()) {
+         audio->removeSample(Handle);
+         Handle = 0;
+      }
+   }
+
+   File.reset();
+}
 
 //********************************************************************************************************************
 
