@@ -46,8 +46,6 @@ using namespace kt;
 #include "agg_span_converter.h"
 #include "agg_span_image_filter_rgba.h"
 #include "agg_trans_affine.h"
-//#include "agg_conv_marker.h"
-//#include "agg_vcgen_markers_term.h"
 
 #include "../link/linear_rgb.h"
 #include "../link/unicode.h"
