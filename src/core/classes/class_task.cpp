@@ -118,7 +118,6 @@ static MSGID glProcessBreak = MSGID::NIL;
 #endif
 
 static ERR TASK_Activate(extTask *);
-static ERR TASK_Free(extTask *);
 static ERR TASK_GetEnv(extTask *, struct task::GetEnv *);
 static ERR TASK_GetKey(extTask *, struct acGetKey *);
 static ERR TASK_Init(extTask *);
@@ -1221,48 +1220,6 @@ mutates-object
 static ERR TASK_Expunge(extTask *Self)
 {
    Expunge(false);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR TASK_Free(extTask *Self)
-{
-   kt::Log log;
-
-#ifdef __unix__
-   check_incoming(Self);
-
-   if (Self->InFD != -1) {
-      RegisterFD(Self->InFD, RFD::REMOVE, nullptr, nullptr);
-      close(Self->InFD);
-      Self->InFD = -1;
-   }
-
-   if (Self->ErrFD != -1) {
-      RegisterFD(Self->ErrFD, RFD::REMOVE, nullptr, nullptr);
-      close(Self->ErrFD);
-      Self->ErrFD = -1;
-   }
-
-   if (Self->InputCallback.defined()) RegisterFD(fileno(stdin), RFD::READ|RFD::REMOVE, &task_stdinput_callback, Self);
-#endif
-
-#ifdef _WIN32
-   if (Self->Platform) { winFreeProcess(Self->Platform); Self->Platform = nullptr; }
-   if (Self->InputCallback.defined()) RegisterFD(winGetStdInput(), RFD::READ|RFD::REMOVE, &task_stdinput_callback, Self);
-#endif
-
-   if (Self->MessageMID)        { FreeResource(Self->MessageMID);        Self->MessageMID         = 0; }
-   if (Self->MsgAction)         { FreeResource(Self->MsgAction);         Self->MsgAction          = nullptr; }
-   if (Self->MsgDebug)          { FreeResource(Self->MsgDebug);          Self->MsgDebug           = nullptr; }
-   if (Self->MsgWaitForObjects) { FreeResource(Self->MsgWaitForObjects); Self->MsgWaitForObjects  = nullptr; }
-   if (Self->MsgQuit)           { FreeResource(Self->MsgQuit);           Self->MsgQuit            = nullptr; }
-   if (Self->MsgFree)           { FreeResource(Self->MsgFree);           Self->MsgFree            = nullptr; }
-   if (Self->MsgEvent)          { FreeResource(Self->MsgEvent);          Self->MsgEvent           = nullptr; }
-   if (Self->MsgThreadCallback) { FreeResource(Self->MsgThreadCallback); Self->MsgThreadCallback  = nullptr; }
-   if (Self->MsgThreadAction)   { FreeResource(Self->MsgThreadAction);   Self->MsgThreadAction    = nullptr; }
-
    return ERR::Okay;
 }
 
@@ -2465,6 +2422,46 @@ This field can be set in conjunction with the `WAIT` flag to define the time lim
 process to return.  The time out is defined in seconds.
 
 *********************************************************************************************************************/
+
+extTask::~extTask()
+{
+   kt::Log log;
+
+#ifdef __unix__
+   check_incoming();
+
+   if (InFD != -1) {
+      RegisterFD(InFD, RFD::REMOVE, nullptr, nullptr);
+      close(InFD);
+      InFD = -1;
+   }
+
+   if (ErrFD != -1) {
+      RegisterFD(ErrFD, RFD::REMOVE, nullptr, nullptr);
+      close(ErrFD);
+      ErrFD = -1;
+   }
+
+   if (InputCallback.defined()) RegisterFD(fileno(stdin), RFD::READ|RFD::REMOVE, &task_stdinput_callback, this);
+#endif
+
+#ifdef _WIN32
+   if (Platform) { winFreeProcess(Platform); Platform = nullptr; }
+   if (InputCallback.defined()) RegisterFD(winGetStdInput(), RFD::READ|RFD::REMOVE, &task_stdinput_callback, this);
+#endif
+
+   if (MessageMID)        { FreeResource(MessageMID);        MessageMID         = 0; }
+   if (MsgAction)         { FreeResource(MsgAction);         MsgAction          = nullptr; }
+   if (MsgDebug)          { FreeResource(MsgDebug);          MsgDebug           = nullptr; }
+   if (MsgWaitForObjects) { FreeResource(MsgWaitForObjects); MsgWaitForObjects  = nullptr; }
+   if (MsgQuit)           { FreeResource(MsgQuit);           MsgQuit            = nullptr; }
+   if (MsgFree)           { FreeResource(MsgFree);           MsgFree            = nullptr; }
+   if (MsgEvent)          { FreeResource(MsgEvent);          MsgEvent           = nullptr; }
+   if (MsgThreadCallback) { FreeResource(MsgThreadCallback); MsgThreadCallback  = nullptr; }
+   if (MsgThreadAction)   { FreeResource(MsgThreadAction);   MsgThreadAction    = nullptr; }
+}
+
+//********************************************************************************************************************
 
 static const FieldArray clFields[] = {
    { "LaunchPath",      FDF_CPPSTRING|FDF_RW },
