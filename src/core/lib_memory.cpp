@@ -101,7 +101,7 @@ static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_fr
 TrackResource: Assign a resource manager to an address, or update an existing one.
 
 TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
-dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing
+dispatch cleanup through the supplied `ResourceManager`.  If the resource identifier is already registered, the existing
 record is updated with the non-zero values provided by the caller.
 
 The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is

@@ -3648,6 +3648,7 @@ class objTask : public Object {
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
    inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
@@ -3754,6 +3755,15 @@ class objTask : public Object {
       auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getKeys(kt::vector<std::string> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }

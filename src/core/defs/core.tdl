@@ -690,7 +690,6 @@ class FloatRect {
       Terminating(false), OwnerManagesChildren(false) { };
   ]])
 
-
   struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
      obj Object # Reference to an object to monitor.
   ]])
