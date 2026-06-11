@@ -795,7 +795,7 @@ the surface area first).</li>
 
     <field>
       <name>WindowHandle</name>
-      <comment>Refers to a surface object's window handle, if relevant.</comment>
+      <comment>Refers to the surface's window handle (host dependent).</comment>
       <access read="G" write="S">Get/Set</access>
       <type>APTR</type>
       <description>
