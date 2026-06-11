@@ -53,7 +53,7 @@ static ERR GET_Location(extMetaClass *, std::string_view &);
 static ERR GET_Methods(extMetaClass *, const MethodEntry **, int *);
 static ERR GET_Module(extMetaClass *, std::string_view &);
 static ERR GET_Objects(extMetaClass *, OBJECTID **, int *);
-static ERR GET_RootModule(extMetaClass *, class RootModule **);
+static ERR GET_RootModule(extMetaClass *, class objRootModule **);
 static ERR GET_Dictionary(extMetaClass *, struct Field **, int *);
 static ERR GET_SubClasses(extMetaClass *, extMetaClass ***, int *);
 static ERR GET_SubFields(extMetaClass *, const FieldArray **, int *);
@@ -221,7 +221,7 @@ void init_metaclass(void)
    sort_class_fields(&glMetaClass, glMetaClass.FieldLookup);
 
    glMetaClass.BaseCeiling = glMetaClass.FieldLookup.size();
-   
+
    glMetaClass.Dictionary = glMetaClass.FieldLookup.data();
 
    glClassMap[CLASSID::METACLASS] = &glMetaClass;
@@ -365,7 +365,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
    for (auto it=tlContext.rbegin(); it != tlContext.rend()-1; it++) {
       if (it->obj->classID() IS CLASSID::ROOTMODULE) {
-         Self->Root = (RootModule *)it->obj;
+         Self->Root = (objRootModule *)it->obj;
          break;
       }
    }
@@ -820,7 +820,7 @@ RootModule: Returns a direct reference to the RootModule object that hosts the c
 
 *********************************************************************************************************************/
 
-static ERR GET_RootModule(extMetaClass *Self, class RootModule **Value)
+static ERR GET_RootModule(extMetaClass *Self, class objRootModule **Value)
 {
    *Value = Self->Root;
    return ERR::Okay;

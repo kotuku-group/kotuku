@@ -1749,7 +1749,7 @@ struct ModHeader {
    CSTRING Name;                                     // Name of the module
    CSTRING Namespace;                                // A reserved system-wide namespace for function names.
    STRUCTS *StructDefs;
-   class RootModule *Root;
+   class objRootModule *Root;
 
    ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
       CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
@@ -4011,8 +4011,9 @@ class objModule : public Object {
 
    const struct Function * FunctionList;    // Refers to a list of public functions exported by the module.
    APTR ModBase;                            // The Module's function base (jump table) must be read from this field.
-   class RootModule * Root;                 // For internal use only.
+   objRootModule * Root;                    // For internal use only.
    struct ModHeader * Header;               // For internal usage only.
+   std::string Name;                        // The name of the module.
    MOF  Flags;                              // Optional flags.
    public:
    static ERR load(std::string Name, OBJECTPTR *Module = nullptr, APTR Functions = nullptr) {
@@ -4063,6 +4064,11 @@ class objModule : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getName(std::string_view &Value) noexcept {
+      Value = this->Name;
+      return ERR::Okay;
+   }
+
    inline ERR getFlags(MOF &Value) noexcept {
       Value = this->Flags;
       return ERR::Okay;
@@ -4070,13 +4076,6 @@ class objModule : public Object {
 
    inline ERR getDefs(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getName(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -4095,15 +4094,15 @@ class objModule : public Object {
       return field->WriteValue(this, field, 0x08000510, Value, 1);
    }
 
+   inline ERR setName(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+   }
+
    inline ERR setFlags(const MOF Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Flags = Value;
       return ERR::Okay;
-   }
-
-   inline ERR setName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
 };

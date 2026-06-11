@@ -422,7 +422,7 @@ class extMetaClass : public objMetaClass {
    std::vector<MethodEntry> Methods;    // Original method array supplied by the module.
    std::vector<extMetaClass *> SubClasses; // List of all associated derived classes
    const struct FieldArray *SubFields;  // Extra fields defined by the derived class
-   class RootModule *Root;              // Root module that owns this class, if any.
+   class objRootModule *Root;           // Root module that owns this class, if any.
    uint8_t Local[8];                    // Local object references (by field indexes), in order
    std::string Location;                // Location of the class binary, this field exists purely for caching the location string if the client reads it
    ActionEntry ActionTable[int(AC::END)];
@@ -542,8 +542,8 @@ struct TaskRecord {
 class extModule : public objModule {
    public:
    using create = kt::Create<extModule>;
-   std::string Name;     // Name of the module
    APTR   prvMBMemory;   // Module base memory
+   ~extModule();
 };
 
 //********************************************************************************************************************
@@ -724,7 +724,7 @@ extern bool glLogThreads;
 extern int16_t glLogLevel, glMaxDepth;
 extern TSTATE glTaskState;
 extern int64_t glTimeLog;
-extern RootModule *glModuleList;    // Locked with glmGeneric.  Maintained as a linked-list; hashmap unsuitable.
+extern objRootModule *glModuleList;    // Locked with glmGeneric.  Maintained as a linked-list; hashmap unsuitable.
 extern OpenInfo glOpenInfo;         // Read-only.  The OpenInfo structure initially passed to OpenCore()
 extern extTask *glCurrentTask;
 extern "C" const ActionTable ActionTable[];
@@ -1048,10 +1048,10 @@ extern std::vector<FDRecord> glRegisterFD;
 // The RootModule class is used to represent the first instantation of a loaded module library.  It is managed
 // internally.  Clients interface with modules via the Module class.
 
-class RootModule : public Object {
+class objRootModule : public Object {
    public:
-   class RootModule *Next;     // Next module in list
-   class RootModule *Prev;     // Previous module in list
+   class objRootModule *Next;     // Next module in list
+   class objRootModule *Prev;     // Previous module in list
    struct ModHeader *Header;   // Pointer to module header - for memory resident modules only.
    struct CoreBase *CoreBase;  // Module's personal Core reference
    #ifdef __unix__
@@ -1075,7 +1075,8 @@ class RootModule : public Object {
    struct ActionEntry prvActions[int(AC::END)]; // Action routines to be intercepted by the program
    std::string LibraryName; // Name of the library loaded from disk
 
-   RootModule() = default;
+   objRootModule() = default;
+   ~objRootModule();
 };
 
 THREADID get_thread_id(void);
@@ -1133,7 +1134,7 @@ ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
 struct ClassItem * find_class(CLASSID);
 ERR    find_private_object_entry(OBJECTID, int *);
 void   free_events(void);
-void   free_module_entry(RootModule *);
+void   free_module_entry(objRootModule *);
 void   free_wakelocks(void);
 void   init_metaclass(void);
 ERR    init_sleep(THREADID, int, int);
