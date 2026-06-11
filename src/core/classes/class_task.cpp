@@ -45,7 +45,10 @@ The task object that represents the active process can be acquired from ~Current
  #include <stdio.h>
 #endif
 
+#include <algorithm>
 #include <bit>
+#include <fstream>
+#include <vector>
 
 #include "../defs.h"
 #include <kotuku/main.h>
@@ -108,6 +111,8 @@ extern "C" DLLCALL int WINAPI RegQueryValueExA(APTR,CSTRING,int *,int *,int8_t *
 extern "C" DLLCALL int WINAPI RegSetValueExA(APTR hKey, CSTRING lpValueName, int Reserved, int dwType, const void *lpData, int cbData);
 extern "C" DLLCALL int WINAPI RegEnumValueA(APTR hKey, int dwIndex, STRING lpValueName, int *lpcchValueName, int *lpReserved, int *lpType, int8_t *lpData, int *lpcbData);
 extern "C" DLLCALL int WINAPI RegEnumKeyExA(APTR hKey, int dwIndex, STRING lpName, int *lpcchName, int *lpReserved, STRING lpClass, int *lpcchClass, void *lpftLastWriteTime);
+extern "C" DLLCALL int WINAPI GetFileVersionInfoSizeA(CSTRING,int *);
+extern "C" DLLCALL int WINAPI GetFileVersionInfoA(CSTRING,int,int,APTR);
 
 static MSGID glProcessBreak = MSGID::NIL;
 #endif
@@ -118,6 +123,7 @@ static ERR TASK_GetEnv(extTask *, struct task::GetEnv *);
 static ERR TASK_GetKey(extTask *, struct acGetKey *);
 static ERR TASK_Init(extTask *);
 static ERR TASK_NewPlacement(extTask *);
+static ERR TASK_Query(extTask *);
 static ERR TASK_SetEnv(extTask *, struct task::SetEnv *);
 static ERR TASK_SetKey(extTask *, struct acSetKey *);
 static ERR TASK_Write(extTask *, struct acWrite *);
@@ -127,6 +133,7 @@ static ERR TASK_Expunge(extTask *);
 static ERR TASK_Quit(extTask *);
 
 #include "class_task_def.c"
+#include "../microsoft/pe_metadata.cpp"
 
 //********************************************************************************************************************
 
@@ -1472,6 +1479,53 @@ static ERR TASK_GetKey(extTask *Self, struct acGetKey *Args)
    else return log.warning(ERR::UnsupportedField);
 }
 
+/*********************************************************************************************************************
+
+-ACTION-
+Query: Reads executable metadata from the file referenced in Location.
+
+Query() reads Windows VERSIONINFO metadata from the executable referenced by the #Location field.  Discovered string
+properties are stored in the task's key-value list and can be retrieved with #GetKey().  Existing keys with matching
+names are overwritten, while unrelated custom keys are preserved.
+
+The #Name field is updated from the ProductName, FileDescription or InternalName metadata when one of those properties
+is available.
+
+-ERRORS-
+Okay
+MissingPath: The Location field has not been set.
+File:        The executable file could not be opened.
+Query:       The executable did not contain readable VERSIONINFO metadata.
+
+-TAGS-
+mutates-object
+-END-
+
+*********************************************************************************************************************/
+
+static ERR TASK_Query(extTask *Self)
+{
+   kt::Log log;
+
+   if (Self->Location.empty()) return log.warning(ERR::MissingPath);
+
+   std::string path;
+   if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &path) != ERR::Okay) return log.warning(ERR::ResolvePath);
+
+   TaskVersionMetadata metadata;
+   if (auto error = load_task_version_metadata(path, metadata); error != ERR::Okay) return log.warning(error);
+
+   for (auto &field : metadata.Fields) Self->Fields[field.first] = field.second;
+
+   // Promote relevant metadata to the Name field
+
+   if (auto it = metadata.Fields.find("ProductName"); it != metadata.Fields.end()) Self->Name = it->second;
+   else if (auto desc = metadata.Fields.find("FileDescription"); desc != metadata.Fields.end()) Self->Name = desc->second;
+   else if (auto name = metadata.Fields.find("InternalName"); name != metadata.Fields.end()) Self->Name = name->second;
+
+   return ERR::Okay;
+}
+
 //********************************************************************************************************************
 
 static ERR TASK_Init(extTask *Self)
@@ -2010,6 +2064,23 @@ static ERR SET_ExitCallback(extTask *Self, FUNCTION *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Keys: Returns a list of all key names available to the GetKeys() action.
+
+*********************************************************************************************************************/
+
+static ERR GET_Keys(extTask *Self, kt::vector<std::string> **Value, int *Elements)
+{
+   Self->Keys.clear();
+   Self->Keys.reserve(Self->Fields.size());
+   for (const auto &kv : Self->Fields) Self->Keys.emplace_back(kv.first);
+   *Value = &Self->Keys;
+   *Elements = Self->Keys.size();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 InputCallback: This callback returns incoming data from STDIN.
 
 The InputCallback field is available to the active task object only (i.e. the current process).
@@ -2143,9 +2214,7 @@ static ERR SET_Location(extTask *Self, const std::string_view &Value)
 -FIELD-
 Name: Name of the task.
 
-This field specifies the name of the task or program that has been initialised. It is up to the developer of the
-program to set the Name which will appear in this field.  If there is no name for the task then the system may
-assign a randomly generated name.
+This field specifies the task's name, which may be derived from the source program's metadata, if available.
 
 -FIELD-
 Parameters: Command line arguments (list format).
@@ -2411,7 +2480,8 @@ static const FieldArray clFields[] = {
    { "Actions",        FDF_POINTER|FDF_R|FDF_PURE,  GET_Actions },
    { "AffinityMask",   FDF_INT64|FDF_RW,   GET_AffinityMask, SET_AffinityMask },
    { "Args",           FDF_CPPSTRING|FDF_W, nullptr, SET_Args },
-   { "Parameters",     FDF_ARRAY|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Parameters, SET_Parameters },
+   { "Keys",           FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_Keys },
+   { "Parameters",     FDF_VECTOR|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Parameters, SET_Parameters },
    { "ErrorCallback",  FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
    { "ExitCallback",   FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_ExitCallback,    SET_ExitCallback },
    { "InputCallback",  FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN

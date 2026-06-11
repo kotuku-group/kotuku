@@ -58,6 +58,24 @@
     </action>
 
     <action>
+      <name>Query</name>
+      <comment>Reads executable metadata from the file referenced in Location.</comment>
+      <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
+      <description>
+<p>Query() reads Windows VERSIONINFO metadata from the executable referenced by the <fl>Location</fl> field.  Discovered string properties are stored in the task's key-value list and can be retrieved with <action>GetKey</action>.  Existing keys with matching names are overwritten, while unrelated custom keys are preserved.</p>
+<p>The <fl>Name</fl> field is updated from the ProductName, FileDescription or InternalName metadata when one of those properties is available.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="File">The executable file could not be opened.</error>
+        <error code="Query">The executable did not contain readable VERSIONINFO metadata.</error>
+        <error code="MissingPath">The Location field has not been set.</error>
+      </result>
+      <tags>mutates-object</tags>
+    </action>
+
+    <action>
       <name>SetKey</name>
       <comment>Variable fields are supported for the general storage of program variables.</comment>
       <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
@@ -285,6 +303,13 @@
 <p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The data buffer is temporary and will be invalid once the callback function has returned.</code>
 <p>A status of </p>ERR::Finished` is sent if the stdinput handle has been closed.</p>
       </description>
+    </field>
+
+    <field>
+      <name>Keys</name>
+      <comment>Returns a list of all key names available to the GetKeys() action.</comment>
+      <access read="G">Get</access>
+      <type>kt::vector&lt;std::string&gt;</type>
     </field>
 
     <field>
