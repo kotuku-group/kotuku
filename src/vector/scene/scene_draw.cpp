@@ -59,6 +59,7 @@ private:
 
    void render_fill(VectorState &, extVector &, agg::rasterizer_scanline_aa<> &, extPainter &);
    void render_stroke(VectorState &, extVector &);
+   bool shape_intersects_clip(extVector *);
    void draw_vectors(extVector *, VectorState &);
    static const agg::trans_affine build_fill_transform(extVector &, bool,  VectorState &);
 
@@ -659,6 +660,41 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
    }
 }
 
+//********************************************************************************************************************
+// Test the transformed vector bounds against the current render clip.  The returned value only controls rasterisation
+// of this vector's own path; child traversal and input-boundary registration are handled separately by draw_vectors().
+
+bool SceneRenderer::shape_intersects_clip(extVector *Shape)
+{
+   if (Shape->BasePath.empty()) return false;
+
+   TClipRectangle<double> bounds;
+
+   if (Shape->Transform.is_normal()) bounds = Shape;
+   else {
+      auto path = Shape->Bounds.as_path(Shape->Transform);
+      bounds = get_bounds(path);
+   }
+
+   double inflation = 1.0; // Preserve antialiasing on sub-pixel edges close to the clip boundary.
+
+   if (Shape->StrokeRaster) {
+      double stroke_inflation = Shape->fixed_stroke_width() * Shape->Transform.scale();
+      if (Shape->MiterLimit > 1.0) stroke_inflation *= Shape->MiterLimit;
+      if (stroke_inflation > inflation) inflation = stroke_inflation;
+   }
+
+   bounds.left   -= inflation;
+   bounds.top    -= inflation;
+   bounds.right  += inflation;
+   bounds.bottom += inflation;
+
+   auto &clip = mRenderBase.clip_box();
+
+   return (bounds.right >= double(clip.x1)) and (bounds.bottom >= double(clip.y1)) and
+      (bounds.left <= double(clip.x2)) and (bounds.top <= double(clip.y2));
+}
+
 // This is the main routine for parsing the vector tree for drawing.
 
 void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentState) {
@@ -1027,13 +1063,17 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                return;
             }
 
-            if (shape->FillRaster) {
-               render_fill(state, *shape, *shape->FillRaster, shape->Fill[0]);
-               if (shape->FGFill) render_fill(state, *shape, *shape->FillRaster, shape->Fill[1]);
-            }
+            const bool render_path = shape_intersects_clip(shape);
 
-            if (shape->StrokeRaster) {
-               render_stroke(state, *shape);
+            if (render_path) {
+               if (shape->FillRaster) {
+                  render_fill(state, *shape, *shape->FillRaster, shape->Fill[0]);
+                  if (shape->FGFill) render_fill(state, *shape, *shape->FillRaster, shape->Fill[1]);
+               }
+
+               if (shape->StrokeRaster) {
+                  render_stroke(state, *shape);
+               }
             }
 
             if (has_input_boundary(shape)) {
