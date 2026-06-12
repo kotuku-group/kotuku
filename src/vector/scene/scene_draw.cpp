@@ -121,10 +121,10 @@ public:
 
       public:
 
-      ClipBuffer() : m_shape(nullptr), m_clip(nullptr) { }
+      ClipBuffer() : m_state(nullptr), m_width(0), m_height(0), m_shape(nullptr), m_clip(nullptr) { }
 
       ClipBuffer(VectorState &pState, extVectorClip *pClip, extVector *pShape) :
-         m_state(&pState), m_shape(pShape), m_clip(pClip) { }
+         m_state(&pState), m_width(0), m_height(0), m_shape(pShape), m_clip(pClip) { }
 
       void draw(SceneRenderer &);
       void draw_viewport(SceneRenderer &);
@@ -132,7 +132,9 @@ public:
          agg::renderer_base<agg::pixfmt_gray8> &, const agg::trans_affine &);
       void draw_bounding_box(SceneRenderer &);
       void draw_userspace(SceneRenderer &);
-      void resize_bitmap(int, int, int, int);
+      bool use_cached_mask(const agg::trans_affine &, double, double);
+      void store_cached_mask(const agg::trans_affine &, double, double);
+      void resize_bitmap(int, int);
    };
 
 private:

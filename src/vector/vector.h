@@ -330,6 +330,39 @@ class SceneDef {
 
 //********************************************************************************************************************
 
+struct ClipMaskCache {
+   std::vector<uint8_t> Bitmap;
+   TClipRectangle<double> Bounds;
+   agg::trans_affine Transform;
+   extVectorClip *Clip;
+   uint64_t ContentVersion;
+   int PathTimestamp;
+   int Width, Height;
+   double ParentWidth, ParentHeight;
+   VUNIT Units;
+   VCLF Flags;
+   bool Valid;
+
+   ClipMaskCache() : Clip(nullptr), ContentVersion(0), PathTimestamp(0), Width(0), Height(0),
+      ParentWidth(0), ParentHeight(0), Units(VUNIT::UNDEFINED), Flags(VCLF::NIL), Valid(false) { }
+
+   void clear() {
+      Bitmap.clear();
+      Bounds = {};
+      Transform.reset();
+      Clip = nullptr;
+      ContentVersion = 0;
+      PathTimestamp = 0;
+      Width = Height = 0;
+      ParentWidth = ParentHeight = 0;
+      Units = VUNIT::UNDEFINED;
+      Flags = VCLF::NIL;
+      Valid = false;
+   }
+};
+
+//********************************************************************************************************************
+
 constexpr int MAX_TRANSITION_STOPS = 10;
 
 struct TransitionStop { // Passed to the Stops field.
@@ -452,6 +485,7 @@ class extVector : public objVector {
    extVector           *Morph;
    extVector           *AppendPath;
    DashedStroke        *DashArray;
+   ClipMaskCache ClipCache;
    JTYPE InputMask;
    int   NumericID;
    int   PathLength;
@@ -558,13 +592,20 @@ class extVectorViewport : public extVector {
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
+   extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
    DMF   vpDimensions;
    ARF   vpAspectRatio;
    VOF   vpOverflowX, vpOverflowY;
+   uint8_t vpClipConfiguring:1;
    uint8_t vpDragging:1;
    uint8_t vpBuffered:1; // True if the client requested that the viewport is buffered.
    uint8_t vpRefreshBuffer:1;
+
+   extVectorViewport() {
+      vpClipOwner = nullptr;
+      vpClipConfiguring = false;
+   }
 };
 
 //********************************************************************************************************************
@@ -645,10 +686,12 @@ class extVectorClip : public objVectorClip, public SceneDef {
 
    extVectorClip() {
       Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
+      ContentVersion = 1;
    }
 
    TClipRectangle<double> Bounds;
    OBJECTID ViewportID;
+   uint64_t ContentVersion;
 };
 
 //********************************************************************************************************************
@@ -749,6 +792,28 @@ TClipRectangle<T> get_bounds(VertexSource &vs, const unsigned path_id = 0)
 
 static void mark_buffers_for_refresh(extVector *Vector)
 {
+   for (auto node=Vector; node; ) {
+      node->ClipCache.clear();
+
+      if ((!node->Parent) or (node->Parent->Class->BaseClassID != CLASSID::VECTOR)) break;
+      node = (extVector *)node->Parent;
+   }
+
+   if (extVectorViewport *parent_view = (Vector->classID() IS CLASSID::VECTORVIEWPORT) ?
+      (extVectorViewport *)Vector : Vector->ParentView) {
+
+      while (parent_view) {
+         if ((parent_view->vpClipOwner) and
+             ((Vector->classID() != CLASSID::VECTORVIEWPORT) or (!parent_view->vpClipConfiguring))) {
+            parent_view->vpClipOwner->ContentVersion++;
+            parent_view->vpClipOwner->modified();
+            break;
+         }
+
+         parent_view = parent_view->ParentView;
+      }
+   }
+
    if ((Vector->Scene) and (!((extVectorScene *)Vector->Scene)->BufferCount)) return;
 
    extVectorViewport *parent_view;

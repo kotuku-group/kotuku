@@ -168,7 +168,10 @@ static void notify_free_morph(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extVector *)CurrentContext();
-   if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) Self->ClipMask = nullptr;
+   if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) {
+      Self->ClipMask = nullptr;
+      Self->ClipCache.clear();
+   }
 }
 
 //********************************************************************************************************************
@@ -276,6 +279,8 @@ static ERR VECTOR_Enable(extVector *Self)
 
 static ERR VECTOR_Free(extVector *Self)
 {
+   Self->ClipCache.clear();
+
    if (Self->ClipMask)   UnsubscribeAction(Self->ClipMask, AC::Free);
    if (Self->Transition) UnsubscribeAction(Self->Transition, AC::Free);
    if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
@@ -1737,11 +1742,13 @@ static ERR VECTOR_SET_Mask(extVector *Self, extVectorClip *Value)
       if (Self->ClipMask) {
          UnsubscribeAction(Self->ClipMask, AC::Free);
          Self->ClipMask = nullptr;
+         Self->ClipCache.clear();
       }
       return ERR::Okay;
    }
    else if (Value->classID() IS CLASSID::VECTORCLIP) {
       if (Self->ClipMask) UnsubscribeAction(Self->ClipMask, AC::Free);
+      Self->ClipCache.clear();
       if (Value->initialised()) { // Ensure that the mask is initialised.
          SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_clipmask));
          Self->ClipMask = Value;
@@ -1979,9 +1986,9 @@ composed of lines at 45 degree increments and `FAST` if points are aligned to wh
 -FIELD-
 PathTimestamp: This counter is modified each time the path is regenerated.
 
-The PathTimestamp can be used as a basic means of recording the state of the vector's path, and checking that state
-for changes at a later time.  For more active monitoring and response, clients should subscribe to the `PATH_CHANGED`
-event.
+The PathTimestamp is a counter that can be used as a basic means of recording the state of the vector's path, and
+checking that state for changes at a later time.  For more active monitoring and response, clients should subscribe
+to the `PATH_CHANGED` event.
 
 -FIELD-
 Prev: The previous vector in the branch, or `NULL`.

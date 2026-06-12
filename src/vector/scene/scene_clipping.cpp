@@ -13,6 +13,78 @@
 // value: ".2126R + .7152G + .0722B".  The best way to apply this is to convert solid colour values to their
 // luminesence value prior to drawing them.
 
+static constexpr int CLIP_MASK_CACHE_LIMIT = 16 * 1024 * 1024;
+
+static bool clip_transform_matches(const agg::trans_affine &A, const agg::trans_affine &B)
+{
+   return (A.sx IS B.sx) and
+      (A.sy IS B.sy) and
+      (A.shx IS B.shx) and
+      (A.shy IS B.shy) and
+      (A.tx IS B.tx) and
+      (A.ty IS B.ty);
+}
+
+//********************************************************************************************************************
+
+bool SceneRenderer::ClipBuffer::use_cached_mask(const agg::trans_affine &Transform, double ParentWidth,
+   double ParentHeight)
+{
+   // A null m_clip is valid: viewport boundary masks (draw_viewport) have no VectorClip and are keyed on the
+   // shape's path state alone.  Note that a viewport using both vpClip and a ClipMask shares the one cache slot,
+   // distinguished by the Clip pointer, so the two masks evict each other on alternate draws.
+
+   auto &cache = m_shape->ClipCache;
+
+   if ((!cache.Valid) or (cache.Clip != m_clip) or (cache.Bitmap.empty())) return false;
+   if (cache.PathTimestamp != m_shape->PathTimestamp) return false;
+   if (m_clip) {
+      if (cache.ContentVersion != m_clip->ContentVersion) return false;
+      if (cache.Units != m_clip->Units) return false;
+      if (cache.Flags != m_clip->Flags) return false;
+   }
+   if ((cache.ParentWidth != ParentWidth) or (cache.ParentHeight != ParentHeight)) return false;
+   if (!clip_transform_matches(cache.Transform, Transform)) return false;
+
+   m_width = cache.Width;
+   m_height = cache.Height;
+   if (m_clip) m_clip->Bounds = cache.Bounds;
+   m_renderer.attach(cache.Bitmap.data(), m_width - 1, m_height - 1, m_width);
+   return true;
+}
+
+//********************************************************************************************************************
+
+void SceneRenderer::ClipBuffer::store_cached_mask(const agg::trans_affine &Transform, double ParentWidth,
+   double ParentHeight)
+{
+   if ((m_width <= 0) or (m_height <= 0)) return;
+
+   if (uint64_t(m_width) * uint64_t(m_height) > CLIP_MASK_CACHE_LIMIT) {
+      m_shape->ClipCache.clear();
+      return;
+   }
+
+   auto &cache = m_shape->ClipCache;
+   cache.Bitmap = m_bitmap;
+   cache.Bounds = m_clip ? m_clip->Bounds : TClipRectangle<double>();
+   cache.Transform = Transform;
+   cache.Clip = m_clip;
+   cache.ContentVersion = m_clip ? m_clip->ContentVersion : 0;
+   cache.PathTimestamp = m_shape->PathTimestamp;
+   cache.Width = m_width;
+   cache.Height = m_height;
+   cache.ParentWidth = ParentWidth;
+   cache.ParentHeight = ParentHeight;
+   cache.Units = m_clip ? m_clip->Units : VUNIT::UNDEFINED;
+   cache.Flags = m_clip ? m_clip->Flags : VCLF::NIL;
+   cache.Valid = true;
+
+   m_renderer.attach(cache.Bitmap.data(), m_width - 1, m_height - 1, m_width);
+}
+
+//********************************************************************************************************************
+
 void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Shape, agg::rasterizer_scanline_aa<> &Raster,
    agg::renderer_base<agg::pixfmt_gray8> &Base, const agg::trans_affine &Transform)
 {
@@ -81,8 +153,8 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
 
                if ((m_clip->Flags & VCLF::APPLY_STROKES) != VCLF::NIL) {
                   if (node->StrokeRaster) {
-                     double value = (std::clamp<float>(node->Stroke.Colour.Red, 0, 1) * 0.2126) + 
-                        (std::clamp<float>(node->Stroke.Colour.Green, 0, 1) * 0.7152) + 
+                     double value = (std::clamp<float>(node->Stroke.Colour.Red, 0, 1) * 0.2126) +
+                        (std::clamp<float>(node->Stroke.Colour.Green, 0, 1) * 0.7152) +
                         (std::clamp<float>(node->Stroke.Colour.Blue, 0, 1) * 0.0722);
                      value *= node->StrokeOpacity;
                      solid.color(agg::gray8(value * 0xff, 0xff));
@@ -116,7 +188,7 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
 
 //********************************************************************************************************************
 
-void SceneRenderer::ClipBuffer::resize_bitmap(int X, int Y, int Width, int Height)
+void SceneRenderer::ClipBuffer::resize_bitmap(int Width, int Height)
 {
    if ((Width <= 0) or (Height <= 0)) Width = Height = 1;
 
@@ -124,20 +196,10 @@ void SceneRenderer::ClipBuffer::resize_bitmap(int X, int Y, int Width, int Heigh
    if (Height > 8192) Height = 8192;
 
    m_bitmap.resize(Width * Height);
+   std::fill(m_bitmap.begin(), m_bitmap.end(), 0);
 
    m_width  = Width;
    m_height = Height;
-
-   Y *= Width;
-
-   if (X < 0) X = 0;
-   if (Y < 0) Y = 0;
-
-   if ((X < Width) and (Y < Height)) {
-      for (; Y < Height; Y += Width) {
-         clearmem(m_bitmap.data() + Y + X, Width - X);
-      }
-   }
 }
 
 //********************************************************************************************************************
@@ -148,7 +210,11 @@ void SceneRenderer::ClipBuffer::draw_viewport(SceneRenderer &Render)
    auto vp = (extVectorViewport *)m_shape;
    if (vp->dirty()) gen_vector_path(vp);
 
-   resize_bitmap(int(vp->vpBounds.left), int(vp->vpBounds.top), int(vp->vpBounds.right) + 2, int(vp->vpBounds.bottom) + 2);
+   // The mask is derived entirely from the viewport's generated path, so PathTimestamp is the key invalidator.
+
+   if (use_cached_mask(vp->Transform, 0, 0)) return;
+
+   resize_bitmap(int(vp->vpBounds.right) + 2, int(vp->vpBounds.bottom) + 2);
 
    m_renderer.attach(m_bitmap.data(), m_width-1, m_height-1, m_width);
    agg::pixfmt_gray8 pixf(m_renderer);
@@ -166,6 +232,8 @@ void SceneRenderer::ClipBuffer::draw_viewport(SceneRenderer &Render)
       rasterizer.add_path(final_path);
       agg::render_scanlines(rasterizer, sl, solid);
    }
+
+   store_cached_mask(vp->Transform, 0, 0);
 }
 
 //********************************************************************************************************************
@@ -196,13 +264,22 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
       transform.ty = 0;
    }
 
-   if (!set_render_transform(m_clip->Viewport, transform)) return;
-
-   // Defining the viewport's dimensions is important for clip paths that use scaled coordinates
    auto parent_width  = get_parent_width(m_shape);
    auto parent_height = get_parent_height(m_shape);
+
+   if (use_cached_mask(transform, parent_width, parent_height)) return;
+
+   auto clip_viewport = (extVectorViewport *)m_clip->Viewport;
+   clip_viewport->vpClipConfiguring = true;
+   if (!set_render_transform(m_clip->Viewport, transform)) {
+      clip_viewport->vpClipConfiguring = false;
+      return;
+   }
+
+   // Defining the viewport's dimensions is important for clip paths that use scaled coordinates
    //m_clip->Viewport->setFields(fl::X(m_shape->ParentView->vpTargetX), fl::Y(m_shape->ParentView->vpTargetY));
    set_viewport_fixed_size(m_clip->Viewport, parent_width, parent_height);
+   clip_viewport->vpClipConfiguring = false;
 
    m_clip->Bounds = TCR_EXPANDING;
    calc_full_boundary((extVector *)m_clip->Viewport, m_clip->Bounds, false, true, true);
@@ -212,8 +289,7 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
    agg::path_storage clip_bound_path = m_clip->Bounds.as_path();
    auto clip_bound_final = get_bounds(clip_bound_path);
 
-   resize_bitmap(int(clip_bound_final.left), int(clip_bound_final.top),
-      int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
+   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 
@@ -223,22 +299,33 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
    agg::rasterizer_scanline_aa<> rasterizer;
 
    draw_clips(Scene, (extVector *)m_clip->Viewport->Child, rasterizer, rb, agg::trans_affine());
+   store_cached_mask(transform, parent_width, parent_height);
 }
 
 //********************************************************************************************************************
 
 void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
 {
+   const auto transform = m_shape->Transform;
+
+   if (use_cached_mask(transform, 0, 0)) return;
+
    TClipRectangle<double> shape_bounds = TCR_EXPANDING; // Bounds *without transforms*
    calc_full_boundary(m_shape, shape_bounds, false, false, false);
 
    // Set the target area to mock the shape.  The viewbox will remain at (0 0 1 1), or whatever the
    // client has defined if the default is overridden.
 
+   auto clip_viewport = (extVectorViewport *)m_clip->Viewport;
+   clip_viewport->vpClipConfiguring = true;
    set_viewport_fixed_bounds(m_clip->Viewport, shape_bounds.left, shape_bounds.top,
       shape_bounds.width(), shape_bounds.height());
 
-   if (!set_render_transform(m_clip->Viewport, build_matrix_transform(m_shape->Matrices))) return;
+   if (!set_render_transform(m_clip->Viewport, build_matrix_transform(m_shape->Matrices))) {
+      clip_viewport->vpClipConfiguring = false;
+      return;
+   }
+   clip_viewport->vpClipConfiguring = false;
 
    m_clip->Bounds = TCR_EXPANDING;
    calc_full_boundary((extVector *)m_clip->Viewport, m_clip->Bounds, false, true, true);
@@ -248,7 +335,7 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    auto clip_bound_path = m_clip->Bounds.as_path(m_shape->Transform);
    auto clip_bound_final = get_bounds(clip_bound_path);
 
-   resize_bitmap(int(clip_bound_final.left), int(clip_bound_final.top), int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
+   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 
@@ -257,5 +344,6 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    agg::renderer_base<agg::pixfmt_gray8> rb(pixf);
    agg::rasterizer_scanline_aa<> rasterizer;
 
-   draw_clips(Render, (extVector *)m_clip->Viewport->Child, rasterizer, rb, m_shape->Transform);
+   draw_clips(Render, (extVector *)m_clip->Viewport->Child, rasterizer, rb, transform);
+   store_cached_mask(transform, 0, 0);
 }
