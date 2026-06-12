@@ -30,6 +30,7 @@ Examples:
   origo examples/benchmark_particles.tiri mode=vector maxParticles=1000
   origo examples/benchmark_particles.tiri mode=vector shape=star
   origo examples/benchmark_particles.tiri mode=directvector shape=star
+  origo examples/benchmark_particles.tiri mode=directvector scale=2
   origo examples/benchmark_particles.tiri mode=directvector
 ]],
       args        = array<table> {
@@ -39,6 +40,8 @@ Examples:
          { name = 'shape', type = 'enum', default = 'ellipse',
            choices = array<string> { 'ellipse', 'star' },
            comment = 'Particle shape for vector and direct vector modes.' },
+         { name = 'scale', type = 'num', default = 1.0,
+           comment = 'Particle radius scale; 1.0 leaves particles at their default size.' },
          { names = array<string> { 'maxParticles', 'maxparticles' }, type = 'int', default = 500,
            comment = 'Number of particles to simulate; values below 100 are raised to 100.' }
       }
@@ -107,13 +110,14 @@ end
 
 function newParticle()
    RADIUS <const> = 6
+   local radius = RADIUS * glArgs.scale
    particle = {
       angle    = PI * 2 * math.random(),
       velocity = 1 + math.random() * 3,
-      radius   = RADIUS,
-      x        = (glWinWidth / 2) - RADIUS,
-      y        = (glWinHeight / 2) - RADIUS,
-      center   = RADIUS
+      radius   = radius,
+      x        = (glWinWidth / 2) - radius,
+      y        = (glWinHeight / 2) - radius,
+      center   = radius
    }
 
    if glMode is MODE_VECTOR then
@@ -137,9 +141,9 @@ function newParticle()
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
       local err
       if glShape is 'star' then
-         err, particle.path = lVec.GeneratePath(makeStarSequence(particle.x, particle.y, particle.radius))
+         err, particle.path = lVec.GeneratePath(makeStarSequence(particle.x+particle.radius, particle.y+particle.radius, particle.radius))
       else
-         err, particle.path = lVec.GenerateEllipse(particle.x, particle.y, particle.radius, particle.radius, 0)
+         err, particle.path = lVec.GenerateEllipse(particle.x+particle.radius, particle.y+particle.radius, particle.radius, particle.radius, 0)
       end
       check err
    elseif glMode is MODE_PRIMITIVE then
@@ -205,7 +209,7 @@ function timer(Subscriber, Elapsed, Current)
       end
 
       choose glMode from
-         MODE_VECTOR -> moveVectorParticle(p, nextX, nextY, moveflag)
+         MODE_VECTOR -> p.vector.acMoveToPoint(nextX + p.center, nextY + p.center, 0, moveflag)
          MODE_DIRECTVECTOR -> lVec.TranslatePath(p.path, tx, ty)
       end
 
