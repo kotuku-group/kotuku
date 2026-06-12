@@ -1086,6 +1086,7 @@ enum class RES : int {
    MEMORY_USAGE = 18,
    MAIN_THREAD = 19,
    MAIN_THREAD_ID = 20,
+   WINDOWS_ICON = 21,
 };
 
 // Path types for SetResourcePath()

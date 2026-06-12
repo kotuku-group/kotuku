@@ -38,6 +38,16 @@ static bool glBackstage = false;
 
 static ERR exec_source(std::string, int, const std::string);
 
+#ifdef _WIN32
+inline void select_window_icon_resource(const std::string_view Path)
+{
+   bool is_tiri = (Path.size() >= 5) and kt::iequals(Path.substr(Path.size() - 5), ".tiri");
+   SetResource(RES::WINDOWS_ICON, is_tiri ? 501 : 500);
+}
+#else
+inline void select_window_icon_resource(const std::string_view) { }
+#endif
+
 static const std::string glHelp =
    "Origo " KOTUKU_VERSION R"(
 
@@ -175,6 +185,7 @@ static ERR process_args(void)
                return ERR::Terminate;
             }
             glArgsIndex = i + 1;
+            select_window_icon_resource(glTargetFile);
             break;
          }
       }
@@ -222,18 +233,20 @@ extern "C" int main(int argc, char **argv)
    }
 
    glTask = CurrentTask();
+   select_window_icon_resource("");
 
-   int result = 0;
+   ERR result = ERR::Okay;
    if (!process_args()) {
       if (glBackstage) {
          objModule::load("backstage");
       }
 
       if (glDialog) {
-         result = int(select_file_dialog());
+         select_window_icon_resource(".tiri");
+         result = select_file_dialog();
       }
       else if (not glStatement.empty()) {
-         result = int(exec_source(std::string("STRING:") + glStatement, glTime, glProcedure));
+         result = exec_source(std::string("STRING:") + glStatement, glTime, glProcedure);
       }
       else if (not glTargetFile.empty()) {
          std::string_view path;
@@ -244,7 +257,7 @@ extern "C" int main(int argc, char **argv)
          if ((AnalysePath(glTargetFile, &type) != ERR::Okay) or (type != LOC::FILE)) {
             printf("File '%s' does not exist.\n", glTargetFile.c_str());
          }
-         else result = int(exec_source(glTargetFile, glTime, glProcedure));
+         else result = exec_source(glTargetFile, glTime, glProcedure);
       }
       else {
          // Engage default behaviour if no parameters have been specified
@@ -266,15 +279,18 @@ extern "C" int main(int argc, char **argv)
             if ((glPackageArchive = objCompression::create::local(fl::Path(pkg_path), fl::ArchiveName("package"), fl::Flags(CMF::READ_ONLY)))) {
                if (SetVolume("package", "archive:package/", "filetypes/archive", "", "", VOLUME::REPLACE|VOLUME::HIDDEN) != ERR::Okay) return -1;
 
-               result = (int)exec_source("package:main.tiri", glTime, glProcedure);
+               select_window_icon_resource("package:main.tiri");
+               result = exec_source("package:main.tiri", glTime, glProcedure);
             }
             else return -1;
          }
          else { // Check for main.tiri
             if ((!AnalysePath("main.tiri", &type)) and (type IS LOC::FILE)) {
-               result = (int)exec_source("main.tiri", glTime, glProcedure);
+               select_window_icon_resource("main.tiri");
+               result = exec_source("main.tiri", glTime, glProcedure);
             }
             else {
+               select_window_icon_resource(".tiri");
                auto error = select_file_dialog();
 
                if (error IS ERR::NoSupport) {
@@ -282,7 +298,7 @@ extern "C" int main(int argc, char **argv)
                   error = ERR::Okay;
                }
 
-               result = int(error);
+               result = error;
             }
          }
       }
@@ -292,5 +308,5 @@ extern "C" int main(int argc, char **argv)
 
    close_kotuku();
 
-   return result;
+   return int(result);
 }

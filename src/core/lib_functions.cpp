@@ -395,6 +395,7 @@ int64_t GetResource(RES Resource)
       case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
       case RES::MAIN_THREAD:     return tlMainThread ? true : false;
       case RES::MAIN_THREAD_ID:  return int(glMainThreadID);
+      case RES::WINDOWS_ICON:    return glWindowsIcon;
 
       case RES::MEMORY_USAGE: {
          #ifdef __linux__
@@ -789,6 +790,8 @@ int64_t SetResource(RES Resource, int64_t Value)
       case RES::LOG_DEPTH: tlDepth = Value; break;
 
       case RES::JNI_ENV: glJNIEnv = L64PTR(Value); break;
+
+      case RES::WINDOWS_ICON: glWindowsIcon = Value; break;
 
       case RES::PRIVILEGED_USER:
 #ifdef __unix__

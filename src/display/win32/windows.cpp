@@ -102,6 +102,14 @@ struct MonitorPhysicalSize {
 
 static std::map<std::string, MonitorPhysicalSize> glMonitorPhysicalSizes;
 
+//********************************************************************************************************************
+
+static HICON win_load_application_icon(void)
+{
+   if (auto icon = LoadIcon(glInstance, MAKEINTRESOURCE(GetWindowsIcon()))) return icon;
+   return LoadIcon(glInstance, IDI_APPLICATION);
+}
+
 #ifdef DBGMSG
 static ankerl::unordered_dense::map<int, const char *> glCmd = { {
  { WM_SETCURSOR, "WM_SETCURSOR" },
@@ -1550,7 +1558,7 @@ int winCreateScreenClass(void)
    winclass.cbClsExtra    = 0;
    winclass.cbWndExtra    = sizeof(struct winextra);
    winclass.hInstance     = glInstance;
-   if (!(winclass.hIcon = LoadIcon(glInstance, MAKEINTRESOURCE(500)))) winclass.hIcon = LoadIcon(glInstance, IDI_APPLICATION);
+   winclass.hIcon         = win_load_application_icon();
    winclass.hCursor       = nullptr; //glDefaultCursor;
    winclass.hbrBackground = nullptr;
    winclass.lpszMenuName  = nullptr;
@@ -1665,8 +1673,13 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
       nid.uID    = ID_TRAY;
       nid.uFlags = NIF_ICON | NIF_MESSAGE;
       nid.uCallbackMessage = WM_ICONNOTIFY;
-      if (!(nid.hIcon = LoadIcon(glInstance, MAKEINTRESOURCE(500)))) nid.hIcon = LoadIcon(glInstance, IDI_APPLICATION);
+      nid.hIcon = win_load_application_icon();
       Shell_NotifyIcon(NIM_ADD, &nid);
+   }
+
+   if (auto icon = win_load_application_icon()) {
+      SendMessage(Window, WM_SETICON, ICON_BIG, (LPARAM)icon);
+      SendMessage(Window, WM_SETICON, ICON_SMALL, (LPARAM)icon);
    }
 
    if (glStickToFront > 0) glStickToFront--;
