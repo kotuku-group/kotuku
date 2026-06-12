@@ -97,7 +97,7 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
    if (SampleMethod IS VSM::AUTO) {
       if ((final_x_scale <= 0.5) or (final_y_scale <= 0.5)) SampleMethod = VSM::BICUBIC;
       else if ((final_x_scale <= 1.0) or (final_y_scale <= 1.0)) SampleMethod = VSM::SINC;
-      else SampleMethod = VSM::SPLINE16; // Spline works well for enlarging monotone vectors and avoids sharpening artifacts.
+      else SampleMethod = VSM::SPLINE16; // Spline is a better bicubic, it works well for enlarging monotone vectors and avoids sharpening artifacts.
    }
 
    if ((Render) and (!Render->clip_stack_empty())) {

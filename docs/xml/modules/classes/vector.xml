@@ -602,7 +602,7 @@
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>The PathTimestamp can be used as a basic means of recording the state of the vector's path, and checking that state for changes at a later time.  For more active monitoring and response, clients should subscribe to the <code>PATH_CHANGED</code> event.</p>
+<p>The PathTimestamp is a counter that can be used as a basic means of recording the state of the vector's path, and checking that state for changes at a later time.  For more active monitoring and response, clients should subscribe to the <code>PATH_CHANGED</code> event.</p>
       </description>
     </field>
 

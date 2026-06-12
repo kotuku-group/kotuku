@@ -257,7 +257,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "NEIGHBOUR: Nearest neighbour is the fastest sampler at the cost of poor quality.",
     "BILINEAR: Bilinear is a common algorithm that produces a reasonable quality image quickly.",
     "BICUBIC: Produces a similar result to `BILINEAR` at a slightly higher CPU cost and a marginally sharper after-effect.",
-    "SPLINE16: About twice as slow as `BILINEAR`, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.",
+    "SPLINE16: About twice as slow as `BILINEAR`, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.",
     "KAISER: Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to `BILINEAR`.",
     "QUADRIC: Uses a quadratic filter with a modest kernel, giving smoother results than `BILINEAR` with limited extra cost.",
     "GAUSSIAN: Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.",

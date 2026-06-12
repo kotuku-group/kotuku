@@ -104,19 +104,23 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
       renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right-1, Self->Target->Clip.Bottom-1);
 
       agg::span_interpolator_linear<> interpolator(img_transform);
-
-      agg::image_filter_lut ifilter;
-      set_filter(ifilter, SampleMethod, img_transform);
-
       agg::span_once<agg::pixfmt_psl> source(pixSource, 0, 0);
-      agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
-         spangen(source, interpolator, ifilter, false);
 
       set_raster_rect_path(raster, Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right - Self->Target->Clip.Left,
          Self->Target->Clip.Bottom - Self->Target->Clip.Top);
 
-      renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      if (SampleMethod IS VSM::NEIGHBOUR) {
+         agg::span_image_filter_rgba_nn<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+            spangen(source, interpolator);
+         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      }
+      else {
+         const agg::image_filter_lut &ifilter = get_filter(SampleMethod, img_transform);
+         agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+            spangen(source, interpolator, ifilter, false);
+         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      }
    }
    else gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height, -img_transform.tx, -img_transform.ty);
 }

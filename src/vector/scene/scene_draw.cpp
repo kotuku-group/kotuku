@@ -429,33 +429,43 @@ const agg::trans_affine SceneRenderer::build_fill_transform(extVector &Vector, b
 
 //********************************************************************************************************************
 
-void set_filter(agg::image_filter_lut &Filter, VSM Method, agg::trans_affine &Transform, double Kernel)
+const agg::image_filter_lut & get_filter(VSM Method, agg::trans_affine &Transform, double Kernel)
 {
-   auto compute_kernel = [&Transform, &Kernel]() {
+   double kernel = 0;
+   if ((Method IS VSM::SINC) or (Method IS VSM::LANCZOS) or (Method IS VSM::BLACKMAN)) {
       // For auto kernel calculation, use larger kernel sizes when shrinking.  A base-level of 3.0 is used so that
       // the use of advanced filter algorithms is justified for the client.
       double k;
       if (Kernel > 0.0) k = Kernel;
       else k = 3.0 + (1.0 / svg_diag(Transform.sx, Transform.sy));
-      return std::clamp(k, 2.0, 8.0);
-   };
+      // Quantised to 0.25 steps; visually indistinguishable and it bounds the cache size.
+      kernel = std::round(std::clamp(k, 2.0, 8.0) * 4.0) * 0.25;
+   }
 
+   // LUT construction is deterministic for a given method and kernel, so tables are computed once and
+   // cached.  Thread-local storage keeps the cache lock-free
+
+   thread_local std::unordered_map<int, agg::image_filter_lut> cache;
+   const int key = (int(Method) << 8) | int(kernel * 4.0);
+   if (auto it = cache.find(key); it != cache.end()) return it->second;
+
+   auto &filter = cache[key];
    switch(Method) {
       case VSM::AUTO:
-      case VSM::NEIGHBOUR: // There is a 'span_image_filter_rgb_nn' class but no equivalent image_filter_neighbour() routine?
-      case VSM::BILINEAR:  Filter.calculate(agg::image_filter_bilinear(), true); break;
-      case VSM::BICUBIC:   Filter.calculate(agg::image_filter_bicubic(), true); break;
-      case VSM::SPLINE16:  Filter.calculate(agg::image_filter_spline16(), true); break;
-      case VSM::KAISER:    Filter.calculate(agg::image_filter_kaiser(), true); break;
-      case VSM::QUADRIC:   Filter.calculate(agg::image_filter_quadric(), true); break;
-      case VSM::GAUSSIAN:  Filter.calculate(agg::image_filter_gaussian(), true); break;
-      case VSM::BESSEL:    Filter.calculate(agg::image_filter_bessel(), true); break;
-      case VSM::MITCHELL:  Filter.calculate(agg::image_filter_mitchell(), true); break;
-      case VSM::SINC:      Filter.calculate(agg::image_filter_sinc(compute_kernel()), true); break;
-      case VSM::LANCZOS:   Filter.calculate(agg::image_filter_lanczos(compute_kernel()), true); break;
-      case VSM::BLACKMAN:  Filter.calculate(agg::image_filter_blackman(compute_kernel()), true); break;
-      default:             Filter.calculate(agg::image_filter_bicubic(), true); break;
+      case VSM::BILINEAR:  filter.calculate(agg::image_filter_bilinear(), true); break;
+      case VSM::BICUBIC:   filter.calculate(agg::image_filter_bicubic(), true); break;
+      case VSM::SPLINE16:  filter.calculate(agg::image_filter_spline16(), true); break;
+      case VSM::KAISER:    filter.calculate(agg::image_filter_kaiser(), true); break;
+      case VSM::QUADRIC:   filter.calculate(agg::image_filter_quadric(), true); break;
+      case VSM::GAUSSIAN:  filter.calculate(agg::image_filter_gaussian(), true); break;
+      case VSM::BESSEL:    filter.calculate(agg::image_filter_bessel(), true); break;
+      case VSM::MITCHELL:  filter.calculate(agg::image_filter_mitchell(), true); break;
+      case VSM::SINC:      filter.calculate(agg::image_filter_sinc(kernel), true); break;
+      case VSM::LANCZOS:   filter.calculate(agg::image_filter_lanczos(kernel), true); break;
+      case VSM::BLACKMAN:  filter.calculate(agg::image_filter_blackman(kernel), true); break;
+      default:             filter.calculate(agg::image_filter_bicubic(), true); break;
    }
+   return filter;
 }
 
 //********************************************************************************************************************
@@ -472,28 +482,35 @@ template <class T> void drawBitmap(T &Scanline, VSM SampleMethod, agg::renderer_
 
    if (requires_interpolation) {
       agg::span_interpolator_linear interpolator(*Transform);
-      agg::image_filter_lut filter;
-      set_filter(filter, SampleMethod, *Transform);  // Set the interpolation filter to use.
+
+      auto render_source = [&](auto &source) {
+         using source_t = std::remove_reference_t<decltype(source)>;
+         if (SampleMethod IS VSM::NEIGHBOUR) {
+            agg::span_image_filter_rgba_nn<source_t, agg::span_interpolator_linear<>> spangen(source, interpolator);
+            drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         }
+         else {
+            const agg::image_filter_lut &filter = get_filter(SampleMethod, *Transform);
+            agg::span_image_filter_rgba<source_t, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
+            drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         }
+      };
 
       if (SpreadMethod IS VSPREAD::REFLECT_X) {
          agg::span_reflect_x source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_reflect_x, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
       else if (SpreadMethod IS VSPREAD::REFLECT_Y) {
          agg::span_reflect_y source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_reflect_y, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
       else if (SpreadMethod IS VSPREAD::REPEAT) {
          agg::span_repeat_pf source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_repeat_pf, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
       else { // VSPREAD::PAD and VSPREAD::CLIP modes.
          agg::span_once<agg::pixfmt_psl> source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
    }
    else {

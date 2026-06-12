@@ -19,9 +19,12 @@
 #ifndef AGG_SPAN_IMAGE_FILTER_RGBA_INCLUDED
 #define AGG_SPAN_IMAGE_FILTER_RGBA_INCLUDED
 
+#include <cstring>
+
 #include "agg_basics.h"
 #include "agg_color_rgba.h"
 #include "agg_span_image_filter.h"
+#include "../../../link/simd.h"
 
 namespace agg
 {
@@ -31,29 +34,32 @@ namespace agg
    public:
       typedef Source source_type;
       typedef typename source_type::color_type color_type;
-      typedef typename source_type::order_type order_type;
       typedef Interpolator in_type;
       typedef span_image_filter<source_type, in_type> base_type;
       typedef typename color_type::value_type value_type;
+      unsigned char oR, oG, oB, oA;
 
       enum base_scale_e {
           base_shift = color_type::base_shift,
           base_mask  = color_type::base_mask
       };
 
-      span_image_filter_rgba_nn() {}
-      span_image_filter_rgba_nn(source_type &src, in_type &inter) : base_type(src, inter, 0)
-      {}
+      span_image_filter_rgba_nn(source_type &src, in_type &inter) : base_type(src, inter, 0) {
+         oR = src.m_src->mPixelOrder.Red;
+         oG = src.m_src->mPixelOrder.Green;
+         oB = src.m_src->mPixelOrder.Blue;
+         oA = src.m_src->mPixelOrder.Alpha;
+      }
 
       void generate(color_type *span, int x, int y, unsigned len) {
          base_type::interpolator().begin(x + base_type::filter_dx_dbl(), y + base_type::filter_dy_dbl(), len);
          do {
             base_type::interpolator().coordinates(&x, &y);
             auto fg_ptr = (const value_type *)base_type::source().span(x >> image_subpixel_shift, y >> image_subpixel_shift, 1);
-            span->r = fg_ptr[order_type::R];
-            span->g = fg_ptr[order_type::G];
-            span->b = fg_ptr[order_type::B];
-            span->a = fg_ptr[order_type::A];
+            span->r = fg_ptr[oR];
+            span->g = fg_ptr[oG];
+            span->b = fg_ptr[oB];
+            span->a = fg_ptr[oA];
             ++span;
             ++base_type::interpolator();
 
@@ -491,6 +497,17 @@ namespace agg
          int          start        = base_type::filter().start();
          const int16* weight_array = base_type::filter().weight_array();
 
+#ifdef KOTUKU_SSE2
+         if (diameter IS 2) { // Bilinear: the 2x2 kernel maps onto two _mm_madd_epi16 ops per pixel.
+            generate_2x2(span, len, start, weight_array);
+            return;
+         }
+         else if (diameter IS 4) { // Spline16/bicubic/mitchell etc: 4x4 kernel, two madds per row.
+            generate_4x4(span, len, start, weight_array);
+            return;
+         }
+#endif
+
          int x_count, weight_y;
 
          do {
@@ -540,32 +557,177 @@ namespace agg
             fg[2] >>= image_filter_shift;
             fg[3] >>= image_filter_shift;
 
-            if (fg[0] < 0) fg[0] = 0;
-            if (fg[1] < 0) fg[1] = 0;
-            if (fg[2] < 0) fg[2] = 0;
-            if (fg[3] < 0) fg[3] = 0;
-
-            if (fg[oA] > base_mask) fg[oA] = base_mask;
-
-            if (alpha_limit) { // Enable only if pipeline is blending with background color
-               if (fg[oR] > fg[oA]) fg[oR] = fg[oA];
-               if (fg[oG] > fg[oA]) fg[oG] = fg[oA];
-               if (fg[oB] > fg[oA]) fg[oB] = fg[oA];
-            }
-            else { // For copy-only, non-blending pipelines
-               if (fg[oR] > base_mask) fg[oR] = base_mask;
-               if (fg[oG] > base_mask) fg[oG] = base_mask;
-               if (fg[oB] > base_mask) fg[oB] = base_mask;
-            }
-
-            span->r = (value_type)fg[oR];
-            span->g = (value_type)fg[oG];
-            span->b = (value_type)fg[oB];
-            span->a = (value_type)fg[oA];
+            store_clamped(span, fg);
             ++span;
             ++base_type::interpolator();
          } while(--len);
       }
+
+   private:
+      // Clamp the accumulated channel values (already shifted down to pixel range) and write them to the span
+      // in destination colour order.
+
+      inline void store_clamped(color_type *span, int (&fg)[4]) const {
+         if (fg[0] < 0) fg[0] = 0;
+         if (fg[1] < 0) fg[1] = 0;
+         if (fg[2] < 0) fg[2] = 0;
+         if (fg[3] < 0) fg[3] = 0;
+
+         if (fg[oA] > base_mask) fg[oA] = base_mask;
+
+         if (alpha_limit) { // Enable only if pipeline is blending with background color
+            if (fg[oR] > fg[oA]) fg[oR] = fg[oA];
+            if (fg[oG] > fg[oA]) fg[oG] = fg[oA];
+            if (fg[oB] > fg[oA]) fg[oB] = fg[oA];
+         }
+         else { // For copy-only, non-blending pipelines
+            if (fg[oR] > base_mask) fg[oR] = base_mask;
+            if (fg[oG] > base_mask) fg[oG] = base_mask;
+            if (fg[oB] > base_mask) fg[oB] = base_mask;
+         }
+
+         span->r = (value_type)fg[oR];
+         span->g = (value_type)fg[oG];
+         span->b = (value_type)fg[oB];
+         span->a = (value_type)fg[oA];
+      }
+
+#ifdef KOTUKU_SSE2
+      // SSE2 specialisation of the 2x2 (bilinear) kernel for 4-byte pixels.  Bit-exact with the generic loop:
+      // the four combined weights are computed with the same fixed-point arithmetic, and bilinear LUT weights
+      // are non-negative and bounded by image_filter_scale (16384) after normalisation, so each fits a signed
+      // 16-bit lane for _mm_madd_epi16.  Texel fetches stay on the source accessor so edge wrapping semantics
+      // are unchanged.
+
+      void generate_2x2(color_type *span, unsigned len, int start, const int16 *weight_array) {
+         const __m128i zero     = _mm_setzero_si128();
+         const __m128i rounding = _mm_set1_epi32(image_filter_scale / 2);
+
+         do {
+            int x, y;
+            base_type::interpolator().coordinates(&x, &y);
+
+            x -= base_type::filter_dx_int();
+            y -= base_type::filter_dy_int();
+
+            const int x_lr = x >> image_subpixel_shift;
+            const int y_lr = y >> image_subpixel_shift;
+
+            const int x_hr = image_subpixel_mask - (x & image_subpixel_mask);
+            const int y_hr = image_subpixel_mask - (y & image_subpixel_mask);
+
+            const int wx0 = weight_array[x_hr];
+            const int wx1 = weight_array[x_hr + image_subpixel_scale];
+            const int wy0 = weight_array[y_hr];
+            const int wy1 = weight_array[y_hr + image_subpixel_scale];
+
+            const int w00 = (wy0 * wx0 + image_filter_scale / 2) >> image_filter_shift;
+            const int w01 = (wy0 * wx1 + image_filter_scale / 2) >> image_filter_shift;
+            const int w10 = (wy1 * wx0 + image_filter_scale / 2) >> image_filter_shift;
+            const int w11 = (wy1 * wx1 + image_filter_scale / 2) >> image_filter_shift;
+
+            // Texel fetch order matches the generic loop: (0,0), (1,0), then next_y resets x for (0,1), (1,1).
+
+            int32_t t00, t01, t10, t11;
+            std::memcpy(&t00, base_type::source().span(x_lr + start, y_lr + start, 2), 4);
+            std::memcpy(&t01, base_type::source().next_x(), 4);
+            std::memcpy(&t10, base_type::source().next_y(), 4);
+            std::memcpy(&t11, base_type::source().next_x(), 4);
+
+            // Interleave row pairs per channel so madd produces w_left*left + w_right*right per 32-bit lane.
+
+            const __m128i top = _mm_unpacklo_epi16(
+               _mm_unpacklo_epi8(_mm_cvtsi32_si128(t00), zero),
+               _mm_unpacklo_epi8(_mm_cvtsi32_si128(t01), zero));
+            const __m128i bottom = _mm_unpacklo_epi16(
+               _mm_unpacklo_epi8(_mm_cvtsi32_si128(t10), zero),
+               _mm_unpacklo_epi8(_mm_cvtsi32_si128(t11), zero));
+
+            __m128i acc = _mm_add_epi32(
+               _mm_madd_epi16(top, _mm_set1_epi32((w01 << 16) | (w00 & 0xffff))),
+               _mm_madd_epi16(bottom, _mm_set1_epi32((w11 << 16) | (w10 & 0xffff))));
+            acc = _mm_srai_epi32(_mm_add_epi32(acc, rounding), image_filter_shift);
+
+            alignas(16) int fg[4];
+            _mm_store_si128((__m128i *)fg, acc);
+
+            store_clamped(span, fg);
+            ++span;
+            ++base_type::interpolator();
+         } while (--len);
+      }
+
+      // SSE2 specialisation of the 4x4 kernel (spline16, bicubic, mitchell, quadric, gaussian) for 4-byte
+      // pixels.  Bit-exact with the generic loop: each row's four combined weights use the same fixed-point
+      // arithmetic and the row is accumulated with two _mm_madd_epi16 ops, replacing 64 scalar multiply-adds
+      // per pixel with 8 madds.  Diameter-4 kernels peak at ~1.0 so combined weights are bounded by
+      // ~image_filter_scale (16384) and fit a signed 16-bit lane.  Negative lobes are handled by the signed
+      // madd and the negative clamp in store_clamped().  Texel fetches stay on the source accessor so edge
+      // wrapping semantics are unchanged.
+
+      void generate_4x4(color_type *span, unsigned len, int start, const int16 *weight_array) {
+         const __m128i zero     = _mm_setzero_si128();
+         const __m128i rounding = _mm_set1_epi32(image_filter_scale / 2);
+
+         do {
+            int x, y;
+            base_type::interpolator().coordinates(&x, &y);
+
+            x -= base_type::filter_dx_int();
+            y -= base_type::filter_dy_int();
+
+            const int x_lr = x >> image_subpixel_shift;
+            const int y_lr = y >> image_subpixel_shift;
+
+            const int x_hr = image_subpixel_mask - (x & image_subpixel_mask);
+            const int y_hr = image_subpixel_mask - (y & image_subpixel_mask);
+
+            const int wx0 = weight_array[x_hr];
+            const int wx1 = weight_array[x_hr + image_subpixel_scale];
+            const int wx2 = weight_array[x_hr + image_subpixel_scale * 2];
+            const int wx3 = weight_array[x_hr + image_subpixel_scale * 3];
+
+            __m128i acc = rounding;
+
+            for (int row = 0; row < 4; row++) {
+               const int wy = weight_array[y_hr + (row << image_subpixel_shift)];
+
+               const int w0 = (wy * wx0 + image_filter_scale / 2) >> image_filter_shift;
+               const int w1 = (wy * wx1 + image_filter_scale / 2) >> image_filter_shift;
+               const int w2 = (wy * wx2 + image_filter_scale / 2) >> image_filter_shift;
+               const int w3 = (wy * wx3 + image_filter_scale / 2) >> image_filter_shift;
+
+               // Texel fetch order matches the generic loop: row start (span or next_y), then next_x x3.
+
+               int32_t t0, t1, t2, t3;
+               if (row IS 0) std::memcpy(&t0, base_type::source().span(x_lr + start, y_lr + start, 4), 4);
+               else std::memcpy(&t0, base_type::source().next_y(), 4);
+               std::memcpy(&t1, base_type::source().next_x(), 4);
+               std::memcpy(&t2, base_type::source().next_x(), 4);
+               std::memcpy(&t3, base_type::source().next_x(), 4);
+
+               const __m128i pair01 = _mm_unpacklo_epi16(
+                  _mm_unpacklo_epi8(_mm_cvtsi32_si128(t0), zero),
+                  _mm_unpacklo_epi8(_mm_cvtsi32_si128(t1), zero));
+               const __m128i pair23 = _mm_unpacklo_epi16(
+                  _mm_unpacklo_epi8(_mm_cvtsi32_si128(t2), zero),
+                  _mm_unpacklo_epi8(_mm_cvtsi32_si128(t3), zero));
+
+               acc = _mm_add_epi32(acc, _mm_madd_epi16(pair01, _mm_set1_epi32((w1 << 16) | (w0 & 0xffff))));
+               acc = _mm_add_epi32(acc, _mm_madd_epi16(pair23, _mm_set1_epi32((w3 << 16) | (w2 & 0xffff))));
+            }
+
+            acc = _mm_srai_epi32(acc, image_filter_shift);
+
+            alignas(16) int fg[4];
+            _mm_store_si128((__m128i *)fg, acc);
+
+            store_clamped(span, fg);
+            ++span;
+            ++base_type::interpolator();
+         } while (--len);
+      }
+#endif
    };
 
    // span_image_resample_rgba_affine

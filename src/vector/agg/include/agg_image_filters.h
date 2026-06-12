@@ -66,10 +66,11 @@ class image_filter_lut {
     const int16* weight_array() const { return &m_weight_array[0]; }
     void         normalize();
 
+    image_filter_lut(const image_filter_lut&) = delete;
+    image_filter_lut& operator=(const image_filter_lut&) = delete;
+
 private:
     void realloc_lut(double radius);
-    image_filter_lut(const image_filter_lut&);
-    const image_filter_lut& operator = (const image_filter_lut&);
 
     double           m_radius;
     unsigned         m_diameter;
@@ -89,8 +90,8 @@ private:
 
 //-----------------------------------------------image_filter_bilinear
 struct image_filter_bilinear {
-    static double radius() { return 1.0; }
-    static double calc_weight(double x) {
+    static constexpr double radius() { return 1.0; }
+    static constexpr double calc_weight(double x) {
         return 1.0 - x;
     }
 };
@@ -99,7 +100,7 @@ struct image_filter_bilinear {
 //-----------------------------------------------image_filter_hanning
 struct image_filter_hanning
 {
-    static double radius() { return 1.0; }
+    static constexpr double radius() { return 1.0; }
     static double calc_weight(double x)
     {
         return 0.5 + 0.5 * cos(pi * x);
@@ -110,7 +111,7 @@ struct image_filter_hanning
 //-----------------------------------------------image_filter_hamming
 struct image_filter_hamming
 {
-    static double radius() { return 1.0; }
+    static constexpr double radius() { return 1.0; }
     static double calc_weight(double x)
     {
         return 0.54 + 0.46 * cos(pi * x);
@@ -120,8 +121,8 @@ struct image_filter_hamming
 //-----------------------------------------------image_filter_hermite
 struct image_filter_hermite
 {
-    static double radius() { return 1.0; }
-    static double calc_weight(double x)
+    static constexpr double radius() { return 1.0; }
+    static constexpr double calc_weight(double x)
     {
         return (2.0 * x - 3.0) * x * x + 1.0;
     }
@@ -130,8 +131,8 @@ struct image_filter_hermite
 //------------------------------------------------image_filter_quadric
 struct image_filter_quadric
 {
-    static double radius() { return 1.5; }
-    static double calc_weight(double x)
+    static constexpr double radius() { return 1.5; }
+    static constexpr double calc_weight(double x)
     {
         double t;
         if(x <  0.5) return 0.75 - x * x;
@@ -141,26 +142,27 @@ struct image_filter_quadric
 };
 
 class image_filter_bicubic {
-    static double pow3(double x) {
+    static constexpr double pow3(double x) {
         return (x <= 0.0) ? 0.0 : x * x * x;
     }
 
 public:
-    static double radius() { return 2.0; }
-    static double calc_weight(double x) {
+    static constexpr double radius() { return 2.0; }
+    static constexpr double calc_weight(double x) {
         return (1.0/6.0) * (pow3(x + 2) - 4 * pow3(x + 1) + 6 * pow3(x) - 4 * pow3(x - 1));
     }
 };
 
 class image_filter_kaiser {
-    double a, i0a, epsilon;
+    static constexpr double epsilon = 1e-12;
+    double a, i0a;
 
 public:
-    image_filter_kaiser(double b = 6.33) : a(b), epsilon(1e-12) {
+    image_filter_kaiser(double b = 6.33) : a(b) {
         i0a = 1.0 / bessel_i0(b);
     }
 
-    static double radius() { return 1.0; }
+    static constexpr double radius() { return 1.0; }
     double calc_weight(double x) const {
         return bessel_i0(a * sqrt(1. - x * x)) * i0a;
     }
@@ -184,8 +186,8 @@ private:
 
 struct image_filter_catrom
 {
-    static double radius() { return 2.0; }
-    static double calc_weight(double x)
+    static constexpr double radius() { return 2.0; }
+    static constexpr double calc_weight(double x)
     {
         if(x <  1.0) return 0.5 * (2.0 + x * x * (-5.0 + x * 3.0));
         if(x <  2.0) return 0.5 * (4.0 + x * (-8.0 + x * (5.0 - x)));
@@ -209,8 +211,8 @@ public:
         q3((-b - 6.0 * c) / 6.0)
     {}
 
-    static double radius() { return 2.0; }
-    double calc_weight(double x) const
+    static constexpr double radius() { return 2.0; }
+    constexpr double calc_weight(double x) const
     {
         if(x < 1.0) return p0 + x * x * (p2 + x * p3);
         if(x < 2.0) return q0 + x * (q1 + x * (q2 + x * q3));
@@ -220,16 +222,16 @@ public:
 
 struct image_filter_spline16
 {
-    static double radius() { return 2.0; }
-    static double calc_weight(double x) {
+    static constexpr double radius() { return 2.0; }
+    static constexpr double calc_weight(double x) {
         if(x < 1.0) return ((x - 9.0/5.0 ) * x - 1.0/5.0 ) * x + 1.0;
         return ((-1.0/3.0 * (x-1) + 4.0/5.0) * (x-1) - 7.0/15.0 ) * (x-1);
     }
 };
 
 struct image_filter_spline36 {
-    static double radius() { return 3.0; }
-    static double calc_weight(double x) {
+    static constexpr double radius() { return 3.0; }
+    static constexpr double calc_weight(double x) {
         if(x < 1.0) return ((13.0/11.0 * x - 453.0/209.0) * x - 3.0/209.0) * x + 1.0;
         if(x < 2.0) return ((-6.0/11.0 * (x-1) + 270.0/209.0) * (x-1) - 156.0/ 209.0) * (x-1);
         return ((1.0/11.0 * (x-2) - 45.0/209.0) * (x-2) +  26.0/209.0) * (x-2);
@@ -238,7 +240,7 @@ struct image_filter_spline36 {
 
 struct image_filter_gaussian
 {
-    static double radius() { return 2.0; }
+    static constexpr double radius() { return 2.0; }
     static double calc_weight(double x)
     {
         return exp(-2.0 * x * x) * sqrt(2.0 / pi);
@@ -247,7 +249,7 @@ struct image_filter_gaussian
 
 
 struct image_filter_bessel {
-    static double radius() { return 3.2383; }
+    static constexpr double radius() { return 3.2383; }
     static double calc_weight(double x) {
         return (x == 0.0) ? pi / 4.0 : besj(pi * x, 1) / (2.0 * x);
     }
@@ -255,7 +257,7 @@ struct image_filter_bessel {
 
 class image_filter_sinc {
 public:
-    image_filter_sinc(double r) : m_radius(r < 2.0 ? 2.0 : r) {}
+    image_filter_sinc(double r) : m_radius(r) {}
     double radius() const { return m_radius; }
     double calc_weight(double x) const
     {
@@ -272,7 +274,7 @@ private:
 class image_filter_lanczos
 {
 public:
-    image_filter_lanczos(double r) : m_radius(r < 2.0 ? 2.0 : r) {}
+    image_filter_lanczos(double r) : m_radius(r) {}
     double radius() const { return m_radius; }
     double calc_weight(double x) const
     {
@@ -291,7 +293,7 @@ private:
 class image_filter_blackman
 {
 public:
-    image_filter_blackman(double r) : m_radius(r < 2.0 ? 2.0 : r) {}
+    image_filter_blackman(double r) : m_radius(r) {}
     double radius() const { return m_radius; }
     double calc_weight(double x) const
     {
