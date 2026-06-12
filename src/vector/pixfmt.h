@@ -1,4 +1,7 @@
 
+#include <cstring>
+#include "../link/simd.h"
+
 extern agg::gamma_lut<uint8_t, uint16_t, 8, 12> glGamma;
 
 static PIXEL_ORDER pxBGRA(2, 1, 0, 3);
@@ -174,7 +177,7 @@ static void linear32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t
 // sRGB copy and cover operations
 
 static void srgbCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
-   blend32<2,1,0,3,srgb_blend32>(p,cr,cg,cb,alpha);
+   copy32<2,1,0,3,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
 static void srgbCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
@@ -208,7 +211,7 @@ static void srgbCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint
 // Gamma correct copy and cover operations
 
 static void gammaCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
-   blend32<2,1,0,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
+   copy32<2,1,0,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
 static void gammaCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
@@ -413,19 +416,265 @@ private:
       } while(--len);
    }
 
+#ifdef KOTUKU_SSE2
+
+   // SSE2 paths for the sRGB blend mode, processing four pixels per iteration with 16-bit lane
+   // arithmetic that reproduces the scalar srgb_blend32/blend32 formulae exactly.  Trailing pixels
+   // are handled by the original scalar logic.  The linear and gamma blend modes depend on LUT
+   // conversions per channel and remain scalar.
+
+   // Builds the 16-bit lane pattern of the source colour for two pixels.  Alpha lanes are left at
+   // zero; they are populated per-pixel by the kernel.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   inline static __m128i srcLanes16(const agg::rgba8 &c) noexcept
+   {
+      alignas(16) uint16_t lanes[8] = {};
+      lanes[oR] = c.r; lanes[oG] = c.g; lanes[oB] = c.b;
+      lanes[4+oR] = c.r; lanes[4+oG] = c.g; lanes[4+oB] = c.b;
+      return _mm_load_si128((const __m128i *)lanes);
+   }
+
+   template <uint8_t oA>
+   inline static __m128i alphaLaneMask16() noexcept
+   {
+      alignas(16) uint16_t lanes[8] = {};
+      lanes[oA] = 0xffff;
+      lanes[4+oA] = 0xffff;
+      return _mm_load_si128((const __m128i *)lanes);
+   }
+
+   // Blends two pixels held in 16-bit lanes (d) against the solid source colour (src16) with the
+   // per-pixel alpha replicated across each pixel's four lanes (a).  Reproduces blend32's
+   // semantics: pixels with zero destination alpha (or a saturated source alpha) take the source
+   // colour directly, all others use the sRGB blend formulae.
+
+   template <uint8_t oA>
+   inline static __m128i srgbBlendPair16(__m128i d, __m128i a, __m128i src16, __m128i amask) noexcept
+   {
+      const __m128i v255 = _mm_set1_epi16(255);
+      const __m128i zero = _mm_setzero_si128();
+      const __m128i inv  = _mm_sub_epi16(v255, a);
+
+      // Colour lanes: (d*(255-a) + c*a + 255) >> 8.  The product sum cannot exceed 16 bits
+      // because inv + a IS 255.
+      __m128i blended = _mm_add_epi16(_mm_mullo_epi16(d, inv), _mm_mullo_epi16(src16, a));
+      blended = _mm_srli_epi16(_mm_add_epi16(blended, v255), 8);
+
+      // Alpha lanes: 255 - (((255-a) * (255-d)) >> 8)
+      const __m128i q    = _mm_sub_epi16(v255, d);
+      const __m128i ares = _mm_sub_epi16(v255, _mm_srli_epi16(_mm_mullo_epi16(inv, q), 8));
+      __m128i res = _mm_or_si128(_mm_and_si128(amask, ares), _mm_andnot_si128(amask, blended));
+
+      // Direct write applies when the source alpha is saturated or the destination alpha is zero.
+      const __m128i direct = _mm_or_si128(src16, _mm_and_si128(a, amask));
+      constexpr int sh = _MM_SHUFFLE(oA, oA, oA, oA);
+      const __m128i pa   = _mm_shufflehi_epi16(_mm_shufflelo_epi16(d, sh), sh);
+      const __m128i cond = _mm_or_si128(_mm_cmpeq_epi16(a, v255), _mm_cmpeq_epi16(pa, zero));
+      return _mm_or_si128(_mm_and_si128(cond, direct), _mm_andnot_si128(cond, res));
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void srgbBlendSolidHSpan32S(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      const __m128i zero  = _mm_setzero_si128();
+      const __m128i src16 = srcLanes16<oR,oG,oB,oA>(c);
+      const __m128i amask = alphaLaneMask16<oA>();
+      const __m128i ca16  = _mm_set1_epi16(short(c.a));
+      const __m128i one16 = _mm_set1_epi16(1);
+
+      while (len >= 4) {
+         const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+
+         // Per-pixel alpha: (c.a * (cover+1)) >> 8, then replicated across each pixel's lanes.
+         uint32_t cv;
+         std::memcpy(&cv, covers, 4);
+         const __m128i cvv = _mm_unpacklo_epi8(_mm_cvtsi32_si128(int(cv)), zero);
+         const __m128i aV  = _mm_srli_epi16(_mm_mullo_epi16(_mm_add_epi16(cvv, one16), ca16), 8);
+         const __m128i tt  = _mm_unpacklo_epi16(aV, aV);
+
+         const __m128i r_lo = srgbBlendPair16<oA>(_mm_unpacklo_epi8(d8, zero), _mm_unpacklo_epi32(tt, tt), src16, amask);
+         const __m128i r_hi = srgbBlendPair16<oA>(_mm_unpackhi_epi8(d8, zero), _mm_unpackhi_epi32(tt, tt), src16, amask);
+         _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+
+         p += 16;
+         covers += 4;
+         len -= 4;
+      }
+
+      while (len) {
+         uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+         p += 4;
+         ++covers;
+         --len;
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void srgbBlendHLine32S(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      const uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
+
+      if (alpha IS 0xff) {
+         uint32_t v;
+         ((uint8_t *)&v)[oR] = c.r;
+         ((uint8_t *)&v)[oG] = c.g;
+         ((uint8_t *)&v)[oB] = c.b;
+         ((uint8_t *)&v)[oA] = c.a;
+         do {
+            *(uint32_t *)p = v;
+            p += sizeof(uint32_t);
+         } while(--len);
+      }
+      else {
+         const __m128i zero  = _mm_setzero_si128();
+         const __m128i src16 = srcLanes16<oR,oG,oB,oA>(c);
+         const __m128i amask = alphaLaneMask16<oA>();
+         const __m128i a16   = _mm_set1_epi16(short(alpha));
+
+         while (len >= 4) {
+            const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+            const __m128i r_lo = srgbBlendPair16<oA>(_mm_unpacklo_epi8(d8, zero), a16, src16, amask);
+            const __m128i r_hi = srgbBlendPair16<oA>(_mm_unpackhi_epi8(d8, zero), a16, src16, amask);
+            _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+            p += 16;
+            len -= 4;
+         }
+
+         while (len) {
+            blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+            p += 4;
+            --len;
+         }
+      }
+   }
+
+   // Blends two pixels with per-pixel source colours, reproducing cover32's semantics: zero source
+   // alpha leaves the destination untouched; otherwise srgbBlendPair16 applies the direct-write and
+   // blend rules.  src16 must have its alpha lanes cleared.
+
+   template <uint8_t oA>
+   inline static __m128i srgbCoverPair16(__m128i d, __m128i a, __m128i src16, __m128i amask) noexcept
+   {
+      const __m128i blended = srgbBlendPair16<oA>(d, a, src16, amask);
+      const __m128i skip = _mm_cmpeq_epi16(a, _mm_setzero_si128());
+      return _mm_or_si128(_mm_and_si128(skip, d), _mm_andnot_si128(skip, blended));
+   }
+
+   // SIMD sink for per-pixel colour spans (gradients, images, patterns) in sRGB mode.  Source
+   // colours arrive as rgba8 in memory order and are permuted to the destination pixel order with
+   // 16-bit lane shuffles whose immediates are compile-time constants.  Scaled alpha is
+   // (a * (cover+1)) >> 8, which reduces to the unscaled alpha when cover is 255, so a single
+   // kernel serves the covers-array, solid-cover and full-cover dispatch cases.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void srgbBlendColorHSpan32S(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      // Inverse channel permutation: destination lane j receives source channel lane_src(j).
+      constexpr auto lane_src = [](int j) constexpr {
+         return (j IS oR) ? 0 : (j IS oG) ? 1 : (j IS oB) ? 2 : 3;
+      };
+      constexpr int perm = _MM_SHUFFLE(lane_src(3), lane_src(2), lane_src(1), lane_src(0));
+      constexpr int shA  = _MM_SHUFFLE(oA, oA, oA, oA);
+
+      const __m128i zero  = _mm_setzero_si128();
+      const __m128i amask = alphaLaneMask16<oA>();
+      const __m128i one16 = _mm_set1_epi16(1);
+      const __m128i cv16  = _mm_set1_epi16(short(cover));
+
+      while (len >= 4) {
+         const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+         const __m128i s8 = _mm_loadu_si128((const __m128i *)colors);
+
+         // Unpack four source pixels to 16-bit lanes and permute rgba into the destination order.
+         __m128i s_lo = _mm_unpacklo_epi8(s8, zero);
+         __m128i s_hi = _mm_unpackhi_epi8(s8, zero);
+         s_lo = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_lo, perm), perm);
+         s_hi = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_hi, perm), perm);
+
+         // Source alpha replicated across each pixel's four lanes.
+         const __m128i sa_lo = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_lo, shA), shA);
+         const __m128i sa_hi = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_hi, shA), shA);
+
+         // Per-pixel cover, replicated across each pixel's four lanes.
+         __m128i cv_lo, cv_hi;
+         if (covers) {
+            uint32_t cv;
+            std::memcpy(&cv, covers, 4);
+            covers += 4;
+            const __m128i cvv = _mm_unpacklo_epi8(_mm_cvtsi32_si128(int(cv)), zero);
+            const __m128i tt  = _mm_unpacklo_epi16(cvv, cvv);
+            cv_lo = _mm_unpacklo_epi32(tt, tt);
+            cv_hi = _mm_unpackhi_epi32(tt, tt);
+         }
+         else {
+            cv_lo = cv16;
+            cv_hi = cv16;
+         }
+
+         // Scaled alpha: (a * (cover+1)) >> 8.  Maximum product is 255*256, within 16 bits.
+         const __m128i a_lo = _mm_srli_epi16(_mm_mullo_epi16(sa_lo, _mm_add_epi16(cv_lo, one16)), 8);
+         const __m128i a_hi = _mm_srli_epi16(_mm_mullo_epi16(sa_hi, _mm_add_epi16(cv_hi, one16)), 8);
+
+         const __m128i r_lo = srgbCoverPair16<oA>(_mm_unpacklo_epi8(d8, zero), a_lo, _mm_andnot_si128(amask, s_lo), amask);
+         const __m128i r_hi = srgbCoverPair16<oA>(_mm_unpackhi_epi8(d8, zero), a_hi, _mm_andnot_si128(amask, s_hi), amask);
+         _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+
+         p += 16;
+         colors += 4;
+         len -= 4;
+      }
+
+      while (len) {
+         cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a, covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+   }
+
+#endif // KOTUKU_SSE2
+
    // Binds the full set of 32-bit operations for a pixel order and blend mode in one step.
    // BlendPix/CopyPix/CoverPix must match the order given by oR/oG/oB/oA.
 
-   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto CopyPix, auto CoverPix>
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto CopyPix, auto CoverPix, bool SRGB = false>
    void set_ops32(const PIXEL_ORDER &Order) noexcept
    {
       pixel_order(Order);
       fBlendPix        = BlendPix;
       fCopyPix         = CopyPix;
       fCoverPix        = CoverPix;
+#ifdef KOTUKU_SSE2
+      if constexpr (SRGB) {
+         fBlendHLine      = &srgbBlendHLine32S<oR,oG,oB,oA>;
+         fBlendSolidHSpan = &srgbBlendSolidHSpan32S<oR,oG,oB,oA>;
+         fBlendColorHSpan = &srgbBlendColorHSpan32S<oR,oG,oB,oA>;
+      }
+      else {
+         fBlendHLine      = &blendHLine32T<oR,oG,oB,oA,BlendPix>;
+         fBlendSolidHSpan = &blendSolidHSpan32T<oR,oG,oB,oA,BlendPix>;
+         fBlendColorHSpan = &blendColorHSpan32T<CopyPix,CoverPix>;
+      }
+#else
       fBlendHLine      = &blendHLine32T<oR,oG,oB,oA,BlendPix>;
       fBlendSolidHSpan = &blendSolidHSpan32T<oR,oG,oB,oA,BlendPix>;
       fBlendColorHSpan = &blendColorHSpan32T<CopyPix,CoverPix>;
+#endif
       fCopyColorHSpan  = &copyColorHSpan32T<oR,oG,oB,oA>;
    }
 
