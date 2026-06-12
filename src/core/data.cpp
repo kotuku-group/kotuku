@@ -147,6 +147,7 @@ int glValidateProcessID = 0;
 int glProcessID = 0;
 int glEUID = -1, glEGID = -1, glGID = -1, glUID = -1;
 int glWildClassMapTotal = 0;
+uint16_t glWindowsIcon = 500;
 std::atomic_int glResourceID = 500;
 std::atomic_int glMessageIDCount = 10000;
 std::atomic_int glGlobalIDCount = 1;

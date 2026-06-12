@@ -2910,6 +2910,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
       <const name="TOTAL_SHARED_MEMORY">The total amount of shared memory in use (system wide).</const>
       <const name="TOTAL_SWAP">The total amount of available swap space.</const>
+      <const name="WINDOWS_ICON">The Microsoft Windows resource icon ID for this process.</const>
     </constants>
 
     <constants lookup="RFD" comment="Flags for RegisterFD()">

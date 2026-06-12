@@ -725,6 +725,7 @@ extern bool glLogThreads;
 extern int16_t glLogLevel, glMaxDepth;
 extern TSTATE glTaskState;
 extern int64_t glTimeLog;
+extern uint16_t glWindowsIcon;
 extern objRootModule *glModuleList;    // Locked with glmGeneric.  Maintained as a linked-list; hashmap unsuitable.
 extern OpenInfo glOpenInfo;         // Read-only.  The OpenInfo structure initially passed to OpenCore()
 extern extTask *glCurrentTask;

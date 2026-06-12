@@ -1,7 +1,8 @@
 #include <windows.h>
 
-// Application Icon
+// Application Icons
 500                     ICON    DISCARDABLE     "@KOTUKU_ICON_PATH@"
+501                     ICON    DISCARDABLE     "@TIRI_ICON_PATH@"
 
 // Application Manifest
 1                       RT_MANIFEST             "@KOTUKU_MANIFEST_PATH@"

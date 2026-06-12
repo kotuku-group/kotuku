@@ -90,6 +90,11 @@ WinCursor winCursors[24] = {
    { 0, PTC::INVISIBLE,         },
    { 0, PTC::DRAGGABLE,         }
 };
+
+extern int16_t GetWindowsIcon()
+{
+   return GetResource(RES::WINDOWS_ICON);
+}
 #endif
 
 #ifdef __ANDROID__

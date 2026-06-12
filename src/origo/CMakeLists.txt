@@ -54,7 +54,8 @@ configure_file(
 )
 
 # Generate versioned manifest and resource files
-set (KOTUKU_ICON_PATH "${PROJECT_SOURCE_DIR}/src/link/tiri.ico")
+set (KOTUKU_ICON_PATH "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
+set (TIRI_ICON_PATH "${PROJECT_SOURCE_DIR}/src/link/tiri.ico")
 set (KOTUKU_MANIFEST_PATH "${CMAKE_CURRENT_BINARY_DIR}/kotuku.manifest")
 set (KOTUKU_RESOURCE_PATH "${CMAKE_CURRENT_BINARY_DIR}/resource.rc")
 
