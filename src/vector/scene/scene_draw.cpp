@@ -100,10 +100,10 @@ class SceneRenderer
 {
 private:
    agg::renderer_base<agg::pixfmt_psl> mRenderBase;
-   agg::pixfmt_psl   mFormat;
-   agg::scanline_u8  mScanLine; // Use scanline_p for large solid polygons/rectangles and scanline_u for complex shapes like text
-   extVectorViewport *mView;    // The current view
-   objBitmap         *mBitmap;
+   agg::pixfmt_psl    mFormat;
+   agg::scanline32_p8 mScanLine; // Use scanline32_p8 for large solid polygons/rectangles and scanline_u for complex shapes like text
+   extVectorViewport  *mView;    // The current view
+   objBitmap          *mBitmap;
    std::vector<class InputBoundary> mInputBounds; // Records boundaries for input events and cursor changes.
 
 public:
