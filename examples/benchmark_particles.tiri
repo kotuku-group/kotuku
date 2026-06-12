@@ -11,13 +11,13 @@ Particle Graphics Benchmark
 
    lVec = mVec
 
-   local glWinWidth, glWinHeight, glColours, glMode, glWindow, glSurface, glParticles, glViewport, glScene
+   local glWinWidth, glWinHeight, glColours, glMode, glShape, glWindow, glSurface, glParticles, glViewport, glScene
    local glTimerHandle, glFPS, glPrinted, glArgs
    local PI = math.pi
    glFrameStats = { avg = 0, best = 0, times = array<int> }
 
    MODE_PRIMITIVE    <const> = 1 -- Tests the speed of drawing primitive rectangles (this will be much faster than drawVector() but is useful for comparative purposes)
-   MODE_VECTOR       <const> = 2 -- Tests the speed of drawing circles via the scene graph and VectorEllipse objects
+   MODE_VECTOR       <const> = 2 -- Tests the speed of drawing particles via the scene graph.
    MODE_DIRECTVECTOR <const> = 3 -- Tests the drawing speed of DrawPath() and bypasses the scene graph.
 
    glParser = options({
@@ -28,12 +28,17 @@ Particle Graphics Benchmark
       epilog      = [[
 Examples:
   origo examples/benchmark_particles.tiri mode=vector maxParticles=1000
+  origo examples/benchmark_particles.tiri mode=vector shape=star
+  origo examples/benchmark_particles.tiri mode=directvector shape=star
   origo examples/benchmark_particles.tiri mode=directvector
 ]],
       args        = array<table> {
          { name = 'mode', type = 'enum', default = 'vector',
            choices = array<string> { 'primitive', 'directvector', 'vector' },
            comment = 'Drawing mode to benchmark.' },
+         { name = 'shape', type = 'enum', default = 'ellipse',
+           choices = array<string> { 'ellipse', 'star' },
+           comment = 'Particle shape for vector and direct vector modes.' },
          { names = array<string> { 'maxParticles', 'maxparticles' }, type = 'int', default = 500,
            comment = 'Number of particles to simulate; values below 100 are raised to 100.' }
       }
@@ -45,7 +50,7 @@ Examples:
 ----------------------------------------------------------------------------------------------------------------------
 -- Render vector paths directly, bypassing the scene graph.
 
-function drawDirectVector(Surface, Bitmap)
+function drawDirectVector(Surface:obj, Bitmap:obj)
    glWinWidth, glWinHeight = Surface.width, Surface.height
 
    start = mSys.PreciseTime()
@@ -59,7 +64,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Render plain rectangles
 
-function drawPrimitive(Surface, Bitmap)
+function drawPrimitive(Surface:obj, Bitmap:obj)
    glWinWidth, glWinHeight = Surface.width, Surface.height
 
    local start
@@ -77,27 +82,66 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+function makeStarSequence(CenterX:num, CenterY:num, Radius:num)
+   local inner_radius = Radius * 0.38196601125
+   local sequence = ''
+
+   for i=0,9 do
+      local angle = -PI * 0.5 + i * PI / 5
+      local radius = (i % 2 is 0) ? Radius :> inner_radius
+      local x = CenterX + math.cos(angle) * radius
+      local y = CenterY + math.sin(angle) * radius
+      sequence ..= string.format('%s%f,%f', (i is 0) ? 'M' :> ' L', x, y)
+   end
+
+   return sequence .. ' Z'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function moveVectorParticle(Particle:table, X:num, Y:num, MoveFlags:num)
+   Particle.vector.acMoveToPoint(X + Particle.center, Y + Particle.center, 0, MoveFlags)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 function newParticle()
+   RADIUS <const> = 6
    particle = {
       angle    = PI * 2 * math.random(),
       velocity = 1 + math.random() * 3,
-      radius   = 6,
-      x        = (glWinWidth / 2) - 6,
-      y        = (glWinHeight / 2) - 6
+      radius   = RADIUS,
+      x        = (glWinWidth / 2) - RADIUS,
+      y        = (glWinHeight / 2) - RADIUS,
+      center   = RADIUS
    }
 
    if glMode is MODE_VECTOR then
-      colour = glColours[(math.floor(math.random() * #glColours))]
-      particle.vector = glViewport.new('VectorEllipse', {
-         fill    = string.format('rgb(%f,%f,%f)', colour.r, colour.g, colour.b),
-         centerX = particle.x,
-         centerY = particle.y,
-         radius  = particle.radius
-      })
+      local colour = glColours[(math.floor(math.random() * #glColours))]
+      local fill = string.format('rgb(%f,%f,%f)', colour.r, colour.g, colour.b)
+      if glShape is 'star' then
+         particle.vector = glViewport.new('VectorPath', {
+            fill     = fill,
+            sequence = makeStarSequence(0, 0, particle.radius)
+         })
+         particle.center = 0
+      else
+         particle.vector = glViewport.new('VectorEllipse', {
+            fill    = fill,
+            centerX = particle.x,
+            centerY = particle.y,
+            radius  = particle.radius
+         })
+      end
    elseif glMode is MODE_DIRECTVECTOR then
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
       local err
-      err, particle.path = lVec.GenerateEllipse(particle.x, particle.y, particle.radius, particle.radius, 0)
+      if glShape is 'star' then
+         err, particle.path = lVec.GeneratePath(makeStarSequence(particle.x, particle.y, particle.radius))
+      else
+         err, particle.path = lVec.GenerateEllipse(particle.x, particle.y, particle.radius, particle.radius, 0)
+      end
+      check err
    elseif glMode is MODE_PRIMITIVE then
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
    else
@@ -161,7 +205,7 @@ function timer(Subscriber, Elapsed, Current)
       end
 
       choose glMode from
-         MODE_VECTOR -> p.vector.acMoveToPoint(nextX + p.radius, nextY + p.radius, 0, moveflag)
+         MODE_VECTOR -> moveVectorParticle(p, nextX, nextY, moveflag)
          MODE_DIRECTVECTOR -> lVec.TranslatePath(p.path, tx, ty)
       end
 
@@ -251,6 +295,12 @@ function setBenchmarkMode()
       'directvector' -> MODE_DIRECTVECTOR
       else -> MODE_VECTOR
    end
+
+   glShape = glArgs.shape
+
+   if (glShape is 'star') and (glMode is MODE_PRIMITIVE) then
+      print('Shape option is currently only supported by vector and direct vector modes.')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -271,7 +321,7 @@ end
         { r=0, g=0x99, b=0xcc }, { r=0x19, g=0x4c, b=0x99 }, { r=0x66, g=0x19, b=0x99 }
       }
    elseif glMode is MODE_VECTOR then
-      print('Drawing Mode: Vector')
+      print(f'Drawing Mode: Vector; Shape: {glShape}')
 
       glColours = array<table> {
         { r=0xcc, g=0, b=0 }, { r=0xff, g=0xcc, b=0 }, { r=0xaa, g=0xff, b=0 },
@@ -279,7 +329,7 @@ end
       }
 
    elseif glMode is MODE_DIRECTVECTOR then
-      print('Drawing Mode: Direct Vector')
+      print(f'Drawing Mode: Direct Vector; Shape: {glShape}')
 
       glSurface.mtAddCallback(drawDirectVector)
 
