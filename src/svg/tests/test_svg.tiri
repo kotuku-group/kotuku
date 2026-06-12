@@ -277,7 +277,7 @@ end
 
 @Test global function CSS()                hashTestSVG('misc/css.svg', 0x8c373aac) end
 @Test; @Disabled global function BrushStrokes()       hashTestSVG('misc/brush-strokes.svg', 0x656a5e37) end
-@Test global function ContourGradient()    hashTestSVG('gradients/contour-gradient.svg', 0xda1d28b2) end
+@Test global function ContourGradient()    hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a) end
 
 @Test global function BottleTree()         hashTestSVG('images/bottletree.svg', 0xfc741c6e) end
 @Test global function Button()             hashTestSVG('images/button.svg', 0x0642f760) end

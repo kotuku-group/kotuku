@@ -7,8 +7,7 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 
-#ifndef AGG_SCANLINE_STORAGE_AA_INCLUDED
-#define AGG_SCANLINE_STORAGE_AA_INCLUDED
+#pragma once
 
 #include <string.h>
 #include <stdlib.h>
@@ -699,6 +698,3 @@ namespace agg
     typedef serialized_scanlines_adaptor_aa<int16u> serialized_scanlines_adaptor_aa16; //----serialized_scanlines_adaptor_aa16
     typedef serialized_scanlines_adaptor_aa<int32u> serialized_scanlines_adaptor_aa32; //----serialized_scanlines_adaptor_aa32
 }
-
-#endif
-

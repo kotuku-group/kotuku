@@ -8,8 +8,7 @@
 // This is a general purpose scanline container with *packed* spans.  It is best used in conjunction with cover
 // values that mostly continuous.  See description of scanline_u8 for details.
 
-#ifndef AGG_SCANLINE_P_INCLUDED
-#define AGG_SCANLINE_P_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -55,7 +54,7 @@ public:
 
    void add_cell(int x, unsigned cover) {
       *m_cover_ptr = cover_type(cover);
-      if ((x == m_last_x+1) and (m_spans.size()) and (m_spans.last().len > 0)) m_spans.last().len++;
+      if ((x IS m_last_x+1) and (m_spans.size()) and (m_spans.last().len > 0)) m_spans.last().len++;
       else m_spans.add(span(coord_type(x), 1, m_cover_ptr));
       m_last_x = x;
       m_cover_ptr++;
@@ -63,7 +62,7 @@ public:
 
    void add_cells(int x, unsigned len, const cover_type *covers) {
       memcpy(m_cover_ptr, covers, len * sizeof(cover_type));
-      if ((x == m_last_x+1) and (m_spans.size()) and (m_spans.last().len > 0)) {
+      if ((x IS m_last_x+1) and (m_spans.size()) and (m_spans.last().len > 0)) {
          m_spans.last().len += coord_type(len);
       }
       else m_spans.add(span(coord_type(x), coord_type(len), m_cover_ptr));
@@ -72,7 +71,7 @@ public:
    }
 
    void add_span(int x, unsigned len, unsigned cover) {
-      if ((x == m_last_x+1) and (m_spans.size()) and (m_spans.last().len < 0) and (cover == *m_spans.last().covers)) {
+      if ((x IS m_last_x+1) and (m_spans.size()) and (m_spans.last().len < 0) and (cover IS *m_spans.last().covers)) {
          m_spans.last().len -= coord_type(len);
       }
       else {
@@ -107,6 +106,3 @@ private:
 };
 
 } // namespace
-
-#endif
-

@@ -3750,6 +3750,14 @@ class objVectorPath : public objVector {
 
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR addCommand(struct PathCommand * Commands, int Size) noexcept {
       struct vp::AddCommand args = { Commands, Size };
@@ -3785,8 +3793,24 @@ class objVectorPath : public objVector {
       return error;
    }
 
-   inline ERR getTotalCommands(int &Value) noexcept {
+   inline ERR getX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getY(double &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getTotalCommands(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -3812,8 +3836,20 @@ class objVectorPath : public objVector {
       return field->WriteValue(this, field, 0x00804308, &Value, 1);
    }
 
-   inline ERR setTotalCommands(const int Value) noexcept {
+   inline ERR setX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setTotalCommands(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 

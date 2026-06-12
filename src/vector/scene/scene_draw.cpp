@@ -100,10 +100,10 @@ class SceneRenderer
 {
 private:
    agg::renderer_base<agg::pixfmt_psl> mRenderBase;
-   agg::pixfmt_psl   mFormat;
-   agg::scanline_u8  mScanLine; // Use scanline_p for large solid polygons/rectangles and scanline_u for complex shapes like text
-   extVectorViewport *mView;    // The current view
-   objBitmap         *mBitmap;
+   agg::pixfmt_psl    mFormat;
+   agg::scanline32_p8 mScanLine; // Use scanline32_p8 for large solid polygons/rectangles and scanline_u for complex shapes like text
+   extVectorViewport  *mView;    // The current view
+   objBitmap          *mBitmap;
    std::vector<class InputBoundary> mInputBounds; // Records boundaries for input events and cursor changes.
 
 public:
@@ -702,16 +702,12 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
 }
 
 //********************************************************************************************************************
-// This function applies the gamma to StrokeRaster if there's been a change in the gamma value (saves recomputation).
+// Points StrokeRaster at the scene's shared gamma table (the scene rebuilds the table only when its
+// Gamma value changes).
 
 static void apply_stroke_gamma(extVector &Vector)
 {
-   auto gamma = Vector.Scene->Gamma;
-
-   if (Vector.StrokeRasterGamma IS gamma) return;
-
-   Vector.StrokeRaster->gamma(agg::gamma_power(gamma));
-   Vector.StrokeRasterGamma = gamma;
+   Vector.StrokeRaster->gamma(((extVectorScene *)Vector.Scene)->gamma_table());
 }
 
 //********************************************************************************************************************
