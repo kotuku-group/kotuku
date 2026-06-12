@@ -105,8 +105,8 @@ namespace agg
       static_assert(aa_scale IS 256, "gamma_identity_lut must match aa_scale");
 
       rasterizer_scanline_aa() :
-         m_outline(), m_clipper(), m_gamma(gamma_identity_lut.data()), m_filling_rule(fill_non_zero),
-         m_auto_close(true), m_start_x(0), m_start_y(0), m_status(status_initial)
+         m_outline(), m_clipper(), m_gamma(gamma_identity_lut.data()), m_identity_gamma(true),
+         m_filling_rule(fill_non_zero), m_auto_close(true), m_start_x(0), m_start_y(0), m_status(status_initial)
       { }
 
       void reset();
@@ -120,6 +120,7 @@ namespace agg
 
       void gamma(const int* Table) {
          m_gamma = Table ? Table : gamma_identity_lut.data();
+         m_identity_gamma = (m_gamma IS gamma_identity_lut.data());
       }
 
       // Builds a gamma table suitable for use with gamma().  The gamma function is sampled over the
@@ -169,6 +170,9 @@ namespace agg
             if (cover > aa_scale) cover = aa_scale2 - cover;
          }
          if (cover > aa_mask) cover = aa_mask;
+         // Identity tables (the common case) skip the LUT to avoid a dependent memory access per cell;
+         // the branch is uniform across a sweep and predicts perfectly.
+         if (m_identity_gamma) return cover;
          return m_gamma[cover];
       }
 
@@ -228,6 +232,7 @@ namespace agg
       rasterizer_cells_aa<cell_aa> m_outline;
       clip_type      m_clipper;
       const int *    m_gamma; // Externally owned; defaults to the shared identity table
+      bool           m_identity_gamma; // True while m_gamma is the shared identity table
       filling_rule_e m_filling_rule;
       bool           m_auto_close;
       coord_type     m_start_x;

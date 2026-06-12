@@ -1,8 +1,8 @@
 
 // NB: The SSE2 span kernels use unaligned loads/stores because span destinations land on arbitrary
-// 4-byte pixel boundaries.  If these kernels are ever widened to AVX2 (32-byte accesses), cache-line
-// splits double in frequency and alignment starts to matter: pad bitmap strides to a multiple of 32,
-// allocate bitmap data 32-byte aligned, and add a scalar peel loop so the SIMD body runs aligned.
+// 4-byte pixel boundaries.  The AVX2 kernels (selected at run time when the CPU supports them)
+// instead peel pixels with scalar code until the destination is 32-byte aligned, so the wide body
+// runs with aligned accesses regardless of bitmap allocation or stride alignment.
 
 #include <cstring>
 #include "../link/simd.h"
@@ -703,6 +703,268 @@ private:
 
 #endif // KOTUKU_SSE2
 
+#ifdef KOTUKU_AVX2
+
+   // AVX2 paths for the sRGB blend mode, processing eight pixels per iteration.  Each 128-bit lane
+   // performs exactly the per-lane steps of the SSE2 kernels, so results are bit-identical.  A
+   // scalar peel loop aligns the destination to 32 bytes before the SIMD body so every wide load
+   // and store is aligned (span destinations land on arbitrary 4-byte pixel boundaries, where
+   // unaligned 32-byte accesses would split cache lines twice as often as the 16-byte SSE2 ones).
+   // Selection happens at run time in set_ops32() via simd_has_avx2().
+
+   // Blends four pixels held in 16-bit lanes; the 256-bit analogue of srgbBlendPair16, with both
+   // 128-bit lanes processed independently.
+
+   template <uint8_t oA>
+   KOTUKU_TARGET_AVX2 inline static __m256i srgbBlendQuad16(__m256i d, __m256i a, __m256i src16, __m256i amask) noexcept
+   {
+      const __m256i v255 = _mm256_set1_epi16(255);
+      const __m256i zero = _mm256_setzero_si256();
+      const __m256i inv  = _mm256_sub_epi16(v255, a);
+
+      // Colour lanes: (d*(255-a) + c*a + 255) >> 8.
+      __m256i blended = _mm256_add_epi16(_mm256_mullo_epi16(d, inv), _mm256_mullo_epi16(src16, a));
+      blended = _mm256_srli_epi16(_mm256_add_epi16(blended, v255), 8);
+
+      // Alpha lanes: 255 - (((255-a) * (255-d)) >> 8)
+      const __m256i q    = _mm256_sub_epi16(v255, d);
+      const __m256i ares = _mm256_sub_epi16(v255, _mm256_srli_epi16(_mm256_mullo_epi16(inv, q), 8));
+      __m256i res = _mm256_or_si256(_mm256_and_si256(amask, ares), _mm256_andnot_si256(amask, blended));
+
+      // Direct write applies when the source alpha is saturated or the destination alpha is zero.
+      const __m256i direct = _mm256_or_si256(src16, _mm256_and_si256(a, amask));
+      constexpr int sh = _MM_SHUFFLE(oA, oA, oA, oA);
+      const __m256i pa   = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(d, sh), sh);
+      const __m256i cond = _mm256_or_si256(_mm256_cmpeq_epi16(a, v255), _mm256_cmpeq_epi16(pa, zero));
+      return _mm256_or_si256(_mm256_and_si256(cond, direct), _mm256_andnot_si256(cond, res));
+   }
+
+   // The 256-bit analogue of srgbCoverPair16: zero source alpha leaves the destination untouched.
+
+   template <uint8_t oA>
+   KOTUKU_TARGET_AVX2 inline static __m256i srgbCoverQuad16(__m256i d, __m256i a, __m256i src16, __m256i amask) noexcept
+   {
+      const __m256i blended = srgbBlendQuad16<oA>(d, a, src16, amask);
+      const __m256i skip = _mm256_cmpeq_epi16(a, _mm256_setzero_si256());
+      return _mm256_or_si256(_mm256_and_si256(skip, d), _mm256_andnot_si256(skip, blended));
+   }
+
+   // Expands eight 8-bit covers into 16-bit lanes replicated across each pixel.  The pair (Lo, Hi)
+   // matches the pixel order produced by _mm256_unpacklo/hi_epi8 on the destination vector: Lo
+   // carries pixels 0,1 (lane 0) and 4,5 (lane 1); Hi carries pixels 2,3 and 6,7.
+
+   KOTUKU_TARGET_AVX2 inline static void coverLanes16x8(const uint8_t *covers, __m256i &Lo, __m256i &Hi) noexcept
+   {
+      uint64_t cv;
+      std::memcpy(&cv, covers, 8);
+      const __m128i zero = _mm_setzero_si128();
+      const __m128i cvv  = _mm_unpacklo_epi8(_mm_cvtsi64_si128(int64_t(cv)), zero); // [c0..c7]
+      const __m128i t_lo = _mm_unpacklo_epi16(cvv, cvv); // [c0,c0,c1,c1,c2,c2,c3,c3]
+      const __m128i t_hi = _mm_unpackhi_epi16(cvv, cvv); // [c4,c4,c5,c5,c6,c6,c7,c7]
+      Lo = _mm256_set_m128i(_mm_unpacklo_epi32(t_hi, t_hi), _mm_unpacklo_epi32(t_lo, t_lo));
+      Hi = _mm256_set_m128i(_mm_unpackhi_epi32(t_hi, t_hi), _mm_unpackhi_epi32(t_lo, t_lo));
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void srgbBlendSolidHSpan32A(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      // Scalar peel until the destination reaches 32-byte alignment.
+      while (len and (uintptr_t(p) & 31)) {
+         uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+         p += 4;
+         ++covers;
+         --len;
+      }
+
+      const __m256i zero  = _mm256_setzero_si256();
+      const __m256i src16 = _mm256_broadcastsi128_si256(srcLanes16<oR,oG,oB,oA>(c));
+      const __m256i amask = _mm256_broadcastsi128_si256(alphaLaneMask16<oA>());
+      const __m256i ca16  = _mm256_set1_epi16(short(c.a));
+      const __m256i one16 = _mm256_set1_epi16(1);
+
+      while (len >= 8) {
+         const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+
+         // Per-pixel alpha: (c.a * (cover+1)) >> 8, replicated across each pixel's lanes.
+         __m256i cv_lo, cv_hi;
+         coverLanes16x8(covers, cv_lo, cv_hi);
+         const __m256i a_lo = _mm256_srli_epi16(_mm256_mullo_epi16(_mm256_add_epi16(cv_lo, one16), ca16), 8);
+         const __m256i a_hi = _mm256_srli_epi16(_mm256_mullo_epi16(_mm256_add_epi16(cv_hi, one16), ca16), 8);
+
+         const __m256i r_lo = srgbBlendQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a_lo, src16, amask);
+         const __m256i r_hi = srgbBlendQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a_hi, src16, amask);
+         _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+
+         p += 32;
+         covers += 8;
+         len -= 8;
+      }
+
+      while (len) {
+         uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+         p += 4;
+         ++covers;
+         --len;
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void srgbBlendHLine32A(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      const uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
+
+      if (alpha IS 0xff) {
+         uint32_t v;
+         ((uint8_t *)&v)[oR] = c.r;
+         ((uint8_t *)&v)[oG] = c.g;
+         ((uint8_t *)&v)[oB] = c.b;
+         ((uint8_t *)&v)[oA] = c.a;
+         fill32(p, len, v);
+      }
+      else {
+         while (len and (uintptr_t(p) & 31)) {
+            blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+            p += 4;
+            --len;
+         }
+
+         const __m256i zero  = _mm256_setzero_si256();
+         const __m256i src16 = _mm256_broadcastsi128_si256(srcLanes16<oR,oG,oB,oA>(c));
+         const __m256i amask = _mm256_broadcastsi128_si256(alphaLaneMask16<oA>());
+         const __m256i a16   = _mm256_set1_epi16(short(alpha));
+
+         while (len >= 8) {
+            const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+            const __m256i r_lo = srgbBlendQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a16, src16, amask);
+            const __m256i r_hi = srgbBlendQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a16, src16, amask);
+            _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+            p += 32;
+            len -= 8;
+         }
+
+         while (len) {
+            blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+            p += 4;
+            --len;
+         }
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void srgbBlendColorHSpan32A(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      while (len and (uintptr_t(p) & 31)) {
+         cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a, covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+
+      // Inverse channel permutation: destination lane j receives source channel lane_src(j).
+      constexpr auto lane_src = [](int j) constexpr {
+         return (j IS oR) ? 0 : (j IS oG) ? 1 : (j IS oB) ? 2 : 3;
+      };
+      constexpr int perm = _MM_SHUFFLE(lane_src(3), lane_src(2), lane_src(1), lane_src(0));
+      constexpr int shA  = _MM_SHUFFLE(oA, oA, oA, oA);
+
+      const __m256i zero  = _mm256_setzero_si256();
+      const __m256i amask = _mm256_broadcastsi128_si256(alphaLaneMask16<oA>());
+      const __m256i one16 = _mm256_set1_epi16(1);
+      const __m256i cv16  = _mm256_set1_epi16(short(cover));
+#ifdef SKIP_ALPHA_ZERO
+      const __m256i v255  = _mm256_set1_epi16(255);
+#endif
+
+      while (len >= 8) {
+         const __m256i s8 = _mm256_loadu_si256((const __m256i *)colors);
+
+         // Unpack eight source pixels to 16-bit lanes and permute rgba into the destination order.
+         __m256i s_lo = _mm256_unpacklo_epi8(s8, zero);
+         __m256i s_hi = _mm256_unpackhi_epi8(s8, zero);
+         s_lo = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_lo, perm), perm);
+         s_hi = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_hi, perm), perm);
+
+         // Source alpha replicated across each pixel's four lanes.
+         const __m256i sa_lo = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_lo, shA), shA);
+         const __m256i sa_hi = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_hi, shA), shA);
+
+         // Per-pixel cover, replicated across each pixel's four lanes.
+         __m256i cv_lo, cv_hi;
+         if (covers) {
+            coverLanes16x8(covers, cv_lo, cv_hi);
+            covers += 8;
+         }
+         else {
+            cv_lo = cv16;
+            cv_hi = cv16;
+         }
+
+         // Scaled alpha: (a * (cover+1)) >> 8.  Maximum product is 255*256, within 16 bits.
+         const __m256i a_lo = _mm256_srli_epi16(_mm256_mullo_epi16(sa_lo, _mm256_add_epi16(cv_lo, one16)), 8);
+         const __m256i a_hi = _mm256_srli_epi16(_mm256_mullo_epi16(sa_hi, _mm256_add_epi16(cv_hi, one16)), 8);
+
+#ifdef SKIP_ALPHA_ZERO
+         // Group early-outs, mirroring the SSE2 kernel: all eight scaled alphas zero skips the
+         // store entirely; all eight saturated allows a direct write of the permuted source.
+
+         if (uint32_t(_mm256_movemask_epi8(_mm256_cmpeq_epi16(_mm256_or_si256(a_lo, a_hi), zero))) IS 0xffffffffu) {
+            p += 32;
+            colors += 8;
+            len -= 8;
+            continue;
+         }
+
+         if (uint32_t(_mm256_movemask_epi8(_mm256_cmpeq_epi16(_mm256_and_si256(a_lo, a_hi), v255))) IS 0xffffffffu) {
+            _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(s_lo, s_hi));
+         }
+         else {
+            const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+            const __m256i r_lo = srgbCoverQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a_lo, _mm256_andnot_si256(amask, s_lo), amask);
+            const __m256i r_hi = srgbCoverQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a_hi, _mm256_andnot_si256(amask, s_hi), amask);
+            _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+         }
+#else
+         const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+         const __m256i r_lo = srgbCoverQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a_lo, _mm256_andnot_si256(amask, s_lo), amask);
+         const __m256i r_hi = srgbCoverQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a_hi, _mm256_andnot_si256(amask, s_hi), amask);
+         _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+#endif
+         p += 32;
+         colors += 8;
+         len -= 8;
+      }
+
+      while (len) {
+         cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a, covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+   }
+
+#endif // KOTUKU_AVX2
+
    // Binds the full set of 32-bit operations for a pixel order and blend mode in one step.
    // BlendPix/CopyPix/CoverPix must match the order given by oR/oG/oB/oA.
 
@@ -715,9 +977,22 @@ private:
       fCoverPix        = CoverPix;
 #ifdef KOTUKU_SSE2
       if constexpr (SRGB) {
+#ifdef KOTUKU_AVX2
+         if (simd_has_avx2()) {
+            fBlendHLine      = &srgbBlendHLine32A<oR,oG,oB,oA>;
+            fBlendSolidHSpan = &srgbBlendSolidHSpan32A<oR,oG,oB,oA>;
+            fBlendColorHSpan = &srgbBlendColorHSpan32A<oR,oG,oB,oA>;
+         }
+         else {
+            fBlendHLine      = &srgbBlendHLine32S<oR,oG,oB,oA>;
+            fBlendSolidHSpan = &srgbBlendSolidHSpan32S<oR,oG,oB,oA>;
+            fBlendColorHSpan = &srgbBlendColorHSpan32S<oR,oG,oB,oA>;
+         }
+#else
          fBlendHLine      = &srgbBlendHLine32S<oR,oG,oB,oA>;
          fBlendSolidHSpan = &srgbBlendSolidHSpan32S<oR,oG,oB,oA>;
          fBlendColorHSpan = &srgbBlendColorHSpan32S<oR,oG,oB,oA>;
+#endif
       }
       else {
          fBlendHLine      = &blendHLine32T<oR,oG,oB,oA,BlendPix>;
