@@ -322,19 +322,22 @@ private:
       mPixelOrder = PixelOrder;
    }
 
-   // Generic 32-bit routines.
+   // 32-bit span routines.  The pixel order and per-pixel operations are template parameters so
+   // that the per-pixel work inlines into the span loop; function pointer indirection is paid once
+   // per span instead of once per pixel.
 
-   static void blendHLine32(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix>
+   static void blendHLine32T(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
    {
       if (c.a) {
          uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
          uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
-         if (alpha == 0xff) {
+         if (alpha IS 0xff) {
             uint32_t v;
-            ((uint8_t *)&v)[Self->mPixelOrder.Red] = c.r;
-            ((uint8_t *)&v)[Self->mPixelOrder.Green] = c.g;
-            ((uint8_t *)&v)[Self->mPixelOrder.Blue] = c.b;
-            ((uint8_t *)&v)[Self->mPixelOrder.Alpha] = c.a;
+            ((uint8_t *)&v)[oR] = c.r;
+            ((uint8_t *)&v)[oG] = c.g;
+            ((uint8_t *)&v)[oB] = c.b;
+            ((uint8_t *)&v)[oA] = c.a;
             do {
                *(uint32_t *)p = v;
                p += sizeof(uint32_t);
@@ -342,72 +345,92 @@ private:
          }
          else {
             do {
-               Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+               BlendPix(p, c.r, c.g, c.b, alpha);
                p += sizeof(uint32_t);
             } while(--len);
          }
       }
    }
 
-   static void blendSolidHSpan32(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix>
+   static void blendSolidHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
    {
       if (c.a) {
          uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
          do {
             uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
-            if (alpha == 0xff) {
-               p[Self->mPixelOrder.Red] = c.r;
-               p[Self->mPixelOrder.Green] = c.g;
-               p[Self->mPixelOrder.Blue] = c.b;
-               p[Self->mPixelOrder.Alpha] = 0xff;
+            if (alpha IS 0xff) {
+               p[oR] = c.r;
+               p[oG] = c.g;
+               p[oB] = c.b;
+               p[oA] = 0xff;
             }
-            else Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+            else BlendPix(p, c.r, c.g, c.b, alpha);
             p += sizeof(uint32_t);
             ++covers;
          } while(--len);
       }
    }
 
-   static void blendColorHSpan32(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   template <auto CopyPix, auto CoverPix>
+   static void blendColorHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
    {
       uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
       if (covers) {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, *covers++);
+            CoverPix(p, colors->r, colors->g, colors->b, colors->a, *covers++);
             p += 4;
             ++colors;
          } while(--len);
       }
-      else if (cover == 255) {
+      else if (cover IS 255) {
          do {
-            Self->fCopyPix(p, colors->r, colors->g, colors->b, colors->a);
+            CopyPix(p, colors->r, colors->g, colors->b, colors->a);
             p += 4;
             ++colors;
          } while(--len);
       }
       else {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, cover);
+            CoverPix(p, colors->r, colors->g, colors->b, colors->a, cover);
             p += 4;
             ++colors;
          } while(--len);
       }
    }
 
-   static void copyColorHSpan32(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors) noexcept
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void copyColorHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors) noexcept
    {
       uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
       do {
-          p[Self->mPixelOrder.Red] = colors->r;
-          p[Self->mPixelOrder.Green] = colors->g;
-          p[Self->mPixelOrder.Blue] = colors->b;
-          p[Self->mPixelOrder.Alpha] = colors->a;
+          p[oR] = colors->r;
+          p[oG] = colors->g;
+          p[oB] = colors->b;
+          p[oA] = colors->a;
           ++colors;
           p += sizeof(uint32_t);
       } while(--len);
    }
 
-   // Generic 8-bit grey-scale routines
+   // Binds the full set of 32-bit operations for a pixel order and blend mode in one step.
+   // BlendPix/CopyPix/CoverPix must match the order given by oR/oG/oB/oA.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto CopyPix, auto CoverPix>
+   void set_ops32(const PIXEL_ORDER &Order) noexcept
+   {
+      pixel_order(Order);
+      fBlendPix        = BlendPix;
+      fCopyPix         = CopyPix;
+      fCoverPix        = CoverPix;
+      fBlendHLine      = &blendHLine32T<oR,oG,oB,oA,BlendPix>;
+      fBlendSolidHSpan = &blendSolidHSpan32T<oR,oG,oB,oA,BlendPix>;
+      fBlendColorHSpan = &blendColorHSpan32T<CopyPix,CoverPix>;
+      fCopyColorHSpan  = &copyColorHSpan32T<oR,oG,oB,oA>;
+   }
+
+   // Generic 8-bit grey-scale routines.  8-bit targets always use blend8/copy8/cover8, so these
+   // call them directly rather than through the per-pixel function pointers.
 
    static void blendHLine8(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
    {
@@ -415,7 +438,7 @@ private:
          uint8_t grey = int((c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722));
          uint8_t *p = Self->mData + (y * Self->mStride) + x;
          uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
-         if (alpha == 0xff) {
+         if (alpha IS 0xff) {
             do {
                *p = grey;
                p++;
@@ -423,7 +446,7 @@ private:
          }
          else {
             do {
-               Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+               blend8(p, c.r, c.g, c.b, alpha);
                p++;
             } while(--len);
          }
@@ -437,8 +460,8 @@ private:
          uint8_t *p = Self->mData + (y * Self->mStride) + x;
          do {
             uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
-            if (alpha == 0xff) p[0] = grey;
-            else Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+            if (alpha IS 0xff) p[0] = grey;
+            else blend8(p, c.r, c.g, c.b, alpha);
             p++;
             ++covers;
          } while(--len);
@@ -450,21 +473,21 @@ private:
       uint8_t *p = Self->mData + (y * Self->mStride) + x;
       if (covers) {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, *covers++);
+            cover8(p, colors->r, colors->g, colors->b, colors->a, *covers++);
             p++;
             ++colors;
          } while(--len);
       }
-      else if (cover == 255) {
+      else if (cover IS 255) {
          do {
-            Self->fCopyPix(p, colors->r, colors->g, colors->b, colors->a);
+            copy8(p, colors->r, colors->g, colors->b, colors->a);
             p++;
             ++colors;
          } while(--len);
       }
       else {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, cover);
+            cover8(p, colors->r, colors->g, colors->b, colors->a, cover);
             p++;
             ++colors;
          } while(--len);

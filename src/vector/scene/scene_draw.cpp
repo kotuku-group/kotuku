@@ -1312,94 +1312,33 @@ void agg::pixfmt_psl::rawBitmap(uint8_t *Data, int Width, int Height, int Stride
    mBytesPerPixel = BitsPerPixel/8;
 
    if (BitsPerPixel IS 32) {
-      fBlendHLine      = &blendHLine32;
-      fBlendSolidHSpan = &blendSolidHSpan32;
-      fBlendColorHSpan = &blendColorHSpan32;
-      fCopyColorHSpan  = &copyColorHSpan32;
+      // Each branch binds the per-pixel and span operations for a <pixel order, blend mode> pair.
+      // The span operations are template instantiations with the per-pixel work inlined, so the
+      // function pointer indirection is paid once per span rather than once per pixel.
 
       if (BlendMode IS BLM::LINEAR) {
          if (ColourFormat.AlphaPos IS 24) {
-            if (ColourFormat.BluePos IS 0) {
-               pixel_order(pxBGRA);
-               fBlendPix = &linear32BGRA;
-               fCopyPix  = &linearCopy32BGRA;
-               fCoverPix = &linearCover32BGRA;
-            }
-            else {
-               pixel_order(pxRGBA);
-               fBlendPix = &linear32RGBA;
-               fCopyPix  = &linearCopy32RGBA;
-               fCoverPix = &linearCover32RGBA;
-            }
+            if (ColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &linear32BGRA, &linearCopy32BGRA, &linearCover32BGRA>(pxBGRA);
+            else set_ops32<0,1,2,3, &linear32RGBA, &linearCopy32RGBA, &linearCover32RGBA>(pxRGBA);
          }
-         else if (ColourFormat.RedPos IS 24) {
-            pixel_order(pxAGBR);
-            fBlendPix = &linear32AGBR;
-            fCopyPix  = &linearCopy32AGBR;
-            fCoverPix = &linearCover32AGBR;
-         }
-         else {
-            pixel_order(pxARGB);
-            fBlendPix = &linear32ARGB;
-            fCopyPix  = &linearCopy32ARGB;
-            fCoverPix = &linearCover32ARGB;
-         }
+         else if (ColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &linear32AGBR, &linearCopy32AGBR, &linearCover32AGBR>(pxAGBR);
+         else set_ops32<1,2,3,0, &linear32ARGB, &linearCopy32ARGB, &linearCover32ARGB>(pxARGB);
       }
       else if (BlendMode IS BLM::SRGB) {
          if (ColourFormat.AlphaPos IS 24) {
-            if (ColourFormat.BluePos IS 0) {
-               pixel_order(pxBGRA);
-               fBlendPix = &srgb32BGRA;
-               fCopyPix  = &srgbCopy32BGRA;
-               fCoverPix = &srgbCover32BGRA;
-            }
-            else {
-               pixel_order(pxRGBA);
-               fBlendPix = &srgb32RGBA;
-               fCopyPix  = &srgbCopy32RGBA;
-               fCoverPix = &srgbCover32RGBA;
-            }
+            if (ColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &srgb32BGRA, &srgbCopy32BGRA, &srgbCover32BGRA>(pxBGRA);
+            else set_ops32<0,1,2,3, &srgb32RGBA, &srgbCopy32RGBA, &srgbCover32RGBA>(pxRGBA);
          }
-         else if (ColourFormat.RedPos IS 24) {
-            pixel_order(pxAGBR);
-            fBlendPix = &srgb32AGBR;
-            fCopyPix  = &srgbCopy32AGBR;
-            fCoverPix = &srgbCover32AGBR;
-         }
-         else {
-            pixel_order(pxARGB);
-            fBlendPix = &srgb32ARGB;
-            fCopyPix  = &srgbCopy32ARGB;
-            fCoverPix = &srgbCover32ARGB;
-         }
+         else if (ColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &srgb32AGBR, &srgbCopy32AGBR, &srgbCover32AGBR>(pxAGBR);
+         else set_ops32<1,2,3,0, &srgb32ARGB, &srgbCopy32ARGB, &srgbCover32ARGB>(pxARGB);
       }
       else { // BLM::GAMMA
          if (ColourFormat.AlphaPos IS 24) {
-            if (ColourFormat.BluePos IS 0) {
-               pixel_order(pxBGRA);
-               fBlendPix = &gamma32BGRA;
-               fCopyPix  = &gammaCopy32BGRA;
-               fCoverPix = &gammaCover32BGRA;
-            }
-            else {
-               pixel_order(pxRGBA);
-               fBlendPix = &gamma32RGBA;
-               fCopyPix  = &gammaCopy32RGBA;
-               fCoverPix = &gammaCover32RGBA;
-            }
+            if (ColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &gamma32BGRA, &gammaCopy32BGRA, &gammaCover32BGRA>(pxBGRA);
+            else set_ops32<0,1,2,3, &gamma32RGBA, &gammaCopy32RGBA, &gammaCover32RGBA>(pxRGBA);
          }
-         else if (ColourFormat.RedPos IS 24) {
-            pixel_order(pxAGBR);
-            fBlendPix = &gamma32AGBR;
-            fCopyPix  = &gammaCopy32AGBR;
-            fCoverPix = &gammaCover32AGBR;
-         }
-         else {
-            pixel_order(pxARGB);
-            fBlendPix = &gamma32ARGB;
-            fCopyPix  = &gammaCopy32ARGB;
-            fCoverPix = &gammaCover32ARGB;
-         }
+         else if (ColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &gamma32AGBR, &gammaCopy32AGBR, &gammaCover32AGBR>(pxAGBR);
+         else set_ops32<1,2,3,0, &gamma32ARGB, &gammaCopy32ARGB, &gammaCover32ARGB>(pxARGB);
       }
    }
    else if (BitsPerPixel IS 24) {
