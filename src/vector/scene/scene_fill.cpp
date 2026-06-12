@@ -559,6 +559,10 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       }
    }
 
+   // The pattern's scene may carry a lingering transform if it was also consumed as a viewport fill
+   // (see draw_vectors()), so restore the identity transform before checking for a redraw.
+   set_render_transform(Pattern.Scene->Viewport, agg::trans_affine());
+
    // Redraw the pattern source if any part of the definition is marked as dirty.
    if ((check_dirty((extVector *)Pattern.Scene->Viewport)) or (!Pattern.Bitmap)) {
       if (acDraw(&Pattern) != ERR::Okay) return;

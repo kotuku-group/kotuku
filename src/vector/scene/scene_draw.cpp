@@ -5,6 +5,97 @@ class VectorState;
 
 //********************************************************************************************************************
 
+static bool render_matrix_matches(const VectorMatrix &Matrix, const agg::trans_affine &Transform)
+{
+   return (Matrix.ScaleX IS Transform.sx) and
+      (Matrix.ScaleY IS Transform.sy) and
+      (Matrix.ShearX IS Transform.shx) and
+      (Matrix.ShearY IS Transform.shy) and
+      (Matrix.TranslateX IS Transform.tx) and
+      (Matrix.TranslateY IS Transform.ty);
+}
+
+static void set_render_matrix(VectorMatrix &Matrix, const agg::trans_affine &Transform)
+{
+   Matrix.ScaleX     = Transform.sx;
+   Matrix.ScaleY     = Transform.sy;
+   Matrix.ShearX     = Transform.shx;
+   Matrix.ShearY     = Transform.shy;
+   Matrix.TranslateX = Transform.tx;
+   Matrix.TranslateY = Transform.ty;
+}
+
+static bool set_render_transform(objVectorViewport *Viewport, const agg::trans_affine &Transform)
+{
+   if (!Viewport->Matrices) {
+      if (Viewport->newMatrix(nullptr, false) != ERR::Okay) return false;
+   }
+
+   if (!render_matrix_matches(*Viewport->Matrices, Transform)) {
+      set_render_matrix(*Viewport->Matrices, Transform);
+      mark_dirty(Viewport, RC::TRANSFORM);
+   }
+
+   return true;
+}
+
+static bool viewport_has_fixed_size(const objVectorViewport *Viewport, double Width, double Height)
+{
+   auto viewport = (const extVectorViewport *)Viewport;
+
+   return dmf::hasWidth(viewport->vpDimensions) and
+      dmf::hasHeight(viewport->vpDimensions) and
+      (!dmf::hasScaledWidth(viewport->vpDimensions)) and
+      (!dmf::hasScaledHeight(viewport->vpDimensions)) and
+      (viewport->vpTargetWidth IS Width) and
+      (viewport->vpTargetHeight IS Height);
+}
+
+static void set_viewport_fixed_size(objVectorViewport *Viewport, double Width, double Height)
+{
+   if (!viewport_has_fixed_size(Viewport, Width, Height)) {
+      Viewport->setFields(fl::Width(Width), fl::Height(Height));
+   }
+}
+
+static bool viewport_has_fixed_bounds(const objVectorViewport *Viewport, double X, double Y, double Width,
+   double Height)
+{
+   auto viewport = (const extVectorViewport *)Viewport;
+
+   if (Width < 1) Width = 1;
+   if (Height < 1) Height = 1;
+
+   return dmf::hasX(viewport->vpDimensions) and
+      dmf::hasY(viewport->vpDimensions) and
+      viewport_has_fixed_size(Viewport, Width, Height) and
+      (!dmf::hasScaledX(viewport->vpDimensions)) and
+      (!dmf::hasScaledY(viewport->vpDimensions)) and
+      (viewport->vpTargetX IS X) and
+      (viewport->vpTargetY IS Y);
+}
+
+static void set_viewport_fixed_bounds(objVectorViewport *Viewport, double X, double Y, double Width, double Height)
+{
+   if (!viewport_has_fixed_bounds(Viewport, X, Y, Width, Height)) {
+      acRedimension(Viewport, X, Y, 0, Width, Height, 0);
+   }
+}
+
+static agg::trans_affine build_matrix_transform(const VectorMatrix *Matrices)
+{
+   agg::trans_affine transform;
+
+   for (auto matrix=Matrices; matrix; matrix=matrix->Next) {
+      transform.multiply(matrix->ScaleX, matrix->ShearY, matrix->ShearX, matrix->ScaleY,
+         matrix->TranslateX, matrix->TranslateY);
+   }
+
+   return transform;
+}
+
+//********************************************************************************************************************
+
 class SceneRenderer
 {
 private:
@@ -864,71 +955,34 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   // the current viewport.  NB: There is a performance penalty in that transforms will be
                   // applied in realtime.
 
-                  if (!view->Fill[0].Pattern->Scene->Viewport->Matrices) {
-                     view->Fill[0].Pattern->Scene->Viewport->newMatrix(nullptr, false);
-                  }
-
                   // Use transforms for the purpose of placing the pattern correctly
 
-                  auto &matrix = view->Fill[0].Pattern->Scene->Viewport->Matrices;
                   auto &t = view->Transform;
+                  if (set_render_transform(view->Fill[0].Pattern->Scene->Viewport, t)) {
 
-                  matrix->ScaleX = t.sx;
-                  matrix->ScaleY = t.sy;
-                  matrix->ShearX = t.shx;
-                  matrix->ShearY = t.shy;
-                  matrix->TranslateX = t.tx;
-                  matrix->TranslateY = t.ty;
+                     if (view->Fill[0].Pattern->Units IS VUNIT::BOUNDING_BOX) {
+                        view->Fill[0].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
+                        view->Fill[0].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
+                        set_viewport_fixed_size(view->Fill[0].Pattern->Scene->Viewport, view->vpFixedWidth,
+                           view->vpFixedHeight);
+                     }
 
-                  mark_dirty(view->Fill[0].Pattern->Scene->Viewport, RC::TRANSFORM);
-
-                  if (view->Fill[0].Pattern->Units IS VUNIT::BOUNDING_BOX) {
-                     view->Fill[0].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
-                     view->Fill[0].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
-                     view->Fill[0].Pattern->Scene->Viewport->setFields(fl::Width(view->vpFixedWidth), fl::Height(view->vpFixedHeight));
+                     draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[0].Pattern)->Viewport, state);
                   }
-
-                  draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[0].Pattern)->Viewport, state);
-
-                  matrix->ScaleX = 1.0;
-                  matrix->ScaleY = 1.0;
-                  matrix->ShearX = 0;
-                  matrix->ShearY = 0;
-                  matrix->TranslateX = 0;
-                  matrix->TranslateY = 0;
-                  mark_dirty(view->Fill[0].Pattern->Scene->Viewport, RC::TRANSFORM);
 
                   if ((view->FGFill) and (view->Fill[1].Pattern)) {
                      // Support for foreground fill patterns
-                     if (!view->Fill[1].Pattern->Scene->Viewport->Matrices) {
-                        view->Fill[1].Pattern->Scene->Viewport->newMatrix(nullptr, false);
+                     if (set_render_transform(view->Fill[1].Pattern->Scene->Viewport, t)) {
+
+                        if (view->Fill[1].Pattern->Units IS VUNIT::BOUNDING_BOX) {
+                           view->Fill[1].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
+                           view->Fill[1].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
+                           set_viewport_fixed_size(view->Fill[1].Pattern->Scene->Viewport, view->vpFixedWidth,
+                              view->vpFixedHeight);
+                        }
+
+                        draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[1].Pattern)->Viewport, state);
                      }
-
-                     auto &matrix = view->Fill[1].Pattern->Scene->Viewport->Matrices;
-                     matrix->ScaleX = t.sx;
-                     matrix->ScaleY = t.sy;
-                     matrix->ShearX = t.shx;
-                     matrix->ShearY = t.shy;
-                     matrix->TranslateX = t.tx;
-                     matrix->TranslateY = t.ty;
-
-                     mark_dirty(view->Fill[1].Pattern->Scene->Viewport, RC::TRANSFORM);
-
-                     if (view->Fill[1].Pattern->Units IS VUNIT::BOUNDING_BOX) {
-                        view->Fill[1].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
-                        view->Fill[1].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
-                        view->Fill[1].Pattern->Scene->Viewport->setFields(fl::Width(view->vpFixedWidth), fl::Height(view->vpFixedHeight));
-                     }
-
-                     draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[1].Pattern)->Viewport, state);
-
-                     matrix->ScaleX = 1.0;
-                     matrix->ScaleY = 1.0;
-                     matrix->ShearX = 0;
-                     matrix->ShearY = 0;
-                     matrix->TranslateX = 0;
-                     matrix->TranslateY = 0;
-                     mark_dirty(view->Fill[1].Pattern->Scene->Viewport, RC::TRANSFORM);
                   }
                }
 

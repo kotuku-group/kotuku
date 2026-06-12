@@ -178,10 +178,6 @@ void SceneRenderer::ClipBuffer::draw(SceneRenderer &Scene)
       return;
    }
 
-   if (!m_clip->Viewport->Matrices) {
-      m_clip->Viewport->newMatrix(nullptr, false);
-   }
-
    if (m_clip->Units IS VUNIT::BOUNDING_BOX) draw_bounding_box(Scene);
    else draw_userspace(Scene);
 }
@@ -191,34 +187,22 @@ void SceneRenderer::ClipBuffer::draw(SceneRenderer &Scene)
 
 void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
 {
-   if (!m_clip->Viewport->Matrices) {
-      if (m_clip->Viewport->newMatrix(nullptr, false) != ERR::Okay) return;
-   }
-
-   auto &matrix = m_clip->Viewport->Matrices;
-   auto &t = m_shape->Transform;
-
-   matrix->ScaleX = t.sx;
-   matrix->ScaleY = t.sy;
-   matrix->ShearX = t.shx;
-   matrix->ShearY = t.shy;
-   matrix->TranslateX = t.tx;
-   matrix->TranslateY = t.ty;
+   auto transform = m_shape->Transform;
 
    if (m_shape->classID() IS CLASSID::VECTORTEXT) {
       // This feels a bit hacky and might not necessarily be right... but it does get around the
       // issue of VectorText's positioning around the baseline and having path bounds in negative space.
-      matrix->TranslateX = 0;
-      matrix->TranslateY = 0;
+      transform.tx = 0;
+      transform.ty = 0;
    }
+
+   if (!set_render_transform(m_clip->Viewport, transform)) return;
 
    // Defining the viewport's dimensions is important for clip paths that use scaled coordinates
    auto parent_width  = get_parent_width(m_shape);
    auto parent_height = get_parent_height(m_shape);
    //m_clip->Viewport->setFields(fl::X(m_shape->ParentView->vpTargetX), fl::Y(m_shape->ParentView->vpTargetY));
-   m_clip->Viewport->setFields(fl::Width(parent_width), fl::Height(parent_height));
-
-   mark_dirty(m_clip->Viewport, RC::TRANSFORM);
+   set_viewport_fixed_size(m_clip->Viewport, parent_width, parent_height);
 
    m_clip->Bounds = TCR_EXPANDING;
    calc_full_boundary((extVector *)m_clip->Viewport, m_clip->Bounds, false, true, true);
@@ -251,15 +235,10 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    // Set the target area to mock the shape.  The viewbox will remain at (0 0 1 1), or whatever the
    // client has defined if the default is overridden.
 
-   acRedimension(m_clip->Viewport, shape_bounds.left, shape_bounds.top, 0,
-      shape_bounds.width(), shape_bounds.height(), 0);
+   set_viewport_fixed_bounds(m_clip->Viewport, shape_bounds.left, shape_bounds.top,
+      shape_bounds.width(), shape_bounds.height());
 
-   if (m_shape->Matrices) {
-      reset_matrix(*m_clip->Viewport->Matrices);
-      for (auto t=m_shape->Matrices; t; t=t->Next) {
-         *m_clip->Viewport->Matrices *= *t;
-      }
-   }
+   if (!set_render_transform(m_clip->Viewport, build_matrix_transform(m_shape->Matrices))) return;
 
    m_clip->Bounds = TCR_EXPANDING;
    calc_full_boundary((extVector *)m_clip->Viewport, m_clip->Bounds, false, true, true);
