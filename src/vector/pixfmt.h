@@ -1,6 +1,13 @@
 
+// NB: The SSE2 span kernels use unaligned loads/stores because span destinations land on arbitrary
+// 4-byte pixel boundaries.  If these kernels are ever widened to AVX2 (32-byte accesses), cache-line
+// splits double in frequency and alignment starts to matter: pad bitmap strides to a multiple of 32,
+// allocate bitmap data 32-byte aligned, and add a scalar peel loop so the SIMD body runs aligned.
+
 #include <cstring>
 #include "../link/simd.h"
+
+//#define SKIP_ALPHA_ZERO 1 // Enables skipping translucent pixels when compositing.
 
 extern agg::gamma_lut<uint8_t, uint16_t, 8, 12> glGamma;
 
@@ -325,6 +332,23 @@ private:
       mPixelOrder = PixelOrder;
    }
 
+   inline static void fill32(uint8_t *Buffer, unsigned Length, uint32_t Value) noexcept
+   {
+#ifdef KOTUKU_SSE2
+      const __m128i vv = _mm_set1_epi32(int(Value));
+      while (Length >= 4) {
+         _mm_storeu_si128((__m128i *)Buffer, vv);
+         Buffer += 16;
+         Length -= 4;
+      }
+#endif
+      while (Length) {
+         *(uint32_t *)Buffer = Value;
+         Buffer += sizeof(uint32_t);
+         --Length;
+      }
+   }
+
    // 32-bit span routines.  The pixel order and per-pixel operations are template parameters so
    // that the per-pixel work inlines into the span loop; function pointer indirection is paid once
    // per span instead of once per pixel.
@@ -341,10 +365,7 @@ private:
             ((uint8_t *)&v)[oG] = c.g;
             ((uint8_t *)&v)[oB] = c.b;
             ((uint8_t *)&v)[oA] = c.a;
-            do {
-               *(uint32_t *)p = v;
-               p += sizeof(uint32_t);
-            } while(--len);
+            fill32(p, len, v);
          }
          else {
             do {
@@ -533,10 +554,7 @@ private:
          ((uint8_t *)&v)[oG] = c.g;
          ((uint8_t *)&v)[oB] = c.b;
          ((uint8_t *)&v)[oA] = c.a;
-         do {
-            *(uint32_t *)p = v;
-            p += sizeof(uint32_t);
-         } while(--len);
+         fill32(p, len, v);
       }
       else {
          const __m128i zero  = _mm_setzero_si128();
@@ -595,9 +613,14 @@ private:
       const __m128i amask = alphaLaneMask16<oA>();
       const __m128i one16 = _mm_set1_epi16(1);
       const __m128i cv16  = _mm_set1_epi16(short(cover));
+#ifdef SKIP_ALPHA_ZERO
+      const __m128i v255  = _mm_set1_epi16(255);
+#endif
 
       while (len >= 4) {
+#ifndef SKIP_ALPHA_ZERO
          const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+#endif
          const __m128i s8 = _mm_loadu_si128((const __m128i *)colors);
 
          // Unpack four source pixels to 16-bit lanes and permute rgba into the destination order.
@@ -630,10 +653,33 @@ private:
          const __m128i a_lo = _mm_srli_epi16(_mm_mullo_epi16(sa_lo, _mm_add_epi16(cv_lo, one16)), 8);
          const __m128i a_hi = _mm_srli_epi16(_mm_mullo_epi16(sa_hi, _mm_add_epi16(cv_hi, one16)), 8);
 
+#ifdef SKIP_ALPHA_ZERO
+         // Group early-outs.  All four scaled alphas zero: the destination is untouched, so skip
+         // the load and store entirely (avoids dirtying unchanged cache lines).  All four
+         // saturated: a direct write of the permuted source; a saturated scaled alpha implies a
+         // saturated source alpha, so the alpha lanes of s_lo/s_hi are already correct.
+
+         if (_mm_movemask_epi8(_mm_cmpeq_epi16(_mm_or_si128(a_lo, a_hi), zero)) IS 0xffff) {
+            p += 16;
+            colors += 4;
+            len -= 4;
+            continue;
+         }
+
+         if (_mm_movemask_epi8(_mm_cmpeq_epi16(_mm_and_si128(a_lo, a_hi), v255)) IS 0xffff) {
+            _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(s_lo, s_hi));
+         }
+         else {
+            const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+            const __m128i r_lo = srgbCoverPair16<oA>(_mm_unpacklo_epi8(d8, zero), a_lo, _mm_andnot_si128(amask, s_lo), amask);
+            const __m128i r_hi = srgbCoverPair16<oA>(_mm_unpackhi_epi8(d8, zero), a_hi, _mm_andnot_si128(amask, s_hi), amask);
+            _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+         }
+#else
          const __m128i r_lo = srgbCoverPair16<oA>(_mm_unpacklo_epi8(d8, zero), a_lo, _mm_andnot_si128(amask, s_lo), amask);
          const __m128i r_hi = srgbCoverPair16<oA>(_mm_unpackhi_epi8(d8, zero), a_hi, _mm_andnot_si128(amask, s_hi), amask);
          _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
-
+#endif
          p += 16;
          colors += 4;
          len -= 4;
