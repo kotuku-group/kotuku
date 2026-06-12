@@ -245,6 +245,7 @@ namespace agg
         path_base() : m_last_x(0), m_last_y(0), m_vertices(), m_iterator(0) {}
         void remove_all() { m_vertices.remove_all(); m_iterator = 0; }
         void free_all()   { m_vertices.free_all();   m_iterator = 0; }
+        void reserve(unsigned Total) { m_vertices.reserve(Total); }
 
         // Make path functions
 
@@ -968,6 +969,7 @@ namespace agg
 
         void remove_all() { m_vertices.clear(); }
         void free_all()   { m_vertices.clear(); }
+        void reserve(unsigned Total) { m_vertices.reserve(Total); }
 
         void add_vertex(double x, double y, unsigned cmd) {
             m_vertices.push_back(vertex_type(value_type(x), value_type(y), int8u(cmd)));

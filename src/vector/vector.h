@@ -627,6 +627,11 @@ class extVectorPath : public extVector, public SceneDef {
    using create = kt::Create<extVectorPath>;
 
    std::vector<PathCommand> Commands;
+   agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
+   TClipRectangle<double> UnplacedBounds;
+   double pX, pY;
+   DMF pDimensions;
+   bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 };
 
 class extVectorRectangle : public extVector {

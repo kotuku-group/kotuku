@@ -326,6 +326,7 @@ ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
 
    auto path = (extVectorPath *)VectorPath;
    path->Commands = std::move(paths);
+   path->CommandsChanged = true;
    reset_path(VectorPath);
    path->modified();
 

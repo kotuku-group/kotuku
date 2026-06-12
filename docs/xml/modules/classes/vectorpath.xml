@@ -34,6 +34,34 @@
       <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
+    <action>
+      <name>Move</name>
+      <comment>Moves the path to a new position.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves the path to a new fixed position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+      <description>
+<p>This action updates the <fl>X</fl> and <fl>Y</fl> placement fields.  The path commands remain unchanged.</p>
+      </description>
+    </action>
+
   </actions>
 
   <methods>
@@ -170,6 +198,26 @@ Z: Close Path
       <type>INT</type>
       <description>
 <p>The total number of points defined in the path <fl>Sequence</fl> is reflected in this field.  Modifying the total directly is permitted, although this should be used for shrinking the list because expansion will create uninitialised command entries.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>X</name>
+      <comment>The left-side of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Y</name>
+      <comment>The top of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Setting Y moves the computed path so that its top-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
       </description>
     </field>
 
