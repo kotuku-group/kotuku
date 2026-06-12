@@ -57,26 +57,34 @@ struct srgb_blend32_gamma {
 
    srgb_blend32_gamma(uint8_t R, uint8_t G, uint8_t B, uint8_t A) : oR(R), oG(G), oB(B), oA(A) { }
 
+   // Channel results never exceed hi_res_mask: the numerator is bounded by dir() <= hi_res_mask and
+   // a4 + a5 <= a6, so no clamping is required before the inv() lookup.
+
    inline void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
       const uint8_t dest_alpha = p[oA];
-      const uint8_t alpha_inv = 0xff - ca;
-      const uint32_t a5 = alpha_inv * dest_alpha;
-      const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8);
+      const uint32_t alpha_inv = 0xff - ca;
+      const uint32_t a4 = 0xff * ca;
 
-      if (final_alpha > 0) {
-          const uint32_t a4 = 0xff * ca;
-          const uint32_t a6 = 0xff * final_alpha;
-
-          const uint32_t r3 = (glGamma.dir(cr) * a4 + glGamma.dir(p[oR]) * a5) / a6;
-          const uint32_t g3 = (glGamma.dir(cg) * a4 + glGamma.dir(p[oG]) * a5) / a6;
-          const uint32_t b3 = (glGamma.dir(cb) * a4 + glGamma.dir(p[oB]) * a5) / a6;
-
-          p[oR] = glGamma.inv(r3 < glGamma.hi_res_mask ? r3 : glGamma.hi_res_mask);
-          p[oG] = glGamma.inv(g3 < glGamma.hi_res_mask ? g3 : glGamma.hi_res_mask);
-          p[oB] = glGamma.inv(b3 < glGamma.hi_res_mask ? b3 : glGamma.hi_res_mask);
-          p[oA] = final_alpha;
+      if (dest_alpha IS 0xff) {
+         // Opaque destination: final alpha is 255 and the divisor is the constant 65025, which the
+         // compiler lowers to a multiply-shift.
+         const uint32_t a5 = alpha_inv * 0xff;
+         p[oR] = glGamma.inv((glGamma.dir(cr) * a4 + glGamma.dir(p[oR]) * a5) / 65025u);
+         p[oG] = glGamma.inv((glGamma.dir(cg) * a4 + glGamma.dir(p[oG]) * a5) / 65025u);
+         p[oB] = glGamma.inv((glGamma.dir(cb) * a4 + glGamma.dir(p[oB]) * a5) / 65025u);
       }
-      else ((uint32_t *)p)[0] = 0;
+      else {
+         const uint32_t a5 = alpha_inv * dest_alpha;
+         const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8); // Always >= 1
+         const uint32_t a6 = 0xff * final_alpha;
+         // One fixed-point reciprocal replaces three divisions; numerators stay below 2^30 so the
+         // 31-bit reciprocal cannot push a result past hi_res_mask.
+         const uint64_t recip = ((uint64_t(1)<<31) + a6 - 1) / a6;
+         p[oR] = glGamma.inv(uint32_t(((glGamma.dir(cr) * a4 + glGamma.dir(p[oR]) * a5) * recip)>>31));
+         p[oG] = glGamma.inv(uint32_t(((glGamma.dir(cg) * a4 + glGamma.dir(p[oG]) * a5) * recip)>>31));
+         p[oB] = glGamma.inv(uint32_t(((glGamma.dir(cb) * a4 + glGamma.dir(p[oB]) * a5) * recip)>>31));
+         p[oA] = uint8_t(final_alpha);
+      }
    }
 };
 
