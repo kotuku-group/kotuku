@@ -18,8 +18,8 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
          agg::renderer_scanline_bin_solid renderer(mRenderBase);
          renderer.color(colour);
 
-         if (!State.mClipStack->empty()) {
-            agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+         if (!mClipStack.empty()) {
+            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
             agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
             agg::render_scanlines(Raster, mScanLineMasked, renderer);
          }
@@ -29,8 +29,8 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
          agg::renderer_scanline_aa_solid renderer(mRenderBase);
          renderer.color(colour);
 
-         if (!State.mClipStack->empty()) {
-            agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+         if (!mClipStack.empty()) {
+            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
             agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
             agg::render_scanlines(Raster, mScanLineMasked, renderer);
          }
@@ -41,21 +41,24 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
    if (Painter.Image) { // Bitmap image fill.  NB: The SVG class creates a standard VectorRectangle and associates an image with it in order to support <image> tags.
       fill_image(State, Vector.Bounds, Vector.BasePath, Vector.Scene->SampleMethod,
          build_fill_transform(Vector, Painter.Image->Units IS VUNIT::USERSPACE, State),
-         mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorImage *)Painter.Image), mRenderBase, Raster, Vector.FillOpacity * State.mOpacity);
+         mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorImage *)Painter.Image), mRenderBase, Raster,
+         Vector.FillOpacity * State.mOpacity, this);
    }
 
    if (Painter.Gradient) {
       if (auto table = get_fill_gradient_table(Painter, State.mOpacity * Vector.FillOpacity)) {
          fill_gradient(State, Vector.Bounds, &Vector.BasePath,
             build_fill_transform(Vector, Painter.Gradient->Units IS VUNIT::USERSPACE, State),
-            mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorGradient *)Painter.Gradient), table, mRenderBase, Raster);
+            mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorGradient *)Painter.Gradient), table, mRenderBase,
+            Raster, this);
       }
    }
 
    if (Painter.Pattern) {
       fill_pattern(State, Vector.Bounds, &Vector.BasePath, Vector.Scene->SampleMethod,
          build_fill_transform(Vector, Painter.Pattern->Units IS VUNIT::USERSPACE, State),
-         mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorPattern *)Painter.Pattern), mRenderBase, Raster);
+         mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorPattern *)Painter.Pattern), mRenderBase, Raster,
+         this);
    }
 }
 
@@ -64,10 +67,10 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
 // Path: The original vector path without transforms.
 // Transform: Transforms to be applied to the path and to align the image.
 
-static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage &Path, VSM SampleMethod,
-   const agg::trans_affine &Transform, double ViewWidth, double ViewHeight,
-   extVectorImage &Image, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
-   agg::rasterizer_scanline_aa<> &Raster, double Alpha)
+static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage &Path,
+   VSM SampleMethod, const agg::trans_affine &Transform, double ViewWidth, double ViewHeight, extVectorImage &Image,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rasterizer_scanline_aa<> &Raster, double Alpha,
+   SceneRenderer *Render)
 {
    const double c_width  = (Image.Units IS VUNIT::USERSPACE) ? ViewWidth : Bounds.width();
    const double c_height = (Image.Units IS VUNIT::USERSPACE) ? ViewHeight : Bounds.height();
@@ -97,10 +100,11 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
       else SampleMethod = VSM::SPLINE16; // Spline works well for enlarging monotone vectors and avoids sharpening artifacts.
    }
 
-   if (!State.mClipStack->empty()) {
-      agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+   if ((Render) and (!Render->clip_stack_empty())) {
+      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
       agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
-      drawBitmap(masked_scanline, SampleMethod, RenderBase, Raster, Image.Bitmap, Image.SpreadMethod, Alpha, &transform);
+      drawBitmap(masked_scanline, SampleMethod, RenderBase, Raster, Image.Bitmap, Image.SpreadMethod, Alpha,
+         &transform);
    }
    else {
       agg::scanline_u8 scanline;
@@ -113,7 +117,8 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
 
 static void fill_gradient(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage *Path,
    const agg::trans_affine &Transform, double ViewWidth, double ViewHeight, extVectorGradient &Gradient,
-   GRADIENT_TABLE *Table, agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rasterizer_scanline_aa<> &Raster)
+   GRADIENT_TABLE *Table, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
+   agg::rasterizer_scanline_aa<> &Raster, SceneRenderer *Render)
 {
    constexpr int MAX_SPAN = 256;
    typedef agg::span_interpolator_linear<> interpolator_type;
@@ -139,12 +144,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       span_gradient_type  span_gradient(span_interpolator, SpreadMethod, *Table, SpanA, SpanB);
       renderer_gradient_type solidrender_gradient(RenderBase, span_allocator, span_gradient);
 
-      if (State.mClipStack->empty()) {
+      if ((!Render) or (Render->clip_stack_empty())) {
          agg::scanline_u8 scanline;
          agg::render_scanlines(Raster, scanline, solidrender_gradient);
       }
       else { // Masked gradient
-         agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+         agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
          agg::render_scanlines(Raster, masked_scanline, solidrender_gradient);
       }
@@ -475,7 +480,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage *Path,
    VSM SampleMethod, const agg::trans_affine &Transform, double ViewWidth, double ViewHeight,
    extVectorPattern &Pattern, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
-   agg::rasterizer_scanline_aa<> &Raster)
+   agg::rasterizer_scanline_aa<> &Raster, SceneRenderer *Render)
 {
    constexpr bool SCALE_BITMAP = true; // Should always be true for fidelity, but switch to false if debugging coordinate issues.
    const double elem_width  = (Pattern.Units IS VUNIT::USERSPACE) ? ViewWidth : Bounds.width();
@@ -594,13 +599,15 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       SampleMethod = VSM::BILINEAR;
    }
 
-   if (!State.mClipStack->empty()) {
-      agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+   if ((Render) and (!Render->clip_stack_empty())) {
+      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
       agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
-      drawBitmap(masked_scanline, SampleMethod, RenderBase, Raster, Pattern.Bitmap, Pattern.SpreadMethod, Pattern.Opacity, &transform);
+      drawBitmap(masked_scanline, SampleMethod, RenderBase, Raster, Pattern.Bitmap, Pattern.SpreadMethod,
+         Pattern.Opacity, &transform);
    }
    else {
       agg::scanline_u8 scanline;
-      drawBitmap(scanline, SampleMethod, RenderBase, Raster, Pattern.Bitmap, Pattern.SpreadMethod, Pattern.Opacity, &transform);
+      drawBitmap(scanline, SampleMethod, RenderBase, Raster, Pattern.Bitmap, Pattern.SpreadMethod, Pattern.Opacity,
+         &transform);
    }
 }

@@ -136,6 +136,8 @@ public:
    };
 
 private:
+   std::stack<ClipBuffer> mClipStack;
+
    constexpr double view_width() {
       if (mView->vpViewWidth > 0) return mView->vpViewWidth;
       else if (dmf::hasAnyWidth(mView->vpDimensions)) return mView->vpFixedWidth;
@@ -157,6 +159,9 @@ private:
 public:
    extVectorScene *Scene; // The top-level VectorScene performing the draw.
    int mObjectCount;     // The number of objects drawn
+
+   bool clip_stack_empty() const { return mClipStack.empty(); }
+   ClipBuffer &clip_stack_top() { return mClipStack.top(); }
 
    SceneRenderer(extVectorScene *pScene) : Scene(pScene) { }
    void draw(objBitmap *, objVectorViewport *);
@@ -180,7 +185,6 @@ public:
    agg::line_join_e  mLineJoin;
    agg::line_cap_e   mLineCap;
    agg::inner_join_e mInnerJoin;
-   std::shared_ptr<std::stack<SceneRenderer::ClipBuffer>> mClipStack;
    double mOpacity;
    VIS    mVisible;
    VOF    mOverflowX, mOverflowY;
@@ -193,7 +197,6 @@ public:
       mLineJoin(agg::miter_join),
       mLineCap(agg::butt_cap),
       mInnerJoin(agg::inner_miter),
-      mClipStack(std::make_shared<std::stack<SceneRenderer::ClipBuffer>>()),
       mOpacity(1.0),
       mVisible(VIS::VISIBLE),
       mOverflowX(VOF::VISIBLE), mOverflowY(VOF::VISIBLE),
@@ -545,10 +548,7 @@ class pattern_rgb {
             if (Bitmap.ColourFormat->BluePos IS 0) pixel = &pixel24BGR;
             else pixel = &pixel24RGB;
          }
-         else {
-            kt::Log log;
-            log.warning("pattern_rgb: Unsupported bitmap format %dbpp", Bitmap.BitsPerPixel);
-         }
+         else kt::Log().warning("pattern_rgb: Unsupported bitmap format %dbpp", Bitmap.BitsPerPixel);
 
          if (Height != (double)mBitmap->Height) {
             ipixel = pixel;
@@ -654,6 +654,7 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
    kt::Log log;
 
    mObjectCount = 0;
+   while (!mClipStack.empty()) mClipStack.pop();
 
    log.traceBranch("Bitmap: %dx%d,%dx%d, Viewport: %d", Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom, Scene->Viewport->UID);
 
@@ -682,13 +683,26 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
 }
 
 //********************************************************************************************************************
+// This function applies the gamma to StrokeRaster if there's been a change in the gamma value (saves recomputation).
+
+static void apply_stroke_gamma(extVector &Vector)
+{
+   auto gamma = Vector.Scene->Gamma;
+
+   if (Vector.StrokeRasterGamma IS gamma) return;
+
+   Vector.StrokeRaster->gamma(agg::gamma_power(gamma));
+   Vector.StrokeRasterGamma = gamma;
+}
+
+//********************************************************************************************************************
 // Refer to configure_stroke() for the configuration of StrokeRaster.
 
 void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 {
    auto &raster = *Vector.StrokeRaster;
 
-   if (Vector.Scene->Gamma != 1.0) raster.gamma(agg::gamma_power(Vector.Scene->Gamma));
+   apply_stroke_gamma(Vector);
 
    if (Vector.FillRule IS VFR::NON_ZERO) raster.filling_rule(agg::fill_non_zero);
    else if (Vector.FillRule IS VFR::EVEN_ODD) raster.filling_rule(agg::fill_even_odd);
@@ -700,15 +714,19 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
    if (Vector.Bounds.valid()) {
       if (Vector.Stroke.Gradient) {
          if (auto table = get_stroke_gradient_table(Vector)) {
-            fill_gradient(State, Vector.Bounds, &Vector.BasePath, build_fill_transform(Vector, ((extVectorGradient *)Vector.Stroke.Gradient)->Units IS VUNIT::USERSPACE, State),
-               view_width(), view_height(), *((extVectorGradient *)Vector.Stroke.Gradient), table, mRenderBase, raster);
+            fill_gradient(State, Vector.Bounds, &Vector.BasePath,
+               build_fill_transform(Vector, ((extVectorGradient *)Vector.Stroke.Gradient)->Units IS VUNIT::USERSPACE,
+                  State),
+               view_width(), view_height(), *((extVectorGradient *)Vector.Stroke.Gradient), table, mRenderBase,
+               raster, this);
          }
          return;
       }
 
       if (Vector.Stroke.Pattern) {
-         fill_pattern(State, Vector.Bounds, &Vector.BasePath, Vector.Scene->SampleMethod, build_fill_transform(Vector, Vector.Stroke.Pattern->Units IS VUNIT::USERSPACE, State),
-            view_width(), view_height(), *((extVectorPattern *)Vector.Stroke.Pattern), mRenderBase, raster);
+         fill_pattern(State, Vector.Bounds, &Vector.BasePath, Vector.Scene->SampleMethod,
+            build_fill_transform(Vector, Vector.Stroke.Pattern->Units IS VUNIT::USERSPACE, State),
+            view_width(), view_height(), *((extVectorPattern *)Vector.Stroke.Pattern), mRenderBase, raster, this);
          return;
       }
 
@@ -731,8 +749,8 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       agg::renderer_scanline_bin_solid renderer(mRenderBase);
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
-      if (!State.mClipStack->empty()) {
-         agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+      if (!mClipStack.empty()) {
+         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
       }
@@ -742,8 +760,8 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       agg::renderer_scanline_aa_solid renderer(mRenderBase);
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
-      if (!State.mClipStack->empty()) {
-         agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+      if (!mClipStack.empty()) {
+         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
       }
@@ -906,13 +924,13 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
             if ((state.mClip.right > state.mClip.left) and (state.mClip.bottom > state.mClip.top)) { // Continue only if the clipping region is visible
                if (view->vpClip) {
-                  state.mClipStack->emplace(state, (extVectorClip *)nullptr, view);
-                  state.mClipStack->top().draw_viewport(*this);
+                  mClipStack.emplace(state, (extVectorClip *)nullptr, view);
+                  mClipStack.top().draw_viewport(*this);
                }
 
                if (view->ClipMask) {
-                  state.mClipStack->emplace(state, view->ClipMask, view);
-                  state.mClipStack->top().draw(*this);
+                  mClipStack.emplace(state, view->ClipMask, view);
+                  mClipStack.top().draw(*this);
                }
 
                auto save_rb_clip = mRenderBase.clip_box();
@@ -1039,7 +1057,12 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                         auto ib_size = mInputBounds.size();
 
+                        std::stack<ClipBuffer> save_clip_stack;
+                        save_clip_stack.swap(mClipStack);
+
                         draw_vectors((extVector *)view->Child, child_state);
+
+                        mClipStack.swap(save_clip_stack);
 
                         // Cache the freshly-generated boundaries on the viewport so that they can be re-used on
                         // subsequent frames that skip re-rendering this buffered viewport.
@@ -1074,8 +1097,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                      agg::rasterizer_scanline_aa<> raster;
                      raster.add_path(view->BasePath);
 
-                     if (!state.mClipStack->empty()) {
-                        agg::alpha_mask_gray8 alpha_mask(state.mClipStack->top().m_renderer);
+                     if (!mClipStack.empty()) {
+                        agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
                         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
                         drawBitmap(masked_scanline, VSM::AUTO, mRenderBase, raster, view->vpBuffer, VSPREAD::REPEAT, view->Opacity, &transform);
                      }
@@ -1087,9 +1110,9 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   else draw_vectors((extVector *)view->Child, state);
                }
 
-               if (view->ClipMask) state.mClipStack->pop();
+               if (view->ClipMask) mClipStack.pop();
 
-               if (view->vpClip) state.mClipStack->pop();
+               if (view->vpClip) mClipStack.pop();
 
                mView = saved_viewport;
 
@@ -1102,8 +1125,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       }
       else {
          if (shape->ClipMask) {
-            state.mClipStack->emplace(state, shape->ClipMask, shape);
-            state.mClipStack->top().draw(*this);
+            mClipStack.emplace(state, shape->ClipMask, shape);
+            mClipStack.top().draw(*this);
          }
 
          if (shape->GeneratePath) { // A vector that generates a path is one that can be drawn
@@ -1144,8 +1167,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                   // Clipping masks can reduce the boundary further.
 
-                  if (!state.mClipStack->empty()) {
-                     auto &top = state.mClipStack->top();
+                  if (!mClipStack.empty()) {
+                     auto &top = mClipStack.top();
                      if ((top.m_clip) and (top.m_clip->Bounds.valid())) {
                         // NB: This hasn't had much testing and doesn't consider nested clips.
                         // The Clip bounds should be post-transform
@@ -1167,7 +1190,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
          if (shape->Child) draw_vectors((extVector *)shape->Child, state);
 
-         if (shape->ClipMask) state.mClipStack->pop();
+         if (shape->ClipMask) mClipStack.pop();
       }
 
       if (bmpBkgd) {
@@ -1177,8 +1200,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
          mBitmap = bmpSave;
          mFormat.setBitmap(*mBitmap);
-         if (!state.mClipStack->empty()) {
-            agg::alpha_mask_gray8 alpha_mask(state.mClipStack->top().m_renderer);
+         if (!mClipStack.empty()) {
+            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
             agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
             drawBitmap(masked_scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
          }

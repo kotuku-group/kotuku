@@ -434,6 +434,7 @@ class extVector : public objVector {
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
    TClipRectangle<double> Bounds; // Must be calculated by GeneratePath() and called from calc_full_boundary()
    double StrokeWidth;
+   double StrokeRasterGamma;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
    std::string FilterString, StrokeString, FillString;
@@ -483,6 +484,7 @@ class extVector : public objVector {
       InnerJoin     = agg::inner_miter; // AGG only
       NumericID     = 0x7fffffff;
       StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
+      StrokeRasterGamma  = 1.0;
       Visibility    = VIS::VISIBLE;
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;

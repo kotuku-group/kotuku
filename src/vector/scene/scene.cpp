@@ -39,19 +39,20 @@ Vector definitions can be saved and loaded from permanent storage by using the @
 
 //********************************************************************************************************************
 
+class SceneRenderer;
 class VectorState;
 
 static void fill_image(VectorState &, const TClipRectangle<double> &, agg::path_storage &, VSM,
    const agg::trans_affine &, double, double, extVectorImage &, agg::renderer_base<agg::pixfmt_psl> &,
-   agg::rasterizer_scanline_aa<> &, double Alpha = 1.0);
+   agg::rasterizer_scanline_aa<> &, double Alpha = 1.0, SceneRenderer *Render = nullptr);
 
 static void fill_gradient(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    const agg::trans_affine &, double, double, extVectorGradient &, GRADIENT_TABLE *,
-   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &);
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
 
 static void fill_pattern(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    VSM, const agg::trans_affine &, double ViewWidth, double, extVectorPattern &,
-   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &);
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
 
 //********************************************************************************************************************
 
