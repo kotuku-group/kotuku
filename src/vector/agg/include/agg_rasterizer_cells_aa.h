@@ -18,6 +18,7 @@
 
 #include <string.h>
 #include <math.h>
+#include <algorithm>
 #include "agg_math.h"
 #include "agg_array.h"
 
@@ -62,7 +63,7 @@ namespace agg
             return m_sorted_y[y - m_min_y].num;
         }
 
-        const cell_type* const* scanline_cells(unsigned y) const {
+        const cell_type* scanline_cells(unsigned y) const {
             return m_sorted_cells.data() + m_sorted_y[y - m_min_y].start;
         }
 
@@ -83,7 +84,7 @@ namespace agg
         unsigned                m_num_cells;
         std::vector<std::unique_ptr<cell_type[]>> m_cells;
         cell_type*              m_curr_cell_ptr;
-        std::vector<cell_type*> m_sorted_cells;
+        std::vector<cell_type>  m_sorted_cells;
         std::vector<sorted_y>   m_sorted_y;
         cell_type m_curr_cell;
         cell_type m_style_cell;
@@ -247,12 +248,12 @@ namespace agg
 
         int dx = x2 - x1;
 
-        if(dx >= dx_limit || dx <= -dx_limit)
-        {
+        if (dx >= dx_limit or dx <= -dx_limit) {
             int cx = (x1 + x2) >> 1;
             int cy = (y1 + y2) >> 1;
             line(x1, y1, cx, cy);
             line(cx, cy, x2, y2);
+            return;
         }
 
         int dy = y2 - y1;
@@ -390,87 +391,6 @@ namespace agg
         m_curr_cell_ptr = m_cells[m_curr_block++].get();
     }
 
-    enum { qsort_threshold = 9 };
-
-    template<class Cell>
-    void qsort_cells(Cell** start, unsigned num) {
-        Cell**  stack[80];
-        Cell*** top;
-        Cell**  limit;
-        Cell**  base;
-
-        limit = start + num;
-        base  = start;
-        top   = stack;
-
-        while (true) {
-            int len = int(limit - base);
-
-            Cell** i;
-            Cell** j;
-            Cell** pivot;
-
-            if (len > qsort_threshold) {
-                // we use base + len/2 as the pivot
-                pivot = base + len / 2;
-                std::swap(*base, *pivot);
-
-                i = base + 1;
-                j = limit - 1;
-
-                // now ensure that *i <= *base <= *j
-
-                if ((*j)->x < (*i)->x) std::swap(*i, *j);
-                if ((*base)->x < (*i)->x) std::swap(*base, *i);
-                if ((*j)->x < (*base)->x) std::swap(*base, *j);
-
-                while (true) {
-                    int x = (*base)->x;
-                    do i++; while( (*i)->x < x );
-                    do j--; while( x < (*j)->x );
-
-                    if (i > j) break;
-
-                    std::swap(*i, *j);
-                }
-
-                std::swap(*base, *j);
-
-                // now, push the largest sub-array
-                if (j - base > limit - i) {
-                   top[0] = base;
-                   top[1] = j;
-                   base   = i;
-                }
-                else {
-                   top[0] = i;
-                   top[1] = limit;
-                   limit  = j;
-                }
-                top += 2;
-            }
-            else {
-                // the sub-array is small, perform insertion sort
-                j = base;
-                i = j + 1;
-
-                for(; i < limit; j = i, i++) {
-                    for(; j[1]->x < (*j)->x; j--) {
-                        std::swap(*(j + 1), *j);
-                        if (j == base) break;
-                    }
-                }
-
-                if (top > stack) {
-                    top  -= 2;
-                    base  = top[0];
-                    limit = top[1];
-                }
-                else break;
-            }
-        }
-    }
-
     template<class Cell>
     void rasterizer_cells_aa<Cell>::sort_cells() {
         if (m_sorted) return; // Perform sort only the first time.
@@ -532,7 +452,7 @@ namespace agg
             start += v;
         }
 
-        // Fill the cell pointer array sorted by Y
+        // Copy the cells into the contiguous array sorted by Y, so each scanline's cells can be swept linearly.
         block_ptr = m_cells.data();
         nb = m_num_cells >> cell_block_shift;
         while(nb--) {
@@ -541,7 +461,7 @@ namespace agg
             i = cell_block_size;
             while(i--) {
                 sorted_y& curr_y = m_sorted_y[cell_ptr->y - m_min_y];
-                m_sorted_cells[curr_y.start + curr_y.num] = cell_ptr;
+                m_sorted_cells[curr_y.start + curr_y.num] = *cell_ptr;
                 ++curr_y.num;
                 ++cell_ptr;
             }
@@ -552,15 +472,19 @@ namespace agg
         i = m_num_cells & cell_block_mask;
         while(i--) {
             sorted_y& curr_y = m_sorted_y[cell_ptr->y - m_min_y];
-            m_sorted_cells[curr_y.start + curr_y.num] = cell_ptr;
+            m_sorted_cells[curr_y.start + curr_y.num] = *cell_ptr;
             ++curr_y.num;
             ++cell_ptr;
         }
 
-        // Finally arrange the X-arrays
+        // Finally arrange the X-arrays.  Relative order of equal-x cells is irrelevant: the sweep accumulates
+        // their area/cover sums commutatively.
         for (i=0; i < m_sorted_y.size(); i++) {
             const sorted_y &curr_y = m_sorted_y[i];
-            if (curr_y.num) qsort_cells(m_sorted_cells.data() + curr_y.start, curr_y.num);
+            if (curr_y.num) {
+                cell_type *base = m_sorted_cells.data() + curr_y.start;
+                std::sort(base, base + curr_y.num, [](const cell_type &a, const cell_type &b) { return a.x < b.x; });
+            }
         }
         m_sorted = true;
     }

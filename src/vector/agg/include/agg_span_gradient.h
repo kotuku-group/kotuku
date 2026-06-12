@@ -14,6 +14,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cstdint>
 #include "agg_basics.h"
 #include "agg_math.h"
 #include "agg_array.h"
@@ -32,6 +33,7 @@ namespace agg
         typedef ColorT color_type;
 
         const int downscale_shift = interpolator_type::subpixel_shift - gradient_subpixel_shift;
+        static const int reciprocal_shift = 24;
 
         span_gradient() {}
 
@@ -65,6 +67,9 @@ namespace agg
         void generate(color_type* span, int x, int y, unsigned len) {
             int dd = m_d2 - m_d1;
             if (dd < 1) dd = 1;
+            // The fixed-point reciprocal hoists an integer division out of the per-pixel loop.
+            const int colour_count = int(m_color_function->size());
+            const int64_t scale = (int64_t(colour_count) << reciprocal_shift) / dd;
             m_interpolator->begin(x+0.5, y+0.5, len);
             do {
                 m_interpolator->coordinates(&x, &y);
@@ -73,9 +78,9 @@ namespace agg
                    *span++ = m_fallback;
                 }
                 else {
-                   d = ((d - m_d1) * (int)m_color_function->size()) / dd;
+                   d = int((int64_t(d - m_d1) * scale) >> reciprocal_shift);
                    if (d < 0) d = 0;
-                   if (d >= (int)m_color_function->size()) d = m_color_function->size() - 1;
+                   if (d >= colour_count) d = colour_count - 1;
                    *span++ = (*m_color_function)[d];
                 }
                 ++(*m_interpolator);
