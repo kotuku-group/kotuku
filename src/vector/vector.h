@@ -651,6 +651,8 @@ class extVectorPath : public extVector, public SceneDef {
    double pX, pY;
    DMF pDimensions;
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
+
+   extVectorPath();
 };
 
 class extVectorRectangle : public extVector {

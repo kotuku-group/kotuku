@@ -351,18 +351,6 @@ static ERR VECTORPATH_MoveToPoint(extVectorPath *Self, struct acMoveToPoint *Arg
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORPATH_NewObject(extVectorPath *Self)
-{
-   new(&Self->Commands) std::vector<PathCommand>;
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_path;
-   Self->pX = 0;
-   Self->pY = 0;
-   Self->pDimensions = DMF::NIL;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -755,6 +743,15 @@ static ERR VECTORPATH_SET_TotalCommands(extVectorPath *Self, int Value)
    Self->CommandsChanged = true;
    Self->modified();
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extVectorPath::extVectorPath() {
+   GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_path;
+   pX = 0;
+   pY = 0;
+   pDimensions = DMF::NIL;
 }
 
 //********************************************************************************************************************

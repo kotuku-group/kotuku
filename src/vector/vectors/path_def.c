@@ -31,7 +31,6 @@ static const struct ActionArray clVectorPathActions[] = {
    { AC::FreePlacement, VECTORPATH_FreePlacement },
    { AC::Move, VECTORPATH_Move },
    { AC::MoveToPoint, VECTORPATH_MoveToPoint },
-   { AC::NewObject, VECTORPATH_NewObject },
    { AC::NewPlacement, VECTORPATH_NewPlacement },
    { AC::NIL, nullptr }
 };
