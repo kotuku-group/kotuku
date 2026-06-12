@@ -247,12 +247,12 @@ namespace agg
 
         int dx = x2 - x1;
 
-        if(dx >= dx_limit || dx <= -dx_limit)
-        {
+        if (dx >= dx_limit or dx <= -dx_limit) {
             int cx = (x1 + x2) >> 1;
             int cy = (y1 + y2) >> 1;
             line(x1, y1, cx, cy);
             line(cx, cy, x2, y2);
+            return;
         }
 
         int dy = y2 - y1;

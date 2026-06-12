@@ -40,7 +40,6 @@ target_sources (${MOD} PRIVATE
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_image_filters.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_line_aa_basics.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_line_profile_aa.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_sqrt_tables.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_affine.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_single_path.cpp")
 

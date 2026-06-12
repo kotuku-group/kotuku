@@ -484,7 +484,7 @@ class extVector : public objVector {
       InnerJoin     = agg::inner_miter; // AGG only
       NumericID     = 0x7fffffff;
       StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
-      StrokeRasterGamma  = 1.0;
+      StrokeRasterGamma = 1.0;
       Visibility    = VIS::VISIBLE;
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;
