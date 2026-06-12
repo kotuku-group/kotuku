@@ -472,7 +472,7 @@ static ERR SET_WindowType(extSurface *Self, SWIN Value)
 /*********************************************************************************************************************
 
 -FIELD-
-WindowHandle: Refers to a surface object's window handle, if relevant.
+WindowHandle: Refers to the surface's window handle (host dependent).
 
 This field exposes the host window handle for platforms that provide one.  It is currently relevant when creating a
 primary surface within an X11 window manager or Microsoft Windows.

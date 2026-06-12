@@ -74,29 +74,6 @@ ERR _expose_surface(OBJECTID SurfaceID, const SURFACELIST &List, int index, int 
    if (abs.Right  <= List[index].Left) return ERR::Okay;
    if (abs.Bottom <= List[index].Top) return ERR::Okay;
 
-   // Cursor split routine.  The purpose of this is to eliminate as much flicker as possible from the cursor when
-   // exposing large areas.
-   //
-   // We scan for the software cursor to see if the bottom of the cursor intersects with our expose region.  If it
-   // does, split ExposeSurface() into top and bottom regions.
-
-#ifndef _WIN32
-   if ((Flags & EXF::CURSOR_SPLIT) IS EXF::NIL) {
-      int cursor;
-      for (cursor=index+1; (cursor < int(List.size())) and (!List[cursor].isCursor()); cursor++);
-      if (cursor < int(List.size())) {
-         if ((List[cursor].SurfaceID) and (List[cursor].Bottom < abs.Bottom) and (List[cursor].Bottom > abs.Top) and
-             (List[cursor].Right > abs.Left) and (List[cursor].Left < abs.Right)) {
-            kt::Log log("expose_surface");
-            log.traceBranch("Splitting cursor.");
-            _expose_surface(SurfaceID, List, index, abs.Left, abs.Top, abs.Right, List[cursor].Bottom, EXF::CURSOR_SPLIT|EXF::ABSOLUTE|Flags);
-            _expose_surface(SurfaceID, List, index, abs.Left, List[cursor].Bottom, abs.Right, abs.Bottom, EXF::CURSOR_SPLIT|EXF::ABSOLUTE|Flags);
-            return ERR::Okay;
-         }
-      }
-   }
-#endif
-
    // The expose routine starts from the front and works to the back, so if the EXF::CHILDREN flag has been specified,
    // the first thing we do is scan to the final child that is listed in this particular area.
 

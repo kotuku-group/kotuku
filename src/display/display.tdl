@@ -32,8 +32,7 @@ module({
     "CHILDREN: If set, all child surfaces that intersect with exposed region will be included in the expose operation.",
     "REDRAW_VOLATILE: Redraw every volatile object that intersects with the expose region, including internal volatile children.",
     "REDRAW_VOLATILE_OVERLAP: Only redraw volatile objects that obscure the expose region from a position outside of the target surface and its children.  Useful if no redrawing has occurred in the surface, but the surface has moved to a new position and the parents need to be redrawn.",
-    "ABSOLUTE_COORDS|ABSOLUTE: The supplied coordinates for exposure are absolute (relative to the display).",
-    "CURSOR_SPLIT: Internal flag used to reduce screen flickering when a software cursor is in use.")
+    "ABSOLUTE_COORDS|ABSOLUTE: The supplied coordinates for exposure are absolute (relative to the display).")
 
   flags("RT", { },
      "ROOT: Can be used by window surfaces to identify themselves as a root layer.")
