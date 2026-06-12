@@ -166,11 +166,10 @@ namespace agg
             if (m_scan_y > m_outline.max_y()) return false;
             sl.reset_spans();
             unsigned num_cells = m_outline.scanline_num_cells(m_scan_y);
-            auto cells = m_outline.scanline_cells(m_scan_y);
+            const cell_aa* cur_cell = m_outline.scanline_cells(m_scan_y);
             int cover = 0;
 
             while(num_cells) {
-                const cell_aa* cur_cell = *cells;
                 int x    = cur_cell->x;
                 int area = cur_cell->area;
                 unsigned alpha;
@@ -179,7 +178,7 @@ namespace agg
 
                 //accumulate all cells with the same X
                 while(--num_cells) {
-                    cur_cell = *++cells;
+                    ++cur_cell;
                     if(cur_cell->x != x) break;
                     area  += cur_cell->area;
                     cover += cur_cell->cover;

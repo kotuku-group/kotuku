@@ -496,7 +496,7 @@ namespace agg
         {
             if(m_scan_y > m_outline.max_y()) return 0;
             unsigned num_cells = m_outline.scanline_num_cells(m_scan_y);
-            const cell_style_aa* const* cells = m_outline.scanline_cells(m_scan_y);
+            const cell_style_aa* cells = m_outline.scanline_cells(m_scan_y);
             unsigned num_styles = m_max_style - m_min_style + 2;
             const cell_style_aa* curr_cell;
             unsigned style_id;
@@ -519,11 +519,11 @@ namespace agg
                 style->num_cells = 0;
                 style->last_x = -0x7FFFFFFF;
 
-                m_sl_start = cells[0]->x;
-                m_sl_len   = cells[num_cells-1]->x - m_sl_start + 1;
+                m_sl_start = cells[0].x;
+                m_sl_len   = cells[num_cells-1].x - m_sl_start + 1;
                 while(num_cells--)
                 {
-                    curr_cell = *cells++;
+                    curr_cell = cells++;
                     add_style(curr_cell->left);
                     add_style(curr_cell->right);
                 }
@@ -544,7 +544,7 @@ namespace agg
 
                 while(num_cells--)
                 {
-                    curr_cell = *cells++;
+                    curr_cell = cells++;
                     style_id = (curr_cell->left < 0) ? 0 :
                                 curr_cell->left - m_min_style + 1;
 
