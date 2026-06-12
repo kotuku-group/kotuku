@@ -11,8 +11,7 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 
-#ifndef AGG_SPAN_GRADIENT_CONTOUR_INCLUDED
-#define AGG_SPAN_GRADIENT_CONTOUR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_trans_affine.h"
@@ -234,5 +233,3 @@ namespace agg
       return m_buffer.data();
    }
 }
-
-#endif

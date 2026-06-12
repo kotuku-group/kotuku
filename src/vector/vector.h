@@ -15,6 +15,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <mutex>
 #include <stack>
 #include <algorithm>
+#include <bit>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
@@ -71,6 +72,7 @@ extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceF
 extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
+namespace agg { class gradient_contour; }
 class objVectorTransition;
 class extVectorText;
 class extVector;
@@ -390,6 +392,8 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
    std::string ID;
+   agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
+   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
    int   NumericID;
    double Angle;
    double Length;

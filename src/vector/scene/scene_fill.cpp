@@ -113,6 +113,31 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
 }
 
 //********************************************************************************************************************
+// FNV-1a fingerprint of a path's vertex data and curve flattening scale.  Used to detect path modification for
+// contour gradient caching; hashing is orders of magnitude cheaper than rebuilding the contour's distance transform.
+
+static uint64_t path_fingerprint(const agg::path_storage &Path)
+{
+   uint64_t hash = 0xcbf29ce484222325ULL;
+   auto mix = [&hash](uint64_t Value) {
+      hash ^= Value;
+      hash *= 0x100000001b3ULL;
+   };
+
+   const auto total = Path.total_vertices();
+   mix(std::bit_cast<uint64_t>(Path.approximation_scale()));
+   mix(total);
+
+   double x, y;
+   for (unsigned i=0; i < total; i++) {
+      mix(Path.vertex(i, &x, &y));
+      mix(std::bit_cast<uint64_t>(x));
+      mix(std::bit_cast<uint64_t>(y));
+   }
+   return hash;
+}
+
+//********************************************************************************************************************
 // Gradient fills.  // The Raster must contain the shape's path.
 
 static void fill_gradient(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage *Path,
@@ -432,16 +457,28 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       render_gradient(gradient_func, 0, radial_col_span);
    }
    else if (Gradient.Type IS VGT::CONTOUR) {
-      // TODO: The creation of the contour gradient is expensive, but it can be cached as long as the
-      // path hasn't been modified.
+      // The contour's distance transform buffer depends only on the path content, so it is cached with the
+      // gradient and reused until the path's fingerprint changes.  The d1/d2 values only affect a small
+      // lookup table and can be updated freely on the cached object.
 
       auto x2 = std::clamp(Gradient.X2, 0.01, 10.0);
       auto x1 = std::clamp(Gradient.X1, 0.0, x2);
 
-      agg::gradient_contour gradient_func;
+      bool rebuild = false;
+      if (!Gradient.ContourCache) {
+         Gradient.ContourCache = new agg::gradient_contour();
+         rebuild = true;
+      }
+
+      auto &gradient_func = *Gradient.ContourCache;
       gradient_func.d1(x1 * 256.0);  // d1 is added to the DT base values
       gradient_func.d2(x2);  // d2 is a multiplier of the base DT value
-      gradient_func.contour_create(*Path);
+
+      const auto hash = path_fingerprint(*Path);
+      if ((rebuild) or (hash != Gradient.ContourHash)) {
+         gradient_func.contour_create(*Path);
+         Gradient.ContourHash = hash;
+      }
 
       transform.translate(Bounds.left, Bounds.top);
       apply_transforms(Gradient, transform);

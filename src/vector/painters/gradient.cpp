@@ -153,6 +153,7 @@ GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolu
 static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
 {
    if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
+   if (Self->ContourCache) { delete Self->ContourCache; Self->ContourCache = nullptr; }
 
    VectorMatrix *next;
    for (auto node=Self->Matrices; node; node=next) {
