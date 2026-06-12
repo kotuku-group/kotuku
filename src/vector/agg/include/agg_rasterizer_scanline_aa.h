@@ -13,8 +13,9 @@
 // Robert Wilhelm, and Werner Lemberg - the authors of the FreeType
 // libray - in producing this work. See http://www.freetype.org for details.
 
-#ifndef AGG_RASTERIZER_SCANLINE_AA_INCLUDED
-#define AGG_RASTERIZER_SCANLINE_AA_INCLUDED
+#pragma once
+
+#include <array>
 
 #include "agg_rasterizer_cells_aa.h"
 #include "agg_rasterizer_sl_clip.h"
@@ -22,6 +23,16 @@
 
 namespace agg
 {
+   // Shared identity gamma table.  Rasterisers reference this by default so that each instance avoids
+   // carrying and initialising its own 1 KB table; non-identity tables are owned by the caller and
+   // applied with gamma().
+
+   inline constexpr auto gamma_identity_lut = [] {
+      std::array<int, 256> table {};
+      for (int i=0; i < 256; i++) table[i] = i;
+      return table;
+   }();
+
    // A pixel cell. There're no constructors defined and it was done
    // intentionally in order to avoid extra overhead when allocating an
    // array of cells.
@@ -91,20 +102,12 @@ namespace agg
          aa_mask2  = aa_scale2 - 1
       };
 
-      rasterizer_scanline_aa() :
-         m_outline(), m_clipper(), m_filling_rule(fill_non_zero), m_auto_close(true),
-         m_start_x(0), m_start_y(0), m_status(status_initial)
-      {
-         for (int i=0; i < aa_scale; i++) m_gamma[i] = i;
-      }
+      static_assert(aa_scale IS 256, "gamma_identity_lut must match aa_scale");
 
-      template<class GammaF>
-      rasterizer_scanline_aa(const GammaF& gamma_function) :
-         m_outline(), m_clipper(m_outline), m_filling_rule(fill_non_zero), m_auto_close(true),
-         m_start_x(0), m_start_y(0), m_status(status_initial)
-      {
-         gamma(gamma_function);
-      }
+      rasterizer_scanline_aa() :
+         m_outline(), m_clipper(), m_gamma(gamma_identity_lut.data()), m_filling_rule(fill_non_zero),
+         m_auto_close(true), m_start_x(0), m_start_y(0), m_status(status_initial)
+      { }
 
       void reset();
       void reset_clipping();
@@ -112,10 +115,19 @@ namespace agg
       void filling_rule(filling_rule_e filling_rule);
       void auto_close(bool flag) { m_auto_close = flag; }
 
-      template<class GammaF> void gamma(const GammaF& gamma_function) {
-         double aa_mask_pct = double(aa_mask) / 100.0;
+      // Point this rasteriser at an externally owned table of aa_scale entries.  A nullptr restores
+      // the shared identity table.  The table must outlive every sweep that follows.
+
+      void gamma(const int* Table) {
+         m_gamma = Table ? Table : gamma_identity_lut.data();
+      }
+
+      // Builds a gamma table suitable for use with gamma().  The gamma function is sampled over the
+      // normalised cover range [0, 1] and the result rescaled to [0, aa_mask].
+
+      template<class GammaF> static void build_gamma(std::array<int, aa_scale>& Table, const GammaF& gamma_function) {
          for (int i=0; i < aa_scale; i++) {
-            m_gamma[i] = uround(gamma_function(double(i) * aa_mask_pct) * int(aa_mask));
+            Table[i] = uround(gamma_function(double(i) / double(aa_mask)) * double(aa_mask));
          }
       }
 
@@ -215,7 +227,7 @@ namespace agg
    private:
       rasterizer_cells_aa<cell_aa> m_outline;
       clip_type      m_clipper;
-      int            m_gamma[aa_scale];
+      const int *    m_gamma; // Externally owned; defaults to the shared identity table
       filling_rule_e m_filling_rule;
       bool           m_auto_close;
       coord_type     m_start_x;
@@ -312,5 +324,3 @@ namespace agg
         return sl.hit();
    }
 }
-
-#endif

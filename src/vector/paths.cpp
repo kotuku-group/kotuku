@@ -368,7 +368,6 @@ void gen_vector_path(extVector *Vector)
          if (!Vector->StrokeRaster) {
             Vector->StrokeRaster = new (std::nothrow) agg::rasterizer_scanline_aa<>;
             if (!Vector->StrokeRaster) return;
-            Vector->StrokeRasterGamma = 1.0;
          }
          else Vector->StrokeRaster->reset();
 
@@ -390,7 +389,6 @@ void gen_vector_path(extVector *Vector)
       else if (Vector->StrokeRaster) {
          delete Vector->StrokeRaster;
          Vector->StrokeRaster = nullptr;
-         Vector->StrokeRasterGamma = 1.0;
       }
 
       Vector->Dirty &= ~RC::FINAL_PATH;

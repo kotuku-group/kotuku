@@ -702,16 +702,12 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
 }
 
 //********************************************************************************************************************
-// This function applies the gamma to StrokeRaster if there's been a change in the gamma value (saves recomputation).
+// Points StrokeRaster at the scene's shared gamma table (the scene rebuilds the table only when its
+// Gamma value changes).
 
 static void apply_stroke_gamma(extVector &Vector)
 {
-   auto gamma = Vector.Scene->Gamma;
-
-   if (Vector.StrokeRasterGamma IS gamma) return;
-
-   Vector.StrokeRaster->gamma(agg::gamma_power(gamma));
-   Vector.StrokeRasterGamma = gamma;
+   Vector.StrokeRaster->gamma(((extVectorScene *)Vector.Scene)->gamma_table());
 }
 
 //********************************************************************************************************************
