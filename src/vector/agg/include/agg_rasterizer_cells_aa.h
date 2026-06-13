@@ -19,6 +19,7 @@
 #include <string.h>
 #include <math.h>
 #include <algorithm>
+#include <cstdint>
 #include "agg_math.h"
 #include "agg_array.h"
 
@@ -86,6 +87,8 @@ namespace agg
         cell_type*              m_curr_cell_ptr;
         std::vector<cell_type>  m_sorted_cells;
         std::vector<sorted_y>   m_sorted_y;
+        std::vector<uint64_t>   m_sort_keys;    // Scratch for sort_cells' per-scanline key sort
+        std::vector<cell_type>  m_cell_scratch; // Scratch for sort_cells' gather pass
         cell_type m_curr_cell;
         cell_type m_style_cell;
         int m_min_x;
@@ -479,11 +482,33 @@ namespace agg
 
         // Finally arrange the X-arrays.  Relative order of equal-x cells is irrelevant: the sweep accumulates
         // their area/cover sums commutatively.
+        //
+        // Longer scanlines sort packed 64-bit keys (x offset in the high half, source index in the low half)
+        // rather than the 16-byte cells themselves: comparisons become branchless integer compares and each
+        // swap moves half the bytes, with a single gather pass afterwards.  Short scanlines stay on a direct
+        // std::sort, where the key-build and gather overhead would outweigh the saving.
+        constexpr unsigned key_sort_threshold = 32;
         for (i=0; i < m_sorted_y.size(); i++) {
             const sorted_y &curr_y = m_sorted_y[i];
-            if (curr_y.num) {
-                cell_type *base = m_sorted_cells.data() + curr_y.start;
+            if (curr_y.num < 2) continue;
+            cell_type *base = m_sorted_cells.data() + curr_y.start;
+
+            if (curr_y.num < key_sort_threshold) {
                 std::sort(base, base + curr_y.num, [](const cell_type &a, const cell_type &b) { return a.x < b.x; });
+            }
+            else {
+                if (m_sort_keys.size() < curr_y.num) {
+                    m_sort_keys.resize(curr_y.num);
+                    m_cell_scratch.resize(curr_y.num);
+                }
+                for (unsigned n=0; n < curr_y.num; n++) {
+                    m_sort_keys[n] = (uint64_t(uint32_t(base[n].x - m_min_x)) << 32) | n;
+                }
+                std::sort(m_sort_keys.begin(), m_sort_keys.begin() + curr_y.num);
+                for (unsigned n=0; n < curr_y.num; n++) {
+                    m_cell_scratch[n] = base[uint32_t(m_sort_keys[n])];
+                }
+                memcpy(base, m_cell_scratch.data(), curr_y.num * sizeof(cell_type));
             }
         }
         m_sorted = true;
