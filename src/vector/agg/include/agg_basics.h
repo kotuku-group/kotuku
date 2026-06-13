@@ -17,11 +17,9 @@
 #include <algorithm>
 #include <memory>
 #include <type_traits>
+#include <utility>
 #ifdef __cpp_lib_math_constants
 #include <numbers>
-#endif
-#ifdef _MSC_VER
-#include <intrin.h>
 #endif
 
 #ifdef AGG_CUSTOM_ALLOCATOR
@@ -122,50 +120,6 @@ namespace agg
     using int64  = std::int64_t;
     using int64u = std::uint64_t;
 
-#if defined(AGG_FISTP)
-#pragma warning(push)
-#pragma warning(disable : 4035) //Disable warning "no return value"
-    inline int iround(double v)
-    {
-        int t;
-        __asm fld   qword ptr [v]
-        __asm fistp dword ptr [t]
-        __asm mov eax, dword ptr [t]
-    }
-    inline unsigned uround(double v)
-    {
-        unsigned t;
-        __asm fld   qword ptr [v]
-        __asm fistp dword ptr [t]
-        __asm mov eax, dword ptr [t]
-    }
-#pragma warning(pop)
-    inline unsigned ufloor(double v)
-    {
-        return unsigned(floor(v));
-    }
-    inline unsigned uceil(double v)
-    {
-        return unsigned(ceil(v));
-    }
-#elif defined(AGG_QIFIST)
-    inline int iround(double v)
-    {
-        return int(v);
-    }
-    inline int uround(double v)
-    {
-        return unsigned(v);
-    }
-    inline unsigned ufloor(double v)
-    {
-        return unsigned(floor(v));
-    }
-    inline unsigned uceil(double v)
-    {
-        return unsigned(ceil(v));
-    }
-#else
     inline int iround(double v)
     {
         return int((v < 0.0) ? v - 0.5 : v + 0.5);
@@ -182,7 +136,6 @@ namespace agg
     {
         return unsigned(ceil(v));
     }
-#endif
 
     template<int Limit> struct saturation {
         static constexpr int iround(double v) noexcept {
@@ -257,7 +210,7 @@ namespace agg
 
     template<typename T>
     requires std::is_arithmetic_v<T>
-    struct alignas(32) rect_base {
+    struct rect_base {
         using value_type = T;
         using self_type = rect_base<T>;
         T x1, y1, x2, y2;
@@ -340,14 +293,14 @@ namespace agg
 
     constexpr bool is_vertex(unsigned c) noexcept    { return c >= path_cmd_move_to and c < path_cmd_end_poly; }
     constexpr bool is_drawing(unsigned c) noexcept   { return c >= path_cmd_line_to and c < path_cmd_end_poly; }
-    constexpr bool is_stop(unsigned c) noexcept      { return c == path_cmd_stop; }
-    constexpr bool is_move_to(unsigned c) noexcept   { return c == path_cmd_move_to; }
-    constexpr bool is_line_to(unsigned c) noexcept   { return c == path_cmd_line_to; }
-    constexpr bool is_curve(unsigned c) noexcept     { return c == path_cmd_curve3 or c == path_cmd_curve4; }
-    constexpr bool is_curve3(unsigned c) noexcept    { return c == path_cmd_curve3; }
-    constexpr bool is_curve4(unsigned c) noexcept    { return c == path_cmd_curve4; }
-    constexpr bool is_end_poly(unsigned c) noexcept  { return (c & path_cmd_mask) == path_cmd_end_poly; }
-    constexpr bool is_close(unsigned c) noexcept     { return (c & ~(path_flags_cw | path_flags_ccw)) == (path_cmd_end_poly | path_flags_close); }
+    constexpr bool is_stop(unsigned c) noexcept      { return c IS path_cmd_stop; }
+    constexpr bool is_move_to(unsigned c) noexcept   { return c IS path_cmd_move_to; }
+    constexpr bool is_line_to(unsigned c) noexcept   { return c IS path_cmd_line_to; }
+    constexpr bool is_curve(unsigned c) noexcept     { return c IS path_cmd_curve3 or c IS path_cmd_curve4; }
+    constexpr bool is_curve3(unsigned c) noexcept    { return c IS path_cmd_curve3; }
+    constexpr bool is_curve4(unsigned c) noexcept    { return c IS path_cmd_curve4; }
+    constexpr bool is_end_poly(unsigned c) noexcept  { return (c & path_cmd_mask) IS path_cmd_end_poly; }
+    constexpr bool is_close(unsigned c) noexcept     { return (c & ~(path_flags_cw | path_flags_ccw)) IS (path_cmd_end_poly | path_flags_close); }
     constexpr bool is_next_poly(unsigned c) noexcept { return is_stop(c) or is_move_to(c) or is_end_poly(c); }
     constexpr bool is_cw(unsigned c) noexcept        { return (c & path_flags_cw) != 0; }
     constexpr bool is_ccw(unsigned c) noexcept       { return (c & path_flags_ccw) != 0; }
@@ -360,7 +313,7 @@ namespace agg
 
     template<typename T>
     requires std::is_arithmetic_v<T>
-    struct alignas(16) point_base {
+    struct point_base {
         using value_type = T;
         T x, y;
         point_base() {}
@@ -373,7 +326,7 @@ namespace agg
 
     template<typename T>
     requires std::is_arithmetic_v<T>
-    struct alignas(16) vertex_base {
+    struct vertex_base {
         using value_type = T;
         T x, y;
         unsigned cmd;

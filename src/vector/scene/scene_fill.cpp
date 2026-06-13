@@ -605,8 +605,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
    // (see draw_vectors()), so restore the identity transform before checking for a redraw.
    set_render_transform(Pattern.Scene->Viewport, agg::trans_affine());
 
-   // Redraw the pattern source if any part of the definition is marked as dirty.
-   if ((check_dirty((extVector *)Pattern.Scene->Viewport)) or (!Pattern.Bitmap)) {
+   // Redraw the pattern source if any part of the definition has been marked dirty.
+   if ((((extVectorScene *)Pattern.Scene)->SubtreeDirty) or (!Pattern.Bitmap)) {
       if (acDraw(&Pattern) != ERR::Okay) return;
    }
 
