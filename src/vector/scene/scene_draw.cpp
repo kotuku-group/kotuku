@@ -899,11 +899,6 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       // a placeholder over the existing target bitmap, and the new content will be rendered to the target
       // after processing the current branch.  The background is then discarded.
 
-      // TODO: The allocation of this bitmap during rendering isn't optimal.  Perhaps we could allocate it as a permanent
-      // dummy bitmap to be retained with the Vector, and the Data would be allocated dynamically during rendering.
-      //
-      // TODO: The clipping area of the bitmap should be declared so that unnecessary pixel interaction is avoided.
-
       objBitmap *bmpBkgd = nullptr;
       objBitmap *bmpSave = nullptr;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
