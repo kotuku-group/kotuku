@@ -290,6 +290,7 @@ static ERR VECTOR_Free(extVector *Self)
    if (Self->Fill[1].GradientTable) { delete Self->Fill[1].GradientTable; Self->Fill[1].GradientTable = nullptr; }
    if (Self->Stroke.GradientTable)  { delete Self->Stroke.GradientTable; Self->Stroke.GradientTable = nullptr; }
    if (Self->DashArray)             { delete Self->DashArray; Self->DashArray = nullptr; }
+   if (Self->IsolatedBuffer)        { delete Self->IsolatedBuffer; Self->IsolatedBuffer = nullptr; }
 
    // Patch the nearest vectors that are linked to this one.
    if (Self->Next) Self->Next->Prev = Self->Prev;

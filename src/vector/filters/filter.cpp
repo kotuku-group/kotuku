@@ -298,15 +298,38 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
    else if (SourceType IS VSF::BKGD_ALPHA) {
       if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
       if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         int dy = bmp->Clip.Top;
-         for (int sy=Self->BkgdBitmap->Clip.Top; sy < Self->BkgdBitmap->Clip.Bottom; sy++) {
-            auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
-            auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
-            int dx = bmp->Clip.Left;
-            for (int sx=Self->BkgdBitmap->Clip.Left; sx < Self->BkgdBitmap->Clip.Right; sx++) {
-               dest[dx++] = src[sx] & 0xff000000;
+         int src_left = std::max(Self->VectorClip.left, Self->BkgdBitmap->Clip.Left);
+         int src_top = std::max(Self->VectorClip.top, Self->BkgdBitmap->Clip.Top);
+         int src_right = std::min(Self->VectorClip.right, Self->BkgdBitmap->Clip.Right);
+         int src_bottom = std::min(Self->VectorClip.bottom, Self->BkgdBitmap->Clip.Bottom);
+
+         int dest_x = bmp->Clip.Left + (src_left - Self->VectorClip.left);
+         int dest_y = bmp->Clip.Top + (src_top - Self->VectorClip.top);
+
+         if (dest_x < bmp->Clip.Left) {
+            src_left += bmp->Clip.Left - dest_x;
+            dest_x = bmp->Clip.Left;
+         }
+
+         if (dest_y < bmp->Clip.Top) {
+            src_top += bmp->Clip.Top - dest_y;
+            dest_y = bmp->Clip.Top;
+         }
+
+         int width = std::min(src_right - src_left, bmp->Clip.Right - dest_x);
+         int height = std::min(src_bottom - src_top, bmp->Clip.Bottom - dest_y);
+
+         if ((width > 0) and (height > 0)) {
+            int dy = dest_y;
+            for (int sy=src_top; sy < src_top + height; sy++) {
+               auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
+               auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
+               int dx = dest_x;
+               for (int sx=src_left; sx < src_left + width; sx++) {
+                  dest[dx++] = src[sx] & 0xff000000;
+               }
+               dy++;
             }
-            dy++;
          }
       }
    }

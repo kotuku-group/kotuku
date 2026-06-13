@@ -104,6 +104,7 @@ private:
    agg::scanline32_p8 mScanLine; // Use scanline32_p8 for large solid polygons/rectangles and scanline_u for complex shapes like text
    extVectorViewport  *mView;    // The current view
    objBitmap          *mBitmap;
+   int mBitmapOriginX, mBitmapOriginY;
    std::vector<class InputBoundary> mInputBounds; // Records boundaries for input events and cursor changes.
 
 public:
@@ -154,6 +155,7 @@ private:
 
    void render_fill(VectorState &, extVector &, agg::rasterizer_scanline_aa<> &, extPainter &);
    void render_stroke(VectorState &, extVector &);
+   void copy_filter_bitmap(objBitmap *, extVectorFilter *);
    bool shape_intersects_clip(extVector *);
    void draw_vectors(extVector *, VectorState &);
    static const agg::trans_affine build_fill_transform(extVector &, bool,  VectorState &);
@@ -165,7 +167,7 @@ public:
    bool clip_stack_empty() const { return mClipStack.empty(); }
    ClipBuffer &clip_stack_top() { return mClipStack.top(); }
 
-   SceneRenderer(extVectorScene *pScene) : Scene(pScene) { }
+   SceneRenderer(extVectorScene *pScene) : mBitmapOriginX(0), mBitmapOriginY(0), Scene(pScene) { }
    void draw(objBitmap *, objVectorViewport *);
 };
 
@@ -799,6 +801,33 @@ bool SceneRenderer::shape_intersects_clip(extVector *Shape)
       (bounds.left <= double(clip.x2)) and (bounds.top <= double(clip.y2));
 }
 
+//********************************************************************************************************************
+// Filter bitmaps use absolute clip coordinates.  Buffered viewport targets are local bitmaps with their Data pointer
+// shifted so vector rasterisation can still address absolute scene coordinates.  CopyArea() clips against bitmap
+// dimensions, so translate the final filter copy back to viewport-local coordinates when a buffered target is active.
+
+void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filter)
+{
+   Bitmap->Opacity = (Filter->Opacity < 1.0) ? (255.0 * Filter->Opacity) : 255;
+
+   if (mBitmapOriginX or mBitmapOriginY) {
+      const int src_x = Bitmap->Clip.Left;
+      const int src_y = Bitmap->Clip.Top;
+      const int width = Bitmap->Clip.Right - Bitmap->Clip.Left;
+      const int height = Bitmap->Clip.Bottom - Bitmap->Clip.Top;
+
+      if ((width > 0) and (height > 0)) {
+         auto save_data = mBitmap->offset(mBitmapOriginX, mBitmapOriginY);
+
+         gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height,
+            src_x - mBitmapOriginX, src_y - mBitmapOriginY);
+
+         mBitmap->Data = save_data;
+      }
+   }
+   else gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, 0, 0, Bitmap->Width, Bitmap->Height, 0, 0);
+}
+
 // This is the main routine for parsing the vector tree for drawing.
 
 void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentState) {
@@ -846,8 +875,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
          objBitmap *bmp;
          if (!render_filter(filter, mView, shape, mBitmap, &bmp)) {
-            bmp->Opacity = (filter->Opacity < 1.0) ? (255.0 * filter->Opacity) : 255;
-            gfx::CopyArea(bmp, mBitmap, BAF::BLEND|BAF::COPY, 0, 0, bmp->Width, bmp->Height, 0, 0);
+            copy_filter_bitmap(bmp, filter);
          }
          continue;
       }
@@ -871,24 +899,32 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       // a placeholder over the existing target bitmap, and the new content will be rendered to the target
       // after processing the current branch.  The background is then discarded.
 
-      // TODO: The allocation of this bitmap during rendering isn't optimal.  Perhaps we could allocate it as a permanent
-      // dummy bitmap to be retained with the Vector, and the Data would be allocated dynamically during rendering.
-      //
-      // TODO: The clipping area of the bitmap should be declared so that unnecessary pixel interaction is avoided.
-
       objBitmap *bmpBkgd = nullptr;
       objBitmap *bmpSave = nullptr;
+      int save_origin_x = 0;
+      int save_origin_y = 0;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
-         if ((bmpBkgd = objBitmap::create::local(fl::Name("scene_temp_bkgd"),
-               fl::Width(mBitmap->Width),
-               fl::Height(mBitmap->Height),
-               fl::BitsPerPixel(32),
-               fl::Flags(BMF::ALPHA_CHANNEL),
-               fl::ColourSpace(mBitmap->ColourSpace)))) {
+         if (!shape->IsolatedBuffer) shape->IsolatedBuffer = new (std::nothrow) filter_bitmap;
+         if (shape->IsolatedBuffer) {
+            auto &clip_box = mRenderBase.clip_box();
+            TClipRectangle<int> isolated_clip(clip_box.x1, clip_box.y1, clip_box.x2 + 1, clip_box.y2 + 1);
+
+            bmpBkgd = shape->IsolatedBuffer->get_bitmap(mBitmap->Width, mBitmap->Height, isolated_clip, false,
+               shape->UID, "isolated_bkgd");
+         }
+
+         if (bmpBkgd) {
+            bmpBkgd->ColourSpace = mBitmap->ColourSpace;
+            bmpBkgd->BlendMode   = mBitmap->BlendMode;
+            bmpBkgd->Flags       = (bmpBkgd->Flags & ~BMF::PREMUL) | BMF::ALPHA_CHANNEL | BMF::NO_DATA;
             bmpSave = mBitmap;
             mBitmap = bmpBkgd;
+            save_origin_x = mBitmapOriginX;
+            save_origin_y = mBitmapOriginY;
+            mBitmapOriginX = 0;
+            mBitmapOriginY = 0;
             mFormat.setBitmap(*bmpBkgd);
-            clearmem(bmpBkgd->Data, bmpBkgd->LineWidth * bmpBkgd->Height);
+            clearmem(bmpBkgd->CreatorMeta, bmpBkgd->LineWidth * (bmpBkgd->Clip.Bottom - bmpBkgd->Clip.Top));
             state.mIsolated = true;
          }
       }
@@ -1042,12 +1078,16 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                         auto save_bmp    = mBitmap;
                         auto save_format = mFormat;
                         auto save_rb     = mRenderBase;
+                        auto save_origin_x = mBitmapOriginX;
+                        auto save_origin_y = mBitmapOriginY;
 
                         // The vector paths will target the coordinate space of their parents, so we
                         // make adjustments to the bitmap to orient to (0,0).
 
                         mBitmap = view->vpBuffer;
-                        auto save_data = mBitmap->offset(-view->vpBounds.left, -view->vpBounds.top);
+                        mBitmapOriginX = int(view->vpBounds.left);
+                        mBitmapOriginY = int(view->vpBounds.top);
+                        auto save_data = mBitmap->offset(-mBitmapOriginX, -mBitmapOriginY);
                         mFormat.setBitmap(*view->vpBuffer);
 
                         auto ib_size = mInputBounds.size();
@@ -1073,6 +1113,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                         mRenderBase = save_rb;
                         mBitmap     = save_bmp;
                         mFormat     = save_format;
+                        mBitmapOriginX = save_origin_x;
+                        mBitmapOriginY = save_origin_y;
 
                         view->vpSeenShareVersion = Scene->ShareVersion;
 
@@ -1193,9 +1235,11 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       if (bmpBkgd) {
          agg::rasterizer_scanline_aa raster;
 
-         basic_path(raster, 0, 0, bmpBkgd->Width, bmpBkgd->Height);
+         basic_path(raster, bmpBkgd->Clip.Left, bmpBkgd->Clip.Top, bmpBkgd->Clip.Right, bmpBkgd->Clip.Bottom);
 
          mBitmap = bmpSave;
+         mBitmapOriginX = save_origin_x;
+         mBitmapOriginY = save_origin_y;
          mFormat.setBitmap(*mBitmap);
          if (!mClipStack.empty()) {
             agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
@@ -1206,7 +1250,6 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             agg::scanline_u8 scanline;
             drawBitmap(scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
          }
-         FreeResource(bmpBkgd);
       }
    } // for loop
 }

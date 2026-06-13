@@ -1,0 +1,103 @@
+   include 'vector'
+
+WIDTH <const> = 120
+HEIGHT <const> = 80
+CLIP_LEFT <const> = 30
+CLIP_TOP <const> = 20
+CLIP_RIGHT <const> = 90
+CLIP_BOTTOM <const> = 60
+
+function newBitmap(Colour)
+   bmp = obj.new('bitmap', { width=WIDTH, height=HEIGHT, bitsPerPixel=32, bkgd=Colour })
+   bmp.acClear()
+   return bmp
+end
+
+function setClip(Bitmap, Left, Top, Right, Bottom)
+   check Bitmap.mtSetClipRegion(Left, Top, Right, Bottom)
+end
+
+function hashBitmap(Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function copyArea(Source, Dest, Left, Top, Right, Bottom, XDest, YDest)
+   check Source.mtCopyArea(Dest, BAF_NIL, Left, Top, Right - Left, Bottom - Top, XDest, YDest)
+end
+
+function copyRegion(Source, Dest, Left, Top, Right, Bottom)
+   copyArea(Source, Dest, Left, Top, Right, Bottom, Left, Top)
+end
+
+function cropRegion(Source, Left, Top, Right, Bottom)
+   crop = newBitmap('0,0,0,255')
+   copyArea(Source, crop, Left, Top, Right, Bottom, 0, 0)
+   return crop
+end
+
+function drawScene(Scene, Bitmap, Left, Top, Right, Bottom)
+   setClip(Bitmap, Left, Top, Right, Bottom)
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function buildScene(UseBackgroundFilter)
+   scene = obj.new('VectorScene', { pageWidth=WIDTH, pageHeight=HEIGHT })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   if UseBackgroundFilter then
+      filter = scene.new('VectorFilter', { x=0, y=0, width='100%', height='100%' })
+      composite = filter.new('CompositeFX', { sourceType='Graphic', mixType='Bkgd', operator='Over' })
+      check scene.mtAddDef('background_over', filter)
+   end
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(24,64,96)' })
+   isolated = viewport.new('VectorGroup', { flags=VF_ISOLATED })
+   isolated.new('VectorRectangle', { x=36, y=24, width=48, height=32, fill='rgb(192,48,32)', opacity=0.65 })
+   if UseBackgroundFilter then
+      isolated.new('VectorEllipse', {
+         cx=60, cy=40, radiusX=20, radiusY=14, fill='rgb(32,160,220)', filter='url(#background_over)'
+      })
+   else
+      isolated.new('VectorEllipse', { cx=60, cy=40, radiusX=20, radiusY=14, fill='rgb(32,160,220)' })
+   end
+
+   return scene
+end
+
+@Test function IsolatedRenderMatchesFullSceneInsideClippedRedraw()
+   full_scene = buildScene(false)
+   clipped_scene = buildScene(false)
+   full = newBitmap('0,0,0,255')
+   clipped = newBitmap('240,0,160,255')
+   expected = newBitmap('240,0,160,255')
+
+   drawScene(full_scene, full, 0, 0, WIDTH, HEIGHT)
+   copyRegion(full, expected, CLIP_LEFT, CLIP_TOP, CLIP_RIGHT, CLIP_BOTTOM)
+
+   drawScene(clipped_scene, clipped, CLIP_LEFT, CLIP_TOP, CLIP_RIGHT, CLIP_BOTTOM)
+
+   full_crop = cropRegion(full, CLIP_LEFT, CLIP_TOP, CLIP_RIGHT, CLIP_BOTTOM)
+   clipped_crop = cropRegion(clipped, CLIP_LEFT, CLIP_TOP, CLIP_RIGHT, CLIP_BOTTOM)
+
+   assert(hashBitmap(clipped_crop) is hashBitmap(full_crop),
+      'Clipped isolated redraw should match the full render inside the clip')
+   assert(hashBitmap(clipped) is hashBitmap(expected),
+      'Clipped isolated redraw should leave outside pixels untouched')
+end
+
+@Test function RepeatedIsolatedRendersAreStableAcrossClipSizes()
+   scene = buildScene(true)
+   full_first = newBitmap('0,0,0,255')
+   full_second = newBitmap('0,0,0,255')
+   clipped_first = newBitmap('240,0,160,255')
+   clipped_second = newBitmap('240,0,160,255')
+
+   drawScene(scene, full_first, 0, 0, WIDTH, HEIGHT)
+   drawScene(scene, clipped_first, CLIP_LEFT, CLIP_TOP, CLIP_RIGHT, CLIP_BOTTOM)
+   drawScene(scene, full_second, 0, 0, WIDTH, HEIGHT)
+   drawScene(scene, clipped_second, CLIP_LEFT, CLIP_TOP, CLIP_RIGHT, CLIP_BOTTOM)
+
+   assert(hashBitmap(full_first) is hashBitmap(full_second), 'Repeated full isolated renders should be stable')
+   assert(hashBitmap(clipped_first) is hashBitmap(clipped_second), 'Repeated clipped isolated renders should be stable')
+end
