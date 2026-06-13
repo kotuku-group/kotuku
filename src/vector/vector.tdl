@@ -608,7 +608,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', extended=true })
+  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
 
   klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
 

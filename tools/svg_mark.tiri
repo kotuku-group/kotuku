@@ -164,7 +164,7 @@ end
    -- Check for file parameter, show dialog if not provided
    svgFile = arg('file')
 
-   global glGitInfo = git.query(glPath)
+   glGitInfo = git.query(glPath)
 
    if not svgFile then
       print('No file parameter provided. Opening file dialog...')

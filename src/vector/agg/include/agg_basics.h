@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -201,7 +200,7 @@ namespace agg
 
         // Compile-time version for constant values
         static consteval int iround_ct(double v) noexcept {
-            const int rounded = static_cast<int>(v < 0.0 ? v - 0.5 : v + 0.5);
+            const int rounded = int(v < 0.0 ? v - 0.5 : v + 0.5);
             return rounded < -Limit ? -Limit : (rounded > Limit ? Limit : rounded);
         }
     };

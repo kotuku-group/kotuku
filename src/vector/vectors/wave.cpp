@@ -16,6 +16,8 @@ Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&g
 
 *********************************************************************************************************************/
 
+static void generate_wave(class extVectorWave *Vector, agg::path_storage &Path);
+
 class extVectorWave : public extVector {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORWAVE;
@@ -32,6 +34,13 @@ class extVectorWave : public extVector {
    DMF    wDimensions;
    WVC    wClose;
    uint8_t  wStyle;
+
+   extVectorWave() {
+      GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
+      wFrequency = 1.0;
+      wAmplitude = 1.0;
+      wDecay = 1.0;
+   }
 };
 
 //********************************************************************************************************************
@@ -157,7 +166,7 @@ Move: Moves the vector to a new position.
 -END-
 *********************************************************************************************************************/
 
-static ERR WAVE_Move(extVectorWave *Self, struct acMove *Args)
+static ERR VECTORWAVE_Move(extVectorWave *Self, struct acMove *Args)
 {
    kt::Log log;
 
@@ -175,7 +184,7 @@ MoveToPoint: Moves the vector to a new fixed position.
 -END-
 *********************************************************************************************************************/
 
-static ERR WAVE_MoveToPoint(extVectorWave *Self, struct acMoveToPoint *Args)
+static ERR VECTORWAVE_MoveToPoint(extVectorWave *Self, struct acMoveToPoint *Args)
 {
    kt::Log log;
 
@@ -189,24 +198,13 @@ static ERR WAVE_MoveToPoint(extVectorWave *Self, struct acMoveToPoint *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR WAVE_NewObject(extVectorWave *Self)
-{
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
-   Self->wFrequency = 1.0;
-   Self->wAmplitude = 1.0;
-   Self->wDecay = 1.0;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Resize: Changes the vector's area.
 -END-
 *********************************************************************************************************************/
 
-static ERR WAVE_Resize(extVectorWave *Self, struct acResize *Args)
+static ERR VECTORWAVE_Resize(extVectorWave *Self, struct acResize *Args)
 {
    if (!Args) return ERR::NullArgs;
 
@@ -225,13 +223,13 @@ default.
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Amplitude(extVectorWave *Self, double *Value)
+static ERR VECTORWAVE_GET_Amplitude(extVectorWave *Self, double *Value)
 {
    *Value = Self->wAmplitude;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Amplitude(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Amplitude(extVectorWave *Self, double Value)
 {
    if (Value > 0.0) {
       Self->wAmplitude = Value;
@@ -250,13 +248,13 @@ filled.
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Close(extVectorWave *Self, WVC *Value)
+static ERR VECTORWAVE_GET_Close(extVectorWave *Self, WVC *Value)
 {
    *Value = Self->wClose;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Close(extVectorWave *Self, WVC Value)
+static ERR VECTORWAVE_SET_Close(extVectorWave *Self, WVC Value)
 {
    Self->wClose = Value;
    reset_path(Self);
@@ -273,13 +271,13 @@ end points for the decay will be reversed.
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Decay(extVectorWave *Self, double *Value)
+static ERR VECTORWAVE_GET_Decay(extVectorWave *Self, double *Value)
 {
    *Value = Self->wDecay;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Decay(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Decay(extVectorWave *Self, double Value)
 {
    Self->wDecay = Value;
    reset_path(Self);
@@ -297,13 +295,13 @@ will give the wave an appearance of moving from right to left.
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Degree(extVectorWave *Self, double *Value)
+static ERR VECTORWAVE_GET_Degree(extVectorWave *Self, double *Value)
 {
    *Value = Self->wDegree;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Degree(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Degree(extVectorWave *Self, double Value)
 {
    Self->wDegree = Value;
    reset_path(Self);
@@ -330,13 +328,13 @@ The following dimension flags are supported:
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Dimensions(extVectorWave *Self, DMF *Value)
+static ERR VECTORWAVE_GET_Dimensions(extVectorWave *Self, DMF *Value)
 {
    *Value = Self->wDimensions;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Dimensions(extVectorWave *Self, DMF Value)
+static ERR VECTORWAVE_SET_Dimensions(extVectorWave *Self, DMF Value)
 {
    Self->wDimensions = Value;
    reset_path(Self);
@@ -352,13 +350,13 @@ value for the frequency is 1.0.  Shortening the frequency to a value closer to 0
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Frequency(extVectorWave *Self, double *Value)
+static ERR VECTORWAVE_GET_Frequency(extVectorWave *Self, double *Value)
 {
    *Value = Self->wFrequency;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Frequency(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Frequency(extVectorWave *Self, double Value)
 {
    if (Value > 0.0) {
       Self->wFrequency = Value;
@@ -376,13 +374,13 @@ The height of the area containing the wave is defined here as a fixed or scaled 
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Height(extVectorWave *Self, Unit *Value)
+static ERR VECTORWAVE_GET_Height(extVectorWave *Self, Unit *Value)
 {
    Value->set(Self->wHeight);
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Height(extVectorWave *Self, Unit &Value)
+static ERR VECTORWAVE_SET_Height(extVectorWave *Self, Unit &Value)
 {
    if (Value.scaled()) Self->wDimensions = (Self->wDimensions | DMF::SCALED_HEIGHT) & (~DMF::FIXED_HEIGHT);
    else Self->wDimensions = (Self->wDimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
@@ -402,13 +400,13 @@ By default, waves are generated in the style of a sine wave.  Alternative styles
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Style(extVectorWave *Self, int *Value)
+static ERR VECTORWAVE_GET_Style(extVectorWave *Self, int *Value)
 {
    *Value = Self->wStyle;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Style(extVectorWave *Self, int Value)
+static ERR VECTORWAVE_SET_Style(extVectorWave *Self, int Value)
 {
    Self->wStyle = Value;
    return ERR::Okay;
@@ -423,13 +421,13 @@ The thickness (height) of the wave is determined by the provided value.
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Thickness(extVectorWave *Self, double *Value)
+static ERR VECTORWAVE_GET_Thickness(extVectorWave *Self, double *Value)
 {
    *Value = Self->wThickness;
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Thickness(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Thickness(extVectorWave *Self, double Value)
 {
    Self->wThickness = Value;
    reset_path(Self);
@@ -444,13 +442,13 @@ The width of the area containing the wave is defined here as a fixed or scaled v
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Width(extVectorWave *Self, Unit *Value)
+static ERR VECTORWAVE_GET_Width(extVectorWave *Self, Unit *Value)
 {
    Value->set(Self->wWidth);
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Width(extVectorWave *Self, Unit &Value)
+static ERR VECTORWAVE_SET_Width(extVectorWave *Self, Unit &Value)
 {
    if (Value.scaled()) Self->wDimensions = (Self->wDimensions | DMF::SCALED_WIDTH) & (~DMF::FIXED_WIDTH);
    else Self->wDimensions = (Self->wDimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
@@ -467,13 +465,13 @@ The x coordinate of the wave is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_X(extVectorWave *Self, Unit *Value)
+static ERR VECTORWAVE_GET_X(extVectorWave *Self, Unit *Value)
 {
    Value->set(Self->wX);
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_X(extVectorWave *Self, Unit &Value)
+static ERR VECTORWAVE_SET_X(extVectorWave *Self, Unit &Value)
 {
    if (Value.scaled()) Self->wDimensions = (Self->wDimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
    else Self->wDimensions = (Self->wDimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
@@ -490,13 +488,13 @@ The y coordinate of the wave is defined here as either a fixed or scaled value.
 -END-
 *********************************************************************************************************************/
 
-static ERR WAVE_GET_Y(extVectorWave *Self, Unit *Value)
+static ERR VECTORWAVE_GET_Y(extVectorWave *Self, Unit *Value)
 {
    Value->set(Self->wY);
    return ERR::Okay;
 }
 
-static ERR WAVE_SET_Y(extVectorWave *Self, Unit &Value)
+static ERR VECTORWAVE_SET_Y(extVectorWave *Self, Unit &Value)
 {
    if (Value.scaled()) Self->wDimensions = (Self->wDimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
    else Self->wDimensions = (Self->wDimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
@@ -507,19 +505,7 @@ static ERR WAVE_SET_Y(extVectorWave *Self, Unit &Value)
 
 //********************************************************************************************************************
 
-static const FieldDef clWaveClose[] = {
-   { "None",   WVC::NONE },
-   { "Top",    WVC::TOP },
-   { "Bottom", WVC::BOTTOM },
-   { nullptr, 0 }
-};
-
-static const FieldDef clWaveStyle[] = {
-   { "Curved",   WVS::CURVED },
-   { "Angled",   WVS::ANGLED },
-   { "Sawtooth", WVS::SAWTOOTH },
-   { nullptr, 0 }
-};
+#include "wave_def.cpp"
 
 static const FieldDef clWaveDimensions[] = {
    { "FixedHeight",   DMF::FIXED_HEIGHT },
@@ -533,29 +519,20 @@ static const FieldDef clWaveDimensions[] = {
    { nullptr, 0 }
 };
 
-static const FieldArray clWaveFields[] = {
-   { "Amplitude",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, WAVE_GET_Amplitude, WAVE_SET_Amplitude },
-   { "Close",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, WAVE_GET_Close, WAVE_SET_Close, &clWaveClose },
-   { "Decay",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, WAVE_GET_Decay, WAVE_SET_Decay },
-   { "Degree",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, WAVE_GET_Degree, WAVE_SET_Degree },
-   { "Dimensions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, WAVE_GET_Dimensions, WAVE_SET_Dimensions, &clWaveDimensions },
-   { "Frequency",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, WAVE_GET_Frequency, WAVE_SET_Frequency },
-   { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, WAVE_GET_Height, WAVE_SET_Height },
-   { "Style",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, WAVE_GET_Style, WAVE_SET_Style, &clWaveStyle },
-   { "Thickness",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, WAVE_GET_Thickness, WAVE_SET_Thickness },
-   { "X",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, WAVE_GET_X, WAVE_SET_X },
-   { "Y",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, WAVE_GET_Y, WAVE_SET_Y },
-   { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, WAVE_GET_Width, WAVE_SET_Width },
+static const FieldArray clVectorWaveFields[] = {
+   { "Amplitude",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Amplitude, VECTORWAVE_SET_Amplitude },
+   { "Close",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORWAVE_GET_Close, VECTORWAVE_SET_Close, &clVectorWaveWVC },
+   { "Decay",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Decay, VECTORWAVE_SET_Decay },
+   { "Degree",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Degree, VECTORWAVE_SET_Degree },
+   { "Dimensions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, VECTORWAVE_GET_Dimensions, VECTORWAVE_SET_Dimensions, &clWaveDimensions },
+   { "Frequency",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Frequency, VECTORWAVE_SET_Frequency },
+   { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORWAVE_GET_Height, VECTORWAVE_SET_Height },
+   { "Style",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORWAVE_GET_Style, VECTORWAVE_SET_Style, &clVectorWaveWVS },
+   { "Thickness",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Thickness, VECTORWAVE_SET_Thickness },
+   { "X",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORWAVE_GET_X, VECTORWAVE_SET_X },
+   { "Y",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORWAVE_GET_Y, VECTORWAVE_SET_Y },
+   { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORWAVE_GET_Width, VECTORWAVE_SET_Width },
    END_FIELD
-};
-
-static const ActionArray clWaveActions[] = {
-   { AC::NewObject,     WAVE_NewObject },
-   { AC::Move,          WAVE_Move },
-   { AC::MoveToPoint,   WAVE_MoveToPoint },
-   //{ AC::Redimension, WAVE_Redimension },
-   { AC::Resize,      WAVE_Resize },
-   { AC::NIL, nullptr }
 };
 
 static ERR init_wave(void)
@@ -565,8 +542,8 @@ static ERR init_wave(void)
       fl::ClassID(CLASSID::VECTORWAVE),
       fl::Name("VectorWave"),
       fl::Category(CCF::GRAPHICS),
-      fl::Actions(clWaveActions),
-      fl::Fields(clWaveFields),
+      fl::Actions(clVectorWaveActions),
+      fl::Fields(clVectorWaveFields),
       fl::Size(sizeof(extVectorWave)),
       fl::Path(MOD_PATH));
 
