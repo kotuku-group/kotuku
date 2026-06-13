@@ -261,7 +261,8 @@ public:
       if (Bitmap) { FreeResource(Bitmap); Bitmap = nullptr; }
    };
 
-   objBitmap * get_bitmap(int Width, int Height, TClipRectangle<int> &Clip, bool Debug) {
+   objBitmap * get_bitmap(int Width, int Height, TClipRectangle<int> &Clip, bool Debug, OBJECTID Owner = 0,
+      CSTRING Name = "dummy_fx_bitmap") {
       kt::Log log;
 
       if (Width < Clip.right) Width = Clip.right;
@@ -283,10 +284,19 @@ public:
       }
       else {
          // NB: The clip region defines the true size and no data is allocated by the bitmap itself unless in debug mode.
-         Bitmap = objBitmap::create::local(
-            fl::Name("dummy_fx_bitmap"),
-            fl::Width(Width), fl::Height(Height), fl::BitsPerPixel(32),
-            fl::Flags(Debug ? BMF::ALPHA_CHANNEL : (BMF::ALPHA_CHANNEL|BMF::NO_DATA)));
+         if (Owner) {
+            Bitmap = objBitmap::create::local(
+               fl::Name(Name),
+               fl::Owner(Owner),
+               fl::Width(Width), fl::Height(Height), fl::BitsPerPixel(32),
+               fl::Flags(Debug ? BMF::ALPHA_CHANNEL : (BMF::ALPHA_CHANNEL|BMF::NO_DATA)));
+         }
+         else {
+            Bitmap = objBitmap::create::local(
+               fl::Name(Name),
+               fl::Width(Width), fl::Height(Height), fl::BitsPerPixel(32),
+               fl::Flags(Debug ? BMF::ALPHA_CHANNEL : (BMF::ALPHA_CHANNEL|BMF::NO_DATA)));
+         }
          if (!Bitmap) return nullptr;
       }
 
@@ -489,6 +499,7 @@ class extVector : public objVector {
    extVector           *AppendPath;
    DashedStroke        *DashArray;
    ClipMaskCache ClipCache;
+   filter_bitmap *IsolatedBuffer;
    JTYPE InputMask;
    int   NumericID;
    int   PathLength;
@@ -525,6 +536,7 @@ class extVector : public objVector {
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;
       Dirty         = RC::DIRTY;
+      IsolatedBuffer = nullptr;
       TabOrder      = 255;
       ColourSpace   = VCS::INHERIT;
       ValidState    = true;

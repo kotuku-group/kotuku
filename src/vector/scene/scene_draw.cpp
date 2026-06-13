@@ -879,16 +879,23 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       objBitmap *bmpBkgd = nullptr;
       objBitmap *bmpSave = nullptr;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
-         if ((bmpBkgd = objBitmap::create::local(fl::Name("scene_temp_bkgd"),
-               fl::Width(mBitmap->Width),
-               fl::Height(mBitmap->Height),
-               fl::BitsPerPixel(32),
-               fl::Flags(BMF::ALPHA_CHANNEL),
-               fl::ColourSpace(mBitmap->ColourSpace)))) {
+         if (!shape->IsolatedBuffer) shape->IsolatedBuffer = new (std::nothrow) filter_bitmap;
+         if (shape->IsolatedBuffer) {
+            auto &clip_box = mRenderBase.clip_box();
+            TClipRectangle<int> isolated_clip(clip_box.x1, clip_box.y1, clip_box.x2 + 1, clip_box.y2 + 1);
+
+            bmpBkgd = shape->IsolatedBuffer->get_bitmap(mBitmap->Width, mBitmap->Height, isolated_clip, false,
+               shape->UID, "isolated_bkgd");
+         }
+
+         if (bmpBkgd) {
+            bmpBkgd->ColourSpace = mBitmap->ColourSpace;
+            bmpBkgd->BlendMode   = mBitmap->BlendMode;
+            bmpBkgd->Flags       = (bmpBkgd->Flags & ~BMF::PREMUL) | BMF::ALPHA_CHANNEL | BMF::NO_DATA;
             bmpSave = mBitmap;
             mBitmap = bmpBkgd;
             mFormat.setBitmap(*bmpBkgd);
-            clearmem(bmpBkgd->Data, bmpBkgd->LineWidth * bmpBkgd->Height);
+            clearmem(bmpBkgd->CreatorMeta, bmpBkgd->LineWidth * (bmpBkgd->Clip.Bottom - bmpBkgd->Clip.Top));
             state.mIsolated = true;
          }
       }
@@ -1193,7 +1200,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       if (bmpBkgd) {
          agg::rasterizer_scanline_aa raster;
 
-         basic_path(raster, 0, 0, bmpBkgd->Width, bmpBkgd->Height);
+         basic_path(raster, bmpBkgd->Clip.Left, bmpBkgd->Clip.Top, bmpBkgd->Clip.Right, bmpBkgd->Clip.Bottom);
 
          mBitmap = bmpSave;
          mFormat.setBitmap(*mBitmap);
@@ -1206,7 +1213,6 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             agg::scanline_u8 scanline;
             drawBitmap(scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
          }
-         FreeResource(bmpBkgd);
       }
    } // for loop
 }
