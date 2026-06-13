@@ -901,6 +901,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
       objBitmap *bmpBkgd = nullptr;
       objBitmap *bmpSave = nullptr;
+      int save_origin_x = 0;
+      int save_origin_y = 0;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
          if (!shape->IsolatedBuffer) shape->IsolatedBuffer = new (std::nothrow) filter_bitmap;
          if (shape->IsolatedBuffer) {
@@ -917,6 +919,10 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             bmpBkgd->Flags       = (bmpBkgd->Flags & ~BMF::PREMUL) | BMF::ALPHA_CHANNEL | BMF::NO_DATA;
             bmpSave = mBitmap;
             mBitmap = bmpBkgd;
+            save_origin_x = mBitmapOriginX;
+            save_origin_y = mBitmapOriginY;
+            mBitmapOriginX = 0;
+            mBitmapOriginY = 0;
             mFormat.setBitmap(*bmpBkgd);
             clearmem(bmpBkgd->CreatorMeta, bmpBkgd->LineWidth * (bmpBkgd->Clip.Bottom - bmpBkgd->Clip.Top));
             state.mIsolated = true;
@@ -1232,6 +1238,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          basic_path(raster, bmpBkgd->Clip.Left, bmpBkgd->Clip.Top, bmpBkgd->Clip.Right, bmpBkgd->Clip.Bottom);
 
          mBitmap = bmpSave;
+         mBitmapOriginX = save_origin_x;
+         mBitmapOriginY = save_origin_y;
          mFormat.setBitmap(*mBitmap);
          if (!mClipStack.empty()) {
             agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
