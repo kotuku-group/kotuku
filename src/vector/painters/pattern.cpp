@@ -46,7 +46,8 @@ static ERR PATTERN_Draw(extVectorPattern *Self, struct acDraw *Args)
 
    clearmem(Self->Bitmap->Data, Self->Bitmap->LineWidth * Self->Bitmap->Height);
    Self->Scene->Bitmap = Self->Bitmap;
-   acDraw(Self->Scene);
+   auto error = acDraw(Self->Scene);
+   if (error != ERR::Okay) return error;
 
    return ERR::Okay;
 }

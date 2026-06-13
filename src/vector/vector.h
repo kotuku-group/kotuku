@@ -570,8 +570,11 @@ class extVectorScene : public objVectorScene {
    int InputHandle;
    PTC Cursor; // Current cursor image
    bool RefreshCursor;
-   bool ShareModified; // True if a shareable object has been modified (e.g. VectorGradient), requiring a redraw of any vectors that use it.
+   uint64_t ShareVersion; // Incremented whenever a shareable object has been modified.
+   bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
+
+   extVectorScene() : ShareVersion(1), SubtreeDirty(true) { }
 
    // Returns the rasteriser gamma table for the scene's current Gamma value; one shared LUT serves
    // every rasteriser in the scene.  Returns nullptr for identity gamma, which restores the
@@ -610,6 +613,7 @@ class extVectorViewport : public extVector {
    objBitmap *vpBuffer;
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
+   uint64_t vpSeenShareVersion; // Scene ShareVersion that was current when vpBuffer was last rendered.
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
@@ -624,6 +628,7 @@ class extVectorViewport : public extVector {
    extVectorViewport() {
       vpClipOwner = nullptr;
       vpClipConfiguring = false;
+      vpSeenShareVersion = 0;
    }
 };
 
@@ -818,6 +823,8 @@ TClipRectangle<T> get_bounds(VertexSource &vs, const unsigned path_id = 0)
 
 static void mark_buffers_for_refresh(extVector *Vector)
 {
+   if (Vector->Scene) ((extVectorScene *)Vector->Scene)->SubtreeDirty = true;
+
    for (auto node=Vector; node; ) {
       node->ClipCache.clear();
 
@@ -909,6 +916,15 @@ inline static void mark_dirty(objVector *Vector, RC Flags)
    mark_buffers_for_refresh((extVector *)Vector);
 
    mark_children((extVector *)Vector, Flags);
+}
+
+//********************************************************************************************************************
+// Keep shared-definition versions monotonic and reserve zero as the "never rendered" value for viewport caches.
+
+inline static void bump_share_version(extVectorScene *Scene)
+{
+   Scene->ShareVersion++;
+   if (Scene->ShareVersion IS 0) Scene->ShareVersion = 1;
 }
 
 //********************************************************************************************************************
@@ -1465,5 +1481,5 @@ template <class T> TClipRectangle<T>::TClipRectangle(const class extVectorViewpo
 }
 
 inline void SceneDef::modified() {
-   if (HostScene) HostScene->ShareModified = true;
+   if (HostScene) bump_share_version(HostScene);
 }

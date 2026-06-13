@@ -167,10 +167,6 @@ public:
 
    SceneRenderer(extVectorScene *pScene) : Scene(pScene) { }
    void draw(objBitmap *, objVectorViewport *);
-
-   ~SceneRenderer() {
-      Scene->ShareModified = false;
-   }
 };
 
 //********************************************************************************************************************
@@ -393,23 +389,6 @@ private:
 };
 } // namespace
 
-//********************************************************************************************************************
-// Check a Shape, its siblings and children for dirty markers.
-
-static bool check_dirty(extVector *Shape) {
-   while (Shape) {
-      if (Shape->Class->BaseClassID != CLASSID::VECTOR) return true;
-      if (Shape->dirty()) return true;
-
-      if (Shape->Child) {
-         if (check_dirty((extVector *)Shape->Child)) return true;
-      }
-      Shape = (extVector *)Shape->Next;
-   }
-   return false;
-}
-
-//********************************************************************************************************************
 // Return the correct transformation matrix for a fill operation.  Requires that the vector's path has been generated.
 
 const agg::trans_affine SceneRenderer::build_fill_transform(extVector &Vector, bool Userspace,  VectorState &State)
@@ -698,6 +677,7 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
       draw_vectors((extVector *)Viewport, state);
 
       Scene->InputBoundaries = std::move(mInputBounds);
+      Scene->SubtreeDirty = false;
    }
 }
 
@@ -1029,7 +1009,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                      bool redraw = view->vpRefreshBuffer or state.mDirty;
                      view->vpRefreshBuffer = false;
 
-                     if ((not redraw) and (Scene->ShareModified)) redraw = true;
+                     if ((not redraw) and (view->vpSeenShareVersion != Scene->ShareVersion)) redraw = true;
 
                      if (view->vpBuffer) {
                         if ((view->vpBuffer->Width != view->vpFixedWidth) or (view->vpBuffer->Height != view->vpFixedHeight)) {
@@ -1093,6 +1073,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                         mRenderBase = save_rb;
                         mBitmap     = save_bmp;
                         mFormat     = save_format;
+
+                        view->vpSeenShareVersion = Scene->ShareVersion;
 
                         //save_bitmap(view->vpBuffer, std::string("viewport"));
                      }

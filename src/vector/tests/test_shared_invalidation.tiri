@@ -1,0 +1,77 @@
+   include 'vector'
+
+function newBitmap(Width, Height)
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function setClip(Bitmap, Left, Top, Right, Bottom)
+   check Bitmap.mtSetClipRegion(Left, Top, Right, Bottom)
+end
+
+function hashBitmap(Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function drawScene(Scene, Bitmap, Left, Top, Right, Bottom)
+   setClip(Bitmap, Left, Top, Right, Bottom)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   Scene.acDraw()
+   return hashBitmap(Bitmap)
+end
+
+function drawFull(Scene, Bitmap)
+   return drawScene(Scene, Bitmap, 0, 0, Bitmap.width, Bitmap.height)
+end
+
+@Test function SharedGradientChangeInvalidatesOffscreenBufferedViewport()
+   scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   gradient = scene.new('VectorGradient', {
+      type='linear', colourMap='cmap:magma', x1=0, y1=0, x2='100%', y2=0, units=VUNIT_BOUNDING_BOX
+   })
+   check scene.mtAddDef('test_gradient', gradient)
+
+   buffered = viewport.new('VectorViewport', { x=20, y=20, width=50, height=40, buffered=true })
+   target = buffered.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#test_gradient)' })
+   bitmap = newBitmap(120, 80)
+
+   initial_hash = drawFull(scene, bitmap)
+   initial_timestamp = target.pathTimestamp
+
+   gradient.colourMap = 'cmap:viridis'
+   drawScene(scene, bitmap, 0, 0, 1, 1)
+   changed_hash = drawFull(scene, bitmap)
+
+   assert(target.pathTimestamp is initial_timestamp,
+      'Changing a shared gradient should not regenerate the consumer path')
+   assert(changed_hash != initial_hash,
+      'Buffered viewport should redraw after missing a shared gradient change offscreen')
+end
+
+@Test function PatternChildFillChangeInvalidatesPatternBitmap()
+   scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   pattern = scene.new('VectorPattern', {
+      width=20, height=20, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT
+   })
+   tile = pattern.viewport.new('VectorRectangle', { x=0, y=0, width=20, height=20, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('test_pattern', pattern)
+
+   target = viewport.new('VectorRectangle', { x=10, y=10, width=70, height=40, fill='url(#test_pattern)' })
+   bitmap = newBitmap(120, 80)
+
+   first_hash = drawFull(scene, bitmap)
+   second_hash = drawFull(scene, bitmap)
+   initial_timestamp = target.pathTimestamp
+
+   assert(first_hash is second_hash, 'Repeated render of unchanged pattern should be stable')
+
+   tile.fill = 'rgb(0,0,255)'
+   changed_hash = drawFull(scene, bitmap)
+
+   assert(target.pathTimestamp is initial_timestamp, 'Changing pattern content should not regenerate the consumer path')
+   assert(changed_hash != first_hash, 'Changing pattern content should invalidate the cached pattern bitmap')
+end
