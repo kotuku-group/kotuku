@@ -96,16 +96,16 @@ src/xquery/
     ├── test_string_uri.tiri          # String and URI function tests
     ├── test_type_constructors.tiri   # Schema type constructor regression tests
     ├── test_type_expr.tiri           # Type expression tests (cast, castable, etc.)
-    ├── test_unit_tests.tiri          # Runs the module's internal unit tests (requires ENABLE_UNIT_TESTS)
-    └── modules/                       # XQuery module files for testing
-        ├── bad_namespace.xq               # Error case: bad namespace declaration
-        ├── circular_a.xq                  # Error case: circular module dependencies
-        ├── circular_b.xq                  # Error case: circular module dependencies
-        ├── composite.xq                   # Composite module usage
-        ├── main_module.xq                 # Module entry point
-        ├── math_utils.xq                  # Library module with math functions
-        ├── self_reference.xq              # Error case: self-referencing module
-        └── string_utils.xq                # Library module with string utilities
+    ├── test_unit_tests.tiri          # Runs the module's internal unit tests (requires UNIT_TESTS)
+    └── modules/                      # XQuery module files for testing
+        ├── bad_namespace.xq          # Error case: bad namespace declaration
+        ├── circular_a.xq             # Error case: circular module dependencies
+        ├── circular_b.xq             # Error case: circular module dependencies
+        ├── composite.xq              # Composite module usage
+        ├── main_module.xq            # Module entry point
+        ├── math_utils.xq             # Library module with math functions
+        ├── self_reference.xq         # Error case: self-referencing module
+        └── string_utils.xq           # Library module with string utilities
 ```
 
 ### Module Architecture Notes
@@ -746,7 +746,7 @@ XQuery tests are located in the XQuery module's test directory and exercise XQue
 - `test_string_uri.tiri` - String and URI functions
 - `test_type_constructors.tiri` - Schema type constructors (xs:double, xs:dateTime, xs:duration, xs:QName, etc.)
 - `test_type_expr.tiri` - Type expressions (cast, castable, treat-as, instance-of, typeswitch, to-range)
-- *(Optional)* `test_unit_tests.tiri` - Runs compiled-in internal unit tests when `-DENABLE_UNIT_TESTS=ON`
+- *(Optional)* `test_unit_tests.tiri` - Runs compiled-in internal unit tests when `-DUNIT_TESTS=ON`
 
 **Test Modules (`src/xquery/tests/modules/`):**
 The `modules/` subdirectory contains XQuery library modules used for testing module loading functionality:
@@ -774,7 +774,7 @@ ctest --build-config [BuildType] --test-dir build/agents -L xquery --output-on-f
 
 The XQuery module includes a compiled-in unit testing framework for testing internal components that are not easily accessible through the Tiri interface. This is particularly useful for debugging low-level functionality like XQuery prolog integration, parser internals, and data structure integrity.
 
-Unit tests will only be compiled in the module if ENABLE_UNIT_TESTS is enabled in the module's CMakeLists.txt file.
+Unit tests will only be compiled in the module if UNIT_TESTS is enabled in the module's CMakeLists.txt file.
 
 **Unit Test Infrastructure:**
 

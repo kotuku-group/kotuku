@@ -4,7 +4,7 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -1761,4 +1761,4 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
    }
 }
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

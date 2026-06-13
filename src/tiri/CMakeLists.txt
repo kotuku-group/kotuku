@@ -4,7 +4,7 @@
 # SPECIAL FEATURES:
 #  Enable LUAJIT_USE_SYSMALLOC temporarily if you need to figure out memory management and overflow issues.
 #  Enable LUAJIT_USE_GDBJIT temporarily if debugging with GDB.
-#  Enable ENABLE_UNIT_TESTS to include unit tests for non-release builds.  You will need to run test_unit_tests.tiri with
+#  Enable UNIT_TESTS to include unit tests for non-release builds.  You will need to run test_unit_tests.tiri with
 #    the --log-api option to view any output.
 #
 # GENERATED HEADERS OVERVIEW:
@@ -44,7 +44,7 @@ set (MOD "tiri")
 set (INC_MOD_TIRI TRUE PARENT_SCOPE)
 
 # Enable unit tests for deep testing of non-release builds only.
-# set (ENABLE_UNIT_TESTS ON)
+# set (UNIT_TESTS ON)
 
 # IDL processing for headers and documentation
 
@@ -145,9 +145,9 @@ if (INCLUDE_TIPS)
    list(APPEND JIT_NON_MSVC_DEFS -DINCLUDE_TIPS)
 endif ()
 
-if (ENABLE_UNIT_TESTS)
-   list(APPEND JIT_COMMON_DEFS ENABLE_UNIT_TESTS)
-   list(APPEND JIT_NON_MSVC_DEFS -DENABLE_UNIT_TESTS)
+if (UNIT_TESTS)
+   list(APPEND JIT_COMMON_DEFS UNIT_TESTS)
+   list(APPEND JIT_NON_MSVC_DEFS -DUNIT_TESTS)
 endif ()
 
 # LUA_USE_ASSERT enables runtime assertions for early detection of VM state issues.
@@ -711,7 +711,7 @@ if (INCLUDE_TIPS)
    list (APPEND TIRI_SOURCES "${JIT_SRC}/parser/parser_tips.cpp")
 endif ()
 
-if (ENABLE_UNIT_TESTS)
+if (UNIT_TESTS)
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
@@ -766,8 +766,8 @@ else ()
    target_compile_options(${MOD} PRIVATE -Wno-invalid-offsetof)
 endif ()
 
-if (ENABLE_UNIT_TESTS)
-   target_compile_definitions(${MOD} PRIVATE ENABLE_UNIT_TESTS)
+if (UNIT_TESTS)
+   target_compile_definitions(${MOD} PRIVATE UNIT_TESTS)
 endif ()
 
 if (DISABLE_DISPLAY)

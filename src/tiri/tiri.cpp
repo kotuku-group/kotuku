@@ -318,7 +318,7 @@ static ERR MODOpen(OBJECTPTR Module)
 
 //********************************************************************************************************************
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 extern void indexing_unit_tests(int &, int &);
 extern void vm_asm_unit_tests(int &, int &);
 extern void jit_frame_unit_tests(int &, int &);
@@ -330,7 +330,7 @@ extern void bulk_unit_tests(int &, int &);
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
    {
       kt::Log log("TiriTests");
       log.branch("Running indexing unit tests...");
