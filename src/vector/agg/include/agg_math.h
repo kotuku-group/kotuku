@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,14 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Collects AGG mathematical constants, comparisons, and geometry helpers. Hooks into transforms, curve flattening,
+// stroking, clipping, and gradient calculations. In the vector renderer it keeps numeric tolerances and geometry
+// operations consistent across the pipeline.
 // Bessel function (besj) was adapted for use in AGG library by Andy Wilk
 // Contact: castor.vulgaris@gmail.com
-//----------------------------------------------------------------------------
 
-#ifndef AGG_MATH_INCLUDED
-#define AGG_MATH_INCLUDED
+#pragma once
 
 #include <cmath>
 #include <cstdlib>
@@ -309,6 +309,3 @@ namespace agg {
     }
 
 }
-
-
-#endif

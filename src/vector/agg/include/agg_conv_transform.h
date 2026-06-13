@@ -5,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Applies a coordinate transform to every vertex from a source path. Hooks into trans_affine, trans_perspective, and
+// other transformer classes used by vertex pipelines. In the vector renderer it maps local path geometry into target
+// space before clipping and rasterisation.
 
-#ifndef AGG_CONV_TRANSFORM_INCLUDED
-#define AGG_CONV_TRANSFORM_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_trans_affine.h"
@@ -39,5 +42,3 @@ private:
 };
 
 }
-
-#endif

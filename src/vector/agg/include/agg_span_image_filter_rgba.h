@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,18 +5,18 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
 //
 // Adaptation for high precision colors has been sponsored by
 // Liberty Technology Systems, Inc., visit http://lib-sys.com
 //
 // Liberty Technology Systems, Inc. is the provider of
 // PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
+// ---
+// Generates RGBA image spans with nearest, bilinear, and filtered resampling. Hooks into image accessors,
+// image_filters, span interpolators, and RGBA pixel formats. In the vector renderer it samples transformed alpha images
+// and patterns before compositing them into scene output.
 
-#ifndef AGG_SPAN_IMAGE_FILTER_RGBA_INCLUDED
-#define AGG_SPAN_IMAGE_FILTER_RGBA_INCLUDED
+#pragma once
 
 #include <cstring>
 
@@ -930,5 +929,3 @@ namespace agg
       }
    };
 }
-
-#endif

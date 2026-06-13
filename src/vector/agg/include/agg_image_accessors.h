@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,17 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines image accessors for clamp, wrap, repeat, and out-of-bounds sampling policies. Hooks into span_image_filter_*
+// generators and source rendering buffers. In the vector renderer it controls how image paints and patterns sample
+// pixels beyond their nominal bounds.
 
-
-#ifndef AGG_IMAGE_ACCESSORS_INCLUDED
-#define AGG_IMAGE_ACCESSORS_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //-----------------------------------------------------image_accessor_clip
     template<class PixFmt> class image_accessor_clip
     {
     public:
@@ -96,10 +95,6 @@ namespace agg
         const int8u*       m_pix_ptr;
     };
 
-
-
-
-    //--------------------------------------------------image_accessor_no_clip
     template<class PixFmt> class image_accessor_no_clip
     {
     public:
@@ -471,6 +466,3 @@ namespace agg
 
 
 }
-
-
-#endif

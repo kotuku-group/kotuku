@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,20 +5,19 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Implements Liang-Barsky clipping for line segments and path commands. Hooks into scanline rasterisers and clipping
+// adaptors that constrain vector geometry to rectangular bounds. In the vector renderer it rejects or trims off-screen
+// edges before they reach rasterisation.
 //
 // Liang-Barsky clipping
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CLIP_LIANG_BARSKY_INCLUDED
-#define AGG_CLIP_LIANG_BARSKY_INCLUDED
+
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //------------------------------------------------------------------------
     enum clipping_flags_e
     {
         clipping_flags_x1_clipped = 4,
@@ -323,6 +321,3 @@ namespace agg
 
 
 }
-
-
-#endif

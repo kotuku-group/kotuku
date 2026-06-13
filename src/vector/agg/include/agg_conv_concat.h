@@ -6,10 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Concatenates two vertex sources into one stream. Hooks into render paths that need to draw combined geometry without
+// materialising a new path_storage. In the vector renderer it lets related contours pass through converters and
+// rasterisers as a single source.
 
-
-#ifndef AGG_CONV_CONCAT_INCLUDED
-#define AGG_CONV_CONCAT_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -63,6 +65,3 @@ namespace agg
 
     };
 }
-
-
-#endif

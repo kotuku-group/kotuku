@@ -4,6 +4,10 @@
 // Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice
 // appears in all copies.  This software is provided "as is" without express or implied warranty, and with no
 // claim as to its suitability for any purpose.
+// ---
+// Defines packed anti-aliased scanlines with compact span coverage storage. Hooks into rasterizer_scanline_aa and
+// renderer_scanline. In the vector renderer it carries generated coverage from the rasterizer to span blending with low
+// memory overhead.
 //
 // This is a general purpose scanline container with *packed* spans.  It is best used in conjunction with cover
 // values that are mostly continuous.  See description of scanline_u8 for details.

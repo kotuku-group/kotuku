@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Maps coordinates along a single source path. Hooks into path sources and span interpolators that need path-based
+// coordinate transformation. In the vector renderer it supports effects that align sampling or geometry to an existing
+// path.
 
-
-#ifndef AGG_TRANS_SINGLE_PATH_INCLUDED
-#define AGG_TRANS_SINGLE_PATH_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vertex_sequence.h"
@@ -26,21 +27,17 @@ namespace agg
 
         trans_single_path();
 
-        //--------------------------------------------------------------------
         void   base_length(double v)  { m_base_length = v; }
         double base_length() const { return m_base_length; }
 
-        //--------------------------------------------------------------------
         void preserve_x_scale(bool f) { m_preserve_x_scale = f;    }
         bool preserve_x_scale() const { return m_preserve_x_scale; }
 
-        //--------------------------------------------------------------------
         void reset();
         void move_to(double x, double y);
         void line_to(double x, double y);
         void finalize_path();
 
-        //--------------------------------------------------------------------
         template<class VertexSource>
         void add_path(VertexSource& vs, unsigned path_id=0)
         {
@@ -66,5 +63,3 @@ namespace agg
         bool           m_preserve_x_scale;
    };
 }
-
-#endif

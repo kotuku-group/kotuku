@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,17 +5,18 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Stores path vertices as compact integer coordinates. Hooks into vertex-source consumers that accept the standard
+// rewind()/vertex() interface. In the vector renderer it provides a memory-efficient path representation when fixed-
+// point precision is sufficient.
 
-
-#ifndef AGG_PATH_STORAGE_INTEGER_INCLUDED
-#define AGG_PATH_STORAGE_INTEGER_INCLUDED
+#pragma once
 
 #include <string.h>
 #include "agg_array.h"
 
 namespace agg
 {
-    //---------------------------------------------------------vertex_integer
     template<class T, unsigned CoordShift=6> struct vertex_integer
     {
         enum path_cmd
@@ -284,7 +284,3 @@ namespace agg
     };
 
 }
-
-
-#endif
-

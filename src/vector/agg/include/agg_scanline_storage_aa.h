@@ -6,6 +6,9 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Stores anti-aliased scanlines for later replay. Hooks into rasteriser output, scanline_boolean_algebra, and
+// renderer_scanline. In the vector renderer it caches coverage when masks or compound operations need multiple passes.
 
 #pragma once
 

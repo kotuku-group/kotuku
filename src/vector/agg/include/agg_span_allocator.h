@@ -6,10 +6,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Allocates reusable span buffers for scanline rendering. Hooks into renderer_scanline and span generators. In the
+// vector renderer it provides temporary colour spans that generators fill before blending.
 
-
-#ifndef AGG_SPAN_ALLOCATOR_INCLUDED
-#define AGG_SPAN_ALLOCATOR_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -42,8 +43,3 @@ namespace agg
         pod_array<color_type> m_span;
     };
 }
-
-
-#endif
-
-

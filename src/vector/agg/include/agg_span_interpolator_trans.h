@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,21 +5,20 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Builds a span interpolator from an arbitrary coordinate transformer. Hooks into span generators that need
+// transform.inverse_transform() style coordinate mapping. In the vector renderer it connects affine, bilinear, and
+// perspective transforms to per-pixel sampling.
 //
 // Horizontal span interpolator for use with an arbitrary transformer
 // The efficiency highly depends on the operations done in the transformer
-//
-//----------------------------------------------------------------------------
 
-#ifndef AGG_SPAN_INTERPOLATOR_TRANS_INCLUDED
-#define AGG_SPAN_INTERPOLATOR_TRANS_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-    //=================================================span_interpolator_trans
     template<class Transformer, unsigned SubpixelShift = 8>
     class span_interpolator_trans
     {
@@ -83,5 +81,3 @@ namespace agg
     };
 
 }
-
-#endif

@@ -10,6 +10,10 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Computes contour-distance values for contour-style gradients. Hooks into span_gradient through a gradient function
+// object. In the vector renderer it lets gradient fills follow distance from path contours instead of only linear or
+// radial metrics.
 
 #pragma once
 

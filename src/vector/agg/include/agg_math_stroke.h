@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Computes stroke joins, caps, miters, and related outline geometry. Hooks into vcgen_stroke and vcgen_contour. In the
+// vector renderer it turns stroke style settings into the vertices later filled by scanline rasterisers.
 
-#ifndef AGG_STROKE_MATH_INCLUDED
-#define AGG_STROKE_MATH_INCLUDED
+#pragma once
 
 #include "agg_math.h"
 #include "agg_vertex_sequence.h"
@@ -379,5 +380,3 @@ namespace agg
         }
     }
 }
-
-#endif

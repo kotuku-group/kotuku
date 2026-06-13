@@ -6,10 +6,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Implements boolean set operations on scanlines. Hooks into scanline_p, scanline_u, and scanline storage containers.
+// In the vector renderer it combines coverage regions for clipping, masking, and constructive shape operations.
 
-
-#ifndef AGG_SCANLINE_BOOLEAN_ALGEBRA_INCLUDED
-#define AGG_SCANLINE_BOOLEAN_ALGEBRA_INCLUDED
+#pragma once
 
 #include <stdlib.h>
 #include <math.h>
@@ -1556,7 +1557,3 @@ namespace agg
     }
 
 }
-
-
-#endif
-

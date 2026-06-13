@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,28 +5,24 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Approximates circular and elliptical arcs with cubic Bezier path segments. Hooks into path construction and SVG-style
+// arc handling before curve conversion and rasterisation. In the vector renderer it turns arc primitives into vertices
+// that the normal AGG path pipeline can consume.
 //
 // Arc generator. Produces at most 4 consecutive cubic bezier curves, i.e.,
 // 4, 7, 10, or 13 vertices.
-//
-//----------------------------------------------------------------------------
 
-#ifndef AGG_BEZIER_ARC_INCLUDED
-#define AGG_BEZIER_ARC_INCLUDED
+#pragma once
 
 #include "agg_conv_transform.h"
 
 namespace agg
 {
-
-    //-----------------------------------------------------------------------
     void arc_to_bezier(double cx, double cy, double rx, double ry,
                        double start_angle, double sweep_angle,
                        double* curve);
 
-
-    //==============================================================bezier_arc
     //
     // See implementation agg_bezier_arc.cpp
     //
@@ -149,6 +144,3 @@ namespace agg
 
 
 }
-
-
-#endif

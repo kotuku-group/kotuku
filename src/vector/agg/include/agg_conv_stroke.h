@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Converts centreline paths into stroked outline geometry. Hooks into conv_adaptor_vcgen with vcgen_stroke and upstream
+// curve, dash, or transform converters. In the vector renderer it implements stroke width, joins, caps, and miter
+// handling before fill-style rasterisation.
 
-//
-// conv_stroke
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CONV_STROKE_INCLUDED
-#define AGG_CONV_STROKE_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vcgen_stroke.h"
@@ -20,8 +18,6 @@
 
 namespace agg
 {
-
-    //-------------------------------------------------------------conv_stroke
     template<class VertexSource, class Markers=null_markers>
     struct conv_stroke :
     public conv_adaptor_vcgen<VertexSource, vcgen_stroke, Markers>
@@ -64,5 +60,3 @@ namespace agg
     };
 
 }
-
-#endif

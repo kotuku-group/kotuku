@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,12 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Defines image resampling filters and filter lookup tables. Hooks into span_image_filter_gray, span_image_filter_rgb,
+// and span_image_filter_rgba. In the vector renderer it supplies the reconstruction kernels used when images are
+// transformed or scaled.
 //
-// Image transformation filters,
-// Filtering classes (image_filter_lut, image_filter),
-// Basic filter shape classes
-//----------------------------------------------------------------------------
+// See Implementation agg_image_filters.cpp
 
 #pragma once
 
@@ -19,7 +18,6 @@
 #include "agg_math.h"
 
 namespace agg {
-// See Implementation agg_image_filters.cpp
 
 enum image_filter_scale_e
 {
@@ -35,8 +33,6 @@ enum image_subpixel_scale_e
     image_subpixel_mask  = image_subpixel_scale - 1   //----image_subpixel_mask
 };
 
-
-//-----------------------------------------------------image_filter_lut
 class image_filter_lut {
     public:
     template<class FilterF> void calculate(const FilterF& filter, bool normalization=true) {

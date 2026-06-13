@@ -6,7 +6,9 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Solves small systems of simultaneous linear equations. Hooks into perspective and bilinear transform setup code. In
+// the vector renderer it supports transform calibration from control points used by image and geometry mapping.
 // Solving simultaneous equations
 
 #pragma once

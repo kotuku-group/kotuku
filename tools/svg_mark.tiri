@@ -26,10 +26,10 @@ Parameters:
    import 'benchmark'
    import 'git'
 
-   global glSelf = obj.find('self')
-   global glPath = glSelf.workingPath
-   global glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
-   global glGitInfo = { }
+   glSelf = obj.find('self')
+   glPath = glSelf.workingPath
+   glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
+   glGitInfo = { }
 
 -----------------------------------------------------------------------------------------------------------------------
 
@@ -164,7 +164,7 @@ end
    -- Check for file parameter, show dialog if not provided
    svgFile = arg('file')
 
-   global glGitInfo = git.query(glPath)
+   glGitInfo = git.query(glPath)
 
    if not svgFile then
       print('No file parameter provided. Opening file dialog...')

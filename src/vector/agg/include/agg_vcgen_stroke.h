@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,18 +5,18 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Generates stroked outline vertices from centreline paths. Hooks into conv_stroke through conv_adaptor_vcgen and
+// math_stroke. In the vector renderer it applies stroke width, caps, joins, and miter rules as geometry.
+//
+// See Implementation agg_vcgen_stroke.cpp
 
-
-#ifndef AGG_VCGEN_STROKE_INCLUDED
-#define AGG_VCGEN_STROKE_INCLUDED
+#pragma once
 
 #include "agg_math_stroke.h"
 
-
 namespace agg
 {
-   // See Implementation agg_vcgen_stroke.cpp
-
    class vcgen_stroke {
       enum status_e {
          initial,
@@ -84,5 +83,3 @@ namespace agg
       unsigned                   m_out_vertex;
    };
 }
-
-#endif

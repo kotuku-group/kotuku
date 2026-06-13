@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines 8-bit alpha-mask adaptors and mask formats. Hooks into pixfmt_amask_adaptor, rendering_buffer, and scanline
+// coverage code that need a per-pixel mask. In the vector renderer it lets fills and images be clipped or modulated by
+// an alpha buffer before blending.
 
-//
-// scanline_u8 class
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_ALPHA_MASK_U8_INCLUDED
-#define AGG_ALPHA_MASK_U8_INCLUDED
+#pragma once
 
 #include <string.h>
 #include "agg_basics.h"
@@ -488,7 +486,3 @@ namespace agg
 
 
 }
-
-
-
-#endif

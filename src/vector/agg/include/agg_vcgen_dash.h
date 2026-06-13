@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,19 +5,20 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Generates dashed path segments from an input path and dash pattern. Hooks into conv_dash through conv_adaptor_vcgen.
+// In the vector renderer it creates the visible dash contours that are later stroked or rasterised.
 // Line dash generator
+//
+// See Implementation agg_vcgen_dash.cpp
 
-#ifndef AGG_VCGEN_DASH_INCLUDED
-#define AGG_VCGEN_DASH_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vertex_sequence.h"
 
 namespace agg
 {
-// See Implementation agg_vcgen_dash.cpp
-
 class vcgen_dash {
    enum max_dashes_e {
       max_dashes = 32
@@ -73,5 +73,3 @@ private:
 };
 
 }
-
-#endif

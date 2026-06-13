@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,20 +5,18 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Generates offset contour vertices from an input path. Hooks into conv_contour through conv_adaptor_vcgen. In the
+// vector renderer it expands or contracts shapes before they are rasterised as fills.
+//
+// See Implementation agg_vcgen_contour.cpp
 
-
-#ifndef AGG_VCGEN_CONTOUR_INCLUDED
-#define AGG_VCGEN_CONTOUR_INCLUDED
+#pragma once
 
 #include "agg_math_stroke.h"
 
 namespace agg
 {
-
-    //----------------------------------------------------------vcgen_contour
-    //
-    // See Implementation agg_vcgen_contour.cpp
-    //
     class vcgen_contour
     {
         enum status_e
@@ -85,5 +82,3 @@ namespace agg
     };
 
 }
-
-#endif

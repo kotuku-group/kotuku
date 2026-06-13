@@ -4285,6 +4285,18 @@ class objVectorWave : public objVector {
 
    // Action stubs
 
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting
