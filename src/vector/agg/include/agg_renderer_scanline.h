@@ -5,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Contains the scanline rendering algorithms that blend spans into a renderer. Hooks into rasterisers, scanline
+// containers, span allocators, span generators, and renderer_base. In the vector renderer it is the final bridge from
+// coverage spans to pixels in the destination buffer.
 
-#ifndef AGG_RENDERER_SCANLINE_INCLUDED
-#define AGG_RENDERER_SCANLINE_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_renderer_base.h"
@@ -541,5 +544,3 @@ namespace agg
       } //if(ras.rewind_scanlines())
    }
 }
-
-#endif

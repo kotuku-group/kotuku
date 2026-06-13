@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,17 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Wraps a vertex source and forces open polygon contours to emit close commands. Hooks into path_storage and converter
+// chains that require closed fill geometry. In the vector renderer it normalises shape contours before fill
+// rasterisation or later path conversion stages.
 
-
-#ifndef AGG_CONV_CLOSE_POLYGON_INCLUDED
-#define AGG_CONV_CLOSE_POLYGON_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //======================================================conv_close_polygon
     template<class VertexSource> class conv_close_polygon
     {
     public:
@@ -39,9 +38,6 @@ namespace agg
         bool          m_line_to;
     };
 
-
-
-    //------------------------------------------------------------------------
     template<class VertexSource>
     void conv_close_polygon<VertexSource>::rewind(unsigned path_id)
     {
@@ -50,9 +46,6 @@ namespace agg
         m_line_to = false;
     }
 
-
-
-    //------------------------------------------------------------------------
     template<class VertexSource>
     unsigned conv_close_polygon<VertexSource>::vertex(double* x, double* y)
     {
@@ -116,5 +109,3 @@ namespace agg
     }
 
 }
-
-#endif

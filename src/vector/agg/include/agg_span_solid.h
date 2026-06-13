@@ -5,9 +5,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Generates spans filled with a single colour. Hooks into renderer_scanline through a span allocator and any AGG colour
+// type. In the vector renderer it is the simplest fill source for solid-colour paths, strokes, and masks.
 
-#ifndef AGG_SPAN_SOLID_INCLUDED
-#define AGG_SPAN_SOLID_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -30,5 +32,3 @@ namespace agg
       color_type m_color;
    };
 }
-
-#endif

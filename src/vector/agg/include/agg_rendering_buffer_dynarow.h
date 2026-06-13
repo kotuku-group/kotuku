@@ -6,14 +6,16 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Implements a rendering buffer backed by dynamically allocated rows. Hooks into pixel formats and renderer_base when
+// row storage is owned by AGG. In the vector renderer it provides a self-managed target buffer for intermediate or
+// temporary rendering.
 //
 // class rendering_buffer_dynarow
 //
 //----------------------------------------------------------------------------
 
-#ifndef AGG_RENDERING_BUFFER_DYNAROW_INCLUDED
-#define AGG_RENDERING_BUFFER_DYNAROW_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -127,6 +129,3 @@ namespace agg
 
 
 }
-
-
-#endif

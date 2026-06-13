@@ -110,14 +110,13 @@ static void notify_def_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APT
 {
    auto Self = (extVectorScene *)CurrentContext();
 
-restart:
    if (!Self->Defs.size()) return; // Necessary when dealing with poor quality mapping libs
 
-   for (auto it = Self->Defs.begin(); it != Self->Defs.end(); it++) {
+   for (auto it = Self->Defs.begin(); it != Self->Defs.end(); ) {
       if (it->second IS Object) {
-         Self->Defs.erase(it);
-         goto restart;
+         it = Self->Defs.erase(it);
       }
+      else it++;
    }
 }
 

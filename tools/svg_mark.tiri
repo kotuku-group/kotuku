@@ -26,10 +26,10 @@ Parameters:
    import 'benchmark'
    import 'git'
 
-   global glSelf = obj.find('self')
-   global glPath = glSelf.workingPath
-   global glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
-   global glGitInfo = { }
+   glSelf = obj.find('self')
+   glPath = glSelf.workingPath
+   glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
+   glGitInfo = { }
 
 -----------------------------------------------------------------------------------------------------------------------
 

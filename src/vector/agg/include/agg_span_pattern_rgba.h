@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,26 +5,20 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
 //
-// Adaptation for high precision colors has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
+// Adaptation for high precision colors has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
 //
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
+// ---
+// Generates RGBA pattern spans from a repeated source buffer. Hooks into pattern filters, image accessors, and RGBA
+// renderer_scanline paths. In the vector renderer it fills geometry with tiled alpha-capable image patterns.
 
-
-#ifndef AGG_SPAN_PATTERN_RGBA_INCLUDED
-#define AGG_SPAN_PATTERN_RGBA_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //======================================================span_pattern_rgba
     template<class Source> class span_pattern_rgba
     {
     public:
@@ -84,6 +77,3 @@ namespace agg
     };
 
 }
-
-#endif
-

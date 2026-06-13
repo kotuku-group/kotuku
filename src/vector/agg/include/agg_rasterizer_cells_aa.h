@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -7,14 +6,14 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 //
-//----------------------------------------------------------------------------
-//
 // The author gratefully acknowleges the support of David Turner,
 // Robert Wilhelm, and Werner Lemberg - the authors of the FreeType
 // libray - in producing this work. See http://www.freetype.org for details.
+// ---
+// Stores and sorts anti-aliased rasteriser cells. Hooks into rasterizer_scanline_aa and compound rasterisers. In the
+// vector renderer it accumulates edge coverage before scanlines are emitted for blending.
 
-#ifndef AGG_RASTERIZER_CELLS_AA_INCLUDED
-#define AGG_RASTERIZER_CELLS_AA_INCLUDED
+#pragma once
 
 #include <string.h>
 #include <math.h>
@@ -535,5 +534,3 @@ namespace agg
         bool m_hit;
     };
 } // namespace
-
-#endif

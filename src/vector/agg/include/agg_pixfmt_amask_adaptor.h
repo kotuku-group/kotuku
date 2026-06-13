@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,20 +5,19 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Adapts a pixel format so writes are modulated by an alpha mask. Hooks into alpha_mask_u8, renderer_base, and scanline
+// rendering against masked targets. In the vector renderer it applies mask coverage on top of ordinary span alpha
+// during blending.
 
-
-#ifndef AGG_PIXFMT_AMASK_ADAPTOR_INCLUDED
-#define AGG_PIXFMT_AMASK_ADAPTOR_INCLUDED
-
+#pragma once
 
 #include <string.h>
 #include "agg_array.h"
 #include "agg_rendering_buffer.h"
 
-
 namespace agg
 {
-    //==================================================pixfmt_amask_adaptor
     template<class PixFmt, class AlphaMask> class pixfmt_amask_adaptor
     {
     public:
@@ -230,6 +228,3 @@ namespace agg
     };
 
 }
-
-#endif
-

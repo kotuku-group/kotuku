@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,16 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Wraps a vertex source and suppresses close-polygon commands. Hooks into converter chains that need open contours,
+// usually before stroke or marker processing. In the vector renderer it prevents fill-style closure from affecting line
+// and marker geometry.
 
-
-#ifndef AGG_CONV_UNCLOSE_POLYGON_INCLUDED
-#define AGG_CONV_UNCLOSE_POLYGON_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-    //====================================================conv_unclose_polygon
     template<class VertexSource> class conv_unclose_polygon
     {
     public:
@@ -43,5 +43,3 @@ namespace agg
     };
 
 }
-
-#endif

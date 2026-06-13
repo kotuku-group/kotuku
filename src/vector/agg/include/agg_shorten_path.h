@@ -6,10 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Provides the path-shortening algorithm used by shorten converters. Hooks into conv_shorten_path and any vertex source
+// that needs endpoint trimming. In the vector renderer it adjusts geometry length before stroke caps, dashes, or
+// markers are generated.
 
-
-#ifndef AGG_SHORTEN_PATH_INCLUDED
-#define AGG_SHORTEN_PATH_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vertex_sequence.h"
@@ -57,5 +59,3 @@ namespace agg
 
 
 }
-
-#endif

@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,30 +5,22 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+//
+// Adaptation for high precision colors has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
+//
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
+// ---
+// Defines grayscale colour types, conversions, gradients, and premultiplied-alpha helpers. Hooks into grayscale pixel
+// formats, span generators, image filters, and renderer_base specialisations. In the vector renderer it supports gray
+// targets and masks that still follow AGG's colour blending conventions.
 
-//
-// Adaptation for high precision colors has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
-//
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
-//
-// color types gray8, gray16
-//
-//----------------------------------------------------------------------------
-
-#ifndef AGG_COLOR_GRAY_INCLUDED
-#define AGG_COLOR_GRAY_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_color_rgba.h"
 
 namespace agg
 {
-
-    //===================================================================gray8
     struct gray8
     {
         typedef int8u  value_type;
@@ -402,8 +393,3 @@ namespace agg
 
 
 }
-
-
-
-
-#endif

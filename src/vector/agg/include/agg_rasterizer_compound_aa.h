@@ -1,36 +1,28 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.3
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
-// Permission to copy, use, modify, sell and distribute this software
-// is granted provided this copyright notice appears in all copies.
-// This software is provided "as is" without express or implied
-// warranty, and with no claim as to its suitability for any purpose.
+// Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice
+// appears in all copies.  This software is provided "as is" without express or implied warranty, and with no
+// claim as to its suitability for any purpose.
 //
-//----------------------------------------------------------------------------
+// The author gratefully acknowleges the support of David Turner, Robert Wilhelm, and Werner Lemberg - the authors
+// of the FreeType libray - in producing this work. See http://www.freetype.org for details.
 //
-// The author gratefully acknowleges the support of David Turner,
-// Robert Wilhelm, and Werner Lemberg - the authors of the FreeType
-// libray - in producing this work. See http://www.freetype.org for details.
+// Adaptation for 32-bit screen coordinates has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
+//
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
+// ---
+// Rasterises multiple styled layers into compound anti-aliased scanlines. Hooks into rasterizer_cells_aa, scanline
+// storage, and renderer_scanline. In the vector renderer it supports layered paths that need separate styles or winding
+// treatment in one pass.
 
-//
-// Adaptation for 32-bit screen coordinates has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
-//
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_RASTERIZER_COMPOUND_AA_INCLUDED
-#define AGG_RASTERIZER_COMPOUND_AA_INCLUDED
+#pragma once
 
 #include "agg_rasterizer_cells_aa.h"
 #include "agg_rasterizer_sl_clip.h"
 
 namespace agg
 {
-
-    //-----------------------------------------------------------cell_style_aa
     // A pixel cell. There're no constructors defined and it was done
     // intentionally in order to avoid extra overhead when allocating an
     // array of cells.
@@ -686,8 +678,3 @@ namespace agg
     }
 
 }
-
-
-
-#endif
-

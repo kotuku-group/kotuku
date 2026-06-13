@@ -6,10 +6,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Stores colour stops in a sampled gradient lookup table. Hooks into span_gradient and colour interpolators that sample
+// gradients by distance. In the vector renderer it turns vector gradient stops into fast per-pixel colour lookups.
 
-
-#ifndef AGG_GRADIENT_LUT_INCLUDED
-#define AGG_GRADIENT_LUT_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 #include "agg_dda_line.h"
@@ -232,8 +233,3 @@ namespace agg
         }
     }
 }
-
-
-
-
-#endif

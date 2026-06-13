@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,22 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Renders marker glyphs and path decorations. Hooks into marker converters, arrowhead sources, and renderer_base. In
+// the vector renderer it draws start, mid, and end decorations on stroked geometry.
 
-//
-// class renderer_markers
-//
-//----------------------------------------------------------------------------
-
-#ifndef AGG_RENDERER_MARKERS_INCLUDED
-#define AGG_RENDERER_MARKERS_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_renderer_primitives.h"
 
 namespace agg
 {
-
-    //---------------------------------------------------------------marker_e
     enum marker_e
     {
         marker_square,
@@ -697,5 +691,3 @@ namespace agg
     };
 
 }
-
-#endif

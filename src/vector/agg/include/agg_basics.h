@@ -6,10 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines AGG's fundamental types, path commands, rectangles, coverage constants, and small helpers. Hooks into nearly
+// every AGG header as the shared vocabulary for vertex sources, rasterisers, spans, and pixels. In the vector renderer
+// it is the common contract between path conversion, scanline generation, and pixel output.
 
-
-#ifndef AGG_BASICS_INCLUDED
-#define AGG_BASICS_INCLUDED
+#pragma once
 
 #include <cmath>
 #include <cstdint>
@@ -22,7 +24,6 @@
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
-#include "agg_config.h"
 
 #ifdef AGG_CUSTOM_ALLOCATOR
 #include "agg_allocator.h"
@@ -406,6 +407,3 @@ namespace agg
         return std::abs(v1 - v2) <= static_cast<T>(epsilon);
     }
 }
-
-#endif
-

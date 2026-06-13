@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,23 +5,21 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Builds arrowhead marker geometry as a small vertex source. Hooks into marker converters and marker renderers that
+// request start or end decoration geometry. In the vector renderer it provides reusable path vertices for stroked line
+// endpoints and marker-style drawing.
 //
 // Simple arrowhead/arrowtail generator
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_ARROWHEAD_INCLUDED
-#define AGG_ARROWHEAD_INCLUDED
+
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //===============================================================arrowhead
-    //
     // See implementation agg_arrowhead.cpp
-    //
+
     class arrowhead
     {
     public:
@@ -73,5 +70,3 @@ namespace agg
     };
 
 }
-
-#endif

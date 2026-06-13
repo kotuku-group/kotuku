@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Rasterises anti-aliased outlines directly from line geometry. Hooks into renderer_outline_aa, line_aa_basics, and
+// outline renderers. In the vector renderer it handles high-quality stroked outline paths when direct outline rendering
+// is preferred.
 
-#ifndef AGG_RASTERIZER_OUTLINE_AA_INCLUDED
-#define AGG_RASTERIZER_OUTLINE_AA_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_line_aa_basics.h"
@@ -16,14 +18,9 @@
 
 namespace agg
 {
-
-    //-------------------------------------------------------------------------
     inline bool cmp_dist_start(int d) { return d > 0;  }
     inline bool cmp_dist_end(int d)   { return d <= 0; }
 
-
-
-    //-----------------------------------------------------------line_aa_vertex
     // Vertex (x, y) with the distance to the next one. The last vertex has
     // the distance between the last and the first points
     struct line_aa_vertex
@@ -588,7 +585,3 @@ namespace agg
 
 
 }
-
-
-#endif
-
