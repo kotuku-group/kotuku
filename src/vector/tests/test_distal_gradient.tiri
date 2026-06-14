@@ -72,6 +72,19 @@ function newEllipseScene()
    return scene, gradient
 end
 
+function newClippedEllipseScene()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, spreadMethod=VSPREAD_CLIP, stops=rampStops()
+   })
+   check scene.mtAddDef('distal_clip_spread', gradient)
+
+   viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_clip_spread)' })
+   return scene, gradient
+end
+
 function newShapeScene()
    local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -186,6 +199,23 @@ end
    assert((centre.red + centre.green + centre.blue) > 0, 'Distal fill should draw inside the target path')
 end
 
+@Test function ClipSpreadConstrainsFillToVectorPath()
+   -- VSPREAD_CLIP keeps the distal field clipped to the target shape, unlike the default mode that expands coverage
+   -- to the padded SDF region.
+
+   local scene = newClippedEllipseScene()
+   local bmp = newBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   local just_outside = mGfx.ReadRGBPixel(bmp, 60, 26) -- just above the top of the ellipse (edge ~30)
+   assert((just_outside.red is 0) and (just_outside.green is 0) and (just_outside.blue is 0),
+      'SpreadMethod.CLIP should leave pixels outside the target path untouched')
+
+   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   assert((centre.red + centre.green + centre.blue) > 0,
+      'SpreadMethod.CLIP should still render inside the target path')
+end
+
 @Test function ExteriorGlowFadesToTransparent()
    -- The exterior glow alpha falls smoothly from full at the outline to zero at the padding edge.  Over a white
    -- background the green glow therefore blends toward white as distance increases: red/blue rise monotonically
@@ -285,9 +315,9 @@ end
    assert(second is third, 'Repeated distal renders should remain stable')
 end
 
-@Test function RadiusAltersInteriorGradient()
-   -- Radius feeds into the symmetric normalisation: a larger exterior margin increases max_abs, which compresses
-   -- the interior half of the ramp.  Two renders with markedly different padding must therefore differ.
+@Test function RadiusPreservesInteriorColourRange()
+   -- Radius controls the exterior margin.  It should not compress the target shape's interior colour range; even
+   -- with a large glow radius, the deepest interior must still reach the first stop.
 
    local small = newRectScene(5)
    local large = newRectScene(60)
@@ -299,13 +329,14 @@ end
 
    assert(small_hash != large_hash, 'Changing Radius should alter the distal render')
 
-   -- With more exterior padding the interior occupies a smaller slice of the ramp, so the rectangle centre does not
-   -- reach as deeply toward blue: its blue channel should be no greater than the lightly-padded render.
+   -- The rectangle centre is the deepest interior point, so it should stay strongly blue in both renders.  A large
+   -- exterior radius must not dilute the interior ramp toward the outline colour.
    local small_centre = mGfx.ReadRGBPixel(small_bmp, 60, 60)
    local large_centre = mGfx.ReadRGBPixel(large_bmp, 60, 60)
-   assert(large_centre.blue <= small_centre.blue + 4,
-      'Heavier padding should compress the interior ramp (large blue ' .. large_centre.blue ..
-      ' vs small blue ' .. small_centre.blue .. ')')
+   assert(small_centre.blue > 220,
+      'Light radius should let the deepest interior reach the blue first stop (got ' .. small_centre.blue .. ')')
+   assert(large_centre.blue > 220,
+      'Large radius should still let the deepest interior reach the blue first stop (got ' .. large_centre.blue .. ')')
 end
 
 @Test function RadiusFieldRoundTrips()

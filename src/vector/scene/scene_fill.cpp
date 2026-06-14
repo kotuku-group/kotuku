@@ -829,26 +829,27 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       transform *= Transform;
       transform.invert();
 
-      // Unlike the path-masked gradients, the SDF describes a signed field that extends beyond the target path.  To
-      // expose the exterior half of the ramp the coverage is widened to the full padded field extent (the path
-      // bounds inflated by the SDF margin) rather than the path itself.  Any active clip stack still constrains the
-      // result inside render_gradient, so genuine clip-paths remain respected.
-
       agg::rasterizer_scanline_aa<> sdf_raster;
-      agg::path_storage region;
-      region.move_to(region_x, region_y);
-      region.line_to(region_x + gradient_func.sdf_width(), region_y);
-      region.line_to(region_x + gradient_func.sdf_width(), region_y + gradient_func.sdf_height());
-      region.line_to(region_x, region_y + gradient_func.sdf_height());
-      region.close_polygon();
-      agg::conv_transform<agg::path_storage> region_trans(region, Transform);
-      sdf_raster.add_path(region_trans);
-      active_raster = &sdf_raster;
+
+      if (Gradient.SpreadMethod != VSPREAD::CLIP) {
+         // Unlike the path-masked gradients, the SDF describes a signed field that extends beyond the target path.
+         // To expose the exterior half of the ramp the coverage is widened to the full padded field extent rather
+         // than the path itself.  Any active clip stack still constrains the result inside render_gradient.
+
+         agg::path_storage region;
+         region.move_to(region_x, region_y);
+         region.line_to(region_x + gradient_func.sdf_width(), region_y);
+         region.line_to(region_x + gradient_func.sdf_width(), region_y + gradient_func.sdf_height());
+         region.line_to(region_x, region_y + gradient_func.sdf_height());
+         region.close_polygon();
+         agg::conv_transform<agg::path_storage> region_trans(region, Transform);
+         sdf_raster.add_path(region_trans);
+         active_raster = &sdf_raster;
+      }
 
       // The SDF glow uses a dedicated span generator that modulates per-pixel alpha by a smoothstep falloff so the
       // exterior fades to transparent over the padding distance and stops contributing once alpha reaches zero.
-      // Spread methods do not apply to a glow (the field is inherently bounded by the padding), so the field is
-      // sampled directly without a spread adaptor.
+      // If SpreadMethod is CLIP, the original target path raster remains active and clips the field to the fill.
 
       typedef agg::span_gradient_sdf<agg::rgba8, interpolator_type, color_array_type> sdf_span_type;
       typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, sdf_span_type> sdf_renderer_type;

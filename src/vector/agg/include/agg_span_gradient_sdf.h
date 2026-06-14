@@ -1,13 +1,8 @@
-// For Anti-Grain Geometry - Version 2.4
-// http://www.antigrain.org
+// Copyright (C) 2026 Paul Manias
 //
-// Derived from the contour-distance gradient contributed by Milan Marusinec.
-// Copyright (c) 2007-2008
-//
-// Permission to copy, use, modify, sell and distribute this software
-// is granted provided this copyright notice appears in all copies.
-// This software is provided "as is" without express or implied
-// warranty, and with no claim as to its suitability for any purpose.
+// Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice
+// appears in all copies.  This software is provided "as is" without express or implied warranty, and with no claim
+// as to its suitability for any purpose.
 // ---
 // Computes signed distance field values for SDF-style gradients.  Where the contour gradient maps the unsigned
 // distance to the path outline, this gradient is signed: the outline is pinned to the centre of the colour ramp,
@@ -20,7 +15,7 @@
 // the colour ramp (edge -> last stop) while still fading in alpha.  Left commented, the exterior holds the outline
 // colour (ramp midpoint) and fades only in alpha — the classic glow/halo look.
 
-//#define SDF_GLOW_RAMP_COLOUR
+#define SDF_GLOW_RAMP_COLOUR
 
 // Exterior glow alpha falloff curve.  The exterior coverage 'a' runs 1.0 at the path outline to 0.0 at the padding
 // edge; the selected curve reshapes how quickly the glow fades over that distance.  Define exactly one of the
@@ -329,9 +324,9 @@ namespace agg
 
       for (int y=0; y < height; y++) dt(image.data() + (y * width), width, fq.data(), spang.data(), spann.data());
 
-      // Apply the sign from the interior/exterior mask: inside negative, outside positive.  image[] holds
-      // squared distances, so the signed magnitude is sign * sqrt(image).  Track the extreme magnitude in
-      // each direction to build a symmetric normalisation that pins the outline (signed 0) to the centre.
+      // Apply the sign from the interior/exterior mask: inside negative, outside positive.  image[] holds squared
+      // distances, so the signed magnitude is sign * sqrt(image).  Track the interior extent independently from
+      // the padded exterior so the target shape always receives the full lower half of the colour ramp.
 
       float max_inside = 0.0f;  // Largest |d| found inside the shape
       float max_outside = 0.0f; // Largest |d| found outside the shape
@@ -342,14 +337,14 @@ namespace agg
          else { if (mag > max_outside) max_outside = mag; }
       }
 
-      const float max_abs = (max_inside > max_outside) ? max_inside : max_outside;
-
-      if (max_abs <= 0.0f) { m_buffer.clear(); m_alpha.clear(); }
+      if ((max_inside <= 0.0f) and (max_outside <= 0.0f)) { m_buffer.clear(); m_alpha.clear(); }
       else {
-         // Map signed_d in [-max_abs, +max_abs] linearly onto [0, 255].  signed_d == 0 (the outline) lands at
-         // 127.5, so the colour ramp midpoint tracks the path edge regardless of shape.
+         // Map the interior and exterior independently around the outline midpoint.  The deepest interior reaches
+         // the first stop, while the exterior reaches the final stop at the padding boundary.  This avoids a large
+         // glow radius compressing all target-shape pixels into a narrow section of the colour ramp.
 
-         const float scale = 127.5f / max_abs;
+         const float inside_scale  = (max_inside > 0.0f) ? (127.5f / max_inside) : 0.0f;
+         const float outside_scale = (margin > 0) ? (127.5f / float(margin)) : 0.0f;
 
          // Exterior alpha is normalised against the padding distance (margin), independently of the colour
          // mapping.  This guarantees the glow fades to fully transparent exactly at the padding edge no matter how
@@ -361,8 +356,10 @@ namespace agg
 
          for (int l=0, total=width * height; l < total; l++) {
             const float mag = sqrtf(image[l]);
-            const float signed_d = inside[l] ? -mag : mag;
-            int v = int(127.5f + (signed_d * scale));
+            int v;
+            if (inside[l]) v = int(127.5f - (mag * inside_scale));
+            else v = int(127.5f + (mag * outside_scale));
+
             if (v < 0) v = 0;
             else if (v > 255) v = 255;
             m_buffer[l] = int8u(v);
