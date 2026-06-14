@@ -1,6 +1,8 @@
 
 //#include "../vector.h"
 
+#include "agg_span_gradient_contour.h" // Complete type required for the gradient's ContourCache
+
 #include "colour.cpp"
 #include "gradient.cpp"
 #include "image.cpp"

@@ -107,6 +107,8 @@ database on the success of this function.
 
 -ERRORS-
 Okay: Proxy deleted.
+Failed
+CreateObject
 
 -TAGS-
 blocking, mutates-object
@@ -174,10 +176,10 @@ The following example searches for all proxies available for use on port 80 (HTT
 <pre>
 objProxy::create proxy;
 if (proxy.ok()) {
-   if (prxFind(*proxy, 80) IS ERR::Okay) {
+   if (!prxFind(*proxy, 80)) {
       do {
          ...
-      } while (prxFindNext(*proxy) IS ERR::Okay);
+      } while (!prxFindNext(*proxy));
    }
 }
 </pre>
@@ -189,6 +191,7 @@ int Enabled: Set to `true` to return only enabled proxies, `false` for disabled 
 -ERRORS-
 Okay: A proxy was discovered.
 NoSearchResult: No matching proxy was discovered.
+CreateObject
 
 -TAGS-
 blocking, mutates-object
@@ -533,7 +536,7 @@ static ERR get_record(extProxy *Self)
    const std::lock_guard<std::recursive_mutex> lock(glProxyMutex);
 
    if (auto config = get_proxy_config()) {
-      if (config->read(Self->GroupName, "Server", Self->Server) IS ERR::Okay) {
+      if (!config->read(Self->GroupName, "Server", Self->Server)) {
          config->read(Self->GroupName, "NetworkFilter", Self->NetworkFilter);
          config->read(Self->GroupName, "GatewayFilter", Self->GatewayFilter);
          config->read(Self->GroupName, "Username", Self->Username);

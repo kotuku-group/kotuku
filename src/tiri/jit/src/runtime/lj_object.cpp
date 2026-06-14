@@ -48,7 +48,7 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
       log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
 
       auto error = FreeResource(obj->uid);
-      if ((error IS ERR::Okay) or (error IS ERR::DoesNotExist)) {
+      if ((!error) or (error IS ERR::DoesNotExist)) {
          obj->uid = 0;
          obj->ptr = nullptr;
       }
@@ -103,7 +103,7 @@ int lj_object_pairs(lua_State *L)
 
    Field *fields;
    int total;
-   if (def->classptr->get(FID_Dictionary, fields, total) IS ERR::Okay) {
+   if (!def->classptr->get(FID_Dictionary, fields, total)) {
       // Create the iterator closure with upvalues
       lua_pushlightuserdata(L, fields);
       lua_pushinteger(L, total);
@@ -148,7 +148,7 @@ int lj_object_ipairs(lua_State *L)
 
    Field *fields;
    int total;
-   if (def->classptr->get(FID_Dictionary, fields, total) IS ERR::Okay) {
+   if (!def->classptr->get(FID_Dictionary, fields, total)) {
       // Create the iterator closure with upvalues
       lua_pushlightuserdata(L, fields);
       lua_pushinteger(L, total);
@@ -333,7 +333,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
 
    objMetaClass *src_class;
    Field *field;
-   if (Obj->classptr->findField(Key->hash, &field, &src_class) IS ERR::Okay) {
+   if (!Obj->classptr->findField(Key->hash, &field, &src_class)) {
       auto flags = field->Flags;
       if (not (flags & FDF_R)) return -1;  // Not readable
 
@@ -374,7 +374,7 @@ extern "C" int ir_object_field_type_write(GCobject *Obj, GCstr *Key, int &Offset
 
    objMetaClass *src_class;
    Field *field;
-   if (Obj->classptr->findField(Key->hash, &field, &src_class) IS ERR::Okay) {
+   if (!Obj->classptr->findField(Key->hash, &field, &src_class)) {
       auto flags = field->Flags;
       if (not (flags & FD_WRITE)) return -1;           // Not writable (FD_INIT excluded)
       if (flags & (FD_FLAGS|FD_LOOKUP)) return -1;     // Special write handlers, not simple stores

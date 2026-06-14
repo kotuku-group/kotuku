@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,18 +5,16 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+//
+// Adaptation for high precision colors has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
+//
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
+// ---
+// Defines RGBA pixel formats, blender policies, and packed/unpacked pixel access. Hooks into renderer_base, span
+// generators, image filters, and rendering_buffer. In the vector renderer it is the main destination pixel layer for
+// alpha-composited scene rendering.
 
-//
-// Adaptation for high precision colors has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
-//
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
-
-#ifndef AGG_PIXFMT_RGBA_INCLUDED
-#define AGG_PIXFMT_RGBA_INCLUDED
+#pragma once
 
 #include <cstring>
 #include <cmath>
@@ -2359,6 +2356,3 @@ namespace agg
     typedef pixfmt_alpha_blend_rgba<blender_abgr64_pre, rendering_buffer, pixel64_type> pixfmt_abgr64_pre;
     typedef pixfmt_alpha_blend_rgba<blender_bgra64_pre, rendering_buffer, pixel64_type> pixfmt_bgra64_pre;
 }
-
-#endif
-

@@ -168,7 +168,10 @@ static void notify_free_morph(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extVector *)CurrentContext();
-   if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) Self->ClipMask = nullptr;
+   if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) {
+      Self->ClipMask = nullptr;
+      Self->ClipCache.clear();
+   }
 }
 
 //********************************************************************************************************************
@@ -191,11 +194,11 @@ Debug: Internal functionality for debugging.
 
 This internal method prints comprehensive debugging information to the log.
 
--TAGS-
-private
-
 -ERRORS-
 Okay:
+
+-TAGS-
+private
 
 *********************************************************************************************************************/
 
@@ -276,6 +279,8 @@ static ERR VECTOR_Enable(extVector *Self)
 
 static ERR VECTOR_Free(extVector *Self)
 {
+   Self->ClipCache.clear();
+
    if (Self->ClipMask)   UnsubscribeAction(Self->ClipMask, AC::Free);
    if (Self->Transition) UnsubscribeAction(Self->Transition, AC::Free);
    if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
@@ -285,6 +290,7 @@ static ERR VECTOR_Free(extVector *Self)
    if (Self->Fill[1].GradientTable) { delete Self->Fill[1].GradientTable; Self->Fill[1].GradientTable = nullptr; }
    if (Self->Stroke.GradientTable)  { delete Self->Stroke.GradientTable; Self->Stroke.GradientTable = nullptr; }
    if (Self->DashArray)             { delete Self->DashArray; Self->DashArray = nullptr; }
+   if (Self->IsolatedBuffer)        { delete Self->IsolatedBuffer; Self->IsolatedBuffer = nullptr; }
 
    // Patch the nearest vectors that are linked to this one.
    if (Self->Next) Self->Next->Prev = Self->Prev;
@@ -364,12 +370,12 @@ attached to the vector then it should be noted that this will affect downstream 
 -INPUT-
 struct(*VectorMatrix) Matrix: Reference to the structure that requires removal.
 
--TAGS-
-mutates-object, closes-handle
-
 -ERRORS-
 Okay:
 NullArgs:
+
+-TAGS-
+mutates-object, closes-handle
 
 *********************************************************************************************************************/
 
@@ -421,14 +427,15 @@ int(VBF) Flags: Optional flags.
 &double Width: The width of the boundary is returned here.
 &double Height: The height of the boundary is returned here.
 
--TAGS-
-pure-query
-
 -ERRORS-
 Okay
 NullArgs
 NoData: The vector does not have a computable path.
 NotPossible: The vector does not support path generation.
+NotInitialised
+
+-TAGS-
+pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -600,12 +607,13 @@ transform is no longer required before then, it can be manually removed with ~Ve
 &resource(*VectorMatrix) Transform: A reference to the new transform structure is returned here.
 int End: If `true`, the matrix priority is lowered by inserting it at the end of the transform list.
 
--TAGS-
-mutates-object, object-owns-result, creates-resource
-
 -ERRORS-
 Okay:
 NullArgs:
+AllocMemory
+
+-TAGS-
+mutates-object, object-owns-result, creates-resource
 
 *********************************************************************************************************************/
 
@@ -614,7 +622,7 @@ static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
    if (!Args) return ERR::NullArgs;
 
    VectorMatrix *transform;
-   if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform)) {
 
       transform->Vector = Self;
       transform->ScaleX = 1.0;
@@ -655,15 +663,15 @@ Transforms are taken into account, as are clip masks.
 double X: The X coordinate of the point.
 double Y: The Y coordinate of the point.
 
--TAGS-
-pure-query
-
 -ERRORS-
 Okay: The point is in the path.
 False: The point is not in the path.
 NullArgs:
 NoData: The vector is unable to generate a path based on its current values.
 NoSupport: The vector type does not support path generation.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -736,12 +744,12 @@ error code.
 -INPUT-
 int Position: Specify a relative position index here (-ve to move backwards, +ve to move forwards)
 
--TAGS-
-mutates-object
-
 -ERRORS-
 Okay:
 NullArgs:
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -824,12 +832,13 @@ The prototype for the `Callback` is `ERR callback(*Vector, FM Event)`
 int(FM) Mask: Defines the feedback events required by the client.  Set to `0xffffffff` if all messages are required.
 ptr(func) Callback: The function that will receive feedback events.
 
--TAGS-
-mutates-object, callback-held
-
 -ERRORS-
 Okay:
 NullArgs:
+AllocMemory
+
+-TAGS-
+mutates-object, callback-held
 
 *********************************************************************************************************************/
 
@@ -880,15 +889,15 @@ The prototype for the `Callback` is `ERR callback(*Vector, *InputEvent)`
 flags(JTYPE) Mask: Combine `JTYPE` flags to define the input messages required by the client.  Set to zero to remove an existing subscription.
 ptr(func) Callback: Reference to a function that will receive input messages.
 
--TAGS-
-mutates-object, callback-held
-
 -ERRORS-
 Okay:
 NullArgs:
 FieldNotSet: The VectorScene has no reference to a Surface.
 AllocMemory:
 Function: A call to ~Display.SubscribeInput() failed.
+
+-TAGS-
+mutates-object, callback-held
 
 *********************************************************************************************************************/
 
@@ -948,15 +957,15 @@ If the callback returns `ERR::Terminate` then the subscription will be ended.  A
 -INPUT-
 ptr(func) Callback: Reference to a callback function that will receive input messages.
 
--TAGS-
-mutates-object, callback-held
-
 -ERRORS-
 Okay:
 NullArgs:
 FieldNotSet: The @VectorScene.Surface field has not been defined.
 AllocMemory:
 Function: A call to ~Display.SubscribeInput() failed.
+
+-TAGS-
+mutates-object, callback-held
 
 *********************************************************************************************************************/
 
@@ -997,13 +1006,15 @@ ptr(func) Callback: A function to call with the path coordinates.
 double Scale: Set to `1.0` (recommended) to trace the path at a scale of 1 to 1.
 int Transform: Set to `true` if all transforms applicable to the vector should be applied to the path.
 
--TAGS-
-pure-query, callback-inlines
-
 -ERRORS-
 Okay:
 NullArgs:
 NoData: The vector does not define a path.
+Terminate
+Function
+
+-TAGS-
+pure-query, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -1378,7 +1389,7 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
    }
 
    std::string_view next;
-   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
+   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); !error) {
       Self->FillString = Value;
 
       if (not next.empty()) {
@@ -1732,11 +1743,13 @@ static ERR VECTOR_SET_Mask(extVector *Self, extVectorClip *Value)
       if (Self->ClipMask) {
          UnsubscribeAction(Self->ClipMask, AC::Free);
          Self->ClipMask = nullptr;
+         Self->ClipCache.clear();
       }
       return ERR::Okay;
    }
    else if (Value->classID() IS CLASSID::VECTORCLIP) {
       if (Self->ClipMask) UnsubscribeAction(Self->ClipMask, AC::Free);
+      Self->ClipCache.clear();
       if (Value->initialised()) { // Ensure that the mask is initialised.
          SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_clipmask));
          Self->ClipMask = Value;
@@ -1974,9 +1987,9 @@ composed of lines at 45 degree increments and `FAST` if points are aligned to wh
 -FIELD-
 PathTimestamp: This counter is modified each time the path is regenerated.
 
-The PathTimestamp can be used as a basic means of recording the state of the vector's path, and checking that state
-for changes at a later time.  For more active monitoring and response, clients should subscribe to the `PATH_CHANGED`
-event.
+The PathTimestamp is a counter that can be used as a basic means of recording the state of the vector's path, and
+checking that state for changes at a later time.  For more active monitoring and response, clients should subscribe
+to the `PATH_CHANGED` event.
 
 -FIELD-
 Prev: The previous vector in the branch, or `NULL`.
@@ -2539,18 +2552,18 @@ static const FieldArray clVectorFields[] = {
    // Virtual fields
    { "ClipRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW,  VECTOR_GET_ClipRule, VECTOR_SET_ClipRule, &clFillRule },
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
-   { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,           VECTOR_GET_DisplayScale },
+   { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                    VECTOR_GET_DisplayScale },
    { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Mask, VECTOR_SET_Mask },
    { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Morph, VECTOR_SET_Morph },
    { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
    { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE,        VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clMorphFlags },
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,             VECTOR_GET_NumericID, VECTOR_SET_NumericID },
    { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_SID, VECTOR_SET_SID },
-   { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,         nullptr, VECTOR_SET_ResizeEvent },
-   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
+   { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,                  nullptr, VECTOR_SET_ResizeEvent },
+   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       VECTOR_GET_Sequence },
    { "Stroke",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Stroke, VECTOR_SET_Stroke },
    { "StrokeColour", FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE,   VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour },
-   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
+   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
    { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Transition, VECTOR_SET_Transition },
    { "Fill",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Fill, VECTOR_SET_Fill },
    { "FillColour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  VECTOR_GET_FillColour, VECTOR_SET_FillColour },

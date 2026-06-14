@@ -6,7 +6,7 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "frame_manager.h"
 #include "../debug/lj_jit.h"
@@ -895,4 +895,4 @@ extern void jit_frame_unit_tests(int &Passed, int &Total)
    }
 }
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

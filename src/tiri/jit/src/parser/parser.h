@@ -6,7 +6,7 @@
 #include "lj_obj.h"
 #include "lexer.h"
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 extern void parser_unit_tests(int &Passed, int &Total);
 #endif
 

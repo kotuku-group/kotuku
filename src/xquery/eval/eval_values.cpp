@@ -1912,7 +1912,7 @@ XPathVal XPathEvaluator::evaluate_computed_element_constructor(const XPathNode *
       if (not context.context_node) [[unlikely]] return std::nullopt;
 
       uint32_t resolved_hash = 0;
-      if (xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash) IS ERR::Okay) return resolved_hash;
+      if (!xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash)) return resolved_hash;
       return std::nullopt;
    };
 
@@ -2037,7 +2037,7 @@ XPathVal XPathEvaluator::evaluate_computed_attribute_constructor(const XPathNode
       if (not context.context_node) [[unlikely]] return std::nullopt;
 
       uint32_t resolved_hash = 0;
-      if (xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash) IS ERR::Okay) return resolved_hash;
+      if (!xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash)) return resolved_hash;
       return std::nullopt;
    };
 

@@ -99,7 +99,7 @@ static ERR get_windows_timezone_info(std::string_view ZoneID, const int StartYea
 {
    rkTimeZoneInfo host_info;
    ERR error = winGetTimeZoneInfo(ZoneID, StartYear, EndYear, host_info);
-   if (error IS ERR::Okay) { }
+   if (!error) { }
    else return error;
 
    Info = TimeZoneInfo();
@@ -800,7 +800,7 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (not valid_timezone_year_range(Args->StartYear, Args->EndYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
-   if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA, (APTR *)&tz) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA, (APTR *)&tz)) {
       new (tz) struct TimeZoneInfo;
       TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler);
 
@@ -822,7 +822,7 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
          else error = ERR::Search;
 #endif
 
-         if (error IS ERR::Okay) {
+         if (!error) {
             Args->Info = tz;
             return ERR::Okay;
          }

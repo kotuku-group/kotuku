@@ -69,6 +69,56 @@ end
    assertCommand(path, 0, PE_Move, 1, 2, 'replacement move')
 end
 
+@Test function PathXYMovesComputedBoundary()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+
+   err, x, y, width, height = path.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   assertNear(x, 10, 'default path boundary X')
+   assertNear(y, 20, 'default path boundary Y')
+   assertNear(width, 30, 'default path boundary width')
+   assertNear(height, 30, 'default path boundary height')
+
+   path.x = 100
+   path.y = 200
+
+   err, x, y, width, height = path.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   assertNear(x, 100, 'moved path boundary X')
+   assertNear(y, 200, 'moved path boundary Y')
+   assertNear(width, 30, 'moved path boundary width')
+   assertNear(height, 30, 'moved path boundary height')
+
+   assertNear(path.x, 100, 'reported path X')
+   assertNear(path.y, 200, 'reported path Y')
+   assertCommand(path, 0, PE_Move, 10, 20, 'path commands remain unchanged after X/Y placement')
+
+   check path.acMoveToPoint(25, 35, 0, MTF_X | MTF_Y)
+
+   err, x, y, width, height = path.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   assertNear(x, 25, 'MoveToPoint path boundary X')
+   assertNear(y, 35, 'MoveToPoint path boundary Y')
+   assertNear(width, 30, 'MoveToPoint path boundary width')
+   assertNear(height, 30, 'MoveToPoint path boundary height')
+end
+
+@Test function PathXYReadFreshWithoutBoundary()
+   -- X/Y getters must compute the path bounds on demand; reading them without a prior draw or
+   -- GetBoundary() call previously returned stale or uninitialised bounds.
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+
+   assertNear(path.x, 10, 'path X read directly after setting the sequence')
+   assertNear(path.y, 20, 'path Y read directly after setting the sequence')
+
+   path.sequence = 'M 50 60 L 70 60 L 70 80 Z'
+
+   assertNear(path.x, 50, 'path X read after replacing the sequence')
+   assertNear(path.y, 60, 'path Y read after replacing the sequence')
+end
+
 @Test function GeneratedCurvesApplyAndTrace()
    err, source = mVec.GeneratePath('M 0 0 C 10 0 20 20 30 30 Q 40 40 50 50')
    check err

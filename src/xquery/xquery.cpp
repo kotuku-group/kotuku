@@ -48,7 +48,7 @@ extern "C" ERR load_regex(void)
 
 //********************************************************************************************************************
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 #include "unit_tests.cpp"
 #endif
 
@@ -75,7 +75,7 @@ static ERR MODExpunge(void)
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
    run_unit_tests(Options, *Passed, *Total);
 #else
    kt::Log log(__FUNCTION__);

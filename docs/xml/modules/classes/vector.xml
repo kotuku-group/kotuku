@@ -136,6 +136,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NoData">The vector does not have a computable path.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="NotPossible">The vector does not support path generation.</error>
       </result>
@@ -158,6 +159,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, object-owns-result, creates-resource</tags>
@@ -220,6 +222,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, callback-held</tags>
@@ -293,8 +296,10 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Terminate">Termination requested</error>
         <error code="NoData">The vector does not define a path.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
       <tags>pure-query, callback-inlines</tags>
     </method>
@@ -597,7 +602,7 @@
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>The PathTimestamp can be used as a basic means of recording the state of the vector's path, and checking that state for changes at a later time.  For more active monitoring and response, clients should subscribe to the <code>PATH_CHANGED</code> event.</p>
+<p>The PathTimestamp is a counter that can be used as a basic means of recording the state of the vector's path, and checking that state for changes at a later time.  For more active monitoring and response, clients should subscribe to the <code>PATH_CHANGED</code> event.</p>
       </description>
     </field>
 

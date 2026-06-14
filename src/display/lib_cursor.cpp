@@ -146,14 +146,14 @@ objPointer * AccessPointer(void)
    objPointer *pointer = nullptr;
 
    if (!glPointerID) {
-      if (FindObject("SystemPointer", CLASSID::POINTER, &glPointerID) IS ERR::Okay) {
+      if (!FindObject("SystemPointer", CLASSID::POINTER, &glPointerID)) {
          AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer);
       }
       return pointer;
    }
 
    if (AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer) IS ERR::NoMatchingObject) {
-      if (FindObject("SystemPointer", CLASSID::POINTER, &glPointerID) IS ERR::Okay) {
+      if (!FindObject("SystemPointer", CLASSID::POINTER, &glPointerID)) {
          AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer);
       }
    }
@@ -405,6 +405,8 @@ OutOfRange: The cursor ID is outside of acceptable range.
 AccessObject: Failed to access the mouse pointer.
 LockFailed
 NothingDone
+Args
+True
 
 -TAGS-
 mutates-object, blocking, case-insensitive
@@ -512,7 +514,7 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
                if (ScopedObjectLock<objSurface> surface(pointer->SurfaceID, 1000); surface.granted()) {
                   if (surface->DisplayID) {
                      if (ScopedObjectLock<objDisplay> display(surface->DisplayID, 1000); display.granted()) {
-                        if ((display->get(FID_WindowHandle, xwin) IS ERR::Okay) and (xwin)) {
+                        if ((!display->get(FID_WindowHandle, xwin)) and (xwin)) {
                            xcursor = get_x11_cursor(CursorID);
                            XDefineCursor(XDisplay, (Window)xwin, xcursor);
                            XFlush(XDisplay);
@@ -744,7 +746,7 @@ ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes
       copymem(Datatypes.data(), pointer->DragData, std::min(sizeof(pointer->DragData), Datatypes.size()));
 
       SURFACEINFO *info;
-      if (gfx::GetSurfaceInfo(Surface, &info) IS ERR::Okay) {
+      if (!gfx::GetSurfaceInfo(Surface, &info)) {
          pointer->DragParent = info->ParentID;
       }
 

@@ -21,6 +21,46 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Move</name>
+      <comment>Moves the vector to a new position.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves the vector to a new fixed position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Resize</name>
+      <comment>Changes the vector's area.</comment>
+      <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Width">The new width of the object.</param>
+        <param type="DOUBLE" name="Height">The new height of the object.</param>
+        <param type="DOUBLE" name="Depth">The new depth of the object.</param>
+      </input>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
       <name>Amplitude</name>

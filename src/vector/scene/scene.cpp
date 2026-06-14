@@ -33,25 +33,33 @@ Vector definitions can be saved and loaded from permanent storage by using the @
 #include "agg_renderer_outline_image.h"
 #include "agg_conv_smooth_poly1.h"
 #include "agg_span_gradient.h"
+#include "agg_span_gouraud_rgba.h"
+#include "agg_span_gouraud_rgba_linear.h"
+#include "agg_span_gouraud_rgba_quantise.h"
 #include "agg_conv_contour.h"
 
 //#include "../vector.h"
 
 //********************************************************************************************************************
 
+class SceneRenderer;
 class VectorState;
 
 static void fill_image(VectorState &, const TClipRectangle<double> &, agg::path_storage &, VSM,
    const agg::trans_affine &, double, double, extVectorImage &, agg::renderer_base<agg::pixfmt_psl> &,
-   agg::rasterizer_scanline_aa<> &, double Alpha = 1.0);
+   agg::rasterizer_scanline_aa<> &, double Alpha = 1.0, SceneRenderer *Render = nullptr);
 
 static void fill_gradient(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    const agg::trans_affine &, double, double, extVectorGradient &, GRADIENT_TABLE *,
-   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &);
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
+
+static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extVectorGradient &, double,
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *Render = nullptr);
 
 static void fill_pattern(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    VSM, const agg::trans_affine &, double ViewWidth, double, extVectorPattern &,
-   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &);
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
 
 //********************************************************************************************************************
 
@@ -109,14 +117,13 @@ static void notify_def_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APT
 {
    auto Self = (extVectorScene *)CurrentContext();
 
-restart:
    if (!Self->Defs.size()) return; // Necessary when dealing with poor quality mapping libs
 
-   for (auto it = Self->Defs.begin(); it != Self->Defs.end(); it++) {
+   for (auto it = Self->Defs.begin(); it != Self->Defs.end(); ) {
       if (it->second IS Object) {
-         Self->Defs.erase(it);
-         goto restart;
+         it = Self->Defs.erase(it);
       }
+      else it++;
    }
 }
 
@@ -232,15 +239,15 @@ At the time of writing, the provided object must belong to one of the following 
 strview Name: The unique name to associate with the definition.
 obj Def: Reference to the definition object.
 
--TAGS-
-mutates-object, retains-input
-
 -ERRORS-
 Okay
 NullArgs
 ResourceExists: The given name is already in use as a definition.
 InvalidObject: The definition is not an accepted object class.
 UnsupportedOwner: The definition is not owned by the scene.
+
+-TAGS-
+mutates-object, retains-input
 
 *********************************************************************************************************************/
 
@@ -301,11 +308,11 @@ Debug: Internal functionality for debugging.
 
 This internal method prints comprehensive information that describes the scene graph to the log.
 
--TAGS-
-private
-
 -ERRORS-
 Okay:
+
+-TAGS-
+private
 
 *********************************************************************************************************************/
 
@@ -314,7 +321,7 @@ static ERR VECTORSCENE_Debug(extVectorScene *Self)
    kt::Log log("debug_tree");
 
    kt::vector<ChildEntry> list;
-   if ((ListChildren(Self->UID, &list) IS ERR::Okay) and (list.size() > 1)) {
+   if ((!ListChildren(Self->UID, &list)) and (list.size() > 1)) {
       log.msg("Scene #%d has %d children:", Self->UID, int(std::ssize(list)-1));
       for (auto &rec : list) {
          auto obj = GetObjectPtr(rec.ObjectID);
@@ -374,13 +381,13 @@ Definitions are created with the #AddDef() method.
 strview Name: The name of the definition.
 &obj Def: A pointer to the definition object is returned here if discovered.
 
--TAGS-
-pure-query, object-owns-result
-
 -ERRORS-
 Okay
 NullArgs
 Search: A definition with the given Name was not found.
+
+-TAGS-
+pure-query, object-owns-result
 -END-
 
 *********************************************************************************************************************/
@@ -476,7 +483,7 @@ static ERR VECTORSCENE_Free(extVectorScene *Self, APTR Args)
 
    if (Self->SurfaceID) {
       OBJECTPTR surface;
-      if (AccessObject(Self->SurfaceID, 5000, &surface) IS ERR::Okay) {
+      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
          UnsubscribeAction(surface, AC::NIL);
          ReleaseObject(surface);
       }
@@ -597,13 +604,13 @@ with `strhash()` and using that as the ID.
 int ID: The ID to search for.
 &obj Result: This parameter will be updated with the discovered vector, or `NULL` if not found.
 
--TAGS-
-pure-query, object-owns-result
-
 -ERRORS-
 Okay
 NullArgs
 Search: A vector with a matching ID was not found.
+
+-TAGS-
+pure-query, object-owns-result
 -END-
 
 *********************************************************************************************************************/
@@ -674,10 +681,8 @@ static ERR SET_Bitmap(extVectorScene *Self, objBitmap *Value)
 -FIELD-
 Defs: Obtain direct access to the SVG definition table.
 
-Reading the Defs field will return a direct pointer to the SVG definition table, which is declared as a key-value C++
-type:
-
-<pre>ankerl::unordered_dense::map&lt;std::string, OBJECTPTR&gt;</pre>
+Reading the Defs field returns direct access to the SVG definition table, which maps definition names to vector
+objects.
 
 Direct access is provided for internal use only and not for the benefit of client programs.
 

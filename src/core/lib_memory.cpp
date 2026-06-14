@@ -101,7 +101,7 @@ static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_fr
 TrackResource: Assign a resource manager to an address, or update an existing one.
 
 TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
-dispatch cleanup through the supplied !ResourceManager.  If the resource identifier is already registered, the existing
+dispatch cleanup through the supplied `ResourceManager`.  If the resource identifier is already registered, the existing
 record is updated with the non-zero values provided by the caller.
 
 The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
@@ -120,6 +120,7 @@ struct(ResourceManager) Manager: Resource manager used to release the resource.
 -ERRORS-
 Okay
 NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
+InUse
 
 -TAGS-
 retains-input, does-not-take-ownership, blocking, thread-safe
@@ -213,7 +214,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (AllocMemory(1000, MEM::DATA, &address) IS ERR::Okay) {
+if (!AllocMemory(1000, MEM::DATA, &address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -396,6 +397,7 @@ res ID: The unique identifier of the resource to be freed.
 Okay: The resource was successfully freed or marked for delayed collection.
 DoesNotExist: The specified memory block identifier is not valid or already freed.
 InUse: The resource is busy.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).
+Terminate
 
 -TAGS-
 closes-handle, blocking
@@ -457,7 +459,7 @@ ERR FreeResource(RESOURCEID ResourceID)
       else error = free_private_memory_resource(ResourceID);
    }
 
-   if (error IS ERR::Okay) {
+   if (!error) {
       std::lock_guard lock(glmResources);
       erase_resource(*resource);
    }
@@ -476,7 +478,7 @@ following example illustrates correct use of this function:
 
 <pre>
 MemInfo info;
-if (MemoryInfo(memid, &info) IS ERR::Okay) {
+if (!MemoryInfo(memid, &info)) {
    log.msg("Memory block #%d is %d bytes large.", info.MemoryID, info.Size);
 }
 </pre>
@@ -558,7 +560,7 @@ ERR ProtectMemory(APTR Address, MEM Flags)
    if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
 
    MemInfo meminfo;
-   if (MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) IS ERR::Okay) {
+   if (!MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo))) {
       if ((meminfo.Flags & MEM::PROTECTED) IS MEM::NIL) {
          log.warning("Memory block at %p is not protected.", Address);
          return ERR::Args;
@@ -641,7 +643,7 @@ ERR ReallocMemory(APTR Address, uint32_t NewSize, APTR *Memory)
 
    // Allocate the new memory block and copy the data across
 
-   if (AllocMemory(NewSize, meminfo.Flags, Memory) IS ERR::Okay) {
+   if (!AllocMemory(NewSize, meminfo.Flags, Memory)) {
       auto copysize = (NewSize < meminfo.Size) ? NewSize : meminfo.Size;
       copymem(Address, *Memory, copysize);
       FreeResource(Address);

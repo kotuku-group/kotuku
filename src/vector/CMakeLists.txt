@@ -29,28 +29,19 @@ target_sources (${MOD} PRIVATE
    "${CMAKE_CURRENT_SOURCE_DIR}/painters/painters.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/transformers/transformers.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/colourmaps.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_arc.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_arrowhead.cpp"
+   #"${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_arrowhead.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_bezier_arc.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_bspline.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_curves.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_contour.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_dash.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_markers_term.cpp"
+   #"${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_markers_term.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_smooth_poly1.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_stroke.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_bspline.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_image_filters.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_line_aa_basics.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_line_profile_aa.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_sqrt_tables.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_affine.cpp"
-   #${CMAKE_CURRENT_SOURCE_DIR}/agg/src/gpc/gpc.c
-   #${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_double_path.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_single_path.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vpgen_clip_polygon.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vpgen_clip_polyline.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vpgen_segmentator.cpp")
+   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_single_path.cpp")
 
 target_include_directories (${MOD} PRIVATE
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/include")
@@ -77,3 +68,7 @@ flute_test(vector_readpainter "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_readpainte
 flute_test(vector_parse_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parse_transform.tiri")
 flute_test(vector_convolve_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_convolve_validation.tiri")
 flute_test(vector_apply_path "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_apply_path.tiri")
+flute_test(vector_clip_mask_cache "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clip_mask_cache.tiri")
+flute_test(vector_gouraud_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gouraud_gradient.tiri")
+flute_test(vector_isolated_bitmap_pool "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_isolated_bitmap_pool.tiri")
+flute_test(vector_shared_invalidation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_invalidation.tiri")

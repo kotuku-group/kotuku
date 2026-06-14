@@ -222,7 +222,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
    }
 
    IPAddress server_ip;
-   if (net::StrToAddress(Self->Address, &server_ip) IS ERR::Okay) { // The address is an IP string, no resolution is necessary
+   if (!net::StrToAddress(Self->Address, &server_ip)) { // The address is an IP string, no resolution is necessary
       std::vector<IPAddress> list;
       list.emplace_back(server_ip);
       connect_name_resolved(Self, ERR::Okay, "", list);
@@ -277,7 +277,7 @@ static ERR start_platform_connect(extNetSocket *Socket, const NetworkEndpoint &E
       Socket->setState(NTC::CONNECTING);
       network_platform().begin_connect_wait(Socket->Handle, &netsocket_connect, Socket);
    }
-   else if (connect_error IS ERR::Okay) {
+   else if (!connect_error) {
       log.trace("%s connect() successful.", Endpoint.Label);
       complete_socket_connect(Socket, network_platform().complete_connect(Socket->Handle));
    }
@@ -398,7 +398,7 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
          if (file.ok()) {
             auto size = file->get<size_t>(FID_Size);
             std::vector<int8_t> buf(size);
-            if (file->read(buf.data(), size) IS ERR::Okay) {
+            if (!file->read(buf.data(), size)) {
                return acWrite(Self, buf.data(), size, nullptr);
             }
             else return log.warning(ERR::Read);
@@ -421,6 +421,8 @@ This method will stop all sending and receiving of data over the socket.  This i
 -ERRORS-
 Okay
 Failed: Shutdown operation failed.
+SystemCall
+
 
 *********************************************************************************************************************/
 
@@ -507,7 +509,7 @@ static ERR NETSOCKET_GetLocalIPAddress(extNetSocket *Self, struct ns::GetLocalIP
    if ((!Args) or (!Args->Address)) return log.warning(ERR::NullArgs);
 
    auto result = network_platform().get_local_ip(Self->Handle, *Args->Address);
-   if (result IS ERR::Okay) return ERR::Okay;
+   if (!result) return ERR::Okay;
    else return log.warning(result);
 }
 
@@ -597,6 +599,7 @@ Okay: Successfully joined the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
 Failed: Failed to join multicast group.
+NullArgs
 
 -TAGS-
 mutates-object
@@ -650,6 +653,7 @@ Okay: Successfully left the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
 Failed: Failed to leave multicast group.
+NullArgs
 
 -TAGS-
 mutates-object
@@ -705,6 +709,9 @@ NullArgs
 Disconnected: The socket connection is closed.
 InvalidState: The socket is not in a state that allows reading (e.g. during SSL handshake).
 Failed: A permanent failure has occurred and socket has been closed.
+Args
+Read
+
 
 *********************************************************************************************************************/
 
@@ -893,7 +900,7 @@ static ERR write_connected_socket_data(T *Self, struct acWrite *Args, size_t Msg
       error = ERR::BufferOverflow;
    }
 
-   if ((error IS ERR::Okay) and (len >= size_t(Args->Length))) return ERR::Okay;
+   if ((!error) and (len >= size_t(Args->Length))) return ERR::Okay;
 
    bool ssl_read_blocked = false;
    bool ssl_write_blocked = false;
@@ -993,6 +1000,7 @@ Okay: Data was received successfully, or no data available.
 Args: Invalid arguments provided.
 NoSupport: Socket is not configured for UDP mode.
 BufferOverflow: Receive buffer is too small for the incoming packet.
+NullArgs
 
 -TAGS-
 non-blocking, mutates-input, mutates-object
@@ -1053,6 +1061,8 @@ NullArgs: Invalid arguments provided.
 OutOfRange: Invalid port number specified.
 InvalidState: Socket is not configured for UDP mode.
 NetworkUnreachable: The destination network is unreachable.
+Args
+DataSize
 
 -TAGS-
 non-blocking, consumes-input
@@ -1087,7 +1097,7 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
    size_t bytes_to_send = Args->Length;
 
    auto error = network_platform().send_to(Self->Handle, Args->Data, bytes_to_send, dest_addr);
-   if (error IS ERR::Okay) Args->BytesSent = int(bytes_to_send);
+   if (!error) Args->BytesSent = int(bytes_to_send);
    return error;
 }
 

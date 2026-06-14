@@ -1282,7 +1282,7 @@ void parser::tag_body(const tag_view &Tag)
       switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_clip_path: {
             OBJECTPTR clip;
-            if (Self->Scene->findDef(Tag.Attribs[i].Value.c_str(), &clip) IS ERR::Okay) {
+            if (!Self->Scene->findDef(Tag.Attribs[i].Value, &clip)) {
                Self->Page->set(FID_Mask, clip);
             }
             break;
@@ -1429,7 +1429,7 @@ void parser::tag_call(const tag_view &Tag)
             auto script_name_text = std::string(script_name);
 
             OBJECTID id;
-            if (FindObject(script_name_text.c_str(), CLASSID::NIL, &id) IS ERR::Okay) script = (objScript *)GetObjectPtr(id);
+            if (!FindObject(script_name_text, CLASSID::NIL, &id)) script = (objScript *)GetObjectPtr(id);
 
             function.assign(function_ref.substr(i + 1));
          }
@@ -1473,7 +1473,7 @@ void parser::tag_call(const tag_view &Tag)
    // Check for a result and print it
 
    kt::vector<std::string> *results;
-   if ((script->get(FID_Results, results) IS ERR::Okay) and (results->size() > 0)) {
+   if ((!script->get(FID_Results, results)) and (results->size() > 0)) {
       auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
          fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
@@ -1750,7 +1750,7 @@ void parser::tag_combobox(const tag_view &Tag)
             // adjustments may also be provided.
             if (scan.hasContent()) {
                std::string xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser) IS ERR::Okay) {
+               if (!m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser)) {
                   widget.style = xml_ser;
                }
             }
@@ -1760,7 +1760,7 @@ void parser::tag_combobox(const tag_view &Tag)
 
             if (not scan.Children.empty()) {
                std::string xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser) IS ERR::Okay) {
+               if (!m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser)) {
                   value = xml_ser;
                }
             }
@@ -2475,7 +2475,7 @@ void parser::tag_template(const tag_view &Tag)
    }
 
    std::string strxml;
-   if (m_xml->serialise(Tag.ID, XMF::NIL, strxml) IS ERR::Okay) {
+   if (!m_xml->serialise(Tag.ID, XMF::NIL, strxml)) {
       // Remove any existing tag that uses the same name.
       if (Self->TemplateIndex.contains(strhash(Tag.Attribs[n].Value))) {
          Self->Templates->removeTag(Tag.ID, 1);
@@ -2601,7 +2601,7 @@ void parser::tag_script(const tag_view &Tag)
          // Reference an external script as the default for function calls
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             OBJECTID id;
-            if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id) IS ERR::Okay) {
+            if (!FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id)) {
                Self->DefaultScript = (objScript *)GetObjectPtr(id);
                return;
             }
@@ -2689,7 +2689,7 @@ void parser::tag_script(const tag_view &Tag)
    // Pass document arguments to the script
 
    KEYVALUE *vs;
-   if ((script->get(FID_Variables, vs) IS ERR::Okay) and (vs) and (vs->size() > 0)) {
+   if ((!script->get(FID_Variables, vs)) and (vs) and (vs->size() > 0)) {
       Self->Vars   = *vs;
       Self->Params = *vs;
    }
@@ -2711,7 +2711,7 @@ void parser::tag_script(const tag_view &Tag)
 
    kt::vector<std::string> *results;
    int size;
-   if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
+   if ((!script->get(FID_Results, results, size)) and (size > 0)) {
       auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
          fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
@@ -3299,8 +3299,8 @@ void parser::tag_trigger(const tag_view &Tag)
       // Get the script
 
       std::string args;
-      if (extract_script(Self, function_name, &script, function_name, args) IS ERR::Okay) {
-         if (script->getProcedureID(function_name.c_str(), &function_id) IS ERR::Okay) {
+      if (!extract_script(Self, function_name, &script, function_name, args)) {
+         if (!script->getProcedureID(function_name, &function_id)) {
             Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, function_id));
          }
          else log_warning(&Tag, "doc.trigger-procedure-missing", attrib_name("function"),

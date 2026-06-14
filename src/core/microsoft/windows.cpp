@@ -2398,7 +2398,7 @@ static ERR delete_file_helper(const std::string &FilePath)
 
    auto error = GetLastError();
    if (error IS ERROR_ACCESS_DENIED) {
-      if (grant_delete_access(FilePath.c_str(), false) IS ERR::Okay) {
+      if (!grant_delete_access(FilePath.c_str(), false)) {
          if (DeleteFileA(FilePath.c_str())) return ERR::Okay;
          error = GetLastError();
       }
@@ -2428,7 +2428,7 @@ static ERR delete_directory_helper(const std::string &DirPath)
 
    auto error = GetLastError();
    if (error IS ERROR_ACCESS_DENIED) {
-      if (grant_delete_access(DirPath.c_str(), true) IS ERR::Okay) {
+      if (!grant_delete_access(DirPath.c_str(), true)) {
          if (RemoveDirectory(DirPath.c_str())) return ERR::Okay;
          error = GetLastError();
       }
@@ -2470,18 +2470,14 @@ extern ERR delete_tree(std::string &Path, FUNCTION *Callback, struct FileFeedbac
             Path.append(find.cFileName);
 
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-               ERR result = delete_tree(Path, Callback, Feedback);
-               if (not (result IS ERR::Okay)) {
+               if (auto result = delete_tree(Path, Callback, Feedback); result != ERR::Okay) {
                   FindClose(handle);
                   return result;
                }
             }
-            else {
-               ERR result = delete_file_helper(Path);
-               if (not (result IS ERR::Okay)) {
-                  FindClose(handle);
-                  return result;
-               }
+            else if (auto result = delete_file_helper(Path); result != ERR::Okay) {
+               FindClose(handle);
+               return result;
             }
          }
 

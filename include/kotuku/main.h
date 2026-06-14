@@ -32,7 +32,7 @@
 #include <optional>
 #include <concepts>
 
-#define TAGEND 0LL
+inline constexpr int64_t TAGEND = 0;
 
 namespace kt {
 
@@ -48,6 +48,10 @@ concept Lockable = requires(T obj, int timeout) {
 // Concept for Kotuku object types (either derived from Object or implementing Lockable interface)
 template<typename T>
 concept KotukuObject = std::is_base_of_v<Object, T> or Lockable<T>;
+
+// Concept for arithmetic types (integral or floating point)
+template<typename T>
+concept Numeric = std::is_arithmetic_v<T>;
 
 // Concept for numeric types (arithmetic or enum)
 template<typename T>
@@ -75,17 +79,9 @@ template <class T = double> struct POINT {
       y += Other.y;
       return *this;
    }
+
+   [[nodiscard]] constexpr bool operator==(const POINT &) const = default;
 };
-
-template <std::floating_point T = double>
-[[nodiscard]] bool operator==(const POINT<T> &a, const POINT<T> &b) {
-   return (a.x == b.x) and (a.y == b.y);
-}
-
-template <std::integral T>
-[[nodiscard]] bool operator==(const POINT<T> &a, const POINT<T> &b) {
-   return (a.x == b.x) and (a.y == b.y);
-}
 
 // Fast distance approximation for integral types
 template <std::integral T>
@@ -204,7 +200,14 @@ class ScopedObjectLock {
       }
 
       inline ScopedObjectLock() = default;
-      [[nodiscard]] inline bool granted() { return error IS ERR::Okay; }
+
+      // Copying or moving would result in a double-release of the lock.
+      ScopedObjectLock(const ScopedObjectLock &) = delete;
+      ScopedObjectLock & operator=(const ScopedObjectLock &) = delete;
+      ScopedObjectLock(ScopedObjectLock &&) = delete;
+      ScopedObjectLock & operator=(ScopedObjectLock &&) = delete;
+
+      [[nodiscard]] inline bool granted() const { return error IS ERR::Okay; }
 
       inline T * operator->() { return obj; }; // Promotes underlying methods and fields
       inline T * & operator*() { return obj; }; // To allow object pointer referencing when calling functions
@@ -219,16 +222,51 @@ class ScopedObjectLock {
 //
 // Usage: kt::LocalResource resource(thing)
 
-template <class T>
 class LocalResource {
    private:
-      MEMORYID id;
+      MEMORYID id = 0;
+
    public:
-      LocalResource(T Resource) {
-         static_assert(std::is_pointer<T>::value, "The resource value must be a pointer");
-         id = ((int *)Resource)[RESOURCE_ID_OFFSET];
+      LocalResource() noexcept = default;
+
+      explicit LocalResource(MEMORYID ResourceID) noexcept : id(ResourceID) { }
+
+      template <class P>
+         requires std::is_pointer_v<P>
+      explicit LocalResource(P Resource) noexcept :
+         id(Resource ? ((MEMORYID *)Resource)[RESOURCE_ID_OFFSET] : 0) { }
+
+      ~LocalResource() { reset(); }
+
+      LocalResource(const LocalResource &) = delete;
+      LocalResource & operator=(const LocalResource &) = delete;
+
+      LocalResource(LocalResource &&Other) noexcept : id(Other.id) {
+         Other.id = 0;
       }
-      ~LocalResource() { FreeResource(id); }
+
+      LocalResource & operator=(LocalResource &&Other) noexcept {
+         if (this != &Other) {
+            reset();
+            id = Other.id;
+            Other.id = 0;
+         }
+         return *this;
+      }
+
+      void reset(MEMORYID ResourceID = 0) noexcept {
+         if (id) FreeResource(id);
+         id = ResourceID;
+      }
+
+      template <class P>
+         requires std::is_pointer_v<P>
+      void reset(P Resource) noexcept {
+         reset(Resource ? ((MEMORYID *)Resource)[RESOURCE_ID_OFFSET] : 0);
+      }
+
+      [[nodiscard]] MEMORYID get() const noexcept { return id; }
+      [[nodiscard]] explicit operator bool() const noexcept { return id != 0; }
 };
 
 //********************************************************************************************************************
@@ -274,7 +312,9 @@ class GuardedObject {
          id     = other.id;
          object = other.object;
          count  = other.count;
-         other.count = nullptr;
+         other.count  = nullptr;
+         other.object = nullptr;
+         other.id     = 0;
       }
 
       // Destructor
@@ -290,7 +330,10 @@ class GuardedObject {
 
       GuardedObject & operator = (const GuardedObject &other) { // Copy assignment
          if (this == &other) return *this;
-         if (!--count[0]) delete count;
+         if ((count) and (!--count[0])) {
+            if (id) FreeResource(id);
+            delete count;
+         }
          if (other.object) {
             object = other.object;
             count  = other.count;
@@ -307,11 +350,16 @@ class GuardedObject {
 
       GuardedObject & operator = (GuardedObject &&other) { // Move assignment
          if (this == &other) return *this;
-         if (!--count[0]) delete count;
+         if ((count) and (!--count[0])) {
+            if (id) FreeResource(id);
+            delete count;
+         }
          id     = other.id;
          object = other.object;
          count  = other.count;
-         other.count = nullptr;
+         other.count  = nullptr;
+         other.object = nullptr;
+         other.id     = 0;
          return *this;
       }
 
@@ -326,7 +374,7 @@ class GuardedObject {
          else { kt::Log log(__FUNCTION__); log.warning(ERR::InUse); }
       }
 
-      constexpr bool empty() { return !object; } // Returns true if no object is being guarded.
+      constexpr bool empty() const { return !object; } // Returns true if no object is being guarded.
 
       T * operator->() { return object; }; // Promotes underlying methods and fields
       T * & operator*() { return object; }; // To allow object pointer referencing when calling functions
@@ -357,6 +405,7 @@ class GuardedResource {
             resource = other.resource;
             count    = other.count;
             count[0]++;
+            id       = other.id;
          }
          else { // If the other resource is undefined then use a default state
             resource = nullptr;
@@ -369,7 +418,9 @@ class GuardedResource {
          id       = other.id;
          resource = other.resource;
          count    = other.count;
-         other.count = nullptr;
+         other.count    = nullptr;
+         other.resource = nullptr;
+         other.id       = 0;
       }
 
       // Destructor
@@ -385,27 +436,36 @@ class GuardedResource {
 
       GuardedResource & operator = (const GuardedResource &other) { // Copy assignment
          if (this == &other) return *this;
-         if (!--count[0]) delete count;
+         if ((count) and (!--count[0])) {
+            if (id) FreeResource(id);
+            delete count;
+         }
          if (other.resource) {
             resource = other.resource;
-            count  = other.count;
+            count    = other.count;
             count[0]++;
+            id       = other.id;
          }
          else { // If the other resource is undefined then we reset our state with no count inheritance.
             resource = nullptr;
             id       = 0;
-            count[0] = 1;
+            count    = new C(1);
          }
          return *this;
       }
 
       GuardedResource & operator = (GuardedResource &&other) { // Move assignment
          if (this == &other) return *this;
-         if (!--count[0]) delete count;
+         if ((count) and (!--count[0])) {
+            if (id) FreeResource(id);
+            delete count;
+         }
          id       = other.id;
          resource = other.resource;
          count    = other.count;
-         other.count = nullptr;
+         other.count    = nullptr;
+         other.resource = nullptr;
+         other.id       = 0;
          return *this;
       }
 
@@ -420,7 +480,7 @@ class GuardedResource {
          else { kt::Log log(__FUNCTION__); log.warning(ERR::InUse); }
       }
 
-      constexpr bool empty() { return !resource; } // Returns true if no resource is being guarded.
+      constexpr bool empty() const { return !resource; } // Returns true if no resource is being guarded.
 
       T * operator->() { return resource; }; // Promotes underlying methods and fields
       T * & operator*() { return resource; }; // To allow resource pointer referencing when calling functions
@@ -456,291 +516,14 @@ class SwitchContext { // C++ wrapper for changing the current context with a res
          if (object) ((OBJECTPTR)object)->unlock();
          if (restore) SetObjectContext(nullptr, nullptr, AC::NIL);
       }
+
+      // Copying or moving would result in a double-unlock and unbalanced context restoration.
+      SwitchContext(const SwitchContext &) = delete;
+      SwitchContext & operator=(const SwitchContext &) = delete;
+      SwitchContext(SwitchContext &&) = delete;
+      SwitchContext & operator=(SwitchContext &&) = delete;
 };
 
 } // namespace
 
-//********************************************************************************************************************
-// These field name and type declarations help to ensure that fields are paired with the correct type during create().
-
-class objBitmap;
-class objNetClient;
-
-namespace fl {
-   using namespace kt;
-
-[[nodiscard]] inline FieldValue Path(std::string_view Value) { return FieldValue(FID_Path, Value); }
-[[nodiscard]] inline FieldValue Location(std::string_view Value) { return FieldValue(FID_Location, Value); }
-[[nodiscard]] inline FieldValue Args(std::string_view Value) { return FieldValue(FID_Args, Value); }
-[[nodiscard]] inline FieldValue Fill(std::string_view Value) { return FieldValue(FID_Fill, Value); }
-[[nodiscard]] inline FieldValue Statement(std::string_view Value) { return FieldValue(FID_Statement, Value); }
-[[nodiscard]] inline FieldValue Stroke(std::string_view Value) { return FieldValue(FID_Stroke, Value); }
-[[nodiscard]] inline FieldValue String(std::string_view Value) { return FieldValue(FID_String, Value); }
-[[nodiscard]] inline FieldValue Name(std::string_view Value) { return FieldValue(FID_Name, Value); }
-[[nodiscard]] inline FieldValue Allow(std::string_view Value) { return FieldValue(FID_Allow, Value); }
-[[nodiscard]] inline FieldValue Style(std::string_view Value) { return FieldValue(FID_Style, Value); }
-[[nodiscard]] inline FieldValue Face(std::string_view Value) { return FieldValue(FID_Face, Value); }
-[[nodiscard]] inline FieldValue FileExtension(std::string_view Value) { return FieldValue(FID_FileExtension, Value); }
-[[nodiscard]] inline FieldValue FileDescription(std::string_view Value) { return FieldValue(FID_FileDescription, Value); }
-[[nodiscard]] inline FieldValue FileHeader(std::string_view Value) { return FieldValue(FID_FileHeader, Value); }
-[[nodiscard]] inline FieldValue ArchiveName(std::string_view Value) { return FieldValue(FID_ArchiveName, Value); }
-[[nodiscard]] inline FieldValue Volume(std::string_view Value) { return FieldValue(FID_Volume, Value); }
-[[nodiscard]] inline FieldValue DPMS(std::string_view Value) { return FieldValue(FID_DPMS, Value); }
-[[nodiscard]] inline FieldValue Icon(std::string_view Value) { return FieldValue(FID_Icon, Value); }
-[[nodiscard]] inline FieldValue Procedure(std::string_view Value) { return FieldValue(FID_Procedure, Value); }
-[[nodiscard]] inline FieldValue ButtonOrder(std::string_view Value) { return FieldValue(FID_ButtonOrder, Value); }
-[[nodiscard]] inline FieldValue Points(std::string_view Value) { return FieldValue(FID_Points, Value); }
-[[nodiscard]] inline FieldValue Pretext(std::string_view Value) { return FieldValue(FID_Pretext, Value); }
-[[nodiscard]] inline FieldValue Point(std::string_view Value) { return FieldValue(FID_Point, Value); }
-
-// Handlers to prevent failure on receipt of a nullptr value
-[[nodiscard]] inline FieldValue Path(CSTRING Value) { return FieldValue(FID_Path, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Location(CSTRING Value) { return FieldValue(FID_Location, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Args(CSTRING Value) { return FieldValue(FID_Args, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Fill(CSTRING Value) { return FieldValue(FID_Fill, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Statement(CSTRING Value) { return FieldValue(FID_Statement, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Stroke(CSTRING Value) { return FieldValue(FID_Stroke, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue String(CSTRING Value) { return FieldValue(FID_String, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Name(CSTRING Value) { return FieldValue(FID_Name, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Allow(CSTRING Value) { return FieldValue(FID_Allow, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Style(CSTRING Value) { return FieldValue(FID_Style, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Face(CSTRING Value) { return FieldValue(FID_Face, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue FileExtension(CSTRING Value) { return FieldValue(FID_FileExtension, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue FileDescription(CSTRING Value) { return FieldValue(FID_FileDescription, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue FileHeader(CSTRING Value) { return FieldValue(FID_FileHeader, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue ArchiveName(CSTRING Value) { return FieldValue(FID_ArchiveName, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Volume(CSTRING Value) { return FieldValue(FID_Volume, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue DPMS(CSTRING Value) { return FieldValue(FID_DPMS, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Icon(CSTRING Value) { return FieldValue(FID_Icon, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Procedure(CSTRING Value) { return FieldValue(FID_Procedure, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue ButtonOrder(CSTRING Value) { return FieldValue(FID_ButtonOrder, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Points(CSTRING Value) { return FieldValue(FID_Points, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Pretext(CSTRING Value) { return FieldValue(FID_Pretext, Value ? std::string_view(Value) : std::string_view()); }
-[[nodiscard]] inline FieldValue Point(CSTRING Value) { return FieldValue(FID_Point, Value ? std::string_view(Value) : std::string_view()); }
-
-[[nodiscard]] constexpr FieldValue FontSize(double Value) { return FieldValue(FID_FontSize, Value); }
-[[nodiscard]] constexpr FieldValue FontSize(int Value) { return FieldValue(FID_FontSize, Value); }
-inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontSize, Value); }
-
-[[nodiscard]] constexpr FieldValue ReadOnly(int Value) { return FieldValue(FID_ReadOnly, Value); }
-[[nodiscard]] constexpr FieldValue ReadOnly(bool Value) { return FieldValue(FID_ReadOnly, (Value ? 1 : 0)); }
-
-[[nodiscard]] constexpr FieldValue Point(double Value) { return FieldValue(FID_Point, Value); }
-[[nodiscard]] constexpr FieldValue Point(int Value) { return FieldValue(FID_Point, Value); }
-[[nodiscard]] constexpr FieldValue Acceleration(double Value) { return FieldValue(FID_Acceleration, Value); }
-[[nodiscard]] constexpr FieldValue Actions(CPTR Value) { return FieldValue(FID_Actions, Value); }
-[[nodiscard]] constexpr FieldValue AmtColours(int Value) { return FieldValue(FID_AmtColours, Value); }
-[[nodiscard]] constexpr FieldValue BaseClassID(CLASSID Value) { return FieldValue(FID_BaseClassID, int(Value)); }
-[[nodiscard]] constexpr FieldValue Bitmap(objBitmap *Value) { return FieldValue(FID_Bitmap, Value); }
-[[nodiscard]] constexpr FieldValue BitsPerPixel(int Value) { return FieldValue(FID_BitsPerPixel, Value); }
-[[nodiscard]] constexpr FieldValue BytesPerPixel(int Value) { return FieldValue(FID_BytesPerPixel, Value); }
-[[nodiscard]] constexpr FieldValue Category(CCF Value) { return FieldValue(FID_Category, int(Value)); }
-[[nodiscard]] constexpr FieldValue ClassID(CLASSID Value) { return FieldValue(FID_ClassID, int(Value)); }
-[[nodiscard]] constexpr FieldValue ClassVersion(double Value) { return FieldValue(FID_ClassVersion, Value); }
-[[nodiscard]] constexpr FieldValue Client(struct NetClient *Value) { return FieldValue(FID_Client, Value); }
-[[nodiscard]] constexpr FieldValue Closed(bool Value) { return FieldValue(FID_Closed, (Value ? 1 : 0)); }
-[[nodiscard]] constexpr FieldValue Cursor(PTC Value) { return FieldValue(FID_Cursor, int(Value)); }
-[[nodiscard]] constexpr FieldValue DataFlags(MEM Value) { return FieldValue(FID_DataFlags, int(Value)); }
-[[nodiscard]] constexpr FieldValue DoubleClick(double Value) { return FieldValue(FID_DoubleClick, Value); }
-[[nodiscard]] inline    FieldValue Feedback(const FUNCTION &Value) { return FieldValue(FID_Feedback, Value); }
-[[nodiscard]] constexpr FieldValue Feedback(CPTR Value) { return FieldValue(FID_Feedback, Value); }
-[[nodiscard]] constexpr FieldValue Fields(const FieldArray *Value) { return FieldValue(FID_Fields, Value, FD_ARRAY); }
-[[nodiscard]] constexpr FieldValue Flags(int Value) { return FieldValue(FID_Flags, Value); }
-[[nodiscard]] constexpr FieldValue Font(OBJECTPTR Value) { return FieldValue(FID_Font, Value); }
-[[nodiscard]] constexpr FieldValue Handle(int Value) { return FieldValue(FID_Handle, Value); }
-[[nodiscard]] constexpr FieldValue Handle(APTR Value) { return FieldValue(FID_Handle, Value); }
-[[nodiscard]] constexpr FieldValue HostScene(OBJECTPTR Value) { return FieldValue(FID_HostScene, Value); }
-[[nodiscard]] inline    FieldValue Incoming(const FUNCTION &Value) { return FieldValue(FID_Incoming, Value); }
-[[nodiscard]] constexpr FieldValue Incoming(CPTR Value) { return FieldValue(FID_Incoming, Value); }
-[[nodiscard]] constexpr FieldValue Input(CPTR Value) { return FieldValue(FID_Input, Value); }
-[[nodiscard]] constexpr FieldValue LineLimit(int Value) { return FieldValue(FID_LineLimit, Value); }
-[[nodiscard]] constexpr FieldValue Listener(int Value) { return FieldValue(FID_Listener, Value); }
-[[nodiscard]] constexpr FieldValue MatrixColumns(int Value) { return FieldValue(FID_MatrixColumns, Value); }
-[[nodiscard]] constexpr FieldValue MatrixRows(int Value) { return FieldValue(FID_MatrixRows, Value); }
-[[nodiscard]] constexpr FieldValue MaxHeight(int Value) { return FieldValue(FID_MaxHeight, Value); }
-[[nodiscard]] constexpr FieldValue MaxSpeed(double Value) { return FieldValue(FID_MaxSpeed, Value); }
-[[nodiscard]] constexpr FieldValue MaxWidth(int Value) { return FieldValue(FID_MaxWidth, Value); }
-[[nodiscard]] constexpr FieldValue Methods(const MethodEntry *Value) { return FieldValue(FID_Methods, Value, FD_ARRAY); }
-[[nodiscard]] constexpr FieldValue Opacity(double Value) { return FieldValue(FID_Opacity, Value); }
-[[nodiscard]] constexpr FieldValue Owner(OBJECTID Value) { return FieldValue(FID_Owner, Value); }
-[[nodiscard]] constexpr FieldValue Parent(OBJECTID Value) { return FieldValue(FID_Parent, Value); }
-[[nodiscard]] constexpr FieldValue Permissions(PERMIT Value) { return FieldValue(FID_Permissions, int(Value)); }
-[[nodiscard]] constexpr FieldValue Image(OBJECTPTR Value) { return FieldValue(FID_Image, Value); }
-[[nodiscard]] constexpr FieldValue PopOver(OBJECTID Value) { return FieldValue(FID_PopOver, Value); }
-[[nodiscard]] constexpr FieldValue Port(int Value) { return FieldValue(FID_Port, Value); }
-[[nodiscard]] constexpr FieldValue RefreshRate(double Value) { return FieldValue(FID_RefreshRate, Value); }
-[[nodiscard]] constexpr FieldValue Routine(CPTR Value) { return FieldValue(FID_Routine, Value); }
-[[nodiscard]] constexpr FieldValue Size(int Value) { return FieldValue(FID_Size, Value); }
-[[nodiscard]] constexpr FieldValue Speed(double Value) { return FieldValue(FID_Speed, Value); }
-[[nodiscard]] constexpr FieldValue StrokeWidth(double Value) { return FieldValue(FID_StrokeWidth, Value); }
-[[nodiscard]] constexpr FieldValue Surface(OBJECTID Value) { return FieldValue(FID_Surface, Value); }
-[[nodiscard]] constexpr FieldValue Target(OBJECTID Value) { return FieldValue(FID_Target, Value); }
-[[nodiscard]] constexpr FieldValue Target(OBJECTPTR Value) { return FieldValue(FID_Target, Value); }
-[[nodiscard]] constexpr FieldValue ClientData(CPTR Value) { return FieldValue(FID_ClientData, Value); }
-[[nodiscard]] constexpr FieldValue Version(double Value) { return FieldValue(FID_Version, Value); }
-[[nodiscard]] constexpr FieldValue Viewport(OBJECTID Value) { return FieldValue(FID_Viewport, Value); }
-[[nodiscard]] constexpr FieldValue Viewport(OBJECTPTR Value) { return FieldValue(FID_Viewport, Value); }
-[[nodiscard]] constexpr FieldValue Weight(int Value) { return FieldValue(FID_Weight, Value); }
-[[nodiscard]] constexpr FieldValue WheelSpeed(double Value) { return FieldValue(FID_WheelSpeed, Value); }
-[[nodiscard]] constexpr FieldValue WindowHandle(APTR Value) { return FieldValue(FID_WindowHandle, Value); }
-[[nodiscard]] constexpr FieldValue WindowHandle(int Value) { return FieldValue(FID_WindowHandle, Value); }
-
-// Template-based Flags are required for strongly typed enums
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue Type(T Value) {
-   return FieldValue(FID_Type, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue AspectRatio(T Value) {
-   return FieldValue(FID_AspectRatio, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue BlendMode(T Value) {
-   return FieldValue(FID_BlendMode, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue ColourSpace(T Value) {
-   return FieldValue(FID_ColourSpace, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue Flags(T Value) {
-   return FieldValue(FID_Flags, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue Units(T Value) {
-   return FieldValue(FID_Units, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue SpreadMethod(T Value) {
-   return FieldValue(FID_SpreadMethod, int(Value));
-}
-
-template <NumericOrEnum T> [[nodiscard]] FieldValue Visibility(T Value) {
-   return FieldValue(FID_Visibility, int(Value));
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue PageWidth(T Value) {
-   return FieldValue(FID_PageWidth, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue PageWidth(T Value) {
-   return FieldValue(FID_PageWidth, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue PageHeight(T Value) {
-   return FieldValue(FID_PageHeight, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue PageHeight(T Value) {
-   return FieldValue(FID_PageHeight, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue Radius(T Value) {
-   return FieldValue(FID_Radius, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue CenterX(T Value) {
-   return FieldValue(FID_CenterX, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue CenterY(T Value) {
-   return FieldValue(FID_CenterY, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue FX(T Value) {
-   return FieldValue(FID_FX, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue FY(T Value) {
-   return FieldValue(FID_FY, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue ResX(T Value) {
-   return FieldValue(FID_ResX, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue ResX(T Value) {
-   return FieldValue(FID_ResX, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue ResY(T Value) {
-   return FieldValue(FID_ResY, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue ResY(T Value) {
-   return FieldValue(FID_ResY, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue ViewX(T Value) {
-   return FieldValue(FID_ViewX, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue ViewX(T Value) {
-   return FieldValue(FID_ViewX, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue ViewY(T Value) {
-   return FieldValue(FID_ViewY, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue ViewY(T Value) {
-   return FieldValue(FID_ViewY, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue ViewWidth(T Value) {
-   return FieldValue(FID_ViewWidth, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue ViewWidth(T Value) {
-   return FieldValue(FID_ViewWidth, Value);
-}
-
-template <std::floating_point T> [[nodiscard]] FieldValue ViewHeight(T Value) {
-   return FieldValue(FID_ViewHeight, Value);
-}
-
-template <std::integral T> [[nodiscard]] FieldValue ViewHeight(T Value) {
-   return FieldValue(FID_ViewHeight, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue Width(T Value) {
-   return FieldValue(FID_Width, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue Height(T Value) {
-   return FieldValue(FID_Height, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue X(T Value) {
-   return FieldValue(FID_X, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue XOffset(T Value) {
-   return FieldValue(FID_XOffset, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue Y(T Value) {
-   return FieldValue(FID_Y, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue YOffset(T Value) {
-   return FieldValue(FID_YOffset, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue X1(T Value) {
-   return FieldValue(FID_X1, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue Y1(T Value) {
-   return FieldValue(FID_Y1, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue X2(T Value) {
-   return FieldValue(FID_X2, Value);
-}
-
-template <NumericOrScale T> [[nodiscard]] FieldValue Y2(T Value) {
-   return FieldValue(FID_Y2, Value);
-}
-
-}
+#include <kotuku/field_values.hpp>

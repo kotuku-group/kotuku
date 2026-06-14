@@ -117,7 +117,7 @@ static ERR read_winfont_entries(objFile *File, std::vector<winFont> &Fonts)
    uint16_t type_id = 0;
    ERR error = fl::ReadLE(File, &type_id);
 
-   while ((error IS ERR::Okay) and (type_id)) {
+   while ((!error) and (type_id)) {
       uint16_t count = 0;
       if (fl::ReadLE(File, &count) != ERR::Okay) return ERR::Read;
 
@@ -267,7 +267,7 @@ public:
             return;
          }
 
-         if ((File->read(mData.data(), size, &result) IS ERR::Okay) and (result IS size)) {
+         if (!(File->read(mData.data(), size, &result)) and (result IS size)) {
             for (int16_t i=0; i < 256; i++) {
                if (!Chars[i].Width) continue;
 

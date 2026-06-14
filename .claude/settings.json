@@ -1,4 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(cmake --build build/agents *)",
+      "Bash(cmake --install build/agents *)",
+      "Bash(cmake -S . -B build/agents *)",
+      "Bash(ctest --build-config Debug --test-dir build/agents *)"
+    ]
+  },
   "env": {
     "BASH_DEFAULT_TIMEOUT_MS": "300000"
   },

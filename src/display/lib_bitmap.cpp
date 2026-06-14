@@ -7,10 +7,74 @@ Name: Bitmap
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include "../link/simd.h"
+
+#include <algorithm>
+#include <cstring>
 
 #ifdef _WIN32
 using namespace display;
 #endif
+
+#ifdef KOTUKU_SSE2
+
+// SIMD helpers for the 32-bit blitting routines.  All arithmetic is performed on 16-bit lanes so that the
+// scalar formulae are reproduced exactly; callers handle trailing pixels with the original scalar loops.
+
+inline __m128i simd_select(__m128i Mask, __m128i A, __m128i B) // Mask ? A : B, per bit
+{
+   return _mm_or_si128(_mm_and_si128(Mask, A), _mm_andnot_si128(Mask, B));
+}
+
+// Broadcast the alpha byte of each 32-bit pixel across all four of its byte lanes.
+
+inline __m128i simd_broadcast_alpha(__m128i Pixels, int AlphaPos)
+{
+   auto a = _mm_and_si128(_mm_srl_epi32(Pixels, _mm_cvtsi32_si128(AlphaPos)), _mm_set1_epi32(0xff));
+   a = _mm_or_si128(a, _mm_slli_epi32(a, 8));
+   return _mm_or_si128(a, _mm_slli_epi32(a, 16));
+}
+
+// Exact equivalent of a glAlphaLookup table read: round((Value * Alpha) / 255) on 16-bit lanes.
+
+inline __m128i simd_mul_div255(__m128i Value, __m128i Alpha)
+{
+   auto t = _mm_add_epi16(_mm_mullo_epi16(Value, Alpha), _mm_set1_epi16(128));
+   return _mm_srli_epi16(_mm_add_epi16(t, _mm_srli_epi16(t, 8)), 8);
+}
+
+// Blend four 32-bit source pixels onto four destination pixels with the (S*A + D*(255-A) + 255)>>8 formula
+// used by CopyArea(), updating the destination alpha channel as 255 - (((255-A) * (255-D))>>8).  The source
+// alpha is first scaled by Opacity with (A*Opacity + 255)>>8, which is an exact identity when Opacity is 255.
+// AlphaPos is the bit position of the alpha channel and AlphaLane is the matching 16-bit lane mask.
+
+inline __m128i simd_blend4(__m128i S, __m128i D, int AlphaPos, __m128i AlphaLane, __m128i Opacity)
+{
+   const auto zero = _mm_setzero_si128();
+   const auto max  = _mm_set1_epi16(255);
+
+   auto a8  = simd_broadcast_alpha(S, AlphaPos);
+   auto slo = _mm_unpacklo_epi8(S, zero),  shi = _mm_unpackhi_epi8(S, zero);
+   auto dlo = _mm_unpacklo_epi8(D, zero),  dhi = _mm_unpackhi_epi8(D, zero);
+   auto alo = _mm_unpacklo_epi8(a8, zero), ahi = _mm_unpackhi_epi8(a8, zero);
+
+   alo = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(alo, Opacity), max), 8);
+   ahi = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(ahi, Opacity), max), 8);
+
+   auto calo = _mm_sub_epi16(max, alo), cahi = _mm_sub_epi16(max, ahi);
+
+   auto blo = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(_mm_mullo_epi16(slo, alo), _mm_mullo_epi16(dlo, calo)), max), 8);
+   auto bhi = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(_mm_mullo_epi16(shi, ahi), _mm_mullo_epi16(dhi, cahi)), max), 8);
+
+   auto xlo = _mm_sub_epi16(max, _mm_srli_epi16(_mm_mullo_epi16(calo, _mm_sub_epi16(max, dlo)), 8));
+   auto xhi = _mm_sub_epi16(max, _mm_srli_epi16(_mm_mullo_epi16(cahi, _mm_sub_epi16(max, dhi)), 8));
+
+   blo = simd_select(AlphaLane, xlo, blo);
+   bhi = simd_select(AlphaLane, xhi, bhi);
+   return _mm_packus_epi16(blo, bhi);
+}
+
+#endif // KOTUKU_SSE2
 
 //********************************************************************************************************************
 // NOTE: Please ensure that the Width and Height are already clipped to meet the restrictions of BOTH the source and
@@ -509,7 +573,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
             Dest->Clip.Right  = DestX + Width;
             Dest->Clip.Top    = DestY;
             Dest->Clip.Bottom = DestY + Height;
-            if (lock_surface(dest, SURFACE_READ|SURFACE_WRITE) IS ERR::Okay) {
+            if (!lock_surface(dest, SURFACE_READ|SURFACE_WRITE)) {
                auto srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
 
                while (Height > 0) {
@@ -638,8 +702,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
       // 32-bit alpha blending support
 
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             uint8_t red, green, blue, *dest_lookup;
             uint16_t alpha;
 
@@ -657,6 +721,13 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
                uint8_t *sdata = src->Data + (Y * src->LineWidth) + (X<<2);
                uint8_t *ddata = dest->Data + (DestY * dest->LineWidth) + (DestX<<2);
+
+#ifdef KOTUKU_SSE2
+               // The SIMD blends operate per byte lane, so the channel layout of both bitmaps must match.
+               const bool simd_ok = (sR IS dR) and (sG IS dG) and (sB IS dB) and (sA IS dA);
+               const auto simd_amask = _mm_set1_epi32(int(uint32_t(0xff) << (sA<<3)));
+               const auto simd_alpha_lane = _mm_cmpeq_epi16(_mm_unpacklo_epi8(simd_amask, _mm_setzero_si128()), _mm_set1_epi16(0xff));
+#endif
 
                if ((Flags & BAF::COPY) != BAF::NIL) { // Avoids blending in cases where the destination pixel is zero alpha.
                   for (int y=0; y < Height; y++) {
@@ -689,7 +760,22 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         }
                      }
                      else {
-                        for (int x=0; x < Width; x++) {
+                        int x = 0;
+#ifdef KOTUKU_SSE2
+                        if (simd_ok) {
+                           const auto zero = _mm_setzero_si128();
+                           const auto op = _mm_set1_epi16(255);
+                           for (; x + 4 <= Width; x += 4, sp += 16, dp += 16) {
+                              auto s = _mm_loadu_si128((const __m128i *)sp);
+                              auto d = _mm_loadu_si128((const __m128i *)dp);
+                              auto src_zero  = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
+                              auto dest_zero = _mm_cmpeq_epi32(_mm_and_si128(d, simd_amask), zero);
+                              auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                              _mm_storeu_si128((__m128i *)dp, simd_select(dest_zero, s, simd_select(src_zero, d, blended)));
+                           }
+                        }
+#endif
+                        for (; x < Width; x++) {
                            if (dp[dA]) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
@@ -739,7 +825,21 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            }
                         }
                         else {
-                           for (i=0; i < Width; i++) {
+                           i = 0;
+#ifdef KOTUKU_SSE2
+                           if (simd_ok) {
+                              const auto zero = _mm_setzero_si128();
+                              const auto op = _mm_set1_epi16(255);
+                              for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
+                                 auto s = _mm_loadu_si128((const __m128i *)sp);
+                                 auto d = _mm_loadu_si128((const __m128i *)dp);
+                                 auto src_zero = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
+                                 auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                                 _mm_storeu_si128((__m128i *)dp, simd_select(src_zero, d, blended));
+                              }
+                           }
+#endif
+                           for (; i < Width; i++) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
                                  const uint8_t ca = 0xff - a;
@@ -779,7 +879,21 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         }
                      }
                      else {
-                        for (i=0; i < Width; i++) {
+                        i = 0;
+#ifdef KOTUKU_SSE2
+                        if (simd_ok) {
+                           const auto zero = _mm_setzero_si128();
+                           const auto op = _mm_set1_epi16(src->Opacity);
+                           for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
+                              auto s = _mm_loadu_si128((const __m128i *)sp);
+                              auto d = _mm_loadu_si128((const __m128i *)dp);
+                              auto src_zero = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
+                              auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                              _mm_storeu_si128((__m128i *)dp, simd_select(src_zero, d, blended));
+                           }
+                        }
+#endif
+                        for (; i < Width; i++) {
                            if (auto oa = sp[sA]) {
                               const uint8_t a = (oa * src->Opacity + 0xff)>>8;
                               const uint8_t ca = 0xff - a;
@@ -875,8 +989,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
       // Transparent colour copying.  In this mode, the alpha component of individual source pixels is ignored
 
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Transparent mask with translucent pixels (consistent blend level)
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
@@ -905,7 +1019,16 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   ddata = (uint32_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<2));
                   colour = src->TransIndex;
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                     i = 0;
+#ifdef KOTUKU_SSE2
+                     const auto key = _mm_set1_epi32(int(colour));
+                     for (; i + 4 <= Width; i += 4) {
+                        auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                        auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                        _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
+                     }
+#endif
+                     for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                      ddata = (uint32_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint32_t *)(((int8_t *)sdata) + src->LineWidth);
                      Height--;
@@ -918,7 +1041,18 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
                   colour = src->TransIndex;
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                     i = 0;
+#ifdef KOTUKU_SSE2
+                     if (colour <= 0xffff) { // The 16-bit lane comparison cannot represent larger keys
+                        const auto key = _mm_set1_epi16(int16_t(colour));
+                        for (; i + 8 <= Width; i += 8) {
+                           auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                           auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                           _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi16(s, key), d, s));
+                        }
+                     }
+#endif
+                     for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                      ddata = (uint16_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint16_t *)(((int8_t *)sdata) + src->LineWidth);
                      Height--;
@@ -966,8 +1100,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
       return ERR::Okay;
    }
    else { // Straight copy operation
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Translucent draw
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
@@ -979,8 +1113,36 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
                   ddata = (uint32_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<2));
                   cmp_alpha = 255 << src->prvColourFormat.AlphaPos;
+
+#ifdef KOTUKU_SSE2
+                  // The SIMD path blends per byte lane, so the RGB channels must be byte-aligned and share
+                  // the same positions in both bitmaps.
+                  const bool simd_ok = (src->prvColourFormat.RedPos IS dest->prvColourFormat.RedPos) and
+                     (src->prvColourFormat.GreenPos IS dest->prvColourFormat.GreenPos) and
+                     (src->prvColourFormat.BluePos IS dest->prvColourFormat.BluePos) and
+                     (((src->prvColourFormat.RedPos | src->prvColourFormat.GreenPos | src->prvColourFormat.BluePos) & 7) IS 0);
+#endif
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) {
+                     i = 0;
+#ifdef KOTUKU_SSE2
+                     if (simd_ok) {
+                        const auto zero = _mm_setzero_si128();
+                        const auto op   = _mm_set1_epi16(src->Opacity);
+                        const auto cop  = _mm_set1_epi16(255 - src->Opacity);
+                        const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                           (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                        const auto alpha = _mm_set1_epi32(int(cmp_alpha));
+                        for (; i + 4 <= Width; i += 4) {
+                           auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                           auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                           auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), op), simd_mul_div255(_mm_unpacklo_epi8(d, zero), cop));
+                           auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), op), simd_mul_div255(_mm_unpackhi_epi8(d, zero), cop));
+                           auto packed = _mm_packus_epi16(blo, bhi);
+                           _mm_storeu_si128((__m128i *)(ddata + i), _mm_or_si128(_mm_and_si128(packed, rgb_mask), alpha));
+                        }
+                     }
+#endif
+                     for (; i < Width; i++) {
                         ddata[i] = ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.RedPos)]   + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.RedPos)]) << dest->prvColourFormat.RedPos) |
                                    ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.GreenPos)] + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.GreenPos)]) << dest->prvColourFormat.GreenPos) |
                                    ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.BluePos)]  + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.BluePos)]) << dest->prvColourFormat.BluePos) |
@@ -1036,7 +1198,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   data    += dest->LineWidth * (Height-1);
 
                   while (Height > 0) {
-                     for (i=Width-1; i >= 0; i--) data[i] = srcdata[i];
+                     memmove(data, srcdata, Width);
                      srcdata -= src->LineWidth;
                      data    -= dest->LineWidth;
                      Height--;
@@ -1044,10 +1206,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
                else {
                   while (Height > 0) {
-                     for (i=0; i + int(sizeof(int)) <= Width; i += sizeof(int)) {
-                        ((int *)(data+i))[0] = ((int *)(srcdata+i))[0];
-                     }
-                     while (i < Width) { data[i] = srcdata[i]; i++; }
+                     memcpy(data, srcdata, Width);
                      srcdata += src->LineWidth;
                      data    += dest->LineWidth;
                      Height--;
@@ -1299,14 +1458,55 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
 #endif // __xwindows__
 
-   if (lock_surface((extBitmap *)Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface((extBitmap *)Bitmap, SURFACE_WRITE)) {
       if (((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32)) { // 32-bit alpha blending support
          uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
 
          if (Bitmap->BitsPerPixel IS 32) {
             uint32_t *ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
+
+#ifdef KOTUKU_SSE2
+            // The SIMD path blends per byte lane, so the RGB channels must be byte-aligned and share the
+            // same positions in both the surface and the destination bitmap.
+            const bool simd_ok = (Surface->Format.RedPos IS dest->prvColourFormat.RedPos) and
+               (Surface->Format.GreenPos IS dest->prvColourFormat.GreenPos) and
+               (Surface->Format.BluePos IS dest->prvColourFormat.BluePos) and
+               (((Surface->Format.RedPos | Surface->Format.GreenPos | Surface->Format.BluePos | Surface->Format.AlphaPos) & 7) IS 0);
+#endif
             while (Height > 0) {
-               for (int i=0; i < Width; i++) {
+               int i = 0;
+#ifdef KOTUKU_SSE2
+               if (simd_ok) {
+                  const auto zero  = _mm_setzero_si128();
+                  const auto max16 = _mm_set1_epi16(255);
+                  const auto op    = _mm_set1_epi16(Surface->Opacity);
+                  const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                     (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                  const auto alpha_or = _mm_set1_epi32(int(uint32_t(0xff) << dest->prvColourFormat.AlphaPos));
+                  for (; i + 4 <= Width; i += 4) {
+                     auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                     auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+
+                     // Scale the source alpha by the overall opacity, then build per-pixel masks for the
+                     // fully opaque (straight copy) and fully transparent (no-op) cases.
+
+                     auto a8  = simd_broadcast_alpha(s, Surface->Format.AlphaPos);
+                     auto alo = simd_mul_div255(_mm_unpacklo_epi8(a8, zero), op);
+                     auto ahi = simd_mul_div255(_mm_unpackhi_epi8(a8, zero), op);
+                     auto a8s = _mm_packus_epi16(alo, ahi);
+                     auto opaque = _mm_cmpeq_epi8(a8s, _mm_set1_epi8(char(0xff)));
+                     auto transparent = _mm_cmpeq_epi8(a8s, zero);
+
+                     auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), alo),
+                                              simd_mul_div255(_mm_unpacklo_epi8(d, zero), _mm_sub_epi16(max16, alo)));
+                     auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), ahi),
+                                              simd_mul_div255(_mm_unpackhi_epi8(d, zero), _mm_sub_epi16(max16, ahi)));
+                     auto blended = _mm_or_si128(_mm_and_si128(_mm_packus_epi16(blo, bhi), rgb_mask), alpha_or);
+                     _mm_storeu_si128((__m128i *)(ddata + i), simd_select(opaque, s, simd_select(transparent, d, blended)));
+                  }
+               }
+#endif
+               for (; i < Width; i++) {
                   colour = sdata[i];
 
                   uint8_t alpha = ((uint8_t)(colour >> Surface->Format.AlphaPos));
@@ -1400,7 +1600,16 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                uint32_t *ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
                colour = Surface->Colour;
                while (Height > 0) {
-                  for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                  i = 0;
+#ifdef KOTUKU_SSE2
+                  const auto key = _mm_set1_epi32(int(colour));
+                  for (; i + 4 <= Width; i += 4) {
+                     auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                     auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                     _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
+                  }
+#endif
+                  for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                   ddata = (uint32_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
                   sdata = (uint32_t *)(((int8_t *)sdata) + Surface->LineWidth);
                   Height--;
@@ -1413,7 +1622,18 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                ddata = (uint16_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<1));
                colour = Surface->Colour;
                while (Height > 0) {
-                  for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                  i = 0;
+#ifdef KOTUKU_SSE2
+                  if (colour <= 0xffff) { // The 16-bit lane comparison cannot represent larger keys
+                     const auto key = _mm_set1_epi16(int16_t(colour));
+                     for (; i + 8 <= Width; i += 8) {
+                        auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                        auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                        _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi16(s, key), d, s));
+                     }
+                  }
+#endif
+                  for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                   ddata = (uint16_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
                   sdata = (uint16_t *)(((int8_t *)sdata) + Surface->LineWidth);
                   Height--;
@@ -1456,8 +1676,34 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
                sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
                ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
+
+#ifdef KOTUKU_SSE2
+               // The SIMD path blends per byte lane, so the RGB channels must be byte-aligned and share
+               // the same positions in both the surface and the destination bitmap.
+               const bool simd_ok = (Surface->Format.RedPos IS dest->prvColourFormat.RedPos) and
+                  (Surface->Format.GreenPos IS dest->prvColourFormat.GreenPos) and
+                  (Surface->Format.BluePos IS dest->prvColourFormat.BluePos) and
+                  (((Surface->Format.RedPos | Surface->Format.GreenPos | Surface->Format.BluePos) & 7) IS 0);
+#endif
                while (Height > 0) {
-                  for (int i=0; i < Width; i++) {
+                  int i = 0;
+#ifdef KOTUKU_SSE2
+                  if (simd_ok) {
+                     const auto zero = _mm_setzero_si128();
+                     const auto op   = _mm_set1_epi16(Surface->Opacity);
+                     const auto cop  = _mm_set1_epi16(255 - Surface->Opacity);
+                     const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                        (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                     for (; i + 4 <= Width; i += 4) {
+                        auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                        auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                        auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), op), simd_mul_div255(_mm_unpacklo_epi8(d, zero), cop));
+                        auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), op), simd_mul_div255(_mm_unpackhi_epi8(d, zero), cop));
+                        _mm_storeu_si128((__m128i *)(ddata + i), _mm_and_si128(_mm_packus_epi16(blo, bhi), rgb_mask));
+                     }
+                  }
+#endif
+                  for (; i < Width; i++) {
                      ddata[i] = ((srctable[(uint8_t)(sdata[i]>>Surface->Format.RedPos)]   + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.RedPos)]) << dest->prvColourFormat.RedPos) |
                                 ((srctable[(uint8_t)(sdata[i]>>Surface->Format.GreenPos)] + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.GreenPos)]) << dest->prvColourFormat.GreenPos) |
                                 ((srctable[(uint8_t)(sdata[i]>>Surface->Format.BluePos)]  + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.BluePos)]) << dest->prvColourFormat.BluePos);
@@ -1510,10 +1756,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
             Width   = Width * Surface->BytesPerPixel;
 
             while (Height > 0) {
-               for (i=0; i + int(sizeof(int)) <= Width; i += sizeof(int)) {
-                  ((int *)(data+i))[0] = ((int *)(srcdata+i))[0];
-               }
-               while (i < Width) { data[i] = srcdata[i]; i++; }
+               memcpy(data, srcdata, Width);
                srcdata += Surface->LineWidth;
                data    += Bitmap->LineWidth;
                Height--;
@@ -1645,7 +1888,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
 
    // Standard rectangle data support
 
-   if (lock_surface(Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface(Bitmap, SURFACE_WRITE)) {
       if (!Bitmap->Data) {
          unlock_surface(Bitmap);
          return;
@@ -1655,7 +1898,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
          if (Bitmap->BitsPerPixel IS 32) {
             longdata = (uint32_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
             while (h > 0) {
-               for (x=X; x < (X+w); x++) longdata[x] = Colour;
+               std::fill_n(longdata + X, w, Colour);
                longdata = (uint32_t *)(((uint8_t *)longdata) + Bitmap->LineWidth);
                h--;
             }
@@ -1674,18 +1917,16 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
          }
          else if ((Bitmap->BitsPerPixel IS 16) or (Bitmap->BitsPerPixel IS 15)) {
             word = (uint16_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
-            xend = X + w;
             while (h > 0) {
-               for (x=X; x < xend; x++) word[x] = (uint16_t)Colour;
+               std::fill_n(word + X, w, uint16_t(Colour));
                word = (uint16_t *)(((int8_t *)word) + Bitmap->LineWidth);
                h--;
             }
          }
          else if (Bitmap->BitsPerPixel IS 8) {
             data = Bitmap->Data + (Bitmap->LineWidth * Y);
-            xend = X + w;
             while (h > 0) {
-               for (x=X; x < xend;) data[x++] = Colour;
+               memset(data + X, int(Colour), w);
                data += Bitmap->LineWidth;
                h--;
             }

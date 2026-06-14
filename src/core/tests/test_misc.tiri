@@ -73,6 +73,128 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+function appendTaskFixtureHex(Bytes, Hex)
+   local index = 0
+   while index < #Hex do
+      Bytes:push(tonumber(Hex:substr(index, index + 2), 16))
+      index += 2
+   end
+end
+
+function writeTaskQueryFixture(Path)
+   local hex_lines = {
+      '4d5a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000000000',
+      '0000000000000000000000000000000000000000000000000000000000000000504500004c0101000000000000000000',
+      '00000000e00002010b010000000000000000000000000000000000000000000000000000000040000010000000020000',
+      '000000000000000000000000000000000020000000020000000000000300000000000000000000000000000000000000',
+      '000000001000000000000000000000000000000000000000001000003003000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000002e72737263000000',
+      '300300000010000000040000000200000000000000000000000000004000004000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100',
+      '100000001800008000000000000000000000000000000100010000003000008000000000000000000000000000000100',
+      '090400004800000058100000d80200000000000000000000d80234000000560053005f00560045005200530049004f00',
+      '4e005f0049004e0046004f0000000000bd04effe00000100020001000400030006000500080007003f00000000000000',
+      '04000400010000000000000000000000000000007c020000010053007400720069006e006700460069006c0065004900',
+      '6e0066006f00000058020000010030003400300039003000340062003000000048001400010043006f006d0070006100',
+      '6e0079004e0061006d006500000000004b006f00740075006b00750020005400650073007400200043006f006d007000',
+      '61006e007900000048000f000100460069006c0065004400650073006300720069007000740069006f006e0000000000',
+      '4f007200690067006f0020004c00610075006e00630068006500720000000000300008000100460069006c0065005600',
+      '65007200730069006f006e000000000039002e0038002e0037002e003600000048001300010049006e00740065007200',
+      '6e0061006c004e0061006d00650000007400610073006b005f00710075006500720079005f0066006900780074007500',
+      '720065000000000064001f0001004c006500670061006c0043006f007000790072006900670068007400000043006f00',
+      '700079007200690067006800740020002800430029002000320030003200360020005000610075006c0020004d006100',
+      '6e0069006100730000000000480013000100500072006f0064007500630074004e0061006d0065000000000054006100',
+      '73006b002000510075006500720079002000500072006f00640075006300740000000000340008000100500072006f00',
+      '6400750063007400560065007200730069006f006e00000036002e0037002e0038002e00390000005800170001004f00',
+      '72006900670069006e0061006c00460069006c0065006e0061006d00650000007400610073006b005f00710075006500',
+      '720079005f0066006900780074007500720065002e006500780065000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+   }
+
+   local content = array<byte> { }
+   for line in values(hex_lines) do
+      appendTaskFixtureHex(content, line)
+   end
+
+   mSys.DeleteFile(Path)
+   local file = obj.new('file', { src=Path, flags=FL_NEW|FL_WRITE })
+   check file.acWrite(content:getString(), #content)
+   file = nil
+   processing.collect()
+end
+
+@Test function TaskQueryExecutableMetadata()
+   local fixture_root = 'temp:task_query_tests/'
+   mSys.DeleteFile(fixture_root)
+   local err = mSys.CreateFolder(fixture_root, 0)
+   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
+
+   local fixture_path = fixture_root .. 'task_query_fixture.exe'
+   local invalid_path = fixture_root .. 'task_query_invalid.exe'
+
+   writeTaskQueryFixture(fixture_path)
+
+   local task = obj.new('task', { src=fixture_path })
+   check task.acSetKey('CustomKey', 'keep')
+   check task.acSetKey('ProductName', 'old')
+   check task.acQuery()
+
+   local err, value = task.acGetKey('ProductName')
+   assert(err is ERR_Okay, 'ProductName was not stored: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Task Query Product', 'Unexpected ProductName: ' .. tostring(value))
+   assert(task.name is 'Task Query Product', 'Task.Name was not updated from metadata.')
+
+   err, value = task.acGetKey('FileDescription')
+   assert(err is ERR_Okay, 'FileDescription was not stored: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Origo Launcher', 'Unexpected FileDescription: ' .. tostring(value))
+
+   err, value = task.acGetKey('LegalCopyright')
+   assert(err is ERR_Okay, 'LegalCopyright was not stored: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Copyright (C) 2026 Paul Manias', 'Unexpected LegalCopyright: ' .. tostring(value))
+
+   err, value = task.acGetKey('CompanyName')
+   assert(err is ERR_Okay, 'CompanyName was not stored: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Kotuku Test Company', 'Unexpected CompanyName: ' .. tostring(value))
+
+   err, value = task.acGetKey('FileVersion')
+   assert(err is ERR_Okay, 'FileVersion was not stored: ' .. mSys.GetErrorMsg(err))
+   assert(value is '9.8.7.6', 'String FileVersion should not be replaced by fixed version data.')
+
+   err, value = task.acGetKey('FixedFileVersion')
+   assert(err is ERR_Okay, 'FixedFileVersion was not stored: ' .. mSys.GetErrorMsg(err))
+   assert(value is '1.2.3.4', 'Unexpected FixedFileVersion: ' .. tostring(value))
+
+   err, value = task.acGetKey('CustomKey')
+   assert(err is ERR_Okay, 'CustomKey was removed: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'keep', 'CustomKey was not preserved.')
+
+   local empty_task = obj.new('task')
+   err = empty_task.acQuery()
+   assert(err is ERR_MissingPath, 'Expected missing Location to return MissingPath, got ' .. mSys.GetErrorMsg(err))
+
+   mSys.DeleteFile(invalid_path)
+   local invalid_file = obj.new('file', { src=invalid_path, flags=FL_NEW|FL_WRITE })
+   check invalid_file.acWrite('not a PE file', #'not a PE file')
+   invalid_file = nil
+   processing.collect()
+
+   local invalid_task = obj.new('task', { src=invalid_path })
+   err = invalid_task.acQuery()
+   assert(err is ERR_Query, 'Expected non-PE file to return Query, got ' .. mSys.GetErrorMsg(err))
+
+   mSys.DeleteFile(fixture_root)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function TaskExitCallback()
    state = mSys.GetSystemState()
    if state.platform is 'Windows' then

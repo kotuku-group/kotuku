@@ -2,7 +2,7 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "lj_alloc.h"
 #include "lj_prng.h"
@@ -150,4 +150,4 @@ extern void allocator_unit_tests(int &Passed, int &Total)
    }
 }
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

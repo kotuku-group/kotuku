@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,11 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Implements Bresenham-style ellipse stepping. Hooks into primitive renderers and outline generators that need integer
+// ellipse traversal. In the vector renderer it supports efficient ellipse outlines without first building a full path.
 // Simple Bresenham interpolator for ellipsees
 
-#ifndef AGG_ELLIPSE_BRESENHAM_INCLUDED
-#define AGG_ELLIPSE_BRESENHAM_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -92,6 +92,3 @@ namespace agg
     };
 
 }
-
-#endif
-

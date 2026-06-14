@@ -90,6 +90,11 @@ WinCursor winCursors[24] = {
    { 0, PTC::INVISIBLE,         },
    { 0, PTC::DRAGGABLE,         }
 };
+
+extern int16_t GetWindowsIcon()
+{
+   return GetResource(RES::WINDOWS_ICON);
+}
 #endif
 
 #ifdef __ANDROID__
@@ -892,10 +897,10 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 
       // TODO: Allow the user to set a custom DPI via style values.
 
-      if (winGetDisplayGeometry(nullptr,
+      if (!winGetDisplayGeometry(nullptr,
             Info->MonitorX, Info->MonitorY, Info->MonitorWidth, Info->MonitorHeight,
             Info->VirtualX, Info->VirtualY, Info->VirtualWidth,
-            Info->VirtualHeight, Info->PhysicalWidth, Info->PhysicalHeight) IS ERR::Okay) {
+            Info->VirtualHeight, Info->PhysicalWidth, Info->PhysicalHeight)) {
          Info->Width  = Info->MonitorWidth;
          Info->Height = Info->MonitorHeight;
       }
@@ -1357,7 +1362,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       config->read("DISPLAY", "GammaBlue", glpGammaBlue);
 
       std::string dpms;
-      if (config->read("DISPLAY", "DPMS", dpms) IS ERR::Okay) {
+      if (!config->read("DISPLAY", "DPMS", dpms)) {
          strcopy(dpms, glpDPMS, sizeof(glpDPMS));
       }
    }

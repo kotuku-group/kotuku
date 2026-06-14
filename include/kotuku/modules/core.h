@@ -1086,6 +1086,7 @@ enum class RES : int {
    MEMORY_USAGE = 18,
    MAIN_THREAD = 19,
    MAIN_THREAD_ID = 20,
+   WINDOWS_ICON = 21,
 };
 
 // Path types for SetResourcePath()
@@ -1749,7 +1750,7 @@ struct ModHeader {
    CSTRING Name;                                     // Name of the module
    CSTRING Namespace;                                // A reserved system-wide namespace for function names.
    STRUCTS *StructDefs;
-   class RootModule *Root;
+   class objRootModule *Root;
 
    ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
       CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
@@ -3628,15 +3629,16 @@ class objTask : public Object {
 
    using create = kt::Create<objTask>;
 
-   std::string LaunchPath;    // Launched executables will start in the path specified here.
-   std::string Name;          // Name of the task.
-   std::string Location;      // Location of an executable file to launch.
-   std::string Path;          // The current working folder of the active process.
-   std::string ProcessPath;   // The path of the executable that is associated with the task.
-   double TimeOut;            // Limits the amount of time to wait for a launched process to return.
-   TSF    Flags;              // Optional flags.
-   int    ReturnCode;         // The task's return code can be retrieved following execution.
-   int    ProcessID;          // Reflects the process ID when an executable is launched.
+   std::string LaunchPath;                // Launched executables will start in the path specified here.
+   std::string Name;                      // Name of the task.
+   std::string Location;                  // Location of an executable file to launch.
+   std::string Path;                      // The current working folder of the active process.
+   std::string ProcessPath;               // The path of the executable that is associated with the task.
+   double TimeOut;                        // Limits the amount of time to wait for a launched process to return.
+   kt::vector<std::string> Parameters;    // Command line arguments (list format).
+   TSF    Flags;                          // Optional flags.
+   int    ReturnCode;                     // The task's return code can be retrieved following execution.
+   int    ProcessID;                      // Reflects the process ID when an executable is launched.
 
    // Action stubs
 
@@ -3648,6 +3650,7 @@ class objTask : public Object {
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
    inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
@@ -3726,6 +3729,11 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getParameters(kt::vector<std::string> * &Value) noexcept {
+      Value = (kt::vector<std::string> *)(((int8_t *)this) + 256);
+      return ERR::Okay;
+   }
+
    inline ERR getFlags(TSF &Value) noexcept {
       Value = this->Flags;
       return ERR::Okay;
@@ -3752,16 +3760,16 @@ class objTask : public Object {
 
    inline ERR getAffinityMask(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
       return error;
    }
 
-   inline ERR getParameters(kt::vector<std::string> * &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+   inline ERR getKeys(kt::vector<std::string> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
       auto error = get_field(this, Value);
+      RestoreObjectContext();
       return error;
    }
 
@@ -3829,6 +3837,11 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setParameters(const kt::vector<std::string> &Value) noexcept {
+      this->Parameters = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setFlags(const TSF Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Flags = Value;
@@ -3853,12 +3866,7 @@ class objTask : public Object {
 
    inline ERR setArgs(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x00804200, &Value, 1);
-   }
-
-   inline ERR setParameters(const kt::vector<std::string> *Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, 0x00905300, Value, int(Value->size()));
+      return field->WriteValue(this, field, 0x00804208, &Value, 1);
    }
 
    inline ERR setErrorCallback(const FUNCTION Value) noexcept {
@@ -3906,10 +3914,12 @@ class objThread : public Object {
 
    using create = kt::Create<objThread>;
 
-   APTR Data;       // Pointer to initialisation data for the thread.
-   int  DataSize;   // The size of the buffer referenced in the Data field.
-   ERR  Error;      // Reflects the error code returned by the thread routine.
-   THF  Flags;      // Optional flags can be defined here.
+   FUNCTION Callback;    // This function will be called when the thread finishes.
+   FUNCTION Routine;     // This function will be called when the thread starts.
+   APTR     Data;        // Pointer to initialisation data for the thread.
+   int      DataSize;    // The size of the buffer referenced in the Data field.
+   ERR      Error;       // Reflects the error code returned by the thread routine.
+   THF      Flags;       // Optional flags can be defined here.
 
    // Action stubs
 
@@ -3922,6 +3932,16 @@ class objThread : public Object {
    }
 
    // Customised field getting
+
+   inline ERR getCallback(FUNCTION * &Value) noexcept {
+      Value = &this->Callback;
+      return ERR::Okay;
+   }
+
+   inline ERR getRoutine(FUNCTION * &Value) noexcept {
+      Value = &this->Routine;
+      return ERR::Okay;
+   }
 
    inline ERR getData(APTR * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[6];
@@ -3945,37 +3965,23 @@ class objThread : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getRoutine(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
 
    // Customised field setting
+
+   inline ERR setCallback(const FUNCTION &Value) noexcept {
+      this->Callback = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setRoutine(const FUNCTION &Value) noexcept {
+      this->Routine = Value;
+      return ERR::Okay;
+   }
 
    inline ERR setFlags(const THF Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Flags = Value;
       return ERR::Okay;
-   }
-
-   inline ERR setCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
-   }
-
-   inline ERR setRoutine(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };
@@ -4001,8 +4007,9 @@ class objModule : public Object {
 
    const struct Function * FunctionList;    // Refers to a list of public functions exported by the module.
    APTR ModBase;                            // The Module's function base (jump table) must be read from this field.
-   class RootModule * Root;                 // For internal use only.
+   objRootModule * Root;                    // For internal use only.
    struct ModHeader * Header;               // For internal usage only.
+   std::string Name;                        // The name of the module.
    MOF  Flags;                              // Optional flags.
    public:
    static ERR load(std::string Name, OBJECTPTR *Module = nullptr, APTR Functions = nullptr) {
@@ -4013,7 +4020,7 @@ class objModule : public Object {
             return ERR::Okay;
          #else
             APTR functionbase;
-            if (module->get(FID_ModBase, functionbase) IS ERR::Okay) {
+            if (!module->get(FID_ModBase, functionbase)) {
                if (Module) *Module = module;
                if (Functions) ((APTR *)Functions)[0] = functionbase;
                return ERR::Okay;
@@ -4053,6 +4060,11 @@ class objModule : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getName(std::string_view &Value) noexcept {
+      Value = this->Name;
+      return ERR::Okay;
+   }
+
    inline ERR getFlags(MOF &Value) noexcept {
       Value = this->Flags;
       return ERR::Okay;
@@ -4060,13 +4072,6 @@ class objModule : public Object {
 
    inline ERR getDefs(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getName(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
@@ -4085,15 +4090,15 @@ class objModule : public Object {
       return field->WriteValue(this, field, 0x08000510, Value, 1);
    }
 
+   inline ERR setName(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+   }
+
    inline ERR setFlags(const MOF Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Flags = Value;
       return ERR::Okay;
-   }
-
-   inline ERR setName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
    }
 
 };
@@ -4522,6 +4527,53 @@ class objCompressedStream : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
+   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
+      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
+         *Result = static_cast<U>(read.Result);
+         return ERR::Okay;
+      }
+      else { *Result = 0; return error; }
+   }
+   template <class T> ERR read(APTR Buffer, T Size) noexcept {
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      return Action(AC::Read, this, &read);
+   }
+   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {
+      struct acSeek args = { Offset, Position };
+      return Action(AC::Seek, this, &args);
+   }
+   inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
+   inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
+   inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
+   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer, Size };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
 
    // Customised field getting
 
@@ -4664,7 +4716,7 @@ struct evHotplug {
 [[nodiscard]] inline char * strclone(const std::string_view String) noexcept
 {
    char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr) IS ERR::Okay) {
+   if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
       copymem(String.data(), newstr, String.size());
       newstr[String.size()] = 0;
       return newstr;
@@ -4682,7 +4734,7 @@ template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
    struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
+   if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native == std::endian::little) {
             *Result = ((T *)data)[0];
@@ -4706,7 +4758,7 @@ template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
    struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
+   if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native == std::endian::little) {
             switch(sizeof(T)) {

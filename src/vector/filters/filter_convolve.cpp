@@ -321,6 +321,11 @@ class extConvolveFX : public extFilterEffect {
    }
 
    // Standard algorithm that uses edge detection at the borders (see getPixel()).
+   //
+   // Interior pixels, where the entire kernel is within the clip region, take a fast path with direct pixel
+   // addressing and (where available) SSE2 accumulation of all four channels in packed-double lanes.  Border
+   // pixels retain the per-tap getPixel() edge handling.  Both paths accumulate taps in the same order with
+   // the same double-precision operations, so the output is bit-identical to the original implementation.
 
    void processClipped(objBitmap *InputBitmap, uint8_t *output, int pLeft, int pTop, int pRight, int pBottom,
       double UnitXPixel, double UnitYPixel) {
@@ -334,24 +339,87 @@ class extConvolveFX : public extFilterEffect {
       const double factor = 1.0 / Divisor;
       const double alpha_bias = Bias * 255.0;
       const bool linear_rgb = Filter->ColourSpace IS VCS::LINEAR_RGB;
+      const int stride = InputBitmap->LineWidth;
+      const int out_stride = (Target->Clip.Right - Target->Clip.Left) * Target->BytesPerPixel;
 
-      uint8_t *alpha_input = InputBitmap->Data + (pTop * InputBitmap->LineWidth);
+      // The kernel is rotated 180 degrees as per convolution theory; hoist the index reversal out of the
+      // inner loops by reordering the weights to match ascending (fy,fx) tap order.
+
+      double weights[MAX_DIM * MAX_DIM];
+      for (int fy=0; fy < MatrixRows; fy++) {
+         for (int fx=0; fx < MatrixColumns; fx++) {
+            weights[(fy * MatrixColumns) + fx] = Matrix[((MatrixRows - fy - 1) * MatrixColumns) + (MatrixColumns - fx - 1)];
+         }
+      }
+
+      // The fast path requires the implicit pixel grid to map 1:1 so that tap coordinates are exact integers.
+      // Interior column range: every tap x - TargetX + fx must fall within the horizontal clip.
+
+      const bool unit_grid = (UnitXPixel IS 1.0) and (UnitYPixel IS 1.0);
+      const int x_lo = InputBitmap->Clip.Left + TargetX;
+      const int x_hi = InputBitmap->Clip.Right - MatrixColumns + TargetX;
+
+      uint8_t *alpha_input = InputBitmap->Data + (pTop * stride);
       uint8_t *outline = output;
       for (int y=pTop; y < pBottom; y++) {
          uint8_t *out = outline;
+         const bool y_interior = unit_grid and (y - TargetY >= InputBitmap->Clip.Top) and
+            (y - TargetY + MatrixRows <= InputBitmap->Clip.Bottom);
+
          for (int x=pLeft; x < pRight; x++) {
-            double r = 0.0, g = 0.0, b = 0.0, a = 0.0;
+            double r, g, b, a;
             auto source_alpha = (alpha_input + (x * InputBitmap->BytesPerPixel))[A];
-            for (int fy = 0; fy < MatrixRows; fy++) {
-               int isrc_y = std::lrint(y - (TargetY * UnitYPixel) + (fy * UnitYPixel));
-               for (int fx = 0; fx < MatrixColumns; fx++) {
-                  int isrc_x = std::lrint(x - (TargetX * UnitXPixel) + (fx * UnitXPixel));
-                  int matrix_index = ((MatrixRows - fy - 1) * MatrixColumns) + (MatrixColumns - fx - 1);
-                  if (auto pixel = getPixel(InputBitmap, isrc_x, isrc_y)) {
-                     r += pixel[R] * Matrix[matrix_index];
-                     g += pixel[G] * Matrix[matrix_index];
-                     b += pixel[B] * Matrix[matrix_index];
-                     a += pixel[A] * Matrix[matrix_index];
+
+            if (y_interior and (x >= x_lo) and (x <= x_hi)) {
+               const uint8_t *base = InputBitmap->Data + ((y - TargetY) * stride) + ((x - TargetX) * 4);
+               double sums[4]; // Channel sums indexed by byte position within the pixel.
+               const double *w = weights;
+#ifdef FILTER_SSE2
+               auto acc01 = _mm_setzero_pd();
+               auto acc23 = _mm_setzero_pd();
+               for (int fy=0; fy < MatrixRows; fy++) {
+                  auto pix = base + (fy * stride);
+                  for (int fx=0; fx < MatrixColumns; fx++, pix += 4) {
+                     uint32_t px;
+                     memcpy(&px, pix, 4);
+                     auto bytes = _mm_cvtsi32_si128(int(px));
+                     bytes = _mm_unpacklo_epi8(bytes, _mm_setzero_si128());
+                     bytes = _mm_unpacklo_epi16(bytes, _mm_setzero_si128());
+                     const auto wv = _mm_set1_pd(*w++);
+                     acc01 = _mm_add_pd(acc01, _mm_mul_pd(_mm_cvtepi32_pd(bytes), wv));
+                     acc23 = _mm_add_pd(acc23, _mm_mul_pd(_mm_cvtepi32_pd(_mm_shuffle_epi32(bytes, _MM_SHUFFLE(1, 0, 3, 2))), wv));
+                  }
+               }
+               _mm_storeu_pd(sums, acc01);
+               _mm_storeu_pd(sums + 2, acc23);
+#else
+               sums[0] = sums[1] = sums[2] = sums[3] = 0.0;
+               for (int fy=0; fy < MatrixRows; fy++) {
+                  auto pix = base + (fy * stride);
+                  for (int fx=0; fx < MatrixColumns; fx++, pix += 4) {
+                     const double wt = *w++;
+                     sums[0] += pix[0] * wt;
+                     sums[1] += pix[1] * wt;
+                     sums[2] += pix[2] * wt;
+                     sums[3] += pix[3] * wt;
+                  }
+               }
+#endif
+               r = sums[R]; g = sums[G]; b = sums[B]; a = sums[A];
+            }
+            else {
+               r = g = b = a = 0.0;
+               for (int fy = 0; fy < MatrixRows; fy++) {
+                  int isrc_y = std::lrint(y - (TargetY * UnitYPixel) + (fy * UnitYPixel));
+                  for (int fx = 0; fx < MatrixColumns; fx++) {
+                     int isrc_x = std::lrint(x - (TargetX * UnitXPixel) + (fx * UnitXPixel));
+                     if (auto pixel = getPixel(InputBitmap, isrc_x, isrc_y)) {
+                        const double wt = weights[(fy * MatrixColumns) + fx];
+                        r += pixel[R] * wt;
+                        g += pixel[G] * wt;
+                        b += pixel[B] * wt;
+                        a += pixel[A] * wt;
+                     }
                   }
                }
             }
@@ -367,8 +435,8 @@ class extConvolveFX : public extFilterEffect {
             else out[A] = source_alpha;
             out += 4;
          }
-         alpha_input += InputBitmap->LineWidth;
-         outline += (Target->Clip.Right - Target->Clip.Left) * Target->BytesPerPixel;
+         alpha_input += stride;
+         outline += out_stride;
       }
    }
 };
@@ -519,7 +587,7 @@ static ERR CONVOLVEFX_Init(extConvolveFX *Self)
 Bias: Used to adjust the final result of each computed RGB value.
 
 After applying the #Matrix to the input image to yield a number and applying the #Divisor, the Bias value is added to
-each component.  One application of Bias is when it is desirable to have .5 gray value be the zero response of the
+each component.  One application of Bias is when it is desirable to have .5 grey value be the zero response of the
 filter.  The Bias value shifts the range of the filter.  This allows representation of values that would otherwise be
 clamped to 0 or 1.  The default is 0.
 
@@ -543,8 +611,8 @@ static ERR CONVOLVEFX_SET_Bias(extConvolveFX *Self, double Value)
 Divisor: Defines the divisor value in the convolution algorithm.
 
 After applying the #Matrix to the input image to yield a number, that number is divided by #Divisor to yield the
-final destination color value.  A divisor that is the sum of all the matrix values tends to have an evening effect
-on the overall color intensity of the result.  The default value is the sum of all values in #Matrix, with the
+final destination colour value.  A divisor that is the sum of all the matrix values tends to have an evening effect
+on the overall colour intensity of the result.  The default value is the sum of all values in #Matrix, with the
 exception that if the sum is zero, then the divisor is set to `1`.
 
 *********************************************************************************************************************/
@@ -569,7 +637,7 @@ static ERR CONVOLVEFX_SET_Divisor(extConvolveFX *Self, double Value)
 -FIELD-
 EdgeMode: Defines the behaviour of the convolve algorithm around the edges of the input image.
 
-The EdgeMode determines how to extend the input image with color values so that the matrix operations can be applied
+The EdgeMode determines how to extend the input image with colour values so that the matrix operations can be applied
 when the #Matrix is positioned at or near the edge of the input image.
 
 *********************************************************************************************************************/

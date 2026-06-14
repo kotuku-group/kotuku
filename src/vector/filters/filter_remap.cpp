@@ -28,10 +28,8 @@ class Component {
    public:
 
    Component(CSTRING pName) : Name(pName), Type(RFT_IDENTITY) {
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i] = i;
-         ILookup[i] = glLinearRGB.invert(i);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i;
+      update_ilookup();
    }
 
    std::string Name;
@@ -43,30 +41,29 @@ class Component {
    double Offset;             // If gamma; the offset of the gamma function.
    RFT    Type;               // The type of algorithm to use.
    uint8_t  Lookup[256];        // sRGB lookup
-   uint8_t  ILookup[256];       // Inverted linear RGB lookup
+   uint8_t  ILookup[256];       // Linear RGB lookup; composes sRGB->linear conversion, the transfer function and
+                                // linear->sRGB inversion so the render loop performs one lookup per channel.
+
+   void update_ilookup() {
+      for (size_t i=0; i < sizeof(ILookup); i++) ILookup[i] = glLinearRGB.invert(Lookup[glLinearRGB.convert(i)]);
+   }
 
    void select_invert() {
       Type = RFT_INVERT;
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i]  = 255 - i;
-         ILookup[i] = glLinearRGB.invert(255 - i);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = 255 - i;
+      update_ilookup();
    }
 
    void select_identity() {
       Type = RFT_IDENTITY;
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i] = i;
-         ILookup[i] = glLinearRGB.invert(i);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i;
+      update_ilookup();
    }
 
    void select_mask(uint8_t pMask) {
       Type = RFT_MASK;
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i]  = i & pMask;
-         ILookup[i] = glLinearRGB.invert(i & pMask);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i & pMask;
+      update_ilookup();
    }
 
    void select_linear(const double pSlope, const double pIntercept) {
@@ -75,10 +72,9 @@ class Component {
       Intercept = pIntercept;
 
       for (size_t i=0; i < sizeof(Lookup); i++) {
-         auto c = std::clamp(int((double(i) * pSlope) + pIntercept * 255.0), 0, 255);
-         Lookup[i] = c;
-         ILookup[i] = glLinearRGB.invert(c);
+         Lookup[i] = std::clamp(int((double(i) * pSlope) + pIntercept * 255.0), 0, 255);
       }
+      update_ilookup();
    }
 
    void select_gamma(const double pAmplitude, const double pExponent, const double pOffset) {
@@ -89,10 +85,9 @@ class Component {
 
       for (size_t i=0; i < sizeof(Lookup); i++) {
          double pe = pow(double(i) * (1.0/255.0), pExponent);
-         auto c = std::clamp(int(((pAmplitude * pe) + pOffset) * 255.0), 0, 255);
-         Lookup[i]  = c;
-         ILookup[i] = glLinearRGB.invert(c);
+         Lookup[i] = std::clamp(int(((pAmplitude * pe) + pOffset) * 255.0), 0, 255);
       }
+      update_ilookup();
    }
 
    void select_discrete(kt::vector<double> &Values) {
@@ -107,8 +102,8 @@ class Component {
          auto val = 255.0 * double(Table[k]);
          val = std::max(0.0, std::min(255.0, val));
          Lookup[i] = uint8_t(val);
-         ILookup[i] = glLinearRGB.invert(uint8_t(val));
       }
+      update_ilookup();
    }
 
    void select_table(kt::vector<double> &Values) {
@@ -123,8 +118,8 @@ class Component {
           double v = Table[std::min((k + 1), (n - 1))];
           int val = int(255.0 * (Table[k] + (c * (n - 1) - k) * (v - Table[k])));
           Lookup[i] = std::max(0, std::min(255, val));
-          ILookup[i] = glLinearRGB.invert(Lookup[i]);
       }
+      update_ilookup();
    }
 };
 
@@ -185,9 +180,9 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
          for (int x=0; x < width; x++) {
             if (auto a = sp[A]) {
                uint8_t out[4];
-               out[R] = Self->Red.ILookup[glLinearRGB.convert(sp[R])];
-               out[G] = Self->Green.ILookup[glLinearRGB.convert(sp[G])];
-               out[B] = Self->Blue.ILookup[glLinearRGB.convert(sp[B])];
+               out[R] = Self->Red.ILookup[sp[R]];
+               out[G] = Self->Green.ILookup[sp[G]];
+               out[B] = Self->Blue.ILookup[sp[B]];
                out[A] = Self->Alpha.Lookup[a];
                dp[0] = ((uint32_t *)out)[0];
             }

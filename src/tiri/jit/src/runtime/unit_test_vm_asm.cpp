@@ -4,7 +4,7 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -1712,9 +1712,9 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
 
    // String function assembly tests (run on all platforms)
    // These test the fast assembly implementations with register preservation checks
-   if (NewObject(CLASSID::TIRI, &glStringTestScript) IS ERR::Okay) {
+   if (!NewObject(CLASSID::TIRI, &glStringTestScript)) {
       glStringTestScript->setStatement("");
-      if (Action(AC::Init, glStringTestScript, nullptr) IS ERR::Okay) {
+      if (!Action(AC::Init, glStringTestScript, nullptr)) {
          constexpr std::array<TestCase, 20> StringAsmTests = { {
             // string.byte assembly tests (1-arg fast path)
             { "asm_string_byte_first_char", test_asm_string_byte_first_char },
@@ -1761,4 +1761,4 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
    }
 }
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

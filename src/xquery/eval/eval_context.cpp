@@ -259,7 +259,7 @@ ERR XPathEvaluator::evaluate_location_path(const XPathNode *PathNode, uint32_t C
    bool matched = false;
    auto result = evaluate_step_sequence(initial_context, steps, 0, CurrentPrefix, matched);
 
-   if ((result IS ERR::Okay) or (result IS ERR::Search)) {
+   if ((!result) or (result IS ERR::Search)) {
       if (query->Callback.defined()) return ERR::Okay; // Search (not found) is not relevant with a callback
       return matched ? ERR::Okay : ERR::Search; // At least one match == Okay, otherwise Search
    }
@@ -297,7 +297,7 @@ ERR XPathEvaluator::evaluate_union(const XPathNode *Node, uint32_t CurrentPrefix
       expression_unsupported = saved_expression_unsupported;
 
       auto result = evaluate_ast(branch, CurrentPrefix);
-      if ((result IS ERR::Okay) or (result IS ERR::Terminate)) return result;
+      if ((!result) or (result IS ERR::Terminate)) return result;
 
       if (result != ERR::Search) {
          last_error = result;
@@ -329,7 +329,7 @@ ERR XPathEvaluator::evaluate_step_ast(const XPathNode *StepNode, uint32_t Curren
    bool matched = false;
    auto result = evaluate_step_sequence(context_nodes, steps, 0, CurrentPrefix, matched);
 
-   if ((result IS ERR::Okay) or (result IS ERR::Search)) {
+   if ((!result) or (result IS ERR::Search)) {
       if (query->Callback.defined()) return ERR::Okay; // Search (not found) is not relevant with a callback
       return matched ? ERR::Okay : ERR::Search; // At least one match == Okay, otherwise Search
    }

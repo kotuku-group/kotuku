@@ -272,7 +272,7 @@ void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
 
    auto clipboard = objClipboard::create { };
    if ((clipboard.ok()) and (selectedText.s) and (selectedText.len > 0)) {
-      if (clipboard->addText(std::string_view(selectedText.s, size_t(selectedText.len - 1))) IS ERR::Okay) {
+      if (!clipboard->addText(std::string_view(selectedText.s, size_t(selectedText.len - 1)))) {
 
       }
    }
@@ -322,14 +322,14 @@ void ScintillaKTK::Paste()
    objClipboard::create clipboard = { };
    if (clipboard.ok()) {
       kt::vector<std::string> files;
-      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr) IS ERR::Okay) {
+      if (!clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr)) {
          objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
          if (file.ok()) {
             int len, size;
-            if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
+            if ((!file->get(FID_Size, size)) and (size > 0)) {
                STRING buffer;
-               if (AllocMemory(size, MEM::STRING, (APTR *)&buffer) IS ERR::Okay) {
-                  if (file->read(buffer, size, &len) IS ERR::Okay) {
+               if (!AllocMemory(size, MEM::STRING, (APTR *)&buffer)) {
+                  if (!file->read(buffer, size, &len)) {
                      pdoc->BeginUndoAction();
 
                         ClearSelection();

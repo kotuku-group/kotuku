@@ -48,7 +48,7 @@ private:
          WINHANDLE expected = WINHANDLE(0);
          WINHANDLE new_lock;
 
-         if (alloc_public_waitlock(&new_lock, nullptr) IS ERR::Okay) {
+         if (!alloc_public_waitlock(&new_lock, nullptr)) {
             if (thread_locks[index].compare_exchange_weak(expected, new_lock, std::memory_order_acquire)) {
                kt::Log log("ThreadLockManager");
                log.trace("Allocated thread-lock #%d for thread #%d", index, get_thread_id());
@@ -363,7 +363,7 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
    *Result = nullptr;
 
    if (ObjectID IS glMetaClass.UID) { // Access to the MetaClass requires this special case handler.
-      if (auto error = LockObject(&glMetaClass, MilliSeconds); error IS ERR::Okay) {
+      if (auto error = LockObject(&glMetaClass, MilliSeconds); !error) {
          *Result = &glMetaClass;
          return ERR::Okay;
       }
@@ -390,14 +390,14 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
 
    // Sanity check in case a thread called FreeResource() on the object before LockObject()
 
-   if ((error IS ERR::Okay) and (object->collecting())) {
+   if ((!error) and (object->collecting())) {
       ReleaseObject(object);
       error = ERR::MarkedForDeletion;
    }
 
    object->unpin(error != ERR::Okay);
 
-   if (error IS ERR::Okay) *Result = object;
+   if (!error) *Result = object;
    return error;
 }
 
@@ -498,7 +498,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       //log.function("TID: %d, Sleeping on #%d, Timeout: %d, Queue: %d, Locked By: %d", our_thread, Object->UID, Timeout, Object->Queue, Object->ThreadID);
 
       ERR error = ERR::TimeOut;
-      if (init_sleep(THREADID(Object->ThreadID), Object->UID, RT_OBJECT) IS ERR::Okay) { // Indicate that our thread is sleeping.
+      if (!init_sleep(THREADID(Object->ThreadID), Object->UID, RT_OBJECT)) { // Indicate that our thread is sleeping.
          auto record = get_thread_record();
          record->state.store(TSTATE::PAUSED, std::memory_order_release);
 

@@ -83,6 +83,128 @@ class extBlurFX : public extFilterEffect {
 };
 
 //********************************************************************************************************************
+// SSE2 implementation of the stack blur pass.  The algorithm is identical to the scalar version below, but the
+// per-channel running sums are held in packed 32-bit lanes so that all four channels advance per operation.  All
+// arithmetic is integral, so the output is bit-identical to the scalar path.  Channel byte order is irrelevant
+// because every channel is processed independently and identically.
+
+#ifdef FILTER_SSE2
+
+inline uint32_t blur_read32(const uint8_t *Pixel)
+{
+   uint32_t v;
+   memcpy(&v, Pixel, 4);
+   return v;
+}
+
+inline void blur_write32(uint8_t *Pixel, uint32_t Value)
+{
+   memcpy(Pixel, &Value, 4);
+}
+
+// Spread the four bytes of a pixel into 32-bit lanes, and vice versa.  Packing truncates each lane to its lowest
+// byte, matching the scalar code's uint8_t assignment.
+
+inline __m128i blur_unpack(uint32_t Pixel)
+{
+   auto v = _mm_cvtsi32_si128(int(Pixel));
+   v = _mm_unpacklo_epi8(v, _mm_setzero_si128());
+   return _mm_unpacklo_epi16(v, _mm_setzero_si128());
+}
+
+inline uint32_t blur_pack(__m128i Value)
+{
+   Value = _mm_and_si128(Value, _mm_set1_epi32(0xff));
+   Value = _mm_packs_epi32(Value, Value);
+   Value = _mm_packus_epi16(Value, Value);
+   return uint32_t(_mm_cvtsi128_si32(Value));
+}
+
+// 32-bit low multiply; _mm_mullo_epi32 requires SSE4.1 so it is emulated with paired 32x32->64 multiplies.
+
+inline __m128i blur_mullo32(__m128i A, __m128i B)
+{
+   auto even = _mm_mul_epu32(A, B);
+   auto odd  = _mm_mul_epu32(_mm_srli_si128(A, 4), _mm_srli_si128(B, 4));
+   return _mm_unpacklo_epi32(_mm_shuffle_epi32(even, _MM_SHUFFLE(0, 0, 2, 0)),
+                             _mm_shuffle_epi32(odd, _MM_SHUFFLE(0, 0, 2, 0)));
+}
+
+// One full stack blur pass over an axis.  The horizontal pass walks lines of `Count` pixels stepping 4 bytes at a
+// time; the vertical pass swaps the roles of LineStep and PixelStep so that lines become columns.
+
+static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
+   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum)
+{
+   const int max_index = Count - 1;
+   const uint32_t div = (Radius * 2) + 1;
+   std::vector<uint32_t> stack(div);
+
+   const auto mul = _mm_set1_epi32(int(MulSum));
+   const auto shr = _mm_cvtsi32_si128(int(ShrSum));
+
+   for (int line=0; line < Lines; line++) {
+      const uint8_t *line_in = InData + (LineStep * line);
+      uint8_t *line_out = OutData + (LineStep * line);
+
+      auto sum     = _mm_setzero_si128();
+      auto sum_in  = _mm_setzero_si128();
+      auto sum_out = _mm_setzero_si128();
+
+      auto src = line_in;
+      for (int i=0; i <= Radius; i++) {
+         const auto px = blur_read32(src);
+         stack[i] = px;
+         const auto v = blur_unpack(px);
+         sum     = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(i + 1)));
+         sum_out = _mm_add_epi32(sum_out, v);
+      }
+
+      for (int i=1; i <= Radius; i++) {
+         if (i <= max_index) src += PixelStep;
+         const auto px = blur_read32(src);
+         stack[i + Radius] = px;
+         const auto v = blur_unpack(px);
+         sum    = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(Radius + 1 - i)));
+         sum_in = _mm_add_epi32(sum_in, v);
+      }
+
+      uint32_t stack_ptr = Radius;
+      int xp = (Radius > max_index) ? max_index : Radius;
+      src = line_in + (xp * PixelStep);
+      auto dst = line_out;
+      for (int i=0; i < Count; i++) {
+         blur_write32(dst, blur_pack(_mm_srl_epi32(blur_mullo32(sum, mul), shr)));
+         dst += PixelStep;
+
+         sum = _mm_sub_epi32(sum, sum_out);
+
+         uint32_t stack_start = stack_ptr + div - Radius;
+         if (stack_start >= div) stack_start -= div;
+         sum_out = _mm_sub_epi32(sum_out, blur_unpack(stack[stack_start]));
+
+         if (xp < max_index) {
+            src += PixelStep;
+            ++xp;
+         }
+
+         const auto px = blur_read32(src);
+         stack[stack_start] = px;
+         sum_in = _mm_add_epi32(sum_in, blur_unpack(px));
+         sum    = _mm_add_epi32(sum, sum_in);
+
+         ++stack_ptr;
+         if (stack_ptr >= div) stack_ptr = 0;
+         const auto sv = blur_unpack(stack[stack_ptr]);
+         sum_out = _mm_add_epi32(sum_out, sv);
+         sum_in  = _mm_sub_epi32(sum_in, sv);
+      }
+   }
+}
+
+#endif
+
+//********************************************************************************************************************
 // This is the stack blur algorithm originally implemented in AGG.  It is intended to produce a near identical output
 // to that of a standard gaussian blur algorithm.
 //
@@ -128,7 +250,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
    if ((Self->SourceType IS VSF::REFERENCE) and (Self->Input)) {
       objBitmap *copy_bmp;
-      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); error IS ERR::Okay) {
+      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); !error) {
          gfx::CopyArea(inBmp, copy_bmp, BAF::NIL,
             inBmp->Clip.Left,
             inBmp->Clip.Top,
@@ -146,11 +268,29 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
 
    inBmp->premultiply();
 
+   const int w = (outBmp->Clip.Right - outBmp->Clip.Left);
+   const int h = (outBmp->Clip.Bottom - outBmp->Clip.Top);
+
+   uint8_t *in_data  = inBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
+   uint8_t *out_data = outBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
+
+#ifdef FILTER_SSE2
+   if (rx > 0) {
+      if (rx > 254) rx = 254;
+      stack_blur_axis_sse2(in_data, out_data, outBmp->LineWidth, 4, h, w, rx,
+         stack_blur_tables<int>::g_stack_blur8_mul[rx], stack_blur_tables<int>::g_stack_blur8_shr[rx]);
+   }
+
+   if (ry > 0) {
+      if (ry > 254) ry = 254;
+      // If rx was already processed, the dest becomes the source
+      stack_blur_axis_sse2((rx > 0) ? out_data : in_data, out_data, 4, outBmp->LineWidth, w, h, ry,
+         stack_blur_tables<int>::g_stack_blur8_mul[ry], stack_blur_tables<int>::g_stack_blur8_shr[ry]);
+   }
+#else
    uint8_t *dst_pix_ptr;
    agg::rgba8 *stack_pix_ptr;
 
-   const int w = (outBmp->Clip.Right - outBmp->Clip.Left);
-   const int h = (outBmp->Clip.Bottom - outBmp->Clip.Top);
    const int wm = w - 1;
    const int hm = h - 1;
 
@@ -158,9 +298,6 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    uint8_t R = inBmp->ColourFormat->RedPos>>3;
    uint8_t G = inBmp->ColourFormat->GreenPos>>3;
    uint8_t B = inBmp->ColourFormat->BluePos>>3;
-
-   uint8_t *in_data  = inBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
-   uint8_t *out_data = outBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
 
    uint32_t sum_r, sum_g, sum_b, sum_a;
    uint32_t sum_in_r, sum_in_g, sum_in_b, sum_in_a;
@@ -388,6 +525,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
          }
       }
    }
+#endif
 
    //bmpDemultiply(inBmp);
 

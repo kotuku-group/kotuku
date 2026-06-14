@@ -351,7 +351,7 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
    if (Entry.DeflateMethod IS 0) {
       struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER-1 };
       ERR error = Action(AC::Read, Self->FileIO, &read);
-      if (error IS ERR::Okay) {
+      if (!error) {
          Self->Input[read.Result] = 0;
          DeleteFile(DestPath, nullptr);
          error = CreateLink(DestPath, (CSTRING)Self->Input);
@@ -531,6 +531,7 @@ Args
 NullArgs
 Failed
 BufferOverflow: The output buffer is not large enough.
+InvalidCompression
 
 -TAGS-
 mutates-input, mutates-object
@@ -602,6 +603,8 @@ Args:
 File: An error was encountered when trying to open the source file.
 NoPermission: The `READ_ONLY` flag has been set on the compression object.
 NoSupport: The derived class does not support this method.
+NullArgs
+MissingPath
 
 -TAGS-
 blocking, mutates-object, copies-input, callback-inlines
@@ -699,8 +702,8 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
       std::string srcfolder(src, pathlen); // Extract the path without the file name
 
       DirInfo *dir;
-      if (OpenDir(srcfolder, RDF::FILE, &dir) IS ERR::Okay) {
-         while (ScanDir(dir) IS ERR::Okay) {
+      if (!OpenDir(srcfolder, RDF::FILE, &dir)) {
+         while (!ScanDir(dir)) {
             FileInfo *scan = dir->Info;
             if (wildcmp(filename, scan->Name)) {
                auto folder = src.substr(0, pathlen);
@@ -734,6 +737,7 @@ The level of compression is determined by the #CompressionLevel field value.
 -ERRORS-
 Okay
 Failed: Failed to initialise the decompression process.
+InvalidCompression
 
 -TAGS-
 mutates-object
@@ -784,11 +788,11 @@ the stream.  We recommend that the compression object's derived class ID is stor
 The following C code illustrates a simple means of compressing a file to another file using a stream:
 
 <pre>
-if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
+if (auto error = mtCompressStreamStart(compress); !error) {
    LONG len;
    LONG cmpsize = 0;
    UBYTE input[4096];
-   while ((error = acRead(file, input, sizeof(input), &len)) IS ERR::Okay) {
+   while (!(error = acRead(file, input, sizeof(input), &len))) {
       if (!len) break; // No more data to read.
 
       error = mtCompressStream(compress, input, len, &callback, NULL, 0);
@@ -801,8 +805,8 @@ if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
       }
    }
 
-   if (error IS ERR::Okay) {
-      if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
+   if (!error) {
+      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
       }
@@ -829,6 +833,9 @@ NullArgs
 Args
 BufferOverflow: The output buffer is not large enough to contain the compressed data.
 Retry: Please recall the method using a larger output buffer.
+InvalidState
+AllocMemory
+Function
 
 -TAGS-
 mutates-input, mutates-object, callback-inlines
@@ -941,6 +948,8 @@ bufsize OutputSize: Size of the `Output` buffer (ignored if Output is `NULL`).
 Okay
 NullArgs
 BufferOverflow: The supplied Output buffer is not large enough (check the #MinOutputSize field for the minimum allowable size).
+FieldNotSet
+Function
 
 -TAGS-
 mutates-input, mutates-object, callback-inlines
@@ -1029,6 +1038,7 @@ has been processed, then call #DecompressStreamEnd().
 -ERRORS-
 Okay
 Failed: Failed to initialise the decompression process.
+InvalidCompression
 
 -TAGS-
 mutates-object
@@ -1086,6 +1096,7 @@ Okay
 NullArgs
 AllocMemory
 BufferOverflow: The output buffer is not large enough.
+Function
 
 -TAGS-
 mutates-input, mutates-object, callback-inlines
@@ -1225,6 +1236,8 @@ bufsize OutputSize: Size of the decompression buffer.
 Okay
 Args
 BufferOverflow: The output buffer is not large enough to hold the decompressed information.
+NullArgs
+InvalidCompression
 
 -TAGS-
 mutates-input, mutates-object
@@ -1293,6 +1306,11 @@ Seek
 Write: Failed to write uncompressed information to a destination file.
 Cancelled: The decompression process was cancelled by the feedback mechanism.
 Failed
+NoSupport
+Terminate
+Skip
+InvalidCompression
+Search
 
 -TAGS-
 blocking, mutates-object, callback-inlines
@@ -1380,7 +1398,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
          if (destpath.ends_with('/') or destpath.ends_with('\\')) {
             LOC result;
-            if ((AnalysePath(destpath, &result) IS ERR::Okay) and (result IS LOC::DIRECTORY)) {
+            if ((!AnalysePath(destpath, &result)) and (result IS LOC::DIRECTORY)) {
                Self->FileIndex++;
                continue;
             }
@@ -1466,7 +1484,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
    if (Self->OutputID) print(Self, "\nDecompression complete.");
 
 exit:
-   if ((error IS ERR::Okay) and (Self->FileIndex <= 0)) {
+   if ((!error) and (Self->FileIndex <= 0)) {
       log.msg("No files matched the path \"%.*s\".", int(Args->Path.size()), Args->Path.data());
       error = ERR::Search;
    }
@@ -1498,6 +1516,10 @@ MissingPath
 Seek
 Write
 Failed
+NoSupport
+InvalidCompression
+Decompression
+Search
 
 -TAGS-
 blocking, mutates-object, updates-seek-index, callback-inlines
@@ -1727,7 +1749,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
    else {
       ERR error = ERR::Okay;
       LOC type;
-      bool exists = ((AnalysePath(path, &type) IS ERR::Okay) and (type IS LOC::FILE));
+      bool exists = ((!AnalysePath(path, &type)) and (type IS LOC::FILE));
 
       if (exists) {
          kt::Create<objFile> file({
@@ -1750,7 +1772,7 @@ static ERR COMPRESSION_Init(extCompression *Self)
       }
       else error = ERR::DoesNotExist;
 
-      if (error IS ERR::Okay) { // Test the given location to see if it matches our supported file format (pkzip).
+      if (!error) { // Test the given location to see if it matches our supported file format (pkzip).
          int result;
          if (acRead(Self->FileIO, Self->Header, sizeof(Self->Header), &result) != ERR::Okay) return log.warning(ERR::Read);
 
@@ -1799,8 +1821,8 @@ static ERR COMPRESSION_Init(extCompression *Self)
 
 static ERR COMPRESSION_NewObject(extCompression *Self)
 {
-   if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output) IS ERR::Okay) {
-      if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input) IS ERR::Okay) {
+   if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output)) {
+      if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input)) {
          Self->CompressionLevel = 60; // 60% compression by default
          Self->Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
          Self->MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k
@@ -1896,6 +1918,8 @@ ptr(func) Callback: This callback function will be called with a pointer to a !C
 Okay
 NoSupport
 NullArgs
+Function
+WrongType
 
 -TAGS-
 pure-query, callback-inlines

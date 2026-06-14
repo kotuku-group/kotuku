@@ -461,7 +461,7 @@ end
 -- Executed when the user clicks the rainbow palette area.  Some coordinate translation
 -- occurs in order to manage viewport scaling within the display window.
 
-function selectPalette(self, X, Y)
+function selectPalette(self:table, X:num, Y:num)
    X = math.clamp(X, 0, self._rainbow.winWidth - 1)
    Y = math.clamp(Y, 0, self._rainbow.winHeight - 1)
 

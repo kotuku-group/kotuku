@@ -369,7 +369,7 @@ static ERR tls_setup_server(extNetServer *Self)
       // Check if custom certificate is specified
       if (not Self->SSLCertificate.empty()) {
          log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate.c_str());
-         if ((error = loadCustomCertificateOpenSSL(Self, server_ctx)) IS ERR::Okay) {
+         if (!(error = loadCustomCertificateOpenSSL(Self, server_ctx))) {
             setup_success = true;
             log.msg("Custom SSL server certificate loaded successfully.");
          }
@@ -490,7 +490,7 @@ static ERR tls_setup_client(extNetSocket *Self)
 
          std::string path;
          if (!cert_loaded) {
-            if (ResolvePath("config:ssl/ca-bundle.crt", RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
+            if (!ResolvePath("config:ssl/ca-bundle.crt", RSF::NO_FILE_CHECK, &path)) {
                if (SSL_CTX_load_verify_locations(glClientSSL, path.c_str(), nullptr)) {
                   cert_loaded = true;
                }

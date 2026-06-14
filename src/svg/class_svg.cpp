@@ -321,8 +321,8 @@ static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
 
    auto pic = objImage::create { fl::Width(width), fl::Height(height), fl::Flags(PCF::ALPHA|PCF::NEW) };
    if (pic.ok()) {
-      if ((error = Self->render(pic->Bitmap, 0, 0, width, height)) IS ERR::Okay) {
-         if ((error = acSaveImage(*pic, Args->Dest, Args->ClassID)) IS ERR::Okay) {
+      if (!(error = Self->render(pic->Bitmap, 0, 0, width, height))) {
+         if (!(error = acSaveImage(*pic, Args->Dest, Args->ClassID))) {
             return ERR::Okay;
          }
       }
@@ -350,7 +350,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
 
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SVG)) {
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
-      if ((mc->get(FID_ActionTable, actions) IS ERR::Okay) and (actions)) {
+      if ((!mc->get(FID_ActionTable, actions)) and (actions)) {
          if ((actions[int(AC::SaveToObject)]) and (actions[int(AC::SaveToObject)] != (APTR)SVG_SaveToObject)) {
             return actions[int(AC::SaveToObject)](Self, Args);
          }
@@ -372,10 +372,10 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
          int index = xml->Tags.back().ID;
 
          XTag *tag;
-         if ((error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>", &tag)) IS ERR::Okay) {
+         if (!(error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>", &tag))) {
             bool multiple_viewports = (Self->Scene->Viewport->Next) ? true : false;
             if (multiple_viewports) {
-               if ((error = save_svg_defs(Self, *xml, Self->Scene, index)) IS ERR::Okay) {
+               if (!(error = save_svg_defs(Self, *xml, Self->Scene, index))) {
                   for (auto scan=Self->Scene->Viewport; scan; scan=(objVectorViewport *)scan->Next) {
                      if (!scan->Child) continue; // Ignore dummy viewports with no content
                      save_svg_scan(Self, *xml, scan, index);
@@ -387,34 +387,34 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
             else {
                double x, y, width, height;
 
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewX, x);
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewY, y);
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewWidth, width);
-               if (error IS ERR::Okay) error = Self->Viewport->get(FID_ViewHeight, height);
+               if (!error) error = Self->Viewport->get(FID_ViewX, x);
+               if (!error) error = Self->Viewport->get(FID_ViewY, y);
+               if (!error) error = Self->Viewport->get(FID_ViewWidth, width);
+               if (!error) error = Self->Viewport->get(FID_ViewHeight, height);
 
-               if (error IS ERR::Okay) {
+               if (!error) {
                   char buffer[80];
                   snprintf(buffer, sizeof(buffer), "%g %g %g %g", x, y, width, height);
                   xml::NewAttrib(tag, "viewBox", buffer);
                }
 
-               if (error IS ERR::Okay) {
+               if (!error) {
                   auto dim = Self->Viewport->get<DMF>(FID_Dimensions);
-                  if (dmf::hasAnyX(dim) and (Self->Viewport->get(FID_X, x) IS ERR::Okay))
+                  if (dmf::hasAnyX(dim) and (!Self->Viewport->get(FID_X, x)))
                      set_dimension(tag, "x", x, dmf::hasScaledX(dim));
 
-                  if (dmf::hasAnyY(dim) and (Self->Viewport->get(FID_Y, y) IS ERR::Okay))
+                  if (dmf::hasAnyY(dim) and (!Self->Viewport->get(FID_Y, y)))
                      set_dimension(tag, "y", y, dmf::hasScaledY(dim));
 
-                  if (dmf::hasAnyWidth(dim) and (Self->Viewport->get(FID_Width, width) IS ERR::Okay))
+                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->get(FID_Width, width)))
                      set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
 
-                  if (dmf::hasAnyHeight(dim) and (Self->Viewport->get(FID_Height, height) IS ERR::Okay))
+                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->get(FID_Height, height)))
                      set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
                }
 
-               if (error IS ERR::Okay) {
-                  if ((error = save_svg_defs(Self, *xml, Self->Scene, index)) IS ERR::Okay) {
+               if (!error) {
+                  if (!(error = save_svg_defs(Self, *xml, Self->Scene, index))) {
                      for (auto scan=((objVector *)Self->Viewport)->Child; scan; scan=scan->Next) {
                         save_svg_scan(Self, *xml, scan, index);
                      }
@@ -446,7 +446,7 @@ registered in the top-level @VectorScene object.
 <b>Supported formats:</b>
 <list type="bullet">
 <li>RGB values: `rgb(red, green, blue)`</li>
-<li>Hexadecimal notation: `#RRGGBB` or `#RGB`</li>
+<li>Hexadecimal notation: six-digit triplets or three-digit shorthand triplets</li>
 <li>Named colours: Standard SVG colour names</li>
 <li>URL references: `url(#gradientId)` for complex paint definitions</li>
 </list>

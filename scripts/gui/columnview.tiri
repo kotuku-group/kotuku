@@ -11,8 +11,6 @@ Documentation is available in the Kotuku Wiki.
 
 lDate = nil
 VSPACING  <const> = 2
-ICON_SIZE <const> = 16
-lCounter  <const> = 1
 EDGE      <const> = 4 -- Whitespace around the page
 
 rx_datetime <const> = <{ regex.new([[^(\d{4}-\d{1,2}-\d{1,2})[\sT]?(.*)$]]) }>
@@ -21,6 +19,9 @@ rx_time <const> = <{ regex.new([[^(\d{2}):(\d{2}):?(\d{0,2})$]]) }>
 
 local LINE_HEIGHT, FONT_HEIGHT, LINE_HEIGHT, FONT_HEIGHT, MARGIN
 local ICON_OFFSET, LINE_OFFSET, BANNER_HEIGHT, lEnableTextGradients
+
+glIconSize = 16
+glCounter = 1
 
 lColours = {
    strokeButton = 'rgb(255,255,255,0.3)'
@@ -180,10 +181,10 @@ function arrangeColumns(View:table)
          col.fillItem = View.theme.page.text
          col.fillItemSelect = View.theme.page.textHighlight
       elseif not col.vecGradient then
-         defName = 'colGradient' .. lCounter
-         lCounter++
-         selName = 'colSelect' .. lCounter
-         lCounter++
+         defName = 'colGradient' .. glCounter
+         glCounter++
+         selName = 'colSelect' .. glCounter
+         glCounter++
 
          if (col.align ?? 'left') is 'right' then
             col.vecGradient = gui.simpleGradient(View.scene, defName,
@@ -213,7 +214,7 @@ function arrangeColumns(View:table)
 
    if View._sort then
       col = View._sort.col
-      View._sort.icon.x = col.align is 'right' ? MARGIN :> col.px_width - MARGIN - ICON_SIZE
+      View._sort.icon.x = col.align is 'right' ? MARGIN :> col.px_width - MARGIN - glIconSize
    end
 
    if View.scrollbar then
@@ -237,37 +238,37 @@ function bannerZoneClick(View, Col, X, Y, Value)
       View._sort = { col=Col, ascending=false }
       if not View.iconDescending then
          if not View._sort_desc then
-            info = gui.createIcon(View.scene, 'layout/sort_alpha_desc', ICON_SIZE, View.theme.window.icon, 'sort_desc')
+            info = gui.createIcon(View.scene, 'layout/sort_alpha_desc', glIconSize, View.theme.window.icon, 'sort_desc')
             View._sort_desc = info.fill
          end
 
          View._sort.icon = Col.bannerVP.new('VectorRectangle', {
             name   = 'banner_sort',
             fill   = View._sort_desc,
-            y      = math.round( ((BANNER_HEIGHT - ICON_SIZE) * 0.5)),
-            width  = ICON_SIZE,
-            height = ICON_SIZE
+            y      = math.round( ((BANNER_HEIGHT - glIconSize) * 0.5)),
+            width  = glIconSize,
+            height = glIconSize
          })
       end
    else
       View._sort = { col=Col, ascending=true }
       if not View.iconAscending then
          if not View._sort_asc then
-            info = gui.createIcon(View.scene, 'layout/sort_alpha_asc', ICON_SIZE, View.theme.window.icon, 'sort_asc')
+            info = gui.createIcon(View.scene, 'layout/sort_alpha_asc', glIconSize, View.theme.window.icon, 'sort_asc')
             View._sort_asc = info.fill
          end
 
          View._sort.icon = Col.bannerVP.new('VectorRectangle', {
             name   = 'banner_sort',
             fill   = View._sort_asc,
-            y      = math.round((BANNER_HEIGHT - ICON_SIZE) * 0.5),
-            width  = ICON_SIZE,
-            height = ICON_SIZE
+            y      = math.round((BANNER_HEIGHT - glIconSize) * 0.5),
+            width  = glIconSize,
+            height = glIconSize
          })
       end
    end
 
-   View._sort.icon.x = Col.align is 'right' ? MARGIN :> Col.px_width - MARGIN - ICON_SIZE
+   View._sort.icon.x = Col.align is 'right' ? MARGIN :> Col.px_width - MARGIN - glIconSize
 
    View:sortColumn(Col, View._sort.ascending)
    View.viewport.acDraw()
@@ -552,13 +553,13 @@ gui.columnView = function(Options)
                try
                   local theme = item.iconTheme ?? View.theme.page.icon
                   local uid   = f'{theme}+{item.icon}'
-                  local info  = gui.createIcon(View.scene, item.icon, ICON_SIZE, theme, uid)
+                  local info  = gui.createIcon(View.scene, item.icon, glIconSize, theme, uid)
                   item._iconFill = info.fill
 
                   if View.theme.page.iconHighlight and View.theme.page.iconHighlight != theme then
                      theme = View.theme.page.iconHighlight
                      uid   = f'{theme}+{item.icon}'
-                     info  = gui.createIcon(View.scene, item.icon, ICON_SIZE, theme, uid)
+                     info  = gui.createIcon(View.scene, item.icon, glIconSize, theme, uid)
                      item._iconHighlight = info.fill
                   end
 
@@ -568,8 +569,8 @@ gui.columnView = function(Options)
                         fill   = item._iconFill,
                         x      = MARGIN * 2,
                         y      = y + ICON_OFFSET,
-                        width  = ICON_SIZE,
-                        height = ICON_SIZE,
+                        width  = glIconSize,
+                        height = glIconSize,
                         visibility = vis
                      })
                   else
@@ -613,7 +614,7 @@ gui.columnView = function(Options)
                   item._col[attrib].text.x = col.px_width - MARGIN
                else
                   if col.showIcons then
-                     item._col[attrib].text.x = (MARGIN * 2) + ICON_SIZE + (MARGIN * 2)
+                     item._col[attrib].text.x = (MARGIN * 2) + glIconSize + (MARGIN * 2)
                   else
                      item._col[attrib].text.x = MARGIN
                   end
@@ -647,10 +648,10 @@ gui.columnView = function(Options)
 
    function constructColumnView(View)
       LINE_HEIGHT, FONT_HEIGHT = gui.getFontHeight({ face=View.fontFace, size=View.fontSize, style=View.fontStyle })
-      ICON_SIZE     = LINE_HEIGHT
+      glIconSize    = LINE_HEIGHT
       MARGIN        = math.round(LINE_HEIGHT * 0.3) -- Min space between graphics elements
       LINE_HEIGHT   = math.round(LINE_HEIGHT * 1.5)
-      ICON_OFFSET   = math.round((LINE_HEIGHT - ICON_SIZE) * 0.5)
+      ICON_OFFSET   = math.round((LINE_HEIGHT - glIconSize) * 0.5)
       LINE_OFFSET   = math.round((LINE_HEIGHT + FONT_HEIGHT) * 0.5)
       BANNER_HEIGHT = math.round(LINE_HEIGHT * 1.15)
 

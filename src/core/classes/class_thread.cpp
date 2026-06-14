@@ -230,28 +230,6 @@ static ERR THREAD_Deactivate(extThread *Self)
    return ERR::Okay;
 }
 
-/*********************************************************************************************************************
--ACTION-
-Free: Remove the object and its resources.
-
-Terminating a thread object will destroy the object unless the thread is currently active.  If an attempt to free
-an active thread is made then it will be marked for termination so as to avoid the risk of system corruption.
--END-
-*********************************************************************************************************************/
-
-static ERR THREAD_Free(extThread *Self)
-{
-   if ((Self->Data) and (Self->DataSize > 0)) {
-      FreeResource(Self->Data);
-      Self->Data = nullptr;
-      Self->DataSize = 0;
-   }
-
-   if (Self->CPPThread) { delete Self->CPPThread; Self->CPPThread = nullptr; }
-
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 static ERR THREAD_FreeWarning(extThread *Self)
@@ -263,13 +241,6 @@ static ERR THREAD_FreeWarning(extThread *Self)
       Self->Flags |= THF::AUTO_FREE;
       return ERR::InUse;
    }
-}
-
-//********************************************************************************************************************
-
-static ERR THREAD_Init(extThread *Self)
-{
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -318,7 +289,7 @@ static ERR THREAD_SetData(extThread *Self, struct th::SetData *Args)
       Self->DataSize = 0;
       return ERR::Okay;
    }
-   else if (AllocMemory(Args->Size, MEM::DATA, &Self->Data) IS ERR::Okay) {
+   else if (!AllocMemory(Args->Size, MEM::DATA, &Self->Data)) {
       Self->DataSize = Args->Size;
       copymem(Args->Data, Self->Data, Args->Size);
       return ERR::Okay;
@@ -329,32 +300,12 @@ static ERR THREAD_SetData(extThread *Self, struct th::SetData *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-Callback: A function reference that will be called when the thread is started.
+Callback: This function will be called when the thread finishes.
 
 Set a function reference here to receive a notification when the thread finishes processing.  The
 callback will be executed in the context of the main program loop to minimise resource locking issues.
 
 The prototype for the callback routine is `void Callback(objThread *Thread)`.
-
-*********************************************************************************************************************/
-
-static ERR GET_Callback(extThread *Self, FUNCTION * &Value)
-{
-   if (Self->Callback.defined()) {
-      Value = &Self->Callback;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Callback(extThread *Self, FUNCTION *Value)
-{
-   if (Value) Self->Callback = *Value;
-   else Self->Callback.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Data: Pointer to initialisation data for the thread.
@@ -384,7 +335,7 @@ Flags: Optional flags can be defined here.
 Lookup: THF
 
 -FIELD-
-Routine: A function reference that will be called when the thread is started.
+Routine: This function will be called when the thread starts.
 
 The routine that will be executed when the thread is activated must be specified here.  The function prototype is
 `ERR routine(objThread *Thread)`.
@@ -394,32 +345,28 @@ finished processing, the resulting error code will be stored in the thread objec
 
 *********************************************************************************************************************/
 
-static ERR GET_Routine(extThread *Self, FUNCTION * &Value)
+extThread::~extThread()
 {
-   if (Self->Routine.defined()) {
-      Value = &Self->Routine;
-      return ERR::Okay;
+   if ((Data) and (DataSize > 0)) {
+      FreeResource(Data);
+      Data = nullptr;
+      DataSize = 0;
    }
-   else return ERR::FieldNotSet;
+
+   if (CPPThread) { delete CPPThread; CPPThread = nullptr; }
 }
 
-static ERR SET_Routine(extThread *Self, FUNCTION *Value)
-{
-   if (Value) Self->Routine = *Value;
-   else Self->Routine.clear();
-   return ERR::Okay;
-}
+//********************************************************************************************************************
 
 #include "class_thread_def.c"
 
 static const FieldArray clFields[] = {
+   { "Callback",  FDF_FUNCTION|FDF_RW },
+   { "Routine",   FDF_FUNCTION|FDF_RW },
    { "Data",      FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Data },
    { "DataSize",  FDF_INT|FDF_R },
    { "Error",     FDF_INT|FDF_R },
    { "Flags",     FDF_INT|FDF_RI, nullptr, nullptr, &clThreadFlags },
-   // Virtual fields
-   { "Callback",  FDF_FUNCTION|FDF_RW|FDF_PURE, GET_Callback, SET_Callback },
-   { "Routine",   FDF_FUNCTION|FDF_RW|FDF_PURE, GET_Routine, SET_Routine },
    END_FIELD
 };
 

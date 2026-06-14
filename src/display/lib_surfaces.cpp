@@ -32,7 +32,7 @@ void winDragDropFromHost_Drop(int SurfaceID, char *Datatypes)
 
       if (!modal_id) {
          SURFACEINFO *info;
-         if (gfx::GetSurfaceInfo(pointer->OverObjectID, &info) IS ERR::Okay) {
+         if (!gfx::GetSurfaceInfo(pointer->OverObjectID, &info)) {
             kt::ScopedObjectLock display(info->DisplayID);
             if (display.granted()) {
                kt::ScopedObjectLock obj(pointer->OverObjectID);
@@ -91,7 +91,7 @@ static void check_bmp_buffer_depth(extSurface *Self, objBitmap *Bitmap)
    if ((Bitmap->Flags & BMF::FIXED_DEPTH) != BMF::NIL) return;  // Don't change bitmaps marked as fixed-depth
 
    DisplayInfo *info;
-   if (gfx::GetDisplayInfo(Self->DisplayID, &info) IS ERR::Okay) {
+   if (!gfx::GetDisplayInfo(Self->DisplayID, &info)) {
       if (info->BitsPerPixel != Bitmap->BitsPerPixel) {
          log.msg("[%d] Updating buffer Bitmap %dx%dx%d to match new display depth of %dbpp.", Bitmap->UID, Bitmap->Width, Bitmap->Height, Bitmap->BitsPerPixel, info->BitsPerPixel);
          acResize(Bitmap, Bitmap->Width, Bitmap->Height, info->BitsPerPixel);
@@ -725,7 +725,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
    if (Self->BitmapOwnerID IS Self->UID) {
       kt::ScopedObjectLock<objBitmap> bitmap(Self->BufferID, 5000);
       if (bitmap.granted()) {
-         if (bitmap->resize(Width, Height, BPP) IS ERR::Okay) {
+         if (!bitmap->resize(Width, Height, BPP)) {
             Self->LineWidth     = bitmap->LineWidth;
             Self->BytesPerPixel = bitmap->BytesPerPixel;
             Self->BitsPerPixel  = bitmap->BitsPerPixel;
@@ -1225,7 +1225,7 @@ ERR GetSurfaceCoords(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, i
 
    if (!SurfaceID) {
       DisplayInfo *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      if (!gfx::GetDisplayInfo(0, &display)) {
          if (X)      *X = 0;
          if (Y)      *Y = 0;
          if (AbsX)   *AbsX = 0;
@@ -1414,7 +1414,7 @@ ERR GetVisibleArea(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int
 {
    if (!SurfaceID) {
       DisplayInfo *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      if (!gfx::GetDisplayInfo(0, &display)) {
          if (X) *X = 0;
          if (Y) *Y = 0;
          if (Width)  *Width = display->Width;

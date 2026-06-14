@@ -331,7 +331,7 @@ void MsgWindowClose(OBJECTID SurfaceID)
          }
       }
 
-      if (CheckResourceExists(SurfaceID) IS ERR::Okay) FreeResource(SurfaceID);
+      if (!CheckResourceExists(SurfaceID)) FreeResource(SurfaceID);
    }
 }
 

@@ -119,7 +119,7 @@ OBJECTPTR access_object(GCobject *Object)
    else if ((not Object->ptr) or Object->is_detached()) {
       // Detached objects are always accessed via UID, even if we have a pointer reference.
       OBJECTPTR obj_ptr;
-      if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); error IS ERR::Okay) {
+      if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); !error) {
          Object->ptr = obj_ptr;
          Object->set_locked(true);
       }
@@ -183,7 +183,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    }
 
    std::string_view module_name;
-   if (auto error = MetaClass->getModule(module_name); error IS ERR::Okay) {
+   if (auto error = MetaClass->getModule(module_name); !error) {
       if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
@@ -235,7 +235,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    kt::vector<std::string> *pargs;
    auto task = CurrentTask();
-   if ((task->get(FID_Parameters, pargs) IS ERR::Okay) and (pargs)) {
+   if ((!task->get(FID_Parameters, &pargs)) and (pargs)) {
       kt::vector<std::string> &args = *pargs;
       for (int i=0; i < std::ssize(args); i++) {
          if (kt::startswith(args[i], "--jit-options")) {
@@ -318,7 +318,7 @@ static ERR MODOpen(OBJECTPTR Module)
 
 //********************************************************************************************************************
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 extern void indexing_unit_tests(int &, int &);
 extern void vm_asm_unit_tests(int &, int &);
 extern void jit_frame_unit_tests(int &, int &);
@@ -330,7 +330,7 @@ extern void bulk_unit_tests(int &, int &);
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
    {
       kt::Log log("TiriTests");
       log.branch("Running indexing unit tests...");
@@ -548,7 +548,7 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
       auto &sdef = glStructs[s_name];
 
       for (int i=0; i < Elements; i++) {
-         if (struct_to_table(Lua, ref, sdef, Values[i]) IS ERR::Okay) {
+         if (!struct_to_table(Lua, ref, sdef, Values[i])) {
             // Table is now on top of stack; retrieve arr from stack in case GC moved it
             arr = arrayV(Lua->base + arr_idx - 1);
             TValue *tv = Lua->top - 1;
@@ -585,7 +585,7 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
       int struct_stride = (Stride > 0) ? Stride : sdef.Size;
 
       for (int i=0; i < Elements; i++) {
-         if (struct_to_table(Lua, ref, sdef, Input) IS ERR::Okay) {
+         if (!struct_to_table(Lua, ref, sdef, Input)) {
             // Table is now on top of stack; retrieve arr from stack in case GC moved it
             arr = arrayV(Lua->base + arr_idx - 1);
             TValue *tv = Lua->top - 1;
@@ -682,7 +682,7 @@ int code_writer_id(lua_State *Lua, CPTR Data, size_t Size, void *FileID)
 
    kt::ScopedObjectLock file((MAXINT)FileID);
    if (file.granted()) {
-      if (acWrite(*file, (APTR)Data, Size) IS ERR::Okay) return 0;
+      if (!acWrite(*file, (APTR)Data, Size)) return 0;
    }
    log.warning("Failed writing %d bytes.", (int)Size);
    return 1;
@@ -695,7 +695,7 @@ int code_writer(lua_State *Lua, CPTR Data, size_t Size, OBJECTPTR File)
    if (Size <= 0) return 0; // Ignore bad size requests
 
    int result;
-   if (acWrite(File, (APTR)Data, Size, &result) IS ERR::Okay) {
+   if (!acWrite(File, (APTR)Data, Size, &result)) {
       if ((size_t)result != Size) {
          log.warning("Wrote %d bytes instead of %d.", result, (int)Size);
          return 1;
@@ -715,7 +715,7 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 {
    auto handle = (code_reader_handle *)Handle;
    int result;
-   if (acRead(handle->File, handle->Buffer, SIZE_READ, &result) IS ERR::Okay) {
+   if (!acRead(handle->File, handle->Buffer, SIZE_READ, &result)) {
       *Size = result;
       return (CSTRING)handle->Buffer;
    }

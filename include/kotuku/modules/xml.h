@@ -233,7 +233,7 @@ class objXML : public Object {
    template <class T> inline ERR insertStatement(int Index, XMI Where, T Statement, XTag **Result) {
       int index_result;
       XTag *tag_result;
-      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); error IS ERR::Okay) {
+      if (auto error = insertXML(Index, Where, std::string_view(Statement), &index_result); !error) {
          error = getTag(index_result, &tag_result);
          *Result = tag_result;
          return error;
@@ -480,7 +480,7 @@ class objXML : public Object {
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, 0x00804320, &Value, 1);
+      return field->WriteValue(this, field, 0x00804328, &Value, 1);
    }
 
 };

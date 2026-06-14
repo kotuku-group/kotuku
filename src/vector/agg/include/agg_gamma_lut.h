@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Builds lookup tables for gamma correction between source and destination value ranges. Hooks into pixel formats,
+// rasteriser coverage adjustment, and image processing helpers. In the vector renderer it makes repeated gamma
+// conversion cheap during scanline blending.
 
-
-#ifndef AGG_GAMMA_LUT_INCLUDED
-#define AGG_GAMMA_LUT_INCLUDED
+#pragma once
 
 #include <math.h>
 #include "agg_basics.h"
@@ -84,5 +85,3 @@ namespace agg {
       LoResT *m_inv_gamma;
    };
 }
-
-#endif

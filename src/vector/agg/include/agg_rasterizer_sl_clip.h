@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Clips scanline rasteriser input to a rectangular viewport. Hooks into rasterizer_scanline_aa and Liang-Barsky
+// clipping helpers. In the vector renderer it keeps generated coverage within the active clipping bounds.
 
-#ifndef AGG_RASTERIZER_SL_CLIP_INCLUDED
-#define AGG_RASTERIZER_SL_CLIP_INCLUDED
+#pragma once
 
 #include "agg_clip_liang_barsky.h"
 
@@ -252,5 +253,3 @@ namespace agg
    typedef rasterizer_sl_clip<ras_conv_int_sat> rasterizer_sl_clip_int_sat;
    typedef rasterizer_sl_clip<ras_conv_dbl>     rasterizer_sl_clip_dbl;
 }
-
-#endif

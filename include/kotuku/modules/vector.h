@@ -239,6 +239,7 @@ enum class VGT : int {
    CONIC = 2,
    DIAMOND = 3,
    CONTOUR = 4,
+   GOURAUD = 5,
 };
 
 // Options for stretching text in VectorText.
@@ -516,6 +517,12 @@ DEFINE_ENUM_FLAG_OPERATORS(FM)
 struct GradientStop {
    double Offset;    // An offset in the range of 0 - 1.0
    struct FRGB RGB;  // A floating point RGB value.
+};
+
+struct GouraudVertex {
+   double X;              // The X coordinate of the vertex.
+   double Y;              // The Y coordinate of the vertex.
+   struct FRGB Colour;    // The floating point RGB colour assigned to this vertex.
 };
 
 struct Transition {
@@ -1212,7 +1219,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getFocalX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[29];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1228,7 +1235,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[32];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1236,7 +1243,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getFocalRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[31];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1300,15 +1307,29 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getID(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[13];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
    }
 
    inline ERR getStops(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[33];
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+   inline ERR getVertices(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+   inline ERR getIndices(int * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
       return error;
    }
@@ -1359,7 +1380,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setFocalX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[29];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1371,13 +1392,13 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[32];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[31];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1388,7 +1409,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -1435,17 +1456,27 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setID(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, 0x00904308, &Value, 1);
    }
 
    inline ERR setStops(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, 0x00101318, Value, Elements);
    }
 
+   inline ERR setVertices(APTR Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+   }
+
+   inline ERR setIndices(const int * Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, 0x40101308, Value, Elements);
+   }
+
    inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(this, field, 0x00804208, &Value, 1);
    }
 
@@ -3484,11 +3515,9 @@ class objVector : public Object {
 
    inline ERR getStrokeWidth(double &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      SetObjectContext(this, field, AC::NIL);
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
-      RestoreObjectContext();
       return error;
    }
 
@@ -3752,6 +3781,14 @@ class objVectorPath : public objVector {
 
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR addCommand(struct PathCommand * Commands, int Size) noexcept {
       struct vp::AddCommand args = { Commands, Size };
@@ -3787,8 +3824,24 @@ class objVectorPath : public objVector {
       return error;
    }
 
-   inline ERR getTotalCommands(int &Value) noexcept {
+   inline ERR getX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getY(double &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getTotalCommands(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -3814,8 +3867,20 @@ class objVectorPath : public objVector {
       return field->WriteValue(this, field, 0x00804308, &Value, 1);
    }
 
-   inline ERR setTotalCommands(const int Value) noexcept {
+   inline ERR setX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setTotalCommands(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -4251,6 +4316,18 @@ class objVectorWave : public objVector {
 
    // Action stubs
 
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting

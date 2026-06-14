@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,29 +5,23 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Provides digital differential analyser line interpolators. Hooks into outline rasterisers, span interpolators, and
+// subpixel stepping code. In the vector renderer it provides precise integer stepping for anti-aliased lines and
+// transformed spans.
 
-//
-// classes dda_line_interpolator, dda2_line_interpolator
-//
-//----------------------------------------------------------------------------
-
-#ifndef AGG_DDA_LINE_INCLUDED
-#define AGG_DDA_LINE_INCLUDED
+#pragma once
 
 #include <stdlib.h>
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //===================================================dda_line_interpolator
     template<int FractionShift, int YShift=0> class dda_line_interpolator
     {
     public:
-        //--------------------------------------------------------------------
         dda_line_interpolator() {}
 
-        //--------------------------------------------------------------------
         dda_line_interpolator(int y1, int y2, unsigned count) :
             m_y(y1),
             m_inc(((y2 - y1) << FractionShift) / int(count)),
@@ -36,32 +29,26 @@ namespace agg
         {
         }
 
-        //--------------------------------------------------------------------
         void operator ++ ()
         {
             m_dy += m_inc;
         }
 
-        //--------------------------------------------------------------------
         void operator -- ()
         {
             m_dy -= m_inc;
         }
 
-        //--------------------------------------------------------------------
         void operator += (unsigned n)
         {
             m_dy += m_inc * n;
         }
 
-        //--------------------------------------------------------------------
         void operator -= (unsigned n)
         {
             m_dy -= m_inc * n;
         }
 
-
-        //--------------------------------------------------------------------
         int y()  const { return m_y + (m_dy >> (FractionShift-YShift)); }
         int dy() const { return m_dy; }
 
@@ -72,18 +59,12 @@ namespace agg
         int m_dy;
     };
 
-
-
-
-
-    //=================================================dda2_line_interpolator
     class dda2_line_interpolator
     {
     public:
         typedef int save_data_type;
         enum save_size_e { save_size = 2 };
 
-        //--------------------------------------------------------------------
         dda2_line_interpolator() {}
 
         //-------------------------------------------- Forward-adjusted line
@@ -135,22 +116,18 @@ namespace agg
             }
         }
 
-
-        //--------------------------------------------------------------------
         void save(save_data_type* data) const
         {
             data[0] = m_mod;
             data[1] = m_y;
         }
 
-        //--------------------------------------------------------------------
         void load(const save_data_type* data)
         {
             m_mod = data[0];
             m_y   = data[1];
         }
 
-        //--------------------------------------------------------------------
         void operator++()
         {
             m_mod += m_rem;
@@ -162,7 +139,6 @@ namespace agg
             }
         }
 
-        //--------------------------------------------------------------------
         void operator--()
         {
             if(m_mod <= m_rem)
@@ -174,24 +150,20 @@ namespace agg
             m_y -= m_lft;
         }
 
-        //--------------------------------------------------------------------
         void adjust_forward()
         {
             m_mod -= m_cnt;
         }
 
-        //--------------------------------------------------------------------
         void adjust_backward()
         {
             m_mod += m_cnt;
         }
 
-        //--------------------------------------------------------------------
         int mod() const { return m_mod; }
         int rem() const { return m_rem; }
         int lft() const { return m_lft; }
 
-        //--------------------------------------------------------------------
         int y() const { return m_y; }
 
     private:
@@ -257,10 +229,4 @@ namespace agg
         dda2_line_interpolator m_interpolator;
 
     };
-
-
 }
-
-
-
-#endif

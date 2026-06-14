@@ -46,7 +46,7 @@
 <pre>objXQuery::create query { statement=&quot;/bookstore/book[@price &lt; 10]/title&quot; };
 if (query.ok()) {
    XPathValue *result;
-   if (query-&gt;evaluate(xml) IS ERR::Okay) {
+   if (!query-&gt;evaluate(xml)) {
       log.msg(&quot;Got: %s&quot;, query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
    }
 }
@@ -159,6 +159,7 @@ if (query.ok()) {
         <error code="Okay">Operation successful.</error>
         <error code="NotFound">A search routine in this function failed</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, retains-input</tags>
@@ -197,6 +198,7 @@ if (query.ok()) {
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, caller-owns-result, null-terminated-result, mutates-input</tags>
@@ -301,7 +303,7 @@ if (query.ok()) {
       <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
-<p>Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through automated means on-the-fly, which relies  on the working directory or XML document path.</p>
+<p>Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through automated means on-the-fly, which relies on the working directory or XML document path.</p>
       </description>
     </field>
 

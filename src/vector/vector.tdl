@@ -115,7 +115,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "RADIAL: A radial gradient is drawn from `CenterX, CenterY` to `Radius`.  An optional focal point can be expressed with `FX` and `FY`.",
     "CONIC: The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.",
     "DIAMOND: A diamond gradient is drawn as a square emanating from the center point.",
-    "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.")
+    "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.",
+    "GOURAUD: A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.")
 
   enums('VTS', { type='int', start=0, comment='Options for stretching text in VectorText.' },
     'INHERIT',
@@ -257,7 +258,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "NEIGHBOUR: Nearest neighbour is the fastest sampler at the cost of poor quality.",
     "BILINEAR: Bilinear is a common algorithm that produces a reasonable quality image quickly.",
     "BICUBIC: Produces a similar result to `BILINEAR` at a slightly higher CPU cost and a marginally sharper after-effect.",
-    "SPLINE16: About twice as slow as `BILINEAR`, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.",
+    "SPLINE16: About twice as slow as `BILINEAR`, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.",
     "KAISER: Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to `BILINEAR`.",
     "QUADRIC: Uses a quadratic filter with a modest kernel, giving smoother results than `BILINEAR` with limited extra cost.",
     "GAUSSIAN: Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.",
@@ -305,6 +306,12 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   struct('GradientStop', { comment='Describes a colour stop for the VectorGradient Stops field.' }, [[
    double Offset     # An offset in the range of 0 - 1.0
    struct(FRGB) RGB  # A floating point RGB value.
+  ]])
+
+  struct('GouraudVertex', { comment='Describes a coloured vertex for the VectorGradient Vertices field.' }, [[
+   double X             # The X coordinate of the vertex.
+   double Y             # The Y coordinate of the vertex.
+   struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
   ]])
 
   struct('Transition', { comment='For VectorTransition definitions' }, [[
@@ -608,7 +615,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', extended=true })
+  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
 
   klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
 

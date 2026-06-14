@@ -53,6 +53,8 @@ enum class CON : unsigned int {
 DEFINE_ENUM_FLAG_OPERATORS(CON)
 #endif
 
+extern int16_t GetWindowsIcon();
+
 #ifdef __cplusplus
 extern "C" {
 #endif

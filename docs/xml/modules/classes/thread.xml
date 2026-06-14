@@ -46,16 +46,6 @@ if (thread.ok()) thread-&gt;activate();
       </description>
     </action>
 
-    <action>
-      <name>Free</name>
-      <comment>Remove the object and its resources.</comment>
-      <prototype>ERR FreeResource(*Object)</prototype>
-      <tiriPrototype>err = Object.acFree()</tiriPrototype>
-      <description>
-<p>Terminating a thread object will destroy the object unless the thread is currently active.  If an attempt to free an active thread is made then it will be marked for termination so as to avoid the risk of system corruption.</p>
-      </description>
-    </action>
-
   </actions>
 
   <methods>
@@ -86,8 +76,8 @@ if (thread.ok()) thread-&gt;activate();
   <fields>
     <field>
       <name>Callback</name>
-      <comment>A function reference that will be called when the thread is started.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <comment>This function will be called when the thread finishes.</comment>
+      <access read="R" write="W">Read/Write</access>
       <type>FUNCTION</type>
       <description>
 <p>Set a function reference here to receive a notification when the thread finishes processing.  The callback will be executed in the context of the main program loop to minimise resource locking issues.</p>
@@ -131,8 +121,8 @@ if (thread.ok()) thread-&gt;activate();
 
     <field>
       <name>Routine</name>
-      <comment>A function reference that will be called when the thread is started.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <comment>This function will be called when the thread starts.</comment>
+      <access read="R" write="W">Read/Write</access>
       <type>FUNCTION</type>
       <description>
 <p>The routine that will be executed when the thread is activated must be specified here.  The function prototype is <code>ERR routine(objThread *Thread)</code>.</p>

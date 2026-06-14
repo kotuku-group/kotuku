@@ -59,6 +59,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Shutdown operation failed.</error>
+        <error code="SystemCall">A call to the host system has failed</error>
       </result>
     </action>
 
@@ -79,6 +80,8 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <result>
         <error code="Okay">Read successful (if no data was on the socket, success is still indicated).</error>
         <error code="Failed">A permanent failure has occurred and socket has been closed.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="Read">Error reading data</error>
         <error code="InvalidState">The socket is not in a state that allows reading (e.g. during SSL handshake).</error>
         <error code="Disconnected">The socket connection is closed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
@@ -168,6 +171,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="Failed">Failed to join multicast group.</error>
         <error code="Args">Invalid multicast address.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -188,6 +192,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="Failed">Failed to leave multicast group.</error>
         <error code="Args">Invalid multicast address.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -214,6 +219,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
         <error code="Args">Invalid arguments provided.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
         <error code="BufferOverflow">Receive buffer is too small for the incoming packet.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>non-blocking, mutates-input, mutates-object</tags>
     </method>
@@ -236,10 +242,12 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       </description>
       <result>
         <error code="Okay">The packet was sent successfully.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="OutOfRange">Invalid port number specified.</error>
         <error code="BufferOverflow">The network buffer is full, retry later.</error>
         <error code="InvalidState">Socket is not configured for UDP mode.</error>
         <error code="NetworkUnreachable">The destination network is unreachable.</error>
+        <error code="DataSize">The size of a data chunk or buffer is incorrect</error>
         <error code="NullArgs">Invalid arguments provided.</error>
       </result>
       <tags>non-blocking, consumes-input</tags>

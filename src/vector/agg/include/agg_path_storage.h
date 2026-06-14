@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Stores path commands and floating-point vertices in AGG's standard path container. Hooks into converters, bounding-
+// box helpers, rasterisers, and renderer_scanline entry points. In the vector renderer it is the main in-memory
+// representation for constructed vector paths.
 
-
-#ifndef AGG_PATH_STORAGE_INCLUDED
-#define AGG_PATH_STORAGE_INCLUDED
+#pragma once
 
 #include <cstring>
 #include <cmath>
@@ -245,6 +246,7 @@ namespace agg
         path_base() : m_last_x(0), m_last_y(0), m_vertices(), m_iterator(0) {}
         void remove_all() { m_vertices.remove_all(); m_iterator = 0; }
         void free_all()   { m_vertices.free_all();   m_iterator = 0; }
+        void reserve(unsigned Total) { m_vertices.reserve(Total); }
 
         // Make path functions
 
@@ -968,6 +970,7 @@ namespace agg
 
         void remove_all() { m_vertices.clear(); }
         void free_all()   { m_vertices.clear(); }
+        void reserve(unsigned Total) { m_vertices.reserve(Total); }
 
         void add_vertex(double x, double y, unsigned cmd) {
             m_vertices.push_back(vertex_type(value_type(x), value_type(y), int8u(cmd)));
@@ -1051,5 +1054,3 @@ namespace agg
 
     typedef path_base<vertex_stl_storage<std::vector<vertex_d> > > path_storage;
 }
-
-#endif

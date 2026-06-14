@@ -11,14 +11,14 @@
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function checkCursorImage(View)
+function checkCursorImage(View:table)
    if View.pointerLocked and not View.activeZone then
       mGfx.restoreCursor(PTC_DEFAULT, View.scene.surface)
       View.pointerLocked = nil
    end
 end
 
-function highlightItem(View, Item:table)  -- Simplifies the process of highlighting an item.  Item can be nil for deselection.
+function highlightItem(View:table, Item:table)  -- Simplifies the process of highlighting an item.  Item can be nil for deselection.
    if Item is View.hItem then return end
 
    if Item != View.hItem then
@@ -52,7 +52,7 @@ function deselectAll(View)
    end
 end
 
-function deselectItem(View, Item)
+function deselectItem(View:table, Item)
    if View.sItem is Item then View.sItem = nil end
 
    Item._selected = false
@@ -83,26 +83,26 @@ end
 --   user:      Selected by user interaction (click or keypress)
 --   manual:    Item was manually selected (by the application, not the user).
 
-function reportItemSelected(View, Reason, Item)
+function reportItemSelected(View:table, Reason, Item)
    View?.itemSelected(View, Reason, Item)
 end
 
-function reportItemDeselected(View, Reason, Item)
+function reportItemDeselected(View:table, Reason, Item)
    View?.itemDeselected(View, Reason, Item)
 end
 
-function reportItemActivated(View, Reason, Item)
+function reportItemActivated(View:table, Reason, Item)
    if Item.activity then Item.activity(Item) end
    View?.itemActivated(View, Reason, Item)
 end
 
-function reportActiveChange(View, Reason, Item)
+function reportActiveChange(View:table, Reason, Item)
    View?.activeChange(View, Reason, Item)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function simpleSelect(View, Item)
+function simpleSelect(View:table, Item)
    if View.sItem then
       deselectItem(View, View.sItem)
       reportItemDeselected(View, 'user', View.sItem)
@@ -114,7 +114,7 @@ function simpleSelect(View, Item)
    View.scene.surface.mtScheduleRedraw()
 end
 
-function selectNext(View, Filter)
+function selectNext(View:table, Filter)
    if not View.sItem then
       for item in values(View.items) do
          if (not item.hidden) and Filter(item) then
@@ -135,7 +135,7 @@ function selectNext(View, Filter)
    end
 end
 
-function selectPrev(View, Filter)
+function selectPrev(View:table, Filter)
    if not View.sItem then
       for i=1, #View.items do
          item = View.items[#View.items - i]
@@ -160,7 +160,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.initView = function(Options, BuildUI, NewItems)
+gui.initView = function(Options:table, BuildUI, NewItems)
    vw = {
       lookup     = { }, -- Lookup items by ID
       activeZone = nil,
@@ -198,7 +198,7 @@ gui.initView = function(Options, BuildUI, NewItems)
       assert(Items, 'No Items provided')
 
       new_items = { }
-      for k, item in pairs(Items) do
+      for item in values(Items) do
          new_item = {
             _id = glItemCounter,
             _vectors = { },

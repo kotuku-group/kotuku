@@ -111,6 +111,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">At least one match was found and processed.</error>
+      <error code="Terminate">Termination requested</error>
       <error code="Search">No matches were found.</error>
       <error code="NullArgs">One or more required input arguments were null.</error>
     </result>

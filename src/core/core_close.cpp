@@ -288,7 +288,7 @@ void CloseCore(void)
 
    if (glCodeIndex < CP_FREE_COREBASE) {
       glCodeIndex = CP_FREE_COREBASE;
-      if (LocalCoreBase) { FreeResource(LocalCoreBase); LocalCoreBase = nullptr; }
+      if (LocalCoreBase) { free(LocalCoreBase); LocalCoreBase = nullptr; }
    }
 
    if (glCodeIndex < CP_FREE_PRIVATE_MEMORY) {
@@ -399,7 +399,7 @@ __export void Expunge(int16_t Force)
                if (mod_master->Expunge) {
                   kt::Log log(__FUNCTION__);
                   log.branch("Expunging %s module #%d.", mod_master->Name.c_str(), mod_master->UID);
-                  if (auto error = mod_master->Expunge(); error IS ERR::Okay) {
+                  if (auto error = mod_master->Expunge(); !error) {
                      ccount++;
                      if (FreeResource(mod_master) != ERR::Okay) {
                         log.warning("RootModule is corrupt");
@@ -492,7 +492,7 @@ __export void Expunge(int16_t Force)
       // original allocation (i.e. by UID) is a good heuristic for avoiding problems with modules that have circular
       // dependencies on each other.
 
-      RootModule *sanity_check = nullptr;
+      objRootModule *sanity_check = nullptr;
 restart_forced_expunge:
       auto mod_master = glModuleList;
       for (auto scan=mod_master; scan; scan=scan->Next) {

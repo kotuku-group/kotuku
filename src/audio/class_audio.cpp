@@ -131,7 +131,7 @@ static ERR AUDIO_Activate(extAudio *Self)
    Self->MixBufferSize = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
    Self->MixElements   = SAMPLE(Self->MixBufferSize / mixbitsize);
 
-   if (AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer) IS ERR::Okay) {
+   if (!AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer)) {
       // Configure the mixing system
 
       bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;
@@ -269,7 +269,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
       sample.Data = nullptr;
    }
-   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) IS ERR::Okay) {
+   else if (!AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data)) {
       copymem(Args->Data, sample.Data, Args->DataSize);
    }
    else return log.warning(ERR::AllocMemory);
@@ -519,33 +519,6 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
 //********************************************************************************************************************
 
-static ERR AUDIO_Free(extAudio *Self)
-{
-   if ((Self->Flags & ADF::AUTO_SAVE) != ADF::NIL) Self->saveSettings();
-
-   if (Self->Timer) { UpdateTimer(Self->Timer, 0); Self->Timer = nullptr; }
-
-   glSoundChannels.erase(Self->UID);
-
-   acDeactivate(Self);
-
-   if (Self->MixBuffer) { FreeResource(Self->MixBuffer); Self->MixBuffer = nullptr; }
-
-#ifdef ALSA_ENABLED
-
-   free_alsa(Self);
-
-#elif _WIN32
-
-   dsCloseDevice();
-
-#endif
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR AUDIO_Init(extAudio *Self)
 {
    kt::Log log;
@@ -553,48 +526,6 @@ static ERR AUDIO_Init(extAudio *Self)
 #ifdef _WIN32
    Self->OutputRate = 44100; // Mix rate is forced for direct sound
 #endif
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR AUDIO_NewObject(extAudio *Self)
-{
-   kt::Log log;
-
-   Self->OutputRate  = 44100;        // Rate for output to speakers
-   Self->InputRate   = 44100;        // Input rate for recording
-   Self->Quality     = 80;
-   Self->BitDepth    = 16;
-   Self->Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
-   Self->Periods     = 4;
-   Self->PeriodSize  = 2048;
-   Self->Device      = "default";
-   Self->MaxChannels = 8;
-
-   const SystemState *state = GetSystemState();
-   if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
-      Self->Flags |= ADF::SYSTEM_WIDE;
-   }
-
-   Self->Samples.reserve(32);
-
-#ifdef __linux__
-   Self->Volumes.resize(2);
-   Self->Volumes[0].Name = "Master";
-   for (int i=0; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = 1.0;
-
-   Self->Volumes[1].Name = "PCM";
-   for (int i=0; i < std::ssize(Self->Volumes[1].Channels); i++) Self->Volumes[1].Channels[i] = 1.0;
-#else
-   Self->Volumes.resize(1);
-   Self->Volumes[0].Name = "Master";
-   Self->Volumes[0].Channels[0] = 1.0;
-   for (int i=1; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = -1;
-#endif
-
-   load_config(Self);
 
    return ERR::Okay;
 }
@@ -901,6 +832,9 @@ Okay: The new volume was applied successfully.
 Args
 NullArgs
 OutOfRange: The `Volume` or `Index` is out of the acceptable range.
+NoSupport
+NotInitialised
+Search
 
 -TAGS-
 blocking, mutates-object
@@ -1409,13 +1343,13 @@ static void load_config(extAudio *Self)
       config->read("AUDIO", "BitDepth", Self->BitDepth);
 
       int value;
-      if (config->read("AUDIO", "Periods", value) IS ERR::Okay) SET_Periods(Self, value);
-      if (config->read("AUDIO", "PeriodSize", value) IS ERR::Okay) SET_PeriodSize(Self, value);
+      if (!config->read("AUDIO", "Periods", value)) SET_Periods(Self, value);
+      if (!config->read("AUDIO", "PeriodSize", value)) SET_PeriodSize(Self, value);
       if (config->read("AUDIO", "Device", Self->Device) != ERR::Okay) Self->Device = "default";
 
       std::string str;
       Self->Flags |= ADF::STEREO;
-      if (config->read("AUDIO", "Stereo", str) IS ERR::Okay) {
+      if (!config->read("AUDIO", "Stereo", str)) {
          if (iequals("FALSE", str)) Self->Flags &= ~ADF::STEREO;
       }
 
@@ -1425,7 +1359,7 @@ static void load_config(extAudio *Self)
       // Find the mixer section, then load the mixer information
 
       ConfigGroups *groups;
-      if (config->get(FID_Data, groups) IS ERR::Okay) {
+      if (!config->get(FID_Data, groups)) {
          for (auto& [group, keys] : groups[0]) {
             if (iequals("MIXER", group)) {
                Self->Volumes.clear();
@@ -1466,22 +1400,84 @@ static void load_config(extAudio *Self)
 
 //********************************************************************************************************************
 
+extAudio::extAudio()
+{
+   OutputRate  = 44100;        // Rate for output to speakers
+   InputRate   = 44100;        // Input rate for recording
+   Quality     = 80;
+   BitDepth    = 16;
+   Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
+   Periods     = 4;
+   PeriodSize  = 2048;
+   Device      = "default";
+   MaxChannels = 8;
+
+   const SystemState *state = GetSystemState();
+   if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
+      Flags |= ADF::SYSTEM_WIDE;
+   }
+
+   Samples.reserve(32);
+
+#ifdef __linux__
+   Volumes.resize(2);
+   Volumes[0].Name = "Master";
+   for (int i=0; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = 1.0;
+
+   Volumes[1].Name = "PCM";
+   for (int i=0; i < std::ssize(Volumes[1].Channels); i++) Volumes[1].Channels[i] = 1.0;
+#else
+   Volumes.resize(1);
+   Volumes[0].Name = "Master";
+   Volumes[0].Channels[0] = 1.0;
+   for (int i=1; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = -1;
+#endif
+
+   load_config(this);
+}
+
+//********************************************************************************************************************
+
+extAudio::~extAudio() {
+   if ((Flags & ADF::AUTO_SAVE) != ADF::NIL) saveSettings();
+
+   if (Timer) { UpdateTimer(Timer, 0); Timer = nullptr; }
+
+   glSoundChannels.erase(UID);
+
+   acDeactivate(this);
+
+   if (MixBuffer) FreeResource(MixBuffer);
+
+#ifdef ALSA_ENABLED
+
+   free_alsa(this);
+
+#elif _WIN32
+
+   dsCloseDevice();
+
+#endif
+}
+
+//********************************************************************************************************************
+
 #include "class_audio_def.c"
 
 static const FieldArray clAudioFields[] = {
    { "OutputRate",    FDF_INT|FDF_RI, nullptr, SET_OutputRate },
    { "InputRate",     FDF_INT|FDF_RI },
-   { "Quality",       FDF_INT|FDF_RW,    nullptr, SET_Quality },
+   { "Quality",       FDF_INT|FDF_RW,      nullptr, SET_Quality },
    { "Flags",         FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clAudioFlags },
-   { "BitDepth",      FDF_INT|FDF_RI,    nullptr, SET_BitDepth },
-   { "Periods",       FDF_INT|FDF_RI,    nullptr, SET_Periods },
-   { "PeriodSize",    FDF_INT|FDF_RI,    nullptr, SET_PeriodSize },
+   { "BitDepth",      FDF_INT|FDF_RI,      nullptr, SET_BitDepth },
+   { "Periods",       FDF_INT|FDF_RI,      nullptr, SET_Periods },
+   { "PeriodSize",    FDF_INT|FDF_RI,      nullptr, SET_PeriodSize },
    // VIRTUAL FIELDS
    { "Device",        FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Device, SET_Device },
-   { "MixerLag",      FDF_DOUBLE|FDF_R,   GET_MixerLag },
-   { "MasterVolume",  FDF_DOUBLE|FDF_RW|FDF_PURE,  GET_MasterVolume, SET_MasterVolume },
-   { "Mute",          FDF_INT|FDF_RW,    GET_Mute, SET_Mute },
-   { "Stereo",        FDF_INT|FDF_RW|FDF_PURE,    GET_Stereo, SET_Stereo },
+   { "MixerLag",      FDF_DOUBLE|FDF_R,               GET_MixerLag },
+   { "MasterVolume",  FDF_DOUBLE|FDF_RW|FDF_PURE,     GET_MasterVolume, SET_MasterVolume },
+   { "Mute",          FDF_INT|FDF_RW,                 GET_Mute, SET_Mute },
+   { "Stereo",        FDF_INT|FDF_RW|FDF_PURE,        GET_Stereo, SET_Stereo },
    END_FIELD
 };
 

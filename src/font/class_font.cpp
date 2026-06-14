@@ -108,7 +108,7 @@ static ERR FONT_Init(extFont *Self)
 
    if (Self->Path.empty()) {
       std::string path;
-      if (auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta); error IS ERR::Okay) {
+      if (auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta); !error) {
          error = Self->set(FID_Path, path);
          if (error != ERR::Okay) return error;
       }
@@ -145,7 +145,7 @@ static ERR FONT_Init(extFont *Self)
             file->seekStart(fonts[i].Offset);
 
             winfnt_header_fields header;
-            if (file->read(&header, sizeof(header)) IS ERR::Okay) {
+            if (!file->read(&header, sizeof(header))) {
                if (auto error = validate_winfnt_header(header, ""); error != ERR::Okay) {
                   return log.warning(error);
                }
@@ -293,17 +293,6 @@ Face: The name of a font face that is to be loaded on initialisation.
 The name of an installed font face must be specified before initialisation unless #Path is set directly.  A list of
 available faces can be obtained from ~Font.GetList().
 
-The face string can include optional point size, style and colour values in the form `face:pointsize:style:colour`.
-Omitted middle values may be left empty.
-
-Here are some examples:
-
-<pre>
-Noto Sans:12:Bold Italic:#ff0000
-Courier:10.6
-Charter:120%::255,128,255
-</pre>
-
 Multiple font faces can be specified in CSV format, e.g. `Sans Serif,Noto Sans`.  Names are resolved from left to
 right.
 
@@ -315,38 +304,12 @@ static ERR SET_Face(extFont *Self, const std::string_view &Value)
       std::string_view final_name;
       auto i = Value.find(':');
       auto face = Value.substr(0, i);
-      if (auto error = fnt::ResolveFamilyName(face, &final_name); error IS ERR::Okay) {
+      if (auto error = fnt::ResolveFamilyName(face, &final_name); !error) {
          Self->Face.assign(final_name);
+         if (i != std::string::npos) kt::Log().warning("Compound face values are deprecated.");
+         return ERR::Okay;
       }
       else return error;
-
-      if (i IS std::string::npos) return ERR::Okay;
-
-      // Extract the point size
-
-      auto point = Value.substr(i + 1);
-      i = point.find(':');
-      auto point_value = point.substr(0, i);
-      if (not point_value.empty()) {
-         double pt = 0;
-         auto result = std::from_chars(point_value.data(), point_value.data() + point_value.size(), pt);
-         if (result.ec IS std::errc()) SET_Point(Self, pt);
-      }
-
-      if (i IS std::string::npos) return ERR::Okay;
-
-      // Extract the style string
-
-      auto style = point.substr(i + 1);
-      i = style.find(':');
-
-      SET_Style(Self, style.substr(0, i));
-
-      if (i IS std::string::npos) return ERR::Okay;
-
-      // Extract the colour string
-
-      Self->set(FID_Colour, style.substr(i + 1));
    }
    else Self->Face.clear();
 

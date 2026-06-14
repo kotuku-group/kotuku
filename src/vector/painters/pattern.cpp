@@ -46,7 +46,8 @@ static ERR PATTERN_Draw(extVectorPattern *Self, struct acDraw *Args)
 
    clearmem(Self->Bitmap->Data, Self->Bitmap->LineWidth * Self->Bitmap->Height);
    Self->Scene->Bitmap = Self->Bitmap;
-   acDraw(Self->Scene);
+   auto error = acDraw(Self->Scene);
+   if (error != ERR::Okay) return error;
 
    return ERR::Okay;
 }
@@ -104,8 +105,8 @@ static ERR PATTERN_Init(extVectorPattern *Self)
 
 static ERR PATTERN_NewObject(extVectorPattern *Self)
 {
-   if (NewLocalObject(CLASSID::VECTORSCENE, &Self->Scene) IS ERR::Okay) {
-      if (NewObject(CLASSID::VECTORVIEWPORT, &Self->Viewport) IS ERR::Okay) {
+   if (!NewLocalObject(CLASSID::VECTORSCENE, &Self->Scene)) {
+      if (!NewObject(CLASSID::VECTORVIEWPORT, &Self->Viewport)) {
          SetOwner(Self->Viewport, Self->Scene);
          Self->SpreadMethod = VSPREAD::REPEAT;
          Self->Units        = VUNIT::BOUNDING_BOX;
@@ -201,7 +202,7 @@ static ERR VECTORPATTERN_SET_Matrices(extVectorPattern *Self, VectorMatrix *Valu
       auto hook = &Self->Matrices;
       while (Value) {
          VectorMatrix *matrix;
-         if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix) IS ERR::Okay) {
+         if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
             matrix->Vector = nullptr;
             matrix->Next   = nullptr;
             matrix->ScaleX = Value->ScaleX;
@@ -292,7 +293,7 @@ static ERR PATTERN_SET_Transform(extVectorPattern *Self, const std::string_view 
 
    if (not Self->Matrices) {
       VectorMatrix *matrix;
-      if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix) IS ERR::Okay) {
+      if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
          matrix->Vector = nullptr;
          matrix->Next   = Self->Matrices;
          matrix->ScaleX = 1.0;

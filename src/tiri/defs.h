@@ -181,7 +181,7 @@ struct actionmonitor {
          kt::Log log(__FUNCTION__);
          log.trace("Unsubscribe action %s from object #%d", glActions[int(ActionID)].Name, ObjectID);
          OBJECTPTR obj;
-         if (AccessObject(ObjectID, 3000, &obj) IS ERR::Okay) {
+         if (!AccessObject(ObjectID, 3000, &obj)) {
             UnsubscribeAction(obj, ActionID);
             ReleaseObject(obj);
          }

@@ -86,6 +86,7 @@ int TotalArgs: The total number of parameters in the Args parameter.
 -ERRORS-
 Okay:
 Args:
+NullArgs
 
 -TAGS-
 mutates-object, callback-inlines, private
@@ -697,7 +698,7 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 
             kt::SwitchContext ctx(Self);
             std::string rpath;
-            if (ResolvePath(buf, RSF::APPROXIMATE, &rpath) IS ERR::Okay) {
+            if (!ResolvePath(buf, RSF::APPROXIMATE, &rpath)) {
                Self->WorkingPath = rpath;
             }
             else Self->WorkingPath = working_path;

@@ -104,22 +104,36 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
       renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right-1, Self->Target->Clip.Bottom-1);
 
       agg::span_interpolator_linear<> interpolator(img_transform);
-
-      agg::image_filter_lut ifilter;
-      set_filter(ifilter, SampleMethod, img_transform);
-
       agg::span_once<agg::pixfmt_psl> source(pixSource, 0, 0);
-      agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
-         spangen(source, interpolator, ifilter, false);
 
       set_raster_rect_path(raster, Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right - Self->Target->Clip.Left,
          Self->Target->Clip.Bottom - Self->Target->Clip.Top);
 
-      renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      if (SampleMethod IS VSM::NEIGHBOUR) {
+         agg::span_image_filter_rgba_nn<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+            spangen(source, interpolator);
+         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      }
+      else {
+         const agg::image_filter_lut &ifilter = get_filter(SampleMethod, img_transform);
+         agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+            spangen(source, interpolator, ifilter, false);
+         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      }
    }
    else gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height, -img_transform.tx, -img_transform.ty);
 }
+
+//********************************************************************************************************************
+// SSE2 detection is shared via link/simd.h.  Filter effects use FILTER_SSE2 to guard their SIMD rendering
+// paths, falling back to scalar code on other architectures.
+
+#include "../../link/simd.h"
+
+#ifdef KOTUKU_SSE2
+   #define FILTER_SSE2 1
+#endif
 
 //********************************************************************************************************************
 
@@ -284,15 +298,38 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
    else if (SourceType IS VSF::BKGD_ALPHA) {
       if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
       if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         int dy = bmp->Clip.Top;
-         for (int sy=Self->BkgdBitmap->Clip.Top; sy < Self->BkgdBitmap->Clip.Bottom; sy++) {
-            auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
-            auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
-            int dx = bmp->Clip.Left;
-            for (int sx=Self->BkgdBitmap->Clip.Left; sx < Self->BkgdBitmap->Clip.Right; sx++) {
-               dest[dx++] = src[sx] & 0xff000000;
+         int src_left = std::max(Self->VectorClip.left, Self->BkgdBitmap->Clip.Left);
+         int src_top = std::max(Self->VectorClip.top, Self->BkgdBitmap->Clip.Top);
+         int src_right = std::min(Self->VectorClip.right, Self->BkgdBitmap->Clip.Right);
+         int src_bottom = std::min(Self->VectorClip.bottom, Self->BkgdBitmap->Clip.Bottom);
+
+         int dest_x = bmp->Clip.Left + (src_left - Self->VectorClip.left);
+         int dest_y = bmp->Clip.Top + (src_top - Self->VectorClip.top);
+
+         if (dest_x < bmp->Clip.Left) {
+            src_left += bmp->Clip.Left - dest_x;
+            dest_x = bmp->Clip.Left;
+         }
+
+         if (dest_y < bmp->Clip.Top) {
+            src_top += bmp->Clip.Top - dest_y;
+            dest_y = bmp->Clip.Top;
+         }
+
+         int width = std::min(src_right - src_left, bmp->Clip.Right - dest_x);
+         int height = std::min(src_bottom - src_top, bmp->Clip.Bottom - dest_y);
+
+         if ((width > 0) and (height > 0)) {
+            int dy = dest_y;
+            for (int sy=src_top; sy < src_top + height; sy++) {
+               auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
+               auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
+               int dx = dest_x;
+               for (int sx=src_left; sx < src_left + width; sx++) {
+                  dest[dx++] = src[sx] & 0xff000000;
+               }
+               dy++;
             }
-            dy++;
          }
       }
    }
@@ -712,7 +749,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string_view &V
    for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
       ss << "<";
       std::string def;
-      if (e->get(FID_XMLDef, def) IS ERR::Okay) {
+      if (!e->get(FID_XMLDef, def)) {
          ss << def;
       }
       ss << "/>";

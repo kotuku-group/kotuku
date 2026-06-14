@@ -174,9 +174,9 @@ static ERR NETLOOKUP_BlockingResolveAddress(extNetLookup *Self, struct nl::Block
    log.branch("Address: %.*s", int(Args->Address.size()), Args->Address.data());
 
    IPAddress ip;
-   if (net::StrToAddress(Args->Address, &ip) IS ERR::Okay) {
+   if (!net::StrToAddress(Args->Address, &ip)) {
       DNSEntry info;
-      if (auto error = resolve_address(Args->Address, &ip, info); error IS ERR::Okay) {
+      if (auto error = resolve_address(Args->Address, &ip, info); !error) {
          Self->Info = info;
          resolve_callback(Self, ERR::Okay, Self->Info.HostName, Self->Info.Addresses);
          return ERR::Okay;
@@ -226,7 +226,7 @@ static ERR NETLOOKUP_BlockingResolveName(extNetLookup *Self, struct nl::Blocking
    log.branch("Host: %.*s", int(Args->HostName.size()), Args->HostName.data());
 
    DNSEntry info;
-   if (auto error = resolve_name(Args->HostName, info); error IS ERR::Okay) {
+   if (auto error = resolve_name(Args->HostName, info); !error) {
       Self->Info = info;
       resolve_callback(Self, ERR::Okay, Self->Info.HostName, Self->Info.Addresses);
       return ERR::Okay;
@@ -325,7 +325,7 @@ static ERR NETLOOKUP_ResolveAddress(extNetLookup *Self, struct nl::ResolveAddres
    }
 
    IPAddress ip;
-   if (net::StrToAddress(Args->Address, &ip) IS ERR::Okay) {
+   if (!net::StrToAddress(Args->Address, &ip)) {
       resolve_buffer rb(Self->UID, ip, Args->Address);
 
       Self->Threads.emplace_back(std::make_unique<std::jthread>(std::jthread([](resolve_buffer rb) {

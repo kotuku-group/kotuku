@@ -628,7 +628,7 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do -- Function
+   do -- Direction C/C++ function reference; i.e. void (*my_function)(args...)
       local fptr_args = rx_fptr_type.extract(Value.type)
       if fptr_args then
          local arglist = fptr_args:split(' ')

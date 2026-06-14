@@ -148,7 +148,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       // (ideally with no leading folder references).
 
       if (((sep IS std::string::npos) or (Path[sep] != ':')) and ((Flags & RSF::PATH) != RSF::NIL)) {
-         if (resolve_path_env(Path, Result) IS ERR::Okay) return ERR::Okay;
+         if (!resolve_path_env(Path, Result)) return ERR::Okay;
       }
 
       if ((sep IS std::string::npos) or (Path[sep] != ':')) resolved = true;
@@ -159,11 +159,11 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       dest.assign(final_path);
 
       if ((Flags & RSF::APPROXIMATE) != RSF::NIL) {
-         if (test_path(dest, RSF::APPROXIMATE) IS ERR::Okay) final_path = dest;
+         if (!test_path(dest, RSF::APPROXIMATE)) final_path = dest;
          else return ERR::FileNotFound;
       }
       else if ((Flags & RSF::NO_FILE_CHECK) IS RSF::NIL) {
-         if (test_path(dest, RSF::NIL) IS ERR::Okay) final_path = dest;
+         if (!test_path(dest, RSF::NIL)) final_path = dest;
          else return ERR::FileNotFound;
       }
 
@@ -237,7 +237,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
    } // for()
 
    if (loop > 0) { // Note that loop starts at 10 and decrements to zero
-      if ((error IS ERR::Okay) and dest.empty()) return ERR::InvalidPath;
+      if ((!error) and dest.empty()) return ERR::InvalidPath;
       return error;
    }
    else return ERR::Loop;
@@ -425,7 +425,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       auto error = ERR(-1);
       for (loop=10; loop > 0; loop--) {
          if ((j != std::string::npos) and (j > 1) and (Dest[j] IS ':')) { // Remaining ':' indicates more path resolution is required.
-            if ((error = resolve(Dest, buffer, Flags)) IS ERR::Okay) {
+            if (!(error = resolve(Dest, buffer, Flags))) {
                Dest.assign(buffer);
                j = Dest.find_first_of(":/"); // Reexamine the result for the presence of a colon.
             }
@@ -439,9 +439,9 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
          return ERR::Loop;
       }
 
-      if (error IS ERR::Okay) return ERR::Okay;
+      if (!error) return ERR::Okay;
       else if ((Flags & RSF::NO_FILE_CHECK) != RSF::NIL) return ERR::Okay;
-      else if (test_path(Dest, Flags) IS ERR::Okay) return ERR::Okay;
+      else if (!test_path(Dest, Flags)) return ERR::Okay;
 
       log.trace("File does not exist at %s", Dest.c_str());
 
@@ -473,10 +473,10 @@ static ERR resolve_object_path(const std::string &Path, const std::string &Sourc
 
    if (!Path.empty()) {
       OBJECTID volume_id;
-      if (FindObject(Path.c_str(), CLASSID::NIL, &volume_id) IS ERR::Okay) {
+      if (!FindObject(Path.c_str(), CLASSID::NIL, &volume_id)) {
          OBJECTPTR object;
-         if (AccessObject(volume_id, 5000, &object) IS ERR::Okay) {
-            if ((object->get(FID_ResolvePath, resolve_virtual) IS ERR::Okay) and (resolve_virtual)) {
+         if (!AccessObject(volume_id, 5000, &object)) {
+            if ((!object->get(FID_ResolvePath, resolve_virtual)) and (resolve_virtual)) {
                error = resolve_virtual(object, Source, Dest);
             }
             ReleaseObject(object);

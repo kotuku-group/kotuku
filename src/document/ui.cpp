@@ -211,7 +211,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
                   else if (code IS SCODE::IMAGE); // Inline images count as a character
                   else if (code != SCODE::TEXT) continue;
 
-                  if (resolve_fontx_by_index(Self, index, Self->CursorCharX) IS ERR::Okay) {
+                  if (!resolve_fontx_by_index(Self, index, Self->CursorCharX)) {
                      Self->CursorIndex = index;
                      Self->Viewport->draw();
                      log.warning("LeftCursor: %d, X: %g", Self->CursorIndex.index, Self->CursorCharX);
@@ -237,7 +237,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
                // The current index references a content character or object.  Advance the cursor to the next index.
 
                index.next_char(Self->Stream);
-               if (resolve_fontx_by_index(Self, index, Self->CursorCharX) IS ERR::Okay) {
+               if (!resolve_fontx_by_index(Self, index, Self->CursorCharX)) {
                   Self->CursorIndex = index;
                   Self->Viewport->draw();
                   log.warning("RightCursor: %d, X: %g", Self->CursorIndex.index, Self->CursorCharX);
@@ -413,7 +413,7 @@ static void error_dialog(const std::string Title, const std::string Message)
 
    OBJECTPTR dialog;
    OBJECTID new_dialog_id = 0;
-   if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
+   if (!NewObject(CLASSID::SCRIPT, &dialog)) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");
@@ -422,10 +422,10 @@ static void error_dialog(const std::string Title, const std::string Message)
       acSetKey(dialog, "type", "error");
       acSetKey(dialog, "message", Message.c_str());
 
-      if ((InitObject(dialog) IS ERR::Okay) and (acActivate(dialog) IS ERR::Okay)) {
+      if ((!InitObject(dialog)) and (!acActivate(dialog))) {
          kt::vector<std::string> *results;
          int size;
-         if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
+         if ((!dialog->get(FID_Results, results, size)) and (size > 0)) {
             new_dialog_id = strtol((*results)[0].c_str(), nullptr, 0);
          }
       }
@@ -522,7 +522,7 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
 
       log.msg("Calling on-enter callback function.");
 
-      if (extract_script(Self, edit.on_enter, &script, function_name, argstring) IS ERR::Okay) {
+      if (!extract_script(Self, edit.on_enter, &script, function_name, argstring)) {
          ScriptArg args[] = { { "ID", edit.name } };
          script->exec(function_name.c_str(), args, std::ssize(args));
       }
@@ -568,7 +568,7 @@ static void deactivate_edit(extDocument *Self, bool Redraw)
 
             objScript *script;
             std::string function_name, argstring;
-            if (extract_script(Self, edit->on_change, &script, function_name, argstring) IS ERR::Okay) {
+            if (!extract_script(Self, edit->on_change, &script, function_name, argstring)) {
                auto cell_content = cell_index;
                cell_content++;
 
@@ -854,7 +854,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
 
    if ((Event->Flags & JTYPE::MOVEMENT) != JTYPE::NIL) {
       if (!link->origin.hooks.on_motion.empty()) {
-         if (extract_script(Self, link->origin.hooks.on_motion, &script, func_name, argstring) IS ERR::Okay) {
+         if (!extract_script(Self, link->origin.hooks.on_motion, &script, func_name, argstring)) {
             const ScriptArg args[] = {
                { "Element", link->origin.uid },
                { "X", Event->X },
@@ -868,7 +868,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
    else if (Event->Type IS JET::CROSSED_IN) {
       link->hover = true;
       if (!link->origin.hooks.on_crossing.empty()) {
-         if (extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring) IS ERR::Okay) {
+         if (!extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring)) {
             const ScriptArg args[] = {
                { "Element", link->origin.uid },
                { "X", Event->X },
@@ -894,7 +894,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
    else if (Event->Type IS JET::CROSSED_OUT) {
       link->hover = false;
       if (!link->origin.hooks.on_crossing.empty()) {
-         if (extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring) IS ERR::Okay) {
+         if (!extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring)) {
             const ScriptArg args[] = {
                { "Element", link->origin.uid },
                { "Args", argstring } };
@@ -973,7 +973,7 @@ static void set_focus(extDocument *Self, INDEX Index, CSTRING Caller)
             kt::ScopedObjectLock focus(std::get<OBJECTID>(Self->Tabs[Index].ref));
             if (focus.granted()) {
                acFocus(*focus);
-               //if ((input->get(FID_UserInput, text) IS ERR::Okay) and (text)) {
+               //if ((!input->get(FID_UserInput, text)) and (text)) {
                //   txtSelectArea(text, 0,0, 200000, 200000);
                //}
             }
@@ -1179,7 +1179,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
          }
 
          if (!cell->hooks.on_click.empty()) {
-            if (extract_script(Self, cell->hooks.on_click, &script, func_name, s_args) IS ERR::Okay) {
+            if (!extract_script(Self, cell->hooks.on_click, &script, func_name, s_args)) {
                const ScriptArg args[] = {
                   { "Entity", cell->uid },
                   { "Button", int(Event->Type) }, // JET::LMB etc
@@ -1197,7 +1197,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
             if (report_event(Self, DEF::ON_MOTION, cell, &cell->args) IS ERR::Skip) continue;
 
             if (!cell->hooks.on_motion.empty()) {
-               if (extract_script(Self, cell->hooks.on_motion, &script, func_name, s_args) IS ERR::Okay) {
+               if (!extract_script(Self, cell->hooks.on_motion, &script, func_name, s_args)) {
                   const ScriptArg args[] = {
                      { "Entity", cell->uid },
                      { "X", Event->X },
@@ -1214,7 +1214,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
             if (report_event(Self, DEF::ON_CROSSING_IN, cell, &cell->args) IS ERR::Skip) continue;
 
             if (!cell->hooks.on_crossing.empty()) {
-               if (extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args) IS ERR::Okay) {
+               if (!extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args)) {
                   const ScriptArg args[] = {
                      { "Entity", cell->uid },
                      { "X", Event->X },
@@ -1231,7 +1231,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
             if (report_event(Self, DEF::ON_CROSSING_OUT, cell, &cell->args) IS ERR::Skip) continue;
 
             if (!cell->hooks.on_crossing.empty()) {
-               if (extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args) IS ERR::Okay) {
+               if (!extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args)) {
                   const ScriptArg args[] = {
                      { "Entity", cell->uid },
                      { "X", Event->X },

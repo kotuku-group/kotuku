@@ -565,9 +565,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
 
    switch (Self->Operator) {
       case OP::OVER: {
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
             objBitmap *mixBmp;
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                Self->doMix<composite_over>(inBmp, mixBmp, dest, in, mix);
@@ -577,9 +577,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
       }
 
       case OP::IN: {
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
             objBitmap *mixBmp;
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                Self->doMix<composite_in>(inBmp, mixBmp, dest, in, mix);
@@ -589,9 +589,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
       }
 
       case OP::OUT: {
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
             objBitmap *mixBmp;
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                Self->doMix<composite_out>(inBmp, mixBmp, dest, in, mix);
@@ -601,9 +601,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
       }
 
       case OP::ATOP: {
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
             objBitmap *mixBmp;
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                Self->doMix<composite_atop>(inBmp, mixBmp, dest, in, mix);
@@ -613,9 +613,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
       }
 
       case OP::XOR: {
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
             objBitmap *mixBmp;
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                Self->doMix<composite_xor>(inBmp, mixBmp, dest, in, mix);
@@ -625,7 +625,7 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
       }
 
       case OP::ARITHMETIC: {
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
             objBitmap *mixBmp;
             int height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
             int width  = Self->Target->Clip.Right - Self->Target->Clip.Left;
@@ -637,7 +637,7 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
             const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
             const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
 
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                for (int y=0; y < height; y++) {
@@ -699,9 +699,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
       }
 
       default: { // These mix routines use pre-multiplied content.
-         if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, true) IS ERR::Okay) {
+         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, true)) {
             objBitmap *mixBmp;
-            if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, true) IS ERR::Okay) {
+            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, true)) {
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                #pragma GCC diagnostic ignored "-Wswitch"

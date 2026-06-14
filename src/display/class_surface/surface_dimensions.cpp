@@ -123,7 +123,7 @@ static ERR SET_Dimensions(extSurface *Self, DMF Value)
    const auto HORIZONTAL_FLAGS = DMF::FIXED_WIDTH|DMF::SCALED_WIDTH|DMF::FIXED_X_OFFSET|DMF::SCALED_X_OFFSET|DMF::FIXED_X|DMF::SCALED_X;
    const auto VERTICAL_FLAGS   = DMF::FIXED_HEIGHT|DMF::SCALED_HEIGHT|DMF::FIXED_Y_OFFSET|DMF::SCALED_Y_OFFSET|DMF::FIXED_Y|DMF::SCALED_Y;
 
-   if (gfx::GetSurfaceInfo(Self->ParentID, &parent) IS ERR::Okay) {
+   if (!gfx::GetSurfaceInfo(Self->ParentID, &parent)) {
       if (dmf::hasAnyY(Value)) {
          if (dmf::hasAnyHeight(Value) or dmf::hasAnyYOffset(Value)) {
             Self->Dimensions &= ~VERTICAL_FLAGS;
@@ -639,7 +639,7 @@ static ERR GET_XOffset(extSurface *Self, Unit *Value)
 
    if (Value->scaled()) {
       Unit xoffset;
-      if (GET_XOffset(Self, &xoffset) IS ERR::Okay) {
+      if (!GET_XOffset(Self, &xoffset)) {
          value = xoffset / Self->Width;
       }
       else value = 0;
@@ -764,7 +764,7 @@ static ERR GET_YOffset(extSurface *Self, Unit *Value)
 
    if (Value->scaled()) {
       Unit yoffset;
-      if (GET_YOffset(Self, &yoffset) IS ERR::Okay) value = yoffset / Self->Height;
+      if (!GET_YOffset(Self, &yoffset)) value = yoffset / Self->Height;
       else value = 0;
    }
    else {

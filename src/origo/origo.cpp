@@ -38,6 +38,16 @@ static bool glBackstage = false;
 
 static ERR exec_source(std::string, int, const std::string);
 
+#ifdef _WIN32
+inline void select_window_icon_resource(const std::string_view Path)
+{
+   bool is_tiri = (Path.size() >= 5) and kt::iequals(Path.substr(Path.size() - 5), ".tiri");
+   SetResource(RES::WINDOWS_ICON, is_tiri ? 501 : 500);
+}
+#else
+inline void select_window_icon_resource(const std::string_view) { }
+#endif
+
 static const std::string glHelp =
    "Origo " KOTUKU_VERSION R"(
 
@@ -92,60 +102,77 @@ end
 
 //********************************************************************************************************************
 
+constexpr uint32_t ARG_HELP1       = kt::strhash("--help");
+constexpr uint32_t ARG_HELP2       = kt::strhash("help");
+constexpr uint32_t ARG_VERSION     = kt::strhash("--version");
+constexpr uint32_t ARG_VERIFY      = kt::strhash("--verify");
+constexpr uint32_t ARG_SANDBOX     = kt::strhash("--sandbox");
+constexpr uint32_t ARG_TIME        = kt::strhash("--time");
+constexpr uint32_t ARG_DIALOG      = kt::strhash("--dialog");
+constexpr uint32_t ARG_RELAUNCH    = kt::strhash("--relaunch");
+constexpr uint32_t ARG_BACKSTAGE   = kt::strhash("--backstage");
+constexpr uint32_t ARG_PROCEDURE   = kt::strhash("--procedure");
+constexpr uint32_t ARG_STATEMENT   = kt::strhash("--statement");
+constexpr uint32_t ARG_JIT_OPTIONS = kt::strhash("--jit-options");
+constexpr uint32_t ARG_LOG_FILE    = kt::strhash("--log-file");
+constexpr uint32_t ARG_C           = kt::strhash("-c");
+constexpr uint32_t ARG_E           = kt::strhash("-e");
+
 static ERR process_args(void)
 {
    kt::Log log("Origo");
 
-   if ((glTask->get(FID_Parameters, glArgs) IS ERR::Okay) and (glArgs)) {
+   if ((!glTask->get(FID_Parameters, &glArgs)) and (glArgs)) {
       kt::vector<std::string> &args = *glArgs;
       for (unsigned i=0; i < args.size(); i++) {
-         if (kt::iequals(args[i], "--help") or kt::iequals(args[i], "help")) { // Print help for the user
+         auto hash = kt::strhash(args[i]);
+         if (hash IS ARG_HELP1 or hash IS ARG_HELP2) { // Print help for the user
             printf("%s", glHelp.c_str());
             return ERR::Terminate;
          }
-         else if (kt::iequals(args[i], "--version")) { // Print version information
+         else if (hash IS ARG_VERSION) { // Print version information
             printf("%s\n", KOTUKU_VERSION);
             printf("%s:%s\n", KOTUKU_GIT_BRANCH, KOTUKU_GIT_COMMIT);
             printf("Build Type: %s\n", KOTUKU_BUILD_TYPE);
             return ERR::Terminate;
          }
-         else if (kt::iequals(args[i], "--verify")) { // Dummy option for verifying installs
+         else if (hash IS ARG_VERIFY) { // Dummy option for verifying installs
             return ERR::Terminate;
          }
-         else if (kt::iequals(args[i], "--sandbox")) {
+         else if (hash IS ARG_SANDBOX) {
             glSandbox = true;
          }
-         else if (kt::iequals(args[i], "--time")) {
+         else if (hash IS ARG_TIME) {
             glTime = true;
          }
-         else if (kt::iequals(args[i], "--dialog")) {
+         else if (hash IS ARG_DIALOG) {
             // Display a file dialog for choosing a script manually
             glDialog = true;
          }
-         else if (kt::iequals(args[i], "--relaunch")) {
+         else if (hash IS ARG_RELAUNCH) {
             // Internal argument to detect relaunching at an altered security level
             glRelaunched = true;
          }
-         else if (kt::iequals(args[i], "--backstage")) {
+         else if (hash IS ARG_BACKSTAGE) {
             glBackstage = true;
             if (i + 1 < args.size()) {
                if (atoi(args[i+1].c_str()) > 0) i++; // Port is optional
             }
          }
-         else if (kt::iequals(args[i], "--procedure")) {
+         else if (hash IS ARG_PROCEDURE) {
             if (i + 1 < args.size()) {
                glProcedure.assign(args[i+1]);
                i++;
             }
          }
-         else if (kt::iequals(args[i], "--statement") or (kt::iequals(args[i], "-c")) or (kt::iequals(args[i], "-e"))) {
+         else if (hash IS ARG_STATEMENT or hash IS ARG_C or hash IS ARG_E) {
             // NB: The support for -c and -e exists only for AI agents that like to use this syntax for whatever reason...
             if (i + 1 < args.size()) {
                glStatement.assign(args[i+1]);
                i++;
             }
          }
-         else if ((kt::iequals(args[i], "--jit-options")) or (kt::iequals(args[i], "--log-file"))) {
+         else if (hash IS ARG_JIT_OPTIONS or hash IS ARG_LOG_FILE) {
             // For some system parameters we need to skip the next argument.
             if (i + 1 < args.size()) i++;
          }
@@ -158,6 +185,7 @@ static ERR process_args(void)
                return ERR::Terminate;
             }
             glArgsIndex = i + 1;
+            select_window_icon_resource(glTargetFile);
             break;
          }
       }
@@ -205,29 +233,31 @@ extern "C" int main(int argc, char **argv)
    }
 
    glTask = CurrentTask();
+   select_window_icon_resource("");
 
-   int result = 0;
-   if (process_args() IS ERR::Okay) {
+   ERR result = ERR::Okay;
+   if (!process_args()) {
       if (glBackstage) {
          objModule::load("backstage");
       }
 
       if (glDialog) {
-         result = int(select_file_dialog());
+         select_window_icon_resource(".tiri");
+         result = select_file_dialog();
       }
       else if (not glStatement.empty()) {
-         result = int(exec_source(std::string("STRING:") + glStatement, glTime, glProcedure));
+         result = exec_source(std::string("STRING:") + glStatement, glTime, glProcedure);
       }
       else if (not glTargetFile.empty()) {
          std::string_view path;
-         if (glTask->get(FID_Path, path) IS ERR::Okay) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
+         if (!glTask->get(FID_Path, path)) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
          else log.error("No working path.");
 
          LOC type;
          if ((AnalysePath(glTargetFile, &type) != ERR::Okay) or (type != LOC::FILE)) {
             printf("File '%s' does not exist.\n", glTargetFile.c_str());
          }
-         else result = int(exec_source(glTargetFile.c_str(), glTime, glProcedure));
+         else result = exec_source(glTargetFile, glTime, glProcedure);
       }
       else {
          // Engage default behaviour if no parameters have been specified
@@ -244,20 +274,23 @@ extern "C" int main(int argc, char **argv)
 
          LOC type;
          static objCompression *glPackageArchive;
-         if ((AnalysePath(pkg_path, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((!AnalysePath(pkg_path, &type)) and (type IS LOC::FILE)) {
             // Create a "package:" volume and attempt to run "package:main.tiri"
             if ((glPackageArchive = objCompression::create::local(fl::Path(pkg_path), fl::ArchiveName("package"), fl::Flags(CMF::READ_ONLY)))) {
                if (SetVolume("package", "archive:package/", "filetypes/archive", "", "", VOLUME::REPLACE|VOLUME::HIDDEN) != ERR::Okay) return -1;
 
-               result = (int)exec_source("package:main.tiri", glTime, glProcedure);
+               select_window_icon_resource("package:main.tiri");
+               result = exec_source("package:main.tiri", glTime, glProcedure);
             }
             else return -1;
          }
          else { // Check for main.tiri
-            if ((AnalysePath("main.tiri", &type) IS ERR::Okay) and (type IS LOC::FILE)) {
-               result = (int)exec_source("main.tiri", glTime, glProcedure);
+            if ((!AnalysePath("main.tiri", &type)) and (type IS LOC::FILE)) {
+               select_window_icon_resource("main.tiri");
+               result = exec_source("main.tiri", glTime, glProcedure);
             }
             else {
+               select_window_icon_resource(".tiri");
                auto error = select_file_dialog();
 
                if (error IS ERR::NoSupport) {
@@ -265,7 +298,7 @@ extern "C" int main(int argc, char **argv)
                   error = ERR::Okay;
                }
 
-               result = int(error);
+               result = error;
             }
          }
       }
@@ -275,5 +308,5 @@ extern "C" int main(int argc, char **argv)
 
    close_kotuku();
 
-   return result;
+   return int(result);
 }

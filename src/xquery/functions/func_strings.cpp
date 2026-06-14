@@ -726,7 +726,7 @@ XPathVal XPathFunctionLibrary::function_analyze_string(const std::vector<XPathVa
    auto cb = C_FUNCTION(&analyze_string_cb, &state);
    ERR search_result = rx::Search(compiled, input, RMATCH::NIL, &cb);
 
-   if (search_result IS ERR::Okay) {
+   if (!search_result) {
       if (state.last_offset < state.input_length) {
          std::string_view tail(state.input_data + state.last_offset, state.input_length - state.last_offset);
          append_analyze_string_segment(builder, tail);

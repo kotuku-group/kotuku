@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Measures the length of streamed path contours. Hooks into any vertex source and path utilities that need distance
+// along geometry. In the vector renderer it supports dash placement, animation metrics, and endpoint adjustments.
 
-#ifndef AGG_PATH_LENGTH_INCLUDED
-#define AGG_PATH_LENGTH_INCLUDED
+#pragma once
 
 #include "agg_math.h"
 
@@ -56,5 +57,3 @@ namespace agg
         return len;
     }
 }
-
-#endif

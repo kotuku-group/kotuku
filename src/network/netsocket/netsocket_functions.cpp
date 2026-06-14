@@ -141,7 +141,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       log.traceBranch("Windows SSL handshake in progress, reading raw data.");
       size_t result;
       std::vector<uint8_t> buffer;
-      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 32768, result); error IS ERR::Okay) {
+      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 32768, result); !error) {
          tls_handshake_received(Self, buffer.data(), int(buffer.size()));
 
          if ((Self->State != NTC::CONNECTED) or (!ssl_has_decrypted_data(Self->TLS.Handle) and !ssl_has_encrypted_data(Self->TLS.Handle))) {
@@ -343,7 +343,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    // Before feeding new data into the queue, the current buffer must be empty.
 
-   if ((error IS ERR::Okay) and Self->CloseAfterWrite and Self->WriteQueue.Buffer.empty() and
+   if ((!error) and Self->CloseAfterWrite and Self->WriteQueue.Buffer.empty() and
        (not network_platform().has_pending_write(Self->Handle))) {
       Self->InUse--;
       Self->OutgoingRecursion--;
@@ -351,7 +351,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
    }
 
-   if ((error IS ERR::Okay) and ((Self->WriteQueue.Buffer.empty()) or
+   if ((!error) and ((Self->WriteQueue.Buffer.empty()) or
        (Self->WriteQueue.Index >= Self->WriteQueue.Buffer.size()))) {
       if (Self->Outgoing.defined()) {
          if (Self->Outgoing.isC()) {

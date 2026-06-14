@@ -69,7 +69,7 @@ Compiling and evaluating queries:
 objXQuery::create query { statement="/bookstore/book[@price &lt; 10]/title" };
 if (query.ok()) {
    XPathValue *result;
-   if (query-&gt;evaluate(xml) IS ERR::Okay) {
+   if (!query-&gt;evaluate(xml)) {
       log.msg("Got: %s", query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
    }
 }
@@ -314,14 +314,15 @@ obj(XML) XML: Targeted XML document to query.  Can be NULL for XQuery expression
 int Index: Optional tag index that establishes the initial context for the query.
 int(XEF) Flags: Optional flags.
 
--TAGS-
-mutates-object, retains-input
-
 -ERRORS-
 Okay
 NullArgs
 AllocMemory
 NotFound
+NotInitialised
+
+-TAGS-
+mutates-object, retains-input
 
 *********************************************************************************************************************/
 
@@ -492,12 +493,13 @@ strview Name: The name of the function or functions to inspect (supports wildcar
 int(XIF) ResultFlags: Bitmask controlling the returned information.
 ^&string Result: Receives a serialised XML document describing the function(s).
 
--TAGS-
-mutates-object, caller-owns-result, null-terminated-result
-
 -ERRORS-
 Okay
 NullArgs
+Search
+
+-TAGS-
+mutates-object, caller-owns-result, null-terminated-result
 
 -END-
 
@@ -616,13 +618,13 @@ Script callbacks are not currently supported.
 strview FunctionName: The name of the function to register (e.g., "custom-function").
 ptr(func) Callback: The callback function to register for FunctionName.
 
--TAGS-
-mutates-object, copies-input, callback-held
-
 -ERRORS-
 Okay
 NullArgs
 NoSupport: The provided callback is not a C function reference.
+
+-TAGS-
+mutates-object, copies-input, callback-held
 
 -END-
 
@@ -674,9 +676,6 @@ ptr(func) Callback: Optional callback function to invoke for each matching node.
 int Index: Optional tag index that establishes the initial context for the query.
 int(XEF) Flags: Optional flags.
 
--TAGS-
-mutates-object, retains-input, callback-inlines
-
 -ERRORS-
 Okay: At least one matching node was found and processed.
 NullArgs: At least one required parameter was not provided.
@@ -684,6 +683,9 @@ Syntax: The provided query expression has syntax errors.
 Search: No matching node was found.
 Terminate: The callback function requested termination of the search.
 NotFound: The specified Index does not correspond to a valid XML tag.
+
+-TAGS-
+mutates-object, retains-input, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -858,7 +860,7 @@ amount of memory (in bytes) allocated during the last compilation or evaluation 
 Path: Base path for resolving relative references.
 
 Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through
-automated means on-the-fly, which relies  on the working directory or XML document path.
+automated means on-the-fly, which relies on the working directory or XML document path.
 
 -FIELD-
 ResolveVariable: Callback function for resolving unknown variables.

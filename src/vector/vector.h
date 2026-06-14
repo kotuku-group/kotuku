@@ -15,6 +15,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <mutex>
 #include <stack>
 #include <algorithm>
+#include <bit>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
@@ -46,8 +47,6 @@ using namespace kt;
 #include "agg_span_converter.h"
 #include "agg_span_image_filter_rgba.h"
 #include "agg_trans_affine.h"
-//#include "agg_conv_marker.h"
-//#include "agg_vcgen_markers_term.h"
 
 #include "../link/linear_rgb.h"
 #include "../link/unicode.h"
@@ -73,6 +72,7 @@ extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceF
 extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
+namespace agg { class gradient_contour; }
 class objVectorTransition;
 class extVectorText;
 class extVector;
@@ -261,7 +261,8 @@ public:
       if (Bitmap) { FreeResource(Bitmap); Bitmap = nullptr; }
    };
 
-   objBitmap * get_bitmap(int Width, int Height, TClipRectangle<int> &Clip, bool Debug) {
+   objBitmap * get_bitmap(int Width, int Height, TClipRectangle<int> &Clip, bool Debug, OBJECTID Owner = 0,
+      CSTRING Name = "dummy_fx_bitmap") {
       kt::Log log;
 
       if (Width < Clip.right) Width = Clip.right;
@@ -283,10 +284,19 @@ public:
       }
       else {
          // NB: The clip region defines the true size and no data is allocated by the bitmap itself unless in debug mode.
-         Bitmap = objBitmap::create::local(
-            fl::Name("dummy_fx_bitmap"),
-            fl::Width(Width), fl::Height(Height), fl::BitsPerPixel(32),
-            fl::Flags(Debug ? BMF::ALPHA_CHANNEL : (BMF::ALPHA_CHANNEL|BMF::NO_DATA)));
+         if (Owner) {
+            Bitmap = objBitmap::create::local(
+               fl::Name(Name),
+               fl::Owner(Owner),
+               fl::Width(Width), fl::Height(Height), fl::BitsPerPixel(32),
+               fl::Flags(Debug ? BMF::ALPHA_CHANNEL : (BMF::ALPHA_CHANNEL|BMF::NO_DATA)));
+         }
+         else {
+            Bitmap = objBitmap::create::local(
+               fl::Name(Name),
+               fl::Width(Width), fl::Height(Height), fl::BitsPerPixel(32),
+               fl::Flags(Debug ? BMF::ALPHA_CHANNEL : (BMF::ALPHA_CHANNEL|BMF::NO_DATA)));
+         }
          if (!Bitmap) return nullptr;
       }
 
@@ -314,6 +324,46 @@ constexpr int TB_NOISE = 1;
 
 #include <kotuku/modules/vector.h>
 
+//********************************************************************************************************************
+// Gouraud gradient mesh.  A set of coloured vertices (GouraudVertex, declared in the generated header above)
+// connected as triangles; colour is interpolated barycentrically across each triangle by agg::span_gouraud_rgba.
+// Indexed connectivity is preferred so that shared vertices (and therefore shared colours/positions) are expressed
+// once, guaranteeing crack-free seams between adjacent triangles.  An empty Indices list treats the vertices as a
+// flat triangle list, where every three consecutive vertices form one triangle.
+
+struct GouraudMesh {
+   std::vector<GouraudVertex> Vertices;
+   std::vector<int> Indices; // 3 indices per triangle (CCW); empty => flat triangle list
+};
+
+// One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
+
+struct GouraudTriangle {
+   double x[3], y[3];      // Device-space vertex positions
+   agg::rgba8 colour[3];   // Vertex colours, fill opacity folded into alpha.  Encoding follows the cache's
+                           // ColourSpace: sRGB-encoded for VCS::SRGB, linear-decoded for VCS::LINEAR_RGB.
+};
+
+// Cache of the transformed/coloured triangle list for a Gouraud gradient.  Rebuilding involves a matrix multiply
+// per vertex plus colour conversion, so the result is retained on the gradient and reused while the inputs are
+// unchanged.  The inputs are the mesh data (captured as a fingerprint), the final placement transform, the opacity
+// multiplier and the colour space; any change to these invalidates the cache.  Degenerate (zero-area) triangles are
+// dropped during the build so the render loop has no per-frame filtering to do.
+
+struct GouraudCache {
+   std::vector<GouraudTriangle> Triangles;
+   agg::trans_affine Transform; // Final transform the triangles were built with
+   uint64_t MeshHash = 0;       // Fingerprint of the source mesh (positions, colours, indices)
+   double Opacity = -1.0;       // Fill opacity the colours were built with (-1 => never built)
+   VCS ColourSpace = VCS::INHERIT; // Colour space the vertex colours were encoded for
+   bool Valid = false;
+
+   bool matches(uint64_t pMeshHash, const agg::trans_affine &pTransform, double pOpacity, VCS pColourSpace) const {
+      return Valid and (MeshHash IS pMeshHash) and (Opacity IS pOpacity) and (ColourSpace IS pColourSpace) and
+         (Transform IS pTransform);
+   }
+};
+
 class FeedbackSubscription {
 public:
    FUNCTION Callback;
@@ -328,6 +378,39 @@ class SceneDef {
    extVectorScene *HostScene;
 
    inline void modified();
+};
+
+//********************************************************************************************************************
+
+struct ClipMaskCache {
+   std::vector<uint8_t> Bitmap;
+   TClipRectangle<double> Bounds;
+   agg::trans_affine Transform;
+   extVectorClip *Clip;
+   uint64_t ContentVersion;
+   int PathTimestamp;
+   int Width, Height;
+   double ParentWidth, ParentHeight;
+   VUNIT Units;
+   VCLF Flags;
+   bool Valid;
+
+   ClipMaskCache() : Clip(nullptr), ContentVersion(0), PathTimestamp(0), Width(0), Height(0),
+      ParentWidth(0), ParentHeight(0), Units(VUNIT::UNDEFINED), Flags(VCLF::NIL), Valid(false) { }
+
+   void clear() {
+      Bitmap.clear();
+      Bounds = {};
+      Transform.reset();
+      Clip = nullptr;
+      ContentVersion = 0;
+      PathTimestamp = 0;
+      Width = Height = 0;
+      ParentWidth = ParentHeight = 0;
+      Units = VUNIT::UNDEFINED;
+      Flags = VCLF::NIL;
+      Valid = false;
+   }
 };
 
 //********************************************************************************************************************
@@ -359,6 +442,10 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
    std::string ID;
+   agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
+   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
+   std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for Type IS VGT::GOURAUD; null for all other gradient types
+   GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
    int   NumericID;
    double Angle;
    double Length;
@@ -453,6 +540,8 @@ class extVector : public objVector {
    extVector           *Morph;
    extVector           *AppendPath;
    DashedStroke        *DashArray;
+   ClipMaskCache ClipCache;
+   filter_bitmap *IsolatedBuffer;
    JTYPE InputMask;
    int   NumericID;
    int   PathLength;
@@ -489,6 +578,7 @@ class extVector : public objVector {
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;
       Dirty         = RC::DIRTY;
+      IsolatedBuffer = nullptr;
       TabOrder      = 255;
       ColourSpace   = VCS::INHERIT;
       ValidState    = true;
@@ -534,8 +624,28 @@ class extVectorScene : public objVectorScene {
    int InputHandle;
    PTC Cursor; // Current cursor image
    bool RefreshCursor;
-   bool ShareModified; // True if a shareable object has been modified (e.g. VectorGradient), requiring a redraw of any vectors that use it.
+   uint64_t ShareVersion; // Incremented whenever a shareable object has been modified.
+   bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
+
+   extVectorScene() : ShareVersion(1), SubtreeDirty(true) { }
+
+   // Returns the rasteriser gamma table for the scene's current Gamma value; one shared LUT serves
+   // every rasteriser in the scene.  Returns nullptr for identity gamma, which restores the
+   // rasteriser's default shared identity table.
+
+   const int * gamma_table() {
+      if (Gamma IS 1.0) return nullptr;
+      if (GammaLUTValue != Gamma) {
+         agg::rasterizer_scanline_aa<>::build_gamma(GammaLUT, agg::gamma_power(Gamma));
+         GammaLUTValue = Gamma;
+      }
+      return GammaLUT.data();
+   }
+
+   private:
+   std::array<int, 256> GammaLUT; // Lazily built; valid only when GammaLUTValue matches Gamma
+   double GammaLUTValue = 1.0;
 };
 
 //********************************************************************************************************************
@@ -557,14 +667,23 @@ class extVectorViewport : public extVector {
    objBitmap *vpBuffer;
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
+   uint64_t vpSeenShareVersion; // Scene ShareVersion that was current when vpBuffer was last rendered.
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
+   extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
    DMF   vpDimensions;
    ARF   vpAspectRatio;
    VOF   vpOverflowX, vpOverflowY;
+   uint8_t vpClipConfiguring:1;
    uint8_t vpDragging:1;
    uint8_t vpBuffered:1; // True if the client requested that the viewport is buffered.
    uint8_t vpRefreshBuffer:1;
+
+   extVectorViewport() {
+      vpClipOwner = nullptr;
+      vpClipConfiguring = false;
+      vpSeenShareVersion = 0;
+   }
 };
 
 //********************************************************************************************************************
@@ -586,6 +705,13 @@ class extVectorPath : public extVector, public SceneDef {
    using create = kt::Create<extVectorPath>;
 
    std::vector<PathCommand> Commands;
+   agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
+   TClipRectangle<double> UnplacedBounds;
+   double pX, pY;
+   DMF pDimensions;
+   bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
+
+   extVectorPath();
 };
 
 class extVectorRectangle : public extVector {
@@ -645,10 +771,12 @@ class extVectorClip : public objVectorClip, public SceneDef {
 
    extVectorClip() {
       Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
+      ContentVersion = 1;
    }
 
    TClipRectangle<double> Bounds;
    OBJECTID ViewportID;
+   uint64_t ContentVersion;
 };
 
 //********************************************************************************************************************
@@ -706,7 +834,7 @@ extern ERR read_path(std::vector<PathCommand> &, std::string_view);
 extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, objBitmap **);
 extern ERR scene_input_events(const InputEvent *, int);
 extern void send_feedback(extVector *, FM, OBJECTPTR = nullptr);
-extern void set_filter(agg::image_filter_lut &, VSM, agg::trans_affine &, double Kernel = 0);
+extern const agg::image_filter_lut & get_filter(VSM, agg::trans_affine &, double Kernel = 0);
 
 extern void render_scene_from_viewport(extVectorScene *, objBitmap *, objVectorViewport *);
 
@@ -749,6 +877,30 @@ TClipRectangle<T> get_bounds(VertexSource &vs, const unsigned path_id = 0)
 
 static void mark_buffers_for_refresh(extVector *Vector)
 {
+   if (Vector->Scene) ((extVectorScene *)Vector->Scene)->SubtreeDirty = true;
+
+   for (auto node=Vector; node; ) {
+      node->ClipCache.clear();
+
+      if ((!node->Parent) or (node->Parent->Class->BaseClassID != CLASSID::VECTOR)) break;
+      node = (extVector *)node->Parent;
+   }
+
+   if (extVectorViewport *parent_view = (Vector->classID() IS CLASSID::VECTORVIEWPORT) ?
+      (extVectorViewport *)Vector : Vector->ParentView) {
+
+      while (parent_view) {
+         if ((parent_view->vpClipOwner) and
+             ((Vector->classID() != CLASSID::VECTORVIEWPORT) or (!parent_view->vpClipConfiguring))) {
+            parent_view->vpClipOwner->ContentVersion++;
+            parent_view->vpClipOwner->modified();
+            break;
+         }
+
+         parent_view = parent_view->ParentView;
+      }
+   }
+
    if ((Vector->Scene) and (!((extVectorScene *)Vector->Scene)->BufferCount)) return;
 
    extVectorViewport *parent_view;
@@ -818,6 +970,15 @@ inline static void mark_dirty(objVector *Vector, RC Flags)
    mark_buffers_for_refresh((extVector *)Vector);
 
    mark_children((extVector *)Vector, Flags);
+}
+
+//********************************************************************************************************************
+// Keep shared-definition versions monotonic and reserve zero as the "never rendered" value for viewport caches.
+
+inline static void bump_share_version(extVectorScene *Scene)
+{
+   Scene->ShareVersion++;
+   if (Scene->ShareVersion IS 0) Scene->ShareVersion = 1;
 }
 
 //********************************************************************************************************************
@@ -1374,5 +1535,5 @@ template <class T> TClipRectangle<T>::TClipRectangle(const class extVectorViewpo
 }
 
 inline void SceneDef::modified() {
-   if (HostScene) HostScene->ShareModified = true;
+   if (HostScene) bump_share_version(HostScene);
 }

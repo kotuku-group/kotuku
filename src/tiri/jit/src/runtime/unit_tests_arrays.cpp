@@ -3,7 +3,7 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -1117,4 +1117,4 @@ void array_unit_tests(int &Passed, int &Total)
 
 #else
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

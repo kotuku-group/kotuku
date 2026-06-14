@@ -107,6 +107,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Terminate">Termination requested</error>
         <error code="Search">Failed to find the tag referenced by the XPath.</error>
         <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="ReadOnly">Changes to the XML structure are not permitted.</error>
@@ -154,6 +155,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The XML structure now contains only the first matched subtree.</error>
+        <error code="Terminate">Termination requested</error>
         <error code="Search">No matching tag could be found for the specified XPath expression.</error>
         <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="NullArgs">The XPath parameter was empty.</error>
@@ -366,6 +368,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The XML statement was successfully inserted at the specified XPath location.</error>
+        <error code="Terminate">Termination requested</error>
         <error code="Failed">General failure</error>
         <error code="InvalidData">There is an error in the provided data</error>
         <error code="NotFound">The target resolved by XPath could not be used as an insertion point.</error>
@@ -488,6 +491,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The matching tag(s) or attribute(s) were successfully removed.</error>
+        <error code="Terminate">Termination requested</error>
         <error code="NoData">The XML document contains no data to process.</error>
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>
         <error code="NullArgs">Required parameters were NULL or not properly specified.</error>
@@ -542,6 +546,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">A matching tag was found (or callback processing completed successfully).</error>
+        <error code="Terminate">Termination requested</error>
         <error code="Search">No matching tag could be found for the specified expression.</error>
         <error code="NoData">The XML document contains no data to search.</error>
         <error code="NewObject">NewObject() failed to produce a new object</error>
@@ -636,6 +641,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">The XML object was successfully sorted.</error>
+        <error code="Terminate">Termination requested</error>
         <error code="Search">The provided XPath failed to locate a tag.</error>
         <error code="NewObject">NewObject() failed to produce a new object</error>
         <error code="ReadOnly">The XML object is in read-only mode and cannot be modified.</error>

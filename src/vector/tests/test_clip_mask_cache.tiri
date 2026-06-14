@@ -1,0 +1,83 @@
+   include 'vector'
+
+function newBitmap(Width, Height)
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function hashBitmap(Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   Scene.acDraw()
+   return hashBitmap(Bitmap)
+end
+
+function newClipScene(Units)
+   scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=Units })
+   local mask_shape
+
+   if Units is VUNIT_BOUNDING_BOX then
+      clip.viewport.viewWidth = 1
+      clip.viewport.viewHeight = 1
+      mask_shape = clip.viewport.new('VectorRectangle', { x=0, y=0, width=0.5, height=1, fill='rgb(255,255,255)' })
+   else
+      mask_shape = clip.viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,255,255)' })
+   end
+
+   return scene, viewport, clip, mask_shape
+end
+
+@Test function UserSpaceMaskRenderIsStableAcrossRepeatedDraws()
+   scene, viewport, clip, mask_shape = newClipScene(VUNIT_USERSPACE)
+   target = viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,0,0)', mask=clip })
+   bmp = newBitmap(120, 80)
+
+   first_hash = drawScene(scene, bmp)
+   second_hash = drawScene(scene, bmp)
+
+   assert(first_hash is second_hash, 'Repeated render of unchanged user-space clip mask should be stable')
+   assert(first_hash != 0, 'Masked render should produce a non-zero bitmap hash')
+end
+
+@Test function ClipVisualChangeInvalidatesCachedMaskWithoutConsumerPathChange()
+   scene, viewport, clip, mask_shape = newClipScene(VUNIT_USERSPACE)
+   target = viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,0,0)', mask=clip })
+   bmp = newBitmap(120, 80)
+
+   initial_hash = drawScene(scene, bmp)
+   initial_timestamp = target.pathTimestamp
+
+   mask_shape.fill = 'rgb(0,0,0)'
+   changed_hash = drawScene(scene, bmp)
+
+   assert(target.pathTimestamp is initial_timestamp, 'Changing clip fill should not regenerate the consumer path')
+   assert(changed_hash != initial_hash, 'Changing clip fill should invalidate and redraw the cached mask')
+end
+
+@Test function BoundingBoxMaskIsCachedPerConsumerTransform()
+   scene, viewport, clip, mask_shape = newClipScene(VUNIT_BOUNDING_BOX)
+   left = viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,0,0)', mask=clip })
+   right = viewport.new('VectorRectangle', { x=70, y=10, width=40, height=40, fill='rgb(0,0,255)', mask=clip })
+   bmp = newBitmap(120, 80)
+
+   first_hash = drawScene(scene, bmp)
+   second_hash = drawScene(scene, bmp)
+   left_timestamp = left.pathTimestamp
+   right_timestamp = right.pathTimestamp
+
+   assert(first_hash is second_hash, 'Shared bounding-box clip should render stably for multiple consumers')
+
+   mask_shape.fill = 'rgb(0,0,0)'
+   changed_hash = drawScene(scene, bmp)
+
+   assert(left.pathTimestamp is left_timestamp, 'Changing shared clip fill should not regenerate the left consumer path')
+   assert(right.pathTimestamp is right_timestamp, 'Changing shared clip fill should not regenerate the right consumer path')
+   assert(changed_hash != first_hash, 'Changing shared bounding-box clip content should invalidate every consumer cache')
+end

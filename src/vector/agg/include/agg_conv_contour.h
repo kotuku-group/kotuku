@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Converts a path into an expanded or contracted contour outline. Hooks into conv_adaptor_vcgen with vcgen_contour and
+// any upstream vertex source. In the vector renderer it offsets path geometry for contour effects before scanline
+// rasterisation.
 
-//
-// conv_stroke
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CONV_CONTOUR_INCLUDED
-#define AGG_CONV_CONTOUR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vcgen_contour.h"
@@ -21,7 +19,6 @@
 namespace agg
 {
 
-    //-----------------------------------------------------------conv_contour
     template<class VertexSource>
     struct conv_contour : public conv_adaptor_vcgen<VertexSource, vcgen_contour>
     {
@@ -56,5 +53,3 @@ namespace agg
     };
 
 }
-
-#endif

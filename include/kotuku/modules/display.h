@@ -55,7 +55,6 @@ enum class EXF : uint32_t {
    REDRAW_VOLATILE_OVERLAP = 0x00000004,
    ABSOLUTE_COORDS = 0x00000008,
    ABSOLUTE = 0x00000008,
-   CURSOR_SPLIT = 0x00000010,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(EXF)
@@ -566,7 +565,7 @@ class objBitmap : public Object {
    int       PlaneMod;                                             // The differential between each bitmap plane.
    struct ClipRectangle Clip;                                      // Defines the bitmap's clipping region.
    int       Size;                                                 // The total size of the bitmap, in bytes.
-   MEM       DataFlags;                                            // Defines the memory flags to use in allocating a bitmap's data area.
+   MEM       DataFlags;                                            // Defines the memory flags to use when allocating a bitmap's data area.
    int       AmtColours;                                           // The maximum number of colours represented by the bitmap format.
    BMF       Flags;                                                // Optional flags.
    int       TransIndex;                                           // The transparent colour of the bitmap, represented as an index.
@@ -584,7 +583,7 @@ class objBitmap : public Object {
       if (BitsPerPixel > 8) return packPixel(RGB);
       else {
          uint32_t result;
-         if (getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result) IS ERR::Okay) {
+         if (!getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result)) {
             return result;
          }
          else return 0;

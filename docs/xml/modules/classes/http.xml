@@ -80,12 +80,14 @@ http.acActivate()
         <error code="File">Failed to create a target file if the OutputFile field was set.</error>
         <error code="NoData">Input file is empty or has no data for POST/PUT operations.</error>
         <error code="Write">Failed to write data to the HTTP <class name="NetSocket">NetSocket</class>.</error>
+        <error code="Lock">Failed to lock a required resource</error>
         <error code="FieldNotSet">Required fields are not set (e.g. destination for COPY/MOVE methods, or data source for POST/PUT methods).</error>
         <error code="CreateObject">Failed to create a <class name="NetSocket">NetSocket</class> object.</error>
         <error code="NotInitialised">The HTTP object has not been initialised.</error>
         <error code="HostNotFound">DNS resolution of the domain name in the URI failed.</error>
         <error code="ConnectionRefused">The connection to the server was refused.</error>
         <error code="Recursion">Function was called recursively.</error>
+        <error code="NoSecureSockets">A secure sockets layer is not available in this environment</error>
       </result>
     </action>
 
@@ -319,7 +321,7 @@ http.acActivate()
       <access read="R" write="W">Read/Write</access>
       <type lookup="HOM">HOM</type>
       <description>
-<p>ObjectMode defines the data transfer mode when <fl>OutputObject</fl> field has been set for receiving incoming data. The default setting is <code>DATA::FEED</code>, which passes data through the data feed system (see also the <fl>Datatype</fl> to define the type of data being sent to the object).  The alternative method is <code>READ_WRITE</code>, which uses the Write action to send data to the targeted object.</p>
+<p>ObjectMode defines the data transfer mode when the <fl>OutputObject</fl> field has been set for receiving incoming data. The default setting is <code>DATA::FEED</code>, which passes data through the data feed system (see also the <fl>Datatype</fl> to define the type of data being sent to the object).  The alternative method is <code>READ_WRITE</code>, which uses the Write action to send data to the targeted object.</p>
 <types lookup="HOM"/>
       </description>
     </field>

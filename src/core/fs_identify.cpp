@@ -28,6 +28,7 @@ NullArgs
 Search: A suitable class could not be found for the data source.
 FileNotFound
 Read
+VirtualVolume
 
 -TAGS-
 blocking, path-resolved
@@ -65,7 +66,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
 
          if (auto vd = get_virtual(res_path)) {
             if (vd->IdentifyFile) {
-               if (vd->IdentifyFile(res_path, ClassID, SubClassID) IS ERR::Okay) {
+               if (!vd->IdentifyFile(res_path, ClassID, SubClassID)) {
                   log.trace("Virtual volume identified the target file.");
                   goto class_identified;
                }
@@ -117,7 +118,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
       if (*ClassID IS CLASSID::NIL) {
          log.trace("Loading file header to identify '%s' against class registry", res_path);
 
-         if ((ReadFileToBuffer(res_path, buffer, HEADER_SIZE, &bytes_read) IS ERR::Okay) and (bytes_read >= 4)) {
+         if ((!ReadFileToBuffer(res_path, buffer, HEADER_SIZE, &bytes_read)) and (bytes_read >= 4)) {
             log.trace("Checking file header data (%d bytes) against %d classes....", bytes_read, glClassDB.size());
             for (auto it = glClassDB.begin(); it != glClassDB.end(); it++) {
                auto &rec = it->second;
@@ -202,7 +203,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
    }
 
 class_identified:
-   if (error IS ERR::Okay) {
+   if (!error) {
       if (*ClassID != CLASSID::NIL) log.detail("File belongs to class $%.8x:$%.8x", (unsigned int)(*ClassID), SubClassID ? (unsigned int)(*SubClassID) : 0);
       else {
          log.detail("Failed to identify file \"%.*s\"", int(Path.size()), Path.data());

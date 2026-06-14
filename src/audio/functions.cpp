@@ -169,7 +169,7 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
       });
 
       ERR result;
-      if (sc::Call(Sample.Callback, args, result) IS ERR::Okay) return BYTELEN(result);
+      if (!sc::Call(Sample.Callback, args, result)) return BYTELEN(result);
       else return BYTELEN(0);
    }
 

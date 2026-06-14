@@ -164,7 +164,7 @@ void svgState::parse_lineargradient(const XTag &Tag, objVectorGradient *Gradient
             if (val.starts_with("url(#cmap:")) {
                auto end = val.find(')');
                auto cmap = val.substr(5, end-5);
-               if (Gradient->setColourMap(cmap) IS ERR::Okay) process_stops = false;
+               if (!Gradient->setColourMap(cmap)) process_stops = false;
             }
             else if (auto other = find_href_tag(Self, val)) {
                std::string dummy;
@@ -244,7 +244,7 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
             if (val.starts_with("url(#cmap:")) {
                auto end = val.find(')');
                auto cmap = val.substr(5, end-5);
-               if (Gradient.setColourMap(cmap) IS ERR::Okay) process_stops = false;
+               if (!Gradient.setColourMap(cmap)) process_stops = false;
             }
             else if (auto other = find_href_tag(Self, val)) {
                std::string dummy;
@@ -320,7 +320,7 @@ void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradien
             if (val.starts_with("url(#cmap:")) {
                auto end = val.find(')');
                auto cmap = val.substr(5, end-5);
-               if (Gradient->setColourMap(cmap) IS ERR::Okay) process_stops = false;
+               if (!Gradient->setColourMap(cmap)) process_stops = false;
             }
             else if (auto other = find_href_tag(Self, val)) {
                std::string dummy;
@@ -393,7 +393,7 @@ void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradien
             if (val.starts_with("url(#cmap:")) {
                auto end = val.find(')');
                auto cmap = val.substr(5, end-5);
-               if (Gradient->setColourMap(cmap) IS ERR::Okay) process_stops = false;
+               if (!Gradient->setColourMap(cmap)) process_stops = false;
             }
             else if (auto other = find_href_tag(Self, val)) {
                std::string dummy;
@@ -434,7 +434,7 @@ ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (NewObject(CLASSID::VECTORGRADIENT, &gradient) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
       SetOwner(gradient, Self->Scene);
       gradient->setFields(
          fl::Name("SVGLinearGrad"),
@@ -447,7 +447,7 @@ ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 
       state.parse_lineargradient(Tag, gradient, id);
 
-      if (InitObject(gradient) IS ERR::Okay) {
+      if (!InitObject(gradient)) {
          if (!id.empty()) {
             SetName(gradient, id.c_str());
             track_object(Self, gradient);
@@ -471,7 +471,7 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (NewObject(CLASSID::VECTORGRADIENT, &gradient) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
       gradient->setFields(fl::Name("SVGRadialGrad"), fl::Type(VGT::RADIAL), fl::Units(VUNIT::BOUNDING_BOX),
@@ -484,7 +484,7 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 
       state.parse_radialgradient(Tag, *gradient, id);
 
-      if (InitObject(gradient) IS ERR::Okay) {
+      if (!InitObject(gradient)) {
          if (!id.empty()) {
             SetName(gradient, id.c_str());
             track_object(Self, gradient);
@@ -508,7 +508,7 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (NewObject(CLASSID::VECTORGRADIENT, &gradient) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
       gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Type(VGT::DIAMOND), fl::Units(VUNIT::BOUNDING_BOX),
@@ -516,7 +516,7 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 
       state.parse_diamondgradient(Tag, gradient, id);
 
-      if (InitObject(gradient) IS ERR::Okay) {
+      if (!InitObject(gradient)) {
          if (!id.empty()) {
             SetName(gradient, id.c_str());
             track_object(Self, gradient);
@@ -541,7 +541,7 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (NewObject(CLASSID::VECTORGRADIENT, &gradient) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
       SetOwner(gradient, Self->Scene);
       gradient->setFields(fl::Name("SVGContourGrad"), fl::Type(VGT::CONTOUR), fl::Units(VUNIT::BOUNDING_BOX));
 
@@ -550,7 +550,7 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
       auto stops = process_gradient_stops(Tag);
       if (stops.size() >= 2) gradient->set(FID_Stops, stops);
 
-      if (InitObject(gradient) IS ERR::Okay) {
+      if (!InitObject(gradient)) {
          if (!id.empty()) {
             SetName(gradient, id.c_str());
             track_object(Self, gradient);
@@ -573,7 +573,7 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (NewObject(CLASSID::VECTORGRADIENT, &gradient) IS ERR::Okay) {
+   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
       gradient->setFields(fl::Name("SVGConicGrad"), fl::Type(VGT::CONIC), fl::Units(VUNIT::BOUNDING_BOX),
@@ -626,7 +626,7 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
       auto stops = process_gradient_stops(Tag);
       if (stops.size() >= 2) gradient->set(FID_Stops, stops);
 
-      if (InitObject(gradient) IS ERR::Okay) {
+      if (!InitObject(gradient)) {
          if (!id.empty()) {
             SetName(gradient, id.c_str());
             track_object(Self, gradient);

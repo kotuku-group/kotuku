@@ -6,9 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Adds multiple rectangular clipping regions around a renderer_base. Hooks into scanline and primitive renderers that
+// write through renderer abstractions. In the vector renderer it supports complex rectangular clip stacks without
+// changing pixel-format code.
 
-#ifndef AGG_RENDERER_MCLIP_INCLUDED
-#define AGG_RENDERER_MCLIP_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_array.h"
@@ -242,5 +245,3 @@ namespace agg
         rect_i                 m_bounds;
     };
 } // namespace
-
-#endif

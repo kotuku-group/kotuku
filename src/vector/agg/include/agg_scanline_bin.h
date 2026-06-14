@@ -5,13 +5,15 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Stores binary scanline spans without per-pixel coverage values. Hooks into binary rasterisers and renderer_scanline
+// paths that only need on/off coverage. In the vector renderer it supports fast mask and shape operations where anti-
+// aliasing is not required.
 // This is binary scaline container which supports the interface
 // used in the rasterizer::render(). See description of agg_scanline_u8
 // for details.
 
-#ifndef AGG_SCANLINE_BIN_INCLUDED
-#define AGG_SCANLINE_BIN_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -161,6 +163,3 @@ namespace agg
         span_array_type m_spans;
     };
 }
-
-
-#endif

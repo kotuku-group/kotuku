@@ -53,7 +53,7 @@ static ERR GET_Location(extMetaClass *, std::string_view &);
 static ERR GET_Methods(extMetaClass *, const MethodEntry **, int *);
 static ERR GET_Module(extMetaClass *, std::string_view &);
 static ERR GET_Objects(extMetaClass *, OBJECTID **, int *);
-static ERR GET_RootModule(extMetaClass *, class RootModule **);
+static ERR GET_RootModule(extMetaClass *, class objRootModule **);
 static ERR GET_Dictionary(extMetaClass *, struct Field **, int *);
 static ERR GET_SubClasses(extMetaClass *, extMetaClass ***, int *);
 static ERR GET_SubFields(extMetaClass *, const FieldArray **, int *);
@@ -221,7 +221,7 @@ void init_metaclass(void)
    sort_class_fields(&glMetaClass, glMetaClass.FieldLookup);
 
    glMetaClass.BaseCeiling = glMetaClass.FieldLookup.size();
-   
+
    glMetaClass.Dictionary = glMetaClass.FieldLookup.data();
 
    glClassMap[CLASSID::METACLASS] = &glMetaClass;
@@ -365,7 +365,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
    for (auto it=tlContext.rbegin(); it != tlContext.rend()-1; it++) {
       if (it->obj->classID() IS CLASSID::ROOTMODULE) {
-         Self->Root = (RootModule *)it->obj;
+         Self->Root = (objRootModule *)it->obj;
          break;
       }
    }
@@ -460,7 +460,7 @@ ActionArray clActions[] = {
 };
 </pre>
 
-Note: Never refer to method ID's in an action list - the #Methods field is provided for this purpose.
+Note: Never refer to method IDs in an action list - the #Methods field is provided for this purpose.
 
 *********************************************************************************************************************/
 
@@ -788,7 +788,7 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    objlist.sort([](const OBJECTID &a, const OBJECTID &b) { return (a < b); });
 
    OBJECTID *result;
-   if (AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result) IS ERR::Okay) {
+   if (!AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result)) {
       int i = 0;
       for (const auto & id : objlist) result[i++] = id;
       *Array = result;
@@ -820,7 +820,7 @@ RootModule: Returns a direct reference to the RootModule object that hosts the c
 
 *********************************************************************************************************************/
 
-static ERR GET_RootModule(extMetaClass *Self, class RootModule **Value)
+static ERR GET_RootModule(extMetaClass *Self, class objRootModule **Value)
 {
    *Value = Self->Root;
    return ERR::Okay;
@@ -1133,7 +1133,7 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
                field_alignment = alignof(int64_t);
             }
             else {
-               log.warning("Invalid field flags for %s: $%.8x.", field.Name, field.Flags);
+               log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
                field_size = 0;
                field_alignment = 0;
             }
@@ -1291,8 +1291,8 @@ void scan_classes(void)
 
    DirInfo *dir;
    int total = 0;
-   if (OpenDir("modules:", RDF::QUALIFY, &dir) IS ERR::Okay) {
-      while (ScanDir(dir) IS ERR::Okay) {
+   if (!OpenDir("modules:", RDF::QUALIFY, &dir)) {
+      while (!ScanDir(dir)) {
          FileInfo *list = dir->Info;
 
          if ((list->Flags & RDF::FILE) != RDF::NIL) {

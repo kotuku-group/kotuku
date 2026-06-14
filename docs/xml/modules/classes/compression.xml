@@ -73,6 +73,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
       <tags>mutates-input, mutates-object</tags>
     </method>
@@ -97,6 +98,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The derived class does not support this method.</error>
         <error code="NoPermission">The <code>READ_ONLY</code> flag has been set on the compression object.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>blocking, mutates-object, copies-input, callback-inlines</tags>
     </method>
@@ -118,11 +121,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <p>A compression object can manage only one compression stream at any given time.  If it is necessary to compress multiple streams at once, create a compression object for each individual stream.</p>
 <p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's derived class ID is stored for future reference.</p>
 <p>The following C code illustrates a simple means of compressing a file to another file using a stream:</p>
-<pre>if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
+<pre>if (auto error = mtCompressStreamStart(compress); !error) {
    LONG len;
    LONG cmpsize = 0;
    UBYTE input[4096];
-   while ((error = acRead(file, input, sizeof(input), &amp;len)) IS ERR::Okay) {
+   while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
       if (!len) break; // No more data to read.
 
       error = mtCompressStream(compress, input, len, &amp;callback, NULL, 0);
@@ -135,8 +138,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       }
    }
 
-   if (error IS ERR::Okay) {
-      if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
+   if (!error) {
+      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &amp;len);
       }
@@ -149,8 +152,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="Retry">Please recall the method using a larger output buffer.</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough to contain the compressed data.</error>
+        <error code="InvalidState">Object was in an incorrect state for the operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
       <tags>mutates-input, mutates-object, callback-inlines</tags>
     </method>
@@ -171,8 +177,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
         <error code="BufferOverflow">The supplied Output buffer is not large enough (check the <fl>MinOutputSize</fl> field for the minimum allowable size).</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
       <tags>mutates-input, mutates-object, callback-inlines</tags>
     </method>
@@ -188,6 +196,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Failed to initialise the decompression process.</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -210,6 +219,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough to hold the decompressed information.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
       <tags>mutates-input, mutates-object</tags>
     </method>
@@ -232,14 +243,19 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">The file was successfully extracted.</error>
         <error code="Cancelled">The decompression process was cancelled by the feedback mechanism.</error>
+        <error code="Skip">Skip this operation</error>
+        <error code="Terminate">Termination requested</error>
         <error code="Failed">General failure</error>
         <error code="File">A destination file could not be created.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">No data is available for use</error>
         <error code="Write">Failed to write uncompressed information to a destination file.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="MissingPath">The object is missing a path reference</error>
         <error code="Seek">An error occurred during a seek operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
       <tags>blocking, mutates-object, callback-inlines</tags>
     </method>
@@ -261,10 +277,14 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">General failure</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="Write">Error writing data</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="MissingPath">The object is missing a path reference</error>
         <error code="Seek">An error occurred during a seek operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Decompression">Unspecified failure during decompression of a data stream</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
       <tags>blocking, mutates-object, updates-seek-index, callback-inlines</tags>
     </method>
@@ -293,6 +313,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
       <tags>mutates-input, mutates-object, callback-inlines</tags>
     </method>
@@ -328,6 +349,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Failed to initialise the decompression process.</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
       <tags>mutates-object</tags>
     </method>
@@ -396,6 +418,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongType">The expected type was not provided</error>
+        <error code="Function">A function call failed</error>
       </result>
       <tags>pure-query, callback-inlines</tags>
     </method>

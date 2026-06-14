@@ -19,7 +19,12 @@ static ERR COMPRESSEDSTREAM_FreePlacement(extCompressedStream *Self) {
 
 static const struct ActionArray clCompressedStreamActions[] = {
    { AC::FreePlacement, COMPRESSEDSTREAM_FreePlacement },
+   { AC::Init, COMPRESSEDSTREAM_Init },
    { AC::NewPlacement, COMPRESSEDSTREAM_NewPlacement },
+   { AC::Read, COMPRESSEDSTREAM_Read },
+   { AC::Reset, COMPRESSEDSTREAM_Reset },
+   { AC::Seek, COMPRESSEDSTREAM_Seek },
+   { AC::Write, COMPRESSEDSTREAM_Write },
    { AC::NIL, nullptr }
 };
 

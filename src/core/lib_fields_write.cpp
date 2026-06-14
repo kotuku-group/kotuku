@@ -35,6 +35,7 @@ static ERR setval_strview(OBJECTPTR, Field *, int Flags, CPTR , int);
 static ERR setval_double(OBJECTPTR, Field *, int Flags, CPTR , int);
 static ERR setval_long(OBJECTPTR, Field *, int Flags, CPTR , int);
 static ERR setval_function(OBJECTPTR, Field *, int Flags, CPTR , int);
+static ERR set_or_write_vector(OBJECTPTR, Field *, int Flags, CPTR , int);
 static ERR set_or_write_array(OBJECTPTR, Field *, int Flags, CPTR , int);
 static ERR setval_unit(OBJECTPTR, Field *, int Flags, CPTR , int);
 
@@ -108,73 +109,6 @@ requires std::is_integral_v<T>
 }
 
 //********************************************************************************************************************
-// Converts a CSV string into an array (or use "#0x123..." for a hexadecimal byte list)
-// Returns element count written
-
-static int write_array(std::string_view String, int Flags, int16_t ArraySize, APTR Dest)
-{
-   if (not ArraySize) ArraySize = 0x7fff; // If no ArraySize is specified then there is no imposed limit.
-
-   if ((String.starts_with('#')) or (String.starts_with("0x"))) {
-      // Array is a sequence of hexadecimal bytes
-      String.remove_prefix(String.starts_with('#') ? 1 : 2);
-      int i = 0;
-      while ((i < ArraySize) and (not String.empty())) {
-         uint8_t byte = 0;
-         for (int shift=4; shift >= 0; shift -= 4) {
-            if (not String.empty()) {
-               const auto ch = (unsigned char)String.front();
-               if (std::isdigit(ch)) byte |= (ch - '0') << shift;
-               else if (ch >= 'A' and (ch <= 'F')) byte |= (ch - 'A' + 10) << shift;
-               else if (ch >= 'a' and (ch <= 'f')) byte |= (ch - 'a' + 10) << shift;
-               String.remove_prefix(1);
-            }
-         }
-
-         if (Flags & FD_INT)         ((int *)Dest)[i]    = byte;
-         else if (Flags & FD_BYTE)   ((int8_t *)Dest)[i] = byte;
-         else if (Flags & FD_FLOAT)  ((float *)Dest)[i]  = byte;
-         else if (Flags & FD_DOUBLE) ((double *)Dest)[i] = byte;
-         i++;
-      }
-      return i;
-   }
-   else {
-      // Assume String is in CSV format
-      int i;
-      for (i=0; (i < ArraySize) and (not String.empty()); i++) {
-         while ((not String.empty()) and (not std::isdigit((unsigned char)String.front())) and (String.front() != '-')) {
-            String.remove_prefix(1);
-         }
-
-         if (String.empty()) break;
-
-         std::string buffer(String);
-         char *end = nullptr;
-         if (Flags & FD_INT)         ((int *)Dest)[i]     = strtol(buffer.c_str(), &end, 0);
-         else if (Flags & FD_BYTE)   ((uint8_t *)Dest)[i] = strtol(buffer.c_str(), &end, 0);
-         else if (Flags & FD_FLOAT)  ((float *)Dest)[i]   = strtod(buffer.c_str(), &end);
-         else if (Flags & FD_DOUBLE) ((double *)Dest)[i]  = strtod(buffer.c_str(), &end);
-         else if (Flags & FD_STRING) {
-            // Not feasible to convert a string into an array of strings
-            kt::Log().warning(ERR::InvalidType);
-            return 0;
-         }
-         else {
-            kt::Log().warning(ERR::InvalidType);
-            return 0;
-         }
-
-         const auto consumed = size_t(end - buffer.c_str());
-         if (not consumed) break;
-         if (consumed >= String.size()) String = {};
-         else String.remove_prefix(consumed);
-      }
-      return i;
-   }
-}
-
-//********************************************************************************************************************
 // Used by some of the SetField() range of instructions.
 
 ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int Elements)
@@ -187,7 +121,10 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
 
    if (not Field->SetValue) {
       ERR error = ERR::Okay;
-      if (Field->Flags & FD_ARRAY)         error = set_or_write_array(Object, Field, flags, Data, Elements);
+      if (Field->Flags & FD_ARRAY) {
+         if (Field->Flags & FD_CPP) error = set_or_write_vector(Object, Field, flags, Data, Elements);
+         else error = set_or_write_array(Object, Field, flags, Data, Elements);
+      }
       else if (Field->Flags & FD_INT)      error = writeval_long(Object, Field, flags, Data, 0);
       else if (Field->Flags & FD_INT64)    error = writeval_large(Object, Field, flags, Data, 0);
       else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) error = writeval_double(Object, Field, flags, Data, 0);
@@ -203,7 +140,10 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
    }
    else {
       if (Field->Flags & FD_UNIT)          return setval_unit(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_ARRAY)    return set_or_write_array(Object, Field, flags, Data, Elements);
+      else if (Field->Flags & FD_ARRAY) {
+         if (Field->Flags & FD_CPP) return set_or_write_vector(Object, Field, flags, Data, Elements);
+         else return set_or_write_array(Object, Field, flags, Data, Elements);
+      }
       else if (Field->Flags & FD_FUNCTION) return setval_function(Object, Field, flags, Data, 0);
       else if (Field->Flags & FD_INT)      return setval_long(Object, Field, flags, Data, 0);
       else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) return setval_double(Object, Field, flags, Data, 0);
@@ -289,7 +229,7 @@ static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
 
          if (op != OP_OVERWRITE) {
             int current_flags;
-            if (auto error = Object->get<int>(Field->FieldID, current_flags); error IS ERR::Okay) {
+            if (auto error = Object->get<int>(Field->FieldID, current_flags); !error) {
                if (op IS OP_OR) int64 = current_flags | int64;
                else if (op IS OP_AND) int64 = current_flags & int64;
             }
@@ -472,6 +412,76 @@ static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
    else return ERR::FieldTypeMismatch;
 }
 
+// Embedded kt::vector<>
+
+template <class T>
+static ERR copy_vector_field(OBJECTPTR Object, Field *Field, CPTR Data)
+{
+   auto dest = (kt::vector<T> *)((int8_t *)Object + Field->Offset);
+   if (Data) *dest = *((const kt::vector<T> *)Data);
+   else dest->clear();
+   return ERR::Okay;
+}
+
+static ERR set_or_write_vector(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+{
+   FieldContext ctx(Object, Field);
+
+   if (Flags & FD_ARRAY) {
+      if (Field->SetValue) {
+         // Basic type checking
+         int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
+         if (src_type) {
+            int dest_type = Field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
+            if (not (src_type & dest_type)) return ERR::SetValueNotArray;
+         }
+         // Vector arrays are fed direct data pointers and element counts to avoid conversion complications
+         return ((ERR (*)(APTR, APTR, int))(Field->SetValue))(Object, (APTR)Data, Elements);
+      }
+      else if (Field->Flags & FD_CPP) { // Embedded kt::vector<>
+         if (Field->Flags & FD_STRING) {
+            if (not (Flags & FD_STRING)) return ERR::SetValueNotArray;
+            return copy_vector_field<std::string>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_BYTE) {
+            if (not (Flags & FD_BYTE)) return ERR::SetValueNotArray;
+            return copy_vector_field<uint8_t>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_WORD) {
+            if (not (Flags & FD_WORD)) return ERR::SetValueNotArray;
+            return copy_vector_field<uint16_t>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_INT) {
+            if (not (Flags & FD_INT)) return ERR::SetValueNotArray;
+            return copy_vector_field<int>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_INT64) {
+            if (not (Flags & FD_INT64)) return ERR::SetValueNotArray;
+            return copy_vector_field<int64_t>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_FLOAT) {
+            if (not (Flags & FD_FLOAT)) return ERR::SetValueNotArray;
+            return copy_vector_field<float>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_DOUBLE) {
+            if (not (Flags & FD_DOUBLE)) return ERR::SetValueNotArray;
+            return copy_vector_field<double>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_POINTER) {
+            if (not (Flags & FD_POINTER)) return ERR::SetValueNotArray;
+            return copy_vector_field<APTR>(Object, Field, Data);
+         }
+      }
+      return ERR::FieldTypeMismatch;
+   }
+   else {
+      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FD_ARRAY type.");
+      return ERR::SetValueNotArray;
+   }
+}
+
+// Embedded basic array (non-vector)
+
 static ERR set_or_write_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
 {
    FieldContext ctx(Object, Field);
@@ -503,43 +513,12 @@ static ERR set_or_write_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Da
       }
       else return ERR::FieldTypeMismatch;
    }
-   else if (Flags & FD_STRING) { // Incoming CSV string
-      std::string_view source;
-      if (not Data) source = {};
-      else source = *((std::string_view *)Data);
-
-      APTR arraybuffer;
-      auto buffer_size = source.empty() ? 1 : source.size() * 8;
-      if ((arraybuffer = malloc(buffer_size))) {
-         Elements = write_array(source, Field->Flags, 0, arraybuffer);
-
-         ERR error;
-         if (Field->SetValue) error = ((ERR (*)(APTR, APTR, int))(Field->SetValue))(Object, arraybuffer, Elements);
-         else if (Field->Arg > 0) { // An arg value indicates an embedded fixed-size array
-            size_t size;
-            if (Elements > Field->Arg) Elements = Field->Arg;
-
-            if (Field->Flags & FD_BYTE) size = Elements * sizeof(uint8_t);
-            else if (Field->Flags & FD_WORD) size = Elements * sizeof(uint16_t);
-            else if (Field->Flags & FD_INT) size = Elements * sizeof(int);
-            else if (Field->Flags & (FD_INT64|FD_DOUBLE)) size = Elements * sizeof(double);
-            else if (Field->Flags & FD_POINTER) size = Elements * sizeof(APTR);
-            else size = 0;
-
-            copymem(arraybuffer, (int8_t *)Object + Field->Offset, size);
-            error = ERR::Okay;
-         }
-         else error = ERR::FieldTypeMismatch;
-
-         free(arraybuffer);
-         return error;
-      }
-      else return ERR::AllocMemory;
+   else if (Flags & FD_STRING) { // Incoming CSV string - DEPRECATED
+      kt::Log(__FUNCTION__).warning("CSV support for arrays is deprecated.");
+      std::abort();
+      return ERR::Failed;
    }
-   else {
-      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FD_ARRAY type.");
-      return ERR::SetValueNotArray;
-   }
+   else return kt::Log(__FUNCTION__).warning(ERR::SetValueNotArray);
 }
 
 static ERR setval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
@@ -663,7 +642,9 @@ void optimise_write_field(Field &Field)
    if (Field.Flags & FD_FLAGS)       Field.WriteValue = writeval_flags;
    else if (Field.Flags & FD_LOOKUP) Field.WriteValue = writeval_lookup;
    else if (not Field.SetValue) {
-      if (Field.Flags & FD_ARRAY)      Field.WriteValue = set_or_write_array;
+      if (Field.Flags & FD_ARRAY) {
+         Field.WriteValue = (Field.Flags & FD_CPP) ? set_or_write_vector : set_or_write_array;
+      }
       else if (Field.Flags & FD_INT)   Field.WriteValue = writeval_long;
       else if (Field.Flags & FD_INT64) Field.WriteValue = writeval_large;
       else if (Field.Flags & (FD_DOUBLE|FD_FLOAT)) Field.WriteValue = writeval_double;
@@ -677,7 +658,9 @@ void optimise_write_field(Field &Field)
    }
    else {
       if (Field.Flags & FD_UNIT)          Field.WriteValue = setval_unit;
-      else if (Field.Flags & FD_ARRAY)    Field.WriteValue = set_or_write_array;
+      else if (Field.Flags & FD_ARRAY) {
+         Field.WriteValue = (Field.Flags & FD_CPP) ? set_or_write_vector : set_or_write_array;
+      }
       else if (Field.Flags & FD_FUNCTION) Field.WriteValue = setval_function;
       else if (Field.Flags & FD_INT)      Field.WriteValue = setval_long;
       else if (Field.Flags & (FD_DOUBLE|FD_FLOAT)) Field.WriteValue = setval_double;

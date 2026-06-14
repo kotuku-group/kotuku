@@ -326,6 +326,7 @@ ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
 
    auto path = (extVectorPath *)VectorPath;
    path->Commands = std::move(paths);
+   path->CommandsChanged = true;
    reset_path(VectorPath);
    path->modified();
 
@@ -758,7 +759,7 @@ ERR GeneratePath(const std::string_view &Sequence, APTR *Path)
    }
    else {
       std::vector<PathCommand> paths;
-      if ((error = read_path(paths, Sequence)) IS ERR::Okay) {
+      if (!(error = read_path(paths, Sequence))) {
          auto vector = new_simplevector();
          if (vector) {
             convert_to_aggpath(nullptr, paths, vector->mPath);
@@ -812,7 +813,7 @@ ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style,
    if (Size < 1) return log.warning(ERR::Args);
 
    common_font *handle;
-   if (auto error = get_font(log, Family, Style.empty() ? "Regular" : Style, Weight, Size, &handle); error IS ERR::Okay) {
+   if (auto error = get_font(log, Family, Style.empty() ? "Regular" : Style, Weight, Size, &handle); !error) {
       *Handle = handle;
       return ERR::Okay;
    }
@@ -885,6 +886,7 @@ double Scale:  Set to 1.0 (recommended) to trace the path at a scale of 1 to 1.
 Okay
 NullArgs
 Function
+Terminate
 
 -TAGS-
 callback-inlines, updates-seek-index
@@ -1351,7 +1353,7 @@ ERR Skew(VectorMatrix *Matrix, double X, double Y)
 
    if (not Matrix) return log.warning(ERR::NullArgs);
 
-   if (auto error = skew_matrix(*Matrix, X, Y); error IS ERR::Okay) {
+   if (auto error = skew_matrix(*Matrix, X, Y); !error) {
       mark_matrix_dirty(Matrix);
       return ERR::Okay;
    }

@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Provides AGG's lightweight POD arrays, block allocators, and sorted vector containers. Hooks into path storage,
+// rasteriser cells, scanline storage, gradient LUTs, and other allocation-heavy helpers. In the vector renderer it
+// supplies compact geometry and span storage without depending on STL container behaviour.
 
-#ifndef AGG_ARRAY_INCLUDED
-#define AGG_ARRAY_INCLUDED
+#pragma once
 
 #include <cstddef>
 #include <cstring>
@@ -19,8 +21,6 @@
 
 namespace agg
 {
-
-    //-------------------------------------------------------pod_array_adaptor
     template<typename T>
     requires std::is_trivially_copyable_v<T>
     class pod_array_adaptor
@@ -1063,5 +1063,3 @@ namespace agg
     //-------------------------------------------------------unsigned_greater
     inline bool unsigned_greater(unsigned a, unsigned b) { return a > b; }
 }
-
-#endif

@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 // Copyright (C) 2005 Tony Juricic (tonygeek@yahoo.com)
@@ -7,10 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Contains curve flatteners for quadratic, cubic, and incremental Bezier processing. Hooks into conv_curve and any
+// component that needs curve commands converted to line vertices. In the vector renderer it controls the accuracy and
+// stepping of curved geometry before rasterisation.
 
-
-#ifndef AGG_CURVES_INCLUDED
-#define AGG_CURVES_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -30,9 +31,7 @@ namespace agg
         curve3_inc() :
           m_num_steps(0), m_step(0), m_scale(1.0) { }
 
-        curve3_inc(double x1, double y1,
-                   double x2, double y2,
-                   double x3, double y3) :
+        curve3_inc(double x1, double y1, double x2, double y2, double x3, double y3) :
             m_num_steps(0), m_step(0), m_scale(1.0)
         {
             init(x1, y1, x2, y2, x3, y3);
@@ -508,5 +507,3 @@ namespace agg
         curve_approximation_method_e m_approximation_method;
     };
 }
-
-#endif

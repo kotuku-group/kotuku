@@ -38,11 +38,11 @@ static ERR TASK_FreePlacement(extTask *Self) {
 
 static const struct ActionArray clTaskActions[] = {
    { AC::Activate, TASK_Activate },
-   { AC::Free, TASK_Free },
    { AC::FreePlacement, TASK_FreePlacement },
    { AC::GetKey, TASK_GetKey },
    { AC::Init, TASK_Init },
    { AC::NewPlacement, TASK_NewPlacement },
+   { AC::Query, TASK_Query },
    { AC::SetKey, TASK_SetKey },
    { AC::Write, TASK_Write },
    { AC::NIL, nullptr }

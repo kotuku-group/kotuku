@@ -5,7 +5,7 @@ This file provides guidance to Agentic programs when working with code in this r
 ### Essential Build Commands
 
 **Configure build:**
-- `cmake -S . -B build/agents -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/agents-install -DRUN_ANYWHERE=TRUE -DKOTUKU_STATIC=OFF -DENABLE_UNIT_TESTS=ON -DORIGO_CONSOLE=ON`
+- `cmake -S . -B build/agents -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/agents-install -DRUN_ANYWHERE=TRUE -DKOTUKU_STATIC=OFF -DUNIT_TESTS=ON -DORIGO_CONSOLE=ON`
 - Modular/Static builds: Use `-DKOTUKU_STATIC=OFF` for modular builds and `-DKOTUKU_STATIC=ON` for static.
 - Always use Debug builds unless the user requests otherwise.
 
@@ -31,7 +31,8 @@ This file provides guidance to Agentic programs when working with code in this r
 
 Key build options (use with `-D` flag):
 - `KOTUKU_STATIC=ON/OFF` - Build as static libraries instead of modules
-- `BUILD_TESTS=ON/OFF` - Enable/disable test building
+- `BUILD_TESTS=ON/OFF` - Enable/disable Flute tests
+- `UNIT_TESTS=ON/OFF` - Enable compiled C++ unit tests (prolongs build)
 - `BUILD_DEFS=ON/OFF` - Auto-generate C/C++ headers from TDL files
 - `RUN_ANYWHERE=ON/OFF` - Build for local folder execution
 - `KOTUKU_VLOG=ON/OFF` - Enables trace level log messages via log.trace() in Debug builds (has no effect on Release builds).
@@ -72,10 +73,11 @@ Kōtuku uses a modular architecture where each major feature is implemented as a
 Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to generate documentation, include files and C++ stubs:
 
 - TDL files define classes, methods, fields, and constants
-- Build system generates C/C++ headers from TDL using tools in `tools/idl/`
+- When `BUILD_DEFS=ON`, the build system generates C/C++ headers from TDL using tools in `tools/idl/`
 - Class implementations are in `class_*.cpp` files
 - Generated headers go to `include/kotuku/` directory
-- Headers are built by triggering a cmake build.
+- Normal builds consume the existing generated headers; after changing `.tdl` files, configure with `BUILD_DEFS=ON`
+  and rebuild to regenerate headers.
 
 ### Scripting Integration
 
@@ -112,15 +114,16 @@ build/agents-install/origo tools/flute.tiri file=src/network/tests/test_bind_add
 The build system heavily uses code generation:
 - TDL files are processed by `tools/idl/idl-c.tiri` to generate C headers
 - `tools/idl/idl-compile.tiri` generates IDL definition strings
-- Generated files are created in build directories and copied to `include/`
-- Use `BUILD_DEFS=OFF` to skip generation if no `origo` executable is available
+- Generated files are created in build directories and copied to `include/` only when `BUILD_DEFS=ON`
+- Normal agent builds generally use `BUILD_DEFS=OFF` and consume the existing generated files.  Use `BUILD_DEFS=ON`
+  after changing `.tdl` files, and only when a working `origo` executable is available to run the IDL tools.
 
 ### Multi-Platform Considerations
 
-- Core code is cross-platform (Windows/Linux/MacOS)
+- Core code is cross-platform (Windows/Linux/MacOS/Android) and is specifically optimised for 64-bit CPUs.  32-bit compatibility is redundant.
 - Platform-specific code is in subdirectories (`win32/`, `x11/`, etc.)
 - Build system auto-detects platform capabilities (X11, SSL, etc.)
-- Windows builds support both MSVC and MinGW toolchains
+- Windows builds support the MSVC toolchain.  MinGW support is deprecated
 
 **Windows-Specific Notes:**
 - In Bash commands, quote paths with spaces: `"path with spaces"`
@@ -156,7 +159,6 @@ Kōtuku maintains retained scene graphs that can be modified at runtime. This en
 
 Before considering ANY C++ code changes complete, verify:
 
-- [ ] All `static_cast` replaced with C-style casts
 - [ ] Code compiles successfully
 - [ ] Follows formatting standards below
 

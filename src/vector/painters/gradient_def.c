@@ -24,6 +24,7 @@ static const struct FieldDef clVectorGradientType[] = {
    { "Conic", 0x00000002 },
    { "Diamond", 0x00000003 },
    { "Contour", 0x00000004 },
+   { "Gouraud", 0x00000005 },
    { nullptr, 0 }
 };
 
