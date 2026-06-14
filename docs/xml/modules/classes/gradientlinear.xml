@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientLinear</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Linear colour gradient paint server.</comment>
+    <version>1</version>
+    <id>585dccaf</id>
+    <idstring>GRADIENTLINEAR</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientLinear draws a colour ramp along the line defined by <code>(X1, Y1)</code> and <code>(X2, Y2)</code>.  The object must be registered with a <class name="VectorScene">VectorScene</class> via <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> before it can be referenced by vector fill or stroke attributes.</p></description>
+    <source>
+      <file path="painters/">gradient_linear.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>X1</name>
+      <comment>Initial X coordinate for the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(X1, Y1)</code> field values define the starting coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>X2</name>
+      <comment>Final X coordinate for the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(X2, Y2)</code> field values define the end coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Y1</name>
+      <comment>Initial Y coordinate for the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(X1, Y1)</code> field values define the starting coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Y2</name>
+      <comment>Final Y coordinate for the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(X2, Y2)</code> field values define the end coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

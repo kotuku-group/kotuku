@@ -248,11 +248,11 @@ private:
    ERR  set_paint_server(objVector *, FIELD, const std::string);
    ERR  current_colour(objVector *, FRGB &) noexcept;
 
-   void parse_contourgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_diamondgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_distalgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_lineargradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_radialgradient(const XTag &, objVectorGradient &, std::string &) noexcept;
+   void parse_contourgradient(const XTag &, objGradient *, std::string &) noexcept;
+   void parse_diamondgradient(const XTag &, objGradient *, std::string &) noexcept;
+   void parse_distalgradient(const XTag &, objGradient *, std::string &) noexcept;
+   void parse_lineargradient(const XTag &, objGradient *, std::string &) noexcept;
+   void parse_radialgradient(const XTag &, objGradient &, std::string &) noexcept;
 
    ERR  parse_fe_blur(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_colour_matrix(objVectorFilter *, XTag &) noexcept;

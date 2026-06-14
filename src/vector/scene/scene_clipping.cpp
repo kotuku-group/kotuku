@@ -132,9 +132,9 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
                      Raster.add_path(final_path);
 
                      if (node->Fill->Gradient) {
-                        auto gradient = (extVectorGradient *)node->Fill->Gradient;
-                        if (gradient->Type IS VGT::GOURAUD) {
-                           fill_gouraud(state, node->Bounds, Render.view_width(), Render.view_height(), *gradient,
+                        auto gradient = (extGradient *)node->Fill->Gradient;
+                        if (gradient->classID() IS CLASSID::GRADIENTGOURAUD) {
+                           fill_gouraud(state, node->Bounds, Render.view_width(), Render.view_height(), *(extGradientGouraud *)gradient,
                               state.mOpacity * node->FillOpacity, rb, Raster, t);
                         }
                         else if (auto table = get_fill_gradient_table(node->Fill[0], state.mOpacity * node->FillOpacity)) {

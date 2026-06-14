@@ -1,0 +1,191 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>Gradient</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Base class for colour gradient paint servers.</comment>
+    <version>1</version>
+    <id>4ac5c2e7</id>
+    <idstring>GRADIENT</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>Gradient stores the common state shared by all gradient paint servers.  Concrete gradient classes such as <class name="GradientLinear">GradientLinear</class>, <class name="GradientRadial">GradientRadial</class> and <class name="GradientGouraud">GradientGouraud</class> provide the fields that describe a specific gradient shape.</p>
+<p>Gradient objects are definition objects and should normally be registered with a <class name="VectorScene">VectorScene</class> via <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> before being referenced by vector fill or stroke attributes.</p></description>
+    <source>
+      <file path="painters/">gradient.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Colour</name>
+      <comment>The default background colour to use when clipping is enabled.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FLOAT []</type>
+      <description>
+<p>The colour value in this field is applicable only when a gradient is in clip-mode by specifying the <code>VSPREAD::CLIP</code> flag in <fl>SpreadMethod</fl>.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.</p>
+<p>The Colour value is defined in floating-point RGBA format, using a range of 0 - 1.0 per component.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ColourMap</name>
+      <comment>Assigns a pre-defined colourmap to the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>An alternative to defining colour <fl>Stops</fl> in a gradient is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the gradient with the colours defined in the map.</p>
+<p>We currently support the following established colourmaps from the matplotlib and seaborn projects: <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
+<p>The use of colourmaps and custom stops are mutually exclusive.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ColourSpace</name>
+      <comment>Defines the colour space to use when interpolating gradient colours.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type lookup="VCS">VCS</type>
+      <description>
+<p>By default, gradients are rendered using the standard RGB colour space and alpha blending rules.  Changing the colour space to <code>LINEAR_RGB</code> will force the renderer to automatically convert sRGB values to linear RGB when blending.</p>
+<types lookup="VCS"/>
+      </description>
+    </field>
+
+    <field>
+      <name>ID</name>
+      <comment>String identifier for a vector.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The ID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Matrices</name>
+      <comment>Applies one or more transforms to a gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>APTR</type>
+      <description>
+<p>A transform can be applied to a gradient via one or more matrices.  These will influence how gradient fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>NumericID</name>
+      <comment>Numeric identifier for a vector.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client, then any value in <fl>ID</fl> will be immediately cleared.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Resolution</name>
+      <comment>Affects the rate of change for colours in the gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>By default, the colours generated for a gradient will be spaced for a smooth transition between stops that maximise resolution.  The resolution can be reduced by setting the Resolution value to a fraction between 0 and 1.0.</p>
+<p>This results in the colour values being averaged to a single value for every block of n colours, where n is the value <code>1 / (1 - Resolution)</code>.</p>
+<p>Resolution is at its maximum when this value is set to 1 (the default).</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SpreadMethod</name>
+      <comment>Determines the rendering behaviour to use when gradient colours are cycled.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="VSPREAD">VSPREAD</type>
+      <description>
+<p>SpreadMethod determines what happens when the first cycle of gradient colours is exhausted and needs to begin again. The default setting is <code>VSPREAD::PAD</code>.</p>
+<types lookup="VSPREAD"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Stops</name>
+      <comment>Defines the colours to use for the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRUCT []</type>
+      <description>
+<p>The colours that will be used for drawing a gradient are defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>TotalStops</name>
+      <comment>Total number of stops defined in the Stops array.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>This read-only field indicates the total number of stops that have been defined in the <fl>Stops</fl> array.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Transform</name>
+      <comment>Applies a transform to the gradient.</comment>
+      <access write="S">Set</access>
+      <type>STRING</type>
+      <description>
+<p>A transform can be applied to the gradient by setting this field with an SVG compliant transform string.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Units</name>
+      <comment>Defines the coordinate system for gradient coordinates.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type lookup="VUNIT">VUNIT</type>
+      <description>
+<p>The default coordinate system for gradients is <code>BOUNDING_BOX</code>, which positions the gradient around the vector that references it.  The alternative is <code>USERSPACE</code>, which positions the gradient scaled to the current viewport.</p>
+<types lookup="VUNIT"/>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="VCS" comment="Colour space options.">
+      <const name="INHERIT">Inherit the colour space option from the parent vector.</const>
+      <const name="LINEAR_RGB">Linear RGB is the default colour space for SVG and produces the best results.</const>
+      <const name="SRGB">The default colour-space is sRGB, recommended for its speed.</const>
+    </constants>
+
+    <constants lookup="VSPREAD" comment="Spread method options define the method to use for tiling filled graphics.">
+      <const name="CLIP">Do not scale the graphic.  Clip it if it extends past imposed boundaries.</const>
+      <const name="PAD">Scale the graphic to the object bounds.</const>
+      <const name="REFLECT">Tile the graphic, reflecting the image alternately on the X and Y axis.</const>
+      <const name="REFLECT_X">Tile the graphic, reflecting the image alternately on the X axis only.</const>
+      <const name="REFLECT_Y">Tile the graphic, reflecting the image alternately on the Y axis only.</const>
+      <const name="REPEAT">Tile the graphic repeatedly.</const>
+      <const name="UNDEFINED">Either the default setting will be applied or the setting will be inherited from a parent object.</const>
+    </constants>
+
+    <constants lookup="VUNIT">
+      <const name="BOUNDING_BOX">Coordinates are scaled to the object's bounding box.</const>
+      <const name="UNDEFINED">Either the default setting will be applied or the setting will be inherited from a parent object.</const>
+      <const name="USERSPACE">Coordinates are scaled to the current viewport.</const>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="VectorMatrix" comment="Vector transformation matrix.">
+      <field name="Next" type="struct VectorMatrix *">The next transform in the list.</field>
+      <field name="Vector" type="objVector *">The vector associated with the transform.</field>
+      <field name="ScaleX" type="DOUBLE">Matrix value A</field>
+      <field name="ShearY" type="DOUBLE">Matrix value B</field>
+      <field name="ShearX" type="DOUBLE">Matrix value C</field>
+      <field name="ScaleY" type="DOUBLE">Matrix value D</field>
+      <field name="TranslateX" type="DOUBLE">Matrix value E</field>
+      <field name="TranslateY" type="DOUBLE">Matrix value F</field>
+      <field name="Tag" type="INT">An optional tag value defined by the client for matrix identification.</field>
+    </struct>
+
+  </structs>
+</book>

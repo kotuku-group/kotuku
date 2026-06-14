@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientContour</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Contour-following colour gradient paint server.</comment>
+    <version>1</version>
+    <id>a3c36399</id>
+    <idstring>GRADIENTCONTOUR</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientContour follows the contours of the target vector path.  <code>X1</code> controls the colour ramp floor and <code>X2</code> controls the ramp multiplier.</p></description>
+    <source>
+      <file path="painters/">gradient_contour.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>X1</name>
+      <comment>Colour ramp floor for contour gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The X1 value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt; X1 &lt; X2</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>X2</name>
+      <comment>Colour ramp multiplier for contour gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The X2 value acts as a multiplier for contour gradient colour values.  It has a valid range of <code>.01 &lt; X2 &lt; 10</code>.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

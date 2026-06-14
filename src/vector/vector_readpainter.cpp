@@ -191,7 +191,7 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
    auto ext_scene = (extVectorScene *)Scene;
    if (auto def_lookup = ext_scene->Defs.find(lookup); def_lookup != ext_scene->Defs.end()) {
       auto def = def_lookup->second;
-      if (def->classID() IS CLASSID::VECTORGRADIENT) Painter->Gradient = (objVectorGradient *)def;
+      if (def->baseClassID() IS CLASSID::GRADIENT) Painter->Gradient = (objGradient *)def;
       else if (def->classID() IS CLASSID::VECTORIMAGE) Painter->Image = (objVectorImage *)def;
       else if (def->classID() IS CLASSID::VECTORPATTERN) Painter->Pattern = (objVectorPattern *)def;
       else Log.warning("Vector definition '%s' (class $%.8x) not supported.", lookup.c_str(), uint32_t(def->classID()));
@@ -201,12 +201,11 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
       // Referencing a pre-defined colour map results in it being added to the Scene's definitions as a linear gradient.
       // It is then accessible permanently under that name.
 
-      extVectorGradient *gradient;
-      if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+      extGradient *gradient;
+      if (!NewObject(CLASSID::GRADIENTLINEAR, &gradient)) {
          SetOwner(gradient, Scene);
          gradient->setFields(
             fl::Name(lookup),
-            fl::Type(VGT::LINEAR),
             fl::Units(VUNIT::BOUNDING_BOX),
             fl::X1(0.0),
             fl::Y1(0.0),

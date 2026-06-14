@@ -1,7 +1,7 @@
 // Kotuku extension to Anti-Grain Geometry.
 // ---
 // Resolution (posterisation) wrapper for the Gouraud span generators.  The field-based gradients implement the
-// VectorGradient Resolution field by collapsing their 256-entry colour table into blocks, leaving 1/(1-Resolution)
+// Gradient Resolution field by collapsing their 256-entry colour table into blocks, leaving 1/(1-Resolution)
 // distinct colours across the ramp (see GradientColours::apply_resolution).  A Gouraud gradient has no colour table:
 // its colour is interpolated per pixel across each triangle.  The equivalent reduction is to quantise each output
 // pixel's channels to a small number of levels, which produces the same banded, reduced-resolution appearance.

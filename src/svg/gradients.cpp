@@ -3,7 +3,7 @@
 //   The fx,fy values can be placed outside of the radial gradient if 'focal="unbound"' is used
 //   The resolution value can be defined to lower the rate of colour sampling.
 
-static ERR gradient_defaults(extSVG *Self, objVectorGradient *Gradient, uint32_t Attrib, const std::string Value)
+static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attrib, const std::string Value)
 {
    switch (Attrib) {
       case SVF_resolution:
@@ -117,7 +117,7 @@ const std::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag
 
 //********************************************************************************************************************
 
-void svgState::parse_lineargradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_lineargradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -203,7 +203,7 @@ void svgState::parse_lineargradient(const XTag &Tag, objVectorGradient *Gradient
 
 //********************************************************************************************************************
 
-void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient, std::string &ID) noexcept
+void svgState::parse_radialgradient(const XTag &Tag, objGradient &Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -238,9 +238,10 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
             else if (iequals("repeat", val))  Gradient.setSpreadMethod(VSPREAD::REPEAT);
             break;
 
-         case SVF_focalPoint:
-            if (iequals("unbound", val)) Gradient.Flags &= ~VGF::CONTAIN_FOCAL;
+         case SVF_focalPoint: {
+            if (iequals("unbound", val)) Gradient.set(kt::fieldhash("ContainFocal"), 0);
             break;
+         }
 
          case SVF_href:
          case SVF_xlink_href: {
@@ -287,7 +288,7 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
 
 //********************************************************************************************************************
 
-void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_diamondgradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -363,7 +364,7 @@ void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradien
 
 //********************************************************************************************************************
 
-void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_contourgradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -439,18 +440,17 @@ void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradien
 ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
 
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTLINEAR, &gradient)) {
       SetOwner(gradient, Self->Scene);
       gradient->setFields(
          fl::Name("SVGLinearGrad"),
-         fl::Type(VGT::LINEAR),
          fl::Units(VUNIT::BOUNDING_BOX),
          fl::X1(0.0),
          fl::Y1(0.0),
@@ -477,22 +477,20 @@ ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTRADIAL, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGRadialGrad"), fl::Type(VGT::RADIAL), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
-
-      // Enforce SVG limits on focal point positioning.  Can be overridden with focal="unbound", which is a Kotuku
-      // specific feature.
-
-      gradient->Flags |= VGF::CONTAIN_FOCAL;
+      gradient->setFields(fl::Name("SVGRadialGrad"),
+         fl::Units(VUNIT::BOUNDING_BOX),
+         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)),
+         fl::Radius(SCALE(0.5)),
+         FieldValue("ContainFocal", 1)); // Enforce SVG limits on focal point, can be overridden with focal="unbound"
 
       state.parse_radialgradient(Tag, *gradient, id);
 
@@ -514,16 +512,16 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTDIAMOND, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Type(VGT::DIAMOND), fl::Units(VUNIT::BOUNDING_BOX),
+      gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Units(VUNIT::BOUNDING_BOX),
          fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
 
       state.parse_diamondgradient(Tag, gradient, id);
@@ -547,15 +545,15 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTCONTOUR, &gradient)) {
       SetOwner(gradient, Self->Scene);
-      gradient->setFields(fl::Name("SVGContourGrad"), fl::Type(VGT::CONTOUR), fl::Units(VUNIT::BOUNDING_BOX));
+      gradient->setFields(fl::Name("SVGContourGrad"), fl::Units(VUNIT::BOUNDING_BOX));
 
       state.parse_contourgradient(Tag, gradient, id);
 
@@ -578,7 +576,7 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 //********************************************************************************************************************
 // NB: Distal gradients are not part of the SVG standard.
 
-void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_distalgradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -657,15 +655,15 @@ void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient
 ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTDISTAL, &gradient)) {
       SetOwner(gradient, Self->Scene);
-      gradient->setFields(fl::Name("SVGDistalGrad"), fl::Type(VGT::DISTAL), fl::Units(VUNIT::BOUNDING_BOX));
+      gradient->setFields(fl::Name("SVGDistalGrad"), fl::Units(VUNIT::BOUNDING_BOX));
 
       state.parse_distalgradient(Tag, gradient, id);
 
@@ -690,15 +688,15 @@ ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
 ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTCONIC, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGConicGrad"), fl::Type(VGT::CONIC), fl::Units(VUNIT::BOUNDING_BOX),
+      gradient->setFields(fl::Name("SVGConicGrad"), fl::Units(VUNIT::BOUNDING_BOX),
          fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
 
       std::string id;

@@ -36,8 +36,7 @@ function newTriangleScene()
    table.insert(vertices, vertex(90, 10, 0.0, 1.0, 0.0))
    table.insert(vertices, vertex(10, 90, 0.0, 0.0, 1.0))
 
-   local gradient = scene.new('VectorGradient', {
-      type     = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
       vertices = vertices
    })
@@ -60,8 +59,7 @@ function newQuadScene()
    table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0)) -- 2: bot-left  = blue
    table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0)) -- 3: bot-right = yellow
 
-   local gradient = scene.new('VectorGradient', {
-      type     = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
       vertices = vertices
    })
@@ -88,8 +86,7 @@ function newEllipseScene()
    table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0))
    table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
 
-   local gradient = scene.new('VectorGradient', {
-      type     = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
       vertices = vertices
    })
@@ -114,8 +111,7 @@ function newStrokeScene()
    table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0))
    table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
 
-   local gradient = scene.new('VectorGradient', {
-      type     = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
       vertices = vertices
    })
@@ -143,8 +139,7 @@ function newClipMaskScene()
    table.insert(vertices, vertex(50, 100, 1.0, 1.0, 1.0))
    table.insert(vertices, vertex(0,  100, 1.0, 1.0, 1.0))
 
-   local gradient = scene.new('VectorGradient', {
-      type     = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
       vertices = vertices
    })
@@ -181,8 +176,7 @@ function newRampScene(ColourSpace)
    table.insert(vertices, vertex(100, 100, 1.0, 1.0, 1.0)) -- bot-right = white
    table.insert(vertices, vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
 
-   local gradient = scene.new('VectorGradient', {
-      type        = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units       = VUNIT_USERSPACE,
       colourSpace = ColourSpace,
       vertices    = vertices
@@ -208,8 +202,7 @@ function newResolutionRampScene(Resolution)
    table.insert(vertices, vertex(100, 100, 1.0, 1.0, 1.0)) -- white
    table.insert(vertices, vertex(0,   100, 0.0, 0.0, 0.0)) -- black
 
-   local gradient = scene.new('VectorGradient', {
-      type       = VGT_GOURAUD,
+   local gradient = scene.new('GradientGouraud', {
       units      = VUNIT_USERSPACE,
       resolution = Resolution,
       vertices   = vertices
@@ -237,7 +230,7 @@ end
 
 @Test function VerticesRoundTrip()
    local scene, gradient = newTriangleScene()
-   assert(gradient.type is VGT_GOURAUD, 'Gradient type should be GOURAUD')
+   assert(gradient != nil, 'GradientGouraud should be created')
    local verts = gradient.vertices
    assert(#verts is 3, 'Expected three vertices, got ' .. #verts)
 end

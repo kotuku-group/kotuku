@@ -151,7 +151,7 @@ namespace agg
 #endif
    }
 
-   // Match the VectorGradient Resolution field for SDF alpha ramps.  Colour resolution is baked into the 256-entry
+   // Match the Gradient Resolution field for SDF alpha ramps.  Colour resolution is baked into the 256-entry
    // ramp table; SDF alpha is independent of that table, so it needs equivalent stepping here.
 
    static inline int8u sdf_apply_resolution(int Value, double Resolution) {

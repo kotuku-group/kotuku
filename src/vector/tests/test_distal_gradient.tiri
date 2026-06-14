@@ -54,10 +54,10 @@ function newRectScene(Radius)
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local opts = { type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, stops=rampStops() }
+   local opts = { units=VUNIT_BOUNDING_BOX, stops=rampStops() }
    if Radius != nil then opts.radius = Radius end
 
-   local gradient = scene.new('VectorGradient', opts)
+   local gradient = scene.new('GradientDistal', opts)
    check scene.mtAddDef('distal_rect', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_rect)' })
@@ -68,9 +68,7 @@ function newAlphaResolutionScene(Resolution)
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=160 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=40, resolution=Resolution, stops=blackStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=40, resolution=Resolution, stops=blackStops() })
    check scene.mtAddDef('distal_alpha_resolution', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=60, width=80, height=40, fill='url(#distal_alpha_resolution)' })
@@ -81,9 +79,7 @@ function newInnerFadeScene(InnerRadius)
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=0, innerRadius=InnerRadius, stops=blackStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=0, innerRadius=InnerRadius, stops=blackStops() })
    check scene.mtAddDef('distal_inner_fade', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_inner_fade)' })
@@ -97,9 +93,7 @@ function newEllipseScene()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops() })
    check scene.mtAddDef('distal_ellipse', gradient)
 
    viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_ellipse)' })
@@ -110,9 +104,7 @@ function newClippedEllipseScene()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, spreadMethod=VSPREAD_CLIP, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, spreadMethod=VSPREAD_CLIP, stops=rampStops() })
    check scene.mtAddDef('distal_clip_spread', gradient)
 
    viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_clip_spread)' })
@@ -123,9 +115,7 @@ function newShapeScene()
    local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=18, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=18, stops=rampStops() })
    check scene.mtAddDef('distal_shape', gradient)
 
    local shape = viewport.new('VectorShape', {
@@ -149,13 +139,13 @@ end
 
 @Test function TypeRoundTrips()
    local scene, gradient = newRectScene()
-   assert(gradient.type is VGT_DISTAL, 'Gradient type should be DISTAL')
+   assert(gradient != nil, 'GradientDistal should be created')
 end
 
 @Test function UserspaceForcedToBoundingBox()
    -- Distal gradients depend on the target path bounds, so USERSPACE units are rejected and coerced to BOUNDING_BOX.
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
-   local gradient = scene.new('VectorGradient', { type=VGT_DISTAL, units=VUNIT_USERSPACE, stops=rampStops() })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_USERSPACE, stops=rampStops() })
    assert(gradient.units is VUNIT_BOUNDING_BOX, 'Distal gradient should coerce USERSPACE units to BOUNDING_BOX')
 end
 
@@ -313,9 +303,7 @@ end
    local scene = obj.new('VectorScene', { pageWidth=300, pageHeight=500 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
-   check scene.mtAddDef('distal_deep', scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=40, stops=rampStops()
-   }))
+   check scene.mtAddDef('distal_deep', scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=40, stops=rampStops() }))
    -- Tall ellipse: right edge ~x=230, padding 40 -> glow should vanish by ~x=270.
    viewport.new('VectorEllipse', { cx=150, cy=250, radiusX=80, radiusY=180, fill='url(#distal_deep)' })
 
@@ -403,26 +391,16 @@ end
 
 @Test function RadiusFieldRoundTrips()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops() })
    assert(math.abs(gradient.radius - 15) < 0.001, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
 end
 
-@Test function InnerRadiusAliasesFocalRadius()
+@Test function InnerRadiusRoundTrips()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops() })
 
    assert(math.abs(gradient.innerRadius - 12) < 0.001,
       'InnerRadius field should round-trip (got ' .. gradient.innerRadius .. ')')
-   assert(math.abs(gradient.focalRadius - 12) < 0.001,
-      'InnerRadius should alias FocalRadius storage (got ' .. gradient.focalRadius .. ')')
-
-   gradient.focalRadius = 7
-   assert(math.abs(gradient.innerRadius - 7) < 0.001,
-      'FocalRadius writes should update the InnerRadius alias (got ' .. gradient.innerRadius .. ')')
 end
 
 @Test function InnerRadiusFadesInterior()
@@ -451,9 +429,7 @@ end
    local clip = scene.new('VectorClip', { units=VUNIT_USERSPACE })
    clip.viewport.new('VectorRectangle', { x=0, y=0, width=60, height=120 })
 
-   check scene.mtAddDef('distal_clip', scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops()
-   }))
+   check scene.mtAddDef('distal_clip', scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops() }))
 
    viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_clip)', mask=clip })
 

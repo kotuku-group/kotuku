@@ -29,8 +29,8 @@ end
 @Test function SharedGradientChangeInvalidatesOffscreenBufferedViewport()
    scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
    viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   gradient = scene.new('VectorGradient', {
-      type='linear', colourMap='cmap:magma', x1=0, y1=0, x2='100%', y2=0, units=VUNIT_BOUNDING_BOX
+   gradient = scene.new('GradientLinear', {
+      colourMap='cmap:magma', x1=0, y1=0, x2='100%', y2=0, units=VUNIT_BOUNDING_BOX
    })
    check scene.mtAddDef('test_gradient', gradient)
 

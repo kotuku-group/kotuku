@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientDistal</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Signed distance field colour gradient paint server.</comment>
+    <version>1</version>
+    <id>e8d90a9c</id>
+    <idstring>GRADIENTDISTAL</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientDistal shades inward and outward from the target vector path outline.  The path outline is pinned to the centre of the colour ramp, <code>Radius</code> controls exterior padding, and <code>InnerRadius</code> controls interior fade-out.</p></description>
+    <source>
+      <file path="painters/">gradient_distal.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>InnerRadius</name>
+      <comment>The size of the inner radius for distal gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The InnerRadius defines the extent of the interior fade-out for distal gradients.  If zero, the interior of the target shape is fully rendered.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Radius</name>
+      <comment>Exterior margin around the target path.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The Radius value controls how much exterior padding is added around the target path so that the exterior half of the signed distance colour ramp remains visible.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>X1</name>
+      <comment>Colour ramp floor for distal gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The X1 value is used as the floor for distal gradient colour values.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>X2</name>
+      <comment>Colour ramp multiplier for distal gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The X2 value acts as a multiplier for distal gradient colour values.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>
