@@ -51,6 +51,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                case VGT::CONIC:   gradient_type = "<conicGradient/>"; break;
                case VGT::DIAMOND: gradient_type = "<diamondGradient/>"; break;
                case VGT::CONTOUR: gradient_type = "<contourGradient/>"; break;
+               case VGT::DISTAL:  gradient_type = "<distalGradient/>"; break;
                case VGT::LINEAR:
                default:           gradient_type = "<linearGradient/>"; break;
             }
@@ -84,6 +85,13 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                   xml::NewAttrib(tag, "y1", std::to_string(gradient->Y1));
                   xml::NewAttrib(tag, "x2", std::to_string(gradient->X2));
                   xml::NewAttrib(tag, "y2", std::to_string(gradient->Y2));
+               }
+            }
+            else if (gradient->Type IS VGT::DISTAL) {
+               if (!error) {
+                  xml::NewAttrib(tag, "x1", std::to_string(gradient->X1));
+                  xml::NewAttrib(tag, "x2", std::to_string(gradient->X2));
+                  if (gradient->Radius > 0) xml::NewAttrib(tag, "radius", std::to_string(gradient->Radius));
                }
             }
             else if ((gradient->Type IS VGT::RADIAL) or (gradient->Type IS VGT::DIAMOND) or (gradient->Type IS VGT::CONIC)) {

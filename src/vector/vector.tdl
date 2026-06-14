@@ -116,7 +116,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "CONIC: The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.",
     "DIAMOND: A diamond gradient is drawn as a square emanating from the center point.",
     "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.",
-    "GOURAUD: A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.")
+    "GOURAUD: A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.",
+    "DISTAL: A signed distance field gradient shades inward and outward from the vector path outline, with the outline pinned to the centre of the colour ramp.  The fill extends beyond the path into a padded region (defined by `Radius`) so that the exterior half of the ramp is visible.")
 
   enums('VTS', { type='int', start=0, comment='Options for stretching text in VectorText.' },
     'INHERIT',

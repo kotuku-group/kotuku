@@ -154,6 +154,7 @@ static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
 {
    if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
    if (Self->ContourCache) { delete Self->ContourCache; Self->ContourCache = nullptr; }
+   if (Self->SDFCache) { delete Self->SDFCache; Self->SDFCache = nullptr; }
 
    VectorMatrix *next;
    for (auto node=Self->Matrices; node; node=next) {
@@ -183,6 +184,13 @@ static ERR VECTORGRADIENT_Init(extVectorGradient *Self)
    if ((Self->Type IS VGT::CONTOUR) and (Self->Units IS VUNIT::USERSPACE)) {
       log.warning("Contour gradients are not compatible with Units.USERSPACE.");
       Self->Units = VUNIT::BOUNDING_BOX;
+   }
+
+   if (Self->Type IS VGT::DISTAL) {
+      if (Self->Units IS VUNIT::USERSPACE) {
+         log.warning("Distal gradients are not compatible with Units.USERSPACE.");
+         Self->Units = VUNIT::BOUNDING_BOX;
+      }
    }
 
    return ERR::Okay;
@@ -227,7 +235,7 @@ static ERR VECTORGRADIENT_SET_CenterX(extVectorGradient *Self, Unit &Value)
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
    else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
    Self->CenterX = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -253,7 +261,7 @@ static ERR VECTORGRADIENT_SET_CenterY(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
 
    Self->CenterY = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -297,7 +305,7 @@ static ERR VECTORGRADIENT_SET_Colour(extVectorGradient *Self, float *Value, int 
    }
    else Self->Colour.Alpha = 0;
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 /*********************************************************************************************************************
@@ -332,7 +340,7 @@ static ERR VECTORGRADIENT_SET_ColourMap(extVectorGradient *Self, const std::stri
       Self->Colours = new (std::nothrow) GradientColours(it->second, Self->Resolution);
       if (not Self->Colours) return ERR::AllocMemory;
       Self->ColourMap = Value;
-      Self->modified();
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::NotFound;
@@ -376,8 +384,9 @@ static ERR VECTORGRADIENT_SET_FocalRadius(extVectorGradient *Self, Unit &Value)
       if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FOCAL_RADIUS) & (~VGF::FIXED_FOCAL_RADIUS);
       else Self->Flags = (Self->Flags | VGF::FIXED_FOCAL_RADIUS) & (~VGF::SCALED_FOCAL_RADIUS);
 
+      Self->SDFHash = 0; // InnerRadius reuses this storage and affects the cached SDF alpha field
       Self->FocalRadius = Value;
-      Self->modified();
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -405,7 +414,7 @@ static ERR VECTORGRADIENT_SET_FocalX(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_FX) & (~VGF::SCALED_FX);
 
    Self->FocalX = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -431,7 +440,7 @@ static ERR VECTORGRADIENT_SET_FocalY(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_FY) & (~VGF::SCALED_FY);
 
    Self->FocalY = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -464,6 +473,12 @@ static ERR VECTORGRADIENT_SET_ID(extVectorGradient *Self, const std::string_view
 }
 
 /*********************************************************************************************************************
+-FIELD-
+InnerRadius: The size of the inner radius for distal gradients.
+
+The InnerRadius defines the extent of the interior fade-out for distal gradients.  If zero (the default) then the
+interior of the target shape is fully rendered.
+
 -FIELD-
 Matrices: A linked list of transform matrices that have been applied to the gradient.
 
@@ -512,7 +527,7 @@ static ERR VECTORGRADIENT_SET_Matrices(extVectorGradient *Self, VectorMatrix *Va
       Self->Matrices = nullptr;
    }
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -564,8 +579,9 @@ static ERR VECTORGRADIENT_SET_Radius(extVectorGradient *Self, Unit &Value)
       if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_RADIUS) & (~VGF::FIXED_RADIUS);
       else Self->Flags = (Self->Flags | VGF::FIXED_RADIUS) & (~VGF::SCALED_RADIUS);
 
+      Self->SDFHash = 0; // Force a rebuild of the cached buffer with the new padding
       Self->Radius = Value;
-      Self->modified();
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -721,7 +737,7 @@ static ERR VECTORGRADIENT_SET_Vertices(extVectorGradient *Self, GouraudVertex *V
 
    Self->Gouraud->Vertices.assign(&Value[0], &Value[Elements]);
    Self->GouraudTriangles.Valid = false;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -779,7 +795,7 @@ static ERR VECTORGRADIENT_SET_Indices(extVectorGradient *Self, int *Value, int E
    }
 
    Self->GouraudTriangles.Valid = false;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -809,7 +825,7 @@ static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, const std::stri
 {
    if (Commands.empty()) return kt::Log().warning(ERR::InvalidValue);
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
 
    if (not Self->Matrices) {
       VectorMatrix *matrix;
@@ -847,7 +863,7 @@ The type of the gradient to be drawn is specified here.
 static ERR VECTORGRADIENT_SET_Type(extVectorGradient *Self, VGT Value)
 {
    Self->Type = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -883,7 +899,7 @@ static ERR VECTORGRADIENT_SET_X1(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
    Self->X1 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -912,7 +928,7 @@ static ERR VECTORGRADIENT_SET_X2(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
    Self->X2 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -939,7 +955,7 @@ static ERR VECTORGRADIENT_SET_Y1(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_Y1) & (~VGF::SCALED_Y1);
    Self->Y1 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -966,8 +982,14 @@ static ERR VECTORGRADIENT_SET_Y2(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_Y2) & (~VGF::SCALED_Y2);
    Self->Y2 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extVectorGradient::~extVectorGradient() {
+
 }
 
 //********************************************************************************************************************
@@ -1004,7 +1026,8 @@ static const FieldArray clGradientFields[] = {
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Stops, VECTORGRADIENT_SET_Stops, "GradientStop" },
    { "Vertices",     FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Vertices, VECTORGRADIENT_SET_Vertices, "GouraudVertex" },
    { "Indices",      FDF_VIRTUAL|FDF_ARRAY|FDF_INT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Indices, VECTORGRADIENT_SET_Indices },
-   { "TotalStops",   FDF_INT|FDF_R|FDF_PURE, VECTORGRADIENT_GET_TotalStops },
+   { "InnerRadius",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalRadius, VECTORGRADIENT_SET_FocalRadius },
+   { "TotalStops",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, VECTORGRADIENT_GET_TotalStops },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, VECTORGRADIENT_SET_Transform },
    END_FIELD
 };

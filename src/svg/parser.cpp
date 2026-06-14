@@ -17,6 +17,7 @@ ERR svgState::set_paint_server(objVector *Vector, FIELD Field, const std::string
 
                switch(svg_tag_hash(*tagref)) {
                   case SVF_contourGradient:  proc_contourgradient(*tagref); break;
+                  case SVF_distalGradient:   proc_distalgradient(*tagref); break;
                   case SVF_radialGradient:   proc_radialgradient(*tagref); break;
                   case SVF_diamondGradient:  proc_diamondgradient(*tagref); break;
                   case SVF_conicGradient:    proc_conicgradient(*tagref); break;
@@ -1879,6 +1880,7 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       case SVF_image:            proc_image(Tag, Parent, Vector); break;
       // Paint servers are deferred and will only be processed if they are referenced via url()
       case SVF_contourGradient:  process_inherit_refs(Tag); break;
+      case SVF_distalGradient:   process_inherit_refs(Tag); break;
       case SVF_radialGradient:   process_inherit_refs(Tag); break;
       case SVF_diamondGradient:  process_inherit_refs(Tag); break;
       case SVF_conicGradient:    process_inherit_refs(Tag); break;
@@ -2285,6 +2287,7 @@ ERR svgState::proc_defs(XTag &Tag, OBJECTPTR Parent) noexcept
    for (auto &child : Tag.Children) {
       switch (svg_tag_hash(child)) {
          case SVF_contourGradient: state.proc_contourgradient(child); break;
+         case SVF_distalGradient:  state.proc_distalgradient(child); break;
          case SVF_radialGradient:  state.proc_radialgradient(child); break;
          case SVF_diamondGradient: state.proc_diamondgradient(child); break;
          case SVF_conicGradient:   state.proc_conicgradient(child); break;

@@ -443,6 +443,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
    Path->approximation_scale(Transform.scale());
 
+   // Most gradients are masked by the target vector's own path, which is carried by Raster.  An SDF gradient is the
+   // exception: it describes a signed field that extends beyond the path, so its branch redirects active_raster at a
+   // padded coverage region to expose the exterior half of the ramp.
+
+   agg::rasterizer_scanline_aa<> *active_raster = &Raster;
+
    auto render_gradient = [&]<typename Method>(Method SpreadMethod, double SpanA, double SpanB) {
       typedef agg::span_gradient<agg::rgba8, interpolator_type, Method, color_array_type> span_gradient_type;
       typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, span_gradient_type> renderer_gradient_type;
@@ -452,12 +458,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       if ((!Render) or (Render->clip_stack_empty())) {
          agg::scanline_u8 scanline;
-         agg::render_scanlines(Raster, scanline, solidrender_gradient);
+         agg::render_scanlines(*active_raster, scanline, solidrender_gradient);
       }
       else { // Masked gradient
          agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
-         agg::render_scanlines(Raster, masked_scanline, solidrender_gradient);
+         agg::render_scanlines(*active_raster, masked_scanline, solidrender_gradient);
       }
    };
 
@@ -783,6 +789,88 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          render_gradient(spread_method, 0, 256.0);
       }
       else render_gradient(gradient_func, 0, 256.0);
+   }
+   else if (Gradient.Type IS VGT::DISTAL) {
+      // The SDF gradient's signed distance field buffer depends on the path content and the configured padding,
+      // so it is cached with the gradient and reused until the path's fingerprint changes.  Unlike the contour
+      // buffer, it is padded outward so that the exterior half of the colour ramp has room to be rendered.
+
+      auto x2 = std::clamp(Gradient.X2, 0.01, 10.0);
+      auto x1 = std::clamp(Gradient.X1, 0.0, x2);
+
+      bool rebuild = false;
+      if (!Gradient.SDFCache) {
+         Gradient.SDFCache = new agg::gradient_sdf();
+         rebuild = true;
+      }
+
+      auto &gradient_func = *Gradient.SDFCache;
+      gradient_func.padding(Gradient.Radius);
+      if ((Gradient.Flags & VGF::SCALED_FOCAL_RADIUS) != VGF::NIL) {
+         const double max_bound = (Bounds.width() > Bounds.height()) ? Bounds.width() : Bounds.height();
+         gradient_func.inner_radius(Gradient.FocalRadius * max_bound);
+      }
+      else gradient_func.inner_radius(Gradient.FocalRadius);
+      gradient_func.d1(x1 * 256.0);  // d1 is added to the signed DT base values
+      gradient_func.d2(x2);  // d2 is a multiplier of the base DT value
+
+      const auto hash = path_fingerprint(*Path);
+      if ((rebuild) or (hash != Gradient.SDFHash)) {
+         gradient_func.sdf_create(*Path);
+         Gradient.SDFHash = hash;
+      }
+
+      // The path is rendered into the SDF buffer at an inset of (origin_x, origin_y) to leave a margin for the
+      // exterior field.  Offset the gradient sampling transform by the same amount so the outline stays aligned
+      // with the path edge.
+
+      const double margin_x = gradient_func.sdf_origin_x();
+      const double margin_y = gradient_func.sdf_origin_y();
+      const double region_x = Bounds.left - margin_x;
+      const double region_y = Bounds.top - margin_y;
+
+      transform.translate(region_x, region_y);
+      apply_transforms(Gradient, transform);
+      transform *= Transform;
+      transform.invert();
+
+      agg::rasterizer_scanline_aa<> sdf_raster;
+
+      if (Gradient.SpreadMethod != VSPREAD::CLIP) {
+         // Unlike the path-masked gradients, the SDF describes a signed field that extends beyond the target path.
+         // To expose the exterior half of the ramp the coverage is widened to the full padded field extent rather
+         // than the path itself.  Any active clip stack still constrains the result inside render_gradient.
+
+         agg::path_storage region;
+         region.move_to(region_x, region_y);
+         region.line_to(region_x + gradient_func.sdf_width(), region_y);
+         region.line_to(region_x + gradient_func.sdf_width(), region_y + gradient_func.sdf_height());
+         region.line_to(region_x, region_y + gradient_func.sdf_height());
+         region.close_polygon();
+         agg::conv_transform<agg::path_storage> region_trans(region, Transform);
+         sdf_raster.add_path(region_trans);
+         active_raster = &sdf_raster;
+      }
+
+      // The SDF glow uses a dedicated span generator that modulates per-pixel alpha by a smoothstep falloff so the
+      // exterior fades to transparent over the padding distance and stops contributing once alpha reaches zero.
+      // If SpreadMethod is CLIP, the original target path raster remains active and clips the field to the fill.
+
+      typedef agg::span_gradient_sdf<agg::rgba8, interpolator_type, color_array_type> sdf_span_type;
+      typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, sdf_span_type> sdf_renderer_type;
+
+      sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0, Gradient.Resolution);
+      sdf_renderer_type sdf_render(RenderBase, span_allocator, sdf_span);
+
+      if ((!Render) or (Render->clip_stack_empty())) {
+         agg::scanline_u8 scanline;
+         agg::render_scanlines(*active_raster, scanline, sdf_render);
+      }
+      else {
+         agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
+         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+         agg::render_scanlines(*active_raster, masked_scanline, sdf_render);
+      }
    }
 }
 

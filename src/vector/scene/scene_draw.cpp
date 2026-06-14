@@ -1,5 +1,6 @@
 
 #include "agg_span_gradient_contour.h"
+#include "agg_span_gradient_sdf.h"
 
 class VectorState;
 
@@ -770,6 +771,23 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
    }
 }
 
+static double distal_fill_inflation(extVector *Shape)
+{
+   double inflation = 0;
+
+   for (auto &fill : Shape->Fill) {
+      if (!fill.Gradient) continue;
+
+      auto gradient = (extVectorGradient *)fill.Gradient;
+      if ((gradient->Type IS VGT::DISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP) and
+         (gradient->Radius > inflation)) {
+         inflation = gradient->Radius;
+      }
+   }
+
+   return inflation * Shape->Transform.scale();
+}
+
 //********************************************************************************************************************
 // Test the transformed vector bounds against the current render clip.  The returned value only controls rasterisation
 // of this vector's own path; child traversal and input-boundary registration are handled separately by draw_vectors().
@@ -793,6 +811,9 @@ bool SceneRenderer::shape_intersects_clip(extVector *Shape)
       if (Shape->MiterLimit > 1.0) stroke_inflation *= Shape->MiterLimit;
       if (stroke_inflation > inflation) inflation = stroke_inflation;
    }
+
+   auto fill_inflation = distal_fill_inflation(Shape);
+   if (fill_inflation > inflation) inflation = fill_inflation;
 
    bounds.left   -= inflation;
    bounds.top    -= inflation;

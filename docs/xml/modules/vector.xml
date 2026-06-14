@@ -948,6 +948,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="CONIC">The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.</const>
       <const name="CONTOUR">Contoured gradients follow the contours of the vector path in which they are rendered.</const>
       <const name="DIAMOND">A diamond gradient is drawn as a square emanating from the center point.</const>
+      <const name="DISTAL">A signed distance field gradient shades inward and outward from the vector path outline, with the outline pinned to the centre of the colour ramp.  The fill extends beyond the path into a padded region (defined by <code>Radius</code>) so that the exterior half of the ramp is visible.</const>
       <const name="GOURAUD">A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.</const>
       <const name="LINEAR">A linear gradient is drawn from <code>(X1, Y1)</code> to <code>(X2, Y2)</code>.</const>
       <const name="RADIAL">A radial gradient is drawn from <code>CenterX, CenterY</code> to <code>Radius</code>.  An optional focal point can be expressed with <code>FX</code> and <code>FY</code>.</const>
