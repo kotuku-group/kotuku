@@ -129,6 +129,17 @@
     </field>
 
     <field>
+      <name>Indices</name>
+      <comment>Defines triangle connectivity for a Gouraud gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT []</type>
+      <description>
+<p>The Indices array provides triangle connectivity for a Gouraud gradient's <fl>Vertices</fl>, with three indices per triangle referencing vertices in counter-clockwise order.  Supplying indices allows vertices to be shared between adjacent triangles, guaranteeing crack-free seams.</p>
+<p>If left empty, the <fl>Vertices</fl> array is treated as a flat triangle list, where every three consecutive vertices form one triangle.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Matrices</name>
       <comment>A linked list of transform matrices that have been applied to the gradient.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -237,6 +248,18 @@
     </field>
 
     <field>
+      <name>Vertices</name>
+      <comment>Defines the coloured vertices for a Gouraud gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRUCT []</type>
+      <description>
+<p>When <fl>Type</fl> is set to <code>VGT::GOURAUD</code>, the Vertices array defines the mesh of coloured points across which colour is interpolated barycentrically.  Each <st>GouraudVertex</st> carries an <code>(X, Y)</code> position and an <code>FRGB</code> colour.</p>
+<p>By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one triangle.  Supplying an <fl>Indices</fl> array instead expresses triangle connectivity explicitly, allowing vertices (and their colours) to be shared between adjacent triangles for crack-free seams.</p>
+<p>The coordinate system for vertex positions is determined by <fl>Units</fl>.  Under <code>BOUNDING_BOX</code> (the default) a normalised mesh in the range <code>0 - 1.0</code> is scaled into the target path's bounds; under <code>USERSPACE</code> the positions are taken directly in the viewport's coordinate space.</p>
+      </description>
+    </field>
+
+    <field>
       <name>X1</name>
       <comment>Initial X coordinate for the gradient.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -316,6 +339,7 @@
       <const name="CONIC">The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.</const>
       <const name="CONTOUR">Contoured gradients follow the contours of the vector path in which they are rendered.</const>
       <const name="DIAMOND">A diamond gradient is drawn as a square emanating from the center point.</const>
+      <const name="GOURAUD">A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.</const>
       <const name="LINEAR">A linear gradient is drawn from <code>(X1, Y1)</code> to <code>(X2, Y2)</code>.</const>
       <const name="RADIAL">A radial gradient is drawn from <code>CenterX, CenterY</code> to <code>Radius</code>.  An optional focal point can be expressed with <code>FX</code> and <code>FY</code>.</const>
     </constants>
@@ -338,6 +362,12 @@
 
   </types>
   <structs>
+    <struct name="GouraudVertex" comment="Describes a coloured vertex for the VectorGradient Vertices field.">
+      <field name="X" type="DOUBLE">The X coordinate of the vertex.</field>
+      <field name="Y" type="DOUBLE">The Y coordinate of the vertex.</field>
+      <field name="Colour" type="struct FRGB">The floating point RGB colour assigned to this vertex.</field>
+    </struct>
+
     <struct name="VectorMatrix" comment="Vector transformation matrix.">
       <field name="Next" type="struct VectorMatrix *">The next transform in the list.</field>
       <field name="Vector" type="objVector *">The vector associated with the transform.</field>

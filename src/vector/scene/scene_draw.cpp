@@ -1290,7 +1290,13 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
       }
       else if (FillStyle->classID() IS CLASSID::VECTORGRADIENT) {
          extVectorGradient &gradient = (extVectorGradient &)*FillStyle;
-         fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient, &gradient.Colours->table, mRenderer, mRaster);
+         if (gradient.Type IS VGT::GOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.Colours) {
+            fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
+               &gradient.Colours->table, mRenderer, mRaster);
+         }
       }
       else if (FillStyle->classID() IS CLASSID::VECTORPATTERN) {
          fill_pattern(state, bounds, &mPath, VSM::AUTO, transform, Bitmap->Width, Bitmap->Height, (extVectorPattern &)*FillStyle, mRenderer, mRaster);
@@ -1305,7 +1311,13 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
          mRaster.add_path(stroke_path);
 
          extVectorGradient &gradient = (extVectorGradient &)*StrokeStyle;
-         fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient, &gradient.Colours->table, mRenderer, mRaster);
+         if (gradient.Type IS VGT::GOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.Colours) {
+            fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
+               &gradient.Colours->table, mRenderer, mRaster);
+         }
       }
       else if (StrokeStyle->classID() IS CLASSID::VECTORPATTERN) {
          agg::conv_stroke<agg::path_storage> stroke_path(mPath);
