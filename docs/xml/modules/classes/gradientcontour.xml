@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientContour follows the contours of the target vector path.  <code>X1</code> controls the colour ramp floor and <code>X2</code> controls the ramp multiplier.</p></description>
+<p>GradientContour follows the contours of the target vector path.  <code>Floor</code> controls the colour ramp floor and <code>Multiplier</code> controls the ramp scale.</p></description>
     <source>
       <file path="painters/">gradient_contour.cpp</file>
     </source>
@@ -21,22 +21,22 @@
 
   <fields>
     <field>
-      <name>X1</name>
+      <name>Floor</name>
       <comment>Colour ramp floor for contour gradients.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The X1 value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt; X1 &lt; X2</code>.</p>
+<p>The Floor value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt; Floor &lt; Multiplier</code>.</p>
       </description>
     </field>
 
     <field>
-      <name>X2</name>
+      <name>Multiplier</name>
       <comment>Colour ramp multiplier for contour gradients.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The X2 value acts as a multiplier for contour gradient colour values.  It has a valid range of <code>.01 &lt; X2 &lt; 10</code>.</p>
+<p>The Multiplier value acts as a multiplier for contour gradient colour values.  It has a valid range of <code>.01 &lt; Multiplier &lt; 10</code>.</p>
       </description>
     </field>
 

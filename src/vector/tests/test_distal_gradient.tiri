@@ -414,6 +414,18 @@ end
    assert(math.abs(gradient.radius - 15) < 0.001, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
 end
 
+@Test function FloorAndMultiplierFieldsRoundTrip()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, floor=0.25, multiplier=1.5, stops=rampStops()
+   })
+
+   assert(math.abs(gradient.floor - 0.25) < 0.001,
+      'Floor field should round-trip (got ' .. gradient.floor .. ')')
+   assert(math.abs(gradient.multiplier - 1.5) < 0.001,
+      'Multiplier field should round-trip (got ' .. gradient.multiplier .. ')')
+end
+
 @Test function InnerRadiusRoundTrips()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops() })

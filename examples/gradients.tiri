@@ -123,20 +123,20 @@ function selectGradient(Text)
    elseif Text is 'Contour' then
       gradient = createGradient('Contour', 'GradientContour', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
-         x1 = 0, x2 = 2.0
+         floor = 0, multiplier = 2.0
       })
 
       uiEvent = function(ev)
          x = math.abs(ev.x - (gradientVP.width * 0.5)) / gradientVP.width * 2
          y = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
-         gradient.x1 = x > y ? x * gradient.x2 :> y * gradient.x2
+         gradient.floor = x > y ? x * gradient.multiplier :> y * gradient.multiplier
       end
       radiusChanged = function(Radius:num)
       end
    elseif Text is 'Contour Shape' then
       gradient = createGradient('ContourShape', 'GradientContour', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
-         x1 = 0.9, x2 = 1.0
+         floor = 0.9, multiplier = 1.0
       })
 
       if not contourShape then

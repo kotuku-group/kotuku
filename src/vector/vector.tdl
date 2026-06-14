@@ -447,13 +447,13 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
   ]])
 
-  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', references={ 'VGF' }, extended=true })
+  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })
 
-  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', references={ 'VGF' }, extended=true })
+  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', extended=true })
 
-  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', references={ 'VGF' }, extended=true })
+  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', extended=true })
 
-  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', references={ 'VGF' }, extended=true })
+  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', extended=true })
 
   klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
 

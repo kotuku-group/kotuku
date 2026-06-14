@@ -224,8 +224,8 @@ void svgState::parse_radialgradient(const XTag &Tag, objGradient &Gradient, std:
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_cx: set_double_units(&Gradient, FID_CenterX, val, Gradient.Units); break;
-         case SVF_cy: set_double_units(&Gradient, FID_CenterY, val, Gradient.Units); break;
+         case SVF_cx: set_double_units(&Gradient, FID_CX, val, Gradient.Units); break;
+         case SVF_cy: set_double_units(&Gradient, FID_CY, val, Gradient.Units); break;
          case SVF_fx: set_double_units(&Gradient, FID_FX, val, Gradient.Units); break;
          case SVF_fy: set_double_units(&Gradient, FID_FY, val, Gradient.Units); break;
          case SVF_r:  set_double_units(&Gradient, FID_Radius, val, Gradient.Units); break;
@@ -312,8 +312,8 @@ void svgState::parse_diamondgradient(const XTag &Tag, objGradient *Gradient, std
       switch(attrib) {
          case SVF_gradientUnits: break; // Already processed
          case SVF_gradientTransform: Gradient->setTransform(val); break;
-         case SVF_cx: set_double_units(Gradient, FID_CenterX, val, Gradient->Units); break;
-         case SVF_cy: set_double_units(Gradient, FID_CenterY, val, Gradient->Units); break;
+         case SVF_cx: set_double_units(Gradient, FID_CX, val, Gradient->Units); break;
+         case SVF_cy: set_double_units(Gradient, FID_CY, val, Gradient->Units); break;
          case SVF_r:  set_double_units(Gradient, FID_Radius, val, Gradient->Units); break;
          case SVF_spreadMethod: {
             if (iequals("pad", val))          Gradient->setSpreadMethod(VSPREAD::PAD);
@@ -388,9 +388,11 @@ void svgState::parse_contourgradient(const XTag &Tag, objGradient *Gradient, std
       switch(attrib) {
          case SVF_gradientUnits: break; // Already processed
          case SVF_gradientTransform: Gradient->setTransform(val); break;
-         // X1 and X2 adjust padding of the gradient within the target vector.
-         case SVF_x1: set_double_units(Gradient, FID_X1, val, Gradient->Units); break;
-         case SVF_x2: set_double_units(Gradient, FID_X2, val, Gradient->Units); break;
+         // Floor and Multiplier adjust the colour ramp bias and scale.
+         case SVF_floor: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_multiplier: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
+         case SVF_x1: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_x2: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
          case SVF_spreadMethod: {
             if (iequals("pad", val))          Gradient->setSpreadMethod(VSPREAD::PAD);
             else if (iequals("reflect", val)) Gradient->setSpreadMethod(VSPREAD::REFLECT);
@@ -439,7 +441,6 @@ void svgState::parse_contourgradient(const XTag &Tag, objGradient *Gradient, std
 
 ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
    objGradient *gradient;
 
    std::string id;
@@ -476,7 +477,6 @@ ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 
 ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
    objGradient *gradient;
    std::string id;
 
@@ -488,7 +488,7 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 
       gradient->setFields(fl::Name("SVGRadialGrad"),
          fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)),
+         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)),
          fl::Radius(SCALE(0.5)),
          FieldValue("ContainFocal", 1)); // Enforce SVG limits on focal point, can be overridden with focal="unbound"
 
@@ -511,7 +511,6 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 
 ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
    objGradient *gradient;
    std::string id;
 
@@ -522,15 +521,15 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
       SetOwner(gradient, Self->Scene);
 
       gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
+         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
 
       state.parse_diamondgradient(Tag, gradient, id);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }
@@ -544,7 +543,6 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 
 ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
    objGradient *gradient;
    std::string id;
 
@@ -562,9 +560,9 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }
@@ -600,9 +598,11 @@ void svgState::parse_distalgradient(const XTag &Tag, objGradient *Gradient, std:
       switch(attrib) {
          case SVF_gradientUnits: break; // Already processed
          case SVF_gradientTransform: Gradient->setTransform(val); break;
-         // X1 and X2 adjust the colour ramp bias and scale, as with contour gradients.
-         case SVF_x1: set_double_units(Gradient, FID_X1, val, Gradient->Units); break;
-         case SVF_x2: set_double_units(Gradient, FID_X2, val, Gradient->Units); break;
+         // Floor and Multiplier adjust the colour ramp bias and scale, as with contour gradients.
+         case SVF_floor: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_multiplier: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
+         case SVF_x1: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_x2: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
          // Radius controls the exterior margin (in path units) around the path bounds.
          case SVF_radius: Gradient->set(FID_Radius, strtod(val.c_str(), nullptr)); break;
          case SVF_spreadMethod: {
@@ -673,9 +673,9 @@ ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }
@@ -698,7 +698,7 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
       SetOwner(gradient, Self->Scene);
 
       gradient->setFields(fl::Name("SVGConicGrad"), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
+         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
 
       std::string id;
 
@@ -725,8 +725,8 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
                else if (iequals("objectBoundingBox", val)) gradient->setUnits(VUNIT::BOUNDING_BOX);
                break;
             case SVF_gradientTransform: gradient->setTransform(val); break;
-            case SVF_cx: set_double_units(gradient, FID_CenterX, val, gradient->Units); break;
-            case SVF_cy: set_double_units(gradient, FID_CenterY, val, gradient->Units); break;
+            case SVF_cx: set_double_units(gradient, FID_CX, val, gradient->Units); break;
+            case SVF_cy: set_double_units(gradient, FID_CY, val, gradient->Units); break;
             case SVF_r:  set_double_units(gradient, FID_Radius, val, gradient->Units); break;
             case SVF_spreadMethod: {
                if (iequals("pad", val))          gradient->setSpreadMethod(VSPREAD::PAD);
@@ -749,9 +749,9 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }

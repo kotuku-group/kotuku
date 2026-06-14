@@ -12,48 +12,48 @@ support displaced radial gradients.
 
 /*********************************************************************************************************************
 -FIELD-
-CenterX: The horizontal centre point of the gradient.
+CX: The horizontal centre point of the gradient.
 
-The `(CenterX, CenterY)` coordinates define the centre point of the radial gradient.  By default, the centre point
+The `(CX, CY)` coordinates define the centre point of the radial gradient.  By default, the centre point
 is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_CenterX(extGradientRadial *Self, Unit *Value)
+static ERR GRADIENTRADIAL_GET_CX(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->CenterX);
+   Value->set(Self->CX);
    return ERR::Okay;
 }
 
-static ERR GRADIENTRADIAL_SET_CenterX(extGradientRadial *Self, Unit &Value)
+static ERR GRADIENTRADIAL_SET_CX(extGradientRadial *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
    else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
-   Self->CenterX = Value;
+   Self->CX = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
-CenterY: The vertical centre point of the gradient.
+CY: The vertical centre point of the gradient.
 
-The `(CenterX, CenterY)` coordinates define the centre point of the radial gradient.  By default, the centre point
+The `(CX, CY)` coordinates define the centre point of the radial gradient.  By default, the centre point
 is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_CenterY(extGradientRadial *Self, Unit *Value)
+static ERR GRADIENTRADIAL_GET_CY(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->CenterY);
+   Value->set(Self->CY);
    return ERR::Okay;
 }
 
-static ERR GRADIENTRADIAL_SET_CenterY(extGradientRadial *Self, Unit &Value)
+static ERR GRADIENTRADIAL_SET_CY(extGradientRadial *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CY) & (~VGF::FIXED_CY);
    else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
-   Self->CenterY = Value;
+   Self->CY = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
@@ -81,30 +81,9 @@ static ERR GRADIENTRADIAL_SET_ContainFocal(extGradientRadial *Self, int Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Flags: Dimension flags for radial gradient fields.
-
-Dimension flags indicate whether radial coordinate fields are fixed or scaled.
-
-*********************************************************************************************************************/
-
-static ERR GRADIENTRADIAL_GET_Flags(extGradientRadial *Self, VGF *Value)
-{
-   *Value = Self->Flags;
-   return ERR::Okay;
-}
-
-static ERR GRADIENTRADIAL_SET_Flags(extGradientRadial *Self, VGF Value)
-{
-   Self->Flags = Value;
-   if (Self->initialised()) Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
 FocalRadius: The size of the focal radius for radial gradients.
 
-If a radial gradient has a defined focal point by setting #FocalX and #FocalY, the FocalRadius can adjust the size of
+If a radial gradient has a defined focal point by setting #FX and #FY, the FocalRadius can adjust the size of
 the focal area.  The default of zero ensures that the focal area matches that defined by #Radius.
 
 *********************************************************************************************************************/
@@ -129,48 +108,48 @@ static ERR GRADIENTRADIAL_SET_FocalRadius(extGradientRadial *Self, Unit &Value)
 
 /*********************************************************************************************************************
 -FIELD-
-FocalX: The horizontal focal point for radial gradients.
+FX: The horizontal focal point for radial gradients.
 
-The `(FocalX, FocalY)` coordinates define the focal point for radial gradients.  If left undefined, the focal point
+The `(FX, FY)` coordinates define the focal point for radial gradients.  If left undefined, the focal point
 will match the centre of the gradient.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_FocalX(extGradientRadial *Self, Unit *Value)
+static ERR GRADIENTRADIAL_GET_FX(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->FocalX);
+   Value->set(Self->FX);
    return ERR::Okay;
 }
 
-static ERR GRADIENTRADIAL_SET_FocalX(extGradientRadial *Self, Unit &Value)
+static ERR GRADIENTRADIAL_SET_FX(extGradientRadial *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FX) & (~VGF::FIXED_FX);
    else Self->Flags = (Self->Flags | VGF::FIXED_FX) & (~VGF::SCALED_FX);
-   Self->FocalX = Value;
+   Self->FX = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
-FocalY: The vertical focal point for radial gradients.
+FY: The vertical focal point for radial gradients.
 
-The `(FocalX, FocalY)` coordinates define the focal point for radial gradients.  If left undefined, the focal point
+The `(FX, FY)` coordinates define the focal point for radial gradients.  If left undefined, the focal point
 will match the centre of the gradient.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_FocalY(extGradientRadial *Self, Unit *Value)
+static ERR GRADIENTRADIAL_GET_FY(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->FocalY);
+   Value->set(Self->FY);
    return ERR::Okay;
 }
 
-static ERR GRADIENTRADIAL_SET_FocalY(extGradientRadial *Self, Unit &Value)
+static ERR GRADIENTRADIAL_SET_FY(extGradientRadial *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FY) & (~VGF::FIXED_FY);
    else Self->Flags = (Self->Flags | VGF::FIXED_FY) & (~VGF::SCALED_FY);
-   Self->FocalY = Value;
+   Self->FY = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
@@ -207,35 +186,14 @@ static ERR GRADIENTRADIAL_SET_Radius(extGradientRadial *Self, Unit &Value)
 
 #include "gradient_radial_def.cpp"
 
-static const struct FieldDef clGradientRadialFlags[] = {
-   { "ScaledCX", 0x00000010 },
-   { "ScaledCY", 0x00000020 },
-   { "ScaledFX", 0x00000040 },
-   { "ScaledFY", 0x00000080 },
-   { "ScaledRadius", 0x00000100 },
-   { "ScaledFocalRadius", 0x00000200 },
-   { "FixedCX", 0x00004000 },
-   { "FixedCY", 0x00008000 },
-   { "FixedFX", 0x00010000 },
-   { "FixedFY", 0x00020000 },
-   { "FixedRadius", 0x00040000 },
-   { "FixedFocalRadius", 0x00080000 },
-   { nullptr, 0 }
-};
-
 static const FieldArray clGradientRadialFields[] = {
-   { "CenterX",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CenterX, GRADIENTRADIAL_SET_CenterX },
-   { "CenterY",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CenterY, GRADIENTRADIAL_SET_CenterY },
-   { "Flags",        FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, GRADIENTRADIAL_GET_Flags, GRADIENTRADIAL_SET_Flags, &clGradientRadialFlags },
-   { "FocalX",       FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FocalX, GRADIENTRADIAL_SET_FocalX },
-   { "FocalY",       FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FocalY, GRADIENTRADIAL_SET_FocalY },
+   { "CX",           FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CX, GRADIENTRADIAL_SET_CX },
+   { "CY",           FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CY, GRADIENTRADIAL_SET_CY },
+   { "FX",           FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FX, GRADIENTRADIAL_SET_FX },
+   { "FY",           FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FY, GRADIENTRADIAL_SET_FY },
    { "Radius",       FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_Radius, GRADIENTRADIAL_SET_Radius },
    { "FocalRadius",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FocalRadius, GRADIENTRADIAL_SET_FocalRadius },
    { "ContainFocal", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_ContainFocal, GRADIENTRADIAL_SET_ContainFocal },
-   { "CX",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CenterX, GRADIENTRADIAL_SET_CenterX },
-   { "CY",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CenterY, GRADIENTRADIAL_SET_CenterY },
-   { "FX",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FocalX, GRADIENTRADIAL_SET_FocalX },
-   { "FY",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FocalY, GRADIENTRADIAL_SET_FocalY },
    END_FIELD
 };
 

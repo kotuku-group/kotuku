@@ -492,15 +492,15 @@ class extGradientRadial : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientRadial";
    using create = kt::Create<extGradientRadial>;
 
-   double CenterX, CenterY, FocalX, FocalY, Radius, FocalRadius;
+   double CX, CY, FX, FY, Radius, FocalRadius;
    VGF Flags;
-   int ContainFocal;
+   bool ContainFocal;
 
    extGradientRadial() {
-      CenterX = 0.5;
-      CenterY = 0.5;
-      FocalX = 0;
-      FocalY = 0;
+      CX = 0.5;
+      CY = 0.5;
+      FX = 0;
+      FY = 0;
       Radius  = 0.5;
       FocalRadius = 0;
       Flags = VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
@@ -514,12 +514,12 @@ class extGradientConic : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientConic";
    using create = kt::Create<extGradientConic>;
 
-   double CenterX, CenterY, Radius;
+   double CX, CY, Radius;
    VGF Flags;
 
    extGradientConic() {
-      CenterX = 0.5;
-      CenterY = 0.5;
+      CX = 0.5;
+      CY = 0.5;
       Radius  = 0.5;
       Flags = VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
    }
@@ -531,12 +531,12 @@ class extGradientDiamond : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientDiamond";
    using create = kt::Create<extGradientDiamond>;
 
-   double CenterX, CenterY, Radius;
+   double CX, CY, Radius;
    VGF Flags;
 
    extGradientDiamond() {
-      CenterX = 0.5;
-      CenterY = 0.5;
+      CX = 0.5;
+      CY = 0.5;
       Radius  = 0.5;
       Flags = VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
    }
@@ -550,12 +550,12 @@ class extGradientContour : public extGradient {
 
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
-   double X1, X2;
+   double Floor, Multiplier;
    VGF Flags;
 
    extGradientContour() {
-      X1 = 0;
-      X2 = 1.0;
+      Floor = 0;
+      Multiplier = 1.0;
       Flags = VGF::NIL;
    }
 
@@ -582,12 +582,12 @@ class extGradientDistal : public extGradient {
 
    agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
    uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
-   double X1, X2, Radius, InnerRadius;
+   double Floor, Multiplier, Radius, InnerRadius;
    VGF Flags;
 
    extGradientDistal() {
-      X1 = 0;
-      X2 = 1.0;
+      Floor = 0;
+      Multiplier = 1.0;
       Radius = 0;
       InnerRadius = 0;
       Flags = VGF::NIL;
@@ -1656,7 +1656,7 @@ extern void ClosePath(APTR Path);
 extern void RewindPath(APTR Path);
 extern int GetVertex(APTR Path, double * X, double * Y);
 extern ERR ApplyPath(APTR Path, objVectorPath * VectorPath);
-extern ERR Rotate(struct VectorMatrix * Matrix, double Angle, double CenterX, double CenterY);
+extern ERR Rotate(struct VectorMatrix * Matrix, double Angle, double CX, double CY);
 extern ERR Translate(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Skew(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Multiply(struct VectorMatrix * Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);

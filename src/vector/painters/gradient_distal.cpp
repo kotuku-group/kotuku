@@ -77,24 +77,23 @@ static ERR GRADIENTDISTAL_SET_Radius(extGradientDistal *Self, Unit &Value)
 }
 
 /*********************************************************************************************************************
--FIELD-
-X1: Colour ramp floor for distal gradients.
+Floor: Colour ramp floor for distal gradients.
 
-The X1 value is used as the floor for distal gradient colour values.
+The Floor value is used as the floor for distal gradient colour values.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_GET_X1(extGradientDistal *Self, Unit *Value)
+static ERR GRADIENTDISTAL_GET_Floor(extGradientDistal *Self, Unit *Value)
 {
-   Value->set(Self->X1);
+   Value->set(Self->Floor);
    return ERR::Okay;
 }
 
-static ERR GRADIENTDISTAL_SET_X1(extGradientDistal *Self, Unit &Value)
+static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X1) & (~VGF::FIXED_X1);
    else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
-   Self->X1 = Value;
+   Self->Floor = Value;
    Self->SDFHash = 0;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -102,24 +101,24 @@ static ERR GRADIENTDISTAL_SET_X1(extGradientDistal *Self, Unit &Value)
 
 /*********************************************************************************************************************
 -FIELD-
-X2: Colour ramp multiplier for distal gradients.
+Multiplier: Colour ramp multiplier for distal gradients.
 
-The X2 value acts as a multiplier for distal gradient colour values.
+The Multiplier value acts as a multiplier for distal gradient colour values.
 
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_GET_X2(extGradientDistal *Self, Unit *Value)
+static ERR GRADIENTDISTAL_GET_Multiplier(extGradientDistal *Self, Unit *Value)
 {
-   Value->set(Self->X2);
+   Value->set(Self->Multiplier);
    return ERR::Okay;
 }
 
-static ERR GRADIENTDISTAL_SET_X2(extGradientDistal *Self, Unit &Value)
+static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X2) & (~VGF::FIXED_X2);
    else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
-   Self->X2 = Value;
+   Self->Multiplier = Value;
    Self->SDFHash = 0;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -130,9 +129,9 @@ static ERR GRADIENTDISTAL_SET_X2(extGradientDistal *Self, Unit &Value)
 #include "gradient_distal_def.cpp"
 
 static const FieldArray clGradientDistalFields[] = {
-   { "X1",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_X1, GRADIENTDISTAL_SET_X1 },
-   { "X2",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_X2, GRADIENTDISTAL_SET_X2 },
-   { "Radius",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
+   { "Floor", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Floor, GRADIENTDISTAL_SET_Floor },
+   { "Multiplier", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Multiplier, GRADIENTDISTAL_SET_Multiplier },
+   { "Radius", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
    { "InnerRadius", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerRadius, GRADIENTDISTAL_SET_InnerRadius },
    END_FIELD
 };

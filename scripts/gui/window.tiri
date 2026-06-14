@@ -218,8 +218,8 @@ gui.window = function(Options:table)
       end
    end
 
-   self.show = function(self:table, Center:bool)
-      if Center then
+   self.show = function(self:table, Centre:bool)
+      if Centre then
          x, y = (function()
             if self.surface.popOver then
                err, x, y, powidth, poheight = [*__*]mGfx.GetSurfaceCoords(self.surface.popOver)

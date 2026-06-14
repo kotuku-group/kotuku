@@ -21,22 +21,22 @@
 
   <fields>
     <field>
-      <name>CenterX</name>
+      <name>CX</name>
       <comment>The horizontal centre point of the gradient.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The <code>(CenterX, CenterY)</code> coordinates define the centre point of the radial gradient.  By default, the centre point is set to <code>50%</code>.</p>
+<p>The <code>(CX, CY)</code> coordinates define the centre point of the radial gradient.  By default, the centre point is set to <code>50%</code>.</p>
       </description>
     </field>
 
     <field>
-      <name>CenterY</name>
+      <name>CY</name>
       <comment>The vertical centre point of the gradient.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The <code>(CenterX, CenterY)</code> coordinates define the centre point of the radial gradient.  By default, the centre point is set to <code>50%</code>.</p>
+<p>The <code>(CX, CY)</code> coordinates define the centre point of the radial gradient.  By default, the centre point is set to <code>50%</code>.</p>
       </description>
     </field>
 
@@ -51,12 +51,22 @@
     </field>
 
     <field>
-      <name>Flags</name>
-      <comment>Dimension flags for radial gradient fields.</comment>
+      <name>FX</name>
+      <comment>The horizontal focal point for radial gradients.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type>DOUBLE</type>
       <description>
-<p>Dimension flags indicate whether radial coordinate fields are fixed or scaled.</p>
+<p>The <code>(FX, FY)</code> coordinates define the focal point for radial gradients.  If left undefined, the focal point will match the centre of the gradient.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FY</name>
+      <comment>The vertical focal point for radial gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(FX, FY)</code> coordinates define the focal point for radial gradients.  If left undefined, the focal point will match the centre of the gradient.</p>
       </description>
     </field>
 
@@ -66,27 +76,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>If a radial gradient has a defined focal point by setting <fl>FocalX</fl> and <fl>FocalY</fl>, the FocalRadius can adjust the size of the focal area.  The default of zero ensures that the focal area matches that defined by <fl>Radius</fl>.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>FocalX</name>
-      <comment>The horizontal focal point for radial gradients.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
-      <description>
-<p>The <code>(FocalX, FocalY)</code> coordinates define the focal point for radial gradients.  If left undefined, the focal point will match the centre of the gradient.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>FocalY</name>
-      <comment>The vertical focal point for radial gradients.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
-      <description>
-<p>The <code>(FocalX, FocalY)</code> coordinates define the focal point for radial gradients.  If left undefined, the focal point will match the centre of the gradient.</p>
+<p>If a radial gradient has a defined focal point by setting <fl>FX</fl> and <fl>FY</fl>, the FocalRadius can adjust the size of the focal area.  The default of zero ensures that the focal area matches that defined by <fl>Radius</fl>.</p>
       </description>
     </field>
 

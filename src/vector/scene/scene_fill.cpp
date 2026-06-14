@@ -549,12 +549,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
          // NOTE: In this mode we are stretching a 1x1 gradient square into the target path.
 
-         c.x = radial.CenterX;
-         c.y = radial.CenterY;
-         if ((radial.Flags & (VGF::SCALED_FX|VGF::FIXED_FX)) != VGF::NIL) f.x = radial.FocalX;
+         c.x = radial.CX;
+         c.y = radial.CY;
+         if ((radial.Flags & (VGF::SCALED_FX|VGF::FIXED_FX)) != VGF::NIL) f.x = radial.FX;
          else f.x = c.x;
 
-         if ((radial.Flags & (VGF::SCALED_FY|VGF::FIXED_FY)) != VGF::NIL) f.y = radial.FocalY;
+         if ((radial.Flags & (VGF::SCALED_FY|VGF::FIXED_FY)) != VGF::NIL) f.y = radial.FY;
          else f.y = c.y;
 
          transform.translate(c);
@@ -576,18 +576,18 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          f.y *= MAX_SPAN;
       }
       else {
-         if ((radial.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * radial.CenterX);
-         else c.x = x_offset + radial.CenterX;
+         if ((radial.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * radial.CX);
+         else c.x = x_offset + radial.CX;
 
-         if ((radial.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * radial.CenterY);
-         else c.y = y_offset + radial.CenterY;
+         if ((radial.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * radial.CY);
+         else c.y = y_offset + radial.CY;
 
-         if ((radial.Flags & VGF::SCALED_FX) != VGF::NIL) f.x = x_offset + (c_width * radial.FocalX);
-         else if ((radial.Flags & VGF::FIXED_FX) != VGF::NIL) f.x = x_offset + radial.FocalX;
+         if ((radial.Flags & VGF::SCALED_FX) != VGF::NIL) f.x = x_offset + (c_width * radial.FX);
+         else if ((radial.Flags & VGF::FIXED_FX) != VGF::NIL) f.x = x_offset + radial.FX;
          else f.x = c.x;
 
-         if ((radial.Flags & VGF::SCALED_FY) != VGF::NIL) f.y = y_offset + (c_height * radial.FocalY);
-         else if ((radial.Flags & VGF::FIXED_FY) != VGF::NIL) f.y = y_offset + radial.FocalY;
+         if ((radial.Flags & VGF::SCALED_FY) != VGF::NIL) f.y = y_offset + (c_height * radial.FY);
+         else if ((radial.Flags & VGF::FIXED_FY) != VGF::NIL) f.y = y_offset + radial.FY;
          else f.y = c.y;
 
          if ((radial.Flags & VGF::SCALED_RADIUS) != VGF::NIL) { // Gradient is a ratio of the viewport's dimensions
@@ -660,11 +660,11 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       auto &diamond = (extGradientDiamond &)Gradient;
       agg::point_d c;
 
-      if ((diamond.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * diamond.CenterX);
-      else c.x = x_offset + diamond.CenterX;
+      if ((diamond.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * diamond.CX);
+      else c.x = x_offset + diamond.CX;
 
-      if ((diamond.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * diamond.CenterY);
-      else c.y = y_offset + diamond.CenterY;
+      if ((diamond.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * diamond.CY);
+      else c.y = y_offset + diamond.CY;
 
       // Standard diamond gradient, where the focal point is the same as the gradient center
 
@@ -712,11 +712,11 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       auto &conic = (extGradientConic &)Gradient;
       agg::point_d c;
 
-      if ((conic.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * conic.CenterX);
-      else c.x = x_offset + conic.CenterX;
+      if ((conic.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * conic.CX);
+      else c.x = x_offset + conic.CX;
 
-      if ((conic.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * conic.CenterY);
-      else c.y = y_offset + conic.CenterY;
+      if ((conic.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * conic.CY);
+      else c.y = y_offset + conic.CY;
 
       // Standard conic gradient, where the focal point is the same as the gradient center
 
@@ -753,8 +753,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       // gradient and reused until the path's fingerprint changes.  The d1/d2 values only affect a small
       // lookup table and can be updated freely on the cached object.
 
-      auto x2 = std::clamp(contour.X2, 0.01, 10.0);
-      auto x1 = std::clamp(contour.X1, 0.0, x2);
+      auto multiplier = std::clamp(contour.Multiplier, 0.01, 10.0);
+      auto floor = std::clamp(contour.Floor, 0.0, multiplier);
 
       bool rebuild = false;
       if (!contour.ContourCache) {
@@ -763,8 +763,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       }
 
       auto &gradient_func = *contour.ContourCache;
-      gradient_func.d1(x1 * 256.0);  // d1 is added to the DT base values
-      gradient_func.d2(x2);  // d2 is a multiplier of the base DT value
+      gradient_func.d1(floor * 256.0);  // d1 is added to the DT base values
+      gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
 
       const auto hash = path_fingerprint(*Path);
       if ((rebuild) or (hash != contour.ContourHash)) {
@@ -801,8 +801,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       // so it is cached with the gradient and reused until the path's fingerprint changes.  Unlike the contour
       // buffer, it is padded outward so that the exterior half of the colour ramp has room to be rendered.
 
-      auto x2 = std::clamp(distal.X2, 0.01, 10.0);
-      auto x1 = std::clamp(distal.X1, 0.0, x2);
+      auto multiplier = std::clamp(distal.Multiplier, 0.01, 10.0);
+      auto floor = std::clamp(distal.Floor, 0.0, multiplier);
 
       bool rebuild = false;
       if (!distal.SDFCache) {
@@ -819,8 +819,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          gradient_func.inner_radius(distal.InnerRadius * max_bound);
       }
       else gradient_func.inner_radius(distal.InnerRadius);
-      gradient_func.d1(x1 * 256.0);  // d1 is added to the signed DT base values
-      gradient_func.d2(x2);  // d2 is a multiplier of the base DT value
+      gradient_func.d1(floor * 256.0);  // d1 is added to the signed DT base values
+      gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
 
       const auto hash = path_fingerprint(*Path);
       if ((rebuild) or (hash != distal.SDFHash)) {

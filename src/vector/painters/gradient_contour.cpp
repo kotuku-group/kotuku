@@ -3,8 +3,8 @@
 -CLASS-
 GradientContour: Contour-following colour gradient paint server.
 
-GradientContour follows the contours of the target vector path.  `X1` controls the colour ramp floor and `X2`
-controls the ramp multiplier.
+GradientContour follows the contours of the target vector path.  `Floor` controls the colour ramp floor and
+`Multiplier` controls the ramp scale.
 
 -END-
 
@@ -12,10 +12,8 @@ controls the ramp multiplier.
 
 static ERR GRADIENTCONTOUR_Init(extGradient *Self)
 {
-   kt::Log log;
-
    if (Self->Units IS VUNIT::USERSPACE) {
-      log.warning("Contour gradients are not compatible with Units.USERSPACE.");
+      kt::Log().warning("Contour gradients are not compatible with Units.USERSPACE.");
       Self->Units = VUNIT::BOUNDING_BOX;
    }
 
@@ -24,47 +22,49 @@ static ERR GRADIENTCONTOUR_Init(extGradient *Self)
 
 /*********************************************************************************************************************
 -FIELD-
-X1: Colour ramp floor for contour gradients.
+Floor: Colour ramp floor for contour gradients.
 
-The X1 value is used as the floor for contour gradient colour values.  It has a valid range of `0 < X1 < X2`.
+The Floor value is used as the floor for contour gradient colour values.  It has a valid range of `0 < Floor <
+Multiplier`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONTOUR_GET_X1(extGradientContour *Self, Unit *Value)
+static ERR GRADIENTCONTOUR_GET_Floor(extGradientContour *Self, Unit *Value)
 {
-   Value->set(Self->X1);
+   Value->set(Self->Floor);
    return ERR::Okay;
 }
 
-static ERR GRADIENTCONTOUR_SET_X1(extGradientContour *Self, Unit &Value)
+static ERR GRADIENTCONTOUR_SET_Floor(extGradientContour *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X1) & (~VGF::FIXED_X1);
    else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
-   Self->X1 = Value;
+   Self->Floor = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
-X2: Colour ramp multiplier for contour gradients.
+Multiplier: Colour ramp multiplier for contour gradients.
 
-The X2 value acts as a multiplier for contour gradient colour values.  It has a valid range of `.01 < X2 < 10`.
+The Multiplier value acts as a multiplier for contour gradient colour values.  It has a valid range of `.01 <
+Multiplier < 10`.
 
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONTOUR_GET_X2(extGradientContour *Self, Unit *Value)
+static ERR GRADIENTCONTOUR_GET_Multiplier(extGradientContour *Self, Unit *Value)
 {
-   Value->set(Self->X2);
+   Value->set(Self->Multiplier);
    return ERR::Okay;
 }
 
-static ERR GRADIENTCONTOUR_SET_X2(extGradientContour *Self, Unit &Value)
+static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X2) & (~VGF::FIXED_X2);
    else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
-   Self->X2 = Value;
+   Self->Multiplier = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
@@ -74,8 +74,10 @@ static ERR GRADIENTCONTOUR_SET_X2(extGradientContour *Self, Unit &Value)
 #include "gradient_contour_def.cpp"
 
 static const FieldArray clGradientContourFields[] = {
-   { "X1", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_X1, GRADIENTCONTOUR_SET_X1 },
-   { "X2", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_X2, GRADIENTCONTOUR_SET_X2 },
+   { "Floor", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_Floor,
+      GRADIENTCONTOUR_SET_Floor },
+   { "Multiplier", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE,
+      GRADIENTCONTOUR_GET_Multiplier, GRADIENTCONTOUR_SET_Multiplier },
    END_FIELD
 };
 

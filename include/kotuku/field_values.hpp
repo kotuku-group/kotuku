@@ -194,6 +194,14 @@ template <NumericOrScale T> [[nodiscard]] FieldValue CenterY(T Value) {
    return FieldValue(FID_CenterY, Value);
 }
 
+template <NumericOrScale T> [[nodiscard]] FieldValue CX(T Value) {
+   return FieldValue(FID_CX, Value);
+}
+
+template <NumericOrScale T> [[nodiscard]] FieldValue CY(T Value) {
+   return FieldValue(FID_CY, Value);
+}
+
 template <NumericOrScale T> [[nodiscard]] FieldValue FX(T Value) {
    return FieldValue(FID_FX, Value);
 }
@@ -224,6 +232,14 @@ template <NumericOrScale T> [[nodiscard]] FieldValue Y(T Value) {
 
 template <NumericOrScale T> [[nodiscard]] FieldValue YOffset(T Value) {
    return FieldValue(FID_YOffset, Value);
+}
+
+template <NumericOrScale T> [[nodiscard]] FieldValue Floor(T Value) {
+   return FieldValue(FID_Floor, Value);
+}
+
+template <NumericOrScale T> [[nodiscard]] FieldValue Multiplier(T Value) {
+   return FieldValue(FID_Multiplier, Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue X1(T Value) {

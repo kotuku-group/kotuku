@@ -11,69 +11,48 @@ GradientDiamond draws a square-shaped colour ramp from a centre point.
 
 /*********************************************************************************************************************
 -FIELD-
-CenterX: The horizontal centre point of the gradient.
+CX: The horizontal centre point of the gradient.
 
-The `(CenterX, CenterY)` coordinates define the centre point from which the diamond gradient expands.  By default,
+The `(CX, CY)` coordinates define the centre point from which the diamond gradient expands.  By default,
 the centre point is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDIAMOND_GET_CenterX(extGradientDiamond *Self, Unit *Value)
+static ERR GRADIENTDIAMOND_GET_CX(extGradientDiamond *Self, Unit *Value)
 {
-   Value->set(Self->CenterX);
+   Value->set(Self->CX);
    return ERR::Okay;
 }
 
-static ERR GRADIENTDIAMOND_SET_CenterX(extGradientDiamond *Self, Unit &Value)
+static ERR GRADIENTDIAMOND_SET_CX(extGradientDiamond *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
    else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
-   Self->CenterX = Value;
+   Self->CX = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
-CenterY: The vertical centre point of the gradient.
+CY: The vertical centre point of the gradient.
 
-The `(CenterX, CenterY)` coordinates define the centre point from which the diamond gradient expands.  By default,
+The `(CX, CY)` coordinates define the centre point from which the diamond gradient expands.  By default,
 the centre point is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDIAMOND_GET_CenterY(extGradientDiamond *Self, Unit *Value)
+static ERR GRADIENTDIAMOND_GET_CY(extGradientDiamond *Self, Unit *Value)
 {
-   Value->set(Self->CenterY);
+   Value->set(Self->CY);
    return ERR::Okay;
 }
 
-static ERR GRADIENTDIAMOND_SET_CenterY(extGradientDiamond *Self, Unit &Value)
+static ERR GRADIENTDIAMOND_SET_CY(extGradientDiamond *Self, Unit &Value)
 {
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CY) & (~VGF::FIXED_CY);
    else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
-   Self->CenterY = Value;
-   if (Self->initialised()) Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-Flags: Dimension flags for diamond gradient fields.
-
-Dimension flags indicate whether diamond coordinate fields are fixed or scaled.
-
-*********************************************************************************************************************/
-
-static ERR GRADIENTDIAMOND_GET_Flags(extGradientDiamond *Self, VGF *Value)
-{
-   *Value = Self->Flags;
-   return ERR::Okay;
-}
-
-static ERR GRADIENTDIAMOND_SET_Flags(extGradientDiamond *Self, VGF Value)
-{
-   Self->Flags = Value;
+   Self->CY = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
@@ -110,23 +89,10 @@ static ERR GRADIENTDIAMOND_SET_Radius(extGradientDiamond *Self, Unit &Value)
 
 #include "gradient_diamond_def.cpp"
 
-static const struct FieldDef clGradientDiamondFlags[] = {
-   { "ScaledCX", 0x00000010 },
-   { "ScaledCY", 0x00000020 },
-   { "ScaledRadius", 0x00000100 },
-   { "FixedCX", 0x00004000 },
-   { "FixedCY", 0x00008000 },
-   { "FixedRadius", 0x00040000 },
-   { nullptr, 0 }
-};
-
 static const FieldArray clGradientDiamondFields[] = {
-   { "CenterX", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CenterX, GRADIENTDIAMOND_SET_CenterX },
-   { "CenterY", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CenterY, GRADIENTDIAMOND_SET_CenterY },
-   { "Flags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, GRADIENTDIAMOND_GET_Flags, GRADIENTDIAMOND_SET_Flags, &clGradientDiamondFlags },
+   { "CX",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CX, GRADIENTDIAMOND_SET_CX },
+   { "CY",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CY, GRADIENTDIAMOND_SET_CY },
    { "Radius",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_Radius, GRADIENTDIAMOND_SET_Radius },
-   { "CX",      FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CenterX, GRADIENTDIAMOND_SET_CenterX },
-   { "CY",      FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CenterY, GRADIENTDIAMOND_SET_CenterY },
    END_FIELD
 };
 

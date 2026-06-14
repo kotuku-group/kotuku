@@ -1375,40 +1375,32 @@ class objGradientRadial : public objGradient {
 
    // Customised field getting
 
-   inline ERR getCenterX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+   inline ERR getCX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
-   inline ERR getCenterY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getFlags(int &Value) noexcept {
+   inline ERR getCY(double &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getFocalX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
-   inline ERR getFocalY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+   inline ERR getFX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getFY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1416,7 +1408,7 @@ class objGradientRadial : public objGradient {
    }
 
    inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[6];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1424,7 +1416,7 @@ class objGradientRadial : public objGradient {
    }
 
    inline ERR getFocalRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[5];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1432,7 +1424,7 @@ class objGradientRadial : public objGradient {
    }
 
    inline ERR getContainFocal(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[1];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -1440,49 +1432,44 @@ class objGradientRadial : public objGradient {
 
    // Customised field setting
 
-   inline ERR setCenterX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+   inline ERR setCX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setCenterY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setFlags(const int Value) noexcept {
+   inline ERR setCY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setFocalX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setFocalY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+   inline ERR setFX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setFY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[6];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[5];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setContainFocal(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[1];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -1505,7 +1492,7 @@ class objGradientConic : public objGradient {
 
    // Customised field getting
 
-   inline ERR getCenterX(double &Value) noexcept {
+   inline ERR getRadius(double &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
@@ -1513,24 +1500,16 @@ class objGradientConic : public objGradient {
       return error;
    }
 
-   inline ERR getCenterY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+   inline ERR getCX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
-   inline ERR getFlags(int &Value) noexcept {
+   inline ERR getCY(double &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1540,25 +1519,20 @@ class objGradientConic : public objGradient {
 
    // Customised field setting
 
-   inline ERR setCenterX(const double Value) noexcept {
+   inline ERR setRadius(const double Value) noexcept {
       auto field = &this->Class->Dictionary[2];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setCenterY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+   inline ERR setCX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setFlags(const int Value) noexcept {
+   inline ERR setCY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1582,32 +1556,24 @@ class objGradientDiamond : public objGradient {
 
    // Customised field getting
 
-   inline ERR getCenterX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+   inline ERR getCX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
-   inline ERR getCenterY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getFlags(int &Value) noexcept {
+   inline ERR getCY(double &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
    inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[2];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1617,25 +1583,20 @@ class objGradientDiamond : public objGradient {
 
    // Customised field setting
 
-   inline ERR setCenterX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+   inline ERR setCX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setCenterY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setFlags(const int Value) noexcept {
+   inline ERR setCY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[2];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1659,16 +1620,16 @@ class objGradientContour : public objGradient {
 
    // Customised field getting
 
-   inline ERR getX1(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+   inline ERR getFloor(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
-   inline ERR getX2(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
+   inline ERR getMultiplier(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1678,14 +1639,14 @@ class objGradientContour : public objGradient {
 
    // Customised field setting
 
-   inline ERR setX1(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+   inline ERR setFloor(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setX2(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1755,7 +1716,7 @@ class objGradientDistal : public objGradient {
 
    // Customised field getting
 
-   inline ERR getX1(double &Value) noexcept {
+   inline ERR getFloor(double &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
@@ -1763,8 +1724,8 @@ class objGradientDistal : public objGradient {
       return error;
    }
 
-   inline ERR getX2(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
+   inline ERR getMultiplier(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1780,7 +1741,7 @@ class objGradientDistal : public objGradient {
    }
 
    inline ERR getInnerRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[0];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1790,14 +1751,14 @@ class objGradientDistal : public objGradient {
 
    // Customised field setting
 
-   inline ERR setX1(const double Value) noexcept {
+   inline ERR setFloor(const double Value) noexcept {
       auto field = &this->Class->Dictionary[1];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setX2(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1809,7 +1770,7 @@ class objGradientDistal : public objGradient {
    }
 
    inline ERR setInnerRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[0];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
