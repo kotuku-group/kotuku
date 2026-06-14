@@ -822,10 +822,28 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.d1(floor * 256.0);  // d1 is added to the signed DT base values
       gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
 
+      // The InnerFall / OuterFall curves are baked into the SDF alpha buffer, so a curve change invalidates the cache
+      // exactly like a Radius change (see the field setters, which reset SDFHash).  The GFALL enum values map 1:1 to
+      // agg::sdf_falloff_curve; NIL falls back to smoothstep.
+
+      auto fall_curve = [](GFALL Value) {
+         if (Value IS GFALL::NIL) return agg::sdf_falloff_curve::smoothstep;
+         return agg::sdf_falloff_curve(int(Value));
+      };
+      gradient_func.inner_fall(fall_curve(distal.InnerFall));
+      gradient_func.outer_fall(fall_curve(distal.OuterFall));
+
+      // Resolution stepping is baked into the SDF alpha buffer too.  The base Resolution setter does not touch the
+      // SDF cache, so a change is detected here and forces a rebuild alongside the path fingerprint check.
+
+      const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
+      gradient_func.resolution(resolution);
+
       const auto hash = path_fingerprint(*Path);
-      if ((rebuild) or (hash != distal.SDFHash)) {
+      if ((rebuild) or (hash != distal.SDFHash) or (resolution != distal.SDFResolution)) {
          gradient_func.sdf_create(*Path);
          distal.SDFHash = hash;
+         distal.SDFResolution = resolution;
       }
 
       // The path is rendered into the SDF buffer at an inset of (origin_x, origin_y) to leave a margin for the
@@ -867,16 +885,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       typedef agg::span_gradient_sdf<agg::rgba8, interpolator_type, color_array_type> sdf_span_type;
       typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, sdf_span_type> sdf_renderer_type;
 
-      // Map the GFALL fields onto the agg curve selector (the enum values are aligned 1:1).  A NIL field falls back
-      // to smoothstep, matching the default established at construction.
-
-      auto fall_curve = [](GFALL Value) {
-         if (Value IS GFALL::NIL) return agg::sdf_falloff_curve::smoothstep;
-         return agg::sdf_falloff_curve(int(Value));
-      };
-
-      sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0, Gradient.Resolution,
-         fall_curve(distal.InnerFall), fall_curve(distal.OuterFall));
+      sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0);
       sdf_renderer_type sdf_render(RenderBase, span_allocator, sdf_span);
 
       if ((!Render) or (Render->clip_stack_empty())) {

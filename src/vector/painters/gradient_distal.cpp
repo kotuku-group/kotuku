@@ -151,6 +151,7 @@ static ERR GRADIENTDISTAL_GET_InnerFall(extGradientDistal *Self, GFALL *Value)
 static ERR GRADIENTDISTAL_SET_InnerFall(extGradientDistal *Self, GFALL Value)
 {
    Self->InnerFall = Value;
+   Self->SDFHash = 0; // The curve is baked into the cached SDF alpha buffer, so force a rebuild
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
@@ -164,6 +165,7 @@ static ERR GRADIENTDISTAL_GET_OuterFall(extGradientDistal *Self, GFALL *Value)
 static ERR GRADIENTDISTAL_SET_OuterFall(extGradientDistal *Self, GFALL Value)
 {
    Self->OuterFall = Value;
+   Self->SDFHash = 0; // The curve is baked into the cached SDF alpha buffer, so force a rebuild
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }

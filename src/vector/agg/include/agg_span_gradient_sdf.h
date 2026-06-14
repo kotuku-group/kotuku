@@ -44,15 +44,46 @@
 
 namespace agg
 {
+   // Alpha fall-off curve selector.  Values mirror the Kotuku GFALL enumeration so a GradientDistal field can be
+   // forwarded directly without translation.
+
+   enum class sdf_falloff_curve {
+      none       = 1,
+      linear     = 2,
+      quadratic  = 3,
+      cubic      = 4,
+      smoothstep = 5
+   };
+
+   // Reshapes the linear coverage 'a' (1.0 at the outline, 0.0 at the fade boundary) into the final alpha multiplier
+   // using the selected curve.
+
+   static inline double sdf_falloff(double a, sdf_falloff_curve Curve) {
+      if (a <= 0.0) return 0.0;
+      if (a >= 1.0) return 1.0;
+      switch (Curve) {
+         case sdf_falloff_curve::none:       return 1.0; // Opaque up to the boundary, then cut
+         case sdf_falloff_curve::linear:     return a;
+         case sdf_falloff_curve::quadratic:  return a * a;
+         case sdf_falloff_curve::cubic:      return a * a * a;
+         case sdf_falloff_curve::smoothstep: return a * a * (3.0 - (2.0 * a));
+         default:                            return a * a;
+      }
+   }
+
    class gradient_sdf {
    private:
       std::vector<int8u> m_buffer;
-      std::vector<int8u> m_alpha; // Exterior alpha coverage: 255 at the outline, falling to 0 at the padding edge
+      std::vector<int8u> m_alpha; // Per-pixel alpha with the InnerFall/OuterFall curve already baked in (255 at the
+                                  // outline, falling to 0 at the interior InnerRadius and the exterior padding edge)
       int m_lut[256]; // Maps signed DT greyscale values directly to gradient results
       int m_width, m_height;
       int m_origin_x, m_origin_y; // Pixel offset of the path bounds within the padded buffer
       double m_padding; // Margin (in path units) added around the bounds so the exterior ramp half is visible
       double m_inner_radius; // Interior fade distance from the outline; zero keeps the interior fully opaque
+      sdf_falloff_curve m_inner_fall; // Alpha fall-off curve baked into the interior half of m_alpha
+      sdf_falloff_curve m_outer_fall; // Alpha fall-off curve baked into the exterior half of m_alpha
+      double m_resolution; // Gradient Resolution stepping baked into m_alpha (before the fall-off curve)
       double m_d1; // Ranges from 0 to 254
       double m_d2; // Ranges from 0.001 to 1.0
 
@@ -62,12 +93,14 @@ namespace agg
 
    public:
       gradient_sdf() : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0), m_inner_radius(0),
-         m_d1(0), m_d2(1.0) {
+         m_inner_fall(sdf_falloff_curve::smoothstep), m_outer_fall(sdf_falloff_curve::smoothstep),
+         m_resolution(1.0), m_d1(0), m_d2(1.0) {
          build_lut();
       }
 
       gradient_sdf(double d1, double d2) : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0),
-         m_inner_radius(0), m_d2(d2) {
+         m_inner_radius(0), m_inner_fall(sdf_falloff_curve::smoothstep), m_outer_fall(sdf_falloff_curve::smoothstep),
+         m_resolution(1.0), m_d2(d2) {
          m_d1 = (d1 > 254) ? 254 : d1;
          build_lut();
       }
@@ -83,6 +116,14 @@ namespace agg
       double padding() const { return m_padding; }
       void   inner_radius(double Value) { m_inner_radius = (Value < 0) ? 0 : Value; }
       double inner_radius() const { return m_inner_radius; }
+
+      void inner_fall(sdf_falloff_curve Value) { m_inner_fall = Value; }
+      void outer_fall(sdf_falloff_curve Value) { m_outer_fall = Value; }
+      sdf_falloff_curve inner_fall() const { return m_inner_fall; }
+      sdf_falloff_curve outer_fall() const { return m_outer_fall; }
+
+      void   resolution(double Value) { m_resolution = Value; }
+      double resolution() const { return m_resolution; }
 
       void   d1(double d) { m_d1 = d; build_lut(); }
       void   d2(double d) { m_d2 = d; build_lut(); }
@@ -117,9 +158,9 @@ namespace agg
       // outline colour across the exterior).
       int lut_at(int Byte) const { return m_lut[Byte & 0xff]; }
 
-      // Returns the alpha coverage at a pixel coordinate (gradient subpixel units).  The exterior falls from the
-      // outline to the padding edge; if inner_radius is non-zero the interior also fades inward from the outline.
-      // Both fades are normalised independently of the colour LUT.
+      // Returns the alpha coverage at a pixel coordinate (gradient subpixel units), with the per-side fall-off curve
+      // already baked in.  The exterior falls from the outline to the padding edge; if inner_radius is non-zero the
+      // interior also fades inward from the outline.  Both fades are normalised independently of the colour LUT.
       int8u alpha(int x, int y) const {
          if (m_alpha.empty()) return 255;
          int px = (x >> agg::gradient_subpixel_shift) % m_width;
@@ -131,33 +172,6 @@ namespace agg
 
       bool empty() const { return m_buffer.empty(); }
    };
-
-   // Alpha fall-off curve selector.  Values mirror the Kotuku GFALL enumeration so a GradientDistal field can be
-   // forwarded directly without translation.
-
-   enum class sdf_falloff_curve {
-      none       = 1,
-      linear     = 2,
-      quadratic  = 3,
-      cubic      = 4,
-      smoothstep = 5
-   };
-
-   // Reshapes the linear coverage 'a' (1.0 at the outline, 0.0 at the fade boundary) into the final alpha multiplier
-   // using the selected curve.
-
-   static inline double sdf_falloff(double a, sdf_falloff_curve Curve) {
-      if (a <= 0.0) return 0.0;
-      if (a >= 1.0) return 1.0;
-      switch (Curve) {
-         case sdf_falloff_curve::none:       return 1.0; // Opaque up to the boundary, then cut
-         case sdf_falloff_curve::linear:     return a;
-         case sdf_falloff_curve::quadratic:  return a * a;
-         case sdf_falloff_curve::cubic:      return a * a * a;
-         case sdf_falloff_curve::smoothstep: return a * a * (3.0 - (2.0 * a));
-         default:                            return a * a;
-      }
-   }
 
    // Match the Gradient Resolution field for SDF alpha ramps.  Colour resolution is baked into the 256-entry
    // ramp table; SDF alpha is independent of that table, so it needs equivalent stepping here.
@@ -197,17 +211,13 @@ namespace agg
       const int downscale_shift = interpolator_type::subpixel_shift - gradient_subpixel_shift;
       static const int reciprocal_shift = 24;
 
-      span_gradient_sdf() : m_interpolator(nullptr), m_gradient(nullptr), m_color_function(nullptr), m_d1(0), m_d2(0),
-         m_resolution(1.0), m_inner_fall(sdf_falloff_curve::smoothstep),
-         m_outer_fall(sdf_falloff_curve::smoothstep) { }
+      span_gradient_sdf() : m_interpolator(nullptr), m_gradient(nullptr), m_color_function(nullptr), m_d1(0),
+         m_d2(0) { }
 
       span_gradient_sdf(interpolator_type &Inter, const gradient_sdf &Gradient, const ColorF &ColorFunction,
-         double D1, double D2, double Resolution = 1.0,
-         sdf_falloff_curve InnerFall = sdf_falloff_curve::smoothstep,
-         sdf_falloff_curve OuterFall = sdf_falloff_curve::smoothstep) :
+         double D1, double D2) :
          m_interpolator(&Inter), m_gradient(&Gradient), m_color_function(&ColorFunction),
-         m_d1(iround(D1 * gradient_subpixel_scale)), m_d2(iround(D2 * gradient_subpixel_scale)),
-         m_resolution(Resolution), m_inner_fall(InnerFall), m_outer_fall(OuterFall) { }
+         m_d1(iround(D1 * gradient_subpixel_scale)), m_d2(iround(D2 * gradient_subpixel_scale)) { }
 
       void prepare() { }
 
@@ -226,16 +236,11 @@ namespace agg
             const int gy = iy >> downscale_shift;
             const int raw = m_gradient->raw(gx, gy);
 
-            // Alpha is read from the gradient's distance-normalised coverage buffer (255 at the outline, fading
-            // inward when InnerRadius is non-zero and outward to the padding edge) and softened with a smoothstep
-            // curve.  Normalising independently of the colour LUT avoids hard cut-offs at the field boundaries.
+            // Alpha is read straight from the gradient's coverage buffer, which already has resolution stepping and
+            // the per-side InnerFall / OuterFall curve baked in by sdf_create (255 at the outline, fading inward when
+            // InnerRadius is non-zero and outward to the padding edge).  The hot loop is therefore just a buffer read.
 
-            // Interior pixels (raw < 128) use the InnerFall curve, exterior pixels (raw >= 128) use OuterFall.  The
-            // outline (raw == 128) sits at full coverage either way, so the choice there is immaterial.
-
-            const int alpha = sdf_apply_resolution(m_gradient->alpha(gx, gy), m_resolution);
-            const sdf_falloff_curve curve = (raw < 128) ? m_inner_fall : m_outer_fall;
-            const double alpha_mul = sdf_falloff(double(alpha) / 255.0, curve);
+            const double alpha_mul = double(m_gradient->alpha(gx, gy)) / 255.0;
 
             if (alpha_mul <= 0.0) { // Past the glow edge: contribute nothing.
                *Span++ = color_type(0, 0, 0, 0);
@@ -271,9 +276,6 @@ namespace agg
       const ColorF       *m_color_function;
       int m_d1;
       int m_d2;
-      double m_resolution;
-      sdf_falloff_curve m_inner_fall;
-      sdf_falloff_curve m_outer_fall;
    };
 
    int8u * gradient_sdf::sdf_create(path_storage &ps) {
@@ -410,20 +412,27 @@ namespace agg
             else if (v > 255) v = 255;
             m_buffer[l] = int8u(v);
 
+            // Resolution stepping and the InnerFall / OuterFall curve are both baked in here so the span generator
+            // only has to read the byte.  The order matches the original per-pixel pipeline exactly: the linear
+            // coverage is resolution-stepped first (keeping the alpha bands spatially even), then reshaped by the
+            // fall-off curve.  The interior uses InnerFall, the exterior uses OuterFall.
+
             if (inside[l]) {
                if (m_inner_radius <= 0) m_alpha[l] = 255; // Interior is fully opaque by default
                else {
                   float a = 1.0f - (mag * inv_inner_radius); // 1 at the outline, 0 at InnerRadius
                   if (a < 0.0f) a = 0.0f;
                   else if (a > 1.0f) a = 1.0f;
-                  m_alpha[l] = int8u(a * 255.0f);
+                  const int stepped = sdf_apply_resolution(int(a * 255.0f), m_resolution);
+                  m_alpha[l] = int8u(sdf_falloff(double(stepped) / 255.0, m_inner_fall) * 255.0);
                }
             }
             else {
                float a = 1.0f - (mag * inv_margin); // 1 at the outline, 0 at the padding edge
                if (a < 0.0f) a = 0.0f;
                else if (a > 1.0f) a = 1.0f;
-               m_alpha[l] = int8u(a * 255.0f);
+               const int stepped = sdf_apply_resolution(int(a * 255.0f), m_resolution);
+               m_alpha[l] = int8u(sdf_falloff(double(stepped) / 255.0, m_outer_fall) * 255.0);
             }
          }
       }

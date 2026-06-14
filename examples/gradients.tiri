@@ -160,8 +160,8 @@ function selectGradient(Text)
       gradient = createGradient('DistalShape', 'GradientDistal', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          radius = glRadius,
-         x1 = 0, -- Added to the signed DT base values (0 - 1.0)
-         x2 = 1  -- Multiplier of the base DT value (0.01 - 10.0)
+         floor = 0, -- Added to the signed DT base values (0 - 1.0)
+         multiplier = 1  -- Multiplier of the base DT value (0.01 - 10.0)
       })
 
       if not distalShape then
