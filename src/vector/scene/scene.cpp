@@ -33,6 +33,9 @@ Vector definitions can be saved and loaded from permanent storage by using the @
 #include "agg_renderer_outline_image.h"
 #include "agg_conv_smooth_poly1.h"
 #include "agg_span_gradient.h"
+#include "agg_span_gouraud_rgba.h"
+#include "agg_span_gouraud_rgba_linear.h"
+#include "agg_span_gouraud_rgba_quantise.h"
 #include "agg_conv_contour.h"
 
 //#include "../vector.h"
@@ -49,6 +52,10 @@ static void fill_image(VectorState &, const TClipRectangle<double> &, agg::path_
 static void fill_gradient(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    const agg::trans_affine &, double, double, extVectorGradient &, GRADIENT_TABLE *,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
+
+static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extVectorGradient &, double,
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *Render = nullptr);
 
 static void fill_pattern(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    VSM, const agg::trans_affine &, double ViewWidth, double, extVectorPattern &,

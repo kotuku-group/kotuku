@@ -5,15 +5,13 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+//
+// Adaptation for high precision colors has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
+//
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
 // ---
 // Generates RGBA Gouraud-shaded spans for triangles. Hooks into span_gouraud interpolation and RGBA renderer_scanline
 // paths. In the vector renderer it produces smoothly interpolated colours across triangular vector primitives.
-//
-// Adaptation for high precision colors has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
-//
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
 
 #pragma once
 
@@ -65,7 +63,7 @@ private:
             m_g = m_g1 + iround(m_dg * k);
             m_b = m_b1 + iround(m_db * k);
             m_a = m_a1 + iround(m_da * k);
-            m_x = iround((m_x1 + m_dx * k) * subpixel_scale);
+            m_x = iround((m_x1 + m_dx * k) * int(subpixel_scale));
         }
 
         double m_x1;
@@ -89,14 +87,9 @@ private:
 
 public:
     span_gouraud_rgba() {}
-    span_gouraud_rgba(const color_type& c1,
-                        const color_type& c2,
-                        const color_type& c3,
-                        double x1, double y1,
-                        double x2, double y2,
-                        double x3, double y3,
-                        double d = 0) :
-        base_type(c1, c2, c3, x1, y1, x2, y2, x3, y3, d)
+    span_gouraud_rgba(const color_type& c1, const color_type& c2, const color_type& c3, double x1, double y1,
+       double x2, double y2, double x3, double y3, double d = 0) :
+       base_type(c1, c2, c3, x1, y1, x2, y2, x3, y3, d)
     {}
 
     void prepare() {
@@ -118,20 +111,15 @@ public:
         const rgba_calc* pc1 = &m_rgba1;
         const rgba_calc* pc2 = &m_rgba2;
 
-        if(y <= m_y2)
-        {
-            // Bottom part of the triangle (first subtriangle)
+        if (y <= m_y2) { // Bottom part of the triangle (first subtriangle)
             m_rgba2.calc(y + m_rgba2.m_1dy);
         }
-        else
-        {
-            // Upper part (second subtriangle)
+        else { // Upper part (second subtriangle)
             m_rgba3.calc(y - m_rgba3.m_1dy);
             pc2 = &m_rgba3;
         }
 
-        if(m_swap)
-        {
+        if (m_swap) {
             // It means that the triangle is oriented clockwise,
             // so that we need to swap the controlling structures
             const rgba_calc* t = pc2;
@@ -139,10 +127,9 @@ public:
             pc1 = t;
         }
 
-        // Get the horizontal length with subpixel accuracy
-        // and protect it from division by zero
+        // Get the horizontal length with subpixel accuracy and protect it from division by zero
         int nlen = abs(pc2->m_x - pc1->m_x);
-        if(nlen <= 0) nlen = 1;
+        if (nlen <= 0) nlen = 1;
 
         dda_line_interpolator<14> r(pc1->m_r, pc2->m_r, nlen);
         dda_line_interpolator<14> g(pc1->m_g, pc2->m_g, nlen);
@@ -164,22 +151,23 @@ public:
         int vr, vg, vb, va;
         enum lim_e { lim = color_type::base_mask };
 
-        // Beginning part of the span. Since we rolled back the
-        // interpolators, the color values may have overflow.
-        // So that, we render the beginning part with checking
-        // for overflow. It lasts until "start" is positive;
+        // Beginning part of the span. Since we rolled back the interpolators, the color values may have overflow.
+        // So that, we render the beginning part with checking for overflow. It lasts until "start" is positive;
         // typically it's 1-2 pixels, but may be more in some cases.
 
-        while(len and start > 0)
-        {
+        while (len and start > 0) {
             vr = r.y();
             vg = g.y();
             vb = b.y();
             va = a.y();
-            if(vr < 0) vr = 0; if(vr > lim) vr = lim;
-            if(vg < 0) vg = 0; if(vg > lim) vg = lim;
-            if(vb < 0) vb = 0; if(vb > lim) vb = lim;
-            if(va < 0) va = 0; if(va > lim) va = lim;
+            if (vr < 0) vr = 0;
+            if (vr > lim) vr = lim;
+            if (vg < 0) vg = 0;
+            if (vg > lim) vg = lim;
+            if (vb < 0) vb = 0;
+            if (vb > lim) vb = lim;
+            if (va < 0) va = 0;
+            if (va > lim) va = lim;
             span->r = (value_type)vr;
             span->g = (value_type)vg;
             span->b = (value_type)vb;
@@ -194,10 +182,8 @@ public:
             --len;
         }
 
-        // Middle part, no checking for overflow.
-        // Actual spans can be longer than the calculated length
-        // because of anti-aliasing, thus, the interpolators can
-        // overflow. But while "nlen" is positive we are safe.
+        // Middle part, no checking for overflow.  Actual spans can be longer than the calculated length
+        // because of anti-aliasing, thus, the interpolators can overflow. But while "nlen" is positive we are safe.
 
         while (len and nlen > 0) {
             span->r = (value_type)r.y();
@@ -221,10 +207,14 @@ public:
             vg = g.y();
             vb = b.y();
             va = a.y();
-            if(vr < 0) vr = 0; if(vr > lim) vr = lim;
-            if(vg < 0) vg = 0; if(vg > lim) vg = lim;
-            if(vb < 0) vb = 0; if(vb > lim) vb = lim;
-            if(va < 0) va = 0; if(va > lim) va = lim;
+            if (vr < 0) vr = 0;
+            if (vr > lim) vr = lim;
+            if (vg < 0) vg = 0;
+            if (vg > lim) vg = lim;
+            if (vb < 0) vb = 0;
+            if (vb > lim) vb = lim;
+            if (va < 0) va = 0;
+            if (va > lim) va = lim;
             span->r = (value_type)vr;
             span->g = (value_type)vg;
             span->b = (value_type)vb;

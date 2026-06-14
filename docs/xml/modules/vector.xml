@@ -948,6 +948,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="CONIC">The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.</const>
       <const name="CONTOUR">Contoured gradients follow the contours of the vector path in which they are rendered.</const>
       <const name="DIAMOND">A diamond gradient is drawn as a square emanating from the center point.</const>
+      <const name="GOURAUD">A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.</const>
       <const name="LINEAR">A linear gradient is drawn from <code>(X1, Y1)</code> to <code>(X2, Y2)</code>.</const>
       <const name="RADIAL">A radial gradient is drawn from <code>CenterX, CenterY</code> to <code>Radius</code>.  An optional focal point can be expressed with <code>FX</code> and <code>FY</code>.</const>
     </constants>
@@ -1100,6 +1101,12 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>
       <field name="Ascent" type="INT">Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</field>
       <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
+    </struct>
+
+    <struct name="GouraudVertex" comment="Describes a coloured vertex for the VectorGradient Vertices field.">
+      <field name="X" type="DOUBLE">The X coordinate of the vertex.</field>
+      <field name="Y" type="DOUBLE">The Y coordinate of the vertex.</field>
+      <field name="Colour" type="struct FRGB">The floating point RGB colour assigned to this vertex.</field>
     </struct>
 
     <struct name="GradientStop" comment="Describes a colour stop for the VectorGradient Stops field.">

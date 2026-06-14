@@ -29,7 +29,7 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
    kt::Log log(__FUNCTION__);
 
    GradientColours *cols = ((extVectorGradient *)Painter.Gradient)->Colours;
-   if (!cols) {
+   if (not cols) {
       log.warning("No colour table in gradient %p.", Painter.Gradient);
       return nullptr;
    }
@@ -43,7 +43,7 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
 
       delete Painter.GradientTable;
       Painter.GradientTable = new (std::nothrow) GRADIENT_TABLE();
-      if (!Painter.GradientTable) {
+      if (not Painter.GradientTable) {
          log.warning("Failed to allocate fill gradient table");
          return nullptr;
       }
@@ -65,8 +65,8 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
    kt::Log log(__FUNCTION__);
 
    GradientColours *cols = ((extVectorGradient *)Vector.Stroke.Gradient)->Colours;
-   if (!cols) {
-      if (!cols) {
+   if (not cols) {
+      if (not cols) {
          log.warning("No colour table referenced in stroke gradient %p for vector #%d.", Vector.Stroke.Gradient, Vector.UID);
          return nullptr;
       }
@@ -82,7 +82,7 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
 
       delete Vector.Stroke.GradientTable;
       Vector.Stroke.GradientTable = new (std::nothrow) GRADIENT_TABLE();
-      if (!Vector.Stroke.GradientTable) {
+      if (not Vector.Stroke.GradientTable) {
          log.warning("Failed to allocate stroke gradient table");
          return nullptr;
       }
@@ -482,7 +482,7 @@ static ERR VECTORGRADIENT_GET_Matrices(extVectorGradient *Self, VectorMatrix **V
 
 static ERR VECTORGRADIENT_SET_Matrices(extVectorGradient *Self, VectorMatrix *Value)
 {
-   if (!Value) {
+   if (not Value) {
       auto hook = &Self->Matrices;
       while (Value) {
          VectorMatrix *matrix;
@@ -589,20 +589,27 @@ static ERR VECTORGRADIENT_SET_Resolution(extVectorGradient *Self, double Value)
 {
    if ((Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
 
+   const bool changed = (Self->Resolution != Value);
    Self->Resolution = Value;
 
    if ((Self->Colours) and (Self->Colours->resolution != Value)) {
+      // Field gradients bake Resolution into the colour table, so the table must be regenerated.
       if (Self->initialised()) {
          Self->modified();
-         if (!Self->Stops.empty()) {
+         if (not Self->Stops.empty()) {
             auto copy = Self->Stops;
             VECTORGRADIENT_SET_Stops(Self, copy.data(), copy.size());
          }
-         else if (!Self->ColourMap.empty()) {
+         else if (not Self->ColourMap.empty()) {
             VECTORGRADIENT_SET_ColourMap(Self, Self->ColourMap.c_str());
          }
       }
       else Self->Colours->apply_resolution(Value);
+   }
+   else if (changed and Self->initialised()) {
+      // Gouraud gradients (and any type with no colour table) apply Resolution per pixel at render time, so there
+      // is no table to rebuild; just flag the change so the scene redraws.
+      Self->modified();
    }
 
    return ERR::Okay;
@@ -651,7 +658,7 @@ static ERR VECTORGRADIENT_SET_Stops(extVectorGradient *Self, GradientStop *Value
       Self->Stops.insert(Self->Stops.end(), &Value[0], &Value[Elements]);
       if (Self->Colours) delete Self->Colours;
       Self->Colours = new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution);
-      if (!Self->Colours) return ERR::AllocMemory;
+      if (not Self->Colours) return ERR::AllocMemory;
       return ERR::Okay;
    }
    else {
@@ -659,6 +666,121 @@ static ERR VECTORGRADIENT_SET_Stops(extVectorGradient *Self, GradientStop *Value
       log.warning("Array size %d < 2", Elements);
       return ERR::InvalidValue;
    }
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Vertices: Defines the coloured vertices for a Gouraud gradient.
+
+When #Type is set to `VGT::GOURAUD`, the Vertices array defines the mesh of coloured points across which colour is
+interpolated barycentrically.  Each !GouraudVertex carries an `(X, Y)` position and an `FRGB` colour.
+
+By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one
+triangle.  Supplying an #Indices array instead expresses triangle connectivity explicitly, allowing vertices (and
+their colours) to be shared between adjacent triangles for crack-free seams.
+
+The coordinate system for vertex positions is determined by #Units.  Under `BOUNDING_BOX` (the default) a normalised
+mesh in the range `0 - 1.0` is scaled into the target path's bounds; under `USERSPACE` the positions are taken
+directly in the viewport's coordinate space.
+
+*********************************************************************************************************************/
+
+static ERR VECTORGRADIENT_GET_Vertices(extVectorGradient *Self, GouraudVertex **Value, int *Elements)
+{
+   if (Self->Gouraud) {
+      *Value    = Self->Gouraud->Vertices.data();
+      *Elements = Self->Gouraud->Vertices.size();
+   }
+   else {
+      *Value    = nullptr;
+      *Elements = 0;
+   }
+   return ERR::Okay;
+}
+
+static ERR VECTORGRADIENT_SET_Vertices(extVectorGradient *Self, GouraudVertex *Value, int Elements)
+{
+   if ((not Value) or (Elements < 3)) {
+      kt::Log log;
+      log.warning("A Gouraud gradient requires at least three vertices (got %d).", Elements);
+      return ERR::InvalidValue;
+   }
+
+   if (not Self->Gouraud) Self->Gouraud = std::make_unique<GouraudMesh>();
+
+   if (not Self->Gouraud->Indices.empty()) {
+      for (auto idx : Self->Gouraud->Indices) {
+         if ((idx < 0) or (idx >= Elements)) {
+            kt::Log log;
+            log.warning("Gouraud index %d is outside the new vertex range 0 - %d.", idx, Elements - 1);
+            return ERR::OutOfRange;
+         }
+      }
+   }
+
+   Self->Gouraud->Vertices.assign(&Value[0], &Value[Elements]);
+   Self->GouraudTriangles.Valid = false;
+   Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Indices: Defines triangle connectivity for a Gouraud gradient.
+
+The Indices array provides triangle connectivity for a Gouraud gradient's #Vertices, with three indices per
+triangle referencing vertices in counter-clockwise order.  Supplying indices allows vertices to be shared between
+adjacent triangles, guaranteeing crack-free seams.
+
+If left empty, the #Vertices array is treated as a flat triangle list, where every three consecutive vertices form
+one triangle.
+
+*********************************************************************************************************************/
+
+static ERR VECTORGRADIENT_GET_Indices(extVectorGradient *Self, int **Value, int *Elements)
+{
+   if (Self->Gouraud) {
+      *Value    = Self->Gouraud->Indices.data();
+      *Elements = Self->Gouraud->Indices.size();
+   }
+   else {
+      *Value    = nullptr;
+      *Elements = 0;
+   }
+   return ERR::Okay;
+}
+
+static ERR VECTORGRADIENT_SET_Indices(extVectorGradient *Self, int *Value, int Elements)
+{
+   if (not Self->Gouraud) Self->Gouraud = std::make_unique<GouraudMesh>();
+
+   if ((not Value) or (Elements <= 0)) Self->Gouraud->Indices.clear();
+   else if ((Elements % 3) != 0) {
+      kt::Log().warning("The Indices array length %d is not a multiple of three.", Elements);
+      return ERR::InvalidValue;
+   }
+   else {
+      const auto total_vertices = Self->Gouraud->Vertices.size();
+      for (int i=0; i < Elements; i++) {
+         if (Value[i] < 0) {
+            kt::Log().warning("Gouraud index %d at position %d is negative.", Value[i], i);
+            return ERR::OutOfRange;
+         }
+         if ((total_vertices > 0) and (size_t(Value[i]) >= total_vertices)) {
+            kt::Log().warning("Gouraud index %d at position %d is outside the vertex range 0 - %d.",
+               Value[i], i, int(total_vertices) - 1);
+            return ERR::OutOfRange;
+         }
+      }
+
+      Self->Gouraud->Indices.assign(&Value[0], &Value[Elements]);
+   }
+
+   Self->GouraudTriangles.Valid = false;
+   Self->modified();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -685,9 +807,7 @@ A transform can be applied to the gradient by setting this field with an SVG com
 
 static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, const std::string_view &Commands)
 {
-   kt::Log log;
-
-   if (Commands.empty()) return log.warning(ERR::InvalidValue);
+   if (Commands.empty()) return kt::Log().warning(ERR::InvalidValue);
 
    Self->modified();
 
@@ -868,7 +988,7 @@ static const FieldArray clGradientFields[] = {
    { "Resolution",   FDF_DOUBLE|FDF_RW, nullptr, VECTORGRADIENT_SET_Resolution },
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORGRADIENT_SET_SpreadMethod, &clVectorGradientSpreadMethod },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clVectorGradientUnits },
-   { "Type",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORGRADIENT_SET_Type, &clVectorGradientType },
+   { "Type",         FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, VECTORGRADIENT_SET_Type, &clVectorGradientType },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clVectorGradientFlags },
    { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clVectorGradientColourSpace },
    // Virtual fields
@@ -882,6 +1002,8 @@ static const FieldArray clGradientFields[] = {
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_NumericID, VECTORGRADIENT_SET_NumericID },
    { "ID",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_ID, VECTORGRADIENT_SET_ID },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Stops, VECTORGRADIENT_SET_Stops, "GradientStop" },
+   { "Vertices",     FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Vertices, VECTORGRADIENT_SET_Vertices, "GouraudVertex" },
+   { "Indices",      FDF_VIRTUAL|FDF_ARRAY|FDF_INT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Indices, VECTORGRADIENT_SET_Indices },
    { "TotalStops",   FDF_INT|FDF_R|FDF_PURE, VECTORGRADIENT_GET_TotalStops },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, VECTORGRADIENT_SET_Transform },
    END_FIELD

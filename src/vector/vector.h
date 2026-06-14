@@ -324,6 +324,46 @@ constexpr int TB_NOISE = 1;
 
 #include <kotuku/modules/vector.h>
 
+//********************************************************************************************************************
+// Gouraud gradient mesh.  A set of coloured vertices (GouraudVertex, declared in the generated header above)
+// connected as triangles; colour is interpolated barycentrically across each triangle by agg::span_gouraud_rgba.
+// Indexed connectivity is preferred so that shared vertices (and therefore shared colours/positions) are expressed
+// once, guaranteeing crack-free seams between adjacent triangles.  An empty Indices list treats the vertices as a
+// flat triangle list, where every three consecutive vertices form one triangle.
+
+struct GouraudMesh {
+   std::vector<GouraudVertex> Vertices;
+   std::vector<int> Indices; // 3 indices per triangle (CCW); empty => flat triangle list
+};
+
+// One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
+
+struct GouraudTriangle {
+   double x[3], y[3];      // Device-space vertex positions
+   agg::rgba8 colour[3];   // Vertex colours, fill opacity folded into alpha.  Encoding follows the cache's
+                           // ColourSpace: sRGB-encoded for VCS::SRGB, linear-decoded for VCS::LINEAR_RGB.
+};
+
+// Cache of the transformed/coloured triangle list for a Gouraud gradient.  Rebuilding involves a matrix multiply
+// per vertex plus colour conversion, so the result is retained on the gradient and reused while the inputs are
+// unchanged.  The inputs are the mesh data (captured as a fingerprint), the final placement transform, the opacity
+// multiplier and the colour space; any change to these invalidates the cache.  Degenerate (zero-area) triangles are
+// dropped during the build so the render loop has no per-frame filtering to do.
+
+struct GouraudCache {
+   std::vector<GouraudTriangle> Triangles;
+   agg::trans_affine Transform; // Final transform the triangles were built with
+   uint64_t MeshHash = 0;       // Fingerprint of the source mesh (positions, colours, indices)
+   double Opacity = -1.0;       // Fill opacity the colours were built with (-1 => never built)
+   VCS ColourSpace = VCS::INHERIT; // Colour space the vertex colours were encoded for
+   bool Valid = false;
+
+   bool matches(uint64_t pMeshHash, const agg::trans_affine &pTransform, double pOpacity, VCS pColourSpace) const {
+      return Valid and (MeshHash IS pMeshHash) and (Opacity IS pOpacity) and (ColourSpace IS pColourSpace) and
+         (Transform IS pTransform);
+   }
+};
+
 class FeedbackSubscription {
 public:
    FUNCTION Callback;
@@ -404,6 +444,8 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    std::string ID;
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
+   std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for Type IS VGT::GOURAUD; null for all other gradient types
+   GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
    int   NumericID;
    double Angle;
    double Length;

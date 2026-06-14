@@ -1,6 +1,11 @@
 
 //********************************************************************************************************************
 
+static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extVectorGradient &, double,
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
+
+//********************************************************************************************************************
+
 void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rasterizer_scanline_aa<> &Raster, extPainter &Painter)
 {
    // Think of the vector's path as representing a mask for the fill algorithm.  Any transforms applied to
@@ -46,10 +51,16 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
    }
 
    if (Painter.Gradient) {
-      if (auto table = get_fill_gradient_table(Painter, State.mOpacity * Vector.FillOpacity)) {
+      auto &gradient = *((extVectorGradient *)Painter.Gradient);
+      if (gradient.Type IS VGT::GOURAUD) {
+         fill_gouraud(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, gradient,
+            State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
+            build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
+      }
+      else if (auto table = get_fill_gradient_table(Painter, State.mOpacity * Vector.FillOpacity)) {
          fill_gradient(State, Vector.Bounds, &Vector.BasePath,
             build_fill_transform(Vector, Painter.Gradient->Units IS VUNIT::USERSPACE, State),
-            mView->vpFixedWidth, mView->vpFixedHeight, *((extVectorGradient *)Painter.Gradient), table, mRenderBase,
+            mView->vpFixedWidth, mView->vpFixedHeight, gradient, table, mRenderBase,
             Raster, this);
       }
    }
@@ -109,6 +120,276 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
    else {
       agg::scanline_u8 scanline;
       drawBitmap(scanline, SampleMethod, RenderBase, Raster, Image.Bitmap, Image.SpreadMethod, Alpha, &transform);
+   }
+}
+
+//********************************************************************************************************************
+// Gouraud gradient fill.  Unlike the field-based gradients, a Gouraud gradient has no 1D colour ramp; it is defined
+// by a mesh of coloured vertices that are interpolated barycentrically across triangles by agg::span_gouraud_rgba.
+// Each triangle is rasterised independently, with the supplied vertex colours converted to the chosen colour space
+// and the vertex positions mapped through the gradient's units and transform.
+//
+// The Raster argument arrives carrying the target vector's fill path, but a Gouraud fill replaces the rasterised
+// geometry per-triangle.  The target path still acts as a fill mask via the active clip stack (when present).
+
+// FNV-1a fingerprint of a Gouraud mesh's vertex positions, colours and connectivity.  Comparing fingerprints lets
+// the transformed-triangle cache detect when the source mesh has changed (including in-place mutation through the
+// authoring fields) without re-running the per-vertex transform and colour conversion every frame.
+
+static uint64_t gouraud_mesh_fingerprint(const GouraudMesh &Mesh)
+{
+   uint64_t hash = 0xcbf29ce484222325ULL;
+   auto mix = [&hash](uint64_t Value) {
+      hash ^= Value;
+      hash *= 0x100000001b3ULL;
+   };
+
+   mix(Mesh.Vertices.size());
+   for (auto &v : Mesh.Vertices) {
+      mix(std::bit_cast<uint64_t>(v.X));
+      mix(std::bit_cast<uint64_t>(v.Y));
+      mix(std::bit_cast<uint32_t>(v.Colour.Red));
+      mix(std::bit_cast<uint32_t>(v.Colour.Green));
+      mix(std::bit_cast<uint32_t>(v.Colour.Blue));
+      mix(std::bit_cast<uint32_t>(v.Colour.Alpha));
+   }
+
+   mix(Mesh.Indices.size());
+   for (auto idx : Mesh.Indices) mix(idx);
+
+   return hash;
+}
+
+//********************************************************************************************************************
+// Guard against stale or malformed indexed meshes.  The field setter validates incoming arrays, but rendering also
+// checks the final mesh so direct C++ edits or legacy data cannot index outside the prepared vertex list.
+
+static bool gouraud_indices_valid(const GouraudMesh &Mesh)
+{
+   if (Mesh.Indices.empty()) return true;
+
+   const auto total_vertices = Mesh.Vertices.size();
+   for (auto idx : Mesh.Indices) {
+      if ((idx < 0) or (size_t(idx) >= total_vertices)) {
+         kt::Log log;
+         log.warning("Ignoring Gouraud gradient with index %d outside the vertex range 0 - %d.",
+            idx, int(total_vertices) - 1);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Render the target fill/stroke raster into a greyscale alpha mask.  Gouraud triangles are then rendered through this
+// mask, so triangle geometry remains clipped to the vector path instead of painting outside it.
+
+static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, SceneRenderer *Render, std::vector<uint8_t> &Bitmap,
+   agg::rendering_buffer &Buffer)
+{
+   const unsigned width = RenderBase.width();
+   const unsigned height = RenderBase.height();
+   if ((!width) or (!height)) return false;
+
+   Bitmap.assign(size_t(width) * size_t(height), 0);
+   Buffer.attach(Bitmap.data(), width, height, int(width));
+
+   agg::pixfmt_gray8 pixf(Buffer);
+   agg::renderer_base<agg::pixfmt_gray8> base(pixf);
+   agg::renderer_scanline_aa_solid<agg::renderer_base<agg::pixfmt_gray8>> solid(base);
+   agg::scanline_u8 scanline;
+
+   solid.color(agg::gray8(0xff, 0xff));
+   agg::render_scanlines(Raster, scanline, solid);
+
+   if ((Render) and (!Render->clip_stack_empty())) {
+      auto &clip = Render->clip_stack_top().m_renderer;
+      const unsigned clip_width = clip.width();
+      const unsigned clip_height = clip.height();
+
+      for (unsigned y=0; y < height; y++) {
+         auto mask_row = Buffer.row_ptr(int(y));
+         if (y >= clip_height) {
+            std::fill(mask_row, mask_row + width, 0);
+            continue;
+         }
+
+         auto clip_row = clip.row_ptr(int(y));
+         for (unsigned x=0; x < width; x++) {
+            if (x >= clip_width) mask_row[x] = 0;
+            else mask_row[x] = uint8_t((int(mask_row[x]) * int(clip_row[x]) + 127) / 255);
+         }
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Rebuild the cached transformed/coloured triangle list for a Gouraud gradient.  Vertex positions are mapped through
+// the final placement transform and the fill opacity is folded into vertex alpha.  Degenerate (zero-area) triangles
+// are dropped here so the render loop never has to filter them.
+//
+// Colour encoding follows ColourSpace, mirroring how the field gradients treat VCS in GradientColours:
+//   * VCS::SRGB (and INHERIT) -> colours are stored sRGB-encoded.  span_gouraud_rgba interpolates linearly in that
+//     encoding and emits the bytes verbatim, which the pixel format reads as sRGB.  That is correct sRGB blending.
+//   * VCS::LINEAR_RGB -> colours are decoded to linear here, so span_gouraud_rgba_linear interpolates in linear
+//     space and re-encodes each output pixel back to sRGB for storage.
+
+static void rebuild_gouraud_cache(extVectorGradient &Gradient, const GouraudMesh &Mesh, const agg::trans_affine &Transform,
+   double Opacity, VCS ColourSpace, uint64_t MeshHash)
+{
+   const auto &verts = Mesh.Vertices;
+   const bool linear = (ColourSpace IS VCS::LINEAR_RGB);
+
+   struct PreparedVertex { double x, y; agg::rgba8 colour; };
+   std::vector<PreparedVertex> pv;
+   pv.reserve(verts.size());
+   for (auto &v : verts) {
+      double x = v.X, y = v.Y;
+      Transform.transform(&x, &y);
+      agg::rgba8 colour(v.Colour, v.Colour.Alpha * Opacity);
+      if (linear) { // Decode RGB to linear space; alpha is unaffected by the transfer function.
+         colour.r = glLinearRGB.convert(colour.r);
+         colour.g = glLinearRGB.convert(colour.g);
+         colour.b = glLinearRGB.convert(colour.b);
+      }
+      pv.push_back({ x, y, colour });
+   }
+
+   // Triangle connectivity: indexed list when provided, otherwise a flat triangle soup (every 3 vertices).
+
+   const size_t tri_count = Mesh.Indices.empty() ? (verts.size() / 3) : (Mesh.Indices.size() / 3);
+
+   auto &cache = Gradient.GouraudTriangles;
+   cache.Triangles.clear();
+   cache.Triangles.reserve(tri_count);
+
+   auto fetch = [&](size_t Tri, int Corner) -> const PreparedVertex & {
+      const int idx = Mesh.Indices.empty() ? int(Tri * 3 + Corner) : Mesh.Indices[Tri * 3 + Corner];
+      return pv[size_t(idx)];
+   };
+
+   for (size_t t=0; t < tri_count; t++) {
+      const auto &a = fetch(t, 0);
+      const auto &b = fetch(t, 1);
+      const auto &c = fetch(t, 2);
+
+      // Drop degenerate (near zero-area) triangles; the base span_gouraud dilates needle triangles, but a true
+      // zero-area triangle contributes nothing and would only waste a scanline pass.
+      const double area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+      if (std::abs(area) < 1e-6) continue;
+
+      GouraudTriangle tri;
+      tri.x[0] = a.x; tri.y[0] = a.y; tri.colour[0] = a.colour;
+      tri.x[1] = b.x; tri.y[1] = b.y; tri.colour[1] = b.colour;
+      tri.x[2] = c.x; tri.y[2] = c.y; tri.colour[2] = c.colour;
+      cache.Triangles.push_back(tri);
+   }
+
+   cache.Transform   = Transform;
+   cache.MeshHash    = MeshHash;
+   cache.Opacity     = Opacity;
+   cache.ColourSpace = ColourSpace;
+   cache.Valid       = true;
+}
+
+static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth, double ViewHeight,
+   extVectorGradient &Gradient, double Opacity, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
+   agg::rasterizer_scanline_aa<> &Raster, const agg::trans_affine &Transform, SceneRenderer *Render)
+{
+   if ((!Gradient.Gouraud) or (Gradient.Gouraud->Vertices.empty())) return;
+
+   const auto &mesh = *Gradient.Gouraud;
+   if (!gouraud_indices_valid(mesh)) return;
+
+   std::vector<uint8_t> path_mask;
+   agg::rendering_buffer path_mask_buffer;
+   if (!build_gouraud_path_mask(Raster, RenderBase, Render, path_mask, path_mask_buffer)) return;
+
+   // Map the mesh coordinate space into the target.  BOUNDING_BOX stretches a normalised (0..1) mesh into the
+   // path's bounds; USERSPACE positions the mesh directly in the viewport's coordinate system.
+
+   const double c_width  = (Gradient.Units IS VUNIT::USERSPACE) ? ViewWidth  : Bounds.width();
+   const double c_height = (Gradient.Units IS VUNIT::USERSPACE) ? ViewHeight : Bounds.height();
+   const double x_offset = (Gradient.Units IS VUNIT::USERSPACE) ? 0 : Bounds.left;
+   const double y_offset = (Gradient.Units IS VUNIT::USERSPACE) ? 0 : Bounds.top;
+
+   agg::trans_affine transform;
+   if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
+      transform.scale(c_width, c_height);
+      transform.translate(x_offset, y_offset);
+   }
+   apply_transforms(Gradient, transform);
+   transform *= Transform;
+
+   // The transformed triangle list depends only on the mesh data, the final placement transform, the opacity and
+   // the colour space.  Reuse the cached result while those inputs are unchanged; otherwise rebuild it.
+
+   const VCS colour_space = Gradient.ColourSpace;
+   const uint64_t mesh_hash = gouraud_mesh_fingerprint(mesh);
+   if (!Gradient.GouraudTriangles.matches(mesh_hash, transform, Opacity, colour_space)) {
+      rebuild_gouraud_cache(Gradient, mesh, transform, Opacity, colour_space, mesh_hash);
+   }
+
+   typedef agg::span_allocator<agg::rgba8> span_allocator_type;
+   span_allocator_type span_allocator;
+   agg::rasterizer_scanline_aa<> triangle_raster;
+   agg::alpha_mask_gray8 alpha_mask(path_mask_buffer);
+   agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+
+   // The Resolution field reduces the gradient's colour resolution, mirroring the field gradients.  It maps to a
+   // count of 1/(1-Resolution) distinct colours; for a Gouraud fill that becomes the number of discrete levels each
+   // output channel is snapped to.  The 8-bit output span cannot represent more than 256 channel values, so counts
+   // at or above 256 disable banding and use the plain span path.
+
+   const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
+   const double level_count = (resolution < 1.0) ? std::round(1.0 / (1.0 - resolution)) : 256.0;
+   const int levels = int(std::clamp(level_count, 2.0, 256.0));
+   const bool quantise = (levels < 256);
+
+   // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
+   // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
+   //
+   // Each triangle is rendered as a separate anti-aliased scanline pass, so the partial edge coverage of adjacent
+   // triangles does not sum to full opacity along a shared edge.  That leaves a faint translucent seam where the
+   // background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a 6-vertex polygon (colours
+   // are still interpolated from the original vertices via miter joins), so feeding the rasteriser that dilated
+   // outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry identical colours on both
+   // sides, the overlap blends invisibly and seals the seam.
+
+   auto render_triangles = [&]<typename SpanGen>() {
+      constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
+      for (auto &tri : Gradient.GouraudTriangles.Triangles) {
+         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
+         auto make_span = [&] {
+            if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels); }) {
+               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels);
+            }
+            else {
+               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION);
+            }
+         };
+         auto span_gen = make_span();
+
+         triangle_raster.reset();
+         triangle_raster.add_path(span_gen);
+         agg::render_scanlines_aa(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
+      }
+   };
+
+   if (colour_space IS VCS::LINEAR_RGB) {
+      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
+      else render_triangles.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+   }
+   else {
+      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
+      else render_triangles.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
    }
 }
 
