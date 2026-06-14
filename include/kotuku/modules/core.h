@@ -4527,6 +4527,53 @@ class objCompressedStream : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
+   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
+      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
+         *Result = static_cast<U>(read.Result);
+         return ERR::Okay;
+      }
+      else { *Result = 0; return error; }
+   }
+   template <class T> ERR read(APTR Buffer, T Size) noexcept {
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      return Action(AC::Read, this, &read);
+   }
+   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {
+      struct acSeek args = { Offset, Position };
+      return Action(AC::Seek, this, &args);
+   }
+   inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
+   inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
+   inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
+   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer, Size };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
 
    // Customised field getting
 

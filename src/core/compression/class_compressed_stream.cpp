@@ -33,21 +33,33 @@ class extCompressedStream : public objCompressedStream {
    uint8_t Deflating:1;
    z_stream Stream;
    gz_header Header;
+
+   ~extCompressedStream();
+
+   extCompressedStream() {
+      Format = CF::GZIP;
+   }
+
+   void reset() {
+      TotalOutput = 0;
+
+      if (Inflating) {
+         inflateEnd(&Stream);
+         Inflating = false;
+      }
+
+      if (Deflating) {
+         deflateEnd(&Stream);
+         Deflating = false;
+      }
+
+      if (OutputBuffer) { FreeResource(OutputBuffer); OutputBuffer = nullptr; }
+   }
 };
 
-static ERR CSTREAM_Reset(extCompressedStream *);
-
 //********************************************************************************************************************
 
-static ERR CSTREAM_Free(extCompressedStream *Self)
-{
-   CSTREAM_Reset(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR CSTREAM_Init(extCompressedStream *Self)
+static ERR COMPRESSEDSTREAM_Init(extCompressedStream *Self)
 {
    kt::Log log;
 
@@ -61,13 +73,6 @@ static ERR CSTREAM_Init(extCompressedStream *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR CSTREAM_NewObject(extCompressedStream *Self) {
-   Self->Format = CF::GZIP;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Read: Decompress data from the input stream and write it to the supplied buffer.
@@ -76,7 +81,7 @@ Read: Decompress data from the input stream and write it to the supplied buffer.
 
 #define MIN_OUTPUT_SIZE ((32 * 1024) + 2048)
 
-static ERR CSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
+static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
 {
    kt::Log log;
 
@@ -168,22 +173,9 @@ referenced objects separately.
 
 *********************************************************************************************************************/
 
-static ERR CSTREAM_Reset(extCompressedStream *Self)
+static ERR COMPRESSEDSTREAM_Reset(extCompressedStream *Self)
 {
-   Self->TotalOutput = 0;
-
-   if (Self->Inflating) {
-      inflateEnd(&Self->Stream);
-      Self->Inflating = FALSE;
-   }
-
-   if (Self->Deflating) {
-      deflateEnd(&Self->Stream);
-      Self->Deflating = FALSE;
-   }
-
-   if (Self->OutputBuffer) { FreeResource(Self->OutputBuffer); Self->OutputBuffer = nullptr; }
-
+   Self->reset();
    return ERR::Okay;
 }
 
@@ -193,7 +185,7 @@ Seek: For use in decompressing streams only.  Seeks to a position within the str
 -END-
 *********************************************************************************************************************/
 
-static ERR CSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
+static ERR COMPRESSEDSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
 {
    kt::Log log;
 
@@ -208,7 +200,7 @@ static ERR CSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
    // Seeking results in a reset of the compression object's state.  It then needs to decompress the stream up to the
    // position requested by the client.
 
-   CSTREAM_Reset(Self);
+   Self->reset();
 
    int64_t pos = 0;
    if (Args->Position IS SEEK::START) pos = int(Args->Offset);
@@ -234,7 +226,7 @@ Write: Compress raw data in a buffer and write it to the Output object.
 -END-
 *********************************************************************************************************************/
 
-static ERR CSTREAM_Write(extCompressedStream *Self, struct acWrite *Args)
+static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Args)
 {
    kt::Log log;
 
@@ -356,7 +348,7 @@ If the size is unknown, a value of `-1` is returned.
 
 *********************************************************************************************************************/
 
-static ERR CSTREAM_GET_Size(extCompressedStream *Self, int64_t *Value)
+static ERR COMPRESSEDSTREAM_GET_Size(extCompressedStream *Self, int64_t *Value)
 {
    *Value = -1;
    if (Self->Input) {
@@ -375,9 +367,14 @@ TotalOutput: A live counter of total bytes that have been output by the stream.
 -END-
 *********************************************************************************************************************/
 
-#include "class_compressed_stream_def.c"
+extCompressedStream::~extCompressedStream()
+{
+   this->reset();
+}
 
 //********************************************************************************************************************
+
+#include "class_compressed_stream_def.c"
 
 static const FieldArray clStreamFields[] = {
    { "TotalOutput", FDF_INT64|FDF_R },
@@ -385,19 +382,8 @@ static const FieldArray clStreamFields[] = {
    { "Output",      FDF_OBJECT|FDF_RI },
    { "Format",      FDF_INT|FDF_LOOKUP|FD_RI, nullptr, nullptr, &clCompressedStreamFormat },
    // Virtual fields
-   { "Size",        FDF_INT64|FDF_R|FDF_PURE, CSTREAM_GET_Size },
+   { "Size",        FDF_INT64|FDF_R|FDF_PURE, COMPRESSEDSTREAM_GET_Size },
    END_FIELD
-};
-
-static const ActionArray clStreamActions[] = {
-   { AC::Free,      CSTREAM_Free },
-   { AC::Init,      CSTREAM_Init },
-   { AC::NewObject, CSTREAM_NewObject },
-   { AC::Read,      CSTREAM_Read },
-   { AC::Reset,     CSTREAM_Reset },
-   { AC::Seek,      CSTREAM_Seek },
-   { AC::Write,     CSTREAM_Write },
-   { AC::NIL, nullptr }
 };
 
 extern ERR add_compressed_stream_class(void)
@@ -408,7 +394,7 @@ extern ERR add_compressed_stream_class(void)
       fl::Name("CompressedStream"),
       fl::FileDescription("GZip File"),
       fl::Category(CCF::DATA),
-      fl::Actions(clStreamActions),
+      fl::Actions(clCompressedStreamActions),
       fl::Fields(clStreamFields),
       fl::Size(sizeof(extCompressedStream)),
       fl::Path("modules:core"));

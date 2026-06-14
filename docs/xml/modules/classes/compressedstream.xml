@@ -22,6 +22,54 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Read</name>
+      <comment>Decompress data from the input stream and write it to the supplied buffer.</comment>
+      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
+      <input>
+        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
+        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Reset</name>
+      <comment>Reset the state of the stream.</comment>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
+      <description>
+<p>Resetting a CompressedStream returns it to the same state as that when first initialised.  Note that this does not affect the state of the object referenced via <fl>Input</fl> or <fl>Output</fl>, so it may be necessary for the client to reset referenced objects separately.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Seek</name>
+      <comment>For use in decompressing streams only.  Seeks to a position within the stream.</comment>
+      <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
+        <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Write</name>
+      <comment>Compress raw data in a buffer and write it to the Output object.</comment>
+      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
+      <input>
+        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
+        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
+      </input>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
       <name>Format</name>
