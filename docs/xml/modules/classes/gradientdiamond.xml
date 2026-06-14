@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientDiamond</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Diamond colour gradient paint server.</comment>
+    <version>1</version>
+    <id>d8e28335</id>
+    <idstring>GRADIENTDIAMOND</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientDiamond draws a square-shaped colour ramp from a centre point.</p></description>
+    <source>
+      <file path="painters/">gradient_diamond.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>CenterX</name>
+      <comment>The horizontal centre point of the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(CenterX, CenterY)</code> coordinates define the centre point from which the diamond gradient expands.  By default, the centre point is set to <code>50%</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CenterY</name>
+      <comment>The vertical centre point of the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The <code>(CenterX, CenterY)</code> coordinates define the centre point from which the diamond gradient expands.  By default, the centre point is set to <code>50%</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Flags</name>
+      <comment>Dimension flags for diamond gradient fields.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>Dimension flags indicate whether diamond coordinate fields are fixed or scaled.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Radius</name>
+      <comment>The radius of the gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The radius of the diamond gradient can be defined as a fixed unit or scaled relative to its container.  A default radius of 50% applies if this field is not set.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

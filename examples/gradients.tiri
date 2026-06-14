@@ -14,9 +14,11 @@ TODO: Add more adjustment options (radius, focalRadius, etc)
 
 local win, viewport, gradient, gradientVP, rect
 local focalEllipse, contourShape, distalShape, uiEvent
+local radiusChanged = function() end
 local glColourMap = 'cmap:magma'
 local glSpreadMethod = VSPREAD_REFLECT
 local glRadius = 100
+local glGradientKind = 'Radial'
 
 -- Corner colours for the Gouraud quad, mutated interactively then rebuilt into the mesh.  Each entry is
 -- { r, g, b }.  Order: top-left, top-right, bottom-left, bottom-right.
@@ -30,11 +32,11 @@ gouraudColours = array<array> {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function createGradient(Name:str, Options:table)
+function createGradient(Name:str, ClassName:str, Options:table)
    global glRegisteredGradients ?= { }
 
    if not glRegisteredGradients[Name] then
-      gradient = viewport.scene.new('VectorGradient', Options)
+      gradient = viewport.scene.new(ClassName, Options)
       check viewport.scene.mtAddDef(Name, gradient)
       glRegisteredGradients[Name] = gradient
    end
@@ -81,14 +83,15 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function selectGradient(Text)
+   glGradientKind = Text
    contourShape?.visibility = 'hidden'
    distalShape?.visibility = 'hidden'
    focalEllipse?.visibility = 'hidden'
    rect.visibility = 'visible'
 
    if Text is 'Radial' then
-      gradient = createGradient('Radial', {
-         type = VGT_RADIAL, colourMap = glColourMap, units='userSpace', spreadMethod=glSpreadMethod,
+      gradient = createGradient('Radial', 'GradientRadial', {
+         colourMap = glColourMap, units='userSpace', spreadMethod=glSpreadMethod,
          cx = '50%', cy = '50%', fx = '50%', fy = '50%', focalRadius = glRadius, radius = glRadius
       })
       focalEllipse.visibility = 'visible'
@@ -96,23 +99,30 @@ function selectGradient(Text)
          gradient.fX = (ev.x / gradientVP.width * 100) .. '%'
          gradient.fY = (ev.y / gradientVP.height * 100) .. '%'
       end
+      radiusChanged = function(Radius:num)
+         gradient?.radius = Radius
+         gradient?.focalRadius = Radius
+         focalEllipse?.radius = Radius
+      end
       gradient.cX = '50%'
       gradient.cY = '50%'
    elseif (Text is 'Conic') or (Text is 'Diamond') then
-      gradient = createGradient(Text, {
-         type = Text is 'Conic' ? VGT_CONIC :> VGT_DIAMOND, colourMap = glColourMap, units='userSpace',
+      gradient = createGradient(Text, Text is 'Conic' ? 'GradientConic' :> 'GradientDiamond', {
+         colourMap = glColourMap, units='userSpace', radius=glRadius,
          spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
       })
 
       uiEvent = function(ev:table)
          gradient.cX = (ev.x / gradientVP.width * 100) .. '%'
          gradient.cY = (ev.y / gradientVP.height * 100) .. '%'
-         gradient.x2 = (ev.x / gradientVP.width * 100) .. '%'
-         gradient.y2 = (ev.y / gradientVP.height * 100) .. '%'
+      end
+
+      radiusChanged = function(Radius:num)
+         gradient?.radius = Radius
       end
    elseif Text is 'Contour' then
-      gradient = createGradient('Contour', {
-         type = VGT_CONTOUR, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+      gradient = createGradient('Contour', 'GradientContour', {
+         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          x1 = 0, x2 = 2.0
       })
 
@@ -121,9 +131,11 @@ function selectGradient(Text)
          y = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
          gradient.x1 = x > y ? x * gradient.x2 :> y * gradient.x2
       end
+      radiusChanged = function(Radius:num)
+      end
    elseif Text is 'Contour Shape' then
-      gradient = createGradient('ContourShape', {
-         type = VGT_CONTOUR, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+      gradient = createGradient('ContourShape', 'GradientContour', {
+         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          x1 = 0.9, x2 = 1.0
       })
 
@@ -142,9 +154,11 @@ function selectGradient(Text)
          yscale = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
          gradient.x1 = xscale > yscale ? xscale :> yscale
       end
+      radiusChanged = function(Radius:num)
+      end
    elseif Text is 'Distal' then
-      gradient = createGradient('DistalShape', {
-         type = VGT_DISTAL, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+      gradient = createGradient('DistalShape', 'GradientDistal', {
+         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          radius = glRadius,
          x1 = 0, -- Added to the signed DT base values (0 - 1.0)
          x2 = 1  -- Multiplier of the base DT value (0.01 - 10.0)
@@ -168,20 +182,26 @@ function selectGradient(Text)
          gradient.innerRadius = dist * 200
          gradient.radius = dist * 200
       end
+      radiusChanged = function(Radius:num)
+         gradient?.radius = Radius
+         gradient?.innerRadius = Radius
+      end
    elseif Text is 'Linear' then
-      gradient = createGradient('Linear', {
-         type = VGT_LINEAR, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+      gradient = createGradient('Linear', 'GradientLinear', {
+         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          x1 = '50%', y1 = '50%', x2 = '100%', y2 = '100%'
       })
       uiEvent = function(ev)
-         gradient.cX = (ev.x / gradientVP.width * 100) .. '%'
-         gradient.cY = (ev.y / gradientVP.height * 100) .. '%'
+         gradient.x1 = '50%'
+         gradient.y1 = '50%'
          gradient.x2 = (ev.x / gradientVP.width * 100) .. '%'
          gradient.y2 = (ev.y / gradientVP.height * 100) .. '%'
       end
+      radiusChanged = function(Radius:num)
+      end
    elseif Text is 'Gouraud' then
-      gradient = createGradient('Gouraud', {
-         type = VGT_GOURAUD, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod
+      gradient = createGradient('Gouraud', 'GradientGouraud', {
+         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod
       })
 
       applyGouraudMesh()
@@ -299,12 +319,7 @@ function buildScene()
       events = {
          activate = function(Widget:table, Value:num)
             glRadius = Value
-            if gradient.type != VGT_DISTAL then
-               gradient?.radius = glRadius
-               gradient?.focalRadius = glRadius
-            end
-            focalEllipse?.radius = glRadius
-            distalShape?.radius = glRadius
+            radiusChanged(Value)
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }

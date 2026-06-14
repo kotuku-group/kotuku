@@ -22,6 +22,14 @@
       <class>DisplacementFX</class>
       <class>FilterEffect</class>
       <class>FloodFX</class>
+      <class>Gradient</class>
+      <class>GradientConic</class>
+      <class>GradientContour</class>
+      <class>GradientDiamond</class>
+      <class>GradientDistal</class>
+      <class>GradientGouraud</class>
+      <class>GradientLinear</class>
+      <class>GradientRadial</class>
       <class>ImageFX</class>
       <class>LightingFX</class>
       <class>MergeFX</class>
@@ -35,7 +43,6 @@
       <class>VectorColour</class>
       <class>VectorEllipse</class>
       <class>VectorFilter</class>
-      <class>VectorGradient</class>
       <class>VectorGroup</class>
       <class>VectorImage</class>
       <class>VectorPath</class>
@@ -182,7 +189,7 @@
     </input>
     <description>
 <p>Use DrawPath() to draw a generated path to a <class name="Bitmap">Bitmap</class>, using customised fill and stroke definitions.  This functionality provides an effective alternative to configuring vector scenes for situations where only simple vector shapes are required.  However, it is limited in that advanced rendering options and effects are not available to the client.</p>
-<p>At least one of <code>StrokeStyle</code> or <code>FillStyle</code> is required to render visible output.  Valid styles are allocated and configured using recognised vector style objects, specifically <class name="VectorImage">VectorImage</class>, <class name="VectorPattern">VectorPattern</class> and <class name="VectorGradient">VectorGradient</class>.  If a fill or stroke operation is not required, set the relevant parameter to <code>NULL</code>.  Stroke rendering is also disabled when <code>StrokeWidth</code> is less than <code>0.001</code>.</p>
+<p>At least one of <code>StrokeStyle</code> or <code>FillStyle</code> is required to render visible output.  Valid styles are allocated and configured using recognised vector style objects, specifically <class name="VectorImage">VectorImage</class>, <class name="VectorPattern">VectorPattern</class> and <class name="Gradient">Gradient</class>.  If a fill or stroke operation is not required, set the relevant parameter to <code>NULL</code>.  Stroke rendering is also disabled when <code>StrokeWidth</code> is less than <code>0.001</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -921,7 +928,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     </constants>
 
     <constants lookup="VGF" comment="Gradient flags">
-      <const name="CONTAIN_FOCAL">Contain the FX,FY point to the base radius.</const>
       <const name="FIXED_CX">CX is fixed</const>
       <const name="FIXED_CY">CY is fixed</const>
       <const name="FIXED_FOCAL_RADIUS">Focal radius is fixed</const>
@@ -942,16 +948,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="SCALED_X2">X2 is scaled</const>
       <const name="SCALED_Y1">Y1 is scaled</const>
       <const name="SCALED_Y2">Y2 is scaled</const>
-    </constants>
-
-    <constants lookup="VGT" comment="VectorGradient options.">
-      <const name="CONIC">The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.</const>
-      <const name="CONTOUR">Contoured gradients follow the contours of the vector path in which they are rendered.</const>
-      <const name="DIAMOND">A diamond gradient is drawn as a square emanating from the center point.</const>
-      <const name="DISTAL">A signed distance field gradient shades inward and outward from the vector path outline, with the outline pinned to the centre of the colour ramp.  The fill extends beyond the path into a padded region (defined by <code>Radius</code>) so that the exterior half of the ramp is visible.</const>
-      <const name="GOURAUD">A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.</const>
-      <const name="LINEAR">A linear gradient is drawn from <code>(X1, Y1)</code> to <code>(X2, Y2)</code>.</const>
-      <const name="RADIAL">A radial gradient is drawn from <code>CenterX, CenterY</code> to <code>Radius</code>.  An optional focal point can be expressed with <code>FX</code> and <code>FY</code>.</const>
     </constants>
 
     <constants lookup="VIJ" comment="Inner join options for angled lines.">
@@ -1104,13 +1100,13 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
     </struct>
 
-    <struct name="GouraudVertex" comment="Describes a coloured vertex for the VectorGradient Vertices field.">
+    <struct name="GouraudVertex" comment="Describes a coloured vertex for the GradientGouraud Vertices field.">
       <field name="X" type="DOUBLE">The X coordinate of the vertex.</field>
       <field name="Y" type="DOUBLE">The Y coordinate of the vertex.</field>
       <field name="Colour" type="struct FRGB">The floating point RGB colour assigned to this vertex.</field>
     </struct>
 
-    <struct name="GradientStop" comment="Describes a colour stop for the VectorGradient Stops field.">
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
       <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
       <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
     </struct>
@@ -1156,7 +1152,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     <struct name="VectorPainter" comment="Deserialised painter information; compliant with SVG painter definitions.">
       <field name="Pattern" type="objVectorPattern *">A <class name="VectorPattern">VectorPattern</class> object, suitable for pattern based fills.</field>
       <field name="Image" type="objVectorImage *">A <class name="VectorImage">VectorImage</class> object, suitable for image fills.</field>
-      <field name="Gradient" type="objVectorGradient *">A <class name="VectorGradient">VectorGradient</class> object, suitable for gradient fills.</field>
+      <field name="Gradient" type="objGradient *">A <class name="Gradient">Gradient</class> object, suitable for gradient fills.</field>
       <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</field>
     </struct>
 

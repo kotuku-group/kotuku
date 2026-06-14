@@ -19,7 +19,9 @@ JUMPTABLE_FONT
 OBJECTPTR clVectorScene = nullptr, clVectorViewport = nullptr, clVectorGroup = nullptr, clVectorColour = nullptr;
 OBJECTPTR clVectorEllipse = nullptr, clVectorRectangle = nullptr, clVectorPath = nullptr, clVectorWave = nullptr;
 OBJECTPTR clVectorFilter = nullptr, clVectorPolygon = nullptr, clVectorText = nullptr, clVectorClip = nullptr;
-OBJECTPTR clVectorGradient = nullptr, clVectorImage = nullptr, clVectorPattern = nullptr, clVector = nullptr;
+OBJECTPTR clGradient = nullptr, clGradientLinear = nullptr, clGradientRadial = nullptr, clGradientConic = nullptr;
+OBJECTPTR clGradientDiamond = nullptr, clGradientContour = nullptr, clGradientGouraud = nullptr, clGradientDistal = nullptr;
+OBJECTPTR clVectorImage = nullptr, clVectorPattern = nullptr, clVector = nullptr;
 OBJECTPTR clVectorSpiral = nullptr, clVectorShape = nullptr, clVectorTransition = nullptr, clImageFX = nullptr;
 OBJECTPTR clBlurFX = nullptr, clColourFX = nullptr, clCompositeFX = nullptr, clConvolveFX = nullptr, clFilterEffect = nullptr;
 OBJECTPTR clFloodFX = nullptr, clMergeFX = nullptr, clMorphologyFX = nullptr, clOffsetFX = nullptr, clTurbulenceFX = nullptr;
@@ -133,7 +135,14 @@ static ERR MODExpunge(void)
    if (clVectorPath)       { FreeResource(clVectorPath);       clVectorPath = nullptr; }
    if (clVectorPolygon)    { FreeResource(clVectorPolygon);    clVectorPolygon = nullptr; }
    if (clVectorText)       { FreeResource(clVectorText);       clVectorText = nullptr; }
-   if (clVectorGradient)   { FreeResource(clVectorGradient);   clVectorGradient = nullptr; }
+   if (clGradientDistal)   { FreeResource(clGradientDistal);   clGradientDistal = nullptr; }
+   if (clGradientGouraud)  { FreeResource(clGradientGouraud);  clGradientGouraud = nullptr; }
+   if (clGradientContour)  { FreeResource(clGradientContour);  clGradientContour = nullptr; }
+   if (clGradientDiamond)  { FreeResource(clGradientDiamond);  clGradientDiamond = nullptr; }
+   if (clGradientConic)    { FreeResource(clGradientConic);    clGradientConic = nullptr; }
+   if (clGradientRadial)   { FreeResource(clGradientRadial);   clGradientRadial = nullptr; }
+   if (clGradientLinear)   { FreeResource(clGradientLinear);   clGradientLinear = nullptr; }
+   if (clGradient)         { FreeResource(clGradient);         clGradient = nullptr; }
    if (clVectorGroup)      { FreeResource(clVectorGroup);      clVectorGroup = nullptr; }
    if (clVectorViewport)   { FreeResource(clVectorViewport);   clVectorViewport = nullptr; }
    if (clVectorPattern)    { FreeResource(clVectorPattern);    clVectorPattern = nullptr; }

@@ -43,17 +43,17 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
          log.msg("Processing definition %s (%x)", def->Class->ClassName.c_str(), uint32_t(def->classID()));
 
-         if (def->classID() IS CLASSID::VECTORGRADIENT) {
-            auto gradient = (objVectorGradient *)def;
+         if (def->baseClassID() IS CLASSID::GRADIENT) {
+            auto gradient = (objGradient *)def;
             std::string gradient_type;
-            switch(gradient->Type) {
-               case VGT::RADIAL:  gradient_type = "<radialGradient/>"; break;
-               case VGT::CONIC:   gradient_type = "<conicGradient/>"; break;
-               case VGT::DIAMOND: gradient_type = "<diamondGradient/>"; break;
-               case VGT::CONTOUR: gradient_type = "<contourGradient/>"; break;
-               case VGT::DISTAL:  gradient_type = "<distalGradient/>"; break;
-               case VGT::LINEAR:
-               default:           gradient_type = "<linearGradient/>"; break;
+            switch(def->classID()) {
+               case CLASSID::GRADIENTRADIAL:  gradient_type = "<radialGradient/>"; break;
+               case CLASSID::GRADIENTCONIC:   gradient_type = "<conicGradient/>"; break;
+               case CLASSID::GRADIENTDIAMOND: gradient_type = "<diamondGradient/>"; break;
+               case CLASSID::GRADIENTCONTOUR: gradient_type = "<contourGradient/>"; break;
+               case CLASSID::GRADIENTDISTAL:  gradient_type = "<distalGradient/>"; break;
+               case CLASSID::GRADIENTLINEAR:
+               default:                       gradient_type = "<linearGradient/>"; break;
             }
             XTag *tag = nullptr;
             error = XML->insertStatement(def_index, XMI::CHILD_END, gradient_type, &tag);
@@ -79,36 +79,58 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
-            if ((gradient->Type IS VGT::LINEAR) or (gradient->Type IS VGT::CONTOUR)) {
-               if (!error) {
-                  xml::NewAttrib(tag, "x1", std::to_string(gradient->X1));
-                  xml::NewAttrib(tag, "y1", std::to_string(gradient->Y1));
-                  xml::NewAttrib(tag, "x2", std::to_string(gradient->X2));
-                  xml::NewAttrib(tag, "y2", std::to_string(gradient->Y2));
-               }
+            if (def->classID() IS CLASSID::GRADIENTLINEAR) {
+               double dbl;
+               if ((!error) and (!gradient->get(FID_X1, dbl))) xml::NewAttrib(tag, "x1", std::to_string(dbl));
+               if ((!error) and (!gradient->get(FID_Y1, dbl))) xml::NewAttrib(tag, "y1", std::to_string(dbl));
+               if ((!error) and (!gradient->get(FID_X2, dbl))) xml::NewAttrib(tag, "x2", std::to_string(dbl));
+               if ((!error) and (!gradient->get(FID_Y2, dbl))) xml::NewAttrib(tag, "y2", std::to_string(dbl));
             }
-            else if (gradient->Type IS VGT::DISTAL) {
-               if (!error) {
-                  xml::NewAttrib(tag, "x1", std::to_string(gradient->X1));
-                  xml::NewAttrib(tag, "x2", std::to_string(gradient->X2));
-                  if (gradient->Radius > 0) xml::NewAttrib(tag, "radius", std::to_string(gradient->Radius));
-               }
+            else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
+               double dbl;
+               if ((!error) and (!gradient->get(FID_X1, dbl))) xml::NewAttrib(tag, "x1", std::to_string(dbl));
+               if ((!error) and (!gradient->get(FID_X2, dbl))) xml::NewAttrib(tag, "x2", std::to_string(dbl));
             }
-            else if ((gradient->Type IS VGT::RADIAL) or (gradient->Type IS VGT::DIAMOND) or (gradient->Type IS VGT::CONIC)) {
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_CX|VGF::SCALED_CX)) != VGF::NIL))
-                  set_dimension(tag, "cx", gradient->CenterX, (gradient->Flags & VGF::SCALED_CX) != VGF::NIL);
+            else if (def->classID() IS CLASSID::GRADIENTDISTAL) {
+               double dbl;
+               if ((!error) and (!gradient->get(FID_X1, dbl))) xml::NewAttrib(tag, "x1", std::to_string(dbl));
+               if ((!error) and (!gradient->get(FID_X2, dbl))) xml::NewAttrib(tag, "x2", std::to_string(dbl));
+               if ((!error) and (!gradient->get(FID_Radius, dbl)) and (dbl > 0))
+                  xml::NewAttrib(tag, "radius", std::to_string(dbl));
+            }
+            else if (def->classID() IS CLASSID::GRADIENTRADIAL) {
+               VGF flags = VGF::NIL;
+               double dbl;
+               if (!error) error = gradient->get(FID_Flags, (int &)flags);
 
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_CY|VGF::SCALED_CY)) != VGF::NIL))
-                  set_dimension(tag, "cy", gradient->CenterY, (gradient->Flags & VGF::SCALED_CY) != VGF::NIL);
+               if ((!error) and ((flags & (VGF::FIXED_CX|VGF::SCALED_CX)) != VGF::NIL) and (!gradient->get(FID_CenterX, dbl)))
+                  set_dimension(tag, "cx", dbl, (flags & VGF::SCALED_CX) != VGF::NIL);
 
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_FX|VGF::SCALED_FX)) != VGF::NIL))
-                  set_dimension(tag, "fx", gradient->FocalX, (gradient->Flags & VGF::SCALED_FX) != VGF::NIL);
+               if ((!error) and ((flags & (VGF::FIXED_CY|VGF::SCALED_CY)) != VGF::NIL) and (!gradient->get(FID_CenterY, dbl)))
+                  set_dimension(tag, "cy", dbl, (flags & VGF::SCALED_CY) != VGF::NIL);
 
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_FY|VGF::SCALED_FY)) != VGF::NIL))
-                  set_dimension(tag, "fy", gradient->FocalY, (gradient->Flags & VGF::SCALED_FY) != VGF::NIL);
+               if ((!error) and ((flags & (VGF::FIXED_FX|VGF::SCALED_FX)) != VGF::NIL) and (!gradient->get(FID_FocalX, dbl)))
+                  set_dimension(tag, "fx", dbl, (flags & VGF::SCALED_FX) != VGF::NIL);
 
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_RADIUS|VGF::SCALED_RADIUS)) != VGF::NIL))
-                  set_dimension(tag, "r", gradient->Radius, (gradient->Flags & VGF::SCALED_RADIUS) != VGF::NIL);
+               if ((!error) and ((flags & (VGF::FIXED_FY|VGF::SCALED_FY)) != VGF::NIL) and (!gradient->get(FID_FocalY, dbl)))
+                  set_dimension(tag, "fy", dbl, (flags & VGF::SCALED_FY) != VGF::NIL);
+
+               if ((!error) and ((flags & (VGF::FIXED_RADIUS|VGF::SCALED_RADIUS)) != VGF::NIL) and (!gradient->get(FID_Radius, dbl)))
+                  set_dimension(tag, "r", dbl, (flags & VGF::SCALED_RADIUS) != VGF::NIL);
+            }
+            else if ((def->classID() IS CLASSID::GRADIENTDIAMOND) or (def->classID() IS CLASSID::GRADIENTCONIC)) {
+               VGF flags = VGF::NIL;
+               double dbl;
+               if (!error) error = gradient->get(FID_Flags, (int &)flags);
+
+               if ((!error) and ((flags & (VGF::FIXED_CX|VGF::SCALED_CX)) != VGF::NIL) and (!gradient->get(FID_CenterX, dbl)))
+                  set_dimension(tag, "cx", dbl, (flags & VGF::SCALED_CX) != VGF::NIL);
+
+               if ((!error) and ((flags & (VGF::FIXED_CY|VGF::SCALED_CY)) != VGF::NIL) and (!gradient->get(FID_CenterY, dbl)))
+                  set_dimension(tag, "cy", dbl, (flags & VGF::SCALED_CY) != VGF::NIL);
+
+               if ((!error) and ((flags & (VGF::FIXED_RADIUS|VGF::SCALED_RADIUS)) != VGF::NIL) and (!gradient->get(FID_Radius, dbl)))
+                  set_dimension(tag, "r", dbl, (flags & VGF::SCALED_RADIUS) != VGF::NIL);
             }
 
             VectorMatrix *transform;

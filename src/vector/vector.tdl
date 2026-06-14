@@ -110,15 +110,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "ROUND: Rounds the edge of the join to produce the best looking results.",
     "INHERIT: Inherit the parent's join value.")
 
-  enums("VGT", { type="int", start=0, comment="VectorGradient options." },
-    "LINEAR: A linear gradient is drawn from `(X1, Y1)` to `(X2, Y2)`.",
-    "RADIAL: A radial gradient is drawn from `CenterX, CenterY` to `Radius`.  An optional focal point can be expressed with `FX` and `FY`.",
-    "CONIC: The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.",
-    "DIAMOND: A diamond gradient is drawn as a square emanating from the center point.",
-    "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.",
-    "GOURAUD: A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.",
-    "DISTAL: A signed distance field gradient shades inward and outward from the vector path outline, with the outline pinned to the centre of the colour ramp.  The fill extends beyond the path into a padded region (defined by `Radius`) so that the exterior half of the ramp is visible.")
-
   enums('VTS', { type='int', start=0, comment='Options for stretching text in VectorText.' },
     'INHERIT',
     'NORMAL',
@@ -241,8 +232,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     'FIXED_FX: FX is fixed',
     'FIXED_FY: FY is fixed',
     'FIXED_RADIUS: Radius is fixed',
-    'FIXED_FOCAL_RADIUS: Focal radius is fixed',
-    'CONTAIN_FOCAL: Contain the FX,FY point to the base radius.')
+    'FIXED_FOCAL_RADIUS: Focal radius is fixed')
 
   flags("VPF", { comment="Optional flags for the VectorScene object." },
     "BITMAP_SIZED: Automatically adjust the @VectorScene.PageWidth and @VectorScene.PageHeight to match the target @Bitmap.Width and @Bitmap.Height.",
@@ -304,12 +294,12 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "CHILD_HAS_FOCUS: A child of the vector has gained the user focus.",
      "LOST_FOCUS: The vector has lost the user focus.")
 
-  struct('GradientStop', { comment='Describes a colour stop for the VectorGradient Stops field.' }, [[
+  struct('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
    double Offset     # An offset in the range of 0 - 1.0
    struct(FRGB) RGB  # A floating point RGB value.
   ]])
 
-  struct('GouraudVertex', { comment='Describes a coloured vertex for the VectorGradient Vertices field.' }, [[
+  struct('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
    double X             # The X coordinate of the vertex.
    double Y             # The Y coordinate of the vertex.
    struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
@@ -330,7 +320,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   struct("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
     obj(VectorPattern)  Pattern   # A @VectorPattern object, suitable for pattern based fills.
     obj(VectorImage)    Image     # A @VectorImage object, suitable for image fills.
-    obj(VectorGradient) Gradient  # A @VectorGradient object, suitable for gradient fills.
+    obj(Gradient)      Gradient  # A @Gradient object, suitable for gradient fills.
     struct(FRGB) Colour           # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
   ]],
   [[
@@ -450,24 +440,26 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(DMF) Dimensions           # Flags for the dimension values.
   ]])
 
-  klass('VectorGradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
-    double X1                    # Starting X coordinate of the gradient 'line'
-    double Y1                    # Starting Y coordinate of the gradient 'line'
-    double X2                    # Ending X of the gradient 'line'
-    double Y2                    # Ending Y of the gradient 'line'
-    double CenterX               # Center X coordinate of radial gradient shapes.
-    double CenterY               # Center Y coordinate of radial gradient shapes.
-    double FocalX                # Focal X coordinate for radial gradient shapes.
-    double FocalY                # Focal Y coordinate for radial gradient shapes.
-    double Radius                # The radius size for radial gradients.
-    double FocalRadius           # The size of the focal radius for radial gradients.
+  klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
     double Resolution            # Alters the rate of change for gradient colours.
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
-    int(VUNIT) Units             # Defines the coordinate system for `(X1, Y1), (X2, Y2)`
-    int(VGT) Type
-    int(VGF) Flags               # Optional flags.
+    int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
   ]])
+
+  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', references={ 'VGF' }, extended=true })
+
+  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', references={ 'VGF' }, extended=true })
+
+  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', references={ 'VGF' }, extended=true })
+
+  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', references={ 'VGF' }, extended=true })
+
+  klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
+
+  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true })
+
+  klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', extended=true })
 
   klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
     obj(FilterEffect) Next  # Next filter in the chain.

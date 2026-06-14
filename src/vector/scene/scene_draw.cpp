@@ -711,9 +711,9 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 
    if (Vector.Bounds.valid()) {
       if (Vector.Stroke.Gradient) {
-         auto gradient = (extVectorGradient *)Vector.Stroke.Gradient;
-         if (gradient->Type IS VGT::GOURAUD) {
-            fill_gouraud(State, Vector.Bounds, view_width(), view_height(), *gradient,
+         auto gradient = (extGradient *)Vector.Stroke.Gradient;
+         if (gradient->classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(State, Vector.Bounds, view_width(), view_height(), *(extGradientGouraud *)gradient,
                State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
                build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
          }
@@ -778,10 +778,10 @@ static double distal_fill_inflation(extVector *Shape)
    for (auto &fill : Shape->Fill) {
       if (!fill.Gradient) continue;
 
-      auto gradient = (extVectorGradient *)fill.Gradient;
-      if ((gradient->Type IS VGT::DISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP) and
-         (gradient->Radius > inflation)) {
-         inflation = gradient->Radius;
+      auto gradient = (extGradient *)fill.Gradient;
+      if ((gradient->classID() IS CLASSID::GRADIENTDISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP)) {
+         auto distal = (extGradientDistal *)gradient;
+         if (distal->Radius > inflation) inflation = distal->Radius;
       }
    }
 
@@ -1313,10 +1313,10 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
          extVectorImage &image = (extVectorImage &)*FillStyle;
          fill_image(state, bounds, mPath, VSM::AUTO, transform, Bitmap->Width, Bitmap->Height, image, mRenderer, mRaster);
       }
-      else if (FillStyle->classID() IS CLASSID::VECTORGRADIENT) {
-         extVectorGradient &gradient = (extVectorGradient &)*FillStyle;
-         if (gradient.Type IS VGT::GOURAUD) {
-            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, gradient, 1.0, mRenderer, mRaster, transform);
+      else if (FillStyle->baseClassID() IS CLASSID::GRADIENT) {
+         extGradient &gradient = (extGradient &)*FillStyle;
+         if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
          }
          else if (gradient.Colours) {
             fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
@@ -1330,14 +1330,14 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
    }
 
    if ((StrokeWidth > 0) and (StrokeStyle)) {
-      if (StrokeStyle->classID() IS CLASSID::VECTORGRADIENT) {
+      if (StrokeStyle->baseClassID() IS CLASSID::GRADIENT) {
          agg::conv_stroke<agg::path_storage> stroke_path(mPath);
          mRaster.reset();
          mRaster.add_path(stroke_path);
 
-         extVectorGradient &gradient = (extVectorGradient &)*StrokeStyle;
-         if (gradient.Type IS VGT::GOURAUD) {
-            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, gradient, 1.0, mRenderer, mRaster, transform);
+         extGradient &gradient = (extGradient &)*StrokeStyle;
+         if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
          }
          else if (gradient.Colours) {
             fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
