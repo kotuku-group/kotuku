@@ -47,7 +47,6 @@ static const struct ActionArray clAudioActions[] = {
    { AC::Deactivate, AUDIO_Deactivate },
    { AC::FreePlacement, AUDIO_FreePlacement },
    { AC::Init, AUDIO_Init },
-   { AC::NewObject, AUDIO_NewObject },
    { AC::NewPlacement, AUDIO_NewPlacement },
    { AC::SaveSettings, AUDIO_SaveSettings },
    { AC::SaveToObject, AUDIO_SaveToObject },

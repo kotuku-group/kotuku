@@ -149,15 +149,15 @@ struct AudioChannel {
    double   RVolumeTarget;  // Volume target when fading or ramping
    double   Volume;         // Playing volume (0 - 1.0)
    double   Pan;            // Pan value (-1.0 - 1.0)
-   int64_t    EndTime;        // Anticipated end-time of playing the current sample, if OnStop is defined in the sample.
-   int     SampleHandle;   // Sample index, direct lookup into extAudio->Samples
+   int64_t  EndTime;        // Anticipated end-time of playing the current sample, if OnStop is defined in the sample.
+   int      SampleHandle;   // Sample index, direct lookup into extAudio->Samples
    CHF      Flags;          // Special flags
-   int     Position;       // Current playing/mixing byte position within Sample.
-   int     Frequency;      // Playback frequency
-   int     PositionLow;    // Playing position, lower bits
-   int8_t     Priority;       // Priority of the sound that has been assigned to this channel
+   int      Position;       // Current playing/mixing byte position within Sample.
+   int      Frequency;      // Playback frequency
+   int      PositionLow;    // Playing position, lower bits
+   int8_t   Priority;       // Priority of the sound that has been assigned to this channel
    CHS      State;          // Channel state
-   int8_t     LoopIndex;      // The current active loop (either 0, 1 or 2)
+   int8_t   LoopIndex;      // The current active loop (either 0, 1 or 2)
    bool     Buffering;
 
    bool active() {
@@ -239,12 +239,12 @@ class extAudio : public objAudio {
    TIMER   Timer;
    BYTELEN MixBufferSize;
    SAMPLE  MixElements;
-   int    MaxChannels;    // Recommended maximum mixing channels for Sound class
+   int     MaxChannels;    // Recommended maximum mixing channels for Sound class
    std::string Device;
    int8_t  DriverBitSize;  // Target sample bit size; accounts for stereo channel
-   bool  Stereo;
-   bool  Mute;
-   bool  Initialising;
+   bool    Stereo;
+   bool    Mute;
+   bool    Initialising;
 
    inline struct AudioChannel * GetChannel(int Handle) {
       return &this->Sets[Handle>>16].Channel[Handle & 0xffff];
@@ -263,7 +263,7 @@ class extAudio : public objAudio {
 
    inline void finish(AudioChannel &Channel, bool Notify);
 
-   extAudio() = default;
+   extAudio();
    ~extAudio();
 
    private:

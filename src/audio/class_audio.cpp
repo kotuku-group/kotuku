@@ -530,48 +530,6 @@ static ERR AUDIO_Init(extAudio *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR AUDIO_NewObject(extAudio *Self)
-{
-   kt::Log log;
-
-   Self->OutputRate  = 44100;        // Rate for output to speakers
-   Self->InputRate   = 44100;        // Input rate for recording
-   Self->Quality     = 80;
-   Self->BitDepth    = 16;
-   Self->Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
-   Self->Periods     = 4;
-   Self->PeriodSize  = 2048;
-   Self->Device      = "default";
-   Self->MaxChannels = 8;
-
-   const SystemState *state = GetSystemState();
-   if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
-      Self->Flags |= ADF::SYSTEM_WIDE;
-   }
-
-   Self->Samples.reserve(32);
-
-#ifdef __linux__
-   Self->Volumes.resize(2);
-   Self->Volumes[0].Name = "Master";
-   for (int i=0; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = 1.0;
-
-   Self->Volumes[1].Name = "PCM";
-   for (int i=0; i < std::ssize(Self->Volumes[1].Channels); i++) Self->Volumes[1].Channels[i] = 1.0;
-#else
-   Self->Volumes.resize(1);
-   Self->Volumes[0].Name = "Master";
-   Self->Volumes[0].Channels[0] = 1.0;
-   for (int i=1; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = -1;
-#endif
-
-   load_config(Self);
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -1438,6 +1396,44 @@ static void load_config(extAudio *Self)
          }
       }
    }
+}
+
+//********************************************************************************************************************
+
+extAudio::extAudio()
+{
+   OutputRate  = 44100;        // Rate for output to speakers
+   InputRate   = 44100;        // Input rate for recording
+   Quality     = 80;
+   BitDepth    = 16;
+   Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
+   Periods     = 4;
+   PeriodSize  = 2048;
+   Device      = "default";
+   MaxChannels = 8;
+
+   const SystemState *state = GetSystemState();
+   if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
+      Flags |= ADF::SYSTEM_WIDE;
+   }
+
+   Samples.reserve(32);
+
+#ifdef __linux__
+   Volumes.resize(2);
+   Volumes[0].Name = "Master";
+   for (int i=0; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = 1.0;
+
+   Volumes[1].Name = "PCM";
+   for (int i=0; i < std::ssize(Volumes[1].Channels); i++) Volumes[1].Channels[i] = 1.0;
+#else
+   Volumes.resize(1);
+   Volumes[0].Name = "Master";
+   Volumes[0].Channels[0] = 1.0;
+   for (int i=1; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = -1;
+#endif
+
+   load_config(this);
 }
 
 //********************************************************************************************************************
