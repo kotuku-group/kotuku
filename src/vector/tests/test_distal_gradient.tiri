@@ -1,0 +1,346 @@
+   include 'display'
+   include 'vector'
+
+   mGfx ?= mod.load('display')
+
+----------------------------------------------------------------------------------------------------------------------
+-- Validation of the signed distance field (distal) gradient render path (VGT::DISTAL).  A distal gradient is signed:
+-- the path outline is pinned to the centre of the colour ramp, the interior shades through one half of the ramp and
+-- the exterior through the other.  Unlike the path-masked gradients, the distal fill deliberately extends beyond the
+-- target path to a padded coverage region (the path bounds inflated by Radius), so the exterior half of the ramp is
+-- visible.  The outline tracks the ramp midpoint, the deepest interior reaches toward the first stop and the deepest
+-- exterior reaches toward the last stop.
+--
+-- The ramp used throughout is three stops: blue (offset 0) -> green (offset 0.5, the marker that should land on the
+-- outline) -> red (offset 1.0).  With inside-negative sign convention the interior runs green (edge) -> blue (centre)
+-- and the exterior runs green (edge) -> red (far outside).
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function stop(Offset, R, G, B)
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+function rampStops()
+   local stops = { }
+   table.insert(stops, stop(0.0, 0.0, 0.0, 1.0)) -- blue  - deepest interior
+   table.insert(stops, stop(0.5, 0.0, 1.0, 0.0)) -- green - the outline marker
+   table.insert(stops, stop(1.0, 1.0, 0.0, 0.0)) -- red   - exterior (masked away for a simple fill)
+   return stops
+end
+
+-- A centred filled rectangle with a distal gradient fill.  The viewport is larger than the rectangle so the exterior
+-- ramp half has somewhere to render around the shape.
+
+function newRectScene(Radius)
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local opts = { type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, stops=rampStops() }
+   if Radius != nil then opts.radius = Radius end
+
+   local gradient = scene.new('VectorGradient', opts)
+   check scene.mtAddDef('distal_rect', gradient)
+
+   viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_rect)' })
+   return scene, gradient
+end
+
+-- A filled ellipse with the Distal gradient, used to confirm the fill extends beyond the target path into the exterior
+-- ramp half.  A modest padding keeps the exterior band within the 120x120 surface.
+
+function newEllipseScene()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops()
+   })
+   check scene.mtAddDef('distal_ellipse', gradient)
+
+   viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_ellipse)' })
+   return scene, gradient
+end
+
+function newShapeScene()
+   local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=18, stops=rampStops()
+   })
+   check scene.mtAddDef('distal_shape', gradient)
+
+   local shape = viewport.new('VectorShape', {
+      centerX=80, centerY=80, radius=40, fill='url(#distal_shape)', mod=8
+   })
+   return scene, shape
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+--********************************************************************************************************************
+
+@Test function TypeRoundTrips()
+   local scene, gradient = newRectScene()
+   assert(gradient.type is VGT_DISTAL, 'Gradient type should be DISTAL')
+end
+
+@Test function UserspaceForcedToBoundingBox()
+   -- Distal gradients depend on the target path bounds, so USERSPACE units are rejected and coerced to BOUNDING_BOX.
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('VectorGradient', { type=VGT_DISTAL, units=VUNIT_USERSPACE, stops=rampStops() })
+   assert(gradient.units is VUNIT_BOUNDING_BOX, 'Distal gradient should coerce USERSPACE units to BOUNDING_BOX')
+end
+
+@Test function OutlineLandsOnRampMidpoint()
+   -- The defining property of a Distal gradient: the path outline is pinned to the centre of the ramp.  Sampling just
+   -- inside the rectangle edge should yield the green marker (the 0.5 stop), i.e. green-dominant with low red/blue.
+
+   local scene = newRectScene()
+   local bmp = newBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   -- Sample a few pixels just inside the top edge (y just below 20) along the horizontal centre.
+   local edge = mGfx.ReadRGBPixel(bmp, 60, 22)
+   assert((edge.green > edge.red) and (edge.green > edge.blue),
+      'Path outline should map to the green ramp midpoint (got ' ..
+      edge.red .. ',' .. edge.green .. ',' .. edge.blue .. ')')
+   assert(edge.green > 120,
+      'Outline colour should be a strong green near the 0.5 stop (got green ' .. edge.green .. ')')
+end
+
+@Test function InteriorShadesTowardFirstStop()
+   -- Moving inward from the edge, the signed distance grows more negative, so the buffer value falls from the 0.5
+   -- midpoint toward 0.0.  The colour should therefore shift monotonically from green (edge) toward blue (centre).
+
+   local scene = newRectScene()
+   local bmp = newBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   -- The centre of the rectangle is the deepest interior point and should be clearly blue-dominant.
+   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   assert((centre.blue > centre.green) and (centre.blue > centre.red),
+      'Rectangle centre (deepest interior) should reach toward the blue first stop (got ' ..
+      centre.red .. ',' .. centre.green .. ',' .. centre.blue .. ')')
+
+   -- Walk from just inside the top edge down to the centre; blue should rise and green should fall monotonically
+   -- (within a small tolerance for anti-aliasing / rounding).
+   local prev_blue = -1
+   local prev_green = 1000
+   for y = 24, 60, 4 do
+      local c = mGfx.ReadRGBPixel(bmp, 60, y)
+      assert(c.blue >= prev_blue - 6, 'Blue channel should rise monotonically toward the interior (y=' .. y .. ')')
+      assert(c.green <= prev_green + 6, 'Green channel should fall monotonically toward the interior (y=' .. y .. ')')
+      prev_blue = c.blue
+      prev_green = c.green
+   end
+end
+
+-- Like newBitmap but cleared to opaque white, so a Distal glow's alpha falloff shows as the exterior colour blending
+-- toward white the further it fades.
+
+function newWhiteBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='255,255,255,255' })
+   bmp.acClear()
+   return bmp
+end
+
+@Test function FillExtendsBeyondVectorPath()
+   -- Unlike the path-masked gradients, a Distal fill deliberately renders beyond the target path so the exterior glow
+   -- is visible.  In the default (outline-hold) glow mode the exterior holds the green outline colour and fades in
+   -- alpha over the padding distance.  Rendered over a white background, the exterior should be green-tinted near
+   -- the edge and blend toward white further out.
+
+   local scene = newEllipseScene()
+   local bmp = newWhiteBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   -- A point just outside the ellipse edge must be painted with the green outline colour (green-dominant).
+   local just_outside = mGfx.ReadRGBPixel(bmp, 60, 26)  -- just above the top of the ellipse (edge ~30)
+   assert((just_outside.green > just_outside.red) and (just_outside.green > just_outside.blue),
+      'Exterior glow should hold the green outline colour (got ' ..
+      just_outside.red .. ',' .. just_outside.green .. ',' .. just_outside.blue .. ')')
+
+   -- The centre must be painted (interior half).
+   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   assert((centre.red + centre.green + centre.blue) > 0, 'Distal fill should draw inside the target path')
+end
+
+@Test function ExteriorGlowFadesToTransparent()
+   -- The exterior glow alpha falls smoothly from full at the outline to zero at the padding edge.  Over a white
+   -- background the green glow therefore blends toward white as distance increases: red/blue rise monotonically
+   -- outward, and a point past the padding edge is left as the background.
+
+   local scene = newEllipseScene()  -- radius 30 @ (60,60), padding 20 -> exterior reaches ~y=10 at the top
+   local bmp = newWhiteBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   -- Walk outward from just beyond the edge toward the padding edge; the red channel (a proxy for how much white
+   -- shows through the fading green) must rise monotonically.
+   local prev_red = -1
+   for y = 28, 14, -2 do
+      local c = mGfx.ReadRGBPixel(bmp, 60, y)
+      assert(c.red >= prev_red - 4, 'Exterior glow should fade outward (red rising toward white) at y=' .. y)
+      prev_red = c.red
+   end
+
+   -- The far corner is well past the padding edge and must be left as the untouched white background.
+   local corner = mGfx.ReadRGBPixel(bmp, 4, 4)
+   assert((corner.red > 250) and (corner.green > 250) and (corner.blue > 250),
+      'Beyond the padding edge the glow must contribute nothing (got ' ..
+      corner.red .. ',' .. corner.green .. ',' .. corner.blue .. ')')
+end
+
+@Test function DeepInteriorGlowFadesAtPaddingEdge()
+   -- Regression: the exterior alpha is normalised against the padding distance, not the colour LUT range.  For a
+   -- shape with a deep interior (a tall ellipse) the interior distance dominates the symmetric colour normalisation,
+   -- so deriving alpha from the colour buffer would leave the glow still partly opaque at the coverage boundary,
+   -- producing a hard rectangular cut-off.  The margin-normalised alpha must instead reach zero exactly at the
+   -- padding edge regardless of the interior extent.
+
+   local scene = obj.new('VectorScene', { pageWidth=300, pageHeight=500 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
+   check scene.mtAddDef('distal_deep', scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=40, stops=rampStops()
+   }))
+   -- Tall ellipse: right edge ~x=230, padding 40 -> glow should vanish by ~x=270.
+   viewport.new('VectorEllipse', { cx=150, cy=250, radiusX=80, radiusY=180, fill='url(#distal_deep)' })
+
+   local bmp = obj.new('bitmap', { width=300, height=500, bitsPerPixel=32, bkgd='255,255,255,255' })
+   bmp.acClear()
+   scene.bitmap = bmp
+   check scene.acDraw()
+
+   -- Just outside the edge the glow is clearly green-tinted (not yet white).
+   local near = mGfx.ReadRGBPixel(bmp, 240, 250)
+   assert(near.green > near.red + 20, 'Glow should be green-tinted just outside a deep-interior shape (got ' ..
+      near.red .. ',' .. near.green .. ',' .. near.blue .. ')')
+
+   -- At the padding edge the glow must have fully faded back to the white background (no hard cut-off).
+   local at_edge = mGfx.ReadRGBPixel(bmp, 272, 250)
+   assert((at_edge.red > 250) and (at_edge.green > 250) and (at_edge.blue > 250),
+      'Glow must fade to transparent by the padding edge for a deep-interior shape (got ' ..
+      at_edge.red .. ',' .. at_edge.green .. ',' .. at_edge.blue .. ')')
+end
+
+@Test function VectorShapeDistalFillUsesRescaledBounds()
+   -- Regression: VectorShape rescales the generated superformula path, so its recorded bounds must match that final
+   -- path.  Distal fills use the bounds to align the padded SDF field; stale pre-rescale bounds shift the glow right
+   -- and down even though the shape itself is centred.
+
+   local scene, shape = newShapeScene()
+   local err, x, y, width, height = shape.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+
+   assert((x < 45) and (x + width > 110),
+      'VectorShape bounds should include the post-rescale path width (x=' .. x .. ', width=' .. width .. ')')
+   assert((y < 45) and (y + height > 110),
+      'VectorShape bounds should include the post-rescale path height (y=' .. y .. ', height=' .. height .. ')')
+
+   local bmp = newWhiteBitmap(160, 160)
+   drawScene(scene, bmp)
+
+   local left = mGfx.ReadRGBPixel(bmp, 36, 80)
+   local top = mGfx.ReadRGBPixel(bmp, 80, 36)
+
+   assert((left.green > left.red) and (left.green > left.blue),
+      'Distal glow should remain visible at the left edge of a VectorShape')
+   assert((top.green > top.red) and (top.green > top.blue),
+      'Distal glow should remain visible at the top edge of a VectorShape')
+end
+
+@Test function UnchangedPathRendersStably()
+   -- The signed distance buffer is cached against the path fingerprint, so re-rendering an unchanged path must
+   -- produce byte-identical output (cache reuse).
+
+   local scene = newRectScene()
+   local bmp = newBitmap(120, 120)
+
+   local first  = drawHash(scene, bmp)
+   local second = drawHash(scene, bmp)
+   local third  = drawHash(scene, bmp)
+
+   assert(first is second, 'Re-rendering an unchanged distal path should be byte-identical (cache reuse)')
+   assert(second is third, 'Repeated distal renders should remain stable')
+end
+
+@Test function RadiusAltersInteriorGradient()
+   -- Radius feeds into the symmetric normalisation: a larger exterior margin increases max_abs, which compresses
+   -- the interior half of the ramp.  Two renders with markedly different padding must therefore differ.
+
+   local small = newRectScene(5)
+   local large = newRectScene(60)
+   local small_bmp = newBitmap(120, 120)
+   local large_bmp = newBitmap(120, 120)
+
+   local small_hash = drawHash(small, small_bmp)
+   local large_hash = drawHash(large, large_bmp)
+
+   assert(small_hash != large_hash, 'Changing Radius should alter the distal render')
+
+   -- With more exterior padding the interior occupies a smaller slice of the ramp, so the rectangle centre does not
+   -- reach as deeply toward blue: its blue channel should be no greater than the lightly-padded render.
+   local small_centre = mGfx.ReadRGBPixel(small_bmp, 60, 60)
+   local large_centre = mGfx.ReadRGBPixel(large_bmp, 60, 60)
+   assert(large_centre.blue <= small_centre.blue + 4,
+      'Heavier padding should compress the interior ramp (large blue ' .. large_centre.blue ..
+      ' vs small blue ' .. small_centre.blue .. ')')
+end
+
+@Test function RadiusFieldRoundTrips()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops()
+   })
+   assert(math.abs(gradient.radius - 15) < 0.001, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
+end
+
+@Test function ClipPathStillConstrainsExteriorFill()
+   -- The distal fill bypasses only the target path's own mask; a genuine clip-path must still constrain the result.
+   -- A clip covering the left half of the surface should leave the right half (including the exterior band) clear.
+
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local clip = scene.new('VectorClip', { units=VUNIT_USERSPACE })
+   clip.viewport.new('VectorRectangle', { x=0, y=0, width=60, height=120 })
+
+   check scene.mtAddDef('distal_clip', scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops()
+   }))
+
+   viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_clip)', mask=clip })
+
+   local bmp = newBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   -- Exterior point just outside the ellipse, on the clipped (left) side: should be painted.
+   local left_exterior = mGfx.ReadRGBPixel(bmp, 28, 60)
+   assert((left_exterior.red + left_exterior.green + left_exterior.blue) > 0,
+      'Exterior distal fill should appear inside the clip region')
+
+   -- The same kind of exterior point on the unclipped (right) side must remain background.
+   local right_exterior = mGfx.ReadRGBPixel(bmp, 92, 60)
+   assert((right_exterior.red is 0) and (right_exterior.green is 0) and (right_exterior.blue is 0),
+      'A clip-path must still constrain the exterior distal fill (right side should be clear)')
+end

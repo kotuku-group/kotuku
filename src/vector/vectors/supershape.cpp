@@ -63,7 +63,6 @@ static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
    else phi_a = (agg::pi * Vector->Phi) / vertices;
    const double a = 1.0 / Vector->A;
    const double b = 1.0 / Vector->B;
-   double min_x = DBL_MAX, max_x = -DBL_MAX, min_y = DBL_MAX, max_y = -DBL_MAX;
 
    int lx = 0x7fffffff, ly = 0x7fffffff;
    for (double i=0; i < vertices; i++) {
@@ -104,13 +103,6 @@ static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
 
       if (i == 0.0) target->move_to(x, y); // Plot the vertex
       else target->line_to(x, y);
-
-      if (Vector->Spiral <= 1) { // Boundary management for non-spirals
-         if (x < min_x) min_x = x;
-         if (y < min_y) min_y = y;
-         if (x > max_x) max_x = x;
-         if (y > max_y) max_y = y;
-      }
    }
 
    if (Vector->Spiral > 1) {
@@ -121,13 +113,6 @@ static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
          x = x * (i / total);
          y = y * (i / total);
          target->modify_vertex(i, x, y);
-
-         // Boundary management
-
-         if (x < min_x) min_x = x;
-         if (y < min_y) min_y = y;
-         if (x > max_x) max_x = x;
-         if (y > max_y) max_y = y;
       }
    }
    else {
@@ -153,7 +138,7 @@ static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
 
    if (&Path != target) Path.concat_path(*target);
 
-   Vector->Bounds = { min_x + cx, min_y + cy, max_x + cx, max_y + cy };
+   Vector->Bounds = get_bounds(*target);
 }
 
 //********************************************************************************************************************
@@ -617,4 +602,3 @@ static ERR init_supershape(void)
 
    return clVectorShape ? ERR::Okay : ERR::AddClass;
 }
-

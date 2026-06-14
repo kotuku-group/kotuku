@@ -73,6 +73,7 @@ extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
 namespace agg { class gradient_contour; }
+namespace agg { class gradient_sdf; }
 class objVectorTransition;
 class extVectorText;
 class extVector;
@@ -444,12 +445,16 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    std::string ID;
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
+   agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
+   uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
    std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for Type IS VGT::GOURAUD; null for all other gradient types
    GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
    int   NumericID;
    double Angle;
    double Length;
    bool   CalcAngle; // True if the Angle/Length values require recalculation.
+
+   ~extVectorGradient();
 };
 
 class extVectorImage : public objVectorImage, public SceneDef {

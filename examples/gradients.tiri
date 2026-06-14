@@ -13,7 +13,7 @@ TODO: Add more adjustment options (radius, focalRadius, etc)
    import 'gui/filedialog'
 
 local win, viewport, gradient, gradientVP, rect
-local focalEllipse, contourShape, uiEvent
+local focalEllipse, contourShape, distalShape, uiEvent
 local glColourMap = 'cmap:magma'
 local glSpreadMethod = VSPREAD_REFLECT
 local glRadius = 100
@@ -81,8 +81,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function selectGradient(Text)
-   if contourShape then contourShape.visibility = 'hidden' end
-   if focalEllipse then focalEllipse.visibility = 'hidden' end
+   contourShape?.visibility = 'hidden'
+   distalShape?.visibility = 'hidden'
+   focalEllipse?.visibility = 'hidden'
    rect.visibility = 'visible'
 
    if Text is 'Radial' then
@@ -141,6 +142,31 @@ function selectGradient(Text)
          yscale = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
          gradient.x1 = xscale > yscale ? xscale :> yscale
       end
+   elseif Text is 'Distal' then
+      gradient = createGradient('DistalShape', {
+         type = VGT_DISTAL, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+         radius = 0,
+         x1 = 0, -- Added to the signed DT base values (0 - 1.0)
+         x2 = 1  -- Multiplier of the base DT value (0.01 - 10.0)
+      })
+
+      if not distalShape then
+         distalShape = gradientVP.new('VectorShape', {
+            name='distalShape', centerX='50%', centerY='50%', radius=glRadius,
+            fill='url(#DistalShape)', visibility='visible', mod="8", stroke="white", strokeWidth=3
+         })
+      else
+         distalShape.visibility = 'visible'
+      end
+
+      rect.visibility = 'hidden'
+      -- Dragging adjusts the exterior radius.  Larger radius widens the outside ramp half and compresses the
+      -- interior half, shifting where the path outline (the ramp midpoint) sits relative to the visible fill.
+      uiEvent = function(ev)
+         dist = math.max(math.abs(ev.x - (gradientVP.width * 0.5)) / gradientVP.width,
+                         math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height)
+         gradient.radius = dist * 200
+      end
    elseif Text is 'Linear' then
       gradient = createGradient('Linear', {
          type = VGT_LINEAR, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
@@ -195,6 +221,7 @@ function buildScene()
          { item='Linear' },
          { item='Contour' },
          { item='Contour Shape' },
+         { item='Distal' },
          { item='Gouraud' }
       },
       events = {
@@ -263,7 +290,7 @@ function buildScene()
    slRadius = gui.slider({
       target = viewport,
       label  = 'Radius:',
-      value  = 1,
+      value  = glRadius,
       min    = 2,
       max    = 400,
       x      = slResolution.viewport.x + slResolution.viewport.width + 10,
@@ -271,8 +298,11 @@ function buildScene()
       events = {
          activate = function(Widget:table, Value:num)
             glRadius = Value
-            gradient.radius = glRadius
-            focalEllipse.radius = glRadius
+            if gradient.type != VGT_DISTAL then
+               gradient?.radius = glRadius
+            end
+            focalEllipse?.radius = glRadius
+            distalShape?.radius = glRadius
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }

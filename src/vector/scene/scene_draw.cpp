@@ -1,5 +1,6 @@
 
 #include "agg_span_gradient_contour.h"
+#include "agg_span_gradient_sdf.h"
 
 class VectorState;
 

@@ -240,6 +240,7 @@ enum class VGT : int {
    DIAMOND = 3,
    CONTOUR = 4,
    GOURAUD = 5,
+   DISTAL = 6,
 };
 
 // Options for stretching text in VectorText.

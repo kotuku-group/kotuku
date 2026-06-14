@@ -154,6 +154,7 @@ static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
 {
    if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
    if (Self->ContourCache) { delete Self->ContourCache; Self->ContourCache = nullptr; }
+   if (Self->SDFCache) { delete Self->SDFCache; Self->SDFCache = nullptr; }
 
    VectorMatrix *next;
    for (auto node=Self->Matrices; node; node=next) {
@@ -182,6 +183,11 @@ static ERR VECTORGRADIENT_Init(extVectorGradient *Self)
 
    if ((Self->Type IS VGT::CONTOUR) and (Self->Units IS VUNIT::USERSPACE)) {
       log.warning("Contour gradients are not compatible with Units.USERSPACE.");
+      Self->Units = VUNIT::BOUNDING_BOX;
+   }
+
+   if ((Self->Type IS VGT::DISTAL) and (Self->Units IS VUNIT::USERSPACE)) {
+      log.warning("Distal gradients are not compatible with Units.USERSPACE.");
       Self->Units = VUNIT::BOUNDING_BOX;
    }
 
@@ -227,7 +233,7 @@ static ERR VECTORGRADIENT_SET_CenterX(extVectorGradient *Self, Unit &Value)
    if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
    else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
    Self->CenterX = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -253,7 +259,7 @@ static ERR VECTORGRADIENT_SET_CenterY(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
 
    Self->CenterY = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -297,7 +303,7 @@ static ERR VECTORGRADIENT_SET_Colour(extVectorGradient *Self, float *Value, int 
    }
    else Self->Colour.Alpha = 0;
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 /*********************************************************************************************************************
@@ -332,7 +338,7 @@ static ERR VECTORGRADIENT_SET_ColourMap(extVectorGradient *Self, const std::stri
       Self->Colours = new (std::nothrow) GradientColours(it->second, Self->Resolution);
       if (not Self->Colours) return ERR::AllocMemory;
       Self->ColourMap = Value;
-      Self->modified();
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::NotFound;
@@ -377,7 +383,7 @@ static ERR VECTORGRADIENT_SET_FocalRadius(extVectorGradient *Self, Unit &Value)
       else Self->Flags = (Self->Flags | VGF::FIXED_FOCAL_RADIUS) & (~VGF::SCALED_FOCAL_RADIUS);
 
       Self->FocalRadius = Value;
-      Self->modified();
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -405,7 +411,7 @@ static ERR VECTORGRADIENT_SET_FocalX(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_FX) & (~VGF::SCALED_FX);
 
    Self->FocalX = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -431,7 +437,7 @@ static ERR VECTORGRADIENT_SET_FocalY(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_FY) & (~VGF::SCALED_FY);
 
    Self->FocalY = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -512,7 +518,7 @@ static ERR VECTORGRADIENT_SET_Matrices(extVectorGradient *Self, VectorMatrix *Va
       Self->Matrices = nullptr;
    }
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -564,8 +570,9 @@ static ERR VECTORGRADIENT_SET_Radius(extVectorGradient *Self, Unit &Value)
       if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_RADIUS) & (~VGF::FIXED_RADIUS);
       else Self->Flags = (Self->Flags | VGF::FIXED_RADIUS) & (~VGF::SCALED_RADIUS);
 
+      Self->SDFHash = 0; // Force a rebuild of the cached buffer with the new padding
       Self->Radius = Value;
-      Self->modified();
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -721,7 +728,7 @@ static ERR VECTORGRADIENT_SET_Vertices(extVectorGradient *Self, GouraudVertex *V
 
    Self->Gouraud->Vertices.assign(&Value[0], &Value[Elements]);
    Self->GouraudTriangles.Valid = false;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -779,7 +786,7 @@ static ERR VECTORGRADIENT_SET_Indices(extVectorGradient *Self, int *Value, int E
    }
 
    Self->GouraudTriangles.Valid = false;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -809,7 +816,7 @@ static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, const std::stri
 {
    if (Commands.empty()) return kt::Log().warning(ERR::InvalidValue);
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
 
    if (not Self->Matrices) {
       VectorMatrix *matrix;
@@ -847,7 +854,7 @@ The type of the gradient to be drawn is specified here.
 static ERR VECTORGRADIENT_SET_Type(extVectorGradient *Self, VGT Value)
 {
    Self->Type = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -883,7 +890,7 @@ static ERR VECTORGRADIENT_SET_X1(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
    Self->X1 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -912,7 +919,7 @@ static ERR VECTORGRADIENT_SET_X2(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
    Self->X2 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -939,7 +946,7 @@ static ERR VECTORGRADIENT_SET_Y1(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_Y1) & (~VGF::SCALED_Y1);
    Self->Y1 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -966,8 +973,14 @@ static ERR VECTORGRADIENT_SET_Y2(extVectorGradient *Self, Unit &Value)
    else Self->Flags = (Self->Flags | VGF::FIXED_Y2) & (~VGF::SCALED_Y2);
    Self->Y2 = Value;
    Self->CalcAngle = true;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extVectorGradient::~extVectorGradient() {
+
 }
 
 //********************************************************************************************************************

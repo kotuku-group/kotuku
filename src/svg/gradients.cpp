@@ -180,6 +180,9 @@ void svgState::parse_lineargradient(const XTag &Tag, objVectorGradient *Gradient
                else if (svg_tag_is(*other, SVF_contourGradient)) {
                   parse_contourgradient(*other, Gradient, dummy);
                }
+               else if (svg_tag_is(*other, SVF_distalGradient)) {
+                  parse_distalgradient(*other, Gradient, dummy);
+               }
             }
             break;
          }
@@ -260,6 +263,9 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
                else if (svg_tag_is(*other, SVF_contourGradient)) {
                   parse_contourgradient(*other, &Gradient, dummy);
                }
+               else if (svg_tag_is(*other, SVF_distalGradient)) {
+                  parse_distalgradient(*other, &Gradient, dummy);
+               }
             }
             break;
          }
@@ -336,6 +342,9 @@ void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradien
                else if (svg_tag_is(*other, SVF_contourGradient)) {
                   parse_contourgradient(*other, Gradient, dummy);
                }
+               else if (svg_tag_is(*other, SVF_distalGradient)) {
+                  parse_distalgradient(*other, Gradient, dummy);
+               }
             }
             break;
          }
@@ -408,6 +417,9 @@ void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradien
                }
                else if (svg_tag_is(*other, SVF_contourGradient)) {
                   parse_contourgradient(*other, Gradient, dummy);
+               }
+               else if (svg_tag_is(*other, SVF_distalGradient)) {
+                  parse_distalgradient(*other, Gradient, dummy);
                }
             }
             break;
@@ -546,6 +558,116 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
       gradient->setFields(fl::Name("SVGContourGrad"), fl::Type(VGT::CONTOUR), fl::Units(VUNIT::BOUNDING_BOX));
 
       state.parse_contourgradient(Tag, gradient, id);
+
+      auto stops = process_gradient_stops(Tag);
+      if (stops.size() >= 2) gradient->set(FID_Stops, stops);
+
+      if (!InitObject(gradient)) {
+         if (!id.empty()) {
+            SetName(gradient, id.c_str());
+            track_object(Self, gradient);
+            return Self->Scene->addDef(id.c_str(), gradient);
+         }
+         else return ERR::Okay;
+      }
+      else return ERR::Init;
+   }
+   else return ERR::NewObject;
+}
+
+//********************************************************************************************************************
+// NB: Distal gradients are not part of the SVG standard.
+
+void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+{
+   kt::Log log(__FUNCTION__);
+
+   // Determine the user coordinate system first.
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      if (iequals("gradientUnits", Tag.Attribs[a].Name)) {
+         if (iequals("userSpaceOnUse", Tag.Attribs[a].Value)) Gradient->Units = VUNIT::USERSPACE;
+         break;
+      }
+   }
+
+   bool process_stops = true;
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      log.trace("Processing distal gradient attribute %s = %s", Tag.Attribs[a].Name, val);
+
+      auto attrib = strhash(Tag.Attribs[a].Name);
+      switch(attrib) {
+         case SVF_gradientUnits: break; // Already processed
+         case SVF_gradientTransform: Gradient->setTransform(val); break;
+         // X1 and X2 adjust the colour ramp bias and scale, as with contour gradients.
+         case SVF_x1: set_double_units(Gradient, FID_X1, val, Gradient->Units); break;
+         case SVF_x2: set_double_units(Gradient, FID_X2, val, Gradient->Units); break;
+         // Radius controls the exterior margin (in path units) around the path bounds.
+         case SVF_radius: Gradient->set(FID_Radius, strtod(val.c_str(), nullptr)); break;
+         case SVF_spreadMethod: {
+            if (iequals("pad", val))          Gradient->setSpreadMethod(VSPREAD::PAD);
+            else if (iequals("reflect", val)) Gradient->setSpreadMethod(VSPREAD::REFLECT);
+            else if (iequals("repeat", val))  Gradient->setSpreadMethod(VSPREAD::REPEAT);
+            break;
+         }
+         case SVF_id: ID = val; break;
+         case SVF_href:
+         case SVF_xlink_href: {
+            if (val.starts_with("url(#cmap:")) {
+               auto end = val.find(')');
+               auto cmap = val.substr(5, end-5);
+               if (!Gradient->setColourMap(cmap)) process_stops = false;
+            }
+            else if (auto other = find_href_tag(Self, val)) {
+               std::string dummy;
+               if (svg_tag_is(*other, SVF_radialGradient)) {
+                  parse_radialgradient(*other, *Gradient, dummy);
+               }
+               else if (svg_tag_is(*other, SVF_linearGradient)) {
+                  parse_lineargradient(*other, Gradient, dummy);
+               }
+               else if (svg_tag_is(*other, SVF_diamondGradient)) {
+                  parse_diamondgradient(*other, Gradient, dummy);
+               }
+               else if (svg_tag_is(*other, SVF_contourGradient)) {
+                  parse_contourgradient(*other, Gradient, dummy);
+               }
+               else if (svg_tag_is(*other, SVF_distalGradient)) {
+                  parse_distalgradient(*other, Gradient, dummy);
+               }
+            }
+            break;
+         }
+         default: {
+            if (gradient_defaults(Self, Gradient, attrib, val) != ERR::Okay) {
+               if (Tag.Attribs[a].Name.find(':') != std::string::npos) break;
+               log.warning("%s attribute '%s' unrecognised @ line %d", Tag.name(), Tag.Attribs[a].Name.c_str(), Tag.LineNo);
+            }
+         }
+      }
+   }
+}
+
+//********************************************************************************************************************
+// NB: Distal gradients are not part of the SVG standard.
+
+ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
+{
+   kt::Log log(__FUNCTION__);
+   objVectorGradient *gradient;
+   std::string id;
+
+   auto state = *this;
+   state.applyTag(Tag); // Apply all attribute values to the current state.
+
+   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+      SetOwner(gradient, Self->Scene);
+      gradient->setFields(fl::Name("SVGDistalGrad"), fl::Type(VGT::DISTAL), fl::Units(VUNIT::BOUNDING_BOX));
+
+      state.parse_distalgradient(Tag, gradient, id);
 
       auto stops = process_gradient_stops(Tag);
       if (stops.size() >= 2) gradient->set(FID_Stops, stops);

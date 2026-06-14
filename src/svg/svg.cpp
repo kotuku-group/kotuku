@@ -238,6 +238,7 @@ private:
    ERR  proc_conicgradient(const XTag &) noexcept;
    ERR  proc_contourgradient(const XTag &) noexcept;
    ERR  proc_diamondgradient(const XTag &) noexcept;
+   ERR  proc_distalgradient(const XTag &) noexcept;
    ERR  proc_lineargradient(const XTag &) noexcept;
    ERR  proc_radialgradient(const XTag &) noexcept;
 
@@ -249,6 +250,7 @@ private:
 
    void parse_contourgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
    void parse_diamondgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
+   void parse_distalgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
    void parse_lineargradient(const XTag &, objVectorGradient *, std::string &) noexcept;
    void parse_radialgradient(const XTag &, objVectorGradient &, std::string &) noexcept;
 
@@ -538,6 +540,8 @@ static constexpr auto SVF_ry                  = strhash("ry");
 static constexpr auto SVF_saturate            = strhash("saturate");
 static constexpr auto SVF_scale               = strhash("scale");
 static constexpr auto SVF_screen              = strhash("screen");
+static constexpr auto SVF_distalGradient      = strhash("distalGradient");
+static constexpr auto SVF_padding             = strhash("padding");
 static constexpr auto SVF_seed                = strhash("seed");
 static constexpr auto SVF_semi_condensed      = strhash("semi_condensed");
 static constexpr auto SVF_semi_expanded       = strhash("semi_expanded");
