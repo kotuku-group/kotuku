@@ -781,7 +781,11 @@ static double distal_fill_inflation(extVector *Shape)
       auto gradient = (extGradient *)fill.Gradient;
       if ((gradient->classID() IS CLASSID::GRADIENTDISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP)) {
          auto distal = (extGradientDistal *)gradient;
-         if (distal->Radius > inflation) inflation = distal->Radius;
+         const double max_bound = (Shape->Bounds.width() > Shape->Bounds.height()) ? Shape->Bounds.width() :
+            Shape->Bounds.height();
+         const double radius = ((distal->Flags & VGF::SCALED_RADIUS) != VGF::NIL) ? distal->Radius * max_bound :
+            distal->Radius;
+         if (radius > inflation) inflation = radius;
       }
    }
 

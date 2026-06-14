@@ -223,6 +223,25 @@ end
    assert((centre.red + centre.green + centre.blue) > 0, 'Distal fill should draw inside the target path')
 end
 
+@Test function ScaledRadiusPadsAgainstVectorBounds()
+   -- Regression: Radius accepts scaled values.  A 50% radius on a 100px-wide shape should create about 50px of
+   -- exterior padding, not a raw 0.5px margin.
+
+   local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   check scene.mtAddDef('distal_scaled_radius',
+      scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius='50%', stops=blackStops() }))
+   viewport.new('VectorRectangle', { x=30, y=55, width=100, height=50, fill='url(#distal_scaled_radius)' })
+
+   local bmp = newWhiteBitmap(160, 160)
+   drawScene(scene, bmp)
+
+   local exterior = mGfx.ReadRGBPixel(bmp, 80, 30)
+   assert((exterior.red < 245) and (exterior.green < 245) and (exterior.blue < 245),
+      'Scaled Radius should pad against the vector bounds (got ' ..
+      exterior.red .. ',' .. exterior.green .. ',' .. exterior.blue .. ')')
+end
+
 @Test function ClipSpreadConstrainsFillToVectorPath()
    -- VSPREAD_CLIP keeps the distal field clipped to the target shape, unlike the default mode that expands coverage
    -- to the padded SDF region.

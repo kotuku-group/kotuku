@@ -419,7 +419,7 @@ static uint64_t path_fingerprint(const agg::path_storage &Path)
 }
 
 //********************************************************************************************************************
-// Gradient fills.  // The Raster must contain the shape's path.
+// Gradient fills.
 
 static void fill_gradient(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage *Path,
    const agg::trans_affine &Transform, double ViewWidth, double ViewHeight, extGradient &Gradient,
@@ -811,9 +811,11 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       }
 
       auto &gradient_func = *distal.SDFCache;
-      gradient_func.padding(distal.Radius);
+      const double max_bound = (Bounds.width() > Bounds.height()) ? Bounds.width() : Bounds.height();
+      const double radius = ((distal.Flags & VGF::SCALED_RADIUS) != VGF::NIL) ? distal.Radius * max_bound :
+         distal.Radius;
+      gradient_func.padding(radius);
       if ((distal.Flags & VGF::SCALED_FOCAL_RADIUS) != VGF::NIL) {
-         const double max_bound = (Bounds.width() > Bounds.height()) ? Bounds.width() : Bounds.height();
          gradient_func.inner_radius(distal.InnerRadius * max_bound);
       }
       else gradient_func.inner_radius(distal.InnerRadius);

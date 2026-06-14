@@ -167,7 +167,7 @@ function selectGradient(Text)
       if not distalShape then
          distalShape = gradientVP.new('VectorShape', {
             name='distalShape', centerX='50%', centerY='50%', radius=glRadius * 2,
-            fill='url(#DistalShape)', visibility='visible', mod="8", stroke="white", strokeWidth=2
+            fill='url(#DistalShape)', visibility='visible', mod=4, stroke="white", strokeOpacity=0.5, strokeWidth=2
          })
       else
          distalShape.visibility = 'visible'
@@ -183,8 +183,7 @@ function selectGradient(Text)
          gradient.radius = dist * 200
       end
       radiusChanged = function(Radius:num)
-         gradient?.radius = Radius
-         gradient?.innerRadius = Radius
+         distalShape?.radius = Radius
       end
    elseif Text is 'Linear' then
       gradient = createGradient('Linear', 'GradientLinear', {
