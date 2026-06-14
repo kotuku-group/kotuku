@@ -145,15 +145,15 @@ function selectGradient(Text)
    elseif Text is 'Distal' then
       gradient = createGradient('DistalShape', {
          type = VGT_DISTAL, colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
-         radius = 0,
+         radius = glRadius,
          x1 = 0, -- Added to the signed DT base values (0 - 1.0)
          x2 = 1  -- Multiplier of the base DT value (0.01 - 10.0)
       })
 
       if not distalShape then
          distalShape = gradientVP.new('VectorShape', {
-            name='distalShape', centerX='50%', centerY='50%', radius=glRadius,
-            fill='url(#DistalShape)', visibility='visible', mod="8", stroke="white", strokeWidth=3
+            name='distalShape', centerX='50%', centerY='50%', radius=glRadius * 2,
+            fill='url(#DistalShape)', visibility='visible', mod="8", stroke="white", strokeWidth=2
          })
       else
          distalShape.visibility = 'visible'
@@ -165,6 +165,7 @@ function selectGradient(Text)
       uiEvent = function(ev)
          dist = math.max(math.abs(ev.x - (gradientVP.width * 0.5)) / gradientVP.width,
                          math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height)
+         gradient.innerRadius = dist * 200
          gradient.radius = dist * 200
       end
    elseif Text is 'Linear' then
@@ -300,6 +301,7 @@ function buildScene()
             glRadius = Value
             if gradient.type != VGT_DISTAL then
                gradient?.radius = glRadius
+               gradient?.focalRadius = glRadius
             end
             focalEllipse?.radius = glRadius
             distalShape?.radius = glRadius

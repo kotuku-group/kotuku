@@ -1212,7 +1212,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getCenterY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1220,7 +1220,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getFocalX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[30];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1236,7 +1236,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[33];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1244,7 +1244,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getFocalRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[32];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1289,14 +1289,14 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getColourMap(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
    }
 
    inline ERR getMatrices(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -1308,30 +1308,38 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getID(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
    }
 
    inline ERR getStops(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
       return error;
    }
 
    inline ERR getVertices(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
       return error;
    }
 
    inline ERR getIndices(int * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+   inline ERR getInnerRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
       return error;
    }
 
@@ -1375,13 +1383,13 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setCenterY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[30];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1393,13 +1401,13 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[33];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[32];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1410,7 +1418,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -1421,7 +1429,7 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setType(const VGT Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -1442,12 +1450,12 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00904208, &Value, 1);
    }
 
    inline ERR setMatrices(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x08100318, Value, 1);
    }
 
@@ -1457,27 +1465,33 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setID(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, 0x00904308, &Value, 1);
    }
 
    inline ERR setStops(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(this, field, 0x00101318, Value, Elements);
    }
 
    inline ERR setVertices(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, 0x00101318, Value, Elements);
    }
 
    inline ERR setIndices(const int * Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, 0x40101308, Value, Elements);
    }
 
+   inline ERR setInnerRadius(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
    inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, 0x00804208, &Value, 1);
    }
 

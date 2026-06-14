@@ -186,9 +186,11 @@ static ERR VECTORGRADIENT_Init(extVectorGradient *Self)
       Self->Units = VUNIT::BOUNDING_BOX;
    }
 
-   if ((Self->Type IS VGT::DISTAL) and (Self->Units IS VUNIT::USERSPACE)) {
-      log.warning("Distal gradients are not compatible with Units.USERSPACE.");
-      Self->Units = VUNIT::BOUNDING_BOX;
+   if (Self->Type IS VGT::DISTAL) {
+      if (Self->Units IS VUNIT::USERSPACE) {
+         log.warning("Distal gradients are not compatible with Units.USERSPACE.");
+         Self->Units = VUNIT::BOUNDING_BOX;
+      }
    }
 
    return ERR::Okay;
@@ -382,6 +384,7 @@ static ERR VECTORGRADIENT_SET_FocalRadius(extVectorGradient *Self, Unit &Value)
       if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FOCAL_RADIUS) & (~VGF::FIXED_FOCAL_RADIUS);
       else Self->Flags = (Self->Flags | VGF::FIXED_FOCAL_RADIUS) & (~VGF::SCALED_FOCAL_RADIUS);
 
+      Self->SDFHash = 0; // InnerRadius reuses this storage and affects the cached SDF alpha field
       Self->FocalRadius = Value;
       if (Self->initialised()) Self->modified();
       return ERR::Okay;
@@ -470,6 +473,12 @@ static ERR VECTORGRADIENT_SET_ID(extVectorGradient *Self, const std::string_view
 }
 
 /*********************************************************************************************************************
+-FIELD-
+InnerRadius: The size of the inner radius for distal gradients.
+
+The InnerRadius defines the extent of the interior fade-out for distal gradients.  If zero (the default) then the
+interior of the target shape is fully rendered.
+
 -FIELD-
 Matrices: A linked list of transform matrices that have been applied to the gradient.
 
@@ -1017,7 +1026,8 @@ static const FieldArray clGradientFields[] = {
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Stops, VECTORGRADIENT_SET_Stops, "GradientStop" },
    { "Vertices",     FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Vertices, VECTORGRADIENT_SET_Vertices, "GouraudVertex" },
    { "Indices",      FDF_VIRTUAL|FDF_ARRAY|FDF_INT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Indices, VECTORGRADIENT_SET_Indices },
-   { "TotalStops",   FDF_INT|FDF_R|FDF_PURE, VECTORGRADIENT_GET_TotalStops },
+   { "InnerRadius",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalRadius, VECTORGRADIENT_SET_FocalRadius },
+   { "TotalStops",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, VECTORGRADIENT_GET_TotalStops },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, VECTORGRADIENT_SET_Transform },
    END_FIELD
 };

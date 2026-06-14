@@ -140,6 +140,16 @@
     </field>
 
     <field>
+      <name>InnerRadius</name>
+      <comment>The size of the inner radius for distal gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The InnerRadius defines the extent of the interior fade-out for distal gradients.  If zero (the default) then the interior of the target shape is fully rendered.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Matrices</name>
       <comment>A linked list of transform matrices that have been applied to the gradient.</comment>
       <access read="G" write="S">Get/Set</access>

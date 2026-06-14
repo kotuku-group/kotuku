@@ -54,6 +54,7 @@ namespace agg
       int m_width, m_height;
       int m_origin_x, m_origin_y; // Pixel offset of the path bounds within the padded buffer
       double m_padding; // Margin (in path units) added around the bounds so the exterior ramp half is visible
+      double m_inner_radius; // Interior fade distance from the outline; zero keeps the interior fully opaque
       double m_d1; // Ranges from 0 to 254
       double m_d2; // Ranges from 0.001 to 1.0
 
@@ -62,11 +63,13 @@ namespace agg
       }
 
    public:
-      gradient_sdf() : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0), m_d1(0), m_d2(1.0) {
+      gradient_sdf() : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0), m_inner_radius(0),
+         m_d1(0), m_d2(1.0) {
          build_lut();
       }
 
-      gradient_sdf(double d1, double d2) : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0), m_d2(d2) {
+      gradient_sdf(double d1, double d2) : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0),
+         m_inner_radius(0), m_d2(d2) {
          m_d1 = (d1 > 254) ? 254 : d1;
          build_lut();
       }
@@ -80,6 +83,8 @@ namespace agg
 
       void   padding(double Value) { m_padding = (Value < 0) ? 0 : Value; }
       double padding() const { return m_padding; }
+      void   inner_radius(double Value) { m_inner_radius = (Value < 0) ? 0 : Value; }
+      double inner_radius() const { return m_inner_radius; }
 
       void   d1(double d) { m_d1 = d; build_lut(); }
       void   d2(double d) { m_d2 = d; build_lut(); }
@@ -114,10 +119,9 @@ namespace agg
       // outline colour across the exterior).
       int lut_at(int Byte) const { return m_lut[Byte & 0xff]; }
 
-      // Returns the exterior alpha coverage at a pixel coordinate (gradient subpixel units).  255 at the path
-      // outline, falling linearly to 0 at the padding edge; the interior is always fully opaque (255).  This is
-      // normalised against the padding distance independently of the colour LUT, so the glow always fades out
-      // exactly at the coverage boundary regardless of the shape's interior extent.
+      // Returns the alpha coverage at a pixel coordinate (gradient subpixel units).  The exterior falls from the
+      // outline to the padding edge; if inner_radius is non-zero the interior also fades inward from the outline.
+      // Both fades are normalised independently of the colour LUT.
       int8u alpha(int x, int y) const {
          if (m_alpha.empty()) return 255;
          int px = (x >> agg::gradient_subpixel_shift) % m_width;
@@ -147,8 +151,8 @@ namespace agg
 #endif
    }
 
-   // Match the VectorGradient Resolution field for the exterior alpha ramp.  Colour resolution is baked into the
-   // 256-entry ramp table; the SDF glow alpha is independent of that table, so it needs equivalent stepping here.
+   // Match the VectorGradient Resolution field for SDF alpha ramps.  Colour resolution is baked into the 256-entry
+   // ramp table; SDF alpha is independent of that table, so it needs equivalent stepping here.
 
    static inline int8u sdf_apply_resolution(int Value, double Resolution) {
       if (Resolution >= 1.0) return int8u(Value);
@@ -211,10 +215,9 @@ namespace agg
             const int gy = iy >> downscale_shift;
             const int raw = m_gradient->raw(gx, gy);
 
-            // Exterior alpha is read from the gradient's margin-normalised coverage buffer (255 at the outline,
-            // 0 at the padding edge) and softened with a smoothstep curve.  Normalising against the padding
-            // distance (rather than the colour LUT range) guarantees the glow reaches zero alpha exactly at the
-            // coverage boundary, so there is no hard rectangular cut-off.
+            // Alpha is read from the gradient's distance-normalised coverage buffer (255 at the outline, fading
+            // inward when InnerRadius is non-zero and outward to the padding edge) and softened with a smoothstep
+            // curve.  Normalising independently of the colour LUT avoids hard cut-offs at the field boundaries.
 
             const int alpha = sdf_apply_resolution(m_gradient->alpha(gx, gy), m_resolution);
             const double alpha_mul = sdf_falloff(double(alpha) / 255.0);
@@ -273,7 +276,7 @@ namespace agg
       const double bound_w = x2 - x1;
       const double bound_h = y2 - y1;
       double pad = m_padding;
-      if (pad <= 0) pad = 0.25 * ((bound_w > bound_h) ? bound_w : bound_h); // Default: 25% of the larger bound
+      if (pad <= 0) pad = 0.01;
 
       const int margin = int(ceil(pad));
 
@@ -378,6 +381,7 @@ namespace agg
 
          m_alpha.resize(width * height);
          const float inv_margin = (margin > 0) ? (1.0f / float(margin)) : 0.0f;
+         const float inv_inner_radius = (m_inner_radius > 0) ? (1.0f / float(m_inner_radius)) : 0.0f;
 
          for (int l=0, total=width * height; l < total; l++) {
             const float mag = sqrtf(image[l]);
@@ -389,7 +393,15 @@ namespace agg
             else if (v > 255) v = 255;
             m_buffer[l] = int8u(v);
 
-            if (inside[l]) m_alpha[l] = 255; // Interior is fully opaque
+            if (inside[l]) {
+               if (m_inner_radius <= 0) m_alpha[l] = 255; // Interior is fully opaque by default
+               else {
+                  float a = 1.0f - (mag * inv_inner_radius); // 1 at the outline, 0 at InnerRadius
+                  if (a < 0.0f) a = 0.0f;
+                  else if (a > 1.0f) a = 1.0f;
+                  m_alpha[l] = int8u(a * 255.0f);
+               }
+            }
             else {
                float a = 1.0f - (mag * inv_margin); // 1 at the outline, 0 at the padding edge
                if (a < 0.0f) a = 0.0f;

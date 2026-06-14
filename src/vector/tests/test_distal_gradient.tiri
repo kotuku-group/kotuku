@@ -77,6 +77,19 @@ function newAlphaResolutionScene(Resolution)
    return scene, gradient
 end
 
+function newInnerFadeScene(InnerRadius)
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=0, innerRadius=InnerRadius, stops=blackStops()
+   })
+   check scene.mtAddDef('distal_inner_fade', gradient)
+
+   viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_inner_fade)' })
+   return scene, gradient
+end
+
 -- A filled ellipse with the Distal gradient, used to confirm the fill extends beyond the target path into the exterior
 -- ramp half.  A modest padding keeps the exterior band within the 120x120 surface.
 
@@ -394,6 +407,39 @@ end
       type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops()
    })
    assert(math.abs(gradient.radius - 15) < 0.001, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
+end
+
+@Test function InnerRadiusAliasesFocalRadius()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops()
+   })
+
+   assert(math.abs(gradient.innerRadius - 12) < 0.001,
+      'InnerRadius field should round-trip (got ' .. gradient.innerRadius .. ')')
+   assert(math.abs(gradient.focalRadius - 12) < 0.001,
+      'InnerRadius should alias FocalRadius storage (got ' .. gradient.focalRadius .. ')')
+
+   gradient.focalRadius = 7
+   assert(math.abs(gradient.innerRadius - 7) < 0.001,
+      'FocalRadius writes should update the InnerRadius alias (got ' .. gradient.innerRadius .. ')')
+end
+
+@Test function InnerRadiusFadesInterior()
+   -- A non-zero InnerRadius fades inward from the outline.  With all-black stops over white, alpha is isolated:
+   -- the edge remains dark, while the deep interior fades back to the white background.
+
+   local scene = newInnerFadeScene(20)
+   local bmp = newWhiteBitmap(120, 120)
+   drawScene(scene, bmp)
+
+   local edge = mGfx.ReadRGBPixel(bmp, 60, 22)
+   assert(edge.red < 120, 'InnerRadius should keep the outline side of the fill opaque (got red ' .. edge.red .. ')')
+
+   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   assert((centre.red > 245) and (centre.green > 245) and (centre.blue > 245),
+      'InnerRadius should fade the deep interior to transparent (got ' ..
+      centre.red .. ',' .. centre.green .. ',' .. centre.blue .. ')')
 end
 
 @Test function ClipPathStillConstrainsExteriorFill()

@@ -806,6 +806,11 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       auto &gradient_func = *Gradient.SDFCache;
       gradient_func.padding(Gradient.Radius);
+      if ((Gradient.Flags & VGF::SCALED_FOCAL_RADIUS) != VGF::NIL) {
+         const double max_bound = (Bounds.width() > Bounds.height()) ? Bounds.width() : Bounds.height();
+         gradient_func.inner_radius(Gradient.FocalRadius * max_bound);
+      }
+      else gradient_func.inner_radius(Gradient.FocalRadius);
       gradient_func.d1(x1 * 256.0);  // d1 is added to the signed DT base values
       gradient_func.d2(x2);  // d2 is a multiplier of the base DT value
 
