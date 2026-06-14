@@ -99,6 +99,62 @@ function newEllipseScene()
    return scene, gradient
 end
 
+// A scene-graph stroke using a Gouraud paint server.  Strokes do not use the SimpleVector DrawPath helper, so this
+// exercises SceneRenderer::render_stroke() directly.
+
+function newStrokeScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   table.insert(vertices, vertex(0,   0,   1.0, 0.0, 0.0))
+   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0))
+   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
+   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0))
+   table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0))
+   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
+
+   local gradient = scene.new('VectorGradient', {
+      type     = VGT_GOURAUD,
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_stroke', gradient)
+
+   viewport.new('VectorRectangle', {
+      x=20, y=20, width=60, height=60, fill='none', stroke='url(#gouraud_stroke)', strokeWidth=10
+   })
+   return scene, gradient
+end
+
+// A clip mask whose mask content uses a Gouraud fill.  The target is clipped to the left half of the bitmap by a
+// white Gouraud-filled rectangle in the clip viewport.
+
+function newClipMaskScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=VUNIT_USERSPACE })
+
+   local vertices = { }
+   table.insert(vertices, vertex(0,  0,   1.0, 1.0, 1.0))
+   table.insert(vertices, vertex(50, 0,   1.0, 1.0, 1.0))
+   table.insert(vertices, vertex(0,  100, 1.0, 1.0, 1.0))
+   table.insert(vertices, vertex(50, 0,   1.0, 1.0, 1.0))
+   table.insert(vertices, vertex(50, 100, 1.0, 1.0, 1.0))
+   table.insert(vertices, vertex(0,  100, 1.0, 1.0, 1.0))
+
+   local gradient = scene.new('VectorGradient', {
+      type     = VGT_GOURAUD,
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_clip', gradient)
+
+   clip.viewport.new('VectorRectangle', { x=0, y=0, width=50, height=100, fill='url(#gouraud_clip)' })
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,0,0)', mask=clip })
+   return scene, gradient
+end
+
 function drawScene(Scene, Bitmap)
    Bitmap.acClear()
    Scene.bitmap = Bitmap
@@ -263,6 +319,33 @@ end
 
    local centre = mGfx.ReadRGBPixel(bmp, 50, 50)
    assert((centre.red + centre.green + centre.blue) > 0, 'Gouraud fill should draw inside the target ellipse path')
+end
+
+@Test function GouraudStrokeRendersInSceneGraph()
+   local scene = newStrokeScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local stroke_pixel = mGfx.ReadRGBPixel(bmp, 50, 20)
+   assert((stroke_pixel.red + stroke_pixel.green + stroke_pixel.blue) > 0,
+      'Gouraud stroke should render through the scene graph stroke path')
+
+   local centre = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert((centre.red is 0) and (centre.green is 0) and (centre.blue is 0),
+      'Stroke-only Gouraud rectangle should not fill its interior')
+end
+
+@Test function GouraudFillCanBuildClipMask()
+   local scene = newClipMaskScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local inside = mGfx.ReadRGBPixel(bmp, 25, 50)
+   assert(inside.red > 0, 'Gouraud-filled clip mask should reveal the masked target')
+
+   local outside = mGfx.ReadRGBPixel(bmp, 75, 50)
+   assert((outside.red is 0) and (outside.green is 0) and (outside.blue is 0),
+      'Gouraud-filled clip mask should keep pixels outside the mask transparent')
 end
 
 @Test function UnchangedMeshRendersStably()

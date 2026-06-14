@@ -710,12 +710,16 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 
    if (Vector.Bounds.valid()) {
       if (Vector.Stroke.Gradient) {
-         if (auto table = get_stroke_gradient_table(Vector)) {
+         auto gradient = (extVectorGradient *)Vector.Stroke.Gradient;
+         if (gradient->Type IS VGT::GOURAUD) {
+            fill_gouraud(State, Vector.Bounds, view_width(), view_height(), *gradient,
+               State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
+         }
+         else if (auto table = get_stroke_gradient_table(Vector)) {
             fill_gradient(State, Vector.Bounds, &Vector.BasePath,
-               build_fill_transform(Vector, ((extVectorGradient *)Vector.Stroke.Gradient)->Units IS VUNIT::USERSPACE,
-                  State),
-               view_width(), view_height(), *((extVectorGradient *)Vector.Stroke.Gradient), table, mRenderBase,
-               raster, this);
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State),
+               view_width(), view_height(), *gradient, table, mRenderBase, raster, this);
          }
          return;
       }

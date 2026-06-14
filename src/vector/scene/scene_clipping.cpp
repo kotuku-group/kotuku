@@ -132,11 +132,16 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
                      Raster.add_path(final_path);
 
                      if (node->Fill->Gradient) {
-                        if (auto table = get_fill_gradient_table(node->Fill[0], state.mOpacity * node->FillOpacity)) {
-                           fill_gradient(state, node->Bounds, &node->BasePath, t, Render.view_width(), Render.view_height(),
-                              *((extVectorGradient *)node->Fill->Gradient), table, rb, Raster);
+                        auto gradient = (extVectorGradient *)node->Fill->Gradient;
+                        if (gradient->Type IS VGT::GOURAUD) {
+                           fill_gouraud(state, node->Bounds, Render.view_width(), Render.view_height(), *gradient,
+                              state.mOpacity * node->FillOpacity, rb, Raster, t);
                         }
-                     }
+                        else if (auto table = get_fill_gradient_table(node->Fill[0], state.mOpacity * node->FillOpacity)) {
+                           fill_gradient(state, node->Bounds, &node->BasePath, t, Render.view_width(), Render.view_height(),
+                              *gradient, table, rb, Raster);
+                        }
+                      }
 
                      if (node->Fill->Image) { // Bitmap image fill.  NB: The SVG class creates a standard VectorRectangle and associates an image with it in order to support <image> tags.
                         fill_image(state, node->Bounds, node->BasePath, node->Scene->SampleMethod, t,
