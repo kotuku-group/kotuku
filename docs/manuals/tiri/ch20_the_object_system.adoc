@@ -36,11 +36,11 @@ Raises an exception on failure.  Never returns `nil`.
 -- Manual initialisation
 file = obj.new('file')
 file.path  = 'readme.md'
-file.flags = '!READ'
+file.flags = FL_READ
 err = file.init()
 
 -- Automatic initialisation with field table
-file = obj.new('file', { path = 'readme.md', flags = '!READ' })
+file = obj.new('file', { path = 'readme.md', flags = FL_READ })
 ----
 
 ==== object.init()
@@ -109,20 +109,7 @@ An exception can be thrown if:
 
 Reads a field value by name.  If the object is inaccessible or the field cannot be read, returns `Default` or `nil`.  Exceptions are never thrown — the `Default` value has priority.
 
-The `get()` method supports extended syntax for specialised access:
-
-Array element access:: `object.get('arrayField(Index)')` retrieves a single element from an array field without reading the entire array.
-
-String representation:: Prefixing the field name with `$` returns the field value as a string.  This feature is intended for flag and lookup fields: `object.get('$flags')` returns the flags as a pipe-separated string.
-
-Bit-fields:: Flag-based fields can be tested for individual flags via dot notation: `object.get('field.flagName')`.  Returns `1` if the named flag is set, `0` if it is not set.  An invalid query returns `Default` or `nil`.  Note that flag names are referenced without underscores in this context.
-
-[source,tiri]
-----
-item = view.get('item(10)')
-flags_str = surface.get('$flags')  -- e.g. 'VISIBLE|STICKY'
-state = surface.get('flags.visible')
-----
+If the object's class defines support for `getKey()`, the call is diverted to the `getKey()` method in cases where `FieldName` does not exist.
 
 ==== object.set()
 
@@ -145,6 +132,10 @@ Some classes support arbitrary key-value string storage.  `getKey()` retrieves a
 script.setKey('Title', 'My Program Name')
 title = script.getKey('Title', 'UNDEFINED')
 ----
+
+Some classes treat keys as parseable strings that are backed by built-in functionality.  For instance, in this conceptual example the value of slot 10 is retrieved from an `item` array:
+
+`item = view.getKey('item[10]')`
 
 ==== object._state()
 
