@@ -649,6 +649,11 @@ void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient
          }
       }
    }
+
+   if (process_stops) {
+      auto stops = process_gradient_stops(Tag);
+      if (stops.size() >= 2) Gradient->set(FID_Stops, stops);
+   }
 }
 
 //********************************************************************************************************************
@@ -668,9 +673,6 @@ ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
       gradient->setFields(fl::Name("SVGDistalGrad"), fl::Type(VGT::DISTAL), fl::Units(VUNIT::BOUNDING_BOX));
 
       state.parse_distalgradient(Tag, gradient, id);
-
-      auto stops = process_gradient_stops(Tag);
-      if (stops.size() >= 2) gradient->set(FID_Stops, stops);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
