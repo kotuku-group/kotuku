@@ -39,6 +39,14 @@ function rampStops()
    return stops
 end
 
+function blackStops()
+   local stops = { }
+   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
+   table.insert(stops, stop(0.5, 0.0, 0.0, 0.0))
+   table.insert(stops, stop(1.0, 0.0, 0.0, 0.0))
+   return stops
+end
+
 -- A centred filled rectangle with a distal gradient fill.  The viewport is larger than the rectangle so the exterior
 -- ramp half has somewhere to render around the shape.
 
@@ -53,6 +61,19 @@ function newRectScene(Radius)
    check scene.mtAddDef('distal_rect', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_rect)' })
+   return scene, gradient
+end
+
+function newAlphaResolutionScene(Resolution)
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=160 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('VectorGradient', {
+      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=40, resolution=Resolution, stops=blackStops()
+   })
+   check scene.mtAddDef('distal_alpha_resolution', gradient)
+
+   viewport.new('VectorRectangle', { x=20, y=60, width=80, height=40, fill='url(#distal_alpha_resolution)' })
    return scene, gradient
 end
 
@@ -239,6 +260,34 @@ end
    assert((corner.red > 250) and (corner.green > 250) and (corner.blue > 250),
       'Beyond the padding edge the glow must contribute nothing (got ' ..
       corner.red .. ',' .. corner.green .. ',' .. corner.blue .. ')')
+end
+
+@Test function ResolutionStepsExteriorAlpha()
+   -- The colour ramp honours Resolution by collapsing table entries into visible bands.  The SDF exterior alpha is
+   -- separate from that colour table, so it must be stepped as well rather than fading smoothly between colour bands.
+
+   local scene = newAlphaResolutionScene(0.75)
+   local bmp = newWhiteBitmap(120, 160)
+   drawScene(scene, bmp)
+
+   local near_a = mGfx.ReadRGBPixel(bmp, 60, 55)
+   local near_b = mGfx.ReadRGBPixel(bmp, 60, 41)
+   assert((near_a.red is near_b.red) and (near_a.green is near_b.green) and (near_a.blue is near_b.blue),
+      'Exterior pixels in the same evenly spaced resolution band should share one alpha step (got ' ..
+      near_a.red .. ',' .. near_a.green .. ',' .. near_a.blue .. ' and ' ..
+      near_b.red .. ',' .. near_b.green .. ',' .. near_b.blue .. ')')
+
+   local next_band = mGfx.ReadRGBPixel(bmp, 60, 38)
+   assert(next_band.red > near_a.red + 20,
+      'The next evenly spaced exterior band should step to a visibly lower alpha (near red ' .. near_a.red ..
+      ', next red ' .. next_band.red .. ')')
+
+   local far_a = mGfx.ReadRGBPixel(bmp, 60, 35)
+   local far_b = mGfx.ReadRGBPixel(bmp, 60, 21)
+   assert((far_a.red is far_b.red) and (far_a.green is far_b.green) and (far_a.blue is far_b.blue),
+      'The outermost resolution band should also keep an even width before the padding edge (got ' ..
+      far_a.red .. ',' .. far_a.green .. ',' .. far_a.blue .. ' and ' ..
+      far_b.red .. ',' .. far_b.green .. ',' .. far_b.blue .. ')')
 end
 
 @Test function DeepInteriorGlowFadesAtPaddingEdge()

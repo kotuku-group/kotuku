@@ -854,7 +854,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       typedef agg::span_gradient_sdf<agg::rgba8, interpolator_type, color_array_type> sdf_span_type;
       typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, sdf_span_type> sdf_renderer_type;
 
-      sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0);
+      sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0, Gradient.Resolution);
       sdf_renderer_type sdf_render(RenderBase, span_allocator, sdf_span);
 
       if ((!Render) or (Render->clip_stack_empty())) {

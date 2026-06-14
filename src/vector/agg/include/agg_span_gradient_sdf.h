@@ -147,6 +147,27 @@ namespace agg
 #endif
    }
 
+   // Match the VectorGradient Resolution field for the exterior alpha ramp.  Colour resolution is baked into the
+   // 256-entry ramp table; the SDF glow alpha is independent of that table, so it needs equivalent stepping here.
+
+   static inline int8u sdf_apply_resolution(int Value, double Resolution) {
+      if (Resolution >= 1.0) return int8u(Value);
+
+      const int colour_block_size = int((1.0 - Resolution) * 256.0);
+      if (colour_block_size <= 1) return int8u(Value);
+
+      if (Value <= 0) return 0;
+      if (Value >= 255) return 255;
+
+      int exterior_steps = (128 + colour_block_size - 1) / colour_block_size;
+      if (exterior_steps < 1) exterior_steps = 1;
+      const int alpha_block_size = (255 + exterior_steps - 1) / exterior_steps;
+      int stepped = ((Value + alpha_block_size - 1) / alpha_block_size) * alpha_block_size;
+      if (stepped < 0) stepped = 0;
+      else if (stepped > 255) stepped = 255;
+      return int8u(stepped);
+   }
+
    // Span generator for SDF glow fills.  Unlike the stock span_gradient, it modulates per-pixel alpha by a
    // distance-based falloff so the exterior half of the field fades smoothly to transparent over the padding
    // distance, and contributes nothing once alpha reaches zero.  Two exterior colour modes are selectable at
@@ -164,12 +185,14 @@ namespace agg
       const int downscale_shift = interpolator_type::subpixel_shift - gradient_subpixel_shift;
       static const int reciprocal_shift = 24;
 
-      span_gradient_sdf() : m_interpolator(nullptr), m_gradient(nullptr), m_color_function(nullptr), m_d1(0), m_d2(0) { }
+      span_gradient_sdf() : m_interpolator(nullptr), m_gradient(nullptr), m_color_function(nullptr), m_d1(0), m_d2(0),
+         m_resolution(1.0) { }
 
       span_gradient_sdf(interpolator_type &Inter, const gradient_sdf &Gradient, const ColorF &ColorFunction,
-         double D1, double D2) :
+         double D1, double D2, double Resolution = 1.0) :
          m_interpolator(&Inter), m_gradient(&Gradient), m_color_function(&ColorFunction),
-         m_d1(iround(D1 * gradient_subpixel_scale)), m_d2(iround(D2 * gradient_subpixel_scale)) { }
+         m_d1(iround(D1 * gradient_subpixel_scale)), m_d2(iround(D2 * gradient_subpixel_scale)),
+         m_resolution(Resolution) { }
 
       void prepare() { }
 
@@ -193,7 +216,8 @@ namespace agg
             // distance (rather than the colour LUT range) guarantees the glow reaches zero alpha exactly at the
             // coverage boundary, so there is no hard rectangular cut-off.
 
-            const double alpha_mul = sdf_falloff(double(m_gradient->alpha(gx, gy)) / 255.0);
+            const int alpha = sdf_apply_resolution(m_gradient->alpha(gx, gy), m_resolution);
+            const double alpha_mul = sdf_falloff(double(alpha) / 255.0);
 
             if (alpha_mul <= 0.0) { // Past the glow edge: contribute nothing.
                *Span++ = color_type(0, 0, 0, 0);
@@ -229,6 +253,7 @@ namespace agg
       const ColorF       *m_color_function;
       int m_d1;
       int m_d2;
+      double m_resolution;
    };
 
    int8u * gradient_sdf::sdf_create(path_storage &ps) {
