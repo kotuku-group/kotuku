@@ -16,3 +16,4 @@ static const struct ActionArray clGradientContourActions[] = {
    { AC::NewPlacement, GRADIENTCONTOUR_NewPlacement },
    { AC::NIL, nullptr }
 };
+

@@ -15,3 +15,4 @@ static const struct ActionArray clGradientGouraudActions[] = {
    { AC::NewPlacement, GRADIENTGOURAUD_NewPlacement },
    { AC::NIL, nullptr }
 };
+

@@ -124,15 +124,61 @@ static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, Unit &Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+InnerFall: Selects the alpha fall-off curve for the interior fade.
+
+InnerFall controls the shape of the interior alpha fade that runs from the path outline inward to `InnerRadius`.  The
+default is `GFALL::SMOOTHSTEP`.  The fade is only visible when `InnerRadius` is non-zero; with a zero InnerRadius the
+interior remains fully opaque and this field has no effect.
+
+-FIELD-
+OuterFall: Selects the alpha fall-off curve for the exterior fade.
+
+OuterFall controls the shape of the exterior alpha fade that runs from the path outline outward to the padding edge
+defined by `Radius`.  The default is `GFALL::SMOOTHSTEP`.  Faster curves such as `GFALL::QUADRATIC` and
+`GFALL::CUBIC` produce a tighter halo, while `GFALL::SMOOTHSTEP` holds the inner half bright for a wider glow.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR GRADIENTDISTAL_GET_InnerFall(extGradientDistal *Self, GFALL *Value)
+{
+   *Value = Self->InnerFall;
+   return ERR::Okay;
+}
+
+static ERR GRADIENTDISTAL_SET_InnerFall(extGradientDistal *Self, GFALL Value)
+{
+   Self->InnerFall = Value;
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+static ERR GRADIENTDISTAL_GET_OuterFall(extGradientDistal *Self, GFALL *Value)
+{
+   *Value = Self->OuterFall;
+   return ERR::Okay;
+}
+
+static ERR GRADIENTDISTAL_SET_OuterFall(extGradientDistal *Self, GFALL Value)
+{
+   Self->OuterFall = Value;
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
 //********************************************************************************************************************
 
 #include "gradient_distal_def.cpp"
 
 static const FieldArray clGradientDistalFields[] = {
-   { "Floor", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Floor, GRADIENTDISTAL_SET_Floor },
-   { "Multiplier", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Multiplier, GRADIENTDISTAL_SET_Multiplier },
-   { "Radius", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
+   { "Floor",       FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Floor, GRADIENTDISTAL_SET_Floor },
+   { "Multiplier",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Multiplier, GRADIENTDISTAL_SET_Multiplier },
+   { "Radius",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
    { "InnerRadius", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerRadius, GRADIENTDISTAL_SET_InnerRadius },
+   { "InnerFall",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerFall, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },
+   { "OuterFall",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_OuterFall, GRADIENTDISTAL_SET_OuterFall, &clGradientDistalGFALL },
    END_FIELD
 };
 

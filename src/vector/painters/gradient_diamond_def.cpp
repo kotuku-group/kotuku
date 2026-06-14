@@ -15,3 +15,4 @@ static const struct ActionArray clGradientDiamondActions[] = {
    { AC::NewPlacement, GRADIENTDIAMOND_NewPlacement },
    { AC::NIL, nullptr }
 };
+

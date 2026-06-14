@@ -451,6 +451,43 @@ end
       centre.red .. ',' .. centre.green .. ',' .. centre.blue .. ')')
 end
 
+@Test function InnerFallAndOuterFallRoundTrip()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, innerFall=GFALL_CUBIC, outerFall=GFALL_LINEAR, stops=rampStops()
+   })
+
+   assert(gradient.innerFall is GFALL_CUBIC, 'InnerFall field should round-trip (got ' .. gradient.innerFall .. ')')
+   assert(gradient.outerFall is GFALL_LINEAR, 'OuterFall field should round-trip (got ' .. gradient.outerFall .. ')')
+end
+
+@Test function OuterFallReshapesExteriorGlow()
+   -- OuterFall reshapes the exterior alpha fade.  A LINEAR curve tapers evenly, whereas QUADRATIC drops faster near
+   -- the outline; sampled at the same exterior point, the faster curve leaves more of the white background showing
+   -- through (a higher red channel).  Switching the curve must therefore alter the render without rebuilding the SDF.
+
+   function exteriorScene(Curve)
+      local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, outerFall=Curve, stops=rampStops() })
+      check scene.mtAddDef('distal_outer_fall', gradient)
+      viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_outer_fall)' })
+      return scene
+   end
+
+   local linear_bmp = newWhiteBitmap(120, 120)
+   local quad_bmp = newWhiteBitmap(120, 120)
+   drawScene(exteriorScene(GFALL_LINEAR), linear_bmp)
+   drawScene(exteriorScene(GFALL_QUADRATIC), quad_bmp)
+
+   -- Mid-way through the exterior padding band (edge ~30, padding 20 -> ~y=20 at the top).
+   local linear = mGfx.ReadRGBPixel(linear_bmp, 60, 20)
+   local quad = mGfx.ReadRGBPixel(quad_bmp, 60, 20)
+   assert(quad.red > linear.red,
+      'A quadratic OuterFall should fade faster than linear, showing more background (linear red ' ..
+      linear.red .. ', quadratic red ' .. quad.red .. ')')
+end
+
 @Test function ClipPathStillConstrainsExteriorFill()
    -- The distal fill bypasses only the target path's own mask; a genuine clip-path must still constrain the result.
    -- A clip covering the left half of the surface should leave the right half (including the exterior band) clear.

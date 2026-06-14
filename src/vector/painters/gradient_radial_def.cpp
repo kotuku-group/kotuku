@@ -15,3 +15,4 @@ static const struct ActionArray clGradientRadialActions[] = {
    { AC::NewPlacement, GRADIENTRADIAL_NewPlacement },
    { AC::NIL, nullptr }
 };
+

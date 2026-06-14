@@ -27,6 +27,16 @@
     </field>
 
     <field>
+      <name>InnerFall</name>
+      <comment>Selects the alpha fall-off curve for the interior fade.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>InnerFall controls the shape of the interior alpha fade that runs from the path outline inward to <code>InnerRadius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  The fade is only visible when <code>InnerRadius</code> is non-zero; with a zero InnerRadius the interior remains fully opaque and this field has no effect.</p>
+      </description>
+    </field>
+
+    <field>
       <name>InnerRadius</name>
       <comment>The size of the inner radius for distal gradients.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -43,6 +53,16 @@
       <type>DOUBLE</type>
       <description>
 <p>The Multiplier value acts as a multiplier for distal gradient colour values.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OuterFall</name>
+      <comment>Selects the alpha fall-off curve for the exterior fade.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>OuterFall controls the shape of the exterior alpha fade that runs from the path outline outward to the padding edge defined by <code>Radius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  Faster curves such as <code>GFALL::QUADRATIC</code> and <code>GFALL::CUBIC</code> produce a tighter halo, while <code>GFALL::SMOOTHSTEP</code> holds the inner half bright for a wider glow.</p>
       </description>
     </field>
 

@@ -370,6 +370,17 @@ enum class WVS : int {
    SAWTOOTH = 3,
 };
 
+// Gradient fall-off options.
+
+enum class GFALL : int {
+   NIL = 0,
+   OPAQUE = 1,
+   LINEAR = 2,
+   QUADRATIC = 3,
+   CUBIC = 4,
+   SMOOTHSTEP = 5,
+};
+
 // Colour modes for ColourFX.
 
 enum class CM : int {
@@ -1733,7 +1744,7 @@ class objGradientDistal : public objGradient {
    }
 
    inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[5];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1745,6 +1756,18 @@ class objGradientDistal : public objGradient {
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getInnerFall(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getOuterFall(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      auto error = field->GetValue(this, &Value);
       return error;
    }
 
@@ -1764,7 +1787,7 @@ class objGradientDistal : public objGradient {
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[5];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1773,6 +1796,16 @@ class objGradientDistal : public objGradient {
       auto field = &this->Class->Dictionary[0];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setInnerFall(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setOuterFall(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };

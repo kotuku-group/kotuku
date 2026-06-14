@@ -17,19 +17,17 @@
 
 #define SDF_GLOW_RAMP_COLOUR
 
-// Exterior glow alpha falloff curve.  The exterior coverage 'a' runs 1.0 at the path outline to 0.0 at the padding
-// edge; the selected curve reshapes how quickly the glow fades over that distance.  Define exactly one of the
-// following (quadratic ease-out is the default).  A curve that drops faster near the outline (quadratic/cubic)
-// produces a tighter, less bright halo; smoothstep holds the inner half bright and reads as a wider, brighter glow.
+// Alpha fall-off curve.  The coverage 'a' runs 1.0 at the path outline to 0.0 at the fade boundary (the padding edge
+// for the exterior, or InnerRadius for the interior); the selected curve reshapes how quickly the alpha fades over
+// that distance.  A curve that drops faster near the outline (quadratic/cubic) produces a tighter, less bright fade;
+// smoothstep holds the inner half bright and reads as a wider, brighter fade.  The interior and exterior curves are
+// selected independently at runtime via the GradientDistal InnerFall and OuterFall fields.
 //
-//   SDF_FALLOFF_LINEAR     : a            (even taper)
-//   SDF_FALLOFF_QUADRATIC  : a^2          (fast drop, thin tail — natural glow, default)
-//   SDF_FALLOFF_CUBIC      : a^3          (very tight glow hugging the outline)
-//   SDF_FALLOFF_SMOOTHSTEP : 3a^2 - 2a^3  (S-curve; brightest, holds the inner half)
-
-#if !defined(SDF_FALLOFF_LINEAR) and !defined(SDF_FALLOFF_QUADRATIC) and !defined(SDF_FALLOFF_CUBIC) and !defined(SDF_FALLOFF_SMOOTHSTEP)
-   #define SDF_FALLOFF_SMOOTHSTEP
-#endif
+//   OPAQUE     : 0            (no fade; the half is fully opaque up to its boundary then cut)
+//   LINEAR     : a            (even taper)
+//   QUADRATIC  : a^2          (fast drop, thin tail — natural glow)
+//   CUBIC      : a^3          (very tight glow hugging the outline)
+//   SMOOTHSTEP : 3a^2 - 2a^3  (S-curve; brightest, holds the inner half)
 
 #include "agg_basics.h"
 #include "agg_trans_affine.h"
@@ -134,21 +132,31 @@ namespace agg
       bool empty() const { return m_buffer.empty(); }
    };
 
-   // Exterior glow alpha falloff: reshapes the linear coverage 'a' (1.0 at the outline, 0.0 at the padding edge)
-   // into the final alpha multiplier.
+   // Alpha fall-off curve selector.  Values mirror the Kotuku GFALL enumeration so a GradientDistal field can be
+   // forwarded directly without translation.
 
-   static inline double sdf_falloff(double a) {
+   enum class sdf_falloff_curve {
+      none       = 1,
+      linear     = 2,
+      quadratic  = 3,
+      cubic      = 4,
+      smoothstep = 5
+   };
+
+   // Reshapes the linear coverage 'a' (1.0 at the outline, 0.0 at the fade boundary) into the final alpha multiplier
+   // using the selected curve.
+
+   static inline double sdf_falloff(double a, sdf_falloff_curve Curve) {
       if (a <= 0.0) return 0.0;
       if (a >= 1.0) return 1.0;
-#if defined(SDF_FALLOFF_LINEAR)
-         return a;
-#elif defined(SDF_FALLOFF_CUBIC)
-         return a * a * a;
-#elif defined(SDF_FALLOFF_SMOOTHSTEP)
-         return a * a * (3.0 - (2.0 * a));
-#else // SDF_FALLOFF_QUADRATIC (default)
-         return a * a;
-#endif
+      switch (Curve) {
+         case sdf_falloff_curve::none:       return 1.0; // Opaque up to the boundary, then cut
+         case sdf_falloff_curve::linear:     return a;
+         case sdf_falloff_curve::quadratic:  return a * a;
+         case sdf_falloff_curve::cubic:      return a * a * a;
+         case sdf_falloff_curve::smoothstep: return a * a * (3.0 - (2.0 * a));
+         default:                            return a * a;
+      }
    }
 
    // Match the Gradient Resolution field for SDF alpha ramps.  Colour resolution is baked into the 256-entry
@@ -190,13 +198,16 @@ namespace agg
       static const int reciprocal_shift = 24;
 
       span_gradient_sdf() : m_interpolator(nullptr), m_gradient(nullptr), m_color_function(nullptr), m_d1(0), m_d2(0),
-         m_resolution(1.0) { }
+         m_resolution(1.0), m_inner_fall(sdf_falloff_curve::smoothstep),
+         m_outer_fall(sdf_falloff_curve::smoothstep) { }
 
       span_gradient_sdf(interpolator_type &Inter, const gradient_sdf &Gradient, const ColorF &ColorFunction,
-         double D1, double D2, double Resolution = 1.0) :
+         double D1, double D2, double Resolution = 1.0,
+         sdf_falloff_curve InnerFall = sdf_falloff_curve::smoothstep,
+         sdf_falloff_curve OuterFall = sdf_falloff_curve::smoothstep) :
          m_interpolator(&Inter), m_gradient(&Gradient), m_color_function(&ColorFunction),
          m_d1(iround(D1 * gradient_subpixel_scale)), m_d2(iround(D2 * gradient_subpixel_scale)),
-         m_resolution(Resolution) { }
+         m_resolution(Resolution), m_inner_fall(InnerFall), m_outer_fall(OuterFall) { }
 
       void prepare() { }
 
@@ -219,8 +230,12 @@ namespace agg
             // inward when InnerRadius is non-zero and outward to the padding edge) and softened with a smoothstep
             // curve.  Normalising independently of the colour LUT avoids hard cut-offs at the field boundaries.
 
+            // Interior pixels (raw < 128) use the InnerFall curve, exterior pixels (raw >= 128) use OuterFall.  The
+            // outline (raw == 128) sits at full coverage either way, so the choice there is immaterial.
+
             const int alpha = sdf_apply_resolution(m_gradient->alpha(gx, gy), m_resolution);
-            const double alpha_mul = sdf_falloff(double(alpha) / 255.0);
+            const sdf_falloff_curve curve = (raw < 128) ? m_inner_fall : m_outer_fall;
+            const double alpha_mul = sdf_falloff(double(alpha) / 255.0, curve);
 
             if (alpha_mul <= 0.0) { // Past the glow edge: contribute nothing.
                *Span++ = color_type(0, 0, 0, 0);
@@ -257,6 +272,8 @@ namespace agg
       int m_d1;
       int m_d2;
       double m_resolution;
+      sdf_falloff_curve m_inner_fall;
+      sdf_falloff_curve m_outer_fall;
    };
 
    int8u * gradient_sdf::sdf_create(path_storage &ps) {
