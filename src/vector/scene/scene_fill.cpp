@@ -342,11 +342,13 @@ static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bound
 
    // The Resolution field reduces the gradient's colour resolution, mirroring the field gradients.  It maps to a
    // count of 1/(1-Resolution) distinct colours; for a Gouraud fill that becomes the number of discrete levels each
-   // output channel is snapped to.  Resolution >= 1 (the default) disables banding, so the plain span path runs.
+   // output channel is snapped to.  The 8-bit output span cannot represent more than 256 channel values, so counts
+   // at or above 256 disable banding and use the plain span path.
 
    const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
-   const bool quantise = (resolution < 1.0);
-   const int levels = quantise ? std::max(2, int(std::lround(1.0 / (1.0 - resolution)))) : 256;
+   const double level_count = (resolution < 1.0) ? std::round(1.0 / (1.0 - resolution)) : 256.0;
+   const int levels = int(std::clamp(level_count, 2.0, 256.0));
+   const bool quantise = (levels < 256);
 
    // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
    // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).

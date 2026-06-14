@@ -27,7 +27,7 @@ public:
     span_gouraud_rgba_quantise(const color_type& c1, const color_type& c2, const color_type& c3,
                                double x1, double y1, double x2, double y2, double x3, double y3,
                                double d, int levels) :
-        BaseSpan(c1, c2, c3, x1, y1, x2, y2, x3, y3, d), m_levels(levels < 2 ? 2 : levels)
+        BaseSpan(c1, c2, c3, x1, y1, x2, y2, x3, y3, d), m_levels(levels < 2 ? 2 : (levels > 256 ? 256 : levels))
     {}
 
     void generate(color_type* span, int x, int y, unsigned len)
