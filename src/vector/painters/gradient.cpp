@@ -24,6 +24,7 @@ static ERR init_gradient_diamond(void);
 static ERR init_gradient_contour(void);
 static ERR init_gradient_gouraud(void);
 static ERR init_gradient_distal(void);
+static ERR init_gradient_voronoi(void);
 
 // Return a gradient table for a vector with its opacity multiplier applied.  The table is cached with the vector so
 // that it does not need to be recalculated when required again.
@@ -580,6 +581,7 @@ ERR init_gradient(void) // The gradient is a definition type for creating gradie
    if ((error = init_gradient_contour()) != ERR::Okay) return error;
    if ((error = init_gradient_gouraud()) != ERR::Okay) return error;
    if ((error = init_gradient_distal()) != ERR::Okay) return error;
+   if ((error = init_gradient_voronoi()) != ERR::Okay) return error;
 
    return error;
 }

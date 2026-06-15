@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientVoronoi</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Seeded Worley/Voronoi field colour gradient paint server.</comment>
+    <version>1</version>
+    <id>8c7b03cb</id>
+    <idstring>GRADIENTVORONOI</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientVoronoi scatters deterministic feature points inside the target path bounds and maps the selected Worley field through the inherited colour ramp.  <code>Seed</code> controls repeatability, <code>PointCount</code> controls feature density, <code>WorleyMode</code> selects the field interpretation, and <code>WorleyMetric</code> selects the distance metric.</p></description>
+    <source>
+      <file path="painters/">gradient_voronoi.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Floor</name>
+      <comment>Colour ramp floor for Voronoi gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of <code>0 &lt; Floor &lt; Multiplier</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>HeightMax</name>
+      <comment>Maximum seeded feature-point height.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>HeightMax defines the upper bound for per-point heights used by the <code>WEIGHTED</code> and <code>PEAKS</code> Worley modes.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>HeightMin</name>
+      <comment>Minimum seeded feature-point height.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>HeightMin defines the lower bound for per-point heights used by the <code>WEIGHTED</code> and <code>PEAKS</code> Worley modes.  When HeightMin and <fl>HeightMax</fl> match, every feature point has the same height.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Jitter</name>
+      <comment>Normalised jitter for grid-distributed feature points.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Jitter ranges from <code>0</code> to <code>1</code>.  A value of zero uses uniform random placement; values above zero place points on a jittered grid, with larger values allowing greater movement within each grid cell.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Multiplier</name>
+      <comment>Colour ramp multiplier for Voronoi gradients.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The Multiplier value acts as a multiplier for Voronoi gradient colour values.  It has a valid range of <code>.01 &lt; Multiplier &lt; 10</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PointCount</name>
+      <comment>Number of seeded Voronoi feature points.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>PointCount controls how many feature points are generated inside the target path bounds.  The accepted range is <code>1</code> to <code>4096</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Seed</name>
+      <comment>Deterministic seed for feature-point generation.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT64</type>
+      <description>
+<p>Seed controls the generated feature points and their heights.  A value of zero derives a stable seed from the target path fingerprint.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>WorleyMetric</name>
+      <comment>Distance metric for the Voronoi field.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="WLM">INT</type>
+      <description>
+<p>WorleyMetric selects the distance function used when measuring each pixel against the seeded feature points.</p>
+<types lookup="WLM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>WorleyMode</name>
+      <comment>Field mode for the Voronoi gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="WLF">INT</type>
+      <description>
+<p>WorleyMode selects how distances to feature points are converted into the scalar field that feeds the colour ramp.</p>
+<types lookup="WLF"/>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="WLF" comment="Worley field modes.">
+      <const name="F1">Distance to nearest point.</const>
+      <const name="F2">Distance to second-nearest point.</const>
+      <const name="F2_F1">Distance between the nearest and second-nearest points.</const>
+      <const name="PEAKS">Additive peaks or terrain using per-point heights.</const>
+      <const name="WEIGHTED">Additively-weighted Voronoi using per-point heights.</const>
+    </constants>
+
+    <constants lookup="WLM" comment="Worley distance metrics.">
+      <const name="CHEBYSHEV"/>
+      <const name="EUCLIDEAN"/>
+      <const name="MANHATTAN"/>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

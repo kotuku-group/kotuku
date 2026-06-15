@@ -1,0 +1,150 @@
+   include 'display'
+   include 'vector'
+
+   mGfx ?= mod.load('display')
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function stop(Offset, R, G, B)
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+function rampStops()
+   local stops = { }
+   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
+   table.insert(stops, stop(1.0, 1.0, 1.0, 1.0))
+   return stops
+end
+
+function newVoronoiScene(Options)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local opts = {
+      units=VUNIT_BOUNDING_BOX,
+      seed=12345,
+      pointCount=12,
+      worleyMode=WLF_F1,
+      worleyMetric=WLM_EUCLIDEAN,
+      stops=rampStops()
+   }
+
+   if Options != nil then
+      for key, value in pairs(Options) do opts[key] = value end
+   end
+
+   local gradient = scene.new('GradientVoronoi', opts)
+   check scene.mtAddDef('voronoi', gradient)
+   viewport.new('VectorRectangle', { x=10, y=10, width=80, height=80, fill='url(#voronoi)' })
+   return scene, gradient
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function renderHash(Options)
+   local scene = newVoronoiScene(Options)
+   local bmp = newBitmap(100, 100)
+   return drawHash(scene, bmp)
+end
+
+@Test function FieldsRoundTrip()
+   local scene, gradient = newVoronoiScene({
+      floor=0.2,
+      multiplier=1.8,
+      seed=987654321,
+      pointCount=19,
+      worleyMode=WLF_F2_F1,
+      worleyMetric=WLM_MANHATTAN,
+      heightMin=0.25,
+      heightMax=2.75,
+      jitter=0.5
+   })
+
+   assert(math.abs(gradient.floor - 0.2) < 0.001, 'Floor field should round-trip')
+   assert(math.abs(gradient.multiplier - 1.8) < 0.001, 'Multiplier field should round-trip')
+   assert(gradient.seed is 987654321, 'Seed field should round-trip')
+   assert(gradient.pointCount is 19, 'PointCount field should round-trip')
+   assert(gradient.worleyMode is WLF_F2_F1, 'WorleyMode field should round-trip')
+   assert(gradient.worleyMetric is WLM_MANHATTAN, 'WorleyMetric field should round-trip')
+   assert(math.abs(gradient.heightMin - 0.25) < 0.001, 'HeightMin field should round-trip')
+   assert(math.abs(gradient.heightMax - 2.75) < 0.001, 'HeightMax field should round-trip')
+   assert(math.abs(gradient.jitter - 0.5) < 0.001, 'Jitter field should round-trip')
+end
+
+@Test function UserspaceForcedToBoundingBox()
+   local scene, gradient = newVoronoiScene({ units=VUNIT_USERSPACE })
+   assert(gradient.units is VUNIT_BOUNDING_BOX, 'Voronoi gradient should coerce USERSPACE units to BOUNDING_BOX')
+end
+
+@Test function SameSeedRendersIdentically()
+   local first = renderHash({ seed=333, pointCount=16, worleyMode=WLF_F1 })
+   local second = renderHash({ seed=333, pointCount=16, worleyMode=WLF_F1 })
+   assert(first is second, 'Same Seed and parameters should produce byte-identical Voronoi renders')
+end
+
+@Test function DifferentSeedChangesRender()
+   local first = renderHash({ seed=333, pointCount=16 })
+   local second = renderHash({ seed=334, pointCount=16 })
+   assert(first != second, 'Changing Seed should alter the generated Voronoi field')
+end
+
+@Test function SeedlessRenderIsStable()
+   local first = renderHash({ seed=0, pointCount=14 })
+   local second = renderHash({ seed=0, pointCount=14 })
+   assert(first is second, 'A zero Seed should derive a stable seed from the path fingerprint')
+end
+
+@Test function ModeChangesRender()
+   local f1 = renderHash({ seed=123, pointCount=18, worleyMode=WLF_F1 })
+   local borders = renderHash({ seed=123, pointCount=18, worleyMode=WLF_F2_F1 })
+   assert(f1 != borders, 'Changing WorleyMode should alter the generated field')
+end
+
+@Test function MetricChangesRender()
+   local euclidean = renderHash({ seed=456, pointCount=18, worleyMetric=WLM_EUCLIDEAN })
+   local manhattan = renderHash({ seed=456, pointCount=18, worleyMetric=WLM_MANHATTAN })
+   assert(euclidean != manhattan, 'Changing WorleyMetric should alter the generated cell shape')
+end
+
+@Test function HeightModesRender()
+   local weighted = renderHash({
+      seed=789,
+      pointCount=18,
+      worleyMode=WLF_WEIGHTED,
+      heightMin=0.0,
+      heightMax=20.0
+   })
+   local peaks = renderHash({
+      seed=789,
+      pointCount=18,
+      worleyMode=WLF_PEAKS,
+      heightMin=0.0,
+      heightMax=20.0
+   })
+   assert(weighted != peaks, 'Weighted and Peaks height modes should produce different fields')
+end
+
+@Test function JitterChangesPlacement()
+   local uniform = renderHash({ seed=222, pointCount=25, jitter=0.0 })
+   local jittered = renderHash({ seed=222, pointCount=25, jitter=0.75 })
+   assert(uniform != jittered, 'Changing Jitter should alter feature point placement')
+end

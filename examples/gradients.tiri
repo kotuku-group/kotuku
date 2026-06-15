@@ -213,6 +213,35 @@ function selectGradient(Text):obj
       radiusChanged = function(Radius:num)
          distalShape?.radius = Radius
       end
+   elseif Text is 'Voronoi' then
+      gradient = createGradient('GradientVoronoi', {
+         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+         seed = 20260615,
+         pointCount = 32,
+         worleyMode = WLF_F2_F1,
+         worleyMetric = WLM_EUCLIDEAN,
+         floor = 0,
+         multiplier = 1.4,
+         heightMin = 0.25,
+         heightMax = 1.75,
+         jitter = 0.35
+      })
+
+      -- Dragging reshapes the ramp while preserving a valid Floor < Multiplier relationship.
+
+      uiEvent = function(ev)
+         local floor = (ev.x / gradientVP.width) * 0.9
+         local multiplier = 0.5 + ((ev.y / gradientVP.height) * 3.5)
+
+         if multiplier <= floor then multiplier = floor + 0.1 end
+
+         gradient.floor = floor
+         gradient.multiplier = multiplier
+      end
+
+      radiusChanged = function(Radius:num)
+         gradient?.pointCount = math.floor(Radius / 4) + 1
+      end
    elseif Text is 'Linear' then
       gradient = createGradient('GradientLinear', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
@@ -274,6 +303,7 @@ function buildScene()
          { item='Contour' },
          { item='Contour Path' },
          { item='Distal' },
+         { item='Voronoi' },
          { item='Gouraud' }
       },
       events = {
