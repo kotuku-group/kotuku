@@ -15,6 +15,20 @@ static void set_dimension(XTag *Tag, const std::string Attrib, Unit &Value)
 
 //*********************************************************************************************************************
 
+static void set_gradient_colour_space(XTag *Tag, objGradient *Gradient, ERR &Error)
+{
+   VCS colour_space;
+   if ((!Error) and (!Gradient->get(FID_ColourSpace, (int &)colour_space))) {
+      switch(colour_space) {
+         case VCS::SRGB:       xml::NewAttrib(Tag, "color-interpolation", "sRGB"); break;
+         case VCS::LINEAR_RGB: xml::NewAttrib(Tag, "color-interpolation", "linearRGB"); break;
+         default: break;
+      }
+   }
+}
+
+//*********************************************************************************************************************
+
 static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Parent)
 {
    std::string path;
@@ -42,7 +56,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
    ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
 
    if (!Scene->get(FID_Defs, defs)) {
-      ERR error;
+      ERR error = ERR::Okay;
       int def_index = 0;
       for (auto & [ key, def ] : *defs) {
          if (!def_index) {
@@ -61,7 +75,12 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                case CLASSID::GRADIENTCONTOUR: gradient_type = "<contourGradient/>"; break;
                case CLASSID::GRADIENTDISTAL:  gradient_type = "<distalGradient/>"; break;
                case CLASSID::GRADIENTLINEAR:  gradient_type = "<linearGradient/>"; break;
-               default: gradient_type = "<linearGradient/>"; break;
+               case CLASSID::GRADIENTGOURAUD:
+                  log.warning("GradientGouraud not supported.");
+                  continue;
+               default:
+                  log.warning("%s not supported.", def->Class->ClassName.c_str());
+                  continue;
             }
             XTag *tag = nullptr;
             error = XML->insertStatement(def_index, XMI::CHILD_END, gradient_type, &tag);
@@ -87,6 +106,13 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
+            set_gradient_colour_space(tag, gradient, error);
+
+            double resolution;
+            if ((!error) and (!gradient->get(FID_Resolution, resolution)) and (resolution != 1.0)) {
+               xml::NewAttrib(tag, "resolution", std::to_string(resolution));
+            }
+
             if (def->classID() IS CLASSID::GRADIENTLINEAR) {
                Unit val;
                if ((!error) and (!gradient->get(FID_X1, val))) set_dimension(tag, "x1", val);
@@ -95,34 +121,40 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                if ((!error) and (!gradient->get(FID_Y2, val))) set_dimension(tag, "y2", val);
             }
             else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
-               double dbl;
-               if ((!error) and (!gradient->get(FID_Floor, dbl))) xml::NewAttrib(tag, "floor", std::to_string(dbl));
-               if ((!error) and (!gradient->get(FID_Multiplier, dbl))) xml::NewAttrib(tag, "multiplier", std::to_string(dbl));
+               Unit val;
+               if ((!error) and (!gradient->get(FID_Floor, val))) set_dimension(tag, "floor", val);
+               if ((!error) and (!gradient->get(FID_Multiplier, val))) set_dimension(tag, "multiplier", val);
             }
             else if (def->classID() IS CLASSID::GRADIENTDISTAL) {
-               double dbl;
-               if ((!error) and (!gradient->get(FID_Floor, dbl))) xml::NewAttrib(tag, "floor", std::to_string(dbl));
-               if ((!error) and (!gradient->get(FID_Multiplier, dbl))) xml::NewAttrib(tag, "multiplier", std::to_string(dbl));
-               if ((!error) and (!gradient->get(FID_Radius, dbl)) and (dbl > 0))
-                  xml::NewAttrib(tag, "radius", std::to_string(dbl));
+               Unit val;
+               if ((!error) and (!gradient->get(FID_Floor, val))) set_dimension(tag, "floor", val);
+               if ((!error) and (!gradient->get(FID_Multiplier, val))) set_dimension(tag, "multiplier", val);
+               if ((!error) and (!gradient->get(FID_Radius, val)) and (val.defined()) and (double(val) > 0)) {
+                  set_dimension(tag, "radius", val);
+               }
             }
             else if (def->classID() IS CLASSID::GRADIENTRADIAL) {
                Unit val;
-               if ((!error) and (!gradient->get(FID_CenterX, val))) set_dimension(tag, "cx", val);
-               if ((!error) and (!gradient->get(FID_CenterY, val))) set_dimension(tag, "cy", val);
-               if ((!error) and (!gradient->get(FID_FocalX, val))) set_dimension(tag, "fx", val);
-               if ((!error) and (!gradient->get(FID_FocalY, val))) set_dimension(tag, "fy", val);
+               if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
+               if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
+               if ((!error) and (!gradient->get(FID_FX, val))) set_dimension(tag, "fx", val);
+               if ((!error) and (!gradient->get(FID_FY, val))) set_dimension(tag, "fy", val);
                if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
+
+               int contain_focal;
+               if ((!error) and (!gradient->get(kt::fieldhash("ContainFocal"), contain_focal)) and (!contain_focal)) {
+                  xml::NewAttrib(tag, "focal", "unbound");
+               }
             }
             else if ((def->classID() IS CLASSID::GRADIENTDIAMOND) or (def->classID() IS CLASSID::GRADIENTCONIC)) {
                Unit val;
-               if ((!error) and (!gradient->get(FID_CenterX, val))) set_dimension(tag, "cx", val);
-               if ((!error) and (!gradient->get(FID_CenterY, val))) set_dimension(tag, "cy", val);
+               if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
+               if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
                if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
             }
 
             VectorMatrix *transform;
-            if ((!error) and (!gradient->get(FID_Transforms, transform)) and (transform)) {
+            if ((!error) and (!gradient->get(FID_Matrices, transform)) and (transform)) {
                std::stringstream buffer;
                if (!save_svg_transform(transform, buffer)) {
                   xml::NewAttrib(tag, "gradientTransform", buffer.str());
@@ -134,14 +166,18 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                int total_stops, stop_index;
                if (!gradient->get(FID_Stops, stops, total_stops)) {
                   for (int s=0; (s < total_stops) and (!error); s++) {
-                     if (!(error = XML->insertXML(def_index, XMI::CHILD_END, "<stop/>", &stop_index))) {
+                     if (!(error = XML->insertXML(tag->ID, XMI::CHILD_END, "<stop/>", &stop_index))) {
                         XTag *stop_tag;
                         error = XML->getTag(stop_index, &stop_tag);
                         if (!error) xml::NewAttrib(stop_tag, "offset", std::to_string(stops[s].Offset));
 
                         std::stringstream buffer;
-                        buffer << "stop-color:rgb(" << stops[s].RGB.Red*255.0 << "," << stops[s].RGB.Green*255.0 << "," << stops[s].RGB.Blue*255.0 << "," << stops[s].RGB.Alpha*255.0 << ")";
-                        if (!error) xml::NewAttrib(stop_tag, "style", buffer.str());
+                        buffer << "rgb(" << stops[s].RGB.Red*255.0 << "," << stops[s].RGB.Green*255.0 << ","
+                           << stops[s].RGB.Blue*255.0 << ")";
+                        if (!error) xml::NewAttrib(stop_tag, "stop-color", buffer.str());
+                        if ((!error) and (stops[s].RGB.Alpha != 1.0)) {
+                           xml::NewAttrib(stop_tag, "stop-opacity", std::to_string(stops[s].RGB.Alpha));
+                        }
                      }
                   }
                }
