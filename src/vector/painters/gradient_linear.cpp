@@ -21,14 +21,12 @@ expressed as units that are scaled to the target space.
 
 static ERR GRADIENTLINEAR_GET_X1(extGradientLinear *Self, Unit *Value)
 {
-   Value->set(Self->X1);
+   *Value = Self->X1;
    return ERR::Okay;
 }
 
 static ERR GRADIENTLINEAR_SET_X1(extGradientLinear *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X1) & (~VGF::FIXED_X1);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
    Self->X1 = Value;
    Self->CalcAngle = true;
    if (Self->initialised()) Self->modified();
@@ -46,14 +44,12 @@ expressed as units that are scaled to the target space.
 
 static ERR GRADIENTLINEAR_GET_X2(extGradientLinear *Self, Unit *Value)
 {
-   Value->set(Self->X2);
+   *Value = Self->X2;
    return ERR::Okay;
 }
 
 static ERR GRADIENTLINEAR_SET_X2(extGradientLinear *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X2) & (~VGF::FIXED_X2);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
    Self->X2 = Value;
    Self->CalcAngle = true;
    if (Self->initialised()) Self->modified();
@@ -71,14 +67,12 @@ expressed as units that are scaled to the target space.
 
 static ERR GRADIENTLINEAR_GET_Y1(extGradientLinear *Self, Unit *Value)
 {
-   Value->set(Self->Y1);
+   *Value = Self->Y1;
    return ERR::Okay;
 }
 
 static ERR GRADIENTLINEAR_SET_Y1(extGradientLinear *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_Y1) & (~VGF::FIXED_Y1);
-   else Self->Flags = (Self->Flags | VGF::FIXED_Y1) & (~VGF::SCALED_Y1);
    Self->Y1 = Value;
    Self->CalcAngle = true;
    if (Self->initialised()) Self->modified();
@@ -97,14 +91,12 @@ expressed as units that are scaled to the target space.
 
 static ERR GRADIENTLINEAR_GET_Y2(extGradientLinear *Self, Unit *Value)
 {
-   Value->set(Self->Y2);
+   *Value = Self->Y2;
    return ERR::Okay;
 }
 
 static ERR GRADIENTLINEAR_SET_Y2(extGradientLinear *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_Y2) & (~VGF::FIXED_Y2);
-   else Self->Flags = (Self->Flags | VGF::FIXED_Y2) & (~VGF::SCALED_Y2);
    Self->Y2 = Value;
    Self->CalcAngle = true;
    if (Self->initialised()) Self->modified();

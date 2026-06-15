@@ -13,7 +13,19 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientDistal shades inward and outward from the target vector path outline.  The path outline is pinned to the centre of the colour ramp, <code>Radius</code> controls exterior padding, and <code>InnerRadius</code> controls interior fade-out.</p></description>
+<p>GradientDistal shades inward and outward from the target vector path outline.  The path outline is pinned to the centre of the colour ramp, <code>Radius</code> controls exterior padding, and <code>InnerRadius</code> controls interior fade-out.</p>
+<p>The base #SpreadMethod field selects how the exterior fade behaves beyond the first cycle, where one cycle spans the <code>Radius</code> distance:</p>
+<list type="bullet">
+<li>
+<code>PAD</code> (the default) fades once over the <code>Radius</code> distance and then stops, producing the classic glow or halo.</li>
+<li>
+<code>REPEAT</code> tiles the fade outward as a sawtooth: at the end of each <code>Radius</code> cycle the alpha and colour restart at
+full strength, repeating until the parent area is filled.</li>
+<li>
+<code>REFLECT</code> tiles the fade outward as a triangle wave: each cycle alternates direction, ramping the alpha back up
+from zero before fading again, repeating until the parent area is filled.</li>
+</list>
+<p>Setting <fl>OuterFall</fl> to <code>GFALL::OPAQUE</code> holds the exterior alpha at full strength rather than tapering it, so with <code>REPEAT</code> or <code>REFLECT</code> the full colour ramp is painted solidly out to the parent edge with no fade between tiles.  Under <code>PAD</code> the alpha still cuts to transparent at the padding edge as usual.</p></description>
     <source>
       <file path="painters/">gradient_distal.cpp</file>
     </source>

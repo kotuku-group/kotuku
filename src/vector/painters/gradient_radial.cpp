@@ -21,14 +21,12 @@ is set to `50%`.
 
 static ERR GRADIENTRADIAL_GET_CX(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->CX);
+   *Value = Self->CX;
    return ERR::Okay;
 }
 
 static ERR GRADIENTRADIAL_SET_CX(extGradientRadial *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
-   else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
    Self->CX = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -45,14 +43,12 @@ is set to `50%`.
 
 static ERR GRADIENTRADIAL_GET_CY(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->CY);
+   *Value = Self->CY;
    return ERR::Okay;
 }
 
 static ERR GRADIENTRADIAL_SET_CY(extGradientRadial *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CY) & (~VGF::FIXED_CY);
-   else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
    Self->CY = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -90,15 +86,13 @@ the focal area.  The default of zero ensures that the focal area matches that de
 
 static ERR GRADIENTRADIAL_GET_FocalRadius(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->FocalRadius);
+   *Value = Self->FocalRadius;
    return ERR::Okay;
 }
 
 static ERR GRADIENTRADIAL_SET_FocalRadius(extGradientRadial *Self, Unit &Value)
 {
    if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FOCAL_RADIUS) & (~VGF::FIXED_FOCAL_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_FOCAL_RADIUS) & (~VGF::SCALED_FOCAL_RADIUS);
       Self->FocalRadius = Value;
       if (Self->initialised()) Self->modified();
       return ERR::Okay;
@@ -117,14 +111,12 @@ will match the centre of the gradient.
 
 static ERR GRADIENTRADIAL_GET_FX(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->FX);
+   *Value = Self->FX;
    return ERR::Okay;
 }
 
 static ERR GRADIENTRADIAL_SET_FX(extGradientRadial *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FX) & (~VGF::FIXED_FX);
-   else Self->Flags = (Self->Flags | VGF::FIXED_FX) & (~VGF::SCALED_FX);
    Self->FX = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -141,14 +133,12 @@ will match the centre of the gradient.
 
 static ERR GRADIENTRADIAL_GET_FY(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->FY);
+   *Value = Self->FY;
    return ERR::Okay;
 }
 
 static ERR GRADIENTRADIAL_SET_FY(extGradientRadial *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FY) & (~VGF::FIXED_FY);
-   else Self->Flags = (Self->Flags | VGF::FIXED_FY) & (~VGF::SCALED_FY);
    Self->FY = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -166,15 +156,13 @@ The radius of the gradient can be defined as a fixed unit or scaled relative to 
 
 static ERR GRADIENTRADIAL_GET_Radius(extGradientRadial *Self, Unit *Value)
 {
-   Value->set(Self->Radius);
+   *Value = Self->Radius;
    return ERR::Okay;
 }
 
 static ERR GRADIENTRADIAL_SET_Radius(extGradientRadial *Self, Unit &Value)
 {
    if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_RADIUS) & (~VGF::FIXED_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_RADIUS) & (~VGF::SCALED_RADIUS);
       Self->Radius = Value;
       if (Self->initialised()) Self->modified();
       return ERR::Okay;

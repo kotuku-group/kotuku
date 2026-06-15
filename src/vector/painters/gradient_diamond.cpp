@@ -20,14 +20,12 @@ the centre point is set to `50%`.
 
 static ERR GRADIENTDIAMOND_GET_CX(extGradientDiamond *Self, Unit *Value)
 {
-   Value->set(Self->CX);
+   *Value = Self->CX;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDIAMOND_SET_CX(extGradientDiamond *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
-   else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
    Self->CX = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -44,14 +42,12 @@ the centre point is set to `50%`.
 
 static ERR GRADIENTDIAMOND_GET_CY(extGradientDiamond *Self, Unit *Value)
 {
-   Value->set(Self->CY);
+   *Value = Self->CY;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDIAMOND_SET_CY(extGradientDiamond *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CY) & (~VGF::FIXED_CY);
-   else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
    Self->CY = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -69,15 +65,13 @@ radius of 50% applies if this field is not set.
 
 static ERR GRADIENTDIAMOND_GET_Radius(extGradientDiamond *Self, Unit *Value)
 {
-   Value->set(Self->Radius);
+   *Value = Self->Radius;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDIAMOND_SET_Radius(extGradientDiamond *Self, Unit &Value)
 {
    if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_RADIUS) & (~VGF::FIXED_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_RADIUS) & (~VGF::SCALED_RADIUS);
       Self->Radius = Value;
       if (Self->initialised()) Self->modified();
       return ERR::Okay;

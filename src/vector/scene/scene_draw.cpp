@@ -783,8 +783,7 @@ static double distal_fill_inflation(extVector *Shape)
          auto distal = (extGradientDistal *)gradient;
          const double max_bound = (Shape->Bounds.width() > Shape->Bounds.height()) ? Shape->Bounds.width() :
             Shape->Bounds.height();
-         const double radius = ((distal->Flags & VGF::SCALED_RADIUS) != VGF::NIL) ? distal->Radius * max_bound :
-            distal->Radius;
+         const double radius = distal->Radius.scaled() ? distal->Radius * max_bound : double(distal->Radius);
          if (radius > inflation) inflation = radius;
       }
    }

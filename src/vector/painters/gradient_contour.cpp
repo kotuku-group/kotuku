@@ -31,14 +31,12 @@ Multiplier`.
 
 static ERR GRADIENTCONTOUR_GET_Floor(extGradientContour *Self, Unit *Value)
 {
-   Value->set(Self->Floor);
+   *Value = Self->Floor;
    return ERR::Okay;
 }
 
 static ERR GRADIENTCONTOUR_SET_Floor(extGradientContour *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X1) & (~VGF::FIXED_X1);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
    Self->Floor = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -56,14 +54,12 @@ Multiplier < 10`.
 
 static ERR GRADIENTCONTOUR_GET_Multiplier(extGradientContour *Self, Unit *Value)
 {
-   Value->set(Self->Multiplier);
+   *Value = Self->Multiplier;
    return ERR::Okay;
 }
 
 static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X2) & (~VGF::FIXED_X2);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
    Self->Multiplier = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;

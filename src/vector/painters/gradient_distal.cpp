@@ -46,15 +46,13 @@ target shape is fully rendered.
 
 static ERR GRADIENTDISTAL_GET_InnerRadius(extGradientDistal *Self, Unit *Value)
 {
-   Value->set(Self->InnerRadius);
+   *Value = Self->InnerRadius;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDISTAL_SET_InnerRadius(extGradientDistal *Self, Unit &Value)
 {
    if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FOCAL_RADIUS) & (~VGF::FIXED_FOCAL_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_FOCAL_RADIUS) & (~VGF::SCALED_FOCAL_RADIUS);
       Self->SDFHash = 0;
       Self->InnerRadius = Value;
       if (Self->initialised()) Self->modified();
@@ -74,15 +72,13 @@ signed distance colour ramp remains visible.
 
 static ERR GRADIENTDISTAL_GET_Radius(extGradientDistal *Self, Unit *Value)
 {
-   Value->set(Self->Radius);
+   *Value = Self->Radius;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDISTAL_SET_Radius(extGradientDistal *Self, Unit &Value)
 {
    if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_RADIUS) & (~VGF::FIXED_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_RADIUS) & (~VGF::SCALED_RADIUS);
       Self->SDFHash = 0;
       Self->Radius = Value;
       if (Self->initialised()) Self->modified();
@@ -100,14 +96,12 @@ The Floor value is used as the floor for distal gradient colour values.
 
 static ERR GRADIENTDISTAL_GET_Floor(extGradientDistal *Self, Unit *Value)
 {
-   Value->set(Self->Floor);
+   *Value = Self->Floor;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X1) & (~VGF::FIXED_X1);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
    Self->Floor = Value;
    Self->SDFHash = 0;
    if (Self->initialised()) Self->modified();
@@ -125,14 +119,12 @@ The Multiplier value acts as a multiplier for distal gradient colour values.
 
 static ERR GRADIENTDISTAL_GET_Multiplier(extGradientDistal *Self, Unit *Value)
 {
-   Value->set(Self->Multiplier);
+   *Value = Self->Multiplier;
    return ERR::Okay;
 }
 
 static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X2) & (~VGF::FIXED_X2);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
    Self->Multiplier = Value;
    Self->SDFHash = 0;
    if (Self->initialised()) Self->modified();

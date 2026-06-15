@@ -468,20 +468,14 @@ class extGradientLinear : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientLinear";
    using create = kt::Create<extGradientLinear>;
 
-   double X1, Y1, X2, Y2;
+   Unit X1, Y1, X2, Y2;
    double Angle;
    double Length;
-   VGF Flags;
    bool CalcAngle; // True if the Angle/Length values require recalculation.
 
    extGradientLinear() {
-      X1 = 0;
-      Y1 = 0;
-      X2 = 1.0;
-      Y2 = 0;
       Angle = 0;
       Length = 0;
-      Flags = VGF::NIL;
       CalcAngle = true;
    }
 };
@@ -492,18 +486,14 @@ class extGradientRadial : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientRadial";
    using create = kt::Create<extGradientRadial>;
 
-   double CX, CY, FX, FY, Radius, FocalRadius;
-   VGF Flags;
+   Unit CX, CY, FX, FY, Radius, FocalRadius;
    bool ContainFocal;
 
    extGradientRadial() {
-      CX = 0.5;
-      CY = 0.5;
-      FX = 0;
-      FY = 0;
-      Radius  = 0.5;
-      FocalRadius = 0;
-      Flags = VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
+      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      FocalRadius = Unit(0);
       ContainFocal = 0;
    }
 };
@@ -514,14 +504,12 @@ class extGradientConic : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientConic";
    using create = kt::Create<extGradientConic>;
 
-   double CX, CY, Radius;
-   VGF Flags;
+   Unit CX, CY, Radius;
 
    extGradientConic() {
-      CX = 0.5;
-      CY = 0.5;
-      Radius  = 0.5;
-      Flags = VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
+      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
    }
 };
 
@@ -531,14 +519,12 @@ class extGradientDiamond : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientDiamond";
    using create = kt::Create<extGradientDiamond>;
 
-   double CX, CY, Radius;
-   VGF Flags;
+   Unit CX, CY, Radius;
 
    extGradientDiamond() {
-      CX = 0.5;
-      CY = 0.5;
-      Radius  = 0.5;
-      Flags = VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
+      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
    }
 };
 
@@ -550,13 +536,11 @@ class extGradientContour : public extGradient {
 
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
-   double Floor, Multiplier;
-   VGF Flags;
+   Unit Floor, Multiplier;
 
    extGradientContour() {
-      Floor = 0;
-      Multiplier = 1.0;
-      Flags = VGF::NIL;
+      Floor = Unit(0);
+      Multiplier = Unit(1.0);
    }
 
    ~extGradientContour() {
@@ -585,18 +569,16 @@ class extGradientDistal : public extGradient {
    double SDFResolution = -1; // Resolution baked into SDFCache; a mismatch forces a rebuild
    double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
    int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
-   double Floor, Multiplier, Radius, InnerRadius;
+   Unit Floor, Multiplier, Radius, InnerRadius;
    GFALL InnerFall, OuterFall; // Alpha fall-off curves for the interior and exterior fades
-   VGF Flags;
 
    extGradientDistal() {
-      Floor = 0;
-      Multiplier = 1.0;
-      Radius = 0;
-      InnerRadius = 0;
+      Floor = Unit(0);
+      Multiplier = Unit(1.0);
+      Radius = Unit(0);
+      InnerRadius = Unit(0);
       InnerFall = GFALL::SMOOTHSTEP;
       OuterFall = GFALL::SMOOTHSTEP;
-      Flags = VGF::NIL;
    }
 
    ~extGradientDistal() {
