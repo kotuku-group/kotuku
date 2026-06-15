@@ -1,5 +1,7 @@
 #pragma once
 
+#include "kotuku/strings.hpp"
+
 // Field flags for classes.  These are intended to simplify field definitions, e.g. using FDF_BYTEARRAY combines
 // FD_ARRAY with FD_BYTE.  DO NOT use these for function definitions, they are not intended to be compatible.
 
@@ -77,6 +79,19 @@ struct FieldValue {
    constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue)     : FieldID(pFID), Type(FD_POINTER), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue, int pCustom) : FieldID(pFID), Type(pCustom), CPointer(pValue) { };
+
+   constexpr FieldValue(std::string_view pFID, const std::string_view pValue) : FieldID(kt::fieldhash(pFID)), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
+   constexpr FieldValue(std::string_view pFID, int pValue)      : FieldID(kt::fieldhash(pFID)), Type(FD_INT), Int(pValue) { };
+   constexpr FieldValue(std::string_view pFID, int64_t pValue)  : FieldID(kt::fieldhash(pFID)), Type(FD_INT64), Int64(pValue) { };
+   constexpr FieldValue(std::string_view pFID, size_t pValue)   : FieldID(kt::fieldhash(pFID)), Type(FD_INT64), Int64(pValue) { };
+   constexpr FieldValue(std::string_view pFID, double pValue)   : FieldID(kt::fieldhash(pFID)), Type(FD_DOUBLE), Double(pValue) { };
+   constexpr FieldValue(std::string_view pFID, SCALE pValue)    : FieldID(kt::fieldhash(pFID)), Type(FD_DOUBLE|FD_SCALED), Percent(pValue) { };
+   constexpr FieldValue(std::string_view pFID, const FUNCTION &pValue) : FieldID(kt::fieldhash(pFID)), Type(FDF_FUNCTIONPTR), CPointer(&pValue) { };
+   constexpr FieldValue(std::string_view pFID, const FUNCTION *pValue) : FieldID(kt::fieldhash(pFID)), Type(FDF_FUNCTIONPTR), CPointer(pValue) { };
+   constexpr FieldValue(std::string_view pFID, APTR pValue)     : FieldID(kt::fieldhash(pFID)), Type(FD_POINTER), Pointer(pValue) { };
+   constexpr FieldValue(std::string_view pFID, CSTRING pValue)  : FieldID(kt::fieldhash(pFID)), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
+   constexpr FieldValue(std::string_view pFID, CPTR pValue)     : FieldID(kt::fieldhash(pFID)), Type(FD_POINTER), CPointer(pValue) { };
+   constexpr FieldValue(std::string_view pFID, CPTR pValue, int pCustom) : FieldID(kt::fieldhash(pFID)), Type(pCustom), CPointer(pValue) { };
 };
 
 inline ERR write_field_value(OBJECTPTR Target, struct Field *FieldPtr, const FieldValue &Value);

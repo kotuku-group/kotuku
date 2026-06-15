@@ -85,15 +85,15 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function makeStarSequence(CenterX:num, CenterY:num, Radius:num)
+function makeStarSequence(CentreX:num, CentreY:num, Radius:num)
    local inner_radius = Radius * 0.38196601125
    local sequence = ''
 
    for i=0,9 do
-      local angle = -PI * 0.5 + i * PI / 5
-      local radius = (i % 2 is 0) ? Radius :> inner_radius
-      local x = CenterX + math.cos(angle) * radius
-      local y = CenterY + math.sin(angle) * radius
+      angle = -PI * 0.5 + i * PI / 5
+      radius = (i % 2 is 0) ? Radius :> inner_radius
+      x = CentreX + math.cos(angle) * radius
+      y = CentreY + math.sin(angle) * radius
       sequence ..= string.format('%s%f,%f', (i is 0) ? 'M' :> ' L', x, y)
    end
 

@@ -6,5 +6,12 @@
 
 #include "colour.cpp"
 #include "gradient.cpp"
+#include "gradient_linear.cpp"
+#include "gradient_radial.cpp"
+#include "gradient_conic.cpp"
+#include "gradient_diamond.cpp"
+#include "gradient_contour.cpp"
+#include "gradient_gouraud.cpp"
+#include "gradient_distal.cpp"
 #include "image.cpp"
 #include "pattern.cpp"

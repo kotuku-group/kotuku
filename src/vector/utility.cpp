@@ -94,12 +94,13 @@ CSTRING get_name(OBJECTPTR Vector)
    switch(Vector->baseClassID()) {
       case CLASSID::VECTORCOLOUR:    return "Colour";
       case CLASSID::VECTORFILTER:    return "Filter";
-      case CLASSID::VECTORGRADIENT:  return "Gradient";
       case CLASSID::VECTORPATTERN:   return "Pattern";
       case CLASSID::VECTOR:          return "Vector";
       case CLASSID::VECTORSCENE:     return "Scene";
       default: break;
    }
+
+   if (Vector->baseClassID() IS CLASSID::GRADIENT) return "Gradient";
 
    return "Unknown";
 }

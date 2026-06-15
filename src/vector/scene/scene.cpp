@@ -50,10 +50,10 @@ static void fill_image(VectorState &, const TClipRectangle<double> &, agg::path_
    agg::rasterizer_scanline_aa<> &, double Alpha = 1.0, SceneRenderer *Render = nullptr);
 
 static void fill_gradient(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
-   const agg::trans_affine &, double, double, extVectorGradient &, GRADIENT_TABLE *,
+   const agg::trans_affine &, double, double, extGradient &, GRADIENT_TABLE *,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
 
-static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extVectorGradient &, double,
+static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extGradientGouraud &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
    SceneRenderer *Render = nullptr);
 
@@ -131,10 +131,12 @@ static void notify_def_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APT
 
 static void clear_def_host_scene(OBJECTPTR Def, extVectorScene *Scene)
 {
+   if (Def->baseClassID() IS CLASSID::GRADIENT) {
+      if (((extGradient *)Def)->HostScene IS Scene) ((extGradient *)Def)->HostScene = nullptr;
+      return;
+   }
+
    switch(Def->classID()) {
-      case CLASSID::VECTORGRADIENT:
-         if (((extVectorGradient *)Def)->HostScene IS Scene) ((extVectorGradient *)Def)->HostScene = nullptr;
-         break;
       case CLASSID::VECTORIMAGE:
          if (((extVectorImage *)Def)->HostScene IS Scene) ((extVectorImage *)Def)->HostScene = nullptr;
          break;
@@ -232,7 +234,7 @@ For example, if creating a gradient with a name of `redGradient` it would be pos
 `url(#redGradient)` in common graphics attributes such as `fill` and `stroke`.
 
 At the time of writing, the provided object must belong to one of the following classes to be valid: @Vector,
-@VectorScene, @VectorGradient, @VectorImage, @VectorPath, @VectorPattern, @VectorFilter, @VectorTransition,
+@VectorScene, @Gradient, @VectorImage, @VectorPath, @VectorPattern, @VectorFilter, @VectorTransition,
 @VectorClip.
 
 -INPUT-
@@ -264,8 +266,11 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
    OBJECTPTR def = Args->Def;
    std::string name(Args->Name);
 
+   if (def->baseClassID() IS CLASSID::GRADIENT) {
+      ((extGradient *)def)->HostScene = Self;
+   }
+   else
    switch(def->classID()) {
-      case CLASSID::VECTORGRADIENT:   ((extVectorGradient*)def)->HostScene = Self; break;
       case CLASSID::VECTORIMAGE:      ((extVectorImage *)def)->HostScene = Self; break;
       case CLASSID::VECTORPATH:       ((extVectorPath*)def)->HostScene = Self; break;
       case CLASSID::VECTORPATTERN:    ((extVectorPattern*)def)->HostScene = Self; break;

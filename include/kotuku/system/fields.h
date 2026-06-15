@@ -974,10 +974,14 @@
 #define FID_VDensity 0x68ad9511LL
 #define FID_RequestHandler 0x7b74011eLL
 #define FID_ErrorCallback 0xd938ca40LL
+#define FID_Floor 0x95cffb3dLL
+#define FID_Multiplier 0xa034c635LL
 #define FID_ExitCallback 0x3cd5a8d0LL
 #define FID_LaunchPath 0x60c55f09LL
 #define FID_OutputCallback 0x1c417ac0LL
 #define FID_Created 0x3279d3d5LL
+#define FID_CX 0xbe5bf68fLL
+#define FID_CY 0x4c30758cLL
 #define FID_Numeric 0x5f5e31c8LL
 #define FID_ResizeEvent 0x66f1fd83LL
 #define FID_TabOrder 0xc4f84379LL

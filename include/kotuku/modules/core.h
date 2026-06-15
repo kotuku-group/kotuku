@@ -1825,11 +1825,13 @@ struct Unit {
    double   Value;  // The unit value.
    uint32_t Type;   // Additional type information
    constexpr Unit(double pValue, int pType = FD_DOUBLE) : Value(pValue), Type(pType) { }
-   constexpr Unit() : Value(0), Type(0) { }
+   constexpr Unit() : Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { }
    explicit Unit(std::string_view String) { read(String); }
    constexpr operator double() const { return Value; }
    constexpr void set(const double pValue) { Value = pValue; }
    constexpr bool scaled() { return (Type & FD_SCALED) ? true : false; }
+   inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
+
    inline void read(std::string_view String) {
       const auto start = String.find_first_not_of(" \n\r\t");
       if (start != std::string::npos) String.remove_prefix(start);

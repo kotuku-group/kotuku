@@ -5,6 +5,28 @@ static void set_dimension(XTag *Tag, const std::string Attrib, double Value, boo
    else xml::NewAttrib(*Tag, Attrib, std::to_string(Value));
 }
 
+static void set_dimension(XTag *Tag, const std::string Attrib, Unit &Value)
+{
+   if (Value.defined()) {
+      if (Value.scaled()) xml::NewAttrib(*Tag, Attrib, std::to_string(Value * 100.0) + "%");
+      else xml::NewAttrib(*Tag, Attrib, std::to_string(double(Value)));
+   }
+}
+
+//*********************************************************************************************************************
+
+static void set_gradient_colour_space(XTag *Tag, objGradient *Gradient, ERR &Error)
+{
+   VCS colour_space;
+   if ((!Error) and (!Gradient->get(FID_ColourSpace, (int &)colour_space))) {
+      switch(colour_space) {
+         case VCS::SRGB:       xml::NewAttrib(Tag, "color-interpolation", "sRGB"); break;
+         case VCS::LINEAR_RGB: xml::NewAttrib(Tag, "color-interpolation", "linearRGB"); break;
+         default: break;
+      }
+   }
+}
+
 //*********************************************************************************************************************
 
 static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Parent)
@@ -34,7 +56,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
    ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
 
    if (!Scene->get(FID_Defs, defs)) {
-      ERR error;
+      ERR error = ERR::Okay;
       int def_index = 0;
       for (auto & [ key, def ] : *defs) {
          if (!def_index) {
@@ -43,17 +65,22 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
          log.msg("Processing definition %s (%x)", def->Class->ClassName.c_str(), uint32_t(def->classID()));
 
-         if (def->classID() IS CLASSID::VECTORGRADIENT) {
-            auto gradient = (objVectorGradient *)def;
+         if (def->baseClassID() IS CLASSID::GRADIENT) {
+            auto gradient = (objGradient *)def;
             std::string gradient_type;
-            switch(gradient->Type) {
-               case VGT::RADIAL:  gradient_type = "<radialGradient/>"; break;
-               case VGT::CONIC:   gradient_type = "<conicGradient/>"; break;
-               case VGT::DIAMOND: gradient_type = "<diamondGradient/>"; break;
-               case VGT::CONTOUR: gradient_type = "<contourGradient/>"; break;
-               case VGT::DISTAL:  gradient_type = "<distalGradient/>"; break;
-               case VGT::LINEAR:
-               default:           gradient_type = "<linearGradient/>"; break;
+            switch(def->classID()) {
+               case CLASSID::GRADIENTRADIAL:  gradient_type = "<radialGradient/>"; break;
+               case CLASSID::GRADIENTCONIC:   gradient_type = "<conicGradient/>"; break;
+               case CLASSID::GRADIENTDIAMOND: gradient_type = "<diamondGradient/>"; break;
+               case CLASSID::GRADIENTCONTOUR: gradient_type = "<contourGradient/>"; break;
+               case CLASSID::GRADIENTDISTAL:  gradient_type = "<distalGradient/>"; break;
+               case CLASSID::GRADIENTLINEAR:  gradient_type = "<linearGradient/>"; break;
+               case CLASSID::GRADIENTGOURAUD:
+                  log.warning("GradientGouraud not supported.");
+                  continue;
+               default:
+                  log.warning("%s not supported.", def->Class->ClassName.c_str());
+                  continue;
             }
             XTag *tag = nullptr;
             error = XML->insertStatement(def_index, XMI::CHILD_END, gradient_type, &tag);
@@ -79,40 +106,62 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
-            if ((gradient->Type IS VGT::LINEAR) or (gradient->Type IS VGT::CONTOUR)) {
-               if (!error) {
-                  xml::NewAttrib(tag, "x1", std::to_string(gradient->X1));
-                  xml::NewAttrib(tag, "y1", std::to_string(gradient->Y1));
-                  xml::NewAttrib(tag, "x2", std::to_string(gradient->X2));
-                  xml::NewAttrib(tag, "y2", std::to_string(gradient->Y2));
+            set_gradient_colour_space(tag, gradient, error);
+
+            double resolution;
+            if ((!error) and (!gradient->get(FID_Resolution, resolution)) and (resolution != 1.0)) {
+               xml::NewAttrib(tag, "resolution", std::to_string(resolution));
+            }
+
+            if (def->classID() IS CLASSID::GRADIENTLINEAR) {
+               Unit val;
+               if ((!error) and (!gradient->get(FID_X1, val))) set_dimension(tag, "x1", val);
+               if ((!error) and (!gradient->get(FID_Y1, val))) set_dimension(tag, "y1", val);
+               if ((!error) and (!gradient->get(FID_X2, val))) set_dimension(tag, "x2", val);
+               if ((!error) and (!gradient->get(FID_Y2, val))) set_dimension(tag, "y2", val);
+            }
+            else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
+               Unit val;
+               if ((!error) and (!gradient->get(FID_Floor, val))) set_dimension(tag, "floor", val);
+               if ((!error) and (!gradient->get(FID_Multiplier, val))) set_dimension(tag, "multiplier", val);
+            }
+            else if (def->classID() IS CLASSID::GRADIENTDISTAL) {
+               Unit val;
+               if ((!error) and (!gradient->get(FID_Floor, val))) set_dimension(tag, "floor", val);
+               if ((!error) and (!gradient->get(FID_Multiplier, val))) set_dimension(tag, "multiplier", val);
+               if ((!error) and (!gradient->get(FID_Radius, val)) and (val.defined()) and (double(val) > 0)) {
+                  set_dimension(tag, "radius", val);
                }
             }
-            else if (gradient->Type IS VGT::DISTAL) {
-               if (!error) {
-                  xml::NewAttrib(tag, "x1", std::to_string(gradient->X1));
-                  xml::NewAttrib(tag, "x2", std::to_string(gradient->X2));
-                  if (gradient->Radius > 0) xml::NewAttrib(tag, "radius", std::to_string(gradient->Radius));
+            else if (def->classID() IS CLASSID::GRADIENTRADIAL) {
+               Unit val;
+               if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
+               if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
+               if ((!error) and (!gradient->get(FID_FX, val))) set_dimension(tag, "fx", val);
+               if ((!error) and (!gradient->get(FID_FY, val))) set_dimension(tag, "fy", val);
+               if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
+
+               int contain_focal;
+               if ((!error) and (!gradient->get(kt::fieldhash("ContainFocal"), contain_focal)) and (!contain_focal)) {
+                  xml::NewAttrib(tag, "focal", "unbound");
                }
             }
-            else if ((gradient->Type IS VGT::RADIAL) or (gradient->Type IS VGT::DIAMOND) or (gradient->Type IS VGT::CONIC)) {
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_CX|VGF::SCALED_CX)) != VGF::NIL))
-                  set_dimension(tag, "cx", gradient->CenterX, (gradient->Flags & VGF::SCALED_CX) != VGF::NIL);
+            else if ((def->classID() IS CLASSID::GRADIENTDIAMOND) or (def->classID() IS CLASSID::GRADIENTCONIC)) {
+               Unit val;
+               if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
+               if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
+               if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
 
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_CY|VGF::SCALED_CY)) != VGF::NIL))
-                  set_dimension(tag, "cy", gradient->CenterY, (gradient->Flags & VGF::SCALED_CY) != VGF::NIL);
-
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_FX|VGF::SCALED_FX)) != VGF::NIL))
-                  set_dimension(tag, "fx", gradient->FocalX, (gradient->Flags & VGF::SCALED_FX) != VGF::NIL);
-
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_FY|VGF::SCALED_FY)) != VGF::NIL))
-                  set_dimension(tag, "fy", gradient->FocalY, (gradient->Flags & VGF::SCALED_FY) != VGF::NIL);
-
-               if ((!error) and ((gradient->Flags & (VGF::FIXED_RADIUS|VGF::SCALED_RADIUS)) != VGF::NIL))
-                  set_dimension(tag, "r", gradient->Radius, (gradient->Flags & VGF::SCALED_RADIUS) != VGF::NIL);
+               if (def->classID() IS CLASSID::GRADIENTCONIC) {
+                  double span;
+                  if ((!error) and (!gradient->get(kt::fieldhash("Span"), span)) and (span != 1.0)) {
+                     xml::NewAttrib(tag, "span", std::to_string(span));
+                  }
+               }
             }
 
             VectorMatrix *transform;
-            if ((!error) and (!gradient->get(FID_Transforms, transform)) and (transform)) {
+            if ((!error) and (!gradient->get(FID_Matrices, transform)) and (transform)) {
                std::stringstream buffer;
                if (!save_svg_transform(transform, buffer)) {
                   xml::NewAttrib(tag, "gradientTransform", buffer.str());
@@ -124,14 +173,18 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                int total_stops, stop_index;
                if (!gradient->get(FID_Stops, stops, total_stops)) {
                   for (int s=0; (s < total_stops) and (!error); s++) {
-                     if (!(error = XML->insertXML(def_index, XMI::CHILD_END, "<stop/>", &stop_index))) {
+                     if (!(error = XML->insertXML(tag->ID, XMI::CHILD_END, "<stop/>", &stop_index))) {
                         XTag *stop_tag;
                         error = XML->getTag(stop_index, &stop_tag);
                         if (!error) xml::NewAttrib(stop_tag, "offset", std::to_string(stops[s].Offset));
 
                         std::stringstream buffer;
-                        buffer << "stop-color:rgb(" << stops[s].RGB.Red*255.0 << "," << stops[s].RGB.Green*255.0 << "," << stops[s].RGB.Blue*255.0 << "," << stops[s].RGB.Alpha*255.0 << ")";
-                        if (!error) xml::NewAttrib(stop_tag, "style", buffer.str());
+                        buffer << "rgb(" << stops[s].RGB.Red*255.0 << "," << stops[s].RGB.Green*255.0 << ","
+                           << stops[s].RGB.Blue*255.0 << ")";
+                        if (!error) xml::NewAttrib(stop_tag, "stop-color", buffer.str());
+                        if ((!error) and (stops[s].RGB.Alpha != 1.0)) {
+                           xml::NewAttrib(stop_tag, "stop-opacity", std::to_string(stops[s].RGB.Alpha));
+                        }
                      }
                   }
                }
@@ -156,11 +209,8 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
             auto dim = filter->get<DMF>(FID_Dimensions);
 
-            if ((!error) and dmf::hasAnyX(dim))
-               set_dimension(tag, "x", filter->X, dmf::hasScaledX(dim));
-
-            if ((!error) and dmf::hasAnyY(dim))
-               set_dimension(tag, "y", filter->Y, dmf::hasScaledY(dim));
+            if ((!error) and dmf::hasAnyX(dim)) set_dimension(tag, "x", filter->X, dmf::hasScaledX(dim));
+            if ((!error) and dmf::hasAnyY(dim)) set_dimension(tag, "y", filter->Y, dmf::hasScaledY(dim));
 
             if ((!error) and dmf::hasAnyWidth(dim))
                set_dimension(tag, "width", filter->Width, dmf::hasScaledWidth(dim));

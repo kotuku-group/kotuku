@@ -28,11 +28,11 @@ static void set_render_matrix(VectorMatrix &Matrix, const agg::trans_affine &Tra
 
 static bool set_render_transform(objVectorViewport *Viewport, const agg::trans_affine &Transform)
 {
-   if (!Viewport->Matrices) {
+   if (not Viewport->Matrices) {
       if (Viewport->newMatrix(nullptr, false) != ERR::Okay) return false;
    }
 
-   if (!render_matrix_matches(*Viewport->Matrices, Transform)) {
+   if (not render_matrix_matches(*Viewport->Matrices, Transform)) {
       set_render_matrix(*Viewport->Matrices, Transform);
       mark_dirty(Viewport, RC::TRANSFORM);
    }
@@ -46,15 +46,15 @@ static bool viewport_has_fixed_size(const objVectorViewport *Viewport, double Wi
 
    return dmf::hasWidth(viewport->vpDimensions) and
       dmf::hasHeight(viewport->vpDimensions) and
-      (!dmf::hasScaledWidth(viewport->vpDimensions)) and
-      (!dmf::hasScaledHeight(viewport->vpDimensions)) and
+      (not dmf::hasScaledWidth(viewport->vpDimensions)) and
+      (not dmf::hasScaledHeight(viewport->vpDimensions)) and
       (viewport->vpTargetWidth IS Width) and
       (viewport->vpTargetHeight IS Height);
 }
 
 static void set_viewport_fixed_size(objVectorViewport *Viewport, double Width, double Height)
 {
-   if (!viewport_has_fixed_size(Viewport, Width, Height)) {
+   if (not viewport_has_fixed_size(Viewport, Width, Height)) {
       Viewport->setFields(fl::Width(Width), fl::Height(Height));
    }
 }
@@ -70,15 +70,15 @@ static bool viewport_has_fixed_bounds(const objVectorViewport *Viewport, double 
    return dmf::hasX(viewport->vpDimensions) and
       dmf::hasY(viewport->vpDimensions) and
       viewport_has_fixed_size(Viewport, Width, Height) and
-      (!dmf::hasScaledX(viewport->vpDimensions)) and
-      (!dmf::hasScaledY(viewport->vpDimensions)) and
+      (not dmf::hasScaledX(viewport->vpDimensions)) and
+      (not dmf::hasScaledY(viewport->vpDimensions)) and
       (viewport->vpTargetX IS X) and
       (viewport->vpTargetY IS Y);
 }
 
 static void set_viewport_fixed_bounds(objVectorViewport *Viewport, double X, double Y, double Width, double Height)
 {
-   if (!viewport_has_fixed_bounds(Viewport, X, Y, Width, Height)) {
+   if (not viewport_has_fixed_bounds(Viewport, X, Y, Width, Height)) {
       acRedimension(Viewport, X, Y, 0, Width, Height, 0);
    }
 }
@@ -167,6 +167,13 @@ public:
 
    bool clip_stack_empty() const { return mClipStack.empty(); }
    ClipBuffer &clip_stack_top() { return mClipStack.top(); }
+
+   // When rendering into a buffered viewport the target bitmap is offset so that render-space coordinates map onto a
+   // buffer whose top-left is (mBitmapOriginX, mBitmapOriginY).  Auxiliary buffers (e.g. the Gouraud path mask) must
+   // account for the same offset to stay aligned with the render base.
+
+   int bitmap_origin_x() const { return mBitmapOriginX; }
+   int bitmap_origin_y() const { return mBitmapOriginY; }
 
    SceneRenderer(extVectorScene *pScene) : mBitmapOriginX(0), mBitmapOriginY(0), Scene(pScene) { }
    void draw(objBitmap *, objVectorViewport *);
@@ -655,7 +662,7 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
    kt::Log log;
 
    mObjectCount = 0;
-   while (!mClipStack.empty()) mClipStack.pop();
+   while (not mClipStack.empty()) mClipStack.pop();
 
    log.traceBranch("Bitmap: %dx%d,%dx%d, Viewport: %d", Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom, Scene->Viewport->UID);
 
@@ -711,9 +718,9 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 
    if (Vector.Bounds.valid()) {
       if (Vector.Stroke.Gradient) {
-         auto gradient = (extVectorGradient *)Vector.Stroke.Gradient;
-         if (gradient->Type IS VGT::GOURAUD) {
-            fill_gouraud(State, Vector.Bounds, view_width(), view_height(), *gradient,
+         auto gradient = (extGradient *)Vector.Stroke.Gradient;
+         if (gradient->classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(State, Vector.Bounds, view_width(), view_height(), *(extGradientGouraud *)gradient,
                State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
                build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
          }
@@ -751,7 +758,7 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       agg::renderer_scanline_bin_solid renderer(mRenderBase);
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
-      if (!mClipStack.empty()) {
+      if (not mClipStack.empty()) {
          agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
@@ -762,7 +769,7 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       agg::renderer_scanline_aa_solid renderer(mRenderBase);
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
-      if (!mClipStack.empty()) {
+      if (not mClipStack.empty()) {
          agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
@@ -771,17 +778,31 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
    }
 }
 
-static double distal_fill_inflation(extVector *Shape)
+static double distal_fill_inflation(extVector *Shape, double ViewWidth, double ViewHeight)
 {
    double inflation = 0;
 
    for (auto &fill : Shape->Fill) {
-      if (!fill.Gradient) continue;
+      if (not fill.Gradient) continue;
 
-      auto gradient = (extVectorGradient *)fill.Gradient;
-      if ((gradient->Type IS VGT::DISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP) and
-         (gradient->Radius > inflation)) {
-         inflation = gradient->Radius;
+      auto gradient = (extGradient *)fill.Gradient;
+      if ((gradient->classID() IS CLASSID::GRADIENTDISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP)) {
+         auto distal = (extGradientDistal *)gradient;
+         const double max_bound = (Shape->Bounds.width() > Shape->Bounds.height()) ? Shape->Bounds.width() :
+            Shape->Bounds.height();
+         const double radius = distal->Radius.scaled() ? distal->Radius * max_bound : double(distal->Radius);
+
+         // For REPEAT/REFLECT the exterior tiles outward to fill the parent area, so fill_gradient() expands the SDF
+         // buffer to a fill extent that reaches the view edges from the path bounds.
+
+         double extent = radius;
+         if ((gradient->SpreadMethod IS VSPREAD::REPEAT) or (gradient->SpreadMethod IS VSPREAD::REFLECT)) {
+            const double reach_x = std::max(Shape->Bounds.left, ViewWidth - Shape->Bounds.right);
+            const double reach_y = std::max(Shape->Bounds.top, ViewHeight - Shape->Bounds.bottom);
+            extent = std::max({ radius, reach_x, reach_y });
+         }
+
+         if (extent > inflation) inflation = extent;
       }
    }
 
@@ -812,7 +833,7 @@ bool SceneRenderer::shape_intersects_clip(extVector *Shape)
       if (stroke_inflation > inflation) inflation = stroke_inflation;
    }
 
-   auto fill_inflation = distal_fill_inflation(Shape);
+   auto fill_inflation = distal_fill_inflation(Shape, mView->vpFixedWidth, mView->vpFixedHeight);
    if (fill_inflation > inflation) inflation = fill_inflation;
 
    bounds.left   -= inflation;
@@ -864,7 +885,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          log.trace("Non-Vector discovered in the vector tree.");
          continue;
       }
-      else if (!shape->Scene) continue;
+      else if (not shape->Scene) continue;
 
       if (shape->dirty()) gen_vector_path(shape);
       else log.trace("%s: #%d, Dirty: NO, ParentView: #%d", shape->Class->ClassName.c_str(), shape->UID, shape->ParentView ? shape->ParentView->UID : 0);
@@ -884,7 +905,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          }
          else if (shape->Visibility != VIS::VISIBLE) visible = false;
 
-         if (((!visible) or (!shape->ValidState)) and (shape->classID() != CLASSID::VECTORGROUP)) {
+         if (((not visible) or (not shape->ValidState)) and (shape->classID() != CLASSID::VECTORGROUP)) {
             log.trace("%s: #%d, Not Visible", get_name(shape), shape->UID);
             continue;
          }
@@ -893,13 +914,13 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       mObjectCount++;
 
       auto filter = (extVectorFilter *)shape->Filter;
-      if ((filter) and (!filter->Disabled)) {
+      if ((filter) and (not filter->Disabled)) {
          #ifdef DBG_DRAW
             log.traceBranch("Rendering filter for %s.", get_name(shape));
          #endif
 
          objBitmap *bmp;
-         if (!render_filter(filter, mView, shape, mBitmap, &bmp)) {
+         if (not render_filter(filter, mView, shape, mBitmap, &bmp)) {
             copy_filter_bitmap(bmp, filter);
          }
          continue;
@@ -929,7 +950,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       int save_origin_x = 0;
       int save_origin_y = 0;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
-         if (!shape->IsolatedBuffer) shape->IsolatedBuffer = new (std::nothrow) filter_bitmap;
+         if (not shape->IsolatedBuffer) shape->IsolatedBuffer = new (std::nothrow) filter_bitmap;
          if (shape->IsolatedBuffer) {
             auto &clip_box = mRenderBase.clip_box();
             TClipRectangle<int> isolated_clip(clip_box.x1, clip_box.y1, clip_box.x2 + 1, clip_box.y2 + 1);
@@ -1161,7 +1182,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                      agg::rasterizer_scanline_aa<> raster;
                      raster.add_path(view->BasePath);
 
-                     if (!mClipStack.empty()) {
+                     if (not mClipStack.empty()) {
                         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
                         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
                         drawBitmap(masked_scanline, VSM::AUTO, mRenderBase, raster, view->vpBuffer, VSPREAD::REPEAT, view->Opacity, &transform);
@@ -1198,7 +1219,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                log.traceBranch("%s: #%d, Mask: %p", get_name(shape), shape->UID, shape->ClipMask);
             #endif
 
-            if (!mView) {
+            if (not mView) {
                // Vector shapes not inside a viewport cannot be drawn (they may exist as definitions for other objects,
                // e.g. as morph paths).
                return;
@@ -1222,7 +1243,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                TClipRectangle b;
 
-               if (!shape->BasePath.empty()) {
+               if (not shape->BasePath.empty()) {
                   if (shape->Transform.is_normal()) b = shape;
                   else {
                      auto path = shape->Bounds.as_path(shape->Transform);
@@ -1231,7 +1252,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                   // Clipping masks can reduce the boundary further.
 
-                  if (!mClipStack.empty()) {
+                  if (not mClipStack.empty()) {
                      auto &top = mClipStack.top();
                      if ((top.m_clip) and (top.m_clip->Bounds.valid())) {
                         // NB: This hasn't had much testing and doesn't consider nested clips.
@@ -1266,7 +1287,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          mBitmapOriginX = save_origin_x;
          mBitmapOriginY = save_origin_y;
          mFormat.setBitmap(*mBitmap);
-         if (!mClipStack.empty()) {
+         if (not mClipStack.empty()) {
             agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
             agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
             drawBitmap(masked_scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
@@ -1313,10 +1334,10 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
          extVectorImage &image = (extVectorImage &)*FillStyle;
          fill_image(state, bounds, mPath, VSM::AUTO, transform, Bitmap->Width, Bitmap->Height, image, mRenderer, mRaster);
       }
-      else if (FillStyle->classID() IS CLASSID::VECTORGRADIENT) {
-         extVectorGradient &gradient = (extVectorGradient &)*FillStyle;
-         if (gradient.Type IS VGT::GOURAUD) {
-            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, gradient, 1.0, mRenderer, mRaster, transform);
+      else if (FillStyle->baseClassID() IS CLASSID::GRADIENT) {
+         extGradient &gradient = (extGradient &)*FillStyle;
+         if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
          }
          else if (gradient.Colours) {
             fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
@@ -1330,14 +1351,14 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
    }
 
    if ((StrokeWidth > 0) and (StrokeStyle)) {
-      if (StrokeStyle->classID() IS CLASSID::VECTORGRADIENT) {
+      if (StrokeStyle->baseClassID() IS CLASSID::GRADIENT) {
          agg::conv_stroke<agg::path_storage> stroke_path(mPath);
          mRaster.reset();
          mRaster.add_path(stroke_path);
 
-         extVectorGradient &gradient = (extVectorGradient &)*StrokeStyle;
-         if (gradient.Type IS VGT::GOURAUD) {
-            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, gradient, 1.0, mRenderer, mRaster, transform);
+         extGradient &gradient = (extGradient &)*StrokeStyle;
+         if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
          }
          else if (gradient.Colours) {
             fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,

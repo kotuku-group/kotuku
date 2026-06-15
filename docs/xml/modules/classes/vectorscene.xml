@@ -100,7 +100,7 @@
       <description>
 <p>This method will add a new definition object to the root of a vector tree and gives it a name.  This feature is provided to support SVG style referencing for features such as gradients, images and patterns.  By providing a name with the definition object, the object can then be referenced in URL strings.</p>
 <p>For example, if creating a gradient with a name of <code>redGradient</code> it would be possible to reference it with <code>url(#redGradient)</code> in common graphics attributes such as <code>fill</code> and <code>stroke</code>.</p>
-<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="VectorGradient">VectorGradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
+<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="Gradient">Gradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>

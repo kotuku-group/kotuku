@@ -3,7 +3,7 @@
 //   The fx,fy values can be placed outside of the radial gradient if 'focal="unbound"' is used
 //   The resolution value can be defined to lower the rate of colour sampling.
 
-static ERR gradient_defaults(extSVG *Self, objVectorGradient *Gradient, uint32_t Attrib, const std::string Value)
+static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attrib, const std::string Value)
 {
    switch (Attrib) {
       case SVF_resolution:
@@ -117,7 +117,7 @@ const std::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag
 
 //********************************************************************************************************************
 
-void svgState::parse_lineargradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_lineargradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -203,7 +203,7 @@ void svgState::parse_lineargradient(const XTag &Tag, objVectorGradient *Gradient
 
 //********************************************************************************************************************
 
-void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient, std::string &ID) noexcept
+void svgState::parse_radialgradient(const XTag &Tag, objGradient &Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -224,8 +224,8 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_cx: set_double_units(&Gradient, FID_CenterX, val, Gradient.Units); break;
-         case SVF_cy: set_double_units(&Gradient, FID_CenterY, val, Gradient.Units); break;
+         case SVF_cx: set_double_units(&Gradient, FID_CX, val, Gradient.Units); break;
+         case SVF_cy: set_double_units(&Gradient, FID_CY, val, Gradient.Units); break;
          case SVF_fx: set_double_units(&Gradient, FID_FX, val, Gradient.Units); break;
          case SVF_fy: set_double_units(&Gradient, FID_FY, val, Gradient.Units); break;
          case SVF_r:  set_double_units(&Gradient, FID_Radius, val, Gradient.Units); break;
@@ -238,9 +238,10 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
             else if (iequals("repeat", val))  Gradient.setSpreadMethod(VSPREAD::REPEAT);
             break;
 
-         case SVF_focalPoint:
-            if (iequals("unbound", val)) Gradient.Flags &= ~VGF::CONTAIN_FOCAL;
+         case SVF_focalPoint: {
+            if (iequals("unbound", val)) Gradient.set(kt::fieldhash("ContainFocal"), 0);
             break;
+         }
 
          case SVF_href:
          case SVF_xlink_href: {
@@ -287,7 +288,7 @@ void svgState::parse_radialgradient(const XTag &Tag, objVectorGradient &Gradient
 
 //********************************************************************************************************************
 
-void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_diamondgradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -311,8 +312,8 @@ void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradien
       switch(attrib) {
          case SVF_gradientUnits: break; // Already processed
          case SVF_gradientTransform: Gradient->setTransform(val); break;
-         case SVF_cx: set_double_units(Gradient, FID_CenterX, val, Gradient->Units); break;
-         case SVF_cy: set_double_units(Gradient, FID_CenterY, val, Gradient->Units); break;
+         case SVF_cx: set_double_units(Gradient, FID_CX, val, Gradient->Units); break;
+         case SVF_cy: set_double_units(Gradient, FID_CY, val, Gradient->Units); break;
          case SVF_r:  set_double_units(Gradient, FID_Radius, val, Gradient->Units); break;
          case SVF_spreadMethod: {
             if (iequals("pad", val))          Gradient->setSpreadMethod(VSPREAD::PAD);
@@ -363,7 +364,7 @@ void svgState::parse_diamondgradient(const XTag &Tag, objVectorGradient *Gradien
 
 //********************************************************************************************************************
 
-void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_contourgradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -387,9 +388,11 @@ void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradien
       switch(attrib) {
          case SVF_gradientUnits: break; // Already processed
          case SVF_gradientTransform: Gradient->setTransform(val); break;
-         // X1 and X2 adjust padding of the gradient within the target vector.
-         case SVF_x1: set_double_units(Gradient, FID_X1, val, Gradient->Units); break;
-         case SVF_x2: set_double_units(Gradient, FID_X2, val, Gradient->Units); break;
+         // Floor and Multiplier adjust the colour ramp bias and scale.
+         case SVF_floor: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_multiplier: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
+         case SVF_x1: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_x2: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
          case SVF_spreadMethod: {
             if (iequals("pad", val))          Gradient->setSpreadMethod(VSPREAD::PAD);
             else if (iequals("reflect", val)) Gradient->setSpreadMethod(VSPREAD::REFLECT);
@@ -438,19 +441,17 @@ void svgState::parse_contourgradient(const XTag &Tag, objVectorGradient *Gradien
 
 ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
 
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTLINEAR, &gradient)) {
       SetOwner(gradient, Self->Scene);
       gradient->setFields(
          fl::Name("SVGLinearGrad"),
-         fl::Type(VGT::LINEAR),
          fl::Units(VUNIT::BOUNDING_BOX),
          fl::X1(0.0),
          fl::Y1(0.0),
@@ -476,23 +477,20 @@ ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
 
 ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTRADIAL, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGRadialGrad"), fl::Type(VGT::RADIAL), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
-
-      // Enforce SVG limits on focal point positioning.  Can be overridden with focal="unbound", which is a Kotuku
-      // specific feature.
-
-      gradient->Flags |= VGF::CONTAIN_FOCAL;
+      gradient->setFields(fl::Name("SVGRadialGrad"),
+         fl::Units(VUNIT::BOUNDING_BOX),
+         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)),
+         fl::Radius(SCALE(0.5)),
+         FieldValue("ContainFocal", 1)); // Enforce SVG limits on focal point, can be overridden with focal="unbound"
 
       state.parse_radialgradient(Tag, *gradient, id);
 
@@ -513,26 +511,25 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
 
 ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTDIAMOND, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Type(VGT::DIAMOND), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
+      gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Units(VUNIT::BOUNDING_BOX),
+         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
 
       state.parse_diamondgradient(Tag, gradient, id);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }
@@ -546,16 +543,15 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 
 ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTCONTOUR, &gradient)) {
       SetOwner(gradient, Self->Scene);
-      gradient->setFields(fl::Name("SVGContourGrad"), fl::Type(VGT::CONTOUR), fl::Units(VUNIT::BOUNDING_BOX));
+      gradient->setFields(fl::Name("SVGContourGrad"), fl::Units(VUNIT::BOUNDING_BOX));
 
       state.parse_contourgradient(Tag, gradient, id);
 
@@ -564,9 +560,9 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }
@@ -578,7 +574,7 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
 //********************************************************************************************************************
 // NB: Distal gradients are not part of the SVG standard.
 
-void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient, std::string &ID) noexcept
+void svgState::parse_distalgradient(const XTag &Tag, objGradient *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
 
@@ -602,9 +598,11 @@ void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient
       switch(attrib) {
          case SVF_gradientUnits: break; // Already processed
          case SVF_gradientTransform: Gradient->setTransform(val); break;
-         // X1 and X2 adjust the colour ramp bias and scale, as with contour gradients.
-         case SVF_x1: set_double_units(Gradient, FID_X1, val, Gradient->Units); break;
-         case SVF_x2: set_double_units(Gradient, FID_X2, val, Gradient->Units); break;
+         // Floor and Multiplier adjust the colour ramp bias and scale, as with contour gradients.
+         case SVF_floor: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_multiplier: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
+         case SVF_x1: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
+         case SVF_x2: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
          // Radius controls the exterior margin (in path units) around the path bounds.
          case SVF_radius: Gradient->set(FID_Radius, strtod(val.c_str(), nullptr)); break;
          case SVF_spreadMethod: {
@@ -661,24 +659,23 @@ void svgState::parse_distalgradient(const XTag &Tag, objVectorGradient *Gradient
 
 ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
 {
-   kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
    std::string id;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTDISTAL, &gradient)) {
       SetOwner(gradient, Self->Scene);
-      gradient->setFields(fl::Name("SVGDistalGrad"), fl::Type(VGT::DISTAL), fl::Units(VUNIT::BOUNDING_BOX));
+      gradient->setFields(fl::Name("SVGDistalGrad"), fl::Units(VUNIT::BOUNDING_BOX));
 
       state.parse_distalgradient(Tag, gradient, id);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }
@@ -692,16 +689,16 @@ ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
 ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objVectorGradient *gradient;
+   objGradient *gradient;
 
    auto state = *this;
    state.applyTag(Tag); // Apply all attribute values to the current state.
 
-   if (!NewObject(CLASSID::VECTORGRADIENT, &gradient)) {
+   if (!NewObject(CLASSID::GRADIENTCONIC, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGConicGrad"), fl::Type(VGT::CONIC), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CenterX(SCALE(0.5)), fl::CenterY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
+      gradient->setFields(fl::Name("SVGConicGrad"), fl::Units(VUNIT::BOUNDING_BOX),
+         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
 
       std::string id;
 
@@ -728,9 +725,10 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
                else if (iequals("objectBoundingBox", val)) gradient->setUnits(VUNIT::BOUNDING_BOX);
                break;
             case SVF_gradientTransform: gradient->setTransform(val); break;
-            case SVF_cx: set_double_units(gradient, FID_CenterX, val, gradient->Units); break;
-            case SVF_cy: set_double_units(gradient, FID_CenterY, val, gradient->Units); break;
+            case SVF_cx: set_double_units(gradient, FID_CX, val, gradient->Units); break;
+            case SVF_cy: set_double_units(gradient, FID_CY, val, gradient->Units); break;
             case SVF_r:  set_double_units(gradient, FID_Radius, val, gradient->Units); break;
+            case SVF_span: gradient->set(kt::fieldhash("Span"), strtod(val.c_str(), nullptr)); break;
             case SVF_spreadMethod: {
                if (iequals("pad", val))          gradient->setSpreadMethod(VSPREAD::PAD);
                else if (iequals("reflect", val)) gradient->setSpreadMethod(VSPREAD::REFLECT);
@@ -752,9 +750,9 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
-            SetName(gradient, id.c_str());
+            SetName(gradient, id);
             track_object(Self, gradient);
-            return Self->Scene->addDef(id.c_str(), gradient);
+            return Self->Scene->addDef(id, gradient);
          }
          else return ERR::Okay;
       }

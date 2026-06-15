@@ -70,6 +70,8 @@ flute_test(vector_convolve_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_co
 flute_test(vector_apply_path "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_apply_path.tiri")
 flute_test(vector_clip_mask_cache "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clip_mask_cache.tiri")
 flute_test(vector_gouraud_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gouraud_gradient.tiri")
+flute_test(vector_conic_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_conic_gradient.tiri")
+flute_test(vector_contour_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_contour_gradient.tiri")
 flute_test(vector_distal_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_distal_gradient.tiri")
 flute_test(vector_isolated_bitmap_pool "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_isolated_bitmap_pool.tiri")
 flute_test(vector_shared_invalidation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_invalidation.tiri")

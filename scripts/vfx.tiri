@@ -504,7 +504,7 @@ vfx.wipes.clock.animate = function(State, Options, Progress)
 
    pc = State.path_cmd
 
-   pc.type = PE_Move -- Center
+   pc.type = PE_Move -- Centre
    pc.x    = State.v_width * 0.5
    pc.y    = State.v_height * 0.5
    State.clip_path.mtAddCommand(pc)

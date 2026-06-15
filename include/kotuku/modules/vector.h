@@ -16,7 +16,14 @@ class objVectorTransition;
 class objVectorScene;
 class objVectorImage;
 class objVectorPattern;
-class objVectorGradient;
+class objGradient;
+class objGradientLinear;
+class objGradientRadial;
+class objGradientConic;
+class objGradientDiamond;
+class objGradientContour;
+class objGradientGouraud;
+class objGradientDistal;
 class objFilterEffect;
 class objImageFX;
 class objSourceFX;
@@ -230,19 +237,6 @@ enum class VIJ : int {
    INHERIT = 5,
 };
 
-// VectorGradient options.
-
-enum class VGT : int {
-   NIL = 0,
-   LINEAR = 0,
-   RADIAL = 1,
-   CONIC = 2,
-   DIAMOND = 3,
-   CONTOUR = 4,
-   GOURAUD = 5,
-   DISTAL = 6,
-};
-
 // Options for stretching text in VectorText.
 
 enum class VTS : int {
@@ -376,6 +370,18 @@ enum class WVS : int {
    SAWTOOTH = 3,
 };
 
+// Gradient fall-off options.
+
+enum class GFALL : int {
+   NIL = 0,
+   OPAQUE = 1,
+   LINEAR = 2,
+   QUADRATIC = 3,
+   CUBIC = 4,
+   SMOOTHSTEP = 5,
+   CLEAR = 6,
+};
+
 // Colour modes for ColourFX.
 
 enum class CM : int {
@@ -416,7 +422,6 @@ enum class VGF : uint32_t {
    FIXED_FY = 0x00020000,
    FIXED_RADIUS = 0x00040000,
    FIXED_FOCAL_RADIUS = 0x00080000,
-   CONTAIN_FOCAL = 0x00100000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VGF)
@@ -541,7 +546,7 @@ struct VectorPoint {
 struct VectorPainter {
    objVectorPattern * Pattern;    // A VectorPattern object, suitable for pattern based fills.
    objVectorImage * Image;        // A VectorImage object, suitable for image fills.
-   objVectorGradient * Gradient;  // A VectorGradient object, suitable for gradient fills.
+   objGradient * Gradient;        // A Gradient object, suitable for gradient fills.
    struct FRGB Colour;            // A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
    void reset() {
       Colour.Alpha = 0;
@@ -1137,33 +1142,166 @@ class objVectorPattern : public Object {
 
 };
 
-// VectorGradient class definition
+// Gradient class definition
 
-#define VER_VECTORGRADIENT (1.000000)
+#define VER_GRADIENT (1.000000)
 
-class objVectorGradient : public Object {
+class objGradient : public Object {
    public:
-   static constexpr CLASSID CLASS_ID = CLASSID::VECTORGRADIENT;
-   static constexpr CSTRING CLASS_NAME = "VectorGradient";
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENT;
+   static constexpr CSTRING CLASS_NAME = "Gradient";
 
-   using create = kt::Create<objVectorGradient>;
+   using create = kt::Create<objGradient>;
 
-   double  X1;            // Initial X coordinate for the gradient.
-   double  Y1;            // Initial Y coordinate for the gradient.
-   double  X2;            // Final X coordinate for the gradient.
-   double  Y2;            // Final Y coordinate for the gradient.
-   double  CenterX;       // The horizontal center point of the gradient.
-   double  CenterY;       // The vertical center point of the gradient.
-   double  FocalX;        // The horizontal focal point for radial gradients.
-   double  FocalY;        // The vertical focal point for radial gradients.
-   double  Radius;        // The radius of the gradient.
-   double  FocalRadius;   // The size of the focal radius for radial gradients.
-   double  Resolution;    // Affects the rate of change for colours in the gradient.
-   VSPREAD SpreadMethod;  // Determines the rendering behaviour to use when gradient colours are cycled.
-   VUNIT   Units;         // Defines the coordinate system for X1, Y1, X2 and Y2.
-   VGT     Type;          // Specifies the type of gradient (e.g. RADIAL, LINEAR)
-   VGF     Flags;         // Dimension flags are stored here.
-   VCS     ColourSpace;   // Defines the colour space to use when interpolating gradient colours.
+   double  Resolution;      // Affects the rate of change for colours in the gradient.
+   VSPREAD SpreadMethod;    // Determines the rendering behaviour to use when gradient colours are cycled.
+   VUNIT   Units;           // Defines the coordinate system for gradient coordinates.
+   VCS     ColourSpace;     // Defines the colour space to use when interpolating gradient colours.
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getResolution(double &Value) noexcept {
+      Value = this->Resolution;
+      return ERR::Okay;
+   }
+
+   inline ERR getSpreadMethod(VSPREAD &Value) noexcept {
+      Value = this->SpreadMethod;
+      return ERR::Okay;
+   }
+
+   inline ERR getUnits(VUNIT &Value) noexcept {
+      Value = this->Units;
+      return ERR::Okay;
+   }
+
+   inline ERR getColourSpace(VCS &Value) noexcept {
+      Value = this->ColourSpace;
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(float * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+   inline ERR getColourMap(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getMatrices(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getNumeric(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getID(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+   inline ERR getStops(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+   inline ERR getTotalStops(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setResolution(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+   }
+
+   inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setUnits(const VUNIT Value) noexcept {
+      if (this->initialised()) return ERR::NoFieldAccess;
+      this->Units = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setColourSpace(const VCS Value) noexcept {
+      if (this->initialised()) return ERR::NoFieldAccess;
+      this->ColourSpace = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setColour(const float * Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+   }
+
+   inline ERR setColourMap(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00904208, &Value, 1);
+   }
+
+   inline ERR setMatrices(APTR Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, 0x08100318, Value, 1);
+   }
+
+   inline ERR setNumeric(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setID(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, 0x00904308, &Value, 1);
+   }
+
+   inline ERR setStops(APTR Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+   }
+
+   inline ERR setTransform(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, 0x00804208, &Value, 1);
+   }
+
+};
+
+// GradientLinear class definition
+
+#define VER_GRADIENTLINEAR (1.000000)
+
+class objGradientLinear : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTLINEAR;
+   static constexpr CSTRING CLASS_NAME = "GradientLinear";
+
+   using create = kt::Create<objGradientLinear>;
 
    // Action stubs
 
@@ -1172,7 +1310,7 @@ class objVectorGradient : public Object {
    // Customised field getting
 
    inline ERR getX1(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[3];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1196,156 +1334,10 @@ class objVectorGradient : public Object {
    }
 
    inline ERR getY2(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
+      auto field = &this->Class->Dictionary[2];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getCenterX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getCenterY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getFocalX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getFocalY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getFocalRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getResolution(double &Value) noexcept {
-      Value = this->Resolution;
-      return ERR::Okay;
-   }
-
-   inline ERR getSpreadMethod(VSPREAD &Value) noexcept {
-      Value = this->SpreadMethod;
-      return ERR::Okay;
-   }
-
-   inline ERR getUnits(VUNIT &Value) noexcept {
-      Value = this->Units;
-      return ERR::Okay;
-   }
-
-   inline ERR getType(VGT &Value) noexcept {
-      Value = this->Type;
-      return ERR::Okay;
-   }
-
-   inline ERR getFlags(VGF &Value) noexcept {
-      Value = this->Flags;
-      return ERR::Okay;
-   }
-
-   inline ERR getColourSpace(VCS &Value) noexcept {
-      Value = this->ColourSpace;
-      return ERR::Okay;
-   }
-
-   inline ERR getColour(float * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
-   }
-
-   inline ERR getColourMap(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getMatrices(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      auto error = field->GetValue(this, &Value);
-      return error;
-   }
-
-   inline ERR getNumeric(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      auto error = field->GetValue(this, &Value);
-      return error;
-   }
-
-   inline ERR getID(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getStops(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[34];
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
-   }
-
-   inline ERR getVertices(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[29];
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
-   }
-
-   inline ERR getIndices(int * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
-   }
-
-   inline ERR getInnerRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getTotalStops(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto error = field->GetValue(this, &Value);
       return error;
    }
 
@@ -1353,7 +1345,7 @@ class objVectorGradient : public Object {
    // Customised field setting
 
    inline ERR setX1(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[3];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1371,128 +1363,483 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setY2(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+};
+
+// GradientRadial class definition
+
+#define VER_GRADIENTRADIAL (1.000000)
+
+class objGradientRadial : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTRADIAL;
+   static constexpr CSTRING CLASS_NAME = "GradientRadial";
+
+   using create = kt::Create<objGradientRadial>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getCX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getCY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getFX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getFY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getFocalRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getContainFocal(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setCX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setCY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setFX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[4];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setCenterX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setCenterY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setFocalX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setFocalY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+   inline ERR setFY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[6];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[5];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setResolution(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+   inline ERR setContainFocal(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+};
+
+// GradientConic class definition
+
+#define VER_GRADIENTCONIC (1.000000)
+
+class objGradientConic : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTCONIC;
+   static constexpr CSTRING CLASS_NAME = "GradientConic";
+
+   using create = kt::Create<objGradientConic>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getCX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getCY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getSpan(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setRadius(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setCX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setCY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setSpan(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
-   inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+};
+
+// GradientDiamond class definition
+
+#define VER_GRADIENTDIAMOND (1.000000)
+
+class objGradientDiamond : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDIAMOND;
+   static constexpr CSTRING CLASS_NAME = "GradientDiamond";
+
+   using create = kt::Create<objGradientDiamond>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getCX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
    }
 
-   inline ERR setUnits(const VUNIT Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->Units = Value;
-      return ERR::Okay;
+   inline ERR getCY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
    }
 
-   inline ERR setType(const VGT Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   inline ERR getRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
    }
 
-   inline ERR setFlags(const VGF Value) noexcept {
-      this->Flags = Value;
-      return ERR::Okay;
+
+   // Customised field setting
+
+   inline ERR setCX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setColourSpace(const VCS Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->ColourSpace = Value;
-      return ERR::Okay;
+   inline ERR setCY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
+
+   inline ERR setRadius(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+};
+
+// GradientContour class definition
+
+#define VER_GRADIENTCONTOUR (1.000000)
+
+class objGradientContour : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTCONTOUR;
+   static constexpr CSTRING CLASS_NAME = "GradientContour";
+
+   using create = kt::Create<objGradientContour>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getFloor(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getMultiplier(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setFloor(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+};
+
+// GradientGouraud class definition
+
+#define VER_GRADIENTGOURAUD (1.000000)
+
+class objGradientGouraud : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTGOURAUD;
+   static constexpr CSTRING CLASS_NAME = "GradientGouraud";
+
+   using create = kt::Create<objGradientGouraud>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getVertices(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+   inline ERR getIndices(int * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      return error;
+   }
+
+
+   // Customised field setting
 
    inline ERR setColour(const float * Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, 0x10111308, Value, Elements);
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, 0x00904208, &Value, 1);
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00914208, &Value, 1);
    }
 
-   inline ERR setMatrices(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x08100318, Value, 1);
-   }
-
-   inline ERR setNumeric(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+   inline ERR setSpreadMethod(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setID(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, 0x00904308, &Value, 1);
-   }
-
    inline ERR setStops(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, 0x00111318, Value, Elements);
    }
 
    inline ERR setVertices(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[1];
       return field->WriteValue(this, field, 0x00101318, Value, Elements);
    }
 
    inline ERR setIndices(const int * Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[0];
       return field->WriteValue(this, field, 0x40101308, Value, Elements);
    }
 
-   inline ERR setInnerRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+};
+
+// GradientDistal class definition
+
+#define VER_GRADIENTDISTAL (1.000000)
+
+class objGradientDistal : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDISTAL;
+   static constexpr CSTRING CLASS_NAME = "GradientDistal";
+
+   using create = kt::Create<objGradientDistal>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getFloor(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getMultiplier(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getInnerRadius(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      return error;
+   }
+
+   inline ERR getInnerFall(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+   inline ERR getOuterFall(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setFloor(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
-   inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
-      return field->WriteValue(this, field, 0x00804208, &Value, 1);
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setRadius(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setInnerRadius(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      Unit var(Value);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setInnerFall(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setOuterFall(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };

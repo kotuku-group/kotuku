@@ -237,6 +237,44 @@ public:
     }
 };
 
+class gradient_conic_span {
+public:
+    explicit gradient_conic_span(double span) :
+        m_span(span)
+    {
+        if (m_span <= 0.0) m_span = 1.0;
+        else if (m_span > 1.0) m_span = 1.0;
+    }
+
+    inline int calculate(int x, int y, int d) const {
+        double angle = atan2(double(y), double(x));
+        if (angle < 0.0) angle += pi * 2.0;
+        return uround(angle * double(d) / (pi * 2.0 * m_span));
+    }
+
+private:
+    double m_span;
+};
+
+class gradient_conic_reflect_span {
+public:
+    explicit gradient_conic_reflect_span(double span) :
+        m_span(span)
+    {
+        if (m_span <= 0.0) m_span = 1.0;
+        else if (m_span > 1.0) m_span = 1.0;
+    }
+
+    inline int calculate(int x, int y, int d) const {
+        double angle = atan2(double(y), double(x));
+        if (angle < 0.0) angle += pi * 2.0;
+        return uround(angle * double(d) / (pi * m_span));
+    }
+
+private:
+    double m_span;
+};
+
 template<class GradientF> class gradient_clip_adaptor {
 public:
     gradient_clip_adaptor(const GradientF& gradient) : m_gradient(&gradient) {}

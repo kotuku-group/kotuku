@@ -496,7 +496,7 @@ simple vector shapes are required.  However, it is limited in that advanced rend
 available to the client.
 
 At least one of `StrokeStyle` or `FillStyle` is required to render visible output.  Valid styles are allocated and
-configured using recognised vector style objects, specifically @VectorImage, @VectorPattern and @VectorGradient.  If a
+configured using recognised vector style objects, specifically @VectorImage, @VectorPattern and @Gradient.  If a
 fill or stroke operation is not required, set the relevant parameter to `NULL`.  Stroke rendering is also disabled when
 `StrokeWidth` is less than `0.001`.
 

@@ -65,7 +65,8 @@ static const double INV_SQRT2   = 1.0 / SQRT2;
 extern OBJECTPTR clVectorScene, clVectorViewport, clVectorGroup, clVectorColour;
 extern OBJECTPTR clVectorEllipse, clVectorRectangle, clVectorPath, clVectorWave;
 extern OBJECTPTR clVectorFilter, clVectorPolygon, clVectorText, clVectorClip;
-extern OBJECTPTR clVectorGradient, clVectorImage, clVectorPattern, clVector;
+extern OBJECTPTR clGradient, clGradientLinear, clGradientRadial, clGradientConic, clGradientDiamond, clGradientContour;
+extern OBJECTPTR clGradientGouraud, clGradientDistal, clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX;
@@ -432,9 +433,11 @@ class extVectorTransition : public objVectorTransition, public SceneDef {
    bool Dirty:1;
 };
 
-class extVectorGradient : public objVectorGradient, public SceneDef {
+class extGradient : public objGradient, public SceneDef {
    public:
-   using create = kt::Create<extVectorGradient>;
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENT;
+   static constexpr CSTRING CLASS_NAME = "Gradient";
+   using create = kt::Create<extGradient>;
 
    std::vector<GradientStop> Stops;  // An array of gradient stop colours.
    struct VectorMatrix *Matrices;
@@ -443,18 +446,146 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
    std::string ID;
-   agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
-   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
-   agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
-   uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
-   std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for Type IS VGT::GOURAUD; null for all other gradient types
-   GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
    int   NumericID;
+
+   extGradient() {
+      Matrices     = nullptr;
+      Colours      = nullptr;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+      Colour       = {};
+      ColourRGB    = {};
+      NumericID    = 0;
+   }
+
+   ~extGradient();
+};
+
+class extGradientLinear : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTLINEAR;
+   static constexpr CSTRING CLASS_NAME = "GradientLinear";
+   using create = kt::Create<extGradientLinear>;
+
+   Unit X1, Y1, X2, Y2;
    double Angle;
    double Length;
-   bool   CalcAngle; // True if the Angle/Length values require recalculation.
+   bool CalcAngle; // True if the Angle/Length values require recalculation.
 
-   ~extVectorGradient();
+   extGradientLinear() {
+      Angle = 0;
+      Length = 0;
+      CalcAngle = true;
+   }
+};
+
+class extGradientRadial : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTRADIAL;
+   static constexpr CSTRING CLASS_NAME = "GradientRadial";
+   using create = kt::Create<extGradientRadial>;
+
+   Unit CX, CY, FX, FY, Radius, FocalRadius;
+   bool ContainFocal;
+
+   extGradientRadial() {
+      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      FocalRadius = Unit(0);
+      ContainFocal = 0;
+   }
+};
+
+class extGradientConic : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTCONIC;
+   static constexpr CSTRING CLASS_NAME = "GradientConic";
+   using create = kt::Create<extGradientConic>;
+
+   Unit CX, CY, Radius;
+   double Span;
+
+   extGradientConic() {
+      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Span = 1.0;
+   }
+};
+
+class extGradientDiamond : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDIAMOND;
+   static constexpr CSTRING CLASS_NAME = "GradientDiamond";
+   using create = kt::Create<extGradientDiamond>;
+
+   Unit CX, CY, Radius;
+
+   extGradientDiamond() {
+      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+   }
+};
+
+class extGradientContour : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTCONTOUR;
+   static constexpr CSTRING CLASS_NAME = "GradientContour";
+   using create = kt::Create<extGradientContour>;
+
+   agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
+   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
+   Unit Floor, Multiplier;
+
+   extGradientContour() {
+      Floor = Unit(0);
+      Multiplier = Unit(1.0);
+   }
+
+   ~extGradientContour() {
+      if (ContourCache) delete ContourCache;
+   }
+};
+
+class extGradientGouraud : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTGOURAUD;
+   static constexpr CSTRING CLASS_NAME = "GradientGouraud";
+   using create = kt::Create<extGradientGouraud>;
+
+   std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for GradientGouraud.
+   GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
+};
+
+class extGradientDistal : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDISTAL;
+   static constexpr CSTRING CLASS_NAME = "GradientDistal";
+   using create = kt::Create<extGradientDistal>;
+
+   agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
+   uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
+   double SDFResolution = -1; // Resolution baked into SDFCache; a mismatch forces a rebuild
+   double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
+   int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
+   Unit Floor, Multiplier, Radius, InnerRadius;
+   GFALL InnerFall, OuterFall; // Alpha fall-off curves for the interior and exterior fades
+
+   extGradientDistal() {
+      Floor = Unit(0);
+      Multiplier = Unit(1.0);
+      Radius = Unit(0);
+      InnerRadius = Unit(0);
+      InnerFall = GFALL::SMOOTHSTEP;
+      OuterFall = GFALL::SMOOTHSTEP;
+   }
+
+   ~extGradientDistal() {
+      if (SDFCache) delete SDFCache;
+   }
 };
 
 class extVectorImage : public objVectorImage, public SceneDef {
@@ -1515,7 +1646,7 @@ extern void ClosePath(APTR Path);
 extern void RewindPath(APTR Path);
 extern int GetVertex(APTR Path, double * X, double * Y);
 extern ERR ApplyPath(APTR Path, objVectorPath * VectorPath);
-extern ERR Rotate(struct VectorMatrix * Matrix, double Angle, double CenterX, double CenterY);
+extern ERR Rotate(struct VectorMatrix * Matrix, double Angle, double CX, double CY);
 extern ERR Translate(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Skew(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Multiply(struct VectorMatrix * Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);

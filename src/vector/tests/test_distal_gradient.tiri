@@ -54,10 +54,10 @@ function newRectScene(Radius)
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local opts = { type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, stops=rampStops() }
+   local opts = { units=VUNIT_BOUNDING_BOX, stops=rampStops() }
    if Radius != nil then opts.radius = Radius end
 
-   local gradient = scene.new('VectorGradient', opts)
+   local gradient = scene.new('GradientDistal', opts)
    check scene.mtAddDef('distal_rect', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_rect)' })
@@ -68,9 +68,7 @@ function newAlphaResolutionScene(Resolution)
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=160 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=40, resolution=Resolution, stops=blackStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=40, resolution=Resolution, stops=blackStops() })
    check scene.mtAddDef('distal_alpha_resolution', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=60, width=80, height=40, fill='url(#distal_alpha_resolution)' })
@@ -81,9 +79,7 @@ function newInnerFadeScene(InnerRadius)
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=0, innerRadius=InnerRadius, stops=blackStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=0, innerRadius=InnerRadius, stops=blackStops() })
    check scene.mtAddDef('distal_inner_fade', gradient)
 
    viewport.new('VectorRectangle', { x=20, y=20, width=80, height=80, fill='url(#distal_inner_fade)' })
@@ -97,9 +93,7 @@ function newEllipseScene()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops() })
    check scene.mtAddDef('distal_ellipse', gradient)
 
    viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_ellipse)' })
@@ -110,12 +104,26 @@ function newClippedEllipseScene()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, spreadMethod=VSPREAD_CLIP, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, spreadMethod=VSPREAD_CLIP, stops=rampStops() })
    check scene.mtAddDef('distal_clip_spread', gradient)
 
    viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_clip_spread)' })
+   return scene, gradient
+end
+
+-- A small centred rectangle with a large surrounding area and a small Radius, so several exterior fall-off cycles fit
+-- between the shape edge and the surface edge.  Used to verify REPEAT/REFLECT tile the exterior fade instead of
+-- fading once and stopping.  Drawn over white so the exterior colour and alpha read through clearly.
+
+function newSpreadScene(Spread)
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=15, spreadMethod=Spread, stops=rampStops() })
+   check scene.mtAddDef('distal_spread', gradient)
+
+   -- Shape edges: top ~85, so the exterior runs upward from y=85 toward y=0 (~85px = ~5.6 Radius cycles).
+   viewport.new('VectorRectangle', { x=85, y=85, width=30, height=30, fill='url(#distal_spread)' })
    return scene, gradient
 end
 
@@ -123,9 +131,7 @@ function newShapeScene()
    local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=18, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=18, stops=rampStops() })
    check scene.mtAddDef('distal_shape', gradient)
 
    local shape = viewport.new('VectorShape', {
@@ -149,13 +155,13 @@ end
 
 @Test function TypeRoundTrips()
    local scene, gradient = newRectScene()
-   assert(gradient.type is VGT_DISTAL, 'Gradient type should be DISTAL')
+   assert(gradient != nil, 'GradientDistal should be created')
 end
 
 @Test function UserspaceForcedToBoundingBox()
    -- Distal gradients depend on the target path bounds, so USERSPACE units are rejected and coerced to BOUNDING_BOX.
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
-   local gradient = scene.new('VectorGradient', { type=VGT_DISTAL, units=VUNIT_USERSPACE, stops=rampStops() })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_USERSPACE, stops=rampStops() })
    assert(gradient.units is VUNIT_BOUNDING_BOX, 'Distal gradient should coerce USERSPACE units to BOUNDING_BOX')
 end
 
@@ -231,6 +237,25 @@ end
    -- The centre must be painted (interior half).
    local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
    assert((centre.red + centre.green + centre.blue) > 0, 'Distal fill should draw inside the target path')
+end
+
+@Test function ScaledRadiusPadsAgainstVectorBounds()
+   -- Regression: Radius accepts scaled values.  A 50% radius on a 100px-wide shape should create about 50px of
+   -- exterior padding, not a raw 0.5px margin.
+
+   local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   check scene.mtAddDef('distal_scaled_radius',
+      scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius='50%', stops=blackStops() }))
+   viewport.new('VectorRectangle', { x=30, y=55, width=100, height=50, fill='url(#distal_scaled_radius)' })
+
+   local bmp = newWhiteBitmap(160, 160)
+   drawScene(scene, bmp)
+
+   local exterior = mGfx.ReadRGBPixel(bmp, 80, 30)
+   assert((exterior.red < 245) and (exterior.green < 245) and (exterior.blue < 245),
+      'Scaled Radius should pad against the vector bounds (got ' ..
+      exterior.red .. ',' .. exterior.green .. ',' .. exterior.blue .. ')')
 end
 
 @Test function ClipSpreadConstrainsFillToVectorPath()
@@ -313,9 +338,7 @@ end
    local scene = obj.new('VectorScene', { pageWidth=300, pageHeight=500 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
-   check scene.mtAddDef('distal_deep', scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=40, stops=rampStops()
-   }))
+   check scene.mtAddDef('distal_deep', scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=40, stops=rampStops() }))
    -- Tall ellipse: right edge ~x=230, padding 40 -> glow should vanish by ~x=270.
    viewport.new('VectorEllipse', { cx=150, cy=250, radiusX=80, radiusY=180, fill='url(#distal_deep)' })
 
@@ -403,26 +426,28 @@ end
 
 @Test function RadiusFieldRoundTrips()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops()
-   })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops() })
    assert(math.abs(gradient.radius - 15) < 0.001, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
 end
 
-@Test function InnerRadiusAliasesFocalRadius()
+@Test function FloorAndMultiplierFieldsRoundTrip()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
-   local gradient = scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops()
+   local gradient = scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, floor=0.25, multiplier=1.5, stops=rampStops()
    })
+
+   assert(math.abs(gradient.floor - 0.25) < 0.001,
+      'Floor field should round-trip (got ' .. gradient.floor .. ')')
+   assert(math.abs(gradient.multiplier - 1.5) < 0.001,
+      'Multiplier field should round-trip (got ' .. gradient.multiplier .. ')')
+end
+
+@Test function InnerRadiusRoundTrips()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops() })
 
    assert(math.abs(gradient.innerRadius - 12) < 0.001,
       'InnerRadius field should round-trip (got ' .. gradient.innerRadius .. ')')
-   assert(math.abs(gradient.focalRadius - 12) < 0.001,
-      'InnerRadius should alias FocalRadius storage (got ' .. gradient.focalRadius .. ')')
-
-   gradient.focalRadius = 7
-   assert(math.abs(gradient.innerRadius - 7) < 0.001,
-      'FocalRadius writes should update the InnerRadius alias (got ' .. gradient.innerRadius .. ')')
 end
 
 @Test function InnerRadiusFadesInterior()
@@ -442,6 +467,113 @@ end
       centre.red .. ',' .. centre.green .. ',' .. centre.blue .. ')')
 end
 
+@Test function InnerFallAndOuterFallRoundTrip()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local gradient = scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, innerFall=GFALL_CUBIC, outerFall=GFALL_LINEAR, stops=rampStops()
+   })
+
+   assert(gradient.innerFall is GFALL_CUBIC, 'InnerFall field should round-trip (got ' .. gradient.innerFall .. ')')
+   assert(gradient.outerFall is GFALL_LINEAR, 'OuterFall field should round-trip (got ' .. gradient.outerFall .. ')')
+end
+
+@Test function OuterFallReshapesExteriorGlow()
+   -- OuterFall reshapes the exterior alpha fade.  A LINEAR curve tapers evenly, whereas QUADRATIC drops faster near
+   -- the outline; sampled at the same exterior point, the faster curve leaves more of the white background showing
+   -- through (a higher red channel).  Switching the curve must therefore alter the render without rebuilding the SDF.
+
+   function exteriorScene(Curve)
+      local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, outerFall=Curve, stops=rampStops() })
+      check scene.mtAddDef('distal_outer_fall', gradient)
+      viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_outer_fall)' })
+      return scene
+   end
+
+   local linear_bmp = newWhiteBitmap(120, 120)
+   local quad_bmp = newWhiteBitmap(120, 120)
+   drawScene(exteriorScene(GFALL_LINEAR), linear_bmp)
+   drawScene(exteriorScene(GFALL_QUADRATIC), quad_bmp)
+
+   -- Mid-way through the exterior padding band (edge ~30, padding 20 -> ~y=20 at the top).
+   local linear = mGfx.ReadRGBPixel(linear_bmp, 60, 20)
+   local quad = mGfx.ReadRGBPixel(quad_bmp, 60, 20)
+   assert(quad.red > linear.red,
+      'A quadratic OuterFall should fade faster than linear, showing more background (linear red ' ..
+      linear.red .. ', quadratic red ' .. quad.red .. ')')
+end
+
+@Test function OuterFallClearDisablesExterior()
+   -- GFALL_CLEAR applied to OuterFall disables the exterior half entirely: the interior still renders but the exterior
+   -- band beyond the outline is fully transparent.  Compared against a normal curve at the same exterior point.
+
+   function clearScene(OuterFall)
+      local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, innerRadius=20, outerFall=OuterFall, stops=rampStops() })
+      check scene.mtAddDef('distal_outer_clear', gradient)
+      viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_outer_clear)' })
+      return scene
+   end
+
+   local normal_bmp = newBitmap(120, 120)
+   local clear_bmp = newBitmap(120, 120)
+   drawScene(clearScene(GFALL_LINEAR), normal_bmp)
+   drawScene(clearScene(GFALL_CLEAR), clear_bmp)
+
+   -- Exterior band just outside the outline (edge ~30).  Normal fall paints it; CLEAR leaves it transparent.
+   local normal_ext = mGfx.ReadRGBPixel(normal_bmp, 60, 24)
+   assert((normal_ext.red + normal_ext.green + normal_ext.blue) > 0,
+      'A normal OuterFall should paint the exterior band')
+
+   local clear_ext = mGfx.ReadRGBPixel(clear_bmp, 60, 24)
+   assert((clear_ext.red is 0) and (clear_ext.green is 0) and (clear_ext.blue is 0),
+      'OuterFall=CLEAR should leave the exterior fully transparent (got ' ..
+      clear_ext.red .. ',' .. clear_ext.green .. ',' .. clear_ext.blue .. ')')
+
+   -- The interior must still render with OuterFall=CLEAR.
+   local clear_int = mGfx.ReadRGBPixel(clear_bmp, 60, 38)
+   assert((clear_int.red + clear_int.green + clear_int.blue) > 0,
+      'OuterFall=CLEAR must leave the interior intact (got ' ..
+      clear_int.red .. ',' .. clear_int.green .. ',' .. clear_int.blue .. ')')
+end
+
+@Test function InnerFallClearDisablesInterior()
+   -- GFALL_CLEAR applied to InnerFall disables the interior half entirely, even with a non-zero InnerRadius, while the
+   -- exterior continues to render.
+
+   function clearScene(InnerFall)
+      local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, innerRadius=20, innerFall=InnerFall, stops=rampStops() })
+      check scene.mtAddDef('distal_inner_clear', gradient)
+      viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_inner_clear)' })
+      return scene
+   end
+
+   local normal_bmp = newBitmap(120, 120)
+   local clear_bmp = newBitmap(120, 120)
+   drawScene(clearScene(GFALL_LINEAR), normal_bmp)
+   drawScene(clearScene(GFALL_CLEAR), clear_bmp)
+
+   -- Interior point just inside the outline (edge ~30).  Normal fall paints it; CLEAR leaves it transparent.
+   local normal_int = mGfx.ReadRGBPixel(normal_bmp, 60, 38)
+   assert((normal_int.red + normal_int.green + normal_int.blue) > 0,
+      'A normal InnerFall should paint the interior fade')
+
+   local clear_int = mGfx.ReadRGBPixel(clear_bmp, 60, 38)
+   assert((clear_int.red is 0) and (clear_int.green is 0) and (clear_int.blue is 0),
+      'InnerFall=CLEAR should leave the interior fully transparent (got ' ..
+      clear_int.red .. ',' .. clear_int.green .. ',' .. clear_int.blue .. ')')
+
+   -- The exterior must still render with InnerFall=CLEAR.
+   local clear_ext = mGfx.ReadRGBPixel(clear_bmp, 60, 24)
+   assert((clear_ext.red + clear_ext.green + clear_ext.blue) > 0,
+      'InnerFall=CLEAR must leave the exterior intact (got ' ..
+      clear_ext.red .. ',' .. clear_ext.green .. ',' .. clear_ext.blue .. ')')
+end
+
 @Test function ClipPathStillConstrainsExteriorFill()
    -- The distal fill bypasses only the target path's own mask; a genuine clip-path must still constrain the result.
    -- A clip covering the left half of the surface should leave the right half (including the exterior band) clear.
@@ -451,9 +583,7 @@ end
    local clip = scene.new('VectorClip', { units=VUNIT_USERSPACE })
    clip.viewport.new('VectorRectangle', { x=0, y=0, width=60, height=120 })
 
-   check scene.mtAddDef('distal_clip', scene.new('VectorGradient', {
-      type=VGT_DISTAL, units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops()
-   }))
+   check scene.mtAddDef('distal_clip', scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, stops=rampStops() }))
 
    viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_clip)', mask=clip })
 
@@ -469,4 +599,130 @@ end
    local right_exterior = mGfx.ReadRGBPixel(bmp, 92, 60)
    assert((right_exterior.red is 0) and (right_exterior.green is 0) and (right_exterior.blue is 0),
       'A clip-path must still constrain the exterior distal fill (right side should be clear)')
+end
+
+@Test function RepeatSpreadTilesExteriorBeyondRadius()
+   -- With PAD the exterior fade vanishes one Radius (15px) past the shape edge.  REPEAT instead tiles the fade out to
+   -- the parent edge, so a point several cycles out (well past where PAD would be transparent white) is still painted
+   -- with the green-tinted exterior colour rather than the untouched white background.
+
+   local pad_scene = newSpreadScene(VSPREAD_PAD)
+   local rep_scene = newSpreadScene(VSPREAD_REPEAT)
+   local pad_bmp = newWhiteBitmap(200, 200)
+   local rep_bmp = newWhiteBitmap(200, 200)
+   drawScene(pad_scene, pad_bmp)
+   drawScene(rep_scene, rep_bmp)
+
+   -- Edge ~y=85; sample ~3 cycles out (y=40, ~45px past the edge).  PAD has fully faded to white here.
+   local pad_far = mGfx.ReadRGBPixel(pad_bmp, 100, 40)
+   assert((pad_far.red > 250) and (pad_far.green > 250) and (pad_far.blue > 250),
+      'PAD should leave white several Radius cycles out (got ' ..
+      pad_far.red .. ',' .. pad_far.green .. ',' .. pad_far.blue .. ')')
+
+   -- REPEAT must still tile colour out to the same point: green-dominant, not the white background.
+   local rep_far = mGfx.ReadRGBPixel(rep_bmp, 100, 40)
+   assert((rep_far.green > rep_far.red) and (rep_far.green > rep_far.blue),
+      'REPEAT should tile the exterior fade out past the first cycle (got ' ..
+      rep_far.red .. ',' .. rep_far.green .. ',' .. rep_far.blue .. ')')
+end
+
+@Test function RepeatSpreadRestartsAtFullOpacity()
+   -- REPEAT is a sawtooth: alpha falls to zero at the end of each Radius cycle (white shows through) then jumps back
+   -- to full at the start of the next (opaque green).  Crossing a cycle boundary the red channel (a proxy for how
+   -- much white bleeds through) should fall sharply as the next cycle restarts at full opacity.  Red is used rather
+   -- than green because the faded state reads as white, whose green is also 255.
+
+   local scene = newSpreadScene(VSPREAD_REPEAT)
+   local bmp = newWhiteBitmap(200, 200)
+   drawScene(scene, bmp)
+
+   -- Edge ~y=85, Radius 15.  The first cycle fades to white near the cycle boundary, then the second restarts opaque
+   -- immediately past it.  Walking outward (decreasing y) through the first ~20px of exterior we must therefore see a
+   -- near-white tail row (red close to the background) immediately followed at a lower y by a snapped-back opaque
+   -- green row (low red).  Red is used as the proxy because the faded state reads as white, whose green is also 255.
+   local found_white = false
+   local restart_red = 999
+   for y = 84, 64, -1 do
+      local c = mGfx.ReadRGBPixel(bmp, 100, y)
+      if (not found_white) then
+         if c.red > 245 then found_white = true end -- cycle tail faded to (near) white
+      elseif c.red < restart_red then restart_red = c.red -- after the boundary: track the most opaque row
+      end
+   end
+
+   assert(found_white, 'REPEAT cycle tail should fade close to the white background before the boundary')
+   assert(restart_red < 60,
+      'REPEAT should restart at full opacity immediately past the cycle boundary (restart red ' .. restart_red .. ')')
+end
+
+@Test function ReflectSpreadAlternatesFadeDirection()
+   -- REFLECT is a triangle wave: the fade alternates direction each cycle, so alpha ramps back up from zero at a cycle
+   -- boundary instead of jumping to full as REPEAT does.  At the first cycle boundary the alpha is therefore near zero
+   -- (near white) for REFLECT but near full (green) for REPEAT, the defining difference between the two modes.
+
+   local rep_scene = newSpreadScene(VSPREAD_REPEAT)
+   local ref_scene = newSpreadScene(VSPREAD_REFLECT)
+   local rep_bmp = newWhiteBitmap(200, 200)
+   local ref_bmp = newWhiteBitmap(200, 200)
+   drawScene(rep_scene, rep_bmp)
+   drawScene(ref_scene, ref_bmp)
+
+   -- Just inside the second cycle (y=68, ~17px past the y=85 edge).  REPEAT has restarted opaque; REFLECT is ramping
+   -- back up from transparent, so REFLECT shows more white (a higher red channel) than REPEAT at the same point.
+   local rep = mGfx.ReadRGBPixel(rep_bmp, 100, 68)
+   local ref = mGfx.ReadRGBPixel(ref_bmp, 100, 68)
+   assert(ref.red > rep.red,
+      'REFLECT should ramp up from transparent at a cycle boundary where REPEAT restarts opaque (reflect red ' ..
+      ref.red .. ', repeat red ' .. rep.red .. ')')
+end
+
+@Test function OpaqueOuterFallHoldsAlphaAcrossCycles()
+   -- An OPAQUE OuterFall holds the exterior alpha at full across every cycle, so a REPEAT fill paints the full colour
+   -- ramp solidly out to the parent edge with no alpha tapering between tiles.  Over white, a far exterior point is
+   -- therefore fully saturated (no white showing through) rather than faded.
+
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   check scene.mtAddDef('distal_opaque_spread', scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, radius=15, spreadMethod=VSPREAD_REPEAT, outerFall=GFALL_OPAQUE, stops=rampStops()
+   }))
+   viewport.new('VectorRectangle', { x=85, y=85, width=30, height=30, fill='url(#distal_opaque_spread)' })
+
+   local bmp = newWhiteBitmap(200, 200)
+   drawScene(scene, bmp)
+
+   -- A far exterior point: with OPAQUE the alpha never tapers, so no white background bleeds through.
+   local far = mGfx.ReadRGBPixel(bmp, 100, 40)
+   assert((far.red + far.green + far.blue) > 0, 'OPAQUE OuterFall with REPEAT should still paint a far exterior point')
+   assert((far.red < 250) or (far.green < 250) or (far.blue < 250),
+      'OPAQUE OuterFall should hold full alpha, not fade to the white background (got ' ..
+      far.red .. ',' .. far.green .. ',' .. far.blue .. ')')
+end
+
+@Test function PadSpreadStillStopsAtPaddingEdge()
+   -- Regression: PAD must keep its single-fade behaviour regardless of the OuterFall curve.  Even an OPAQUE OuterFall
+   -- (which holds the alpha at full strength) must still cut to transparent at the padding edge under PAD, rather than
+   -- tiling outward.  Over white, a point beyond one Radius past the shape edge must be the untouched background.
+
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   check scene.mtAddDef('distal_pad_opaque', scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, radius=15, spreadMethod=VSPREAD_PAD, outerFall=GFALL_OPAQUE, stops=rampStops()
+   }))
+   viewport.new('VectorRectangle', { x=85, y=85, width=30, height=30, fill='url(#distal_pad_opaque)' })
+
+   local bmp = newWhiteBitmap(200, 200)
+   drawScene(scene, bmp)
+
+   -- Just outside the edge (within one Radius) the OPAQUE fill is painted solidly (green outline colour).
+   local near = mGfx.ReadRGBPixel(bmp, 100, 80) -- ~5px past the y=85 edge, inside the single padding cycle
+   assert((near.green > near.red) and (near.green > near.blue),
+      'PAD with OPAQUE should paint solidly within the padding distance (got ' ..
+      near.red .. ',' .. near.green .. ',' .. near.blue .. ')')
+
+   -- Well beyond one Radius past the edge the PAD fill must have stopped, leaving the white background untouched.
+   local far = mGfx.ReadRGBPixel(bmp, 100, 60) -- ~25px past the edge, > one Radius out
+   assert((far.red > 250) and (far.green > 250) and (far.blue > 250),
+      'PAD must cut to transparent at the padding edge even with OPAQUE OuterFall (got ' ..
+      far.red .. ',' .. far.green .. ',' .. far.blue .. ')')
 end
