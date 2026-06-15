@@ -738,9 +738,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       transform.invert();
 
       if (Gradient.SpreadMethod IS VSPREAD::REFLECT) {
-         agg::gradient_conic_span span_func(conic.Span);
-         agg::gradient_reflect_adaptor<agg::gradient_conic_span> spread_method(span_func);
-         render_gradient(spread_method, 0, radial_col_span);
+         if (conic.Span < 1.0) {
+            agg::gradient_conic_reflect_span span_func(conic.Span);
+            agg::gradient_reflect_adaptor<agg::gradient_conic_reflect_span> spread_method(span_func);
+            render_gradient(spread_method, 0, radial_col_span);
+         }
+         else render_gradient(gradient_func, 0, radial_col_span);
       }
       else if (Gradient.SpreadMethod IS VSPREAD::REPEAT) {
          agg::gradient_conic_span span_func(conic.Span);

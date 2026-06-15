@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>GradientConic draws colour values around a centre point, producing a conic gradient.</p>
-<p>The inherited #SpreadMethod field is honoured when <fl>Span</fl> is less than <code>1.0</code>.  A <code>PAD</code> spread ignores <fl>Span</fl> and renders the legacy full conic gradient.</p></description>
+<p>The <fl>Span</fl> field is honoured by <code>REPEAT</code>, <code>REFLECT</code> and <code>CLIP</code> spread modes.  A <code>REFLECT</code> spread sweeps the colour ramp forwards and then back again within each Span cycle, forming a triangular sweep.  With the default span of <code>1.0</code> a single triangle spans the full turn: the ramp runs from start to end across the first half-turn and back to the start across the second.</p></description>
     <source>
       <file path="painters/">gradient_conic.cpp</file>
     </source>

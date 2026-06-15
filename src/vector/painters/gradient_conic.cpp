@@ -5,8 +5,10 @@ GradientConic: Conic colour gradient paint server.
 
 GradientConic draws colour values around a centre point, producing a conic gradient.
 
-The inherited #SpreadMethod field is honoured when #Span is less than `1.0`.  A `PAD` spread ignores #Span and renders
-the legacy full conic gradient.
+The #Span field is honoured by `REPEAT`, `REFLECT` and `CLIP` spread modes.  A `REFLECT` spread sweeps the colour
+ramp forwards and then back again within each Span cycle, forming a triangular sweep.  With the default span of
+`1.0` a single triangle spans the full turn: the ramp runs from start to end across the first half-turn and back to
+the start across the second.
 
 -END-
 

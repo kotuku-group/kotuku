@@ -18,6 +18,8 @@ local glSpreadMethod = VSPREAD_REFLECT
 local glRadius = 100
 local glResolution = 1.0
 local glActiveGradient
+local MIN_RADIUS <const> = 2
+local MAX_RADIUS <const> = 400
 
 -- Corner colours for the Gouraud quad, mutated interactively then rebuilt into the mesh.  Each entry is
 -- { r, g, b }.  Order: top-left, top-right, bottom-left, bottom-right.
@@ -113,6 +115,8 @@ function selectGradient(Text):obj
          gradient?.focalRadius = Radius
          focalEllipse?.radius = Radius
       end
+
+      focalEllipse.radius = glRadius
       focalEllipse.visibility = 'visible'
    elseif (Text is 'Conic') then
       gradient = createGradient('GradientConic', {
@@ -126,7 +130,7 @@ function selectGradient(Text):obj
       end
 
       radiusChanged = function(Radius:num)
-         gradient?.radius = Radius
+         gradient?.span = Radius / MAX_RADIUS
       end
    elseif (Text is 'Diamond') then
       gradient = createGradient('GradientDiamond', {
@@ -240,6 +244,7 @@ function selectGradient(Text):obj
          applyGouraudMesh(gradient)
       end
    end
+
    gradient.resolution = glResolution
    gradientVP.scene.surface.mtScheduleRedraw()
    return gradient
@@ -261,7 +266,7 @@ function buildScene()
       text   = 'Radial',
       x      = win.margins.left,
       y      = 10,
-      items = {
+      items = array<table> {
          { item='Radial' },
          { item='Conic' },
          { item='Diamond' },
@@ -284,7 +289,7 @@ function buildScene()
       text   = 'Reflect',
       x      = cmbGradient.viewport.x + cmbGradient.viewport.width + 10,
       y      = 10,
-      items  = { { item='Pad' }, { item='Repeat' }, { item='Reflect' }, { item='Clip' } },
+      items  = array<table> { { item='Pad' }, { item='Repeat' }, { item='Reflect' }, { item='Clip' } },
       events = {
          activate = function(Widget, Text)
             glSpreadMethod = choose Text from
@@ -306,9 +311,10 @@ function buildScene()
       text   = 'Magma',
       x      = cmbSpread.viewport.x + cmbSpread.viewport.width + 10,
       y      = 10,
-      items  = {
+      items  = array<table> {
          { item='Magma' }, { item='Rocket' }, { item='Mako' }, { item='IceFire' },
-         { item='Flare' }, { item='Crest' }, { item='Viridis' }, { item='Plasma' }, { item='Inferno' } },
+         { item='Flare' }, { item='Crest' }, { item='Viridis' }, { item='Plasma' }, { item='Inferno' }
+      },
       events = {
          activate = function(Widget, Text)
             glColourMap = 'cmap:' .. Text:lower()
@@ -339,8 +345,8 @@ function buildScene()
       target = viewport,
       label  = 'Radius:',
       value  = glRadius,
-      min    = 2,
-      max    = 400,
+      min    = MIN_RADIUS,
+      max    = MAX_RADIUS,
       x      = slResolution.viewport.x + slResolution.viewport.width + 10,
       y      = 10,
       events = {
