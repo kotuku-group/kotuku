@@ -1011,6 +1011,11 @@ class objVectorPattern : public Object {
 
    // Action stubs
 
+   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
+   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
+      struct acDraw args = { X, Y, Width, Height };
+      return Action(AC::Draw, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting

@@ -21,11 +21,15 @@ static ERR GRADIENTVORONOI_Init(extGradientVoronoi *Self)
    }
 
    if (Self->Floor >= Self->Multiplier) return log.warning(ERR::OutOfRange);
+
    if ((Self->PointCount < 1) or (Self->PointCount > 4096)) return log.warning(ERR::OutOfRange);
+
    if ((Self->Jitter < 0.0) or (Self->Jitter > 1.0)) return log.warning(ERR::OutOfRange);
+
    if ((int(Self->WorleyMode) < int(WLF::F1)) or (int(Self->WorleyMode) > int(WLF::PEAKS))) {
       return log.warning(ERR::OutOfRange);
    }
+
    if ((int(Self->WorleyMetric) < int(WLM::EUCLIDEAN)) or (int(Self->WorleyMetric) > int(WLM::CHEBYSHEV))) {
       return log.warning(ERR::OutOfRange);
    }

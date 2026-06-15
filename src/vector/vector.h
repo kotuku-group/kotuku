@@ -627,6 +627,8 @@ class extVectorPattern : public objVectorPattern, public SceneDef {
 
    struct VectorMatrix *Matrices;
    objBitmap *Bitmap;
+
+   ~extVectorPattern();
 };
 
 class extVectorFilter : public objVectorFilter {

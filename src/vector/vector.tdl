@@ -444,7 +444,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
   ]])
 
-  klass('VectorPattern', { src='painters/pattern.cpp', extended=true }, [[
+  klass('VectorPattern', { src='painters/pattern.cpp', output='painters/pattern_def.cpp', extended=true }, [[
     double X                      # Starting horizontal coordinate
     double Y                      # Starting vertical coordinate
     double Width                  # Width of the canvas

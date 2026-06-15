@@ -62,11 +62,12 @@ namespace agg
          for (int i=0; i < 256; i++) m_lut[i] = iround((i * m_d2) + m_d1) << gradient_subpixel_shift;
       }
 
-      static void store_field_value(std::vector<float> &Field, int Pos, double Value, float &MinValue,
-         float &MaxValue)
+      static void store_field_value(std::vector<float> &Field, int Pos, double Value, bool IncludeRange,
+         float &MinValue, float &MaxValue)
       {
          const float value = float(Value);
          Field[Pos] = value;
+         if (!IncludeRange) return;
          if (value < MinValue) MinValue = value;
          if (value > MaxValue) MaxValue = value;
       }
@@ -84,7 +85,7 @@ namespace agg
          for (int y=0; y < Height; y++) {
             for (int x=0; x < Width; x++) {
                const int pos = (y * Width) + x;
-               if (Mask[pos] > 0x01) continue;
+               const bool inside = Mask[pos] <= 0x01;
 
                const double px = x + 0.5;
                const double py = y + 0.5;
@@ -122,7 +123,7 @@ namespace agg
                      else value = f1;
                   }
 
-                  store_field_value(Field, pos, value, MinValue, MaxValue);
+                  store_field_value(Field, pos, value, inside, MinValue, MaxValue);
                }
                else if constexpr (Mode IS WLF::WEIGHTED) {
                   double weighted = std::numeric_limits<double>::max();
@@ -134,7 +135,7 @@ namespace agg
                      if (dominance < weighted) weighted = dominance;
                   }
 
-                  store_field_value(Field, pos, weighted, MinValue, MaxValue);
+                  store_field_value(Field, pos, weighted, inside, MinValue, MaxValue);
                }
                else {
                   double peaks = std::numeric_limits<double>::lowest();
@@ -146,7 +147,7 @@ namespace agg
                      if (peak > peaks) peaks = peak;
                   }
 
-                  store_field_value(Field, pos, peaks, MinValue, MaxValue);
+                  store_field_value(Field, pos, peaks, inside, MinValue, MaxValue);
                }
             }
          }
@@ -353,14 +354,13 @@ namespace agg
       if (min_value IS max_value) m_buffer.clear();
       else {
          const float scale = 255.0f / (max_value - min_value);
+
+         // Keep out-of-mask samples valid for anti-aliased edge pixels whose centres fall outside the fill.
          for (int l=0, total=width * height; l < total; l++) {
-            if (mask[l] <= 0x01) {
-               int value = int((field[l] - min_value) * scale);
-               if (value < 0) value = 0;
-               else if (value > 255) value = 255;
-               m_buffer[l] = int8u(value);
-            }
-            else m_buffer[l] = 0;
+            int value = int((field[l] - min_value) * scale);
+            if (value < 0) value = 0;
+            else if (value > 255) value = 255;
+            m_buffer[l] = int8u(value);
          }
       }
 
