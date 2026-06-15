@@ -66,7 +66,7 @@ extern OBJECTPTR clVectorScene, clVectorViewport, clVectorGroup, clVectorColour;
 extern OBJECTPTR clVectorEllipse, clVectorRectangle, clVectorPath, clVectorWave;
 extern OBJECTPTR clVectorFilter, clVectorPolygon, clVectorText, clVectorClip;
 extern OBJECTPTR clGradient, clGradientLinear, clGradientRadial, clGradientConic, clGradientDiamond, clGradientContour;
-extern OBJECTPTR clGradientGouraud, clGradientDistal, clVectorImage, clVectorPattern, clVector;
+extern OBJECTPTR clGradientGouraud, clGradientDistal, clGradientVoronoi, clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX;
@@ -75,6 +75,7 @@ extern OBJECTPTR glVectorModule;
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
 namespace agg { class gradient_contour; }
 namespace agg { class gradient_sdf; }
+namespace agg { class gradient_worley; }
 class objVectorTransition;
 class extVectorText;
 class extVector;
@@ -585,6 +586,33 @@ class extGradientDistal : public extGradient {
 
    ~extGradientDistal() {
       if (SDFCache) delete SDFCache;
+   }
+};
+
+class extGradientVoronoi : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTVORONOI;
+   static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
+   using create = kt::Create<extGradientVoronoi>;
+
+   agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
+   uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
+   Unit Floor, Multiplier;
+   int64_t Seed = 0;
+   int PointCount = 16;
+   WLF WorleyMode = WLF::F1;
+   WLM WorleyMetric = WLM::EUCLIDEAN;
+   double HeightMin = 1.0;
+   double HeightMax = 1.0;
+   double Jitter = 0.0;
+
+   extGradientVoronoi() {
+      Floor = Unit(0);
+      Multiplier = Unit(1.0);
+   }
+
+   ~extGradientVoronoi() {
+      if (WorleyCache) delete WorleyCache;
    }
 };
 

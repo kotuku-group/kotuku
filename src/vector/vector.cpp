@@ -21,6 +21,7 @@ OBJECTPTR clVectorEllipse = nullptr, clVectorRectangle = nullptr, clVectorPath =
 OBJECTPTR clVectorFilter = nullptr, clVectorPolygon = nullptr, clVectorText = nullptr, clVectorClip = nullptr;
 OBJECTPTR clGradient = nullptr, clGradientLinear = nullptr, clGradientRadial = nullptr, clGradientConic = nullptr;
 OBJECTPTR clGradientDiamond = nullptr, clGradientContour = nullptr, clGradientGouraud = nullptr, clGradientDistal = nullptr;
+OBJECTPTR clGradientVoronoi = nullptr;
 OBJECTPTR clVectorImage = nullptr, clVectorPattern = nullptr, clVector = nullptr;
 OBJECTPTR clVectorSpiral = nullptr, clVectorShape = nullptr, clVectorTransition = nullptr, clImageFX = nullptr;
 OBJECTPTR clBlurFX = nullptr, clColourFX = nullptr, clCompositeFX = nullptr, clConvolveFX = nullptr, clFilterEffect = nullptr;
@@ -136,6 +137,7 @@ static ERR MODExpunge(void)
    if (clVectorPolygon)    { FreeResource(clVectorPolygon);    clVectorPolygon = nullptr; }
    if (clVectorText)       { FreeResource(clVectorText);       clVectorText = nullptr; }
    if (clGradientDistal)   { FreeResource(clGradientDistal);   clGradientDistal = nullptr; }
+   if (clGradientVoronoi)  { FreeResource(clGradientVoronoi);  clGradientVoronoi = nullptr; }
    if (clGradientGouraud)  { FreeResource(clGradientGouraud);  clGradientGouraud = nullptr; }
    if (clGradientContour)  { FreeResource(clGradientContour);  clGradientContour = nullptr; }
    if (clGradientDiamond)  { FreeResource(clGradientDiamond);  clGradientDiamond = nullptr; }

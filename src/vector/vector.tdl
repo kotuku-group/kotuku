@@ -208,6 +208,18 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
     "CLEAR:      Disables the gradient.")
 
+  enums("WLF", { type="int", start=0, comment="Worley field modes." },
+    "F1: Distance to nearest point.",
+    "F2_F1: Distance between the nearest and second-nearest points.",
+    "F2: Distance to second-nearest point.",
+    "WEIGHTED: Additively-weighted Voronoi using per-point heights.",
+    "PEAKS: Additive peaks or terrain using per-point heights.")
+
+  enums("WLM", { type="int", start=0, comment="Worley distance metrics." },
+    "EUCLIDEAN",
+    "MANHATTAN",
+    "CHEBYSHEV")
+
   enums("CM", { type="int", start=0, comment="Colour modes for ColourFX." },
     "NONE: Do nothing.",
     "MATRIX: Process the supplied 5x4 matrix values.",
@@ -467,6 +479,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true })
 
   klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
+
+  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true })
 
   klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
     obj(FilterEffect) Next  # Next filter in the chain.

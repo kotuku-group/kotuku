@@ -428,6 +428,13 @@ static uint64_t path_fingerprint(const agg::path_storage &Path)
    return hash;
 }
 
+static uint64_t mix_fingerprint(uint64_t Hash, uint64_t Value)
+{
+   Hash ^= Value;
+   Hash *= 0x100000001b3ULL;
+   return Hash;
+}
+
 //********************************************************************************************************************
 // Gradient fills.
 
@@ -811,6 +818,61 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       }
       else if (Gradient.SpreadMethod IS VSPREAD::CLIP) {
          agg::gradient_clip_adaptor<agg::gradient_contour> spread_method(gradient_func);
+         render_gradient(spread_method, 0, 256.0);
+      }
+      else render_gradient(gradient_func, 0, 256.0);
+   }
+   else if (Gradient.classID() IS CLASSID::GRADIENTVORONOI) {
+      auto &voronoi = (extGradientVoronoi &)Gradient;
+      // The Worley field buffer depends on the path and all generation parameters.  The d1/d2 values only affect
+      // the small lookup table, so they can be updated without rebuilding the feature-point field.
+
+      auto multiplier = std::clamp<double>(voronoi.Multiplier, 0.01, 10.0);
+      auto floor = std::clamp<double>(voronoi.Floor, 0.0, multiplier);
+
+      bool rebuild = false;
+      if (!voronoi.WorleyCache) {
+         voronoi.WorleyCache = new agg::gradient_worley();
+         rebuild = true;
+      }
+
+      auto &gradient_func = *voronoi.WorleyCache;
+      gradient_func.d1(floor * 256.0);
+      gradient_func.d2(multiplier);
+
+      const auto path_hash = path_fingerprint(*Path);
+      const auto resolved_seed = voronoi.Seed ? uint64_t(voronoi.Seed) : path_hash;
+
+      uint64_t hash = path_hash;
+      hash = mix_fingerprint(hash, resolved_seed);
+      hash = mix_fingerprint(hash, uint64_t(voronoi.PointCount));
+      hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
+      hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMetric)));
+      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMin));
+      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMax));
+      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.Jitter));
+
+      if ((rebuild) or (hash != voronoi.WorleyHash)) {
+         gradient_func.worley_create(*Path, resolved_seed, voronoi.PointCount, voronoi.WorleyMode,
+            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter);
+         voronoi.WorleyHash = hash;
+      }
+
+      transform.translate(Bounds.left, Bounds.top);
+      apply_transforms(Gradient, transform);
+      transform *= Transform;
+      transform.invert();
+
+      if (Gradient.SpreadMethod IS VSPREAD::REFLECT) {
+         agg::gradient_reflect_adaptor<agg::gradient_worley> spread_method(gradient_func);
+         render_gradient(spread_method, 0, 256.0);
+      }
+      else if (Gradient.SpreadMethod IS VSPREAD::REPEAT) {
+         agg::gradient_repeat_adaptor<agg::gradient_worley> spread_method(gradient_func);
+         render_gradient(spread_method, 0, 256.0);
+      }
+      else if (Gradient.SpreadMethod IS VSPREAD::CLIP) {
+         agg::gradient_clip_adaptor<agg::gradient_worley> spread_method(gradient_func);
          render_gradient(spread_method, 0, 256.0);
       }
       else render_gradient(gradient_func, 0, 256.0);

@@ -30,6 +30,7 @@
       <class>GradientGouraud</class>
       <class>GradientLinear</class>
       <class>GradientRadial</class>
+      <class>GradientVoronoi</class>
       <class>ImageFX</class>
       <class>LightingFX</class>
       <class>MergeFX</class>
@@ -1086,6 +1087,20 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="BOUNDING_BOX">Coordinates are scaled to the object's bounding box.</const>
       <const name="UNDEFINED">Either the default setting will be applied or the setting will be inherited from a parent object.</const>
       <const name="USERSPACE">Coordinates are scaled to the current viewport.</const>
+    </constants>
+
+    <constants lookup="WLF" comment="Worley field modes.">
+      <const name="F1">Distance to nearest point.</const>
+      <const name="F2">Distance to second-nearest point.</const>
+      <const name="F2_F1">Distance between the nearest and second-nearest points.</const>
+      <const name="PEAKS">Additive peaks or terrain using per-point heights.</const>
+      <const name="WEIGHTED">Additively-weighted Voronoi using per-point heights.</const>
+    </constants>
+
+    <constants lookup="WLM" comment="Worley distance metrics.">
+      <const name="CHEBYSHEV"/>
+      <const name="EUCLIDEAN"/>
+      <const name="MANHATTAN"/>
     </constants>
 
     <constants lookup="WVC" comment="Wave options.">
