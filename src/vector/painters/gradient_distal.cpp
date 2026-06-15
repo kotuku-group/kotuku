@@ -6,6 +6,21 @@ GradientDistal: Signed distance field colour gradient paint server.
 GradientDistal shades inward and outward from the target vector path outline.  The path outline is pinned to the
 centre of the colour ramp, `Radius` controls exterior padding, and `InnerRadius` controls interior fade-out.
 
+The base #SpreadMethod field selects how the exterior fade behaves beyond the first cycle, where one cycle spans the
+`Radius` distance:
+
+<list type="bullet">
+<li>`PAD` (the default) fades once over the `Radius` distance and then stops, producing the classic glow or halo.</li>
+<li>`REPEAT` tiles the fade outward as a sawtooth: at the end of each `Radius` cycle the alpha and colour restart at
+full strength, repeating until the parent area is filled.</li>
+<li>`REFLECT` tiles the fade outward as a triangle wave: each cycle alternates direction, ramping the alpha back up
+from zero before fading again, repeating until the parent area is filled.</li>
+</list>
+
+Setting #OuterFall to `GFALL::OPAQUE` holds the exterior alpha at full strength rather than tapering it, so with
+`REPEAT` or `REFLECT` the full colour ramp is painted solidly out to the parent edge with no fade between tiles.  Under
+`PAD` the alpha still cuts to transparent at the padding edge as usual.
+
 -END-
 
 *********************************************************************************************************************/

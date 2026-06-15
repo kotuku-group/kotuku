@@ -111,6 +111,22 @@ function newClippedEllipseScene()
    return scene, gradient
 end
 
+-- A small centred rectangle with a large surrounding area and a small Radius, so several exterior fall-off cycles fit
+-- between the shape edge and the surface edge.  Used to verify REPEAT/REFLECT tile the exterior fade instead of
+-- fading once and stopping.  Drawn over white so the exterior colour and alpha read through clearly.
+
+function newSpreadScene(Spread)
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=15, spreadMethod=Spread, stops=rampStops() })
+   check scene.mtAddDef('distal_spread', gradient)
+
+   -- Shape edges: top ~85, so the exterior runs upward from y=85 toward y=0 (~85px = ~5.6 Radius cycles).
+   viewport.new('VectorRectangle', { x=85, y=85, width=30, height=30, fill='url(#distal_spread)' })
+   return scene, gradient
+end
+
 function newShapeScene()
    local scene = obj.new('VectorScene', { pageWidth=160, pageHeight=160 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -513,4 +529,130 @@ end
    local right_exterior = mGfx.ReadRGBPixel(bmp, 92, 60)
    assert((right_exterior.red is 0) and (right_exterior.green is 0) and (right_exterior.blue is 0),
       'A clip-path must still constrain the exterior distal fill (right side should be clear)')
+end
+
+@Test function RepeatSpreadTilesExteriorBeyondRadius()
+   -- With PAD the exterior fade vanishes one Radius (15px) past the shape edge.  REPEAT instead tiles the fade out to
+   -- the parent edge, so a point several cycles out (well past where PAD would be transparent white) is still painted
+   -- with the green-tinted exterior colour rather than the untouched white background.
+
+   local pad_scene = newSpreadScene(VSPREAD_PAD)
+   local rep_scene = newSpreadScene(VSPREAD_REPEAT)
+   local pad_bmp = newWhiteBitmap(200, 200)
+   local rep_bmp = newWhiteBitmap(200, 200)
+   drawScene(pad_scene, pad_bmp)
+   drawScene(rep_scene, rep_bmp)
+
+   -- Edge ~y=85; sample ~3 cycles out (y=40, ~45px past the edge).  PAD has fully faded to white here.
+   local pad_far = mGfx.ReadRGBPixel(pad_bmp, 100, 40)
+   assert((pad_far.red > 250) and (pad_far.green > 250) and (pad_far.blue > 250),
+      'PAD should leave white several Radius cycles out (got ' ..
+      pad_far.red .. ',' .. pad_far.green .. ',' .. pad_far.blue .. ')')
+
+   -- REPEAT must still tile colour out to the same point: green-dominant, not the white background.
+   local rep_far = mGfx.ReadRGBPixel(rep_bmp, 100, 40)
+   assert((rep_far.green > rep_far.red) and (rep_far.green > rep_far.blue),
+      'REPEAT should tile the exterior fade out past the first cycle (got ' ..
+      rep_far.red .. ',' .. rep_far.green .. ',' .. rep_far.blue .. ')')
+end
+
+@Test function RepeatSpreadRestartsAtFullOpacity()
+   -- REPEAT is a sawtooth: alpha falls to zero at the end of each Radius cycle (white shows through) then jumps back
+   -- to full at the start of the next (opaque green).  Crossing a cycle boundary the red channel (a proxy for how
+   -- much white bleeds through) should fall sharply as the next cycle restarts at full opacity.  Red is used rather
+   -- than green because the faded state reads as white, whose green is also 255.
+
+   local scene = newSpreadScene(VSPREAD_REPEAT)
+   local bmp = newWhiteBitmap(200, 200)
+   drawScene(scene, bmp)
+
+   -- Edge ~y=85, Radius 15.  The first cycle fades to white near the cycle boundary, then the second restarts opaque
+   -- immediately past it.  Walking outward (decreasing y) through the first ~20px of exterior we must therefore see a
+   -- near-white tail row (red close to the background) immediately followed at a lower y by a snapped-back opaque
+   -- green row (low red).  Red is used as the proxy because the faded state reads as white, whose green is also 255.
+   local found_white = false
+   local restart_red = 999
+   for y = 84, 64, -1 do
+      local c = mGfx.ReadRGBPixel(bmp, 100, y)
+      if (not found_white) then
+         if c.red > 245 then found_white = true end -- cycle tail faded to (near) white
+      elseif c.red < restart_red then restart_red = c.red -- after the boundary: track the most opaque row
+      end
+   end
+
+   assert(found_white, 'REPEAT cycle tail should fade close to the white background before the boundary')
+   assert(restart_red < 60,
+      'REPEAT should restart at full opacity immediately past the cycle boundary (restart red ' .. restart_red .. ')')
+end
+
+@Test function ReflectSpreadAlternatesFadeDirection()
+   -- REFLECT is a triangle wave: the fade alternates direction each cycle, so alpha ramps back up from zero at a cycle
+   -- boundary instead of jumping to full as REPEAT does.  At the first cycle boundary the alpha is therefore near zero
+   -- (near white) for REFLECT but near full (green) for REPEAT, the defining difference between the two modes.
+
+   local rep_scene = newSpreadScene(VSPREAD_REPEAT)
+   local ref_scene = newSpreadScene(VSPREAD_REFLECT)
+   local rep_bmp = newWhiteBitmap(200, 200)
+   local ref_bmp = newWhiteBitmap(200, 200)
+   drawScene(rep_scene, rep_bmp)
+   drawScene(ref_scene, ref_bmp)
+
+   -- Just inside the second cycle (y=68, ~17px past the y=85 edge).  REPEAT has restarted opaque; REFLECT is ramping
+   -- back up from transparent, so REFLECT shows more white (a higher red channel) than REPEAT at the same point.
+   local rep = mGfx.ReadRGBPixel(rep_bmp, 100, 68)
+   local ref = mGfx.ReadRGBPixel(ref_bmp, 100, 68)
+   assert(ref.red > rep.red,
+      'REFLECT should ramp up from transparent at a cycle boundary where REPEAT restarts opaque (reflect red ' ..
+      ref.red .. ', repeat red ' .. rep.red .. ')')
+end
+
+@Test function OpaqueOuterFallHoldsAlphaAcrossCycles()
+   -- An OPAQUE OuterFall holds the exterior alpha at full across every cycle, so a REPEAT fill paints the full colour
+   -- ramp solidly out to the parent edge with no alpha tapering between tiles.  Over white, a far exterior point is
+   -- therefore fully saturated (no white showing through) rather than faded.
+
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   check scene.mtAddDef('distal_opaque_spread', scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, radius=15, spreadMethod=VSPREAD_REPEAT, outerFall=GFALL_OPAQUE, stops=rampStops()
+   }))
+   viewport.new('VectorRectangle', { x=85, y=85, width=30, height=30, fill='url(#distal_opaque_spread)' })
+
+   local bmp = newWhiteBitmap(200, 200)
+   drawScene(scene, bmp)
+
+   -- A far exterior point: with OPAQUE the alpha never tapers, so no white background bleeds through.
+   local far = mGfx.ReadRGBPixel(bmp, 100, 40)
+   assert((far.red + far.green + far.blue) > 0, 'OPAQUE OuterFall with REPEAT should still paint a far exterior point')
+   assert((far.red < 250) or (far.green < 250) or (far.blue < 250),
+      'OPAQUE OuterFall should hold full alpha, not fade to the white background (got ' ..
+      far.red .. ',' .. far.green .. ',' .. far.blue .. ')')
+end
+
+@Test function PadSpreadStillStopsAtPaddingEdge()
+   -- Regression: PAD must keep its single-fade behaviour regardless of the OuterFall curve.  Even an OPAQUE OuterFall
+   -- (which holds the alpha at full strength) must still cut to transparent at the padding edge under PAD, rather than
+   -- tiling outward.  Over white, a point beyond one Radius past the shape edge must be the untouched background.
+
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   check scene.mtAddDef('distal_pad_opaque', scene.new('GradientDistal', {
+      units=VUNIT_BOUNDING_BOX, radius=15, spreadMethod=VSPREAD_PAD, outerFall=GFALL_OPAQUE, stops=rampStops()
+   }))
+   viewport.new('VectorRectangle', { x=85, y=85, width=30, height=30, fill='url(#distal_pad_opaque)' })
+
+   local bmp = newWhiteBitmap(200, 200)
+   drawScene(scene, bmp)
+
+   -- Just outside the edge (within one Radius) the OPAQUE fill is painted solidly (green outline colour).
+   local near = mGfx.ReadRGBPixel(bmp, 100, 80) -- ~5px past the y=85 edge, inside the single padding cycle
+   assert((near.green > near.red) and (near.green > near.blue),
+      'PAD with OPAQUE should paint solidly within the padding distance (got ' ..
+      near.red .. ',' .. near.green .. ',' .. near.blue .. ')')
+
+   -- Well beyond one Radius past the edge the PAD fill must have stopped, leaving the white background untouched.
+   local far = mGfx.ReadRGBPixel(bmp, 100, 60) -- ~25px past the edge, > one Radius out
+   assert((far.red > 250) and (far.green > 250) and (far.blue > 250),
+      'PAD must cut to transparent at the padding edge even with OPAQUE OuterFall (got ' ..
+      far.red .. ',' .. far.green .. ',' .. far.blue .. ')')
 end

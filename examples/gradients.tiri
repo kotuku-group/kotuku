@@ -1,8 +1,6 @@
 #!/usr/bin/env origo
 --[[
 Gradient Demonstration
-
-TODO: Add more adjustment options (radius, focalRadius, etc)
 --]]
 
    import 'gui'
@@ -12,13 +10,14 @@ TODO: Add more adjustment options (radius, focalRadius, etc)
    import 'gui/button'
    import 'gui/filedialog'
 
-local win, viewport, gradient, gradientVP, rect
+local win, viewport, gradientVP, rect
 local focalEllipse, contourShape, distalShape, uiEvent
 local radiusChanged = function() end
 local glColourMap = 'cmap:magma'
 local glSpreadMethod = VSPREAD_REFLECT
 local glRadius = 100
-local glGradientKind = 'Radial'
+local glResolution = 1.0
+local glActiveGradient
 
 -- Corner colours for the Gouraud quad, mutated interactively then rebuilt into the mesh.  Each entry is
 -- { r, g, b }.  Order: top-left, top-right, bottom-left, bottom-right.
@@ -32,17 +31,24 @@ gouraudColours = array<array> {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function createGradient(Name:str, ClassName:str, Options:table)
+function createGradient(ClassName:str, Options:table)
    global glRegisteredGradients ?= { }
 
-   if not glRegisteredGradients[Name] then
+   local gradient = glRegisteredGradients[ClassName]
+   if not gradient then
       gradient = viewport.scene.new(ClassName, Options)
-      check viewport.scene.mtAddDef(Name, gradient)
-      glRegisteredGradients[Name] = gradient
+      check viewport.scene.mtAddDef(ClassName, gradient)
+      glRegisteredGradients[ClassName] = gradient
+   else
+      for k,v in pairs(Options) do
+         try
+            gradient[k] = v
+         end
+      end
    end
 
-   rect.fill = f'url(#{Name})'
-   return glRegisteredGradients[Name]
+   rect.fill = f'url(#{ClassName})'
+   return gradient
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -53,7 +59,7 @@ end
 -- The mesh is rebuilt from fresh struct values each time rather than read-modify-written, which keeps the nested
 -- FRGB colours marshalling cleanly back into the gradient.
 
-function gouraudVertex(X:num, Y:num, Col:array)
+function gouraudVertex(X:num, Y:num, Col:array):any
    v = struct.new('GouraudVertex')
    v.x = X
    v.y = Y
@@ -64,7 +70,7 @@ function gouraudVertex(X:num, Y:num, Col:array)
    return v
 end
 
-function applyGouraudMesh()
+function applyGouraudMesh(Gradient)
    w = 1
    h = 1
 
@@ -75,39 +81,55 @@ function applyGouraudMesh()
       gouraudVertex(w, h, gouraudColours[3])  -- 3: bottom-right
    }
 
-   gradient.vertices = vertices
-   gradient.indices  = array<int> { 0, 1, 2,   -- triangle A: TL, TR, BL
+   Gradient.vertices = vertices
+   Gradient.indices  = array<int> { 0, 1, 2,   -- triangle A: TL, TR, BL
                                     1, 3, 2 }   -- triangle B: TR, BR, BL
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function selectGradient(Text)
-   glGradientKind = Text
+function selectGradient(Text):obj
+   local gradient
+
    contourShape?.visibility = 'hidden'
    distalShape?.visibility = 'hidden'
    focalEllipse?.visibility = 'hidden'
    rect.visibility = 'visible'
+   radiusChanged = function(Radius:num) end
 
    if Text is 'Radial' then
-      gradient = createGradient('Radial', 'GradientRadial', {
+      gradient = createGradient('GradientRadial', {
          colourMap = glColourMap, units='userSpace', spreadMethod=glSpreadMethod,
          cx = '50%', cy = '50%', fx = '50%', fy = '50%', focalRadius = glRadius, radius = glRadius
       })
-      focalEllipse.visibility = 'visible'
+
       uiEvent = function(ev:table)
          gradient.fX = (ev.x / gradientVP.width * 100) .. '%'
          gradient.fY = (ev.y / gradientVP.height * 100) .. '%'
       end
+
       radiusChanged = function(Radius:num)
          gradient?.radius = Radius
          gradient?.focalRadius = Radius
          focalEllipse?.radius = Radius
       end
-      gradient.cX = '50%'
-      gradient.cY = '50%'
-   elseif (Text is 'Conic') or (Text is 'Diamond') then
-      gradient = createGradient(Text, Text is 'Conic' ? 'GradientConic' :> 'GradientDiamond', {
+      focalEllipse.visibility = 'visible'
+   elseif (Text is 'Conic') then
+      gradient = createGradient('GradientConic', {
+         colourMap = glColourMap, units='userSpace', radius=glRadius,
+         spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
+      })
+
+      uiEvent = function(ev:table)
+         gradient.cX = (ev.x / gradientVP.width * 100) .. '%'
+         gradient.cY = (ev.y / gradientVP.height * 100) .. '%'
+      end
+
+      radiusChanged = function(Radius:num)
+         gradient?.radius = Radius
+      end
+   elseif (Text is 'Diamond') then
+      gradient = createGradient('GradientDiamond', {
          colourMap = glColourMap, units='userSpace', radius=glRadius,
          spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
       })
@@ -121,7 +143,7 @@ function selectGradient(Text)
          gradient?.radius = Radius
       end
    elseif Text is 'Contour' then
-      gradient = createGradient('Contour', 'GradientContour', {
+      gradient = createGradient('GradientContour', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          floor = 0, multiplier = 2.0
       })
@@ -131,10 +153,8 @@ function selectGradient(Text)
          y = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
          gradient.floor = x > y ? x * gradient.multiplier :> y * gradient.multiplier
       end
-      radiusChanged = function(Radius:num)
-      end
    elseif Text is 'Contour Shape' then
-      gradient = createGradient('ContourShape', 'GradientContour', {
+      gradient = createGradient('GradientContour', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          floor = 0.9, multiplier = 1.0
       })
@@ -142,7 +162,7 @@ function selectGradient(Text)
       if not contourShape then
          contourShape = gradientVP.new('VectorSpiral', {
             name='spiral', centerX='50%', centerY='50%',
-            fill='url(#ContourShape)', spacing=140, loopLimit=6, visibility='visible'
+            fill='url(#GradientContour)', spacing=140, loopLimit=6, visibility='visible'
          })
       else
          contourShape.visibility = 'visible'
@@ -152,14 +172,14 @@ function selectGradient(Text)
       uiEvent = function(ev)
          xscale = math.abs(ev.x - (gradientVP.width * 0.5)) / gradientVP.width * 2
          yscale = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
-         gradient.x1 = xscale > yscale ? xscale :> yscale
-      end
-      radiusChanged = function(Radius:num)
+         gradient.floor = xscale > yscale ? xscale :> yscale
       end
    elseif Text is 'Distal' then
-      gradient = createGradient('DistalShape', 'GradientDistal', {
+      gradient = createGradient('GradientDistal', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          radius = glRadius,
+         innerFall = GFALL_LINEAR,
+         outerFall = GFALL_LINEAR,
          floor = 0, -- Added to the signed DT base values (0 - 1.0)
          multiplier = 1  -- Multiplier of the base DT value (0.01 - 10.0)
       })
@@ -167,44 +187,49 @@ function selectGradient(Text)
       if not distalShape then
          distalShape = gradientVP.new('VectorShape', {
             name='distalShape', centerX='50%', centerY='50%', radius=glRadius * 2,
-            fill='url(#DistalShape)', visibility='visible', mod=4, stroke="white", strokeOpacity=0.5, strokeWidth=2
+            fill='url(#GradientDistal)', visibility='visible', mod=4, stroke="white", strokeOpacity=0.5, strokeWidth=2
          })
       else
          distalShape.visibility = 'visible'
+         distalShape.radius = glRadius
       end
 
       rect.visibility = 'hidden'
+
       -- Dragging adjusts the exterior radius.  Larger radius widens the outside ramp half and compresses the
       -- interior half, shifting where the path outline (the ramp midpoint) sits relative to the visible fill.
+
       uiEvent = function(ev)
          dist = math.max(math.abs(ev.x - (gradientVP.width * 0.5)) / gradientVP.width,
                          math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height)
          gradient.innerRadius = dist * 200
          gradient.radius = dist * 200
       end
+
       radiusChanged = function(Radius:num)
          distalShape?.radius = Radius
       end
    elseif Text is 'Linear' then
-      gradient = createGradient('Linear', 'GradientLinear', {
+      gradient = createGradient('GradientLinear', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          x1 = '50%', y1 = '50%', x2 = '100%', y2 = '100%'
       })
+
       uiEvent = function(ev)
          gradient.x1 = '50%'
          gradient.y1 = '50%'
          gradient.x2 = (ev.x / gradientVP.width * 100) .. '%'
          gradient.y2 = (ev.y / gradientVP.height * 100) .. '%'
       end
-      radiusChanged = function(Radius:num)
-      end
    elseif Text is 'Gouraud' then
-      gradient = createGradient('Gouraud', 'GradientGouraud', {
+      gradient = createGradient('GradientGouraud', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod
       })
 
-      applyGouraudMesh()
+      applyGouraudMesh(gradient)
+
       -- Dragging recolours the vertices, demonstrating runtime-mutable mesh shading.
+
       uiEvent = function(ev)
          gouraudColours[3][0] = ev.x / gradientVP.width
          gouraudColours[3][1] = ev.y / gradientVP.height
@@ -212,10 +237,12 @@ function selectGradient(Text)
          gouraudColours[0][0] = ev.x / gradientVP.width
          gouraudColours[0][1] = ev.y / gradientVP.height
          gouraudColours[0][2] = 1.0 - (ev.x / gradientVP.width)
-         applyGouraudMesh()
+         applyGouraudMesh(gradient)
       end
    end
+   gradient.resolution = glResolution
    gradientVP.scene.surface.mtScheduleRedraw()
+   return gradient
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -246,7 +273,7 @@ function buildScene()
       },
       events = {
          activate = function(Widget, Text)
-            selectGradient(Text)
+            glActiveGradient = selectGradient(Text)
          end
       }
    })
@@ -267,7 +294,7 @@ function buildScene()
                'Clip'    -> VSPREAD_CLIP
                else      -> VSPREAD_PAD
             end
-            gradient.spreadMethod = glSpreadMethod
+            glActiveGradient.spreadMethod = glSpreadMethod
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }
@@ -285,7 +312,7 @@ function buildScene()
       events = {
          activate = function(Widget, Text)
             glColourMap = 'cmap:' .. Text:lower()
-            gradient.colourMap = glColourMap
+            glActiveGradient.colourMap = glColourMap
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }
@@ -301,7 +328,8 @@ function buildScene()
       y      = 10,
       events = {
          activate = function(Widget, Value)
-            gradient.resolution = Value
+            glResolution = Value
+            glActiveGradient.resolution = glResolution
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }
@@ -364,7 +392,7 @@ function buildScene()
 
    gradientVP.y = cmbGradient.viewport.y + cmbGradient.viewport.height + 12
 
-   selectGradient('Radial')
+   glActiveGradient = selectGradient('Radial')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

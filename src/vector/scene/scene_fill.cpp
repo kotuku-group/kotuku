@@ -833,6 +833,27 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.inner_fall(fall_curve(distal.InnerFall));
       gradient_func.outer_fall(fall_curve(distal.OuterFall));
 
+      // The spread method selects how the exterior fade behaves beyond the first Radius cycle.  PAD fades once and
+      // stops; REPEAT and REFLECT tile the cycle outward until the parent area is covered.  The unsupported VSPREAD
+      // variants (PAD-equivalents, REFLECT_X/Y, plus the CLIP handling below) collapse to a single padded fade.
+
+      agg::sdf_spread spread = agg::sdf_spread::pad;
+      if (Gradient.SpreadMethod IS VSPREAD::REPEAT) spread = agg::sdf_spread::repeat;
+      else if (Gradient.SpreadMethod IS VSPREAD::REFLECT) spread = agg::sdf_spread::reflect;
+      gradient_func.spread(spread);
+
+      // For REPEAT/REFLECT the exterior must extend far enough to fill the parent area.  The cycle length stays at
+      // Radius; the fill extent is the furthest the field has to reach from the path bounds to cover the view, so a
+      // tiled fade always paints out to (and a little past) the parent edges regardless of where the shape sits.
+
+      double fill_extent = radius;
+      if (spread != agg::sdf_spread::pad) {
+         const double reach_x = std::max(Bounds.left, ViewWidth - Bounds.right);
+         const double reach_y = std::max(Bounds.top, ViewHeight - Bounds.bottom);
+         fill_extent = std::max({ radius, reach_x, reach_y });
+      }
+      gradient_func.fill_extent(fill_extent);
+
       // Resolution stepping is baked into the SDF alpha buffer too.  The base Resolution setter does not touch the
       // SDF cache, so a change is detected here and forces a rebuild alongside the path fingerprint check.
 
@@ -840,10 +861,13 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.resolution(resolution);
 
       const auto hash = path_fingerprint(*Path);
-      if ((rebuild) or (hash != distal.SDFHash) or (resolution != distal.SDFResolution)) {
+      if ((rebuild) or (hash != distal.SDFHash) or (resolution != distal.SDFResolution) or
+          (int(spread) != distal.SDFSpread) or (fill_extent != distal.SDFExtent)) {
          gradient_func.sdf_create(*Path);
          distal.SDFHash = hash;
          distal.SDFResolution = resolution;
+         distal.SDFSpread = int(spread);
+         distal.SDFExtent = fill_extent;
       }
 
       // The path is rendered into the SDF buffer at an inset of (origin_x, origin_y) to leave a margin for the

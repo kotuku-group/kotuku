@@ -583,6 +583,8 @@ class extGradientDistal : public extGradient {
    agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
    uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
    double SDFResolution = -1; // Resolution baked into SDFCache; a mismatch forces a rebuild
+   double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
+   int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
    double Floor, Multiplier, Radius, InnerRadius;
    GFALL InnerFall, OuterFall; // Alpha fall-off curves for the interior and exterior fades
    VGF Flags;
