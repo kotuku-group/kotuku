@@ -28,6 +28,7 @@ static ERR writeval_double(OBJECTPTR, Field *, int, CPTR , int);
 static ERR writeval_function(OBJECTPTR, Field *, int, CPTR , int);
 static ERR writeval_ptr(OBJECTPTR, Field *, int, CPTR , int);
 static ERR writeval_cppstr(OBJECTPTR, Field *, int, CPTR , int);
+static ERR writeval_unit(OBJECTPTR, Field *, int, CPTR , int);
 
 static ERR setval_large(OBJECTPTR, Field *, int Flags, CPTR , int);
 static ERR setval_pointer(OBJECTPTR, Field *, int Flags, CPTR , int);
@@ -131,6 +132,7 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
       else if (Field->Flags & FD_FUNCTION) error = writeval_function(Object, Field, flags, Data, 0);
       else if (Field->Flags & FD_STRING)   error = writeval_cppstr(Object, Field, flags, Data, 0);
       else if (Field->Flags & FD_POINTER)  error = writeval_ptr(Object, Field, flags, Data, 0);
+      else if (Field->Flags & FD_UNIT)     error = writeval_unit(Object, Field, flags, Data, 0);
       else log.warning("Unrecognised field flags $%.8x.", Field->Flags);
 
       if (error != ERR::Okay) {
@@ -347,6 +349,22 @@ static ERR writeval_cppstr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
       return ERR::Okay;
    }
    else return ERR::SetValueNotPointer;
+}
+
+static ERR writeval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+{
+   auto offset = (Unit *)((int8_t *)Object + Field->Offset);
+
+   if (Flags & FD_UNIT) *offset = *((Unit *)Data);
+   else {
+      auto unit_type = Flags & (~(FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT|FD_POINTER|FD_STRING));
+      if (Flags & FD_INT64) *offset = Unit(*((int64_t *)Data), unit_type);
+      else if (Flags & FD_INT)   *offset = Unit(*((int *)Data), unit_type);
+      else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = Unit(*((double *)Data), unit_type);
+      else return ERR::SetValueNotNumeric;
+   }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
