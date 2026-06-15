@@ -307,7 +307,8 @@ elseif (KOTUKU_DEFS_AVAILABLE)
    add_custom_target (build_headers COMMENT "Generate headers and definition files on demand")
 else ()
    add_custom_target (build_headers
-      COMMAND ${CMAKE_COMMAND} -E echo "Cannot generate definitions: install or build Origo before running this target."
+      COMMAND ${CMAKE_COMMAND} -E echo "Cannot generate definitions: install or build Origo, then reconfigure this build tree."
+      COMMAND ${CMAKE_COMMAND} -E false
       COMMENT "Definition generation is unavailable")
 endif ()
 
