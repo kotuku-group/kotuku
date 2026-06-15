@@ -157,7 +157,7 @@ function selectGradient(Text):obj
          y = math.abs(ev.y - (gradientVP.height * 0.5)) / gradientVP.height * 2
          gradient.floor = x > y ? x * gradient.multiplier :> y * gradient.multiplier
       end
-   elseif Text is 'Contour Shape' then
+   elseif Text is 'Contour Path' then
       gradient = createGradient('GradientContour', {
          colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
          floor = 0.9, multiplier = 1.0
@@ -272,7 +272,7 @@ function buildScene()
          { item='Diamond' },
          { item='Linear' },
          { item='Contour' },
-         { item='Contour Shape' },
+         { item='Contour Path' },
          { item='Distal' },
          { item='Gouraud' }
       },
