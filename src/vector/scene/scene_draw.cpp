@@ -168,6 +168,13 @@ public:
    bool clip_stack_empty() const { return mClipStack.empty(); }
    ClipBuffer &clip_stack_top() { return mClipStack.top(); }
 
+   // When rendering into a buffered viewport the target bitmap is offset so that render-space coordinates map onto a
+   // buffer whose top-left is (mBitmapOriginX, mBitmapOriginY).  Auxiliary buffers (e.g. the Gouraud path mask) must
+   // account for the same offset to stay aligned with the render base.
+
+   int bitmap_origin_x() const { return mBitmapOriginX; }
+   int bitmap_origin_y() const { return mBitmapOriginY; }
+
    SceneRenderer(extVectorScene *pScene) : mBitmapOriginX(0), mBitmapOriginY(0), Scene(pScene) { }
    void draw(objBitmap *, objVectorViewport *);
 };

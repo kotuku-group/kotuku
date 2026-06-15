@@ -189,8 +189,18 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
    agg::renderer_base<agg::pixfmt_psl> &RenderBase, SceneRenderer *Render, std::vector<uint8_t> &Bitmap,
    agg::rendering_buffer &Buffer)
 {
-   const unsigned width = RenderBase.width();
-   const unsigned height = RenderBase.height();
+   // The triangle raster and the path Raster both operate in render-space coordinates.  When rendering into a
+   // buffered viewport the target bitmap is offset by (origin_x, origin_y), so render-space (origin_x, origin_y) maps
+   // to buffer pixel (0,0) and the render base only spans the buffer dimensions.  The mask, however, is indexed by
+   // the render-space coordinates of the triangle scanlines, so it must extend to cover the origin offset as well;
+   // otherwise the bottom/right edge of the shape (which sits at render-space y >= buffer height) samples beyond the
+   // mask and is silently clipped.  Mirror the clip-mask convention (scene_clipping.cpp) of sizing to the full
+   // render-space extent from (0,0).
+
+   const unsigned origin_x = Render ? unsigned(std::max(0, Render->bitmap_origin_x())) : 0;
+   const unsigned origin_y = Render ? unsigned(std::max(0, Render->bitmap_origin_y())) : 0;
+   const unsigned width = RenderBase.width() + origin_x;
+   const unsigned height = RenderBase.height() + origin_y;
    if ((!width) or (!height)) return false;
 
    Bitmap.assign(size_t(width) * size_t(height), 0);

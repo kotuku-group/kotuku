@@ -44,7 +44,8 @@ from zero before fading again, repeating until the parent area is filled.</li>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>InnerFall controls the shape of the interior alpha fade that runs from the path outline inward to <code>InnerRadius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  The fade is only visible when <code>InnerRadius</code> is non-zero; with a zero InnerRadius the interior remains fully opaque and this field has no effect.</p>
+<p>InnerFall controls the shape of the interior alpha fade that runs from the path outline inward to <code>InnerRadius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  The fade is only visible when <code>InnerRadius</code> is non-zero; with a zero InnerRadius the interior remains fully opaque and the curve has no effect.</p>
+<p>Setting InnerFall to <code>GFALL::CLEAR</code> disables the interior entirely, rendering it fully transparent irrespective of <code>InnerRadius</code>.  This is useful for producing an exterior-only halo with no fill inside the path outline.</p>
       </description>
     </field>
 
@@ -75,6 +76,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
       <type>INT</type>
       <description>
 <p>OuterFall controls the shape of the exterior alpha fade that runs from the path outline outward to the padding edge defined by <code>Radius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  Faster curves such as <code>GFALL::QUADRATIC</code> and <code>GFALL::CUBIC</code> produce a tighter halo, while <code>GFALL::SMOOTHSTEP</code> holds the inner half bright for a wider glow.</p>
+<p>Setting OuterFall to <code>GFALL::CLEAR</code> disables the exterior entirely, rendering it fully transparent so that only the interior half of the gradient is drawn.</p>
       </description>
     </field>
 

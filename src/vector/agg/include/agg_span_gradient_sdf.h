@@ -52,7 +52,8 @@ namespace agg
       linear     = 2,
       quadratic  = 3,
       cubic      = 4,
-      smoothstep = 5
+      smoothstep = 5,
+      clear      = 6  // Disables the half it is applied to (interior or exterior), rendering it fully transparent.
    };
 
    // Exterior spread mode.  Controls what happens to the exterior alpha fade beyond the first fall-off cycle (one
@@ -81,6 +82,7 @@ namespace agg
          case sdf_falloff_curve::quadratic:  return a * a;
          case sdf_falloff_curve::cubic:      return a * a * a;
          case sdf_falloff_curve::smoothstep: return a * a * (3.0 - (2.0 * a));
+         case sdf_falloff_curve::clear:      return 0.0; // Half is disabled - fully transparent
          default:                            return a * a;
       }
    }
@@ -478,7 +480,8 @@ namespace agg
             // fall-off curve.  The interior uses InnerFall, the exterior uses OuterFall.
 
             if (inside[l]) {
-               if (m_inner_radius <= 0) m_alpha[l] = 255; // Interior is fully opaque by default
+               if (m_inner_fall IS sdf_falloff_curve::clear) m_alpha[l] = 0; // Interior disabled
+               else if (m_inner_radius <= 0) m_alpha[l] = 255; // Interior is fully opaque by default
                else {
                   float a = 1.0f - (mag * inv_inner_radius); // 1 at the outline, 0 at InnerRadius
                   if (a < 0.0f) a = 0.0f;
@@ -487,6 +490,7 @@ namespace agg
                   m_alpha[l] = int8u(sdf_falloff(double(stepped) / 255.0, m_inner_fall) * 255.0);
                }
             }
+            else if (m_outer_fall IS sdf_falloff_curve::clear) m_alpha[l] = 0; // Exterior disabled
             else if ((m_outer_fall IS sdf_falloff_curve::opaque) and (m_spread != sdf_spread::pad)) {
                // OPAQUE holds the alpha at full strength across the whole tiled field.  This is handled here rather
                // than via sdf_falloff because the repeat/reflect phase touches 0 at every cycle seam (the reflect

@@ -143,7 +143,10 @@ InnerFall: Selects the alpha fall-off curve for the interior fade.
 
 InnerFall controls the shape of the interior alpha fade that runs from the path outline inward to `InnerRadius`.  The
 default is `GFALL::SMOOTHSTEP`.  The fade is only visible when `InnerRadius` is non-zero; with a zero InnerRadius the
-interior remains fully opaque and this field has no effect.
+interior remains fully opaque and the curve has no effect.
+
+Setting InnerFall to `GFALL::CLEAR` disables the interior entirely, rendering it fully transparent irrespective of
+`InnerRadius`.  This is useful for producing an exterior-only halo with no fill inside the path outline.
 
 -FIELD-
 OuterFall: Selects the alpha fall-off curve for the exterior fade.
@@ -151,6 +154,9 @@ OuterFall: Selects the alpha fall-off curve for the exterior fade.
 OuterFall controls the shape of the exterior alpha fade that runs from the path outline outward to the padding edge
 defined by `Radius`.  The default is `GFALL::SMOOTHSTEP`.  Faster curves such as `GFALL::QUADRATIC` and
 `GFALL::CUBIC` produce a tighter halo, while `GFALL::SMOOTHSTEP` holds the inner half bright for a wider glow.
+
+Setting OuterFall to `GFALL::CLEAR` disables the exterior entirely, rendering it fully transparent so that only the
+interior half of the gradient is drawn.
 
 -END-
 *********************************************************************************************************************/

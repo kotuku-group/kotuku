@@ -204,8 +204,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "OPAQUE:     No fall-off.",
     "LINEAR:     Linear fall-off (even taper).",
     "QUADRATIC:  Quadratic fall-off - fast drop, thin tail — natural glow.",
-    "CUBIC:      Cubic fall-off - very tight glow hugging the outline",
-    "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half")
+    "CUBIC:      Cubic fall-off - very tight glow hugging the outline.",
+    "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
+    "CLEAR:      Disables the gradient.")
 
   enums("CM", { type="int", start=0, comment="Colour modes for ColourFX." },
     "NONE: Do nothing.",

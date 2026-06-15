@@ -504,6 +504,76 @@ end
       linear.red .. ', quadratic red ' .. quad.red .. ')')
 end
 
+@Test function OuterFallClearDisablesExterior()
+   -- GFALL_CLEAR applied to OuterFall disables the exterior half entirely: the interior still renders but the exterior
+   -- band beyond the outline is fully transparent.  Compared against a normal curve at the same exterior point.
+
+   function clearScene(OuterFall)
+      local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, innerRadius=20, outerFall=OuterFall, stops=rampStops() })
+      check scene.mtAddDef('distal_outer_clear', gradient)
+      viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_outer_clear)' })
+      return scene
+   end
+
+   local normal_bmp = newBitmap(120, 120)
+   local clear_bmp = newBitmap(120, 120)
+   drawScene(clearScene(GFALL_LINEAR), normal_bmp)
+   drawScene(clearScene(GFALL_CLEAR), clear_bmp)
+
+   -- Exterior band just outside the outline (edge ~30).  Normal fall paints it; CLEAR leaves it transparent.
+   local normal_ext = mGfx.ReadRGBPixel(normal_bmp, 60, 24)
+   assert((normal_ext.red + normal_ext.green + normal_ext.blue) > 0,
+      'A normal OuterFall should paint the exterior band')
+
+   local clear_ext = mGfx.ReadRGBPixel(clear_bmp, 60, 24)
+   assert((clear_ext.red is 0) and (clear_ext.green is 0) and (clear_ext.blue is 0),
+      'OuterFall=CLEAR should leave the exterior fully transparent (got ' ..
+      clear_ext.red .. ',' .. clear_ext.green .. ',' .. clear_ext.blue .. ')')
+
+   -- The interior must still render with OuterFall=CLEAR.
+   local clear_int = mGfx.ReadRGBPixel(clear_bmp, 60, 38)
+   assert((clear_int.red + clear_int.green + clear_int.blue) > 0,
+      'OuterFall=CLEAR must leave the interior intact (got ' ..
+      clear_int.red .. ',' .. clear_int.green .. ',' .. clear_int.blue .. ')')
+end
+
+@Test function InnerFallClearDisablesInterior()
+   -- GFALL_CLEAR applied to InnerFall disables the interior half entirely, even with a non-zero InnerRadius, while the
+   -- exterior continues to render.
+
+   function clearScene(InnerFall)
+      local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=20, innerRadius=20, innerFall=InnerFall, stops=rampStops() })
+      check scene.mtAddDef('distal_inner_clear', gradient)
+      viewport.new('VectorEllipse', { cx=60, cy=60, radius=30, fill='url(#distal_inner_clear)' })
+      return scene
+   end
+
+   local normal_bmp = newBitmap(120, 120)
+   local clear_bmp = newBitmap(120, 120)
+   drawScene(clearScene(GFALL_LINEAR), normal_bmp)
+   drawScene(clearScene(GFALL_CLEAR), clear_bmp)
+
+   -- Interior point just inside the outline (edge ~30).  Normal fall paints it; CLEAR leaves it transparent.
+   local normal_int = mGfx.ReadRGBPixel(normal_bmp, 60, 38)
+   assert((normal_int.red + normal_int.green + normal_int.blue) > 0,
+      'A normal InnerFall should paint the interior fade')
+
+   local clear_int = mGfx.ReadRGBPixel(clear_bmp, 60, 38)
+   assert((clear_int.red is 0) and (clear_int.green is 0) and (clear_int.blue is 0),
+      'InnerFall=CLEAR should leave the interior fully transparent (got ' ..
+      clear_int.red .. ',' .. clear_int.green .. ',' .. clear_int.blue .. ')')
+
+   -- The exterior must still render with InnerFall=CLEAR.
+   local clear_ext = mGfx.ReadRGBPixel(clear_bmp, 60, 24)
+   assert((clear_ext.red + clear_ext.green + clear_ext.blue) > 0,
+      'InnerFall=CLEAR must leave the exterior intact (got ' ..
+      clear_ext.red .. ',' .. clear_ext.green .. ',' .. clear_ext.blue .. ')')
+end
+
 @Test function ClipPathStillConstrainsExteriorFill()
    -- The distal fill bypasses only the target path's own mask; a genuine clip-path must still constrain the result.
    -- A clip covering the left half of the surface should leave the right half (including the exterior band) clear.

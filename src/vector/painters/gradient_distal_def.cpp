@@ -6,6 +6,7 @@ static const struct FieldDef clGradientDistalGFALL[] = {
    { "Quadratic", 0x00000003 },
    { "Cubic", 0x00000004 },
    { "Smoothstep", 0x00000005 },
+   { "Clear", 0x00000006 },
    { nullptr, 0 }
 };
 

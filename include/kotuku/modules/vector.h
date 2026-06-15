@@ -379,6 +379,7 @@ enum class GFALL : int {
    QUADRATIC = 3,
    CUBIC = 4,
    SMOOTHSTEP = 5,
+   CLEAR = 6,
 };
 
 // Colour modes for ColourFX.
