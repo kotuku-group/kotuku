@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientConic draws colour values around a centre point, producing a conic gradient.</p></description>
+<p>GradientConic draws colour values around a centre point, producing a conic gradient.</p>
+<p>The inherited #SpreadMethod field is honoured when <fl>Span</fl> is less than <code>1.0</code>.  A <code>PAD</code> spread ignores <fl>Span</fl> and renders the legacy full conic gradient.</p></description>
     <source>
       <file path="painters/">gradient_conic.cpp</file>
     </source>
@@ -47,6 +48,17 @@
       <type>DOUBLE</type>
       <description>
 <p>The radius of the conic gradient can be defined as a fixed unit or scaled relative to its container.  A default radius of 50% applies if this field is not set.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Span</name>
+      <comment>Defines the angular size of one conic gradient cycle.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The span is normalised so that <code>1.0</code> equals 360 degrees.  Values smaller than <code>1.0</code> define a partial angular cycle for #SpreadMethod modes that can repeat, reflect or clip the gradient.  The default value is <code>1.0</code>.</p>
+<p>When #SpreadMethod is <code>PAD</code>, Span is ignored and the conic gradient renders as a full-turn gradient.</p>
       </description>
     </field>
 

@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientGouraud interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.  The mesh is defined by <fl>Vertices</fl> and optional <fl>Indices</fl>.</p></description>
+<p>GradientGouraud interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.  The mesh is defined by <fl>Vertices</fl> and optional <fl>Indices</fl>.</p>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Per-vertex colour values are supplied directly through <fl>Vertices</fl>.</p></description>
     <source>
       <file path="painters/">gradient_gouraud.cpp</file>
     </source>

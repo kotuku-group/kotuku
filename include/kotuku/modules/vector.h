@@ -1504,7 +1504,7 @@ class objGradientConic : public objGradient {
    // Customised field getting
 
    inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1512,7 +1512,7 @@ class objGradientConic : public objGradient {
    }
 
    inline ERR getCX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[2];
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
       if (error IS ERR::Okay) Value = var.Value;
@@ -1527,17 +1527,25 @@ class objGradientConic : public objGradient {
       return error;
    }
 
+   inline ERR getSpan(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[2];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
@@ -1546,6 +1554,11 @@ class objGradientConic : public objGradient {
       auto field = &this->Class->Dictionary[0];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var, 1);
+   }
+
+   inline ERR setSpan(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
 };
@@ -1697,6 +1710,26 @@ class objGradientGouraud : public objGradient {
 
 
    // Customised field setting
+
+   inline ERR setColour(const float * Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, 0x10111308, Value, Elements);
+   }
+
+   inline ERR setColourMap(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00914208, &Value, 1);
+   }
+
+   inline ERR setSpreadMethod(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setStops(APTR Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, 0x00111318, Value, Elements);
+   }
 
    inline ERR setVertices(APTR Value, int Elements) noexcept {
       auto field = &this->Class->Dictionary[1];

@@ -10,12 +10,16 @@ GradientContour follows the contours of the target vector path.  `Floor` control
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONTOUR_Init(extGradient *Self)
+static ERR GRADIENTCONTOUR_Init(extGradientContour *Self)
 {
+   kt::Log log;
+
    if (Self->Units IS VUNIT::USERSPACE) {
-      kt::Log().warning("Contour gradients are not compatible with Units.USERSPACE.");
+      log.warning("Contour gradients are not compatible with Units.USERSPACE.");
       Self->Units = VUNIT::BOUNDING_BOX;
    }
+
+   if (Self->Floor >= Self->Multiplier) return log.warning(ERR::OutOfRange);
 
    return ERR::Okay;
 }
@@ -37,6 +41,7 @@ static ERR GRADIENTCONTOUR_GET_Floor(extGradientContour *Self, Unit *Value)
 
 static ERR GRADIENTCONTOUR_SET_Floor(extGradientContour *Self, Unit &Value)
 {
+   if (Value < 0) return ERR::OutOfRange;
    Self->Floor = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -60,6 +65,7 @@ static ERR GRADIENTCONTOUR_GET_Multiplier(extGradientContour *Self, Unit *Value)
 
 static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, Unit &Value)
 {
+   if ((Value < 0.01) or (Value > 10)) return ERR::OutOfRange;
    Self->Multiplier = Value;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;

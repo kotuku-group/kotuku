@@ -505,11 +505,13 @@ class extGradientConic : public extGradient {
    using create = kt::Create<extGradientConic>;
 
    Unit CX, CY, Radius;
+   double Span;
 
    extGradientConic() {
       CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
       CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
       Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      Span = 1.0;
    }
 };
 

@@ -6,9 +6,32 @@ GradientGouraud: Gouraud mesh colour gradient paint server.
 GradientGouraud interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.  The mesh is
 defined by #Vertices and optional #Indices.
 
+The inherited colour-ramp fields `Stops`, `ColourMap`, `SpreadMethod` and `Colour` are not supported by this class.
+Per-vertex colour values are supplied directly through #Vertices.
+
 -END-
 
 *********************************************************************************************************************/
+
+static ERR GRADIENTGOURAUD_SET_Colour(extGradientGouraud *, float *, int)
+{
+   return kt::Log().warning(ERR::UnsupportedField);
+}
+
+static ERR GRADIENTGOURAUD_SET_ColourMap(extGradientGouraud *, const std::string_view &)
+{
+   return kt::Log().warning(ERR::UnsupportedField);
+}
+
+static ERR GRADIENTGOURAUD_SET_SpreadMethod(extGradientGouraud *, VSPREAD)
+{
+   return kt::Log().warning(ERR::UnsupportedField);
+}
+
+static ERR GRADIENTGOURAUD_SET_Stops(extGradientGouraud *, GradientStop *, int)
+{
+   return kt::Log().warning(ERR::UnsupportedField);
+}
 
 /*********************************************************************************************************************
 
@@ -102,8 +125,7 @@ static ERR GRADIENTGOURAUD_GET_Vertices(extGradientGouraud *Self, GouraudVertex 
 static ERR GRADIENTGOURAUD_SET_Vertices(extGradientGouraud *Self, GouraudVertex *Value, int Elements)
 {
    if ((not Value) or (Elements < 3)) {
-      kt::Log log;
-      log.warning("A Gouraud gradient requires at least three vertices (got %d).", Elements);
+      kt::Log().warning("A Gouraud gradient requires at least three vertices (got %d).", Elements);
       return ERR::InvalidValue;
    }
 
@@ -112,8 +134,7 @@ static ERR GRADIENTGOURAUD_SET_Vertices(extGradientGouraud *Self, GouraudVertex 
    if (not Self->Gouraud->Indices.empty()) {
       for (auto idx : Self->Gouraud->Indices) {
          if ((idx < 0) or (idx >= Elements)) {
-            kt::Log log;
-            log.warning("Gouraud index %d is outside the new vertex range 0 - %d.", idx, Elements - 1);
+            kt::Log().warning("Gouraud index %d is outside the new vertex range 0 - %d.", idx, Elements - 1);
             return ERR::OutOfRange;
          }
       }
@@ -130,8 +151,12 @@ static ERR GRADIENTGOURAUD_SET_Vertices(extGradientGouraud *Self, GouraudVertex 
 #include "gradient_gouraud_def.cpp"
 
 static const FieldArray clGradientGouraudFields[] = {
-   { "Vertices", FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTGOURAUD_GET_Vertices, GRADIENTGOURAUD_SET_Vertices, "GouraudVertex" },
-   { "Indices",  FDF_VIRTUAL|FDF_ARRAY|FDF_INT|FDF_RW|FDF_PURE, GRADIENTGOURAUD_GET_Indices, GRADIENTGOURAUD_SET_Indices },
+   { "Colour",       FDF_SYSTEM|FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE, nullptr, GRADIENTGOURAUD_SET_Colour },
+   { "ColourMap",    FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, GRADIENTGOURAUD_SET_ColourMap },
+   { "SpreadMethod", FDF_SYSTEM|FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTGOURAUD_SET_SpreadMethod, &clGradientSpreadMethod },
+   { "Stops",        FDF_SYSTEM|FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, nullptr, GRADIENTGOURAUD_SET_Stops, "GradientStop" },
+   { "Vertices",     FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTGOURAUD_GET_Vertices, GRADIENTGOURAUD_SET_Vertices, "GouraudVertex" },
+   { "Indices",      FDF_VIRTUAL|FDF_ARRAY|FDF_INT|FDF_RW|FDF_PURE, GRADIENTGOURAUD_GET_Indices, GRADIENTGOURAUD_SET_Indices },
    END_FIELD
 };
 

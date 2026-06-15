@@ -151,6 +151,13 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
                if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
                if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
+
+               if (def->classID() IS CLASSID::GRADIENTCONIC) {
+                  double span;
+                  if ((!error) and (!gradient->get(kt::fieldhash("Span"), span)) and (span != 1.0)) {
+                     xml::NewAttrib(tag, "span", std::to_string(span));
+                  }
+               }
             }
 
             VectorMatrix *transform;

@@ -24,6 +24,33 @@ function vertex(X, Y, R, G, B)
    return v
 end
 
+function stop(Offset, R, G, B)
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+function rampStops()
+   local stops = { }
+   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
+   table.insert(stops, stop(1.0, 1.0, 1.0, 1.0))
+   return stops
+end
+
+function expectUnsupported(FieldName, Body)
+   local rejected = false
+   try
+      Body()
+   except ex
+      rejected = true
+   end
+   assert(rejected, 'GradientGouraud should reject inherited ramp field ' .. FieldName)
+end
+
 -- A right-angled triangle filling most of a 100x100 viewport.
 --   A (10,10) = red, B (90,10) = green, C (10,90) = blue
 
@@ -233,6 +260,14 @@ end
    assert(gradient != nil, 'GradientGouraud should be created')
    local verts = gradient.vertices
    assert(#verts is 3, 'Expected three vertices, got ' .. #verts)
+end
+
+@Test function RampFieldsAreRejected()
+   local scene, gradient = newTriangleScene()
+   expectUnsupported('Colour', function() gradient.colour = array<float> { 1.0, 0.0, 0.0, 1.0 } end)
+   expectUnsupported('ColourMap', function() gradient.colourMap = 'cmap:magma' end)
+   expectUnsupported('SpreadMethod', function() gradient.spreadMethod = VSPREAD_REPEAT end)
+   expectUnsupported('Stops', function() gradient.stops = rampStops() end)
 end
 
 @Test function CornerColoursDominate()

@@ -556,6 +556,7 @@ static constexpr auto SVF_SourceGraphic       = strhash("SourceGraphic");
 static constexpr auto SVF_spacing             = strhash("spacing");
 static constexpr auto SVF_specularConstant    = strhash("specularConstant");
 static constexpr auto SVF_specularExponent    = strhash("specularExponent");
+static constexpr auto SVF_span                = strhash("span");
 static constexpr auto SVF_spiral              = strhash("spiral");
 static constexpr auto SVF_spreadMethod        = strhash("spreadMethod");
 static constexpr auto SVF_square              = strhash("square");

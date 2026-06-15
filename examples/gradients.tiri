@@ -223,7 +223,7 @@ function selectGradient(Text):obj
       end
    elseif Text is 'Gouraud' then
       gradient = createGradient('GradientGouraud', {
-         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod
+         units = 'boundingBox'
       })
 
       applyGouraudMesh(gradient)

@@ -728,6 +728,7 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
             case SVF_cx: set_double_units(gradient, FID_CX, val, gradient->Units); break;
             case SVF_cy: set_double_units(gradient, FID_CY, val, gradient->Units); break;
             case SVF_r:  set_double_units(gradient, FID_Radius, val, gradient->Units); break;
+            case SVF_span: gradient->set(kt::fieldhash("Span"), strtod(val.c_str(), nullptr)); break;
             case SVF_spreadMethod: {
                if (iequals("pad", val))          gradient->setSpreadMethod(VSPREAD::PAD);
                else if (iequals("reflect", val)) gradient->setSpreadMethod(VSPREAD::REFLECT);

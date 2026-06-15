@@ -27,10 +27,14 @@ Setting #OuterFall to `GFALL::OPAQUE` holds the exterior alpha at full strength 
 
 static ERR GRADIENTDISTAL_Init(extGradientDistal *Self)
 {
+   kt::Log log;
+
    if (Self->Units IS VUNIT::USERSPACE) {
-      kt::Log().warning("Distal gradients are not compatible with Units.USERSPACE.");
+      log.warning("Distal gradients are not compatible with Units.USERSPACE.");
       Self->Units = VUNIT::BOUNDING_BOX;
    }
+
+   if (Self->Floor >= Self->Multiplier) return log.warning(ERR::OutOfRange);
 
    return ERR::Okay;
 }
@@ -102,6 +106,7 @@ static ERR GRADIENTDISTAL_GET_Floor(extGradientDistal *Self, Unit *Value)
 
 static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
 {
+   if (Value < 0) return ERR::OutOfRange;
    Self->Floor = Value;
    Self->SDFHash = 0;
    if (Self->initialised()) Self->modified();
@@ -125,6 +130,7 @@ static ERR GRADIENTDISTAL_GET_Multiplier(extGradientDistal *Self, Unit *Value)
 
 static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, Unit &Value)
 {
+   if ((Value < 0.01) or (Value > 10)) return ERR::OutOfRange;
    Self->Multiplier = Value;
    Self->SDFHash = 0;
    if (Self->initialised()) Self->modified();

@@ -241,9 +241,12 @@ static ERR GRADIENT_SET_ColourMap(extGradient *Self, const std::string_view &Val
    if (Value.empty()) return ERR::NoData;
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, Self->Resolution));
+      if (not colours) return ERR::AllocMemory;
+
       if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(it->second, Self->Resolution);
-      if (not Self->Colours) return ERR::AllocMemory;
+      Self->Colours = colours.release();
+      Self->Stops.clear();
       Self->ColourMap = Value;
       if (Self->initialised()) Self->modified();
       return ERR::Okay;
@@ -440,14 +443,17 @@ static ERR GRADIENT_GET_Stops(extGradient *Self, GradientStop **Value, int *Elem
 
 static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elements)
 {
-   Self->Stops.clear();
-
    if (Elements >= 2) {
-      Self->modified();
-      Self->Stops.insert(Self->Stops.end(), &Value[0], &Value[Elements]);
+      auto stops = std::vector<GradientStop>(&Value[0], &Value[Elements]);
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
+         stops, Self->ColourSpace, 1.0, Self->Resolution));
+      if (not colours) return ERR::AllocMemory;
+
+      Self->Stops = std::move(stops);
       if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution);
-      if (not Self->Colours) return ERR::AllocMemory;
+      Self->Colours = colours.release();
+      Self->ColourMap.clear();
+      Self->modified();
       return ERR::Okay;
    }
    else {
