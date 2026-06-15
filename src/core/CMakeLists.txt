@@ -40,7 +40,7 @@ SET (CORE_DEFS
    "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
    "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression_def.c")
 
-if (BUILD_DEFS)
+if (KOTUKU_DEFS_AVAILABLE)
    set (CORE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/core_defs.stamp")
    set (CORE_OUTPUTS
       ${CORE_DEFS}
