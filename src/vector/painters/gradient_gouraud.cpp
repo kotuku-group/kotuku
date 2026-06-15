@@ -102,7 +102,7 @@ The Vertices array defines the mesh of coloured points across which colour is in
 By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one
 triangle.  Supplying an #Indices array instead expresses triangle connectivity explicitly.
 
-The coordinate system for vertex positions is determined by #Units.  Under `BOUNDING_BOX`, a normalised mesh in the
+The coordinate system for vertex positions is determined by @Gradient.Units.  Under `BOUNDING_BOX`, a normalised mesh in the
 range `0 - 1.0` is scaled into the target path's bounds.  Under `USERSPACE`, the positions are taken directly in the
 viewport's coordinate space.
 

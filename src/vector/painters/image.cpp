@@ -85,11 +85,6 @@ static ERR IMAGE_SET_Bitmap(extVectorImage *Self, objBitmap *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Dimensions: Dimension flags define whether individual dimension fields contain fixed or scaled values.
-
-Of the Dimension flags that are available, only `FIXED_X`, `FIXED_Y`, `SCALED_X` and `SCALED_Y` are applicable.
-
--FIELD-
 Image: Refers to a @Image from which the source #Bitmap is acquired.
 
 If an image bitmap is sourced from a @Image then this field may be used to refer to the @Image object.  The image
@@ -130,7 +125,7 @@ the image from being tiled.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_SpreadMethod(extVectorImage* Self, VSPREAD Value)
+static ERR IMAGE_SET_SpreadMethod(extVectorImage *Self, VSPREAD Value)
 {
    Self->SpreadMethod = Value;
    Self->modified();
@@ -149,7 +144,7 @@ X: Apply a horizontal offset to the image, the origin of which is determined by 
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_X(extVectorImage *Self, double Value)
+static ERR IMAGE_SET_X(extVectorImage *Self, Unit &Value)
 {
    Self->X = Value;
    Self->modified();
@@ -164,7 +159,7 @@ Y: Apply a vertical offset to the image, the origin of which is determined by th
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_Y(extVectorImage *Self, double Value)
+static ERR IMAGE_SET_Y(extVectorImage *Self, Unit &Value)
 {
    Self->Y = Value;
    Self->modified();
@@ -194,21 +189,12 @@ static const FieldDef clImageUnits[] = {
    { nullptr, 0 }
 };
 
-static const FieldDef clImageDimensions[] = {
-   { "FixedX",  DMF::FIXED_X },
-   { "FixedY",  DMF::FIXED_Y },
-   { "ScaledX", DMF::SCALED_X },
-   { "ScaledY", DMF::SCALED_Y },
-   { nullptr, 0 }
-};
-
 static const FieldArray clImageFields[] = {
-   { "X",            FDF_DOUBLE|FDF_RW, nullptr, IMAGE_SET_X },
-   { "Y",            FDF_DOUBLE|FDF_RW, nullptr, IMAGE_SET_Y },
+   { "X",            FDF_UNIT|FDF_SCALED|FDF_RW, nullptr, IMAGE_SET_X },
+   { "Y",            FDF_UNIT|FDF_SCALED|FDF_RW, nullptr, IMAGE_SET_Y },
    { "Image",        FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Image, CLASSID::IMAGE },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Bitmap, CLASSID::BITMAP },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageUnits },
-   { "Dimensions",   FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clImageDimensions },
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGE_SET_SpreadMethod, &clImageSpread },
    { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, IMAGE_SET_AspectRatio, &clAspectRatio },
    END_FIELD

@@ -85,8 +85,8 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
 {
    const double c_width  = (Image.Units IS VUNIT::USERSPACE) ? ViewWidth : Bounds.width();
    const double c_height = (Image.Units IS VUNIT::USERSPACE) ? ViewHeight : Bounds.height();
-   const double dx = Bounds.left + (dmf::hasScaledX(Image.Dimensions) ? (c_width * Image.X) : Image.X);
-   const double dy = Bounds.top + (dmf::hasScaledY(Image.Dimensions) ? (c_height * Image.Y) : Image.Y);
+   const double dx = Bounds.left + (Image.X.scaled() ? (c_width * double(Image.X)) : double(Image.X));
+   const double dy = Bounds.top + (Image.Y.scaled() ? (c_height * double(Image.Y)) : double(Image.Y));
 
    auto t_scale = Transform.scale();
    Path.approximation_scale(t_scale);

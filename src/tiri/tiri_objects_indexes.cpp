@@ -303,6 +303,23 @@ static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, Field *Field, int
    }
 }
 
+static ERR object_set_unit(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+{
+   switch(lua_type(Lua, ValueIndex)) {
+      case LUA_TNUMBER:
+         return Object->set(Field->FieldID, Unit(lua_tonumber(Lua, ValueIndex)));
+
+      case LUA_TSTRING: // Allow internal string parsing to do its thing - important if the field is variable
+         return object_set_string(Lua, Object, Field, ValueIndex);
+
+      case LUA_TNIL: // Setting a unit with nil does nothing.  Use zero to be explicit.
+         return ERR::Okay;
+
+      default:
+         return ERR::SetValueNotNumeric;
+   }
+}
+
 //********************************************************************************************************************
 // Usage: value = obj.get("Width", [Default])
 //
@@ -355,6 +372,9 @@ static int object_get(lua_State *Lua)
                result = object_get_ulong(Lua, obj_read(0, nullptr, field), def);
             }
             else result = object_get_long(Lua, obj_read(0, nullptr, field), def);
+         }
+         else if (field->Flags & FD_UNIT) {
+            result = object_get_unit(Lua, obj_read(0, nullptr, field), def);
          }
 
          release_object(def);
@@ -494,6 +514,9 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
       else if (field->Flags & (FD_INT|FD_INT64)) {
          return object_set_number(Lua, target, field, ValueIndex);
       }
+      else if (field->Flags & FD_UNIT) {
+         return object_set_unit(Lua, target, field, ValueIndex);
+      }
       else return ERR::UnsupportedField;
    }
    else return ERR::UnsupportedField;
@@ -629,6 +652,21 @@ static int object_get_object(lua_State *Lua, const obj_read &Handle, GCobject *D
          if (objval) push_object(Lua, objval);
          else lua_pushnil(Lua);
       }
+      release_object(Def);
+   }
+   else error = ERR::AccessObject;
+
+   Lua->CaughtError = error;
+   return error != ERR::Okay ? 0 : 1;
+}
+
+static int object_get_unit(lua_State *Lua, const obj_read &Handle, GCobject *Def)
+{
+   ERR error;
+   if (auto obj = access_object(Def)) {
+      auto field = (Field *)(Handle.Data);
+      Unit result;
+      if (!(error = obj->get(field->FieldID, result))) lua_pushnumber(Lua, result.Value);
       release_object(Def);
    }
    else error = ERR::AccessObject;

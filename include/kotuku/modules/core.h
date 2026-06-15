@@ -1824,12 +1824,16 @@ struct SystemState {
 struct Unit {
    double   Value;  // The unit value.
    uint32_t Type;   // Additional type information
-   constexpr Unit(double pValue, int pType = FD_DOUBLE) : Value(pValue), Type(pType) { }
+   // Note that the type holds optional FD metadata; the use of FD_DOUBLE is unnecessary
+   constexpr Unit(double pValue, int pType = 0) : Value(pValue), Type(pType) { }
    constexpr Unit() : Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { }
    explicit Unit(std::string_view String) { read(String); }
+
    constexpr operator double() const { return Value; }
+   double operator*() const { return Value; };
+
    constexpr void set(const double pValue) { Value = pValue; }
-   constexpr bool scaled() { return (Type & FD_SCALED) ? true : false; }
+   constexpr bool scaled() const { return (Type & FD_SCALED) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
    inline void read(std::string_view String) {
@@ -1840,8 +1844,8 @@ struct Unit {
       if (error != std::errc()) { Value = 0; return; }
 
       String = String.substr(end - String.data());
-      if (String.starts_with("%")) { Value *= 0.01; Type = FD_DOUBLE|FD_SCALED; }
-      else Type = FD_DOUBLE;
+      if (String.starts_with("%")) { Value *= 0.01; Type = FD_SCALED; }
+      else Type = 0;
    }
 };
 

@@ -24,7 +24,7 @@
       <name>Floor</name>
       <comment>Colour ramp floor for contour gradients.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Floor value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt; Floor &lt; Multiplier</code>.</p>
       </description>
@@ -34,7 +34,7 @@
       <name>Multiplier</name>
       <comment>Colour ramp multiplier for contour gradients.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Multiplier value acts as a multiplier for contour gradient colour values.  It has a valid range of <code>.01 &lt; Multiplier &lt; 10</code>.</p>
       </description>

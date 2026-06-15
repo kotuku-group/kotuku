@@ -45,17 +45,6 @@
     </field>
 
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or scaled values.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type lookup="DMF">DMF</type>
-      <description>
-<p>Of the Dimension flags that are available, only <code>FIXED_X</code>, <code>FIXED_Y</code>, <code>SCALED_X</code> and <code>SCALED_Y</code> are applicable.</p>
-<types lookup="DMF"/>
-      </description>
-    </field>
-
-    <field>
       <name>Image</name>
       <comment>Refers to a <class name="Image">Image</class> from which the source <fl>Bitmap</fl> is acquired.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -92,14 +81,14 @@
       <name>X</name>
       <comment>Apply a horizontal offset to the image, the origin of which is determined by the <fl>Units</fl> value.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
     </field>
 
     <field>
       <name>Y</name>
       <comment>Apply a vertical offset to the image, the origin of which is determined by the <fl>Units</fl> value.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
     </field>
 
   </fields>
@@ -114,35 +103,6 @@
       <const name="Y_MAX">Align to the bottom.</const>
       <const name="Y_MID">Align to the vertical center.</const>
       <const name="Y_MIN">Align to the top.</const>
-    </constants>
-
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
     </constants>
 
     <constants lookup="VSPREAD" comment="Spread method options define the method to use for tiling filled graphics.">

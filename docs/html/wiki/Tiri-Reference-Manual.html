@@ -170,6 +170,7 @@
         <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
         <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
         <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XQuery</a></li>
         </ul></div>
         </li>
         <li>
@@ -227,12 +228,19 @@
         </li>
         <li>
         <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/gradient.html">Gradient</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientconic.html">GradientConic</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientcontour.html">GradientContour</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientdiamond.html">GradientDiamond</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientdistal.html">GradientDistal</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientgouraud.html">GradientGouraud</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientlinear.html">GradientLinear</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientradial.html">GradientRadial</a></li>
         <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
         <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
         <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
         <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
         <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
-        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
         <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
         <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
         <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
@@ -373,7 +381,6 @@
 <li><a href="#garbage-collection">Garbage Collection</a></li>
 <li><a href="#action-and-method-calls">Action and Method Calls</a></li>
 <li><a href="#field-interface">Field Interface</a></li>
-<li><a href="#bit-fields">Bit Fields</a></li>
 </ul></li>
 <li><a href="#action--method-subscriptions">Action &amp; Method Subscriptions</a></li>
 <li><a href="#processing-interface">Processing Interface</a>
@@ -2441,22 +2448,15 @@ end</code></pre>
 <p>Action calls are identified by their <code>ac</code> prefix. Method calls are prefixed by <code>mt</code>. Field references can be directly accessed without a prefix. The naming scheme for methods, actions and fields is case insensitive.</p>
 <p>For information about the actions and methods supported by an object class, refer to its published API documentation on our website.</p>
 <h3 id="field-interface">Field Interface</h3>
-<p>Object fields are accessible by conventional means, i.e. <code>thing = my_object.field_name</code> and <code>my_object.field_name = thing</code> for get and set respectively. There are <code>get()</code> and <code>set()</code> methods that are equivalent to these, and they can be useful in special circumstances such as retrieving a value from an array-based field without first retrieving the entire array:</p>
-<p><code>item = view.get(&#39;item(10)&#39;)</code></p>
+<p>Object fields are accessible by conventional means, i.e. <code>value = my_object.field_name</code> and <code>my_object.field_name = value</code> for get and set respectively. There are <code>get()</code> and <code>set()</code> methods that are equivalent to these, which allow strings to be used for dynamic field access. Some classes also support key-values via <code>getKey()</code> and <code>setKey()</code> methods, which can be used for accessing dynamic field names.</p>
 <h4 id="objectgetkey-objectsetkey">object.getKey(), object.setKey()</h4>
 <p>Some classes support key-value pairs in cases where custom string names need to be associated with an object. The <code>getKey()</code> and <code>setKey()</code> methods are provided to manage these fields. For example:</p>
 <div class="sourceCode" id="cb150"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb150-1"><a href="#cb150-1" aria-hidden="true" tabindex="-1"></a><span class="va">surface</span><span class="op">.</span>setKey<span class="op">(</span><span class="st">&#39;Title&#39;</span><span class="op">,</span> <span class="st">&#39;My Window&#39;</span><span class="op">)</span></span>
 <span id="cb150-2"><a href="#cb150-2" aria-hidden="true" tabindex="-1"></a><span class="va">title</span> <span class="op">=</span> <span class="va">surface</span><span class="op">.</span>getKey<span class="op">(</span><span class="st">&#39;Title&#39;</span><span class="op">,</span> <span class="st">&#39;UNDEFINED&#39;</span><span class="op">)</span></span></code></pre></div>
+<p>Some classes treat keys as parseable strings that are backed by built-in functionality. For instance, the following statement retrieves the content from slot 10 of an <code>item</code> array:</p>
+<p><code>item = view.getKey(&#39;item[10]&#39;)</code></p>
 <h4 id="object_state">object._state()</h4>
 <p>The <code>_state()</code> method is a special accessor that attaches a table to the object and returns it. This allows you to store custom data with the object that is seperate to its definition. The table will be removed when the object is destroyed.</p>
-<h3 id="bit-fields">Bit Fields</h3>
-<p>To test for the presence of a bit in a flag-based field, the following template supported by <code>get()</code> can be used:</p>
-<p><code>state = object.get(&#39;flagfield.flagname&#39;)</code></p>
-<p>For example:</p>
-<p><code>state = surface.get(&#39;flags.visible&#39;)</code></p>
-<p>If the named flag is set, a value of 1 is returned, otherwise 0.</p>
-<p>To get the value of a flag or lookup field in string format, prefix the name of the field with a <code>$</code> symbol when using the <code>get()</code> method as follows:</p>
-<p><code>name = object.get(&#39;$flags&#39;)</code></p>
 <hr>
 <h2 id="action--method-subscriptions">Action &amp; Method Subscriptions</h2>
 <p>Kōtuku allows clients to monitor the calls made to an object by subscribing to its actions and methods. One commonly used strategy involves subscribing to the <code>free()</code> action of an object so that the client is notified of object termination.</p>
