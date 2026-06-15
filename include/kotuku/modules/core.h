@@ -1827,9 +1827,12 @@ struct Unit {
    constexpr Unit(double pValue, int pType = FD_DOUBLE) : Value(pValue), Type(pType) { }
    constexpr Unit() : Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { }
    explicit Unit(std::string_view String) { read(String); }
+
    constexpr operator double() const { return Value; }
+   double operator*() const { return Value; };
+
    constexpr void set(const double pValue) { Value = pValue; }
-   constexpr bool scaled() { return (Type & FD_SCALED) ? true : false; }
+   constexpr bool scaled() const { return (Type & FD_SCALED) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
    inline void read(std::string_view String) {

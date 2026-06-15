@@ -89,9 +89,9 @@ static ERR GRADIENTCONIC_SET_Radius(extGradientConic *Self, Unit &Value)
 Span: Defines the angular size of one conic gradient cycle.
 
 The span is normalised so that `1.0` equals 360 degrees.  Values smaller than `1.0` define a partial angular cycle
-for #SpreadMethod modes that can repeat, reflect or clip the gradient.  The default value is `1.0`.
+for @Gradient.SpreadMethod modes that can repeat, reflect or clip the gradient.  The default value is `1.0`.
 
-When #SpreadMethod is `PAD`, Span is ignored and the conic gradient renders as a full-turn gradient.
+When @Gradient.SpreadMethod is `PAD`, Span is ignored and the conic gradient renders as a full-turn gradient.
 
 -END-
 *********************************************************************************************************************/
@@ -116,9 +116,9 @@ static ERR GRADIENTCONIC_SET_Span(extGradientConic *Self, double Value)
 #include "gradient_conic_def.cpp"
 
 static const FieldArray clGradientConicFields[] = {
-   { "Radius",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_Radius, GRADIENTCONIC_SET_Radius },
-   { "CX",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_CX, GRADIENTCONIC_SET_CX },
-   { "CY",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_CY, GRADIENTCONIC_SET_CY },
+   { "Radius",  FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_Radius, GRADIENTCONIC_SET_Radius },
+   { "CX",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_CX, GRADIENTCONIC_SET_CX },
+   { "CY",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_CY, GRADIENTCONIC_SET_CY },
    { "Span",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, GRADIENTCONIC_GET_Span, GRADIENTCONIC_SET_Span },
    END_FIELD
 };

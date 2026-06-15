@@ -87,6 +87,7 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static int object_get_string(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_object(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_ptr(lua_State *, const obj_read &, GCobject *);
+[[nodiscard]] static int object_get_unit(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_double(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_large(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_ulong(lua_State *, const obj_read &, GCobject *);
@@ -338,6 +339,7 @@ READ_TABLE * get_read_table(objMetaClass *Class)
             if (field.Flags & FD_UNSIGNED) jmp.push_back(obj_read(hash, object_get_ulong, &field));
             else jmp.push_back(obj_read(hash, object_get_long, &field));
          }
+         else if (field.Flags & FD_UNIT) jmp.push_back(obj_read(hash, object_get_unit, &field));
          else if (field.Flags & FD_FUNCTION); // Unsupported
          else kt::Log().warning("Unable to support field %s.%s for reading", Class->Name, field.Name);
       }
@@ -407,6 +409,9 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
          }
          else if (field.Flags & (FD_INT|FD_INT64)) {
             jmp.push_back(obj_write(hash, object_set_number, &field));
+         }
+         else if (field.Flags & FD_UNIT) {
+            jmp.push_back(obj_write(hash, object_set_unit, &field));
          }
       }
    }

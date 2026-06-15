@@ -6,7 +6,7 @@ GradientDistal: Signed distance field colour gradient paint server.
 GradientDistal shades inward and outward from the target vector path outline.  The path outline is pinned to the
 centre of the colour ramp, `Radius` controls exterior padding, and `InnerRadius` controls interior fade-out.
 
-The base #SpreadMethod field selects how the exterior fade behaves beyond the first cycle, where one cycle spans the
+The base @Gradient.SpreadMethod field selects how the exterior fade behaves beyond the first cycle, where one cycle spans the
 `Radius` distance:
 
 <list type="bullet">
@@ -92,6 +92,8 @@ static ERR GRADIENTDISTAL_SET_Radius(extGradientDistal *Self, Unit &Value)
 }
 
 /*********************************************************************************************************************
+
+-FIELD-
 Floor: Colour ramp floor for distal gradients.
 
 The Floor value is used as the floor for distal gradient colour values.
@@ -194,10 +196,10 @@ static ERR GRADIENTDISTAL_SET_OuterFall(extGradientDistal *Self, GFALL Value)
 #include "gradient_distal_def.cpp"
 
 static const FieldArray clGradientDistalFields[] = {
-   { "Floor",       FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Floor, GRADIENTDISTAL_SET_Floor },
-   { "Multiplier",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Multiplier, GRADIENTDISTAL_SET_Multiplier },
-   { "Radius",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
-   { "InnerRadius", FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerRadius, GRADIENTDISTAL_SET_InnerRadius },
+   { "Floor",       FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Floor, GRADIENTDISTAL_SET_Floor },
+   { "Multiplier",  FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Multiplier, GRADIENTDISTAL_SET_Multiplier },
+   { "Radius",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
+   { "InnerRadius", FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerRadius, GRADIENTDISTAL_SET_InnerRadius },
    { "InnerFall",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerFall, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },
    { "OuterFall",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_OuterFall, GRADIENTDISTAL_SET_OuterFall, &clGradientDistalGFALL },
    END_FIELD

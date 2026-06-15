@@ -73,7 +73,8 @@ global glTypes = {
    va_list    = { fd='FD_PTR',                t_type='any', c_type='va_list' },
    void       = { fd='FD_VOID',               t_type=nil, c_type='void' },
    vtags      = { fd='FD_VARTAGS',            t_type=nil, c_type='...' },
-   bool       = { fd='FD_BYTE',               t_type='bool', c_type='bool', doc_type='BOOL' }
+   bool       = { fd='FD_BYTE',               t_type='bool', c_type='bool', doc_type='BOOL' },
+   unit       = { fd='FD_UNIT',               t_type='any', c_type='Unit', doc_type='UNIT' }
 }
 
 function copyOf(Type:str)
@@ -151,6 +152,9 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       Def.type = 'STRING'
    elseif Type has FD_FUNCTION then
       Def.type = 'FUNCTION'
+   elseif (Type has FD_UNIT) and not (Type has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT)) then
+      Def.type = 'Unit'
+      Def.doc_type = 'UNIT'
    elseif Type has FD_POINTER then
       ptr = 0
       if Type has FD_INT then

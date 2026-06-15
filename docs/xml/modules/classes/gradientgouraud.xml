@@ -40,7 +40,7 @@
       <description>
 <p>The Vertices array defines the mesh of coloured points across which colour is interpolated barycentrically.  Each <st>GouraudVertex</st> carries an <code>(X, Y)</code> position and an <code>FRGB</code> colour.</p>
 <p>By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one triangle.  Supplying an <fl>Indices</fl> array instead expresses triangle connectivity explicitly.</p>
-<p>The coordinate system for vertex positions is determined by #Units.  Under <code>BOUNDING_BOX</code>, a normalised mesh in the range <code>0 - 1.0</code> is scaled into the target path's bounds.  Under <code>USERSPACE</code>, the positions are taken directly in the viewport's coordinate space.</p>
+<p>The coordinate system for vertex positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, a normalised mesh in the range <code>0 - 1.0</code> is scaled into the target path's bounds.  Under <code>USERSPACE</code>, the positions are taken directly in the viewport's coordinate space.</p>
       </description>
     </field>
 

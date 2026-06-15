@@ -135,6 +135,13 @@ function fieldSetType(Field:table):str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Return true when a unit field stores a numeric value rather than a Unit struct.
+
+function fieldUnitUsesNumericStorage(Field:table):bool
+   return (Field.flags has FD_UNIT) and (Field.flags has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT))
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Return the element type for generated array getters.
 
 function fieldArrayElementType(Field:table):str
@@ -215,10 +222,12 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
       output(Indent .. 'SetObjectContext(this, field, AC::NIL);')
    end
 
-   if Field.flags has FD_UNIT then
+   if fieldUnitUsesNumericStorage(Field) then
       output(Indent .. 'Unit var(0, FD_DOUBLE);')
       output(Indent .. 'auto error = field->GetValue(this, &var);')
       output(Indent .. 'if (error IS ERR::Okay) Value = var.Value;')
+   elseif Field.flags has FD_UNIT then
+      output(Indent .. 'auto error = field->GetValue(this, &Value);')
    elseif Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then
          output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&))field->GetValue;')
@@ -411,14 +420,11 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
 
    output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
 
-   if Field.flags has FD_UNIT then
-      if Field.flags has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT) then
-         output(Indent .. 'Unit var(Value);')
-         output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var, 1);')
-      else
-         -- Pass through as pointer; requires further analysis to determine viability.
-         output(Indent .. 'return field->WriteValue(this, field, FD_POINTER, Value, 1);')
-      end
+   if fieldUnitUsesNumericStorage(Field) then
+      output(Indent .. 'Unit var(Value);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var, 1);')
+   elseif Field.flags has FD_UNIT then
+      output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &Value, 1);')
    elseif Field.flags has FD_ARRAY then
       local flags = fieldFlagsHex(Field.flags)
       if Field.flags has FD_CPP then -- kt::vector

@@ -328,7 +328,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   struct("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
     obj(VectorPattern)  Pattern   # A @VectorPattern object, suitable for pattern based fills.
     obj(VectorImage)    Image     # A @VectorImage object, suitable for image fills.
-    obj(Gradient)      Gradient  # A @Gradient object, suitable for gradient fills.
+    obj(Gradient)      Gradient   # A @Gradient object, suitable for gradient fills.
     struct(FRGB) Colour           # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
   ]],
   [[

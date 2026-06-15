@@ -725,11 +725,17 @@ struct alignas(8) Object { // Must be 64-bit aligned
          if (not field->readable()) return ERR::NoFieldAccess;
 
          if (field->Flags & FD_UNIT) {
-            SetObjectContext(target, field, AC::NIL);
-            auto get_field = (ERR (*)(APTR, Unit &))field->GetValue;
-            auto error = get_field(target, Value);
-            RestoreObjectContext();
-            return error;
+            if (field->GetValue) {
+               SetObjectContext(target, field, AC::NIL);
+               auto get_field = (ERR (*)(APTR, Unit &))field->GetValue;
+               auto error = get_field(target, Value);
+               RestoreObjectContext();
+               return error;
+            }
+            else {
+               Value = *((Unit *)(((int8_t *)target) + field->Offset));
+               return ERR::Okay;
+            }
          }
          else return ERR::FieldTypeMismatch;
       }

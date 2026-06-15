@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>GradientDistal shades inward and outward from the target vector path outline.  The path outline is pinned to the centre of the colour ramp, <code>Radius</code> controls exterior padding, and <code>InnerRadius</code> controls interior fade-out.</p>
-<p>The base #SpreadMethod field selects how the exterior fade behaves beyond the first cycle, where one cycle spans the <code>Radius</code> distance:</p>
+<p>The base <class name="Gradient" field="SpreadMethod">Gradient.SpreadMethod</class> field selects how the exterior fade behaves beyond the first cycle, where one cycle spans the <code>Radius</code> distance:</p>
 <list type="bullet">
 <li>
 <code>PAD</code> (the default) fades once over the <code>Radius</code> distance and then stops, producing the classic glow or halo.</li>
@@ -34,8 +34,12 @@ from zero before fading again, repeating until the parent area is filled.</li>
   <fields>
     <field>
       <name>Floor</name>
+      <comment>Colour ramp floor for distal gradients.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
+      <description>
+<p>The Floor value is used as the floor for distal gradient colour values.</p>
+      </description>
     </field>
 
     <field>
@@ -53,7 +57,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
       <name>InnerRadius</name>
       <comment>The size of the inner radius for distal gradients.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The InnerRadius defines the extent of the interior fade-out for distal gradients.  If zero, the interior of the target shape is fully rendered.</p>
       </description>
@@ -63,7 +67,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
       <name>Multiplier</name>
       <comment>Colour ramp multiplier for distal gradients.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Multiplier value acts as a multiplier for distal gradient colour values.</p>
       </description>
@@ -84,11 +88,9 @@ from zero before fading again, repeating until the parent area is filled.</li>
       <name>Radius</name>
       <comment>Exterior margin around the target path.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Radius value controls how much exterior padding is added around the target path so that the exterior half of the signed distance colour ramp remains visible.</p>
-<p>Floor: Colour ramp floor for distal gradients.</p>
-<p>The Floor value is used as the floor for distal gradient colour values.</p>
       </description>
     </field>
 

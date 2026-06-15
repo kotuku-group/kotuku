@@ -19,9 +19,9 @@ expressed as units that are scaled to the target space.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_X1(extGradientLinear *Self, Unit *Value)
+static ERR GRADIENTLINEAR_GET_X1(extGradientLinear *Self, Unit &Value)
 {
-   *Value = Self->X1;
+   Value = Self->X1;
    return ERR::Okay;
 }
 
@@ -42,9 +42,9 @@ expressed as units that are scaled to the target space.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_X2(extGradientLinear *Self, Unit *Value)
+static ERR GRADIENTLINEAR_GET_X2(extGradientLinear *Self, Unit &Value)
 {
-   *Value = Self->X2;
+   Value = Self->X2;
    return ERR::Okay;
 }
 
@@ -65,9 +65,9 @@ expressed as units that are scaled to the target space.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_Y1(extGradientLinear *Self, Unit *Value)
+static ERR GRADIENTLINEAR_GET_Y1(extGradientLinear *Self, Unit &Value)
 {
-   *Value = Self->Y1;
+   Value = Self->Y1;
    return ERR::Okay;
 }
 
@@ -89,9 +89,9 @@ expressed as units that are scaled to the target space.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_Y2(extGradientLinear *Self, Unit *Value)
+static ERR GRADIENTLINEAR_GET_Y2(extGradientLinear *Self, Unit &Value)
 {
-   *Value = Self->Y2;
+   Value = Self->Y2;
    return ERR::Okay;
 }
 

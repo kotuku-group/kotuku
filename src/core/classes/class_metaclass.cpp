@@ -1190,6 +1190,16 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       field_alignment = alignof(int8_t);
       field_type = "byte";
    }
+   else if (field.Flags & FD_UNIT) {
+      // NOTE: A FD_UNIT|FD_NUMBER combination indicates that the storage type is the NUMBER and not a Unit struct.
+      // In such cases, the getter/setter is receiving a Unit struct and not the relevant NUMBER type.
+      //
+      // When FD_UNIT is defined alone, the storage type is a Unit struct.
+
+      field_size = sizeof(Unit);
+      field_alignment = alignof(Unit);
+      field_type = "unit";
+   }
    else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName.c_str(), field.Name, field.FieldID);
 
    if (field_size) {
