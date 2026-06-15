@@ -676,7 +676,6 @@ set_module_defaults (${MOD} "Fl")
 add_dependencies (${MOD} ${FFI_PROJECT} jitlib jit_codegen)
 
 if (BUILD_DEFS)
-   add_dependencies (${MOD} ${MOD}_hashes)
    add_dependencies (jit_codegen core_defs)
    add_dependencies (jit_lib core_defs)
 endif ()

@@ -26,7 +26,7 @@ set (DISPLAY_DEFS # Full paths are required for add_custom_command() dependencie
    "${CMAKE_CURRENT_SOURCE_DIR}/class_pointer_def.c"
    "${CMAKE_CURRENT_SOURCE_DIR}/class_surface/surface_def.c")
 
-if (BUILD_DEFS) # Customised idl_c() equivalent, this is for defining the output from the TDL file
+if (KOTUKU_DEFS_AVAILABLE) # Customised idl_c() equivalent, this is for defining the output from the TDL file
    set (DISPLAY_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/display_defs.stamp")
    set (DISPLAY_OUTPUTS
       ${DISPLAY_DEFS}

@@ -76,7 +76,7 @@ else ()
    set (RUN_ANYWHERE ON)
 endif ()
 option (BUILD_TESTS       "Enable Flute tests" ON)
-option (BUILD_DEFS        "Auto-generate C/C++ headers and documentation" OFF)
+option (BUILD_DEFS        "Build generated C/C++ headers and documentation as part of the default build" OFF)
 option (DISABLE_SSL       "Disable built-in SSL support even if available on this system" OFF)
 option (DISABLE_X11       "Disable X11 even if available on this system" OFF)
 option (DISABLE_AUDIO     "Disable Audio API" OFF)
@@ -244,12 +244,17 @@ find_file (IDL_C_SCRIPT "idl-c.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (IDL_COMPILE_SCRIPT "idl-compile.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (FLUTE_SCRIPT "flute.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools")
 
+set (KOTUKU_DEFS_AVAILABLE TRUE)
+
 if (ORIGO_CMD STREQUAL "ORIGO_CMD-NOTFOUND")
-   message (STATUS "Definitions will not be built and tests are disabled.")
+   message (STATUS "Definition generation targets are unavailable because no installed Origo executable was found.")
+   set (KOTUKU_DEFS_AVAILABLE FALSE)
    set (BUILD_DEFS OFF)
 else ()
    if (BUILD_DEFS)
       message (STATUS "Definitions will be built with the Origo exe installed @ ${ORIGO_CMD}.")
+   else ()
+      message (STATUS "Definition generation is available with: cmake --build <build-dir> --target build_headers")
    endif ()
 endif ()
 
@@ -296,7 +301,16 @@ else ()
    endif ()
 endif ()
 
-add_custom_target(build_headers ALL COMMENT "Generate headers and definition files on the fly")
+if (BUILD_DEFS)
+   add_custom_target (build_headers ALL COMMENT "Generate headers and definition files on the fly")
+elseif (KOTUKU_DEFS_AVAILABLE)
+   add_custom_target (build_headers COMMENT "Generate headers and definition files on demand")
+else ()
+   add_custom_target (build_headers
+      COMMAND ${CMAKE_COMMAND} -E echo "Cannot generate definitions: install or build Origo, then reconfigure this build tree."
+      COMMAND ${CMAKE_COMMAND} -E false
+      COMMENT "Definition generation is unavailable")
+endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Register generated header targets with the aggregate target while also making them discoverable for
@@ -366,7 +380,7 @@ endfunction ()
 function (idl_gen)
    cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES;DEPENDS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -438,7 +452,7 @@ endfunction ()
 function (idl_compile)
    cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -511,7 +525,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
    endif ()
 
    get_property (KOTUKU_LOCAL_HEADER_TARGETS DIRECTORY PROPERTY KOTUKU_GENERATED_HEADER_TARGETS)
-   if (KOTUKU_LOCAL_HEADER_TARGETS)
+   if (BUILD_DEFS AND KOTUKU_LOCAL_HEADER_TARGETS)
       add_dependencies (${ARG_TARGET} ${KOTUKU_LOCAL_HEADER_TARGETS})
    endif ()
 
