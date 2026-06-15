@@ -423,12 +423,11 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('VectorImage', { src='painters/image.cpp', extended=true }, [[
-    double X                   # Starting horizontal coordinate
-    double Y                   # Starting vertical coordinate
+    unit X                     # Starting horizontal coordinate
+    unit Y                     # Starting vertical coordinate
     obj(Image)   Image
     obj(Bitmap)  Bitmap
     int(VUNIT)   Units         # Defines the coordinate system for `(X, Y)`
-    int(DMF)     Dimensions
     int(VSPREAD) SpreadMethod
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
   ]])

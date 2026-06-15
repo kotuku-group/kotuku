@@ -359,6 +359,14 @@
                   <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button>
                     <div class="collapse" id="vectors-collapse">
                       <ul class="btn-toggle-nav list-unstyled pb-1">
+                        <li class="api-ref"><a class="rounded" href="gradient.html">Gradient</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientconic.html">GradientConic</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientcontour.html">GradientContour</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientdiamond.html">GradientDiamond</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientdistal.html">GradientDistal</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientgouraud.html">GradientGouraud</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientlinear.html">GradientLinear</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientradial.html">GradientRadial</a></li>
                         <li class="api-ref"><a class="rounded" href="vector.html">Vector</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorclip.html">VectorClip</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorcolour.html">VectorColour</a></li>
