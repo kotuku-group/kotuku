@@ -32,3 +32,4 @@ static const struct ActionArray clGradientVoronoiActions[] = {
    { AC::NewPlacement, GRADIENTVORONOI_NewPlacement },
    { AC::NIL, nullptr }
 };
+

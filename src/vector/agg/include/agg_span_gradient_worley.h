@@ -62,13 +62,121 @@ namespace agg
          for (int i=0; i < 256; i++) m_lut[i] = iround((i * m_d2) + m_d1) << gradient_subpixel_shift;
       }
 
-      static double metric(double X1, double Y1, double X2, double Y2, WLM Metric) {
-         const double dx = std::abs(X2 - X1);
-         const double dy = std::abs(Y2 - Y1);
+      static void store_field_value(std::vector<float> &Field, int Pos, double Value, float &MinValue,
+         float &MaxValue)
+      {
+         const float value = float(Value);
+         Field[Pos] = value;
+         if (value < MinValue) MinValue = value;
+         if (value > MaxValue) MaxValue = value;
+      }
 
-         if (Metric IS WLM::MANHATTAN) return dx + dy;
-         else if (Metric IS WLM::CHEBYSHEV) return (dx > dy) ? dx : dy;
-         else return sqrt((dx * dx) + (dy * dy));
+      template <WLM Metric> static double distance_from_delta(double Dx, double Dy) {
+         if constexpr (Metric IS WLM::MANHATTAN) return Dx + Dy;
+         else if constexpr (Metric IS WLM::CHEBYSHEV) return (Dx > Dy) ? Dx : Dy;
+         else return sqrt((Dx * Dx) + (Dy * Dy));
+      }
+
+      template <WLM Metric, WLF Mode> static void build_field(const std::vector<worley_feature> &Features,
+         const std::vector<int8u> &Mask, int Width, int Height, std::vector<float> &Field, float &MinValue,
+         float &MaxValue)
+      {
+         for (int y=0; y < Height; y++) {
+            for (int x=0; x < Width; x++) {
+               const int pos = (y * Width) + x;
+               if (Mask[pos] > 0x01) continue;
+
+               const double px = x + 0.5;
+               const double py = y + 0.5;
+
+               if constexpr ((Mode IS WLF::F1) or (Mode IS WLF::F2) or (Mode IS WLF::F2_F1)) {
+                  double f1 = std::numeric_limits<double>::max();
+                  double f2 = std::numeric_limits<double>::max();
+
+                  for (auto &point : Features) {
+                     const double dx = (point.x > px) ? point.x - px : px - point.x;
+                     const double dy = (point.y > py) ? point.y - py : py - point.y;
+
+                     double dist;
+                     if constexpr (Metric IS WLM::EUCLIDEAN) dist = (dx * dx) + (dy * dy);
+                     else dist = distance_from_delta<Metric>(dx, dy);
+
+                     if (dist < f1) {
+                        f2 = f1;
+                        f1 = dist;
+                     }
+                     else if (dist < f2) f2 = dist;
+                  }
+
+                  if (f2 IS std::numeric_limits<double>::max()) f2 = f1;
+
+                  double value;
+                  if constexpr (Metric IS WLM::EUCLIDEAN) {
+                     if constexpr (Mode IS WLF::F2_F1) value = sqrt(f2) - sqrt(f1);
+                     else if constexpr (Mode IS WLF::F2) value = sqrt(f2);
+                     else value = sqrt(f1);
+                  }
+                  else {
+                     if constexpr (Mode IS WLF::F2_F1) value = f2 - f1;
+                     else if constexpr (Mode IS WLF::F2) value = f2;
+                     else value = f1;
+                  }
+
+                  store_field_value(Field, pos, value, MinValue, MaxValue);
+               }
+               else if constexpr (Mode IS WLF::WEIGHTED) {
+                  double weighted = std::numeric_limits<double>::max();
+
+                  for (auto &point : Features) {
+                     const double dx = (point.x > px) ? point.x - px : px - point.x;
+                     const double dy = (point.y > py) ? point.y - py : py - point.y;
+                     const double dominance = distance_from_delta<Metric>(dx, dy) - point.height;
+                     if (dominance < weighted) weighted = dominance;
+                  }
+
+                  store_field_value(Field, pos, weighted, MinValue, MaxValue);
+               }
+               else {
+                  double peaks = std::numeric_limits<double>::lowest();
+
+                  for (auto &point : Features) {
+                     const double dx = (point.x > px) ? point.x - px : px - point.x;
+                     const double dy = (point.y > py) ? point.y - py : py - point.y;
+                     const double peak = point.height - distance_from_delta<Metric>(dx, dy);
+                     if (peak > peaks) peaks = peak;
+                  }
+
+                  store_field_value(Field, pos, peaks, MinValue, MaxValue);
+               }
+            }
+         }
+      }
+
+      template <WLM Metric> static void build_field_for_metric(WLF Mode, const std::vector<worley_feature> &Features,
+         const std::vector<int8u> &Mask, int Width, int Height, std::vector<float> &Field, float &MinValue,
+         float &MaxValue)
+      {
+         if (Mode IS WLF::F2_F1) build_field<Metric, WLF::F2_F1>(Features, Mask, Width, Height, Field,
+            MinValue, MaxValue);
+         else if (Mode IS WLF::F2) build_field<Metric, WLF::F2>(Features, Mask, Width, Height, Field,
+            MinValue, MaxValue);
+         else if (Mode IS WLF::WEIGHTED) build_field<Metric, WLF::WEIGHTED>(Features, Mask, Width, Height, Field,
+            MinValue, MaxValue);
+         else if (Mode IS WLF::PEAKS) build_field<Metric, WLF::PEAKS>(Features, Mask, Width, Height, Field,
+            MinValue, MaxValue);
+         else build_field<Metric, WLF::F1>(Features, Mask, Width, Height, Field, MinValue, MaxValue);
+      }
+
+      static void build_worley_field(WLF Mode, WLM Metric, const std::vector<worley_feature> &Features,
+         const std::vector<int8u> &Mask, int Width, int Height, std::vector<float> &Field, float &MinValue,
+         float &MaxValue)
+      {
+         if (Metric IS WLM::MANHATTAN) build_field_for_metric<WLM::MANHATTAN>(Mode, Features, Mask, Width,
+            Height, Field, MinValue, MaxValue);
+         else if (Metric IS WLM::CHEBYSHEV) build_field_for_metric<WLM::CHEBYSHEV>(Mode, Features, Mask, Width,
+            Height, Field, MinValue, MaxValue);
+         else build_field_for_metric<WLM::EUCLIDEAN>(Mode, Features, Mask, Width, Height, Field, MinValue,
+            MaxValue);
       }
 
       static bool inside_mask(const std::vector<int8u> &Mask, int Width, int Height, int X, int Y) {
@@ -240,47 +348,7 @@ namespace agg
       float min_value = std::numeric_limits<float>::max();
       float max_value = std::numeric_limits<float>::lowest();
 
-      for (int y=0; y < height; y++) {
-         for (int x=0; x < width; x++) {
-            const int pos = (y * width) + x;
-            if (mask[pos] > 0x01) continue;
-
-            double f1 = std::numeric_limits<double>::max();
-            double f2 = std::numeric_limits<double>::max();
-            double weighted = std::numeric_limits<double>::max();
-            double peaks = std::numeric_limits<double>::lowest();
-
-            const double px = x + 0.5;
-            const double py = y + 0.5;
-            for (auto &point : features) {
-               const double dist = metric(px, py, point.x, point.y, Metric);
-               if (dist < f1) {
-                  f2 = f1;
-                  f1 = dist;
-               }
-               else if (dist < f2) f2 = dist;
-
-               const double dominance = dist - point.height;
-               if (dominance < weighted) weighted = dominance;
-
-               const double peak = point.height - dist;
-               if (peak > peaks) peaks = peak;
-            }
-
-            if (f2 IS std::numeric_limits<double>::max()) f2 = f1;
-
-            double value;
-            if (Mode IS WLF::F2_F1) value = f2 - f1;
-            else if (Mode IS WLF::F2) value = f2;
-            else if (Mode IS WLF::WEIGHTED) value = weighted;
-            else if (Mode IS WLF::PEAKS) value = peaks;
-            else value = f1;
-
-            field[pos] = float(value);
-            if (field[pos] < min_value) min_value = field[pos];
-            if (field[pos] > max_value) max_value = field[pos];
-         }
-      }
+      build_worley_field(Mode, Metric, features, mask, width, height, field, min_value, max_value);
 
       if (min_value IS max_value) m_buffer.clear();
       else {
