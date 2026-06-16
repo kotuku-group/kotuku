@@ -3492,6 +3492,13 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getResults(kt::vector<std::string> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
    inline ERR getCacheFile(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3505,13 +3512,6 @@ class objScript : public Object {
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getResults(kt::vector<std::string> * &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3562,6 +3562,11 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setResults(kt::vector<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, 0x00905300, &Value, int(Value.size()));
+   }
+
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00904300, &Value, 1);
@@ -3570,11 +3575,6 @@ class objScript : public Object {
    inline ERR setWorkingPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, 0x00804300, &Value, 1);
-   }
-
-   inline ERR setResults(const kt::vector<std::string> *Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00905300, Value, int(Value->size()));
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
