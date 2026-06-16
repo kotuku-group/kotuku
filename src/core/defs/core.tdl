@@ -1480,6 +1480,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     error Error         # If an error occurred, this field will indicate the error number
     int CurrentLine     # Current line being executed, or failed line if script execution terminated
     int LineOffset      # An optional offset to use when reporting line numbers
+    !vector(string) Results
   ]],
   [[
    int64_t  ProcedureID;          // For callbacks
