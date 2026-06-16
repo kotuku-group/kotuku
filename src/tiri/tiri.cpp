@@ -59,7 +59,7 @@ JOF glJitOptions = JOF::NIL;
 ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
 ankerl::unordered_dense::map<uint32_t, uint32_t> *glStructSizes = nullptr;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
-ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
+std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 std::shared_mutex glConstantMutex;
 uint64_t glActionsWithResults = 0;
 
