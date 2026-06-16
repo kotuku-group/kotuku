@@ -2548,18 +2548,24 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getFields(const struct FieldArray * &Value, int &Elements) noexcept {
+   inline ERR getFields(std::span<const struct FieldArray> &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
+      const struct FieldArray *values;
+      int size;
       auto get_field = (ERR (*)(APTR, const struct FieldArray *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<const struct FieldArray>(values, size);
       return error;
    }
 
-   inline ERR getDictionary(struct Field * &Value, int &Elements) noexcept {
+   inline ERR getDictionary(std::span<struct Field> &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
+      struct Field *values;
+      int size;
       auto get_field = (ERR (*)(APTR, struct Field *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<struct Field>(values, size);
       RestoreObjectContext();
       return error;
    }
@@ -2624,17 +2630,23 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getMethods(APTR * &Value, int &Elements) noexcept {
+   inline ERR getMethods(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
-   inline ERR getActionTable(APTR * &Value, int &Elements) noexcept {
+   inline ERR getActionTable(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
@@ -2656,19 +2668,25 @@ class objMetaClass : public Object {
       return error;
    }
 
-   inline ERR getObjects(int * &Value, int &Elements) noexcept {
+   inline ERR getObjects(std::span<int> &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
+      int *values;
+      int size;
       auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<int>(values, size);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getSubClasses(OBJECTPTR * &Value, int &Elements) noexcept {
+   inline ERR getSubClasses(std::span<OBJECTPTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
+      OBJECTPTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, OBJECTPTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<OBJECTPTR>(values, size);
       return error;
    }
 
@@ -3002,10 +3020,13 @@ class objFile : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getBuffer(int8_t * &Value, int &Elements) noexcept {
+   inline ERR getBuffer(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
+      int8_t *values;
+      int size;
       auto get_field = (ERR (*)(APTR, int8_t *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<int8_t>(values, size);
       return error;
    }
 
@@ -3493,10 +3514,13 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getResults(std::string * &Value, int &Elements) noexcept {
+   inline ERR getResults(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
+      std::string *values;
+      int size;
       auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<std::string>(values, size);
       return error;
    }
 
@@ -3771,11 +3795,14 @@ class objTask : public Object {
       return error;
    }
 
-   inline ERR getKeys(std::string * &Value, int &Elements) noexcept {
+   inline ERR getKeys(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
+      std::string *values;
+      int size;
       auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<std::string>(values, size);
       RestoreObjectContext();
       return error;
    }
@@ -3950,10 +3977,13 @@ class objThread : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getData(APTR * &Value, int &Elements) noexcept {
+   inline ERR getData(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 

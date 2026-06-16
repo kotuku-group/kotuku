@@ -547,10 +547,13 @@ class objSound : public Object {
       return error;
    }
 
-   inline ERR getHeader(int8_t * &Value, int &Elements) noexcept {
+   inline ERR getHeader(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
+      int8_t *values;
+      int size;
       auto get_field = (ERR (*)(APTR, int8_t *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<int8_t>(values, size);
       return error;
    }
 

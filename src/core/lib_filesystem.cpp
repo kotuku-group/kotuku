@@ -209,10 +209,9 @@ extern "C" FFR CALL_FEEDBACK(FUNCTION *Callback, FileFeedback *Feedback)
       }), error) != ERR::Okay) error = ERR::Function;
 
       if (!error) {
-         kt::vector<std::string> *results;
-         int size;
-         if ((!Callback->Context->get(FID_Results, results, size)) and (size > 0)) {
-            return FFR(strtol((*results)[0].c_str(), nullptr, 0));
+         std::span<std::string> results;
+         if ((!((objScript *)Callback->Context)->getResults(results)) and (results.size() > 0)) {
+            return FFR(strtol((results)[0].c_str(), nullptr, 0));
          }
          else return FFR::OKAY;
       }

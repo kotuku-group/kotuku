@@ -510,10 +510,13 @@ class objNetLookup : public Object {
       return error;
    }
 
-   inline ERR getAddresses(APTR * &Value, int &Elements) noexcept {
+   inline ERR getAddresses(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 

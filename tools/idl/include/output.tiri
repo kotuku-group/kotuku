@@ -200,10 +200,14 @@ end
 
 function outputFieldGetSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
-      if (Field.flags has FD_CPP) and (Field.read != 'Get') then -- Embedded kt::vector
+      if ((Field.flags has FD_CPP) and (Field.read != 'Get')) then -- Embedded kt::vector or general array, has direct access
          output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
       else
-         output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
+         if (FieldType is 'struct RGB8') then
+            output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
+         else
+            output(f'   inline ERR get{FidName}(std::span<{FieldType}> &Value) noexcept {{')
+         end
       end
    elseif Field.flags has FD_FUNCTION then
       output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
@@ -230,8 +234,11 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
    elseif Field.flags has FD_UNIT then
       output(Indent .. 'auto error = field->GetValue(this, &Value);')
    elseif Field.flags has FD_ARRAY then
+      output(Indent .. f'{FieldType} *values;')
+      output(Indent .. 'int size;')
       output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&, int &))field->GetValue;')
-      output(Indent .. 'auto error = get_field(this, Value, Elements);')
+      output(Indent .. 'auto error = get_field(this, values, size);')
+      output(Indent .. f'if (!error) Value = std::span<{FieldType}>(values, size);')
    elseif Field.flags has FD_STRING then
       if Field.flags has FD_ALLOC then
          output(Indent .. 'std::string_view view;')

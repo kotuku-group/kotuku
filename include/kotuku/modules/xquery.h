@@ -245,20 +245,26 @@ class objXQuery : public Object {
       return error;
    }
 
-   inline ERR getFunctions(std::string * &Value, int &Elements) noexcept {
+   inline ERR getFunctions(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       SetObjectContext(this, field, AC::NIL);
+      std::string *values;
+      int size;
       auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<std::string>(values, size);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getVariables(std::string * &Value, int &Elements) noexcept {
+   inline ERR getVariables(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
+      std::string *values;
+      int size;
       auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<std::string>(values, size);
       RestoreObjectContext();
       return error;
    }

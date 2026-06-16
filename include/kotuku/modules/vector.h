@@ -1205,10 +1205,13 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getColour(float * &Value, int &Elements) noexcept {
+   inline ERR getColour(std::span<float> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
+      float *values;
+      int size;
       auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<float>(values, size);
       return error;
    }
 
@@ -1238,10 +1241,13 @@ class objGradient : public Object {
       return error;
    }
 
-   inline ERR getStops(APTR * &Value, int &Elements) noexcept {
+   inline ERR getStops(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
@@ -1674,17 +1680,23 @@ class objGradientGouraud : public objGradient {
 
    // Customised field getting
 
-   inline ERR getVertices(APTR * &Value, int &Elements) noexcept {
+   inline ERR getVertices(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
-   inline ERR getIndices(int * &Value, int &Elements) noexcept {
+   inline ERR getIndices(std::span<int> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
+      int *values;
+      int size;
       auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<int>(values, size);
       return error;
    }
 
@@ -1828,10 +1840,13 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field getting
 
-   inline ERR getPoints(VoronoiPoint * &Value, int &Elements) noexcept {
+   inline ERR getPoints(std::span<VoronoiPoint> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
+      VoronoiPoint *values;
+      int size;
       auto get_field = (ERR (*)(APTR, VoronoiPoint *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<VoronoiPoint>(values, size);
       return error;
    }
 
@@ -2360,10 +2375,13 @@ class objColourFX : public objFilterEffect {
       return error;
    }
 
-   inline ERR getValues(double * &Value, int &Elements) noexcept {
+   inline ERR getValues(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
@@ -2544,10 +2562,13 @@ class objConvolveFX : public objFilterEffect {
       return error;
    }
 
-   inline ERR getMatrix(double * &Value, int &Elements) noexcept {
+   inline ERR getMatrix(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
@@ -2751,10 +2772,13 @@ class objFloodFX : public objFilterEffect {
 
    // Customised field getting
 
-   inline ERR getColour(float * &Value, int &Elements) noexcept {
+   inline ERR getColour(std::span<float> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
+      float *values;
+      int size;
       auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<float>(values, size);
       return error;
    }
 
@@ -2836,10 +2860,13 @@ class objLightingFX : public objFilterEffect {
 
    // Customised field getting
 
-   inline ERR getColour(float * &Value, int &Elements) noexcept {
+   inline ERR getColour(std::span<float> &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
+      float *values;
+      int size;
       auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<float>(values, size);
       return error;
    }
 
@@ -2955,10 +2982,13 @@ class objMergeFX : public objFilterEffect {
 
    // Customised field getting
 
-   inline ERR getSourceList(APTR * &Value, int &Elements) noexcept {
+   inline ERR getSourceList(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
@@ -3379,10 +3409,13 @@ class objWaveFunctionFX : public objFilterEffect {
       return error;
    }
 
-   inline ERR getStops(APTR * &Value, int &Elements) noexcept {
+   inline ERR getStops(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
@@ -3895,10 +3928,13 @@ class objVector : public Object {
       return error;
    }
 
-   inline ERR getDashArray(double * &Value, int &Elements) noexcept {
+   inline ERR getDashArray(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
@@ -3968,10 +4004,13 @@ class objVector : public Object {
       return error;
    }
 
-   inline ERR getStrokeColour(float * &Value, int &Elements) noexcept {
+   inline ERR getStrokeColour(std::span<float> &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
+      float *values;
+      int size;
       auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<float>(values, size);
       return error;
    }
 
@@ -3996,10 +4035,13 @@ class objVector : public Object {
       return error;
    }
 
-   inline ERR getFillColour(float * &Value, int &Elements) noexcept {
+   inline ERR getFillColour(std::span<float> &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
+      float *values;
+      int size;
       auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<float>(values, size);
       return error;
    }
 
@@ -4314,10 +4356,13 @@ class objVectorPath : public objVector {
       return error;
    }
 
-   inline ERR getCommands(APTR * &Value, int &Elements) noexcept {
+   inline ERR getCommands(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
@@ -4475,17 +4520,23 @@ class objVectorText : public objVector {
       return error;
    }
 
-   inline ERR getDX(double * &Value, int &Elements) noexcept {
+   inline ERR getDX(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[28];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
-   inline ERR getDY(double * &Value, int &Elements) noexcept {
+   inline ERR getDY(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
@@ -4509,10 +4560,13 @@ class objVectorText : public objVector {
       return error;
    }
 
-   inline ERR getRotate(double * &Value, int &Elements) noexcept {
+   inline ERR getRotate(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
@@ -4960,10 +5014,13 @@ class objVectorRectangle : public objVector {
 
    // Customised field getting
 
-   inline ERR getRounding(double * &Value, int &Elements) noexcept {
+   inline ERR getRounding(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 
@@ -5133,10 +5190,13 @@ class objVectorPolygon : public objVector {
       return error;
    }
 
-   inline ERR getPointsArray(APTR * &Value, int &Elements) noexcept {
+   inline ERR getPointsArray(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
+      APTR *values;
+      int size;
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<APTR>(values, size);
       return error;
    }
 
