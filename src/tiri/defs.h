@@ -4,6 +4,7 @@
 constexpr int SIZE_READ = 1024;
 
 #include <list>
+#include <unordered_map>
 #include <unordered_set>
 #include <set>
 #include <array>
@@ -76,8 +77,8 @@ extern OBJECTPTR modRegex;
 extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
-extern ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
-extern ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
+extern std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 extern uint64_t glActionsWithResults;
 
 //********************************************************************************************************************

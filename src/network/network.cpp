@@ -1058,9 +1058,9 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "DNSEntry",  sizeof(DNSEntry) },
-   { "IPAddress", sizeof(IPAddress) },
-   { "NetQueue",  sizeof(NetQueue) }
+   { "DNSEntry",  { sizeof(DNSEntry),  alignof(DNSEntry)  } },
+   { "IPAddress", { sizeof(IPAddress), alignof(IPAddress) } },
+   { "NetQueue",  { sizeof(NetQueue),  alignof(NetQueue)  } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

@@ -211,7 +211,7 @@ static ERR MODExpunge(void)
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "AudioLoop", sizeof(AudioLoop) }
+   { "AudioLoop", { sizeof(AudioLoop), alignof(AudioLoop) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

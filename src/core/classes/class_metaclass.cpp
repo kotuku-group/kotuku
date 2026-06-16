@@ -1200,6 +1200,22 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       field_alignment = alignof(Unit);
       field_type = "unit";
    }
+   else if (field.Flags & FD_STRUCT) {
+      if (field.Arg) {
+         CSTRING struct_name = CSTRING(field.Arg);
+         if (struct_name) {
+            auto struct_hash = kt::strhash(struct_name);
+            if (auto it = glStructSizes.find(struct_hash); it != glStructSizes.end()) {
+               field_size = it->second.Size;
+               field_alignment = it->second.Alignment;
+               field_type = struct_name;
+            }
+            else log.warning("%s.%s field refers to unknown struct name '%s'.", Class->ClassName.c_str(), field.Name, CSTRING(field.Arg));
+         }
+         else log.warning("%s.%s field requires a struct name reference.", Class->ClassName.c_str(), field.Name);
+      }
+      else log.warning("%s.%s field requires a struct name.", Class->ClassName.c_str(), field.Name);
+   }
    else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName.c_str(), field.Name, field.FieldID);
 
    if (field_size) {

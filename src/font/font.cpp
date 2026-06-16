@@ -1238,7 +1238,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "FontList", sizeof(FontList) }
+   { "FontList", { sizeof(FontList), alignof(FontList) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

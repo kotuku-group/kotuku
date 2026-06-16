@@ -251,6 +251,7 @@ extern std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
 extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
 extern std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes;
 
 extern std::condition_variable_any cvObjects;
 

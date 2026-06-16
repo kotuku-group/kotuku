@@ -198,6 +198,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "A secure sockets layer is not available in this environment",
  "Missing required parameter",
  "Unknown parameter name",
+ "Attempted to set a struct field with an incompatible value",
  nullptr // Needs to be null-terminated for Tiri support
 };
 

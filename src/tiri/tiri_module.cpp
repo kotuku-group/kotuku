@@ -246,10 +246,6 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
       if ((error = root->get(FID_Header, header)) != ERR::Okay) return error;
       if (not header) return ERR::NoData;
 
-      if (auto structs = header->StructDefs) {
-         for (auto &s : structs[0]) glStructSizes[s.first] = s.second;
-      }
-
       if (auto idl = header->Definitions) {
          while ((idl) and (*idl)) {
             if ((idl[0] IS 's') and (idl[1] IS '.')) idl = load_include_struct(Script, idl+2, Name);
