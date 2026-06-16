@@ -459,6 +459,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(DMF) Dimensions           # Flags for the dimension values.
   ]])
 
+  struct('VoronoiPoint', {
+   comment='Describes a feature point for the GradientVoronoi Points field.'
+  }, [[
+    double X       # The X coordinate of the feature point.
+    double Y       # The Y coordinate of the feature point.
+    double Height  # The per-point height used by WEIGHTED and PEAKS modes.
+  ]])
+
   klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
     double Resolution            # Alters the rate of change for gradient colours.
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
@@ -480,7 +488,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
 
-  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true })
+  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
+    !vector(struct(VoronoiPoint)) Points # User-defined Voronoi feature points.
+  ]])
 
   klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
     obj(FilterEffect) Next  # Next filter in the chain.

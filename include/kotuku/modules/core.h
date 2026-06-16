@@ -3562,7 +3562,7 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setResults(kt::vector<std::string> &Value) noexcept {
+   inline ERR setResults(const kt::vector<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00905300, &Value, int(Value.size()));
    }

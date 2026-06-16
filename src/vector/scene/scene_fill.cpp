@@ -842,19 +842,37 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       const auto path_hash = path_fingerprint(*Path);
       const auto resolved_seed = voronoi.Seed ? uint64_t(voronoi.Seed) : path_hash;
+      const bool use_points = not voronoi.Points.empty();
 
       uint64_t hash = path_hash;
-      hash = mix_fingerprint(hash, resolved_seed);
-      hash = mix_fingerprint(hash, uint64_t(voronoi.PointCount));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMetric)));
-      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMin));
-      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMax));
-      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.Jitter));
+      if (use_points) {
+         hash = mix_fingerprint(hash, uint64_t(voronoi.Points.size()));
+         for (auto &point : voronoi.Points) {
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.X));
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.Y));
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.Height));
+         }
+      }
+      else {
+         hash = mix_fingerprint(hash, resolved_seed);
+         hash = mix_fingerprint(hash, uint64_t(voronoi.PointCount));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMin));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMax));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.Jitter));
+      }
 
       if ((rebuild) or (hash != voronoi.WorleyHash)) {
+         std::vector<agg::worley_feature> points;
+         if (use_points) {
+            points.reserve(voronoi.Points.size());
+            for (auto &point : voronoi.Points) points.push_back({ point.X, point.Y, point.Height });
+         }
+
          gradient_func.worley_create(*Path, resolved_seed, voronoi.PointCount, voronoi.WorleyMode,
-            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter);
+            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter,
+            use_points ? &points : nullptr);
          voronoi.WorleyHash = hash;
       }
 

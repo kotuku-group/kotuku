@@ -1157,6 +1157,12 @@ class objVectorPattern : public Object {
 
 };
 
+struct VoronoiPoint {
+   double X;         // The X coordinate of the feature point.
+   double Y;         // The Y coordinate of the feature point.
+   double Height;    // The per-point height used by WEIGHTED and PEAKS modes.
+};
+
 // Gradient class definition
 
 #define VER_GRADIENT (1.000000)
@@ -1822,38 +1828,45 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field getting
 
-   inline ERR getFloor(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      auto error = field->GetValue(this, &Value);
+   inline ERR getPoints(kt::vector<VoronoiPoint> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      auto get_field = (ERR (*)(APTR, kt::vector<VoronoiPoint> *&))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
-   inline ERR getMultiplier(Unit &Value) noexcept {
+   inline ERR getFloor(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
+   inline ERR getMultiplier(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      auto error = field->GetValue(this, &Value);
+      return error;
+   }
+
    inline ERR getSeed(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
    inline ERR getPointCount(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
    inline ERR getWorleyMode(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[2];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
    inline ERR getWorleyMetric(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -1865,13 +1878,13 @@ class objGradientVoronoi : public objGradient {
    }
 
    inline ERR getHeightMax(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
    inline ERR getJitter(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -1879,33 +1892,38 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field setting
 
-   inline ERR setFloor(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_UNIT, &Value, 1);
+   inline ERR setPoints(const kt::vector<VoronoiPoint> &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, 0x00105318, &Value, int(Value.size()));
    }
 
-   inline ERR setMultiplier(const Unit Value) noexcept {
+   inline ERR setFloor(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_UNIT, &Value, 1);
    }
 
+   inline ERR setMultiplier(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, FD_UNIT, &Value, 1);
+   }
+
    inline ERR setSeed(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setPointCount(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setWorleyMode(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[2];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setWorleyMetric(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -1915,12 +1933,12 @@ class objGradientVoronoi : public objGradient {
    }
 
    inline ERR setHeightMax(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setJitter(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
