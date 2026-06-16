@@ -2606,7 +2606,7 @@ static const FieldArray clSurfaceFields[] = {
    { "Dimensions",   FDF_INT|FDF_RW, nullptr, SET_Dimensions, &clSurfaceDimensions },
    { "DragStatus",   FDF_INT|FDF_LOOKUP|FDF_R, nullptr, nullptr, &clSurfaceDragStatus },
    { "Cursor",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Cursor, &clSurfaceCursor },
-   { "Colour",       FD_ARRAY|FD_BYTE|FDF_RW, nullptr, nullptr, 4 },
+   { "Colour",       FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },
    { "Type",         FDF_SYSTEM|FDF_INT|FDF_RI, nullptr, nullptr, &clSurfaceType },
    { "Modal",        FDF_INT|FDF_RW, nullptr, SET_Modal },
    // Virtual fields

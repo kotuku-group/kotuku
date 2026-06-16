@@ -151,21 +151,18 @@ class objFont : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getOutline(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 240);
+   inline ERR getOutline(struct RGB8 &Value) noexcept {
+      Value = this->Outline;
       return ERR::Okay;
    }
 
-   inline ERR getUnderline(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 244);
+   inline ERR getUnderline(struct RGB8 &Value) noexcept {
+      Value = this->Underline;
       return ERR::Okay;
    }
 
-   inline ERR getColour(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 248);
+   inline ERR getColour(struct RGB8 &Value) noexcept {
+      Value = this->Colour;
       return ERR::Okay;
    }
 

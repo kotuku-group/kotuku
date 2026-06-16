@@ -710,9 +710,9 @@ class objVectorTransition : public Object {
 
    // Customised field setting
 
-   inline ERR setStops(APTR Value, int Elements) noexcept {
+   inline ERR setStops(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00001218, Value, Elements);
+      return field->WriteValue(this, field, 0x00001218, Value.data(), Value.size());
    }
 
 };
@@ -1282,9 +1282,9 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setColour(const float * Value, int Elements) noexcept {
+   inline ERR setColour(std::span<const float> Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+      return field->WriteValue(this, field, 0x10101308, Value.data(), Value.size());
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
@@ -1307,9 +1307,9 @@ class objGradient : public Object {
       return field->WriteValue(this, field, 0x00904308, &Value, 1);
    }
 
-   inline ERR setStops(APTR Value, int Elements) noexcept {
+   inline ERR setStops(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+      return field->WriteValue(this, field, 0x00101318, Value.data(), Value.size());
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
@@ -1703,9 +1703,9 @@ class objGradientGouraud : public objGradient {
 
    // Customised field setting
 
-   inline ERR setColour(const float * Value, int Elements) noexcept {
+   inline ERR setColour(std::span<const float> Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x10111308, Value, Elements);
+      return field->WriteValue(this, field, 0x10111308, Value.data(), Value.size());
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
@@ -1718,19 +1718,19 @@ class objGradientGouraud : public objGradient {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setStops(APTR Value, int Elements) noexcept {
+   inline ERR setStops(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, 0x00111318, Value, Elements);
+      return field->WriteValue(this, field, 0x00111318, Value.data(), Value.size());
    }
 
-   inline ERR setVertices(APTR Value, int Elements) noexcept {
+   inline ERR setVertices(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+      return field->WriteValue(this, field, 0x00101318, Value.data(), Value.size());
    }
 
-   inline ERR setIndices(const int * Value, int Elements) noexcept {
+   inline ERR setIndices(std::span<const int> Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x40101308, Value, Elements);
+      return field->WriteValue(this, field, 0x40101308, Value.data(), Value.size());
    }
 
 };
@@ -2407,9 +2407,9 @@ class objColourFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setValues(const double * Value, int Elements) noexcept {
+   inline ERR setValues(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x80101508, Value, Elements);
+      return field->WriteValue(this, field, 0x80101508, Value.data(), Value.size());
    }
 
 };
@@ -2644,9 +2644,9 @@ class objConvolveFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setMatrix(const double * Value, int Elements) noexcept {
+   inline ERR setMatrix(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, 0x80101508, Value, Elements);
+      return field->WriteValue(this, field, 0x80101508, Value.data(), Value.size());
    }
 
    inline ERR setPreserveAlpha(const int Value) noexcept {
@@ -2805,9 +2805,9 @@ class objFloodFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setColour(const float * Value, int Elements) noexcept {
+   inline ERR setColour(std::span<const float> Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+      return field->WriteValue(this, field, 0x10101308, Value.data(), Value.size());
    }
 
    inline ERR setOpacity(const double Value) noexcept {
@@ -2923,9 +2923,9 @@ class objLightingFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setColour(const float * Value, int Elements) noexcept {
+   inline ERR setColour(std::span<const float> Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+      return field->WriteValue(this, field, 0x10101308, Value.data(), Value.size());
    }
 
    inline ERR setConstant(const double Value) noexcept {
@@ -3009,9 +3009,9 @@ class objMergeFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setSourceList(APTR Value, int Elements) noexcept {
+   inline ERR setSourceList(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+      return field->WriteValue(this, field, 0x00101318, Value.data(), Value.size());
    }
 
 };
@@ -3471,9 +3471,9 @@ class objWaveFunctionFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
-   inline ERR setStops(APTR Value, int Elements) noexcept {
+   inline ERR setStops(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+      return field->WriteValue(this, field, 0x00101318, Value.data(), Value.size());
    }
 
 };
@@ -4156,9 +4156,9 @@ class objVector : public Object {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setDashArray(const double * Value, int Elements) noexcept {
+   inline ERR setDashArray(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x80101308, Value, Elements);
+      return field->WriteValue(this, field, 0x80101308, Value.data(), Value.size());
    }
 
    inline ERR setMask(OBJECTPTR Value) noexcept {
@@ -4201,9 +4201,9 @@ class objVector : public Object {
       return field->WriteValue(this, field, 0x00904308, &Value, 1);
    }
 
-   inline ERR setStrokeColour(const float * Value, int Elements) noexcept {
+   inline ERR setStrokeColour(std::span<const float> Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+      return field->WriteValue(this, field, 0x10101308, Value.data(), Value.size());
    }
 
    inline ERR setStrokeWidth(const double Value) noexcept {
@@ -4222,9 +4222,9 @@ class objVector : public Object {
       return field->WriteValue(this, field, 0x00904308, &Value, 1);
    }
 
-   inline ERR setFillColour(const float * Value, int Elements) noexcept {
+   inline ERR setFillColour(std::span<const float> Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, 0x10101308, Value, Elements);
+      return field->WriteValue(this, field, 0x10101308, Value.data(), Value.size());
    }
 
    inline ERR setFillRule(const int Value) noexcept {
@@ -4396,9 +4396,9 @@ class objVectorPath : public objVector {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setCommands(APTR Value, int Elements) noexcept {
+   inline ERR setCommands(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x00101318, Value, Elements);
+      return field->WriteValue(this, field, 0x00101318, Value.data(), Value.size());
    }
 
 };
@@ -4705,14 +4705,14 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, 0x00904508, &Value, 1);
    }
 
-   inline ERR setDX(const double * Value, int Elements) noexcept {
+   inline ERR setDX(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(this, field, 0x80101308, Value, Elements);
+      return field->WriteValue(this, field, 0x80101308, Value.data(), Value.size());
    }
 
-   inline ERR setDY(const double * Value, int Elements) noexcept {
+   inline ERR setDY(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x80101308, Value, Elements);
+      return field->WriteValue(this, field, 0x80101308, Value.data(), Value.size());
    }
 
    inline ERR setInlineSize(const double Value) noexcept {
@@ -4725,9 +4725,9 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
-   inline ERR setRotate(const double * Value, int Elements) noexcept {
+   inline ERR setRotate(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x80101308, Value, Elements);
+      return field->WriteValue(this, field, 0x80101308, Value.data(), Value.size());
    }
 
    inline ERR setShapeInside(OBJECTID Value) noexcept {
@@ -5101,9 +5101,9 @@ class objVectorRectangle : public objVector {
 
    // Customised field setting
 
-   inline ERR setRounding(const double * Value, int Elements) noexcept {
+   inline ERR setRounding(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x80101308, Value, Elements);
+      return field->WriteValue(this, field, 0x80101308, Value.data(), Value.size());
    }
 
    inline ERR setRoundX(const double Value) noexcept {
@@ -5251,9 +5251,9 @@ class objVectorPolygon : public objVector {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setPointsArray(APTR * Value, int Elements) noexcept {
+   inline ERR setPointsArray(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, 0x08101308, Value, Elements);
+      return field->WriteValue(this, field, 0x08101308, Value.data(), Value.size());
    }
 
    inline ERR setPoints(const std::string_view &Value) noexcept {

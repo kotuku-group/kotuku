@@ -350,6 +350,21 @@ static ERR writeval_cppstr(OBJECTPTR Object, const Field *Field, int Flags, CPTR
    else return ERR::SetValueNotPointer;
 }
 
+static ERR writeval_struct(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
+{
+   if (Flags & FD_STRUCT) {
+      // Possibly dangerous if the struct happens to contain C++ classes, but otherwise works.
+      if (auto it = glStructSizes.find(kt::strhash(CSTRING(Field->Arg))); it != glStructSizes.end()) {
+         auto struct_size = it->second.Size;
+         auto offset = ((int8_t *)Object + Field->Offset);
+         copymem(Data, offset, struct_size);
+         return ERR::Okay;
+      }
+      else return ERR::Search;
+   }
+   else return ERR::SetValueNotStruct;
+}
+
 static ERR writeval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    auto offset = (Unit *)((int8_t *)Object + Field->Offset);
@@ -663,6 +678,15 @@ static ERR setval_large(OBJECTPTR Object, const Field *Field, int Flags, CPTR Da
    return ((ERR (*)(APTR, int64_t))(Field->SetValue))(Object, int64);
 }
 
+static ERR setval_struct(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
+{
+   if (Flags & (FD_STRUCT|FD_POINTER)) {
+      FieldContext ctx(Object, Field);
+      return ((ERR (*)(APTR, CPTR))(Field->SetValue))(Object, Data);
+   }
+   else return ERR::SetValueNotStruct;
+}
+
 //********************************************************************************************************************
 // This routine configures WriteValue so that it uses the correct set-field function, according to the field type that
 // has been defined.
@@ -688,6 +712,7 @@ void optimise_write_field(Field &Field)
          if (Field.Flags & FD_STRING) log.warning("C-style string pointers are deprecated; field: %s.", Field.Name);
          Field.WriteValue = writeval_ptr;
       }
+      else if (Field.Flags & FD_STRUCT) Field.WriteValue = writeval_struct;
       else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
    }
    else {
@@ -704,6 +729,7 @@ void optimise_write_field(Field &Field)
          Field.WriteValue = setval_pointer;
       }
       else if (Field.Flags & FD_INT64)    Field.WriteValue = setval_large;
+      else if (Field.Flags & FD_STRUCT)   Field.WriteValue = setval_struct;
       else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
    }
 }

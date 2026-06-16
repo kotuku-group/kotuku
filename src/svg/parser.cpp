@@ -3823,7 +3823,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_stroke_dasharray: {
          auto values = read_array(StrValue);
-         Vector->setDashArray(values.data(), values.size());
+         Vector->setDashArray(values);
          break;
       }
 

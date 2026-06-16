@@ -303,6 +303,100 @@ static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
    }
 }
 
+//********************************************************************************************************************
+// Populates a struct buffer from a CSV string by walking the struct definition positionally.  The Nth CSV value is
+// written to the Nth field.  Only structs composed entirely of primitive numeric fields are supported - the presence
+// of a string, pointer, nested struct, array, function or object field aborts the operation.
+
+static ERR parse_csv_struct(std::string_view String, struct_record &Def, APTR Dest)
+{
+   constexpr int UNSUPPORTED = FD_STRING|FD_POINTER|FD_STRUCT|FD_ARRAY|FD_FUNCTION|FD_OBJECT;
+
+   for (auto &field : Def.Fields) {
+      if (field.Type & UNSUPPORTED) return ERR::NoSupport;
+   }
+
+   for (auto &field : Def.Fields) {
+      while ((not String.empty()) and (not std::isdigit((unsigned char)String.front())) and (String.front() != '-')) {
+         String.remove_prefix(1);
+      }
+      if (String.empty()) break; // Remaining fields retain their zero-initialised value.
+
+      std::string buffer(String);
+      char *end = nullptr;
+      APTR address = (int8_t *)Dest + field.Offset;
+      auto type = field.Type;
+      if (type & FD_DOUBLE)     ((double *)address)[0]  = strtod(buffer.c_str(), &end);
+      else if (type & FD_FLOAT) ((float *)address)[0]   = strtod(buffer.c_str(), &end);
+      else if (type & FD_INT64) ((int64_t *)address)[0] = strtoll(buffer.c_str(), &end, 0);
+      else if (type & FD_INT)   ((int *)address)[0]      = strtol(buffer.c_str(), &end, 0);
+      else if (type & FD_WORD)  ((int16_t *)address)[0] = strtol(buffer.c_str(), &end, 0);
+      else if (type & FD_BYTE)  ((uint8_t *)address)[0] = strtol(buffer.c_str(), &end, 0);
+      else return ERR::NoSupport;
+
+      const auto consumed = size_t(end - buffer.c_str());
+      if (not consumed) break;
+      if (consumed >= String.size()) String = {};
+      else String.remove_prefix(consumed);
+   }
+
+   return ERR::Okay;
+}
+
+static struct_record * lookup_struct_field_def(const Field *Field)
+{
+   if (not Field->Arg) return nullptr;
+
+   auto def = glStructs.find(std::string_view((CSTRING)Field->Arg));
+   if (def IS glStructs.end()) return nullptr;
+   else return &def->second;
+}
+
+static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
+{
+   switch(lua_type(Lua, ValueIndex)) {
+      case LUA_TSTRING: {
+         // The user can provide a CSV list of values for the struct.  This is only valid for structs that consist of
+         // primitive numeric values.  Each CSV value is mapped positionally to the struct's fields.
+
+         auto struct_def = lookup_struct_field_def(Field);
+         if (not struct_def) return ERR::SetValueNotStruct;
+
+         std::string_view source = lua_tostring(Lua, ValueIndex);
+
+         auto structbuf = std::make_unique<uint8_t[]>(ALIGN64(struct_def->Size));
+         if (auto error = parse_csv_struct(source, *struct_def, structbuf.get()); error != ERR::Okay) return error;
+
+         if (Field->SetValue) return Object->set(Field->FieldID, structbuf.get());
+         else { // The struct is embedded, we can write to it directly because we know the struct size.
+            copymem(structbuf.get(), ((int8_t *)Object) + Field->Offset, struct_def->Size);
+            return ERR::Okay;
+         }
+      }
+
+      case LUA_TUSERDATA:
+         if (auto fs = (fstruct *)get_meta(Lua, ValueIndex, "Tiri.struct")) {
+            auto struct_def = lookup_struct_field_def(Field);
+            if ((not struct_def) or (fs->Def != struct_def) or (fs->StructSize < struct_def->Size)) {
+               return ERR::SetValueNotStruct;
+            }
+
+            if (Field->SetValue) {
+               // We only need to pass a reference to the struct as a pointer
+               return Object->set(Field->FieldID, fs->Data);
+            }
+            else { // The struct is embedded, we can write to it directly because we know the struct size.
+               copymem(fs->Data, ((int8_t *)Object) + Field->Offset, struct_def->Size);
+            }
+            return ERR::Okay;
+         }
+         else return ERR::SetValueNotStruct;
+
+      default:
+         return ERR::SetValueNotStruct;
+   }
+}
+
 static ERR object_set_unit(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
@@ -516,6 +610,9 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
       }
       else if (field->Flags & FD_UNIT) {
          return object_set_unit(Lua, target, field, ValueIndex);
+      }
+      else if (field->Flags & FD_STRUCT) {
+         return object_set_struct(Lua, target, field, ValueIndex);
       }
       else return ERR::UnsupportedField;
    }

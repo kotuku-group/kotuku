@@ -12,13 +12,15 @@ local glSVGFolder
    glSVGFolder = State.folder
 end
 
+glWhite = struct.new('RGB8', { red = 255, green = 255, blue = 255, alpha = 255 })
+
 ----------------------------------------------------------------------------------------------------------------------
 
 function renderSVGToBitmap(Path)
    scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    svg = obj.new('svg', { target=vp, path=Path })
-   bmp = obj.new('bitmap', { width=scene.pageWidth, height=scene.pageHeight, bitsPerPixel=32, bkgd='255,255,255,255' })
+   bmp = obj.new('bitmap', { width=scene.pageWidth, height=scene.pageHeight, bitsPerPixel=32, bkgd=glWhite })
    bmp.acClear()
    scene.bitmap = bmp
    scene.acDraw()

@@ -203,11 +203,7 @@ function outputFieldGetSignature(Field:table, FidName:str, FieldType:str)
       if ((Field.flags has FD_CPP) and (Field.read != 'Get')) then -- Embedded kt::vector or general array, has direct access
          output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
       else
-         if (FieldType is 'struct RGB8') then
-            output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
-         else
-            output(f'   inline ERR get{FidName}(std::span<{FieldType}> &Value) noexcept {{')
-         end
+         output(f'   inline ERR get{FidName}(std::span<{FieldType}> &Value) noexcept {{')
       end
    elseif Field.flags has FD_FUNCTION then
       output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
@@ -363,10 +359,8 @@ function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then -- Embedded kt::vector
          output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
-      elseif FieldType is 'const struct RGB8' then
-         output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
       else
-         output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
+         output(f'   inline ERR set{FidName}(std::span<{Field.innerType}> Value) noexcept {{')
       end
    elseif FieldType is 'T &&' then
       output(f'   template <class T> inline ERR set{FidName}({FieldType} Value) noexcept {{')
@@ -384,13 +378,13 @@ end
 
 function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
    if FieldType:endsWith('[]') then
-      local array_type = FieldType:sub(0,-3) .. '*'
-      output(f'   inline ERR set{FidName}({array_type} Value, int Elements) noexcept {{')
+      local array_type = FieldType:sub(0,-3):trim()
+      output(f'   inline ERR set{FidName}(std::span<{array_type}> Value) noexcept {{')
    elseif Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
          output(f'   inline ERR set{FidName}(const {Field.basicType} &Value) noexcept {{')
       else
-         output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
+         output(f'   inline ERR set{FidName}(std::span<{FieldType}> Value) noexcept {{')
       end
    elseif Field.flags has FD_STRING then -- std::string internally, accessed as std::string_view.
       output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
@@ -426,7 +420,7 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
       if Field.flags has FD_CPP then -- Virtual kt::vector; setter will match the regular C signature for type compatibility
          output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value.data(), int(Value.size()));')
       else
-         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, Elements);')
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value.data(), Value.size());')
       end
    elseif Field.flags has FD_FUNCTION then
       output(Indent .. 'return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);')
@@ -440,8 +434,12 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
       output(Indent .. 'return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);')
    elseif Field.flags has FD_INT64 then
       output(Indent .. 'return field->WriteValue(this, field, FD_INT64, &Value, 1);')
-   else
+   elseif Field.flags has FD_INT then
       output(Indent .. 'return field->WriteValue(this, field, FD_INT, &Value, 1);')
+   elseif Field.flags has FD_STRUCT then
+      output(Indent .. 'return field->WriteValue(this, field, FD_STRUCT, Value, 1);')
+   else
+      output(Indent .. 'return field->WriteValue(this, field, FD_UNKNOWN, &Value, 1);')
    end
 end
 

@@ -864,15 +864,13 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getTransColour(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 244);
+   inline ERR getTransColour(struct RGB8 &Value) noexcept {
+      Value = this->TransColour;
       return ERR::Okay;
    }
 
-   inline ERR getBkgd(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 248);
+   inline ERR getBkgd(struct RGB8 &Value) noexcept {
+      Value = this->Bkgd;
       return ERR::Okay;
    }
 
@@ -987,14 +985,14 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setTransColour(const struct RGB8 * Value, int Elements) noexcept {
+   inline ERR setTransColour(const struct RGB8 * Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x01001300, Value, Elements);
+      return field->WriteValue(this, field, FD_STRUCT, Value, 1);
    }
 
-   inline ERR setBkgd(const struct RGB8 * Value, int Elements) noexcept {
+   inline ERR setBkgd(const struct RGB8 * Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x01001300, Value, Elements);
+      return field->WriteValue(this, field, FD_STRUCT, Value, 1);
    }
 
    inline ERR setBkgdIndex(const int Value) noexcept {
@@ -1423,9 +1421,9 @@ class objDisplay : public Object {
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setGamma(const double * Value, int Elements) noexcept {
+   inline ERR setGamma(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x80101508, Value, Elements);
+      return field->WriteValue(this, field, 0x80101508, Value.data(), Value.size());
    }
 
    inline ERR setHDensity(const int Value) noexcept {
@@ -2131,9 +2129,8 @@ class objSurface : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getColour(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 164);
+   inline ERR getColour(struct RGB8 &Value) noexcept {
+      Value = this->Colour;
       return ERR::Okay;
    }
 

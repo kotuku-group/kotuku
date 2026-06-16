@@ -2711,9 +2711,9 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setFields(const struct FieldArray * Value, int Elements) noexcept {
+   inline ERR setFields(std::span<const struct FieldArray *> Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, 0x00101510, Value, Elements);
+      return field->WriteValue(this, field, 0x00101510, Value.data(), Value.size());
    }
 
    inline ERR setClassName(const std::string_view &Value) noexcept {
@@ -2782,9 +2782,9 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setMethods(APTR Value, int Elements) noexcept {
+   inline ERR setMethods(std::span<APTR> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, 0x00101510, Value, Elements);
+      return field->WriteValue(this, field, 0x00101510, Value.data(), Value.size());
    }
 
    inline ERR setActions(APTR Value) noexcept {

@@ -208,6 +208,9 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
    elseif Type has FD_FLOAT then
       Def.type     = 'float'
       Def.doc_type = 'FLOAT'
+   elseif Type has FD_STRUCT then
+      Def.type     = 'struct'
+      Def.doc_type = 'STRUCT'
    else
       print(string.format('Failed to identify field type $%.8x for field "%s"', Type, CustomName))
       Def.type = 'void'

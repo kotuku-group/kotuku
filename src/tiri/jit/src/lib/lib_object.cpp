@@ -102,6 +102,7 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, const Field *, int);
 [[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, const Field *, int);
 [[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_struct(lua_State *, OBJECTPTR, const Field *, int);
 
 inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    lua_pushvalue(Lua, 1); // Duplicate the object reference
@@ -410,6 +411,9 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
          else if (field.Flags & (FD_INT|FD_INT64)) {
             jmp.push_back(obj_write(hash, object_set_number, &field));
          }
+         else if (field.Flags & FD_STRUCT) {
+            jmp.push_back(obj_write(hash, object_set_struct, &field));
+         }
          else if (field.Flags & FD_UNIT) {
             jmp.push_back(obj_write(hash, object_set_unit, &field));
          }
@@ -578,9 +582,9 @@ LJLIB_CF(object_new)
             FreeResource(obj);
 
             if (field_error != ERR::Okay) {
-               luaL_error(L, field_error, "Failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
+               luaL_error(L, field_error, "obj.new() failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
             }
-            else luaL_error(L, error, "Failed to Init() %s: %s", class_name, GetErrorMsg(error));
+            else luaL_error(L, error, "obj.new() failed to Init() %s: %s", class_name, GetErrorMsg(error));
 
             return 0;
          }
