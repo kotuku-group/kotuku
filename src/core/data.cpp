@@ -89,6 +89,49 @@ std::unordered_set<OBJECTID> glActiveAsyncObjects;
 std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
+ankerl::unordered_dense::map<uint32_t, uint32_t> glStructSizes = {
+   { kt::strhash("ActionArray"),         sizeof(ActionArray) },
+   { kt::strhash("ActionEntry"),         sizeof(ActionEntry) },
+   { kt::strhash("CacheFile"),           sizeof(CacheFile) },
+   { kt::strhash("ChildEntry"),          sizeof(ChildEntry) },
+   { kt::strhash("ClipRectangle"),       sizeof(ClipRectangle) },
+   { kt::strhash("ColourFormat"),        sizeof(ColourFormat) },
+   { kt::strhash("CompressedItem"),      sizeof(CompressedItem) },
+   { kt::strhash("CompressionFeedback"), sizeof(CompressionFeedback) },
+   { kt::strhash("DateTime"),            sizeof(DateTime) },
+   { kt::strhash("DirInfo"),             sizeof(DirInfo) },
+   { kt::strhash("Edges"),               sizeof(Edges) },
+   { kt::strhash("FRGB"),                sizeof(FRGB) },
+   { kt::strhash("Field"),               sizeof(Field) },
+   { kt::strhash("FieldArray"),          sizeof(FieldArray) },
+   { kt::strhash("FieldDef"),            sizeof(FieldDef) },
+   { kt::strhash("FileFeedback"),        sizeof(FileFeedback) },
+   { kt::strhash("FileInfo"),            sizeof(FileInfo) },
+   { kt::strhash("Function"),            sizeof(Function) },
+   { kt::strhash("FunctionField"),       sizeof(FunctionField) },
+   { kt::strhash("HSV"),                 sizeof(HSV) },
+   { kt::strhash("InputEvent"),          sizeof(InputEvent) },
+   { kt::strhash("MemInfo"),             sizeof(MemInfo) },
+   { kt::strhash("Message"),             sizeof(Message) },
+   { kt::strhash("MethodEntry"),         sizeof(MethodEntry) },
+   { kt::strhash("ModHeader"),           sizeof(struct ModHeader) },
+   { kt::strhash("MsgHandler"),          sizeof(MsgHandler) },
+   { kt::strhash("ObjectSignal"),        sizeof(ObjectSignal) },
+   { kt::strhash("RGB16"),               sizeof(RGB16) },
+   { kt::strhash("RGB32"),               sizeof(RGB32) },
+   { kt::strhash("RGB8"),                sizeof(RGB8) },
+   { kt::strhash("RGBPalette"),          sizeof(RGBPalette) },
+   { kt::strhash("ResourceManager"),     sizeof(ResourceManager) },
+   { kt::strhash("SystemState"),         sizeof(SystemState) },
+   { kt::strhash("ThreadActionMessage"), sizeof(ThreadActionMessage) },
+   { kt::strhash("ThreadMessage"),       sizeof(ThreadMessage) },
+   { kt::strhash("Unit"),                sizeof(Unit) },
+   { kt::strhash("dcAudio"),             sizeof(dcAudio) },
+   { kt::strhash("dcDeviceInput"),       sizeof(dcDeviceInput) },
+   { kt::strhash("dcKeyEntry"),          sizeof(dcKeyEntry) },
+   { kt::strhash("dcRequest"),           sizeof(dcRequest) }
+};
+
 std::condition_variable_any cvObjects;
 
 std::mutex glmThreadRegistry;

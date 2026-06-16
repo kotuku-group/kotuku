@@ -228,7 +228,8 @@ enum class ERR : int32_t {
    NoSecureSockets = 196,
    ParameterRequired = 197,
    ParameterUnknown = 198,
-   END = 199,
+   SetValueNotStruct = 199,
+   END = 200,
    Notified = 1073741824,
 };
 

@@ -358,7 +358,8 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "MEMORY_USAGE: The total amount of memory used by the current process, in bytes.",
     "MAIN_THREAD: Read-only, returns `true` if called from the main thread.",
     "MAIN_THREAD_ID: Read-only, returns the ID of the main thread.",
-    "WINDOWS_ICON: The Microsoft Windows resource icon ID for this process."
+    "WINDOWS_ICON: The Microsoft Windows resource icon ID for this process.",
+    "STRUCT_DB: Returns a map of hashed struct names and corresponding struct sizes."
   )
 
   enums("RP", { type="int", start=1, comment="Path types for SetResourcePath()" },

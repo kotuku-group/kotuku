@@ -206,6 +206,7 @@ function declareErrors()
     "NoSecureSockets",         -- A secure sockets layer is not available in this environment
     "ParameterRequired",       -- Missing required parameter
     "ParameterUnknown",        -- Unknown parameter name
+    "SetValueNotStruct",       -- Attempted to set a struct field with an incompatible value
     "END",
     { Notified = 0x40000000 }
   ) -- NB: Any new error messages need to be added to data_errors.c manually
