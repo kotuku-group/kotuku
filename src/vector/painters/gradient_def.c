@@ -25,6 +25,17 @@ static const struct FieldDef clGradientColourSpace[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clGradientEasing[] = {
+   { "Linear", 0x00000000 },
+   { "In", 0x00000001 },
+   { "Out", 0x00000002 },
+   { "InOut", 0x00000003 },
+   { "CubicIn", 0x00000004 },
+   { "CubicOut", 0x00000005 },
+   { "CubicInOut", 0x00000006 },
+   { nullptr, 0 }
+};
+
 static ERR GRADIENT_NewPlacement(extGradient *Self) {
    new (Self) extGradient;
    return ERR::Okay;

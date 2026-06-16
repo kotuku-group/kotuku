@@ -16,6 +16,7 @@ Gradient objects are definition objects and should normally be registered with a
 *********************************************************************************************************************/
 
 static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elements);
+static ERR rebuild_gradient_colours(extGradient *Self);
 
 static ERR init_gradient_linear(void);
 static ERR init_gradient_radial(void);
@@ -104,8 +105,12 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
 // Constructor for the GradientColours class.  This expects to be called whenever the Gradient class updates the
 // Stops array.
 
-GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution)
+GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
+   double Gamma, GEZ Easing)
 {
+   resolution = 1.0;
+   gamma = 1.0;
+
    int stop, i1, i2, i;
 
    for (stop=0; stop < std::ssize(Stops)-1; stop++) {
@@ -129,6 +134,7 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
       if (i1 < i2) {
          for (i=i1; i <= i2; i++) {
             double j = double(i - i1) / double(i2 - i1);
+            j = GradientColours::ease(Easing, j);
             if (ColourSpace IS VCS::LINEAR_RGB) table[i] = begin.linear_gradient(end, j);
             else table[i] = begin.gradient(end, j);
          }
@@ -140,16 +146,44 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
       }
    }
 
+   apply_gamma(Gamma);
    if (Resolution < 1) apply_resolution(Resolution);
 }
 
-GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution)
+GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution, double Gamma)
 {
+   resolution = 1.0;
+   gamma = 1.0;
+
    for (int i=0; i < std::ssize(Map); i++) {
       table[i] = agg::rgba8(Map[i]);
    }
 
+   apply_gamma(Gamma);
    if (Resolution < 1) apply_resolution(Resolution);
+}
+
+static ERR rebuild_gradient_colours(extGradient *Self)
+{
+   std::unique_ptr<GradientColours> colours;
+
+   if (not Self->Stops.empty()) {
+      colours.reset(new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution,
+         Self->Gamma, Self->Easing));
+   }
+   else if (not Self->ColourMap.empty()) {
+      if (auto it = glColourMaps.find(Self->ColourMap); it != glColourMaps.end()) {
+         colours.reset(new (std::nothrow) GradientColours(it->second, Self->Resolution, Self->Gamma));
+      }
+      else return ERR::NotFound;
+   }
+   else return ERR::Okay;
+
+   if (not colours) return ERR::AllocMemory;
+
+   if (Self->Colours) delete Self->Colours;
+   Self->Colours = colours.release();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -242,7 +276,8 @@ static ERR GRADIENT_SET_ColourMap(extGradient *Self, const std::string_view &Val
    if (Value.empty()) return ERR::NoData;
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
-      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, Self->Resolution));
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, Self->Resolution,
+         Self->Gamma));
       if (not colours) return ERR::AllocMemory;
 
       if (Self->Colours) delete Self->Colours;
@@ -263,6 +298,42 @@ Lookup: VCS
 
 By default, gradients are rendered using the standard RGB colour space and alpha blending rules.  Changing the colour
 space to `LINEAR_RGB` will force the renderer to automatically convert sRGB values to linear RGB when blending.
+
+-FIELD-
+Easing: Selects the easing function for interpolation between gradient stops.
+Lookup: GEZ
+
+Easing modifies the interpolation position between each adjacent pair of #Stops.  The default `GEZ::LINEAR` mode leaves
+the gradient unchanged.  This field has no effect on gradients sourced from #ColourMap because colourmaps already supply
+a complete colour table rather than editable stop segments.
+
+*********************************************************************************************************************/
+
+static ERR GRADIENT_SET_Easing(extGradient *Self, GEZ Value)
+{
+   const GEZ old_easing = Self->Easing;
+   if (old_easing IS Value) return ERR::Okay;
+
+   Self->Easing = Value;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Easing = old_easing;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Gamma: Applies a gamma curve to the gradient ramp.
+
+Gamma remaps the completed colour ramp before #Resolution is applied.  Values greater than `1.0` bias the ramp toward
+the first colour, while values between `0.0` and `1.0` bias it toward the last colour.  A value of `1.0` leaves the
+gradient unchanged.
 
 -FIELD-
 ID: String identifier for a vector.
@@ -288,6 +359,25 @@ static ERR GRADIENT_SET_ID(extGradient *Self, const std::string_view &Value)
       Self->ID.clear();
       Self->NumericID = 0;
    }
+   return ERR::Okay;
+}
+
+static ERR GRADIENT_SET_Gamma(extGradient *Self, double Value)
+{
+   if (Value <= 0) return ERR::OutOfRange;
+
+   const double old_gamma = Self->Gamma;
+   if (old_gamma IS Value) return ERR::Okay;
+
+   Self->Gamma = Value;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Gamma = old_gamma;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -392,14 +482,7 @@ static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
    if ((Self->Colours) and (Self->Colours->resolution != Value)) {
       if (Self->initialised()) {
          Self->modified();
-         if (not Self->Stops.empty()) {
-            auto copy = Self->Stops;
-            GRADIENT_SET_Stops(Self, copy.data(), copy.size());
-         }
-         else if (not Self->ColourMap.empty()) {
-            auto map = Self->ColourMap;
-            GRADIENT_SET_ColourMap(Self, map);
-         }
+         if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) return error;
       }
       else Self->Colours->apply_resolution(Value);
    }
@@ -447,7 +530,7 @@ static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elemen
    if (Elements >= 2) {
       auto stops = std::vector<GradientStop>(&Value[0], &Value[Elements]);
       auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
-         stops, Self->ColourSpace, 1.0, Self->Resolution));
+         stops, Self->ColourSpace, 1.0, Self->Resolution, Self->Gamma, Self->Easing));
       if (not colours) return ERR::AllocMemory;
 
       Self->Stops = std::move(stops);
@@ -543,9 +626,11 @@ extGradient::~extGradient() {
 
 static const FieldArray clGradientFields[] = {
    { "Resolution",   FDF_DOUBLE|FDF_RW, nullptr, GRADIENT_SET_Resolution },
+   { "Gamma",        FDF_DOUBLE|FDF_RW, nullptr, GRADIENT_SET_Gamma },
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_SpreadMethod, &clGradientSpreadMethod },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clGradientUnits },
    { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clGradientColourSpace },
+   { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
    // Virtual fields
    { "Colour",       FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE, GRADIENT_GET_Colour, GRADIENT_SET_Colour },
    { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, GRADIENT_GET_ColourMap, GRADIENT_SET_ColourMap },

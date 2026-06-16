@@ -383,6 +383,19 @@ enum class GFALL : int {
    CLEAR = 6,
 };
 
+// Gradient easing functions.
+
+enum class GEZ : int {
+   NIL = 0,
+   LINEAR = 0,
+   IN = 1,
+   OUT = 2,
+   IN_OUT = 3,
+   CUBIC_IN = 4,
+   CUBIC_OUT = 5,
+   CUBIC_IN_OUT = 6,
+};
+
 // Worley field modes.
 
 enum class WLF : int {
@@ -1169,9 +1182,11 @@ class objGradient : public Object {
    using create = kt::Create<objGradient>;
 
    double  Resolution;      // Affects the rate of change for colours in the gradient.
+   double  Gamma;           // Applies a gamma curve to the gradient ramp.
    VSPREAD SpreadMethod;    // Determines the rendering behaviour to use when gradient colours are cycled.
    VUNIT   Units;           // Defines the coordinate system for gradient coordinates.
    VCS     ColourSpace;     // Defines the colour space to use when interpolating gradient colours.
+   GEZ     Easing;          // Selects the easing function for interpolation between gradient stops.
 
    // Action stubs
 
@@ -1181,6 +1196,11 @@ class objGradient : public Object {
 
    inline ERR getResolution(double &Value) noexcept {
       Value = this->Resolution;
+      return ERR::Okay;
+   }
+
+   inline ERR getGamma(double &Value) noexcept {
+      Value = this->Gamma;
       return ERR::Okay;
    }
 
@@ -1199,48 +1219,53 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getEasing(GEZ &Value) noexcept {
+      Value = this->Easing;
+      return ERR::Okay;
+   }
+
    inline ERR getColour(float * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[2];
       auto get_field = (ERR (*)(APTR, float *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
       return error;
    }
 
    inline ERR getColourMap(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
    }
 
    inline ERR getMatrices(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
    inline ERR getNumeric(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       auto error = field->GetValue(this, &Value);
       return error;
    }
 
    inline ERR getID(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       return error;
    }
 
    inline ERR getStops(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[17];
       auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
       auto error = get_field(this, Value, Elements);
       return error;
    }
 
    inline ERR getTotalStops(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       auto error = field->GetValue(this, &Value);
       return error;
    }
@@ -1249,12 +1274,17 @@ class objGradient : public Object {
    // Customised field setting
 
    inline ERR setResolution(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+   }
+
+   inline ERR setGamma(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
       return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
@@ -1270,38 +1300,43 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setColour(const float * Value, int Elements) noexcept {
+   inline ERR setEasing(const GEZ Value) noexcept {
       auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setColour(const float * Value, int Elements) noexcept {
+      auto field = &this->Class->Dictionary[2];
       return field->WriteValue(this, field, 0x10101308, Value, Elements);
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x00904208, &Value, 1);
    }
 
    inline ERR setMatrices(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x08100318, Value, 1);
    }
 
    inline ERR setNumeric(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setID(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       return field->WriteValue(this, field, 0x00904308, &Value, 1);
    }
 
    inline ERR setStops(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00101318, Value, Elements);
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804208, &Value, 1);
    }
 
@@ -1686,22 +1721,22 @@ class objGradientGouraud : public objGradient {
    // Customised field setting
 
    inline ERR setColour(const float * Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[2];
       return field->WriteValue(this, field, 0x10111308, Value, Elements);
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x00914208, &Value, 1);
    }
 
    inline ERR setSpreadMethod(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setStops(APTR Value, int Elements) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00111318, Value, Elements);
    }
 

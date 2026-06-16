@@ -56,6 +56,27 @@
     </field>
 
     <field>
+      <name>Easing</name>
+      <comment>Selects the easing function for interpolation between gradient stops.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="GEZ">GEZ</type>
+      <description>
+<p>Easing modifies the interpolation position between each adjacent pair of <fl>Stops</fl>.  The default <code>GEZ::LINEAR</code> mode leaves the gradient unchanged.  This field has no effect on gradients sourced from <fl>ColourMap</fl> because colourmaps already supply a complete colour table rather than editable stop segments.</p>
+<types lookup="GEZ"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Gamma</name>
+      <comment>Applies a gamma curve to the gradient ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Gamma remaps the completed colour ramp before <fl>Resolution</fl> is applied.  Values greater than <code>1.0</code> bias the ramp toward the first colour, while values between <code>0.0</code> and <code>1.0</code> bias it toward the last colour.  A value of <code>1.0</code> leaves the gradient unchanged.</p>
+      </description>
+    </field>
+
+    <field>
       <name>ID</name>
       <comment>String identifier for a vector.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -151,6 +172,16 @@
 
   </fields>
   <types>
+    <constants lookup="GEZ" comment="Gradient easing functions.">
+      <const name="CUBIC_IN">Cubic ease-in.</const>
+      <const name="CUBIC_IN_OUT">Cubic ease-in and ease-out.</const>
+      <const name="CUBIC_OUT">Cubic ease-out.</const>
+      <const name="IN">Ease-in (slow start).</const>
+      <const name="IN_OUT">Smoothstep-style ease-in and ease-out.</const>
+      <const name="LINEAR">Linear interpolation (no easing) - the default.</const>
+      <const name="OUT">Ease-out (slow end).</const>
+    </constants>
+
     <constants lookup="VCS" comment="Colour space options.">
       <const name="INHERIT">Inherit the colour space option from the parent vector.</const>
       <const name="LINEAR_RGB">Linear RGB is the default colour space for SVG and produces the best results.</const>
