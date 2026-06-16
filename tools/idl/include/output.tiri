@@ -385,7 +385,7 @@ function outputFieldWriteSignature(Field:table, FidName:str, FieldType:str)
       output(f'   inline ERR set{FidName}({array_type} Value, int Elements) noexcept {{')
    elseif Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then -- kt::vector
-         output(f'   inline ERR set{FidName}({Field.basicType} &Value) noexcept {{')
+         output(f'   inline ERR set{FidName}(const {Field.basicType} &Value) noexcept {{')
       else
          output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
       end
