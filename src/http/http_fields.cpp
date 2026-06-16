@@ -638,7 +638,7 @@ if no keys are found.
 
 *********************************************************************************************************************/
 
-static ERR GET_ResponseKeys(extHTTP *Self, kt::vector<std::string> **Value, int *Elements)
+static ERR GET_ResponseKeys(extHTTP *Self, std::string * &Value, int &Elements)
 {
    Self->ResponseKeys.clear();
    Self->ResponseKeys.reserve(Self->ResponseHeaders.size());
@@ -647,8 +647,8 @@ static ERR GET_ResponseKeys(extHTTP *Self, kt::vector<std::string> **Value, int 
       Self->ResponseKeys.emplace_back(response_header.first);
    }
 
-   *Value = &Self->ResponseKeys;
-   *Elements = Self->ResponseKeys.size();
+   Value = Self->ResponseKeys.data();
+   Elements = Self->ResponseKeys.size();
    return ERR::Okay;
 }
 

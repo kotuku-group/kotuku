@@ -309,6 +309,32 @@ public:
       length = 0;
    }
 
+   template<std::input_iterator I> void assign(I first, I last) {
+      if constexpr (std::contiguous_iterator<I> and std::same_as<std::remove_cv_t<std::iter_value_t<I>>, T>) {
+         const_pointer source_first = std::to_address(first);
+         const_pointer source_last  = std::to_address(last);
+         if (source_overlaps_storage(source_first, source_last)) {
+            vector<T> tmp(first, last);
+            tmp.swap(*this);
+            return;
+         }
+      }
+
+      clear();
+      assign_from_range(first, last);
+   }
+
+   void assign(size_type Count, const value_type &Value) {
+      T copy(Value); // Guard against Value aliasing an existing element
+      clear();
+      reserve(Count);
+      while (length < Count) pushBackInternal(copy);
+   }
+
+   inline void assign(std::initializer_list<T> const &list) {
+      assign(std::begin(list), std::end(list));
+   }
+
    // INTERNAL FUNCTIONALITY
 
 private:

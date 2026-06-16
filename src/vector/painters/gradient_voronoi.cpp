@@ -202,27 +202,30 @@ only modes.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_Points(extGradientVoronoi *Self, kt::vector<VoronoiPoint> * &Value)
+static ERR GRADIENTVORONOI_GET_Points(extGradientVoronoi *Self, VoronoiPoint * &Value, int &Elements)
 {
-   Value = &Self->Points;
+   Value = Self->Points.data();
+   Elements = Self->Points.size();
    return ERR::Okay;
 }
 
-static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, const kt::vector<VoronoiPoint> *Value, int Elements)
+static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, VoronoiPoint *Value, int Elements)
 {
    if ((not Value) or (Elements <= 0)) Self->Points.clear();
    else {
       if (Elements > 4096) return ERR::OutOfRange;
 
-      for (auto &point : *Value) {
+      Self->Points.clear();
+      Self->Points.reserve(Elements);
+      for (int i=0; i < Elements; i++) {
+         VoronoiPoint &point = Value[i];
          if ((not std::isfinite(point.X)) or (not std::isfinite(point.Y)) or (not std::isfinite(point.Height))) {
             return ERR::InvalidValue;
          }
 
          if ((point.X < 0.0) or (point.X > 1.0) or (point.Y < 0.0) or (point.Y > 1.0)) return ERR::OutOfRange;
+         Self->Points.push_back(point);
       }
-
-      Self->Points = *Value;
    }
 
    Self->WorleyHash = 0;

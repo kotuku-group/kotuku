@@ -382,11 +382,11 @@ class objHTTP : public Object {
       return error;
    }
 
-   inline ERR getResponseKeys(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getResponseKeys(std::string * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[28];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
       RestoreObjectContext();
       return error;
    }

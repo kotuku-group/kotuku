@@ -245,20 +245,20 @@ class objXQuery : public Object {
       return error;
    }
 
-   inline ERR getFunctions(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getFunctions(std::string * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[13];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getVariables(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getVariables(std::string * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
       RestoreObjectContext();
       return error;
    }

@@ -2011,17 +2011,18 @@ struct FileFeedback {
 };
 
 struct Field {
-   MAXINT   Arg;                                                             // An option to complement the field type.  Can be a pointer or an integer value
-   ERR (*GetValue)(APTR, APTR);                                              // A virtual function that will retrieve the value for this field
-   APTR     SetValue;                                                        // A virtual function that will set the value for this field
-   ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int);     // An internal function for writing to this field
-   CSTRING  Name;                                                            // The English name for the field, e.g. Width
-   uint32_t FieldID;                                                         // 32-bit hash from fieldhash(). Represented by FID constants, e.g. FID_Width
-   uint16_t Offset;                                                          // Field offset within the object
-   uint16_t Index;                                                           // Field array index
-   uint32_t Flags;                                                           // Special flags that describe the field
-   inline bool readable() { return (Flags & FD_READ) ? true : false; }
-   inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   MAXINT   Arg;                                                                   // An option to complement the field type.  Can be a pointer or an integer value
+   ERR (*GetValue)(APTR, APTR);                                                    // A virtual function that will retrieve the value for this field
+   APTR     SetValue;                                                              // A virtual function that will set the value for this field
+   ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *, int);     // An internal function for writing to this field
+   CSTRING  Name;                                                                  // The English name for the field, e.g. Width
+   uint32_t FieldID;                                                               // 32-bit hash from fieldhash(). Represented by FID constants, e.g. FID_Width
+   uint16_t Offset;                                                                // Field offset within the object
+   uint16_t Index;                                                                 // Field array index
+   uint32_t Flags;                                                                 // Special flags that describe the field
+   inline bool readable() const { return (Flags & FD_READ) ? true : false; }
+   inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
 };
 
 struct ClassRecord {
@@ -2103,7 +2104,7 @@ struct CoreBase {
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
    ERR (*_ProtectMemory)(APTR Address, MEM Flags);
-   void (*_SetObjectContext)(OBJECTPTR Object, struct Field *Field, AC ActionID);
+   void (*_SetObjectContext)(OBJECTPTR Object, const struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
    ERR (*_ScanDir)(struct DirInfo *Info);
    ERR (*_SetName)(OBJECTPTR Object, const std::string_view &Name);
@@ -2134,7 +2135,7 @@ struct CoreBase {
    int64_t (*_PreciseTime)(void);
    ERR (*_OpenDir)(const std::string_view &Path, RDF Flags, struct DirInfo **Info);
    OBJECTPTR (*_GetObjectPtr)(OBJECTID Object);
-   struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
+   const struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
    CSTRING (*_GetErrorMsg)(ERR Error);
    struct Message * (*_GetActionMsg)(AC Action);
    ERR (*_FuncError)(CSTRING Header, ERR Error);
@@ -2199,7 +2200,7 @@ inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase-
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
 inline ERR ProtectMemory(APTR Address, MEM Flags) { return CoreBase->_ProtectMemory(Address,Flags); }
-inline void SetObjectContext(OBJECTPTR Object, struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
+inline void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
 inline ERR ScanDir(struct DirInfo *Info) { return CoreBase->_ScanDir(Info); }
 inline ERR SetName(OBJECTPTR Object, const std::string_view &Name) { return CoreBase->_SetName(Object,Name); }
@@ -2230,7 +2231,7 @@ inline ERR QueueAction(AC Action, OBJECTID Object, APTR Args) { return CoreBase-
 inline int64_t PreciseTime(void) { return CoreBase->_PreciseTime(); }
 inline ERR OpenDir(const std::string_view &Path, RDF Flags, struct DirInfo **Info) { return CoreBase->_OpenDir(Path,Flags,Info); }
 inline OBJECTPTR GetObjectPtr(OBJECTID Object) { return CoreBase->_GetObjectPtr(Object); }
-inline struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
+inline const struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
 inline CSTRING GetErrorMsg(ERR Error) { return CoreBase->_GetErrorMsg(Error); }
 inline struct Message * GetActionMsg(AC Action) { return CoreBase->_GetActionMsg(Action); }
 inline ERR FuncError(CSTRING Header, ERR Error) { return CoreBase->_FuncError(Header,Error); }
@@ -2290,7 +2291,7 @@ extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
 extern "C" ERR ProtectMemory(APTR Address, MEM Flags);
-extern "C" void SetObjectContext(OBJECTPTR Object, struct Field *Field, AC ActionID);
+extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
 extern "C" ERR ScanDir(struct DirInfo *Info);
 extern "C" ERR SetName(OBJECTPTR Object, const std::string_view &Name);
@@ -2321,7 +2322,7 @@ extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime(void);
 extern "C" ERR OpenDir(const std::string_view &Path, RDF Flags, struct DirInfo **Info);
 extern "C" OBJECTPTR GetObjectPtr(OBJECTID Object);
-extern "C" struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
+extern "C" const struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
 extern "C" CSTRING GetErrorMsg(ERR Error);
 extern "C" struct Message * GetActionMsg(AC Action);
 extern "C" ERR FuncError(CSTRING Header, ERR Error);
@@ -2467,11 +2468,11 @@ typedef std::vector<obj_read> READ_TABLE;
 // Object field write handler structure for Tiri code
 
 struct obj_write {
-   typedef ERR JUMP(struct lua_State *, OBJECTPTR, struct Field *, int);
+   typedef ERR JUMP(struct lua_State *, OBJECTPTR, const struct Field *, int);
 
    uint32_t Hash;
    JUMP *Call;
-   struct Field *Field;
+   const struct Field *Field;
 
    auto operator<=>(const obj_write &Other) const {
        if (Hash < Other.Hash) return -1;
@@ -2479,7 +2480,7 @@ struct obj_write {
        return 0;
    }
 
-   obj_write(uint32_t pHash, JUMP pJump, struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
+   obj_write(uint32_t pHash, JUMP pJump, const struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
    obj_write(uint32_t pHash, JUMP pJump) : Hash(pHash), Call(pJump) { }
    obj_write(uint32_t pHash) : Hash(pHash) { }
 };
@@ -3492,10 +3493,10 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getResults(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getResults(std::string * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
       return error;
    }
 
@@ -3564,7 +3565,7 @@ class objScript : public Object {
 
    inline ERR setResults(const kt::vector<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00905300, &Value, int(Value.size()));
+      return field->WriteValue(this, field, 0x00905300, Value.data(), int(Value.size()));
    }
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
@@ -3770,11 +3771,11 @@ class objTask : public Object {
       return error;
    }
 
-   inline ERR getKeys(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getKeys(std::string * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
       RestoreObjectContext();
       return error;
    }

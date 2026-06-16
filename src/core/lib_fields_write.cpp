@@ -21,24 +21,24 @@ constexpr int OP_OR        = 0;
 constexpr int OP_AND       = 1;
 constexpr int OP_OVERWRITE = 2;
 
-static ERR writeval_flags(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_long(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_large(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_double(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_function(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_ptr(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_cppstr(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_unit(OBJECTPTR, Field *, int, CPTR , int);
+static ERR writeval_flags(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_long(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_large(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_double(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_function(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_ptr(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_cppstr(OBJECTPTR, const Field *, int, CPTR , int);
+static ERR writeval_unit(OBJECTPTR, const Field *, int, CPTR , int);
 
-static ERR setval_large(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_pointer(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_strview(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_double(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_long(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_function(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR set_or_write_vector(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR set_or_write_array(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_unit(OBJECTPTR, Field *, int Flags, CPTR , int);
+static ERR setval_large(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR setval_pointer(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR setval_strview(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR setval_double(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR setval_long(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR setval_function(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR set_or_write_vector(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR set_or_write_array(OBJECTPTR, const Field *, int Flags, CPTR , int);
+static ERR setval_unit(OBJECTPTR, const Field *, int Flags, CPTR , int);
 
 //********************************************************************************************************************
 
@@ -112,7 +112,7 @@ requires std::is_integral_v<T>
 //********************************************************************************************************************
 // Used by some of the SetField() range of instructions.
 
-ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int Elements)
+ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data, int Elements)
 {
    kt::Log log("WriteField");
 
@@ -181,7 +181,7 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
    return ((i IS CamelFlag.size()) and (j IS ClientFlag.size()));
 }
 
-static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_flags(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    kt::Log log("WriteField");
    int int32;
@@ -255,7 +255,7 @@ static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    return writeval_default(Object, Field, Flags, Data, Elements);
 }
 
-static ERR writeval_lookup(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_lookup(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    int int32;
 
@@ -282,7 +282,7 @@ static ERR writeval_lookup(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
    return writeval_default(Object, Field, Flags, Data, Elements);
 }
 
-static ERR writeval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_long(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    auto offset = (int *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_INT)         *offset = *((int *)Data);
@@ -293,7 +293,7 @@ static ERR writeval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, i
    return ERR::Okay;
 }
 
-static ERR writeval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_large(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    auto offset = (int64_t *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_INT64)      *offset = *((int64_t *)Data);
@@ -304,7 +304,7 @@ static ERR writeval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    return ERR::Okay;
 }
 
-static ERR writeval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_double(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    auto offset = (double *)((int8_t *)Object + Field->Offset);
    if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = *((double *)Data);
@@ -315,7 +315,7 @@ static ERR writeval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
    return ERR::Okay;
 }
 
-static ERR writeval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_function(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    auto offset = (FUNCTION *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_FUNCTION) {
@@ -330,7 +330,7 @@ static ERR writeval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Dat
    return ERR::Okay;
 }
 
-static ERR writeval_ptr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_ptr(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    if (Flags & FD_POINTER) {
       auto offset = (APTR *)((int8_t *)Object + Field->Offset);
@@ -340,7 +340,7 @@ static ERR writeval_ptr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
    else return ERR::SetValueNotPointer;
 }
 
-static ERR writeval_cppstr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_cppstr(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    if (Flags & FD_STRING) {
       auto offset = (std::string *)((int8_t *)Object + Field->Offset);
@@ -350,7 +350,7 @@ static ERR writeval_cppstr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
    else return ERR::SetValueNotPointer;
 }
 
-static ERR writeval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    auto offset = (Unit *)((int8_t *)Object + Field->Offset);
 
@@ -386,7 +386,7 @@ class FieldContext : public extObjectContext {
    bool success;
 
    public:
-   FieldContext(OBJECTPTR Object, struct Field *Field) : extObjectContext(Object, AC::SetField) {
+   FieldContext(OBJECTPTR Object, const struct Field *Field) : extObjectContext(Object, AC::SetField) {
 #ifndef NDEBUG
       if ((tlContext.back().field IS Field) and (tlContext.back().obj IS Object)) { // Detect recursion
          success = false;
@@ -407,7 +407,7 @@ class FieldContext : public extObjectContext {
 
 //********************************************************************************************************************
 
-static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    // Convert the value to match what the unit will accept, then call the unit field's set function.
 
@@ -446,15 +446,18 @@ static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
 // Embedded kt::vector<>
 
 template <class T>
-static ERR copy_vector_field(OBJECTPTR Object, Field *Field, CPTR Data)
+static ERR assign_vector_field(OBJECTPTR Object, const Field *Field, CPTR Data, int Elements)
 {
    auto dest = (kt::vector<T> *)((int8_t *)Object + Field->Offset);
-   if (Data) *dest = *((const kt::vector<T> *)Data);
+   if ((Data) and (Elements > 0)) {
+      auto source = (const T *)Data;
+      dest->assign(source, source + Elements);
+   }
    else dest->clear();
    return ERR::Okay;
 }
 
-static ERR set_or_write_vector(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    FieldContext ctx(Object, Field);
 
@@ -472,35 +475,35 @@ static ERR set_or_write_vector(OBJECTPTR Object, Field *Field, int Flags, CPTR D
       else if (Field->Flags & FD_CPP) { // Embedded kt::vector<>
          if (Field->Flags & FD_STRING) {
             if (not (Flags & FD_STRING)) return ERR::SetValueNotArray;
-            return copy_vector_field<std::string>(Object, Field, Data);
+            return assign_vector_field<std::string>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_BYTE) {
             if (not (Flags & FD_BYTE)) return ERR::SetValueNotArray;
-            return copy_vector_field<uint8_t>(Object, Field, Data);
+            return assign_vector_field<uint8_t>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_WORD) {
             if (not (Flags & FD_WORD)) return ERR::SetValueNotArray;
-            return copy_vector_field<uint16_t>(Object, Field, Data);
+            return assign_vector_field<uint16_t>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_INT) {
             if (not (Flags & FD_INT)) return ERR::SetValueNotArray;
-            return copy_vector_field<int>(Object, Field, Data);
+            return assign_vector_field<int>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_INT64) {
             if (not (Flags & FD_INT64)) return ERR::SetValueNotArray;
-            return copy_vector_field<int64_t>(Object, Field, Data);
+            return assign_vector_field<int64_t>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_FLOAT) {
             if (not (Flags & FD_FLOAT)) return ERR::SetValueNotArray;
-            return copy_vector_field<float>(Object, Field, Data);
+            return assign_vector_field<float>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_DOUBLE) {
             if (not (Flags & FD_DOUBLE)) return ERR::SetValueNotArray;
-            return copy_vector_field<double>(Object, Field, Data);
+            return assign_vector_field<double>(Object, Field, Data, Elements);
          }
          else if (Field->Flags & FD_POINTER) {
             if (not (Flags & FD_POINTER)) return ERR::SetValueNotArray;
-            return copy_vector_field<APTR>(Object, Field, Data);
+            return assign_vector_field<APTR>(Object, Field, Data, Elements);
          }
       }
       return ERR::FieldTypeMismatch;
@@ -513,7 +516,7 @@ static ERR set_or_write_vector(OBJECTPTR Object, Field *Field, int Flags, CPTR D
 
 // Embedded basic array (non-vector)
 
-static ERR set_or_write_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    FieldContext ctx(Object, Field);
 
@@ -552,7 +555,7 @@ static ERR set_or_write_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Da
    else return kt::Log(__FUNCTION__).warning(ERR::SetValueNotArray);
 }
 
-static ERR setval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_function(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    OBJECTPTR caller = tlContext.back().obj;
    FieldContext ctx(Object, Field);
@@ -573,7 +576,7 @@ static ERR setval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
    else return ERR::SetValueNotFunction;
 }
 
-static ERR setval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_long(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    int int32;
    if (Flags & FD_INT64)       int32 = (int)(*((int64_t *)Data));
@@ -587,7 +590,7 @@ static ERR setval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
    return ((ERR (*)(APTR, int))(Field->SetValue))(Object, int32);
 }
 
-static ERR setval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_double(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    double float64;
    if (Flags & FD_INT)         float64 = *((int *)Data);
@@ -601,7 +604,7 @@ static ERR setval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, i
    return ((ERR (*)(APTR, double))(Field->SetValue))(Object, float64);
 }
 
-static ERR setval_pointer(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_pointer(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    FieldContext ctx(Object, Field);
 
@@ -620,7 +623,7 @@ static ERR setval_pointer(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    else return ERR::SetValueNotPointer;
 }
 
-static ERR setval_strview(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_strview(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    FieldContext ctx(Object, Field);
 
@@ -645,7 +648,7 @@ static ERR setval_strview(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    else return ERR::SetValueNotPointer;
 }
 
-static ERR setval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_large(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data, int Elements)
 {
    int64_t int64;
 

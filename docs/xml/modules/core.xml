@@ -726,7 +726,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>FindField</name>
     <category>Fields</category>
     <comment>Finds field descriptors for any class, by ID.</comment>
-    <prototype>struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</prototype>
+    <prototype>const struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</prototype>
     <tiriPrototype>any, Target:obj = FindField(Object:obj, FieldID:num)</tiriPrototype>
     <tags>object-owns-result, nullable-result, pure-query</tags>
     <input>
@@ -743,7 +743,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>The resulting <st>Field</st> structure is immutable.</p>
 <p>Note: To lookup the field definition of a <class name="MetaClass">MetaClass</class>, use the <class name="MetaClass" method="FindField">MetaClass.FindField()</class> method.</p>
     </description>
-    <result type="struct Field *">Returns a pointer to the <st>Field</st> descriptor, otherwise <code>NULL</code> if not found.</result>
+    <result type="const struct Field *">Returns a pointer to the <st>Field</st> descriptor, otherwise <code>NULL</code> if not found.</result>
   </function>
 
   <function>
@@ -3158,7 +3158,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
       <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *, int)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>

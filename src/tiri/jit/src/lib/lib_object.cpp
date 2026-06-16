@@ -93,15 +93,15 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static int object_get_ulong(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_long(lua_State *, const obj_read &, GCobject *);
 
-[[nodiscard]] static ERR object_set_array(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_function(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_object(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_ptr(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_cppstring(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_double(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, Field *, int);
+[[nodiscard]] static ERR object_set_array(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_function(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_object(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_ptr(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_cppstring(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_double(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, const Field *, int);
 
 inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    lua_pushvalue(Lua, 1); // Duplicate the object reference

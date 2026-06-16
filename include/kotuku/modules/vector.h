@@ -1828,10 +1828,10 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field getting
 
-   inline ERR getPoints(kt::vector<VoronoiPoint> * &Value) noexcept {
+   inline ERR getPoints(VoronoiPoint * &Value, int &Elements) noexcept {
       auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, kt::vector<VoronoiPoint> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, VoronoiPoint *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
       return error;
    }
 
@@ -1894,7 +1894,7 @@ class objGradientVoronoi : public objGradient {
 
    inline ERR setPoints(const kt::vector<VoronoiPoint> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00105318, &Value, int(Value.size()));
+      return field->WriteValue(this, field, 0x00105318, Value.data(), int(Value.size()));
    }
 
    inline ERR setFloor(const Unit Value) noexcept {

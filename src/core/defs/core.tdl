@@ -1027,7 +1027,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
     fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
     ptr SetValue       # A virtual function that will set the value for this field
-    fptr(error obj struct(*Field) int cptr int) WriteValue # An internal function for writing to this field
+    fptr(error obj cstruct(*Field) int cptr int) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
     uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
     ushort Offset      # Field offset within the object
@@ -1035,8 +1035,9 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     uint Flags         # Special flags that describe the field
   ]],
   [[
-   inline bool readable() { return (Flags & FD_READ) ? true : false; }
-   inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool readable() const { return (Flags & FD_READ) ? true : false; }
+   inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
   ]]) -- [32/52]
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
@@ -1290,11 +1291,11 @@ typedef std::vector<obj_read> READ_TABLE;
 // Object field write handler structure for Tiri code
 
 struct obj_write {
-   typedef ERR JUMP(struct lua_State *, OBJECTPTR, struct Field *, int);
+   typedef ERR JUMP(struct lua_State *, OBJECTPTR, const struct Field *, int);
 
    uint32_t Hash;
    JUMP *Call;
-   struct Field *Field;
+   const struct Field *Field;
 
    auto operator<=>(const obj_write &Other) const {
        if (Hash < Other.Hash) return -1;
@@ -1302,7 +1303,7 @@ struct obj_write {
        return 0;
    }
 
-   obj_write(uint32_t pHash, JUMP pJump, struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
+   obj_write(uint32_t pHash, JUMP pJump, const struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
    obj_write(uint32_t pHash, JUMP pJump) : Hash(pHash), Call(pJump) { }
    obj_write(uint32_t pHash) : Hash(pHash) { }
 };
