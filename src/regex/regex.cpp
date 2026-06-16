@@ -662,7 +662,7 @@ ERR Split(Regex *Regex, const std::string_view &Text, kt::vector<std::string> *O
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "Regex", sizeof(struct Regex) }
+   { "Regex", { sizeof(struct Regex), alignof(struct Regex) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

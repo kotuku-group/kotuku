@@ -57,7 +57,7 @@ struct ActionTable *glActions = nullptr;
 bool glPrintMsg = false;
 JOF glJitOptions = JOF::NIL;
 ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
-ankerl::unordered_dense::map<uint32_t, uint32_t> *glStructSizes = nullptr;
+ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes = nullptr;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 std::shared_mutex glConstantMutex;
@@ -207,7 +207,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    ActionList(&glActions, nullptr); // Get the global action table from the Core
 
-   glStructSizes = (ankerl::unordered_dense::map<uint32_t, uint32_t> *)GetResourcePtr(RES::STRUCT_DB);
+   glStructSizes = (ankerl::unordered_dense::map<uint32_t, StructInfo> *)GetResourcePtr(RES::STRUCT_DB);
 
    glDelayedCallMsgID = MSGID(AllocateID(IDTYPE::MESSAGE));
    auto func = C_FUNCTION(delayed_msg_handler);

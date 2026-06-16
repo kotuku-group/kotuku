@@ -547,7 +547,12 @@ typedef AC ACTIONID;
 #define __attribute__(a)
 #endif
 
-typedef const std::vector<std::pair<std::string, uint32_t>> STRUCTS;
+struct StructInfo {
+   uint16_t Size;       // Byte size of the structure (sizeof)
+   uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+};
+
+typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
 typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);

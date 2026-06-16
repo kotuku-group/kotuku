@@ -89,48 +89,56 @@ std::unordered_set<OBJECTID> glActiveAsyncObjects;
 std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
-ankerl::unordered_dense::map<uint32_t, uint32_t> glStructSizes = {
-   { kt::strhash("ActionArray"),         sizeof(ActionArray) },
-   { kt::strhash("ActionEntry"),         sizeof(ActionEntry) },
-   { kt::strhash("CacheFile"),           sizeof(CacheFile) },
-   { kt::strhash("ChildEntry"),          sizeof(ChildEntry) },
-   { kt::strhash("ClipRectangle"),       sizeof(ClipRectangle) },
-   { kt::strhash("ColourFormat"),        sizeof(ColourFormat) },
-   { kt::strhash("CompressedItem"),      sizeof(CompressedItem) },
-   { kt::strhash("CompressionFeedback"), sizeof(CompressionFeedback) },
-   { kt::strhash("DateTime"),            sizeof(DateTime) },
-   { kt::strhash("DirInfo"),             sizeof(DirInfo) },
-   { kt::strhash("Edges"),               sizeof(Edges) },
-   { kt::strhash("FRGB"),                sizeof(FRGB) },
-   { kt::strhash("Field"),               sizeof(Field) },
-   { kt::strhash("FieldArray"),          sizeof(FieldArray) },
-   { kt::strhash("FieldDef"),            sizeof(FieldDef) },
-   { kt::strhash("FileFeedback"),        sizeof(FileFeedback) },
-   { kt::strhash("FileInfo"),            sizeof(FileInfo) },
-   { kt::strhash("Function"),            sizeof(Function) },
-   { kt::strhash("FunctionField"),       sizeof(FunctionField) },
-   { kt::strhash("HSV"),                 sizeof(HSV) },
-   { kt::strhash("InputEvent"),          sizeof(InputEvent) },
-   { kt::strhash("MemInfo"),             sizeof(MemInfo) },
-   { kt::strhash("Message"),             sizeof(Message) },
-   { kt::strhash("MethodEntry"),         sizeof(MethodEntry) },
-   { kt::strhash("ModHeader"),           sizeof(struct ModHeader) },
-   { kt::strhash("MsgHandler"),          sizeof(MsgHandler) },
-   { kt::strhash("ObjectSignal"),        sizeof(ObjectSignal) },
-   { kt::strhash("RGB16"),               sizeof(RGB16) },
-   { kt::strhash("RGB32"),               sizeof(RGB32) },
-   { kt::strhash("RGB8"),                sizeof(RGB8) },
-   { kt::strhash("RGBPalette"),          sizeof(RGBPalette) },
-   { kt::strhash("ResourceManager"),     sizeof(ResourceManager) },
-   { kt::strhash("SystemState"),         sizeof(SystemState) },
-   { kt::strhash("ThreadActionMessage"), sizeof(ThreadActionMessage) },
-   { kt::strhash("ThreadMessage"),       sizeof(ThreadMessage) },
-   { kt::strhash("Unit"),                sizeof(Unit) },
-   { kt::strhash("dcAudio"),             sizeof(dcAudio) },
-   { kt::strhash("dcDeviceInput"),       sizeof(dcDeviceInput) },
-   { kt::strhash("dcKeyEntry"),          sizeof(dcKeyEntry) },
-   { kt::strhash("dcRequest"),           sizeof(dcRequest) }
+// Registers a built-in struct as { name-hash, { sizeof, alignof } }.  The alignment is required so that the
+// metaclass can position FD_STRUCT fields at the offsets the compiler actually uses (alignment cannot be
+// derived from size alone).
+
+#define REG_STRUCT(name) { kt::strhash(#name), { uint16_t(sizeof(name)), uint16_t(alignof(name)) } }
+
+ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
+   REG_STRUCT(ActionArray),
+   REG_STRUCT(ActionEntry),
+   REG_STRUCT(CacheFile),
+   REG_STRUCT(ChildEntry),
+   REG_STRUCT(ClipRectangle),
+   REG_STRUCT(ColourFormat),
+   REG_STRUCT(CompressedItem),
+   REG_STRUCT(CompressionFeedback),
+   REG_STRUCT(DateTime),
+   REG_STRUCT(DirInfo),
+   REG_STRUCT(Edges),
+   REG_STRUCT(FRGB),
+   REG_STRUCT(Field),
+   REG_STRUCT(FieldArray),
+   REG_STRUCT(FieldDef),
+   REG_STRUCT(FileFeedback),
+   REG_STRUCT(FileInfo),
+   REG_STRUCT(Function),
+   REG_STRUCT(FunctionField),
+   REG_STRUCT(HSV),
+   REG_STRUCT(InputEvent),
+   REG_STRUCT(MemInfo),
+   REG_STRUCT(Message),
+   REG_STRUCT(MethodEntry),
+   { kt::strhash("ModHeader"), { uint16_t(sizeof(struct ModHeader)), uint16_t(alignof(struct ModHeader)) } },
+   REG_STRUCT(MsgHandler),
+   REG_STRUCT(ObjectSignal),
+   REG_STRUCT(RGB16),
+   REG_STRUCT(RGB32),
+   REG_STRUCT(RGB8),
+   REG_STRUCT(RGBPalette),
+   REG_STRUCT(ResourceManager),
+   REG_STRUCT(SystemState),
+   REG_STRUCT(ThreadActionMessage),
+   REG_STRUCT(ThreadMessage),
+   REG_STRUCT(Unit),
+   REG_STRUCT(dcAudio),
+   REG_STRUCT(dcDeviceInput),
+   REG_STRUCT(dcKeyEntry),
+   REG_STRUCT(dcRequest)
 };
+
+#undef REG_STRUCT
 
 std::condition_variable_any cvObjects;
 

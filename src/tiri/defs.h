@@ -77,7 +77,7 @@ extern OBJECTPTR modRegex;
 extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
-extern ankerl::unordered_dense::map<uint32_t, uint32_t> *glStructSizes;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
 extern std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 extern uint64_t glActionsWithResults;
 
