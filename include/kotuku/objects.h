@@ -94,7 +94,7 @@ struct FieldValue {
    constexpr FieldValue(std::string_view pFID, CPTR pValue, int pCustom) : FieldID(kt::fieldhash(pFID)), Type(pCustom), CPointer(pValue) { };
 };
 
-inline ERR write_field_value(OBJECTPTR Target, struct Field *FieldPtr, const FieldValue &Value);
+inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, const FieldValue &Value);
 
 }
 
@@ -194,8 +194,8 @@ template <class T> [[nodiscard]] constexpr int FIELD_TYPECHECK() {
 //********************************************************************************************************************
 
 struct ObjectContext {
-   OBJECTPTR obj = nullptr;       // The object that currently has the operating context.
-   struct Field *field = nullptr; // Set if the context is linked to a get/set field operation.  For logging purposes only.
+   OBJECTPTR obj = nullptr;             // The object that currently has the operating context.
+   const struct Field *field = nullptr; // Set if the context is linked to a get/set field operation.  For logging purposes only.
    AC action = AC::NIL;           // Set if the context enters an action or method routine.
 };
 
@@ -354,7 +354,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
    private:
    // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
    // reflected in the error code.
-   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, struct Field *&FieldPtr, bool Array) {
+   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, const struct Field *&FieldPtr, bool Array) {
       if (not (FieldPtr = FindField(this, FieldID, &Target))) return ERR::UnsupportedField;
       if ((Array) and not (FieldPtr->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
 
@@ -371,37 +371,35 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    template <class T> ERR set(FIELD FieldID, const T *Data, size_t Elements, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_ARRAY|Type, Data, Elements);
    }
 
    template <class T, std::size_t SIZE> ERR set(FIELD FieldID, const std::array<T, SIZE> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_ARRAY|Type, Value.data(), SIZE);
    }
 
    template <class T> ERR set(FIELD FieldID, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
    }
 
    template <class T> ERR set(FIELD FieldID, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-
-      if (field->Flags & FD_CPP) return field->WriteValue(target, field, FDF_VECTOR|Type, &Value, std::ssize(Value));
-      else return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
+      return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
    }
 
    inline ERR set(FIELD FieldID, const FRGB &Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_ARRAY|FD_FLOAT, &Value, 4);
    }
@@ -415,7 +413,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    template <class T> ERR set(FIELD FieldID, const T Value) requires std::integral<T> or std::floating_point<T> {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       if constexpr (std::is_integral_v<T> and (sizeof(T) < sizeof(int))) {
          // Promote small integrals to int so that WriteValue does not read 4 bytes from a 1 or 2 byte value.
@@ -427,14 +425,14 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR set(FIELD FieldID, const FUNCTION *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_FUNCTION, Value, 1);
    }
 
    inline ERR set(FIELD FieldID, const char *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       std::string_view sv(Value ? Value : "");
       return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
@@ -442,14 +440,14 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR set(FIELD FieldID, std::string_view Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_CPP|FD_STRING, &Value, 1);
    }
 
    inline ERR set(FIELD FieldID, const std::string &Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       auto sv = std::string_view(Value);
       return field->WriteValue(target, field, FD_CPP|FD_STRING, &sv, 1);
@@ -457,7 +455,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR set(FIELD FieldID, const Unit *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_UNIT, Value, 1);
    }
@@ -470,7 +468,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR set(FIELD FieldID, const void *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       return field->WriteValue(target, field, FD_POINTER, Value, 1);
    }
@@ -479,7 +477,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
    // code and the value itself; the second ignores the error code and returns a value that could potentially be invalid.
 
    private:
-   template <class T> ERR get_unit(Object *Object, struct Field &Field, T &Value) {
+   template <class T> ERR get_unit(Object *Object, const struct Field &Field, T &Value) {
       SetObjectContext(Object, &Field, AC::NIL);
 
       ERR error = ERR::Okay;
@@ -494,7 +492,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
       return error;
    }
 
-   inline std::pair<ERR, APTR> get_field_value(Object *Object, struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)], int &ArraySize) {
+   inline std::pair<ERR, APTR> get_field_value(Object *Object, const struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)], int &ArraySize) {
       if (Field.GetValue) {
          SetObjectContext(Object, &Field, AC::NIL);
          auto get_field = (ERR (*)(APTR, APTR, int &))Field.GetValue;
@@ -659,21 +657,23 @@ struct alignas(8) Object { // Must be 64-bit aligned
       else return ERR::UnsupportedField;
    }
 
-   template <class T> ERR get(FIELD FieldID, kt::vector<T> **Value) {
+   template <class T> ERR get(FIELD FieldID, T **Value, int &Elements) {
       Object *target;
+      *Value = nullptr;
       if (auto field = FindField(this, FieldID, &target)) {
          if (not field->readable()) return ERR::NoFieldAccess;
 
          if (field->GetValue) {
-            int array_size;
-            SetObjectContext(target, field, AC::NIL);
-            auto get_field = (ERR (*)(APTR, kt::vector<T> **, int &))field->GetValue;
-            auto error = get_field(target, Value, array_size);
-            RestoreObjectContext();
+            if (not field->pure()) SetObjectContext(target, field, AC::NIL);
+            auto get_field = (ERR (*)(APTR, T **, int &))field->GetValue;
+            auto error = get_field(target, Value, Elements);
+            if (not field->pure()) RestoreObjectContext();
             return error;
          }
          else {
-            *Value = ((kt::vector<T> *)(((int8_t *)target) + field->Offset));
+            kt::vector<T> vec = ((kt::vector<T> *)(((int8_t *)target) + field->Offset));
+            *Value = vec.data();
+            Elements = int(vec.size());
             return ERR::Okay;
          }
       }
@@ -785,28 +785,26 @@ struct alignas(8) Object { // Must be 64-bit aligned
          Elements = -1;
 
          if (field->GetValue) {
-            SetObjectContext(target, field, AC::NIL);
+            if (not field->pure()) SetObjectContext(target, field, AC::NIL);
             auto get_field = (ERR (*)(APTR, T * &, int &))field->GetValue;
             auto error = get_field(target, data, Elements);
-            RestoreObjectContext();
+            if (not field->pure()) RestoreObjectContext();
             if (error != ERR::Okay) return error;
          }
          else if (field->Arg) { // Fixed-size array (embedded)
             Elements = field->Arg;
             data = (T *)(((int8_t *)target) + field->Offset);
          }
-         else data = *((T **)(((int8_t *)target) + field->Offset));
-
-         if (field->Flags & FD_CPP) {// Source is kt::vector<>
-            auto vec = (kt::vector<APTR> *)data; // Data type doesn't matter, we just need the size().
-            Result = data; // Return a generic kt::vector<>, the caller must cast to the correct type.
+         else if (field->Flags & FD_CPP) { // Embedded kt::vector<T>
+            auto vec = ((kt::vector<T> *)(((int8_t *)target) + field->Offset)); // Data type doesn't matter, we just need data() and size().
+            Result   = vec->data();
             Elements = vec->size();
+            return ERR::Okay;
          }
-         else {
-            if (Elements IS -1) return ERR::Failed;
-            Result = data;
-         }
+         else data = *((T **)(((int8_t *)target) + field->Offset)); // Pointer to array buffer
 
+         if (Elements IS -1) return ERR::Failed;
+         Result = data;
          return ERR::Okay;
       }
       else return ERR::UnsupportedField;
@@ -852,7 +850,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
 namespace kt {
 
-inline ERR write_field_value(OBJECTPTR Target, struct Field *FieldPtr, const FieldValue &Value) {
+inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, const FieldValue &Value) {
    if ((Value.Type & FD_STRING) and (Value.Type & FD_CPP)) {
       return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.CPPString, 0);
    }

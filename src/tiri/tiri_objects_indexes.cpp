@@ -12,7 +12,7 @@ static ERR lua_string_view(lua_State *Lua, int ValueIndex, std::string_view &Val
    else return ERR::AllocMemory;
 }
 
-static ERR object_set_string(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_string(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    std::string_view value;
    if (auto error = lua_string_view(Lua, ValueIndex, value); error != ERR::Okay) return error;
@@ -21,7 +21,7 @@ static ERR object_set_string(lua_State *Lua, OBJECTPTR Object, Field *Field, int
 
 //********************************************************************************************************************
 
-static ERR set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int Values, int total)
+static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *Field, int Values, int total)
 {
    if (Field->Flags & FD_INT) {
       kt::vector<int> values((size_t)total);
@@ -118,7 +118,7 @@ static int parse_csv_array(std::string_view String, int Flags, APTR Dest)
 
 //********************************************************************************************************************
 
-static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    auto type = lua_type(Lua, ValueIndex);
 
@@ -151,7 +151,7 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int 
       int total = lua_objlen(Lua, t);
 
       if (total < 1024) {
-         return set_array(Lua, Object, Field, t, total);
+         return set_array_from_table(Lua, Object, Field, t, total);
       }
       else return ERR::BufferOverflow;
    }
@@ -162,7 +162,7 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int 
    else return ERR::SetValueNotArray;
 }
 
-static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    int type = lua_type(Lua, ValueIndex);
    if (type IS LUA_TSTRING) {
@@ -178,7 +178,7 @@ static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, Field *Field, i
    else return ERR::SetValueNotFunction;
 }
 
-static ERR object_set_object(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_object(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    if (auto def = lua_toobject(Lua, ValueIndex)) {
       if (auto ptr_obj = access_object(def)) {
@@ -191,7 +191,7 @@ static ERR object_set_object(lua_State *Lua, OBJECTPTR Object, Field *Field, int
    else return Object->set(Field->FieldID, (APTR)nullptr);
 }
 
-static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    auto type = lua_type(Lua, ValueIndex);
 
@@ -221,14 +221,14 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
    else return ERR::SetValueNotPointer;
 }
 
-static ERR object_set_cppstring(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_cppstring(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    auto type = lua_type(Lua, ValueIndex);
    if (type IS LUA_TNIL) return Object->set(Field->FieldID, std::string_view());
    else return object_set_string(Lua, Object, Field, ValueIndex);
 }
 
-static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TNUMBER:
@@ -245,7 +245,7 @@ static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int
    }
 }
 
-static ERR object_set_lookup(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_lookup(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TNUMBER: return Object->set(Field->FieldID, (int)lua_tointeger(Lua, ValueIndex));
@@ -254,7 +254,7 @@ static ERR object_set_lookup(lua_State *Lua, OBJECTPTR Object, Field *Field, int
    }
 }
 
-static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
       default:          return ERR::SetValueNotObject;
@@ -283,7 +283,7 @@ static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
    return ERR::SetValueNotObject;
 }
 
-static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TBOOLEAN:
@@ -303,7 +303,7 @@ static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, Field *Field, int
    }
 }
 
-static ERR object_set_unit(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+static ERR object_set_unit(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TNUMBER:
@@ -347,34 +347,34 @@ static int object_get(lua_State *Lua)
       else if (auto field = FindField(obj, fieldhash(fieldname), &target)) {
          int result = 0;
          if (field->Flags & FD_ARRAY) {
-            result = object_get_array(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_array(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_STRUCT) {
-            result = object_get_struct(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_struct(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_STRING) {
-            result = object_get_string(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_string(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_POINTER) {
             if (field->Flags & (FD_OBJECT|FD_LOCAL)) {
-               result = object_get_object(Lua, obj_read(0, nullptr, field), def);
+               result = object_get_object(Lua, obj_read(0, nullptr, (APTR)field), def);
             }
-            else result = object_get_ptr(Lua, obj_read(0, nullptr, field), def);
+            else result = object_get_ptr(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_DOUBLE) {
-            result = object_get_double(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_double(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_INT64) {
-            result = object_get_large(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_large(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_INT) {
             if (field->Flags & FD_UNSIGNED) {
-               result = object_get_ulong(Lua, obj_read(0, nullptr, field), def);
+               result = object_get_ulong(Lua, obj_read(0, nullptr, (APTR)field), def);
             }
-            else result = object_get_long(Lua, obj_read(0, nullptr, field), def);
+            else result = object_get_long(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_UNIT) {
-            result = object_get_unit(Lua, obj_read(0, nullptr, field), def);
+            result = object_get_unit(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
 
          release_object(def);
@@ -534,21 +534,22 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
       APTR *list;
       if (field->Flags & FD_CPP) { // kt::vector<>
          if (field->Flags & FD_STRING) { // kt::vector<std::string>
-            kt::vector<std::string> *values;
-            if (!(error = obj->get(field->FieldID, &values))) {
-               GCarray *array = lj_array_new(Lua, values->size(), AET::STR_CPP, (void*)values, ARRAY_CACHED, "");
+            std::string *values;
+            if (!(error = obj->get(field->FieldID, values, total, false))) {
+               kt::vector<std::string> strings(values, values + total);
+               GCarray *array = lj_array_new(Lua, total, AET::STR_CPP, (void *)&strings, ARRAY_CACHED, "");
                lj_gc_check(Lua);
                setarrayV(Lua, Lua->top++, array);
             }
          }
          else {
             // For kt::vector primitives we can just convert to a raw data array.
-            kt::vector<APTR> *values; // The type doesn't matter.
+            APTR *values; // The type doesn't matter.
             if (!(error = obj->get(field->FieldID, values, total, false))) {
                if (total <= 0) lua_pushnil(Lua);
                else {
                   std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
-                  make_any_array(Lua, field->Flags, struct_name, total, values->data());
+                  make_any_array(Lua, field->Flags, struct_name, total, values);
                }
             }
          }

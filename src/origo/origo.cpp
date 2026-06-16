@@ -28,7 +28,7 @@ static int glArgsIndex = 0;
 //static STRING glAllow = nullptr;
 static std::string glTargetFile;
 static std::string glStatement;
-static OBJECTPTR glTask = nullptr;
+static objTask *glTask = nullptr;
 static objScript *glScript = nullptr;
 static bool glSandbox = false;
 static bool glRelaunched = false;
@@ -122,7 +122,7 @@ static ERR process_args(void)
 {
    kt::Log log("Origo");
 
-   if ((!glTask->get(FID_Parameters, &glArgs)) and (glArgs)) {
+   if ((!glTask->getParameters(glArgs)) and (glArgs)) {
       kt::vector<std::string> &args = *glArgs;
       for (unsigned i=0; i < args.size(); i++) {
          auto hash = kt::strhash(args[i]);
@@ -250,7 +250,7 @@ extern "C" int main(int argc, char **argv)
       }
       else if (not glTargetFile.empty()) {
          std::string_view path;
-         if (!glTask->get(FID_Path, path)) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
+         if (!glTask->getPath(path)) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
          else log.error("No working path.");
 
          LOC type;
@@ -263,7 +263,8 @@ extern "C" int main(int argc, char **argv)
          // Engage default behaviour if no parameters have been specified
          // Check for the presence of package.zip or main.tiri files in the working directory
 
-         auto path = glTask->get<std::string_view>(FID_ProcessPath);
+         std::string_view path;
+         glTask->getProcessPath(path);
          if (path.empty()) path = ".";
          std::string exe_path(path);
          if (not ((exe_path.ends_with("/")) or (exe_path.ends_with("\\")))) {

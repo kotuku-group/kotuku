@@ -820,7 +820,7 @@ Duplicate function names are not removed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Functions(extXQuery *Self, kt::vector<std::string> **Value)
+static ERR GET_Functions(extXQuery *Self, std::string * &Value, int &Elements)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -844,7 +844,8 @@ static ERR GET_Functions(extXQuery *Self, kt::vector<std::string> **Value)
       }
    }
 
-   *Value = &Self->ListFunctions;
+   Value = Self->ListFunctions.data();
+   Elements = Self->ListFunctions.size();
    return ERR::Okay;
 }
 
@@ -1024,7 +1025,7 @@ Duplicate variable names are not removed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
+static ERR GET_Variables(extXQuery *Self, std::string * &Value, int &Elements)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -1055,7 +1056,8 @@ static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
       }
    }
 
-   *Value = &Self->ListVariables;
+   Value = Self->ListVariables.data();
+   Elements = Self->ListVariables.size();
    return ERR::Okay;
 }
 

@@ -130,7 +130,7 @@ static const FieldDef clJitOptions[] = {
 
 static ERR GET_JitOptions(objScript *, JOF *);
 static ERR SET_JitOptions(objScript *, JOF);
-static ERR GET_Procedures(objScript *, kt::vector<std::string> **, int *);
+static ERR GET_Procedures(objScript *, std::string * &, int &);
 
 static const FieldArray clFields[] = {
    { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clJitOptions },
@@ -850,7 +850,7 @@ It will otherwise return an empty array.
 
 *********************************************************************************************************************/
 
-static ERR GET_Procedures(objScript *Self, kt::vector<std::string> **Value, int *Elements)
+static ERR GET_Procedures(objScript *Self, std::string * &Value, int &Elements)
 {
    if (auto prv = (prvTiri *)Self->DerivedPtr) {
       prv->Procedures.clear();
@@ -864,8 +864,8 @@ static ERR GET_Procedures(objScript *Self, kt::vector<std::string> **Value, int 
          lua_pop(prv->Lua, 1);
       }
 
-      *Value = &prv->Procedures;
-      *Elements = prv->Procedures.size();
+      Value = prv->Procedures.data();
+      Elements = prv->Procedures.size();
       return ERR::Okay;
    }
    else return ERR::NotInitialised;
@@ -1007,10 +1007,10 @@ static ERR run_script(objScript *Self)
          log.warning("%s", str.c_str());
 
          #ifndef NDEBUG
-            kt::vector<std::string> *list;
+            std::string *list;
             int total_procedures;
-            if (!GET_Procedures(Self, &list, &total_procedures)) {
-               for (int i=0; i < total_procedures; i++) log.trace("%s", list[0][i]);
+            if (!GET_Procedures(Self, list, total_procedures)) {
+               for (int i=0; i < total_procedures; i++) log.trace("%s", list[i].c_str());
             }
          #endif
 

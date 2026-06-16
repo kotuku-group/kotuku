@@ -595,6 +595,7 @@ class extGradientVoronoi : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
    using create = kt::Create<extGradientVoronoi>;
 
+   kt::vector<VoronoiPoint> Points; // Optional list of Voronoi feature points provided by the client
    agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
    uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
    Unit Floor, Multiplier;

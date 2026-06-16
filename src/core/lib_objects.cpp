@@ -2291,12 +2291,12 @@ This function does not acquire an object lock, that is the responsibility of the
 
 -INPUT-
 obj Object: Object to host the current context.  If NULL, the current context is popped.
-struct(Field) Field: Active field, if any.
+cstruct(Field) Field: Active field, if any.
 int(AC) ActionID: Active action, if any.
 
 *********************************************************************************************************************/
 
-void SetObjectContext(OBJECTPTR Object, Field *Field, ACTIONID ActionID)
+void SetObjectContext(OBJECTPTR Object, const Field *Field, ACTIONID ActionID)
 {
    if (not Object) tlContext.pop_back();
    else tlContext.emplace_back(Object, Field, ActionID);

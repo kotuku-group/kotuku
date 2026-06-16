@@ -373,20 +373,26 @@ class objHTTP : public Object {
       return error;
    }
 
-   inline ERR getRecvBuffer(int8_t * &Value, int &Elements) noexcept {
+   inline ERR getRecvBuffer(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
       SetObjectContext(this, field, AC::NIL);
+      int8_t *values;
+      int size;
       auto get_field = (ERR (*)(APTR, int8_t *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<int8_t>(values, size);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getResponseKeys(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getResponseKeys(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[28];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
+      std::string *values;
+      int size;
+      auto get_field = (ERR (*)(APTR, std::string *&, int &))field->GetValue;
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<std::string>(values, size);
       RestoreObjectContext();
       return error;
    }

@@ -1283,10 +1283,13 @@ class objDisplay : public Object {
       return error;
    }
 
-   inline ERR getGamma(double * &Value, int &Elements) noexcept {
+   inline ERR getGamma(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
+      double *values;
+      int size;
       auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto error = get_field(this, values, size);
+      if (!error) Value = std::span<double>(values, size);
       return error;
    }
 

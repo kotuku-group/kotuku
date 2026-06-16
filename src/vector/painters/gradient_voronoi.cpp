@@ -24,6 +24,18 @@ static ERR GRADIENTVORONOI_Init(extGradientVoronoi *Self)
 
    if ((Self->PointCount < 1) or (Self->PointCount > 4096)) return log.warning(ERR::OutOfRange);
 
+   if (Self->Points.size() > 4096) return log.warning(ERR::OutOfRange);
+
+   for (auto &point : Self->Points) {
+      if ((not std::isfinite(point.X)) or (not std::isfinite(point.Y)) or (not std::isfinite(point.Height))) {
+         return log.warning(ERR::InvalidValue);
+      }
+
+      if ((point.X < 0.0) or (point.X > 1.0) or (point.Y < 0.0) or (point.Y > 1.0)) {
+         return log.warning(ERR::OutOfRange);
+      }
+   }
+
    if ((Self->Jitter < 0.0) or (Self->Jitter > 1.0)) return log.warning(ERR::OutOfRange);
 
    if ((int(Self->WorleyMode) < int(WLF::F1)) or (int(Self->WorleyMode) > int(WLF::PEAKS))) {
@@ -178,6 +190,51 @@ static ERR GRADIENTVORONOI_SET_PointCount(extGradientVoronoi *Self, int Value)
 
 /*********************************************************************************************************************
 -FIELD-
+Points: User-defined Voronoi feature points.
+
+The Points field accepts a vector of !VoronoiPoint structures that define the feature-point coordinates used by the
+Voronoi field.  When at least one point is supplied, the procedural #Seed, #PointCount, #HeightMin, #HeightMax and
+#Jitter fields are ignored and the field is generated from the supplied points instead.
+
+Point coordinates are normalised to the target path bounds, with `(0, 0)` at the top-left of the bounds and `(1, 1)`
+at the bottom-right.  The Height value is used by the `WEIGHTED` and `PEAKS` Worley modes and ignored by the distance
+only modes.
+
+*********************************************************************************************************************/
+
+static ERR GRADIENTVORONOI_GET_Points(extGradientVoronoi *Self, VoronoiPoint * &Value, int &Elements)
+{
+   Value = Self->Points.data();
+   Elements = Self->Points.size();
+   return ERR::Okay;
+}
+
+static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, VoronoiPoint *Value, int Elements)
+{
+   if ((not Value) or (Elements <= 0)) Self->Points.clear();
+   else {
+      if (Elements > 4096) return ERR::OutOfRange;
+
+      Self->Points.clear();
+      Self->Points.reserve(Elements);
+      for (int i=0; i < Elements; i++) {
+         VoronoiPoint &point = Value[i];
+         if ((not std::isfinite(point.X)) or (not std::isfinite(point.Y)) or (not std::isfinite(point.Height))) {
+            return ERR::InvalidValue;
+         }
+
+         if ((point.X < 0.0) or (point.X > 1.0) or (point.Y < 0.0) or (point.Y > 1.0)) return ERR::OutOfRange;
+         Self->Points.push_back(point);
+      }
+   }
+
+   Self->WorleyHash = 0;
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
 Seed: Deterministic seed for feature-point generation.
 
 Seed controls the generated feature points and their heights.  A value of zero derives a stable seed from the target
@@ -262,6 +319,7 @@ static const FieldArray clGradientVoronoiFields[] = {
    { "HeightMin",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_HeightMin, GRADIENTVORONOI_SET_HeightMin },
    { "HeightMax",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_HeightMax, GRADIENTVORONOI_SET_HeightMax },
    { "Jitter",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Jitter, GRADIENTVORONOI_SET_Jitter },
+   { "Points",        FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Points, GRADIENTVORONOI_SET_Points, "VoronoiPoint" },
    END_FIELD
 };
 

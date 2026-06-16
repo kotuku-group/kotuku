@@ -102,24 +102,25 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
 
       if Type has FD_CPP then
          if Type has FD_BYTE then
-            Def.type = 'kt::vector<int8_t>'
+            Def.innerType = 'int8_t'
          elseif Type has FD_WORD then
-            Def.type = 'kt::vector<int16_t>'
+            Def.innerType = 'int16_t'
          elseif Type has FD_INT then
-            Def.type = 'kt::vector<int>'
+            Def.innerType = 'int'
          elseif Type has FD_FLOAT then
-            Def.type = 'kt::vector<float>'
+            Def.innerType = 'float'
          elseif Type has FD_DOUBLE then
-            Def.type = 'kt::vector<double>'
+            Def.innerType = 'double'
          elseif Type has FD_STRING then
-            Def.type = 'kt::vector<std::string>'
+            Def.innerType = 'std::string'
          elseif Type has FD_POINTER then
-            Def.type = 'kt::vector<APTR>'
+            Def.innerType = 'APTR'
          elseif Type has FD_STRUCT then
-            Def.type = 'kt::vector<STRUCT>'
+            Def.innerType = 'STRUCT'
          else
-            Def.type = 'kt::vector<>'
+            Def.innerType = 'UNDEFINED'
          end
+         Def.type = f'kt::vector<{Def.innerType}>'
       else
          if Type has FD_BYTE then
             Def.type = 'int8_t []'
@@ -621,6 +622,7 @@ global function cType(Value:table, Origin:str):table
          Value.isComplex = true
          Value.isCompound = true
          Value.docType = Value.type
+         Value.innerType = inner_type
 
          Value.fullType = {
             fd       = 'FDF_VECTOR|' .. Value.fullType.fd,

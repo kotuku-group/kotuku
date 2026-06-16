@@ -2033,13 +2033,13 @@ Keys: Returns a list of all key names available to the GetKeys() action.
 
 *********************************************************************************************************************/
 
-static ERR GET_Keys(extTask *Self, kt::vector<std::string> **Value, int *Elements)
+static ERR GET_Keys(extTask *Self, std::string * &Value, int &Elements)
 {
    Self->Keys.clear();
    Self->Keys.reserve(Self->Fields.size());
    for (const auto &kv : Self->Fields) Self->Keys.emplace_back(kv.first);
-   *Value = &Self->Keys;
-   *Elements = Self->Keys.size();
+   Value = Self->Keys.data();
+   Elements = Self->Keys.size();
    return ERR::Okay;
 }
 

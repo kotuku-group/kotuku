@@ -162,6 +162,7 @@ function fieldGetType(Field:table):str
    if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
 
    if Field.flags has FD_ARRAY then
+      if (Field.flags has FD_CPP) and (Field.read is 'Get') then return Field.innerType end
       if Field.flags has FD_CPP then return field_type end
       return fieldArrayElementType(Field)
    elseif Field.flags has FD_STRING then
@@ -199,10 +200,14 @@ end
 
 function outputFieldGetSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- kt::vector
+      if ((Field.flags has FD_CPP) and (Field.read != 'Get')) then -- Embedded kt::vector or general array, has direct access
          output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
       else
-         output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
+         if (FieldType is 'struct RGB8') then
+            output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
+         else
+            output(f'   inline ERR get{FidName}(std::span<{FieldType}> &Value) noexcept {{')
+         end
       end
    elseif Field.flags has FD_FUNCTION then
       output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
@@ -229,13 +234,11 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
    elseif Field.flags has FD_UNIT then
       output(Indent .. 'auto error = field->GetValue(this, &Value);')
    elseif Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then
-         output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, Value);')
-      else
-         output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&, int &))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, Value, Elements);')
-      end
+      output(Indent .. f'{FieldType} *values;')
+      output(Indent .. 'int size;')
+      output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&, int &))field->GetValue;')
+      output(Indent .. 'auto error = get_field(this, values, size);')
+      output(Indent .. f'if (!error) Value = std::span<{FieldType}>(values, size);')
    elseif Field.flags has FD_STRING then
       if Field.flags has FD_ALLOC then
          output(Indent .. 'std::string_view view;')
@@ -279,7 +282,7 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
       offset = tostring(Field.offset)
 
       if Field.flags has FD_ARRAY then
-         if Field.flags has FD_CPP then -- kt::vector
+         if Field.flags has FD_CPP then -- Embedded kt::vector
             output(Indent .. f'Value = ({FieldType} *)(((int8_t *)this) + {offset});')
          else -- Primitive array
             if Field.arg >= 1 and not (Field.flags has FD_STRUCT) then -- Embedded array with known size
@@ -358,7 +361,7 @@ end
 
 function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- kt::vector
+      if Field.flags has FD_CPP then -- Embedded kt::vector
          output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
       elseif FieldType is 'const struct RGB8' then
          output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
@@ -379,12 +382,12 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Emit the opening signature for a setter that calls FIELD::WriteValue().
 
-function outputFieldWriteSignature(Field:table, FidName:str, FieldType:str)
+function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
    if FieldType:endsWith('[]') then
       local array_type = FieldType:sub(0,-3) .. '*'
       output(f'   inline ERR set{FidName}({array_type} Value, int Elements) noexcept {{')
    elseif Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- kt::vector
+      if Field.flags has FD_CPP then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
          output(f'   inline ERR set{FidName}(const {Field.basicType} &Value) noexcept {{')
       else
          output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
@@ -399,15 +402,6 @@ function outputFieldWriteSignature(Field:table, FidName:str, FieldType:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Emit the run-time guard for fields that can only be written before initialisation.
-
-function outputInitialisedCheck(Field:table, Indent:str)
-   if Field.write is 'Init' then
-      output(Indent .. 'if (this->initialised()) return ERR::NoFieldAccess;')
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
 -- Emit a complete setter body that delegates assignment to FIELD::WriteValue().
 
 function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
@@ -415,8 +409,10 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
       FieldType = FieldType .. ' *'
    end
 
-   outputFieldWriteSignature(Field, FidName, FieldType)
-   outputInitialisedCheck(Field, Indent)
+   outputFieldSetterSignature(Field, FidName, FieldType)
+   if Field.write is 'Init' then
+      output(Indent .. 'if (this->initialised()) return ERR::NoFieldAccess;')
+   end
 
    output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
 
@@ -427,8 +423,8 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
       output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &Value, 1);')
    elseif Field.flags has FD_ARRAY then
       local flags = fieldFlagsHex(Field.flags)
-      if Field.flags has FD_CPP then -- kt::vector
-         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value, int(Value.size()));')
+      if Field.flags has FD_CPP then -- Virtual kt::vector; setter will match the regular C signature for type compatibility
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value.data(), int(Value.size()));')
       else
          output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, Elements);')
       end
@@ -454,7 +450,9 @@ end
 
 function outputDirectFieldSetter(Field:table, FieldName:str, FidName:str, FieldType:str, Indent:str)
    outputDirectSetSignature(Field, FidName, FieldType)
-   outputInitialisedCheck(Field, Indent)
+   if Field.write is 'Init' then
+      output(Indent .. 'if (this->initialised()) return ERR::NoFieldAccess;')
+   end
    output(Indent .. f'this->{FieldName} = Value;')
    output(Indent .. 'return ERR::Okay;')
 end

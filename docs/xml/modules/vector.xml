@@ -1187,5 +1187,11 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <field name="YScaled" type="UINT8"><code>TRUE</code> if the <code>Y</code> value is scaled to its viewport (between 0 and 1.0).</field>
     </struct>
 
+    <struct name="VoronoiPoint" comment="Describes a feature point for the GradientVoronoi Points field.">
+      <field name="X" type="DOUBLE">The X coordinate of the feature point.</field>
+      <field name="Y" type="DOUBLE">The Y coordinate of the feature point.</field>
+      <field name="Height" type="DOUBLE">The per-point height used by WEIGHTED and PEAKS modes.</field>
+    </struct>
+
   </structs>
 </book>
