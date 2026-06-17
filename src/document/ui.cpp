@@ -5,13 +5,14 @@
 static void notify_input_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   auto str = Vector->get<std::string>(FID_String);
+   std::string_view str;
+   Vector->getString(str);
 
    Self->Vars[Vector->Name].assign(str);
 
    if ((Self->EventMask & DEF::WIDGET_STATE) != DEF::NIL) {
       if (auto vp = (Object *)Vector->CreatorMeta) {
-         KEYVALUE keys = { { "name", Vector->Name }, { "value", str } };
+         KEYVALUE keys = { { "name", Vector->Name }, { "value", std::string(str) } };
          auto ent = std::get<bc_input *>(Self->VPToEntity[vp->UID].widget);
          report_event(Self, DEF::WIDGET_STATE, ent, &keys);
       }
@@ -21,13 +22,14 @@ static void notify_input_onchange(objVectorText *Vector)
 static void notify_combo_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   auto str = Vector->get<std::string>(FID_String);
+   std::string_view str;
+   Vector->getString(str);
 
    Self->Vars[Vector->Name].assign(str);
 
    if ((Self->EventMask & DEF::WIDGET_STATE) != DEF::NIL) {
       if (auto vp = (Object *)Vector->CreatorMeta) {
-         KEYVALUE keys = { { "name", Vector->Name }, { "value", str } };
+         KEYVALUE keys = { { "name", Vector->Name }, { "value", std::string(str) } };
          auto ent = std::get<bc_combobox *>(Self->VPToEntity[vp->UID].widget);
          report_event(Self, DEF::WIDGET_STATE, ent, &keys);
       }
@@ -393,11 +395,11 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
 
 //********************************************************************************************************************
 
-static void error_dialog(const std::string Title, const std::string Message)
+static void error_dialog(const std::string_view Title, const std::string_view Message)
 {
    kt::Log log(__FUNCTION__);
 
-   log.warning("%s", Message.c_str());
+   log.warning("%.*s", int(Message.size()), Message.data());
 
 #if !(defined(DBG_LAYOUT) || defined(DBG_STREAM) || defined(DBG_SEGMENTS))
    static bool detect_recursive_dialog = false;
@@ -411,22 +413,21 @@ static void error_dialog(const std::string Title, const std::string Message)
       detect_recursive_dialog = true;
    }
 
-   OBJECTPTR dialog;
+   objScript *dialog;
    OBJECTID new_dialog_id = 0;
    if (!NewObject(CLASSID::SCRIPT, &dialog)) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");
-      acSetKey(dialog, "title", Title.c_str());
+      acSetKey(dialog, "title", Title);
       acSetKey(dialog, "options", "okay");
       acSetKey(dialog, "type", "error");
-      acSetKey(dialog, "message", Message.c_str());
+      acSetKey(dialog, "message", Message);
 
       if ((!InitObject(dialog)) and (!acActivate(dialog))) {
-         kt::vector<std::string> *results;
-         int size;
-         if ((!dialog->get(FID_Results, results, size)) and (size > 0)) {
-            new_dialog_id = strtol((*results)[0].c_str(), nullptr, 0);
+         std::span<std::string> results;
+         if ((!dialog->getResults(results)) and (not results.empty())) {
+            new_dialog_id = strtol(results[0].c_str(), nullptr, 0);
          }
       }
    }
@@ -439,7 +440,7 @@ static void error_dialog(const std::string Title, const std::string Message)
 #endif
 }
 
-static void error_dialog(const std::string Title, ERR Error)
+static void error_dialog(std::string_view Title, ERR Error)
 {
    if (auto errstr = GetErrorMsg(Error)) {
       std::string buffer("Error: ");
@@ -1279,8 +1280,10 @@ static ERR inputevent_button(objVectorViewport *Viewport, const InputEvent *Even
                button->viewport->newMatrix(&matrix, false);
             }
 
-            const auto width  = button->viewport->get<double>(FID_Width);
-            const auto height = button->viewport->get<double>(FID_Height);
+            double width;
+            button->viewport->getWidth(width);
+            double height;
+            button->viewport->getHeight(height);
 
             if (auto m = button->viewport->Matrices) {
                const auto SCALE = 0.95;

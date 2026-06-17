@@ -36,7 +36,7 @@
       <name>Vertices</name>
       <comment>Defines the coloured vertices for a Gouraud gradient.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>GouraudVertex[]</type>
       <description>
 <p>The Vertices array defines the mesh of coloured points across which colour is interpolated barycentrically.  Each <st>GouraudVertex</st> carries an <code>(X, Y)</code> position and an <code>FRGB</code> colour.</p>
 <p>By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one triangle.  Supplying an <fl>Indices</fl> array instead expresses triangle connectivity explicitly.</p>

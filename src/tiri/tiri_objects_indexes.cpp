@@ -71,7 +71,8 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
             }
          }
 
-         return Object->set(Field->FieldID, structbuf.get(), total, FD_STRUCT);
+         // The span carries the element count; the receiving setter derives the per-struct stride from its own type.
+         return Object->set(Field->FieldID, std::span<uint8_t>(structbuf.get(), total), FD_STRUCT);
       }
       else return ERR::SetValueNotArray;
    }
@@ -131,10 +132,11 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
             auto total = parse_csv_array(source, Field->Flags, arraybuffer);
 
             ERR error;
-            if (Field->SetValue) error = ((ERR (*)(APTR, APTR, int))(Field->SetValue))(Object, arraybuffer, total);
+            std::span<int> arraybuffer_span((int *)arraybuffer, total);
+            if (Field->SetValue) error = ((ERR (*)(APTR, std::span<int> *))(Field->SetValue))(Object, &arraybuffer_span);
             else if (Field->Arg > 0) { // An arg value indicates an embedded fixed-size array
                if (total > Field->Arg) total = Field->Arg;
-               error = Object->set(Field->FieldID, arraybuffer, total, Field->Flags);
+               error = Object->set(Field->FieldID, arraybuffer_span, Field->Flags);
             }
             else error = ERR::FieldTypeMismatch;
 
@@ -157,7 +159,8 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
    }
    else if (type IS LUA_TARRAY) {
       GCarray *arr = arrayV(Lua, ValueIndex);
-      return Object->set(Field->FieldID, arr->arraydata(), arr->len, arr->type_flags());
+      std::span<int> span((int *)arr->arraydata(), arr->len);
+      return Object->set(Field->FieldID, span, arr->type_flags());
    }
    else return ERR::SetValueNotArray;
 }
@@ -627,41 +630,36 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
    ERR error;
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
-      int total;
-      APTR *list;
+      std::span<int> span;
       if (field->Flags & FD_CPP) { // kt::vector<>
          if (field->Flags & FD_STRING) { // kt::vector<std::string>
-            std::string *values;
-            if (!(error = obj->get(field->FieldID, values, total, false))) {
-               kt::vector<std::string> strings(values, values + total);
-               GCarray *array = lj_array_new(Lua, total, AET::STR_CPP, (void *)&strings, ARRAY_CACHED, "");
+            std::span<std::string> values;
+            if (!(error = obj->get(field->FieldID, values))) {
+               kt::vector<std::string> strings(values.data(), values.data() + values.size());
+               GCarray *array = lj_array_new(Lua, values.size(), AET::STR_CPP, (void *)&strings, ARRAY_CACHED, "");
                lj_gc_check(Lua);
                setarrayV(Lua, Lua->top++, array);
             }
          }
          else {
             // For kt::vector primitives we can just convert to a raw data array.
-            APTR *values; // The type doesn't matter.
-            if (!(error = obj->get(field->FieldID, values, total, false))) {
-               if (total <= 0) lua_pushnil(Lua);
-               else {
-                  std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
-                  make_any_array(Lua, field->Flags, struct_name, total, values);
-               }
+            std::span<int> values; // The type doesn't matter.
+            if (!(error = obj->get(field->FieldID, values))) {
+               std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
+               make_any_array(Lua, field->Flags, struct_name, values.size(), values.data());
             }
          }
       }
-      else if (!(error = obj->get(field->FieldID, list, total, false))) {
-         if (total <= 0) lua_pushnil(Lua);
-         else if (field->Flags & FD_STRING) {
-            make_array(Lua, AET::CSTR, total, list);
+      else if (!(error = obj->get(field->FieldID, span, false))) {
+         if (field->Flags & FD_STRING) {
+            make_array(Lua, AET::CSTR, span.size(), span.data());
          }
          else if (field->Flags & FD_OBJECT) {
-            make_array(Lua, AET::OBJECT, total, list);
+            make_array(Lua, AET::OBJECT, span.size(), span.data());
          }
          else if (field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT)) {
             std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
-            make_any_array(Lua, field->Flags, struct_name, total, list);
+            make_any_array(Lua, field->Flags, struct_name, span.size(), span.data());
          }
          else {
             kt::Log(__FUNCTION__).warning("Invalid array type for '%s', flags: $%.8x", field->Name, field->Flags);

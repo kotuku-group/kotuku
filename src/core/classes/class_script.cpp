@@ -577,16 +577,15 @@ For maximum compatibility in type conversion, the results are stored as an array
 
 *********************************************************************************************************************/
 
-static ERR GET_Results(objScript *Self, std::string * &Value, int &Elements)
+static ERR GET_Results(objScript *Self, std::span<const std::string> &Value)
 {
-   Value = Self->Results.data();
-   Elements = Self->Results.size();
+   Value = std::span<const std::string>(Self->Results.data(), Self->Results.size());
    return ERR::Okay;
 }
 
-static ERR SET_Results(objScript *Self, const std::string *Value, int Elements)
+static ERR SET_Results(objScript *Self, const std::span<const std::string> &Value)
 {
-   if (Value) Self->Results.assign(Value, Value + Elements);
+   if (Value.data()) Self->Results.assign(Value.data(), Value.data() + Value.size());
    else Self->Results.clear();
    return ERR::Okay;
 }

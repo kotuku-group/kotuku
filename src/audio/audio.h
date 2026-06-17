@@ -273,7 +273,7 @@ class extAudio : public objAudio {
 class extSound : public objSound {
    public:
    FUNCTION OnStop;
-   uint8_t  Header[32];
+   std::array<uint8_t,32> Header;
    #ifdef _WIN32
    uint8_t  PlatformData[64];   // Data area for holding platform/hardware specific information
    #endif

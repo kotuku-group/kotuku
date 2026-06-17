@@ -1033,7 +1033,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
     fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
     ptr SetValue       # A virtual function that will set the value for this field
-    fptr(error obj cstruct(*Field) int cptr int) WriteValue # An internal function for writing to this field
+    fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
     uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
     ushort Offset      # Field offset within the object
@@ -1340,6 +1340,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
     cid BaseClassID        # Base-class ID
     int OpenCount          # Number of objects allocated to this class
     int(CCF) Category      # Assigned category
+    ~array(struct(ActionEntry)) ActionTable
+    ~array(struct(MethodEntry)) Methods
   ]],
   [[
     // Field table cache for Tiri - eliminates per-instance hash tables.
@@ -1384,6 +1386,9 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     string    Path      # The file path.
     int(FL)   Flags     # File flags and options.
     ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
+    ~struct(DateTime) Date
+    ~struct(DateTime) Created
+    ~int(PERMIT) Permissions
   ]],
   nil,
   [[
@@ -1487,7 +1492,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     error Error         # If an error occurred, this field will indicate the error number
     int CurrentLine     # Current line being executed, or failed line if script execution terminated
     int LineOffset      # An optional offset to use when reporting line numbers
-    !vector(string) Results
+    ~vector(string) Results
   ]],
   [[
    int64_t  ProcedureID;          // For callbacks

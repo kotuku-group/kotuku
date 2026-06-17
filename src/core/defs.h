@@ -1161,7 +1161,7 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 void   scan_classes(void);
 #endif
 
-ERR  writeval_default(OBJECTPTR, const Field *, int, const void *, int);
+ERR  writeval_default(OBJECTPTR, const Field *, int, const void *);
 ERR  check_paths(std::string_view, PERMIT);
 extern "C" ERR validate_process(int);
 

@@ -202,23 +202,21 @@ only modes.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_Points(extGradientVoronoi *Self, VoronoiPoint * &Value, int &Elements)
+static ERR GRADIENTVORONOI_GET_Points(extGradientVoronoi *Self, std::span<VoronoiPoint> *Value)
 {
-   Value = Self->Points.data();
-   Elements = Self->Points.size();
+   *Value = std::span<VoronoiPoint>(Self->Points);
    return ERR::Okay;
 }
 
-static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, VoronoiPoint *Value, int Elements)
+static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, std::span<const VoronoiPoint> *Value)
 {
-   if ((not Value) or (Elements <= 0)) Self->Points.clear();
-   else {
-      if (Elements > 4096) return ERR::OutOfRange;
+   Self->Points.clear();
+   if ((Value) and (Value->size() > 0)) {
+      if (Value->size() > 4096) return ERR::OutOfRange;
 
-      Self->Points.clear();
-      Self->Points.reserve(Elements);
-      for (int i=0; i < Elements; i++) {
-         VoronoiPoint &point = Value[i];
+      Self->Points.reserve(Value->size());
+      for (int i=0; i < Value->size(); i++) {
+         const VoronoiPoint &point = Value[0][i];
          if ((not std::isfinite(point.X)) or (not std::isfinite(point.Y)) or (not std::isfinite(point.Height))) {
             return ERR::InvalidValue;
          }
@@ -319,7 +317,7 @@ static const FieldArray clGradientVoronoiFields[] = {
    { "HeightMin",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_HeightMin, GRADIENTVORONOI_SET_HeightMin },
    { "HeightMax",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_HeightMax, GRADIENTVORONOI_SET_HeightMax },
    { "Jitter",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Jitter, GRADIENTVORONOI_SET_Jitter },
-   { "Points",        FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Points, GRADIENTVORONOI_SET_Points, "VoronoiPoint" },
+   { "Points",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Points, GRADIENTVORONOI_SET_Points, "VoronoiPoint" },
    END_FIELD
 };
 

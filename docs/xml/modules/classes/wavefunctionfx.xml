@@ -115,7 +115,7 @@
       <name>Stops</name>
       <comment>Defines the colours to use for the wave function.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>GradientStop[]</type>
       <description>
 <p>The colours that will be used for drawing a wave function can be defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
 <p>If no stops are defined, the wave function will be drawn in greyscale.</p>
@@ -146,5 +146,10 @@
 
   </types>
   <structs>
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
+      <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
+      <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
   </structs>
 </book>

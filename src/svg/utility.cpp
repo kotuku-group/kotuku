@@ -98,30 +98,34 @@ static FRGB hsl_to_rgb(HSV Colour)
 //********************************************************************************************************************
 // Support for the 'currentColor' colour value.  Finds the first parent with a defined fill colour and returns it.
 
-ERR svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
+bool svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 {
    if (!m_color.empty()) {
       VectorPainter painter;
       if (!vec::ReadPainter(nullptr, m_color, &painter, nullptr)) {
          RGB = painter.Colour;
-         return ERR::Okay;
+         return true;
       }
    }
 
-   if (Vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Failed;
+   if (Vector->Class->BaseClassID != CLASSID::VECTOR) return false;
 
    Vector = (objVector *)Vector->Parent;
    while (Vector) {
-      if (Vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Failed;
+      if (Vector->Class->BaseClassID != CLASSID::VECTOR) return false;
 
-      int total;
-      if (!Vector->get(FID_FillColour, (float * &)RGB, total)) {
-         if (RGB.Alpha != 0) return ERR::Okay;
+      FRGB *rgb;
+      if (!Vector->getFillColour(rgb)) {
+         if (rgb->Alpha) {
+            RGB = *rgb;
+            return true;
+         }
+         else return false;
       }
       Vector = (objVector *)Vector->Parent;
    }
 
-   return ERR::Failed;
+   return false;
 }
 
 //********************************************************************************************************************

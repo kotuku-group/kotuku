@@ -175,13 +175,14 @@ a transform string.  The Transition structure consists of the following fields:
 
 *********************************************************************************************************************/
 
-static ERR TRANSITION_SET_Stops(extVectorTransition *Self, Transition *Value, int Elements)
+static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Transition> &Value)
 {
    kt::Log log;
-   if ((Elements >= 2) and (Elements < MAX_TRANSITION_STOPS)) {
-      Self->TotalStops = Elements;
+   const int elements = Value.size();
+   if ((elements >= 2) and (elements < MAX_TRANSITION_STOPS)) {
+      Self->TotalStops = elements;
       double last_offset = 0;
-      for (auto i=0; i < Elements; i++) {
+      for (auto i=0; i < elements; i++) {
          if (Value[i].Offset < last_offset) return log.warning(ERR::InvalidValue); // Offsets must be in incrementing order.
          if ((Value[i].Offset < 0.0) or (Value[i].Offset > 1.0)) return log.warning(ERR::OutOfRange);
 
@@ -216,7 +217,7 @@ static const ActionArray clTransitionActions[] = {
 static const FieldArray clTransitionFields[] = {
    { "TotalStops",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_W, NULL, (APTR)TRANSITION_SET_Stops, "Transition" },
+   { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_W, nullptr, (APTR)TRANSITION_SET_Stops, "Transition" },
    END_FIELD
 };
 

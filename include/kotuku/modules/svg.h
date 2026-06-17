@@ -124,14 +124,12 @@ class objSVG : public Object {
    inline ERR getFrameCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getScene(OBJECTPTR &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getViewport(OBJECTPTR &Value) noexcept {
@@ -147,12 +145,12 @@ class objSVG : public Object {
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x08000501, Value, 1);
+      return field->WriteValue(this, field, 0x08000501, Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setTitle(const std::string_view &Value) noexcept {
@@ -182,12 +180,12 @@ class objSVG : public Object {
 
    inline ERR setFrameRate(const int Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFrameCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };

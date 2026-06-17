@@ -8,7 +8,7 @@
 
 local glSVGFolder
 
-@BeforeAll function setup(State)
+@BeforeAll function setup(State:table)
    glSVGFolder = State.folder
 end
 
@@ -16,7 +16,7 @@ glWhite = struct.new('RGB8', { red = 255, green = 255, blue = 255, alpha = 255 }
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function renderSVGToBitmap(Path)
+function renderSVGToBitmap(Path:str)
    scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    svg = obj.new('svg', { target=vp, path=Path })
@@ -29,7 +29,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function saveBitmap(Bitmap, Path)
+function saveBitmap(Bitmap:obj, Path:str)
    folder, filename = io.splitPath(Path)
    split = string.split(filename, '.')
    if split?? then
@@ -37,7 +37,7 @@ function saveBitmap(Bitmap, Path)
 
       pic = obj.new('image', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags='NEW' })
       Bitmap.acCopyData(pic.bitmap)
-      file = obj.new('file', { flags='NEW|WRITE', path='temp:svg_test_results/' .. filename })
+      file = obj.new('file', { flags=FL_NEW|FL_WRITE, path='temp:svg_test_results/' .. filename })
       pic.acSaveImage(file)
    end
 end

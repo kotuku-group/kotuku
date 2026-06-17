@@ -47,20 +47,20 @@ static Field * lookup_id_byclass(extMetaClass *, uint32_t, extMetaClass **);
 // The MetaClass is the focal point of the OO design model.  Because classes are treated like objects, they must point
 // back to a controlling class definition - this it.  See NewObject() for the management code for this data.
 
-static ERR GET_ActionTable(extMetaClass *, ActionEntry **, int *);
-static ERR GET_Fields(extMetaClass *, const FieldArray **, int *);
+static ERR GET_ActionTable(extMetaClass *, std::span<ActionEntry> &);
+static ERR GET_Fields(extMetaClass *Self, std::span<const FieldArray> &);
 static ERR GET_Location(extMetaClass *, std::string_view &);
-static ERR GET_Methods(extMetaClass *, const MethodEntry **, int *);
+static ERR GET_Methods(extMetaClass *, std::span<const MethodEntry> &);
 static ERR GET_Module(extMetaClass *, std::string_view &);
-static ERR GET_Objects(extMetaClass *, OBJECTID **, int *);
+static ERR GET_Objects(extMetaClass *, std::span<OBJECTID> &);
 static ERR GET_RootModule(extMetaClass *, class objRootModule **);
-static ERR GET_Dictionary(extMetaClass *, struct Field **, int *);
-static ERR GET_SubClasses(extMetaClass *, extMetaClass ***, int *);
-static ERR GET_SubFields(extMetaClass *, const FieldArray **, int *);
+static ERR GET_Dictionary(extMetaClass *, std::span<Field> &);
+static ERR GET_SubClasses(extMetaClass *, std::span<extMetaClass *> &);
+static ERR GET_SubFields(extMetaClass *, std::span<const FieldArray> &);
 
 static ERR SET_Actions(extMetaClass *, const ActionArray *);
-static ERR SET_Fields(extMetaClass *, const FieldArray *, int);
-static ERR SET_Methods(extMetaClass *, const MethodEntry *, int);
+static ERR SET_Fields(extMetaClass *Self, std::span<const FieldArray> &);
+static ERR SET_Methods(extMetaClass *, std::span<const MethodEntry> &);
 
 static constexpr uint16_t meta_align_offset(size_t Offset, size_t Alignment)
 {
@@ -322,7 +322,7 @@ ERR CLASS_Init(extMetaClass *Self)
             Self->ClassName.c_str());
          if (Self->FileDescription.empty()) Self->FileDescription = base->FileDescription;
          if (Self->FileExtension.empty())   Self->FileExtension   = base->FileExtension;
-         if (!Self->ClassVersion)    Self->ClassVersion    = base->ClassVersion;
+         if (!Self->ClassVersion)           Self->ClassVersion    = base->ClassVersion;
 
          // If over-riding field definitions have been specified by the derived class, move them to the SubFields pointer.
 
@@ -494,10 +494,9 @@ example `Routine[AC::Read]`.  Calling an action routine directly from client cod
 
 *********************************************************************************************************************/
 
-static ERR GET_ActionTable(extMetaClass *Self, ActionEntry **Value, int *Elements)
+static ERR GET_ActionTable(extMetaClass *Self, std::span<ActionEntry> &Value)
 {
-   *Value = Self->ActionTable;
-   *Elements = int(AC::END);
+   Value = std::span<ActionEntry>(Self->ActionTable, int(AC::END));
    return ERR::Okay;
 }
 
@@ -550,11 +549,10 @@ linear scanning.
 
 *********************************************************************************************************************/
 
-static ERR GET_Dictionary(extMetaClass *Self, struct Field **Value, int *Elements)
+static ERR GET_Dictionary(extMetaClass *Self, std::span<Field> &Value)
 {
    if (Self->initialised()) {
-      *Value    = Self->FieldLookup.data();
-      *Elements = Self->FieldLookup.size();
+      Value = std::span<Field>(Self->FieldLookup.data(), Self->FieldLookup.size());
       return ERR::Okay;
    }
    else return ERR::NotInitialised;
@@ -573,26 +571,26 @@ Refer to the Kotuku Wiki on class development for more information.
 
 *********************************************************************************************************************/
 
-static ERR GET_Fields(extMetaClass *Self, const FieldArray **Fields, int *Elements)
+static ERR GET_Fields(extMetaClass *Self, std::span<const FieldArray> &Value)
 {
-   *Fields = Self->Fields;
-   *Elements = Self->OriginalFieldTotal;
+   Value = std::span<const FieldArray>(Self->Fields, Self->OriginalFieldTotal);
    return ERR::Okay;
 }
 
-static ERR SET_Fields(extMetaClass *Self, const FieldArray *Fields, int Elements)
+static ERR SET_Fields(extMetaClass *Self, std::span<const FieldArray> &Value)
 {
-   if (!Fields) return ERR::NullArgs;
-
-   Self->Fields = Fields;
-   if (Elements > 0) {
-      if (!Fields[Elements-1].Name) Elements--; // Make an adjustment in case the last entry is a null terminator.
-      Self->OriginalFieldTotal = Elements;
-   }
-   else {
-      int i;
-      for (i=0; Fields[i].Name; i++);
-      Self->OriginalFieldTotal = i;
+   if (Value.data()) {
+      Self->Fields = Value.data();
+      if (Value.size() > 0) {
+         // Make an adjustment in case the last entry is a null terminator.
+         if (not Self->Fields[Value.size()-1].Name) Self->OriginalFieldTotal = int16_t(Value.size() - 1);
+         else Self->OriginalFieldTotal = int16_t(Value.size());
+      }
+      else { // Client passed a span with indeterminate size (legacy mode)
+         int i;
+         for (i=0; Self->Fields[i].Name; i++);
+         Self->OriginalFieldTotal = i;
+      }
    }
 
    return ERR::Okay;
@@ -687,19 +685,19 @@ Note that method lists can be auto-generated using our IDL scripts - an approach
 
 *********************************************************************************************************************/
 
-static ERR GET_Methods(extMetaClass *Self, const MethodEntry **Methods, int *Elements)
+static ERR GET_Methods(extMetaClass *Self, std::span<const MethodEntry> &Value)
 {
-   *Methods = Self->Methods.data();
-   *Elements = Self->Methods.size();
+   Value = std::span<const MethodEntry>(Self->Methods.data(), Self->Methods.size());
    return ERR::Okay;
 }
 
-static ERR SET_Methods(extMetaClass *Self, const MethodEntry *Methods, int Elements)
+static ERR SET_Methods(extMetaClass *Self, std::span<const MethodEntry> &Value)
 {
    kt::Log log;
 
    Self->Methods.clear();
-   if (!Methods) return ERR::Okay;
+   if ((not Value.data()) or Value.empty()) return ERR::Okay;
+   auto Methods = Value.data();
 
    // Search for the method with the lowest ID number
 
@@ -763,7 +761,7 @@ The resulting array must be terminated with ~FreeResource() after use.
 
 *********************************************************************************************************************/
 
-static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
+static ERR GET_Objects(extMetaClass *Self, std::span<OBJECTID> &Value)
 {
    kt::Log log;
    std::list<OBJECTID> objlist;
@@ -780,8 +778,7 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    }
 
    if (!objlist.size()) {
-      *Array = nullptr;
-      *Elements = 0;
+      Value = std::span<OBJECTID>();
       return ERR::Okay;
    }
 
@@ -791,8 +788,7 @@ static ERR GET_Objects(extMetaClass *Self, OBJECTID **Array, int *Elements)
    if (!AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result)) {
       int i = 0;
       for (const auto & id : objlist) result[i++] = id;
-      *Array = result;
-      *Elements = objlist.size();
+      Value = std::span<OBJECTID>(result, objlist.size());
       return ERR::Okay;
    }
    else return ERR::AllocMemory;
@@ -836,10 +832,9 @@ included).  This feature applies to base-classes only.
 
 *********************************************************************************************************************/
 
-static ERR GET_SubClasses(extMetaClass *Self, extMetaClass ***Values, int *Elements)
+static ERR GET_SubClasses(extMetaClass *Self, std::span<extMetaClass *> &Value)
 {
-   *Values = Self->SubClasses.data();
-   *Elements = int(Self->SubClasses.size());
+   Value = std::span<extMetaClass *>(Self->SubClasses.data(), Self->SubClasses.size());
    return ERR::Okay;
 }
 
@@ -857,18 +852,14 @@ evaluating the field definitions that have been provided.
 
 *********************************************************************************************************************/
 
-static ERR GET_SubFields(extMetaClass *Self, const FieldArray **Fields, int *Elements)
+static ERR GET_SubFields(extMetaClass *Self, std::span<const FieldArray> &Value)
 {
    if (Self->SubFields) {
       int i;
       for (i=0; Self->SubFields[i].Name; i++);
-      *Fields = Self->SubFields;
-      *Elements = i;
+      Value = std::span<const FieldArray>(Self->SubFields, i);
    }
-   else {
-      *Fields = nullptr;
-      *Elements = 0;
-   }
+   else Value = std::span<const FieldArray>{};
    return ERR::Okay;
 }
 
@@ -1110,31 +1101,31 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       // CPP arrays are kt::vector<> types; note that the selected type doesn't impact its size
 
       if (field.Flags & FD_CPP) { // Embedded kt::vector<> array (the declared type doesn't contribute to size)
-         field_size = sizeof(kt::vector<int>);
+         field_size      = sizeof(kt::vector<int>);
          field_alignment = alignof(kt::vector<int>);
-         field_type = "kt::vector";
+         field_type      = "kt::vector";
       }
       else { // Standard embedded array (since FD_VIRTUAL wasn't set)
          if (field.Arg) { // Arg is set if the array is embedded in the object
             if (field.Flags & FD_INT) {
-               field_size = sizeof(int) * field.Arg;
+               field_size      = sizeof(int) * field.Arg;
                field_alignment = alignof(int);
             }
             else if (field.Flags & FD_DOUBLE) {
-               field_size = sizeof(double) * field.Arg;
+               field_size      = sizeof(double) * field.Arg;
                field_alignment = alignof(double);
             }
             else if (field.Flags & FD_BYTE) {
-               field_size = sizeof(uint8_t) * field.Arg;
+               field_size      = sizeof(uint8_t) * field.Arg;
                field_alignment = alignof(uint8_t);
             }
             else if (field.Flags & FD_INT64) {
-               field_size = sizeof(int64_t) * field.Arg;
+               field_size      = sizeof(int64_t) * field.Arg;
                field_alignment = alignof(int64_t);
             }
             else {
                log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
-               field_size = 0;
+               field_size      = 0;
                field_alignment = 0;
             }
 
@@ -1206,9 +1197,9 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
          if (struct_name) {
             auto struct_hash = kt::strhash(struct_name);
             if (auto it = glStructSizes.find(struct_hash); it != glStructSizes.end()) {
-               field_size = it->second.Size;
+               field_size      = it->second.Size;
                field_alignment = it->second.Alignment;
-               field_type = struct_name;
+               field_type      = struct_name;
             }
             else log.warning("%s.%s field refers to unknown struct name '%s'.", Class->ClassName.c_str(), field.Name, CSTRING(field.Arg));
          }

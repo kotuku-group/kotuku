@@ -572,22 +572,18 @@ existing path, if any.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_GET_Commands(extVectorPath *Self, PathCommand **Value, int *Elements)
+static ERR VECTORPATH_GET_Commands(extVectorPath *Self, std::span<PathCommand> &Value)
 {
-   *Value = Self->Commands.data();
-   *Elements = Self->Commands.size();
+   Value = std::span<PathCommand>(Self->Commands.data(), Self->Commands.size());
    return ERR::Okay;
 }
 
-static ERR VECTORPATH_SET_Commands(extVectorPath *Self, PathCommand *Value, int Elements)
+static ERR VECTORPATH_SET_Commands(extVectorPath *Self, std::span<const PathCommand> &Value)
 {
-   if (!Value) return ERR::NullArgs;
-   if ((Elements < 0) or (Elements > 1000000)) return ERR::Args;
+   if (!Value.data()) return ERR::NullArgs;
+   if (Value.size() > 1000000) return ERR::Args;
 
-   Self->Commands.clear();
-   for (int i=0; i < Elements; i++) {
-      Self->Commands.push_back(Value[i]);
-   }
+   Self->Commands.assign(Value.begin(), Value.end());
 
    Self->CommandsChanged = true;
    if (Self->initialised()) {
@@ -762,8 +758,7 @@ static const FieldArray clPathFields[] = {
    { "Y",             FDF_VIRTUAL|FD_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Y, VECTORPATH_SET_Y },
    { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },
    { "PathLength",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_PathLength, VECTORPATH_SET_PathLength },
-   { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORPATH_GET_Commands,
-      VECTORPATH_SET_Commands, "PathCommand" },
+   { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORPATH_GET_Commands, VECTORPATH_SET_Commands, "PathCommand" },
    END_FIELD
 };
 

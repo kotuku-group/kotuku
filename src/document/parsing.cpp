@@ -1799,7 +1799,7 @@ void parser::tag_combobox(const tag_view &Tag)
          });
 
          std::array<double, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
-         rect->set(FID_Rounding, round);
+         rect->setRounding(round);
 
          objVectorPath::create::global({ // Down arrow
             fl::Owner(vp->UID),
@@ -2709,10 +2709,9 @@ void parser::tag_script(const tag_view &Tag)
 
    // Any results returned from the script are processed as XML
 
-   kt::vector<std::string> *results;
-   int size;
-   if ((!script->get(FID_Results, results, size)) and (size > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
          fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);

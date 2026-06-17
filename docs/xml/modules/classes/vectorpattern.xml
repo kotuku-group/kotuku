@@ -73,7 +73,7 @@
       <name>Matrices</name>
       <comment>A linked list of transform matrices that have been applied to the pattern.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>APTR</type>
+      <type>struct VectorMatrix *</type>
       <description>
 <p>All transforms that have been applied to the pattern can be read from the Matrices field.  Each transform is represented by a <st>VectorMatrix</st> structure, and are linked in the order in which they were applied to the pattern.</p>
 <p>Setting this field is always additive unless NULL is passed, in which case all existing matrices are removed.</p>

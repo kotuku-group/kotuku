@@ -1691,10 +1691,9 @@ the address of that buffer.  The size of the buffer will match the #Size field.
 
 *********************************************************************************************************************/
 
-static ERR GET_Buffer(extFile *Self, APTR *Value, int *Elements)
+static ERR GET_Buffer(extFile *Self, std::span<int8_t> &Array)
 {
-   *Value = Self->Buffer;
-   *Elements = Self->Size;
+   Array = std::span<int8_t>(Self->Buffer, Self->Size);
    return ERR::Okay;
 }
 
@@ -1714,7 +1713,7 @@ static ERR GET_Created(extFile *Self, DateTime **Value)
 {
    kt::Log log;
 
-   *Value = 0;
+   *Value = nullptr;
 
    if (Self->Handle != -1) {
       struct stat64 stats;
@@ -2735,17 +2734,17 @@ static const FieldArray FileFields[] = {
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    // Virtual fields
-   { "Date",         FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Date, SET_Date, "DateTime" },
-   { "Created",      FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Created, nullptr, "DateTime" },
-   { "Handle",       FDF_INT64|FDF_R|FDF_PURE,      GET_Handle },
-   { "Icon",         FDF_CPPSTRING|FDF_R,  GET_Icon },
-   { "Permissions",  FDF_INTFLAGS|FDF_RW,  GET_Permissions, SET_Permissions, &clFilePERMIT },
-   { "ResolvedPath", FDF_CPPSTRING|FDF_R,  GET_ResolvedPath },
-   { "Size",         FDF_INT64|FDF_RW,     GET_Size, SET_Size },
-   { "Timestamp",    FDF_INT64|FDF_R,      GET_Timestamp },
-   { "Link",         FDF_CPPSTRING|FDF_RW, GET_Link, SET_Link },
-   { "User",         FDF_INT|FDF_RW,       GET_User, SET_User },
-   { "Group",        FDF_INT|FDF_RW,       GET_Group, SET_Group },
+   { "Date",         FDF_VIRTUAL|FDF_STRUCT|FDF_RW,        GET_Date, SET_Date, "DateTime" },
+   { "Created",      FDF_VIRTUAL|FDF_STRUCT|FDF_R,         GET_Created, nullptr, "DateTime" },
+   { "Handle",       FDF_VIRTUAL|FDF_INT64|FDF_R|FDF_PURE, GET_Handle },
+   { "Icon",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_Icon },
+   { "Permissions",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW,      GET_Permissions, SET_Permissions, &clFilePERMIT },
+   { "ResolvedPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_ResolvedPath },
+   { "Size",         FDF_VIRTUAL|FDF_INT64|FDF_RW,         GET_Size, SET_Size },
+   { "Timestamp",    FDF_VIRTUAL|FDF_INT64|FDF_R,          GET_Timestamp },
+   { "Link",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Link, SET_Link },
+   { "User",         FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_User, SET_User },
+   { "Group",        FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_Group, SET_Group },
    // Synonyms
    { "Src",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Location",  FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path }, // Deprecated

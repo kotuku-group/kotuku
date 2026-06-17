@@ -74,7 +74,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "An error occurred while drawing the object",
  "The class does not export any methods",
  "No matching object was found for the given object ID",
- "Access to a memory block was denied",
+ "Cannot modify an immutable field value",
  "The object is missing a path reference",
  "A lock was expected but not found",
  "The search yielded no results",

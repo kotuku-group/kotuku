@@ -73,7 +73,7 @@ inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontS
 [[nodiscard]] constexpr FieldValue DoubleClick(double Value) { return FieldValue(FID_DoubleClick, Value); }
 [[nodiscard]] inline    FieldValue Feedback(const FUNCTION &Value) { return FieldValue(FID_Feedback, Value); }
 [[nodiscard]] constexpr FieldValue Feedback(CPTR Value) { return FieldValue(FID_Feedback, Value); }
-[[nodiscard]] constexpr FieldValue Fields(const FieldArray *Value) { return FieldValue(FID_Fields, Value, FD_ARRAY); }
+[[nodiscard]] constexpr FieldValue Fields(const std::span<const FieldArray> Value) { return FieldValue(FID_Fields, Value); }
 [[nodiscard]] constexpr FieldValue Flags(int Value) { return FieldValue(FID_Flags, Value); }
 [[nodiscard]] constexpr FieldValue Font(OBJECTPTR Value) { return FieldValue(FID_Font, Value); }
 [[nodiscard]] constexpr FieldValue Handle(int Value) { return FieldValue(FID_Handle, Value); }
@@ -89,7 +89,7 @@ inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontS
 [[nodiscard]] constexpr FieldValue MaxHeight(int Value) { return FieldValue(FID_MaxHeight, Value); }
 [[nodiscard]] constexpr FieldValue MaxSpeed(double Value) { return FieldValue(FID_MaxSpeed, Value); }
 [[nodiscard]] constexpr FieldValue MaxWidth(int Value) { return FieldValue(FID_MaxWidth, Value); }
-[[nodiscard]] constexpr FieldValue Methods(const MethodEntry *Value) { return FieldValue(FID_Methods, Value, FD_ARRAY); }
+[[nodiscard]] constexpr FieldValue Methods(const std::span<const MethodEntry> Value) { return FieldValue(FID_Methods, Value); }
 [[nodiscard]] constexpr FieldValue Opacity(double Value) { return FieldValue(FID_Opacity, Value); }
 [[nodiscard]] constexpr FieldValue Owner(OBJECTID Value) { return FieldValue(FID_Owner, Value); }
 [[nodiscard]] constexpr FieldValue Parent(OBJECTID Value) { return FieldValue(FID_Parent, Value); }

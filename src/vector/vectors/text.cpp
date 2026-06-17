@@ -615,21 +615,20 @@ else (b) no extra shift along the x-axis occurs.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_DX(extVectorText *Self, double **Values, int *Elements)
+static ERR TEXT_GET_DX(extVectorText *Self, std::span<double> &Array)
 {
-   *Values = Self->txDX;
-   *Elements = Self->txTotalDX;
+   Array = std::span<double>(Self->txDX, Self->txTotalDX);
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_DX(extVectorText *Self, double *Values, int Elements)
+static ERR TEXT_SET_DX(extVectorText *Self, std::span<const double> &Array)
 {
    if (Self->txDX) { FreeResource(Self->txDX); Self->txDX = nullptr; Self->txTotalDX = 0; }
 
-   if ((Values) and (Elements > 0)) {
-      if (!AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDX)) {
-         copymem(Values, Self->txDX, Elements * sizeof(double));
-         Self->txTotalDX = Elements;
+   if ((Array.data()) and (Array.size() > 0)) {
+      if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txDX)) {
+         copymem(Array.data(), Self->txDX, Array.size() * sizeof(double));
+         Self->txTotalDX = Array.size();
          reset_path(Self);
          return ERR::Okay;
       }
@@ -646,21 +645,20 @@ This field follows the same rules described in #DX.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_DY(extVectorText *Self, double **Values, int *Elements)
+static ERR TEXT_GET_DY(extVectorText *Self, std::span<double> &Array)
 {
-   *Values   = Self->txDY;
-   *Elements = Self->txTotalDY;
+   Array = std::span<double>(Self->txDY, Self->txTotalDY);
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_DY(extVectorText *Self, double *Values, int Elements)
+static ERR TEXT_SET_DY(extVectorText *Self, std::span<const double> &Array)
 {
    if (Self->txDY) { FreeResource(Self->txDY); Self->txDY = nullptr; Self->txTotalDY = 0; }
 
-   if ((Values) and (Elements > 0)) {
-      if (!AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txDY)) {
-         copymem(Values, Self->txDY, Elements * sizeof(double));
-         Self->txTotalDY = Elements;
+   if ((Array.data()) and (Array.size() > 0)) {
+      if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txDY)) {
+         copymem(Array.data(), Self->txDY, Array.size() * sizeof(double));
+         Self->txTotalDY = Array.size();
          reset_path(Self);
          return ERR::Okay;
       }
@@ -1196,20 +1194,19 @@ and is supplemental to any rotation due to text on a path and to 'glyph-orientat
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_Rotate(extVectorText *Self, double **Values, int *Elements)
+static ERR TEXT_GET_Rotate(extVectorText *Self, std::span<double> &Array)
 {
-   *Values = Self->txRotate;
-   *Elements = Self->txTotalRotate;
+   Array = std::span<double>(Self->txRotate, Self->txTotalRotate);
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_Rotate(extVectorText *Self, double *Values, int Elements)
+static ERR TEXT_SET_Rotate(extVectorText *Self, std::span<const double> &Array)
 {
    if (Self->txRotate) { FreeResource(Self->txRotate); Self->txRotate = nullptr; Self->txTotalRotate = 0; }
 
-   if (!AllocMemory(sizeof(double) * Elements, MEM::DATA, (APTR *)&Self->txRotate)) {
-      copymem(Values, Self->txRotate, Elements * sizeof(double));
-      Self->txTotalRotate = Elements;
+   if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txRotate)) {
+      copymem(Array.data(), Self->txRotate, Array.size() * sizeof(double));
+      Self->txTotalRotate = Array.size();
       reset_path(Self);
       return ERR::Okay;
    }

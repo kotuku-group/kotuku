@@ -99,7 +99,7 @@ global function extractFields(Def:str, Origin:str):table
          local virtual = false
          type = type:trim()
 
-         if type:startsWith('!') then
+         if type:startsWith('~') then
             virtual = true
             type = type:sub(1):trim()
          end

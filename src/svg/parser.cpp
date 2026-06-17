@@ -141,9 +141,9 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
    if (!m_fill.empty())   Vector->setFill(m_fill);
    if (!m_stroke.empty()) Vector->setStroke(m_stroke);
    if (m_stroke_width)    Vector->setStrokeWidth(m_stroke_width);
-   if (m_line_join != VLJ::NIL)  Vector->setLineJoin(int(m_line_join));
-   if (m_inner_join != VIJ::NIL) Vector->setInnerJoin(int(m_inner_join));
-   if (m_line_cap != VLC::NIL)   Vector->setLineCap(int(m_line_cap));
+   if (m_line_join != VLJ::NIL)  Vector->setLineJoin(m_line_join);
+   if (m_inner_join != VIJ::NIL) Vector->setInnerJoin(m_inner_join);
+   if (m_line_cap != VLC::NIL)   Vector->setLineCap(m_line_cap);
 
    if (Vector->classID() IS CLASSID::VECTORTEXT) {
       if (!m_font_family.empty()) Vector->setFields(fl::Face(m_font_family));
@@ -228,11 +228,11 @@ void svgState::applyTag(const XTag &Tag) noexcept
 
          case SVF_stroke_linejoin:
             switch(strhash(val)) {
-               case SVF_miter:   m_line_join = VLJ::MITER; break;
-               case SVF_round:   m_line_join = VLJ::ROUND; break;
-               case SVF_bevel:   m_line_join = VLJ::BEVEL; break;
-               case SVF_inherit: m_line_join = VLJ::INHERIT; break;
-               case SVF_miter_clip: m_line_join = VLJ::MITER_SMART; break; // Special AGG only join type
+               case SVF_miter:       m_line_join = VLJ::MITER; break;
+               case SVF_round:       m_line_join = VLJ::ROUND; break;
+               case SVF_bevel:       m_line_join = VLJ::BEVEL; break;
+               case SVF_inherit:     m_line_join = VLJ::INHERIT; break;
+               case SVF_miter_clip:  m_line_join = VLJ::MITER_SMART; break; // Special AGG only join type
                case SVF_miter_round: m_line_join = VLJ::MITER_ROUND; break; // Special AGG only join type
             }
             break;
@@ -878,9 +878,9 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             VectorPainter painter;
             if (iequals("currentColor", val)) {
                FRGB rgb;
-               if (!current_colour(Self->Scene->Viewport, rgb)) fx->set(FID_Colour, rgb);
+               if (current_colour(Self->Scene->Viewport, rgb)) fx->setColour(rgb);
             }
-            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) fx->set(FID_Colour, painter.Colour);
+            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) fx->setColour(painter.Colour);
             break;
          }
 
@@ -1277,7 +1277,7 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objFloodFX *fx;
 
    if (NewObject(CLASSID::FLOODFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1293,9 +1293,9 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_flood_colour: {
             VectorPainter painter;
             if (iequals("currentColor", val)) {
-               if (!current_colour(Self->Scene->Viewport, painter.Colour)) error = fx->set(FID_Colour, painter.Colour);
+               if (current_colour(Self->Scene->Viewport, painter.Colour)) error = fx->setColour(painter.Colour);
             }
-            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) error = fx->set(FID_Colour, painter.Colour);
+            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) error = fx->setColour(painter.Colour);
             break;
          }
 
@@ -3709,31 +3709,31 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_stroke_linejoin:
          switch(strhash(StrValue)) {
-            case SVF_miter: Vector->setLineJoin(int(VLJ::MITER)); break;
-            case SVF_round: Vector->setLineJoin(int(VLJ::ROUND)); break;
-            case SVF_bevel: Vector->setLineJoin(int(VLJ::BEVEL)); break;
-            case SVF_inherit: Vector->setLineJoin(int(VLJ::INHERIT)); break;
-            case SVF_miter_clip: Vector->setLineJoin(int(VLJ::MITER_SMART)); break; // Special AGG only join type
-            case SVF_miter_round: Vector->setLineJoin(int(VLJ::MITER_ROUND)); break; // Special AGG only join type
+            case SVF_miter:       Vector->setLineJoin(VLJ::MITER); break;
+            case SVF_round:       Vector->setLineJoin(VLJ::ROUND); break;
+            case SVF_bevel:       Vector->setLineJoin(VLJ::BEVEL); break;
+            case SVF_inherit:     Vector->setLineJoin(VLJ::INHERIT); break;
+            case SVF_miter_clip:  Vector->setLineJoin(VLJ::MITER_SMART); break; // Special AGG only join type
+            case SVF_miter_round: Vector->setLineJoin(VLJ::MITER_ROUND); break; // Special AGG only join type
          }
          break;
 
       case SVF_stroke_innerjoin: // AGG ONLY
          switch(strhash(StrValue)) {
-            case SVF_miter:   Vector->setInnerJoin(int(VIJ::MITER));  break;
-            case SVF_round:   Vector->setInnerJoin(int(VIJ::ROUND)); break;
-            case SVF_bevel:   Vector->setInnerJoin(int(VIJ::BEVEL)); break;
-            case SVF_inherit: Vector->setInnerJoin(int(VIJ::INHERIT)); break;
-            case SVF_jag:     Vector->setInnerJoin(int(VIJ::JAG)); break;
+            case SVF_miter:   Vector->setInnerJoin(VIJ::MITER);  break;
+            case SVF_round:   Vector->setInnerJoin(VIJ::ROUND); break;
+            case SVF_bevel:   Vector->setInnerJoin(VIJ::BEVEL); break;
+            case SVF_inherit: Vector->setInnerJoin(VIJ::INHERIT); break;
+            case SVF_jag:     Vector->setInnerJoin(VIJ::JAG); break;
          }
          break;
 
       case SVF_stroke_linecap:
          switch(strhash(StrValue)) {
-            case SVF_butt:    Vector->setLineCap(int(VLC::BUTT)); break;
-            case SVF_square:  Vector->setLineCap(int(VLC::SQUARE)); break;
-            case SVF_round:   Vector->setLineCap(int(VLC::ROUND)); break;
-            case SVF_inherit: Vector->setLineCap(int(VLC::INHERIT)); break;
+            case SVF_butt:    Vector->setLineCap(VLC::BUTT); break;
+            case SVF_square:  Vector->setLineCap(VLC::SQUARE); break;
+            case SVF_round:   Vector->setLineCap(VLC::ROUND); break;
+            case SVF_inherit: Vector->setLineCap(VLC::INHERIT); break;
          }
          break;
 
@@ -3746,16 +3746,16 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          break;
 
       case SVF_fill_rule:
-         if (iequals("nonzero", StrValue)) Vector->setFillRule(int(VFR::NON_ZERO));
-         else if (iequals("evenodd", StrValue)) Vector->setFillRule(int(VFR::EVEN_ODD));
-         else if (iequals("inherit", StrValue)) Vector->setFillRule(int(VFR::INHERIT));
+         if (iequals("nonzero", StrValue))      Vector->setFillRule(VFR::NON_ZERO);
+         else if (iequals("evenodd", StrValue)) Vector->setFillRule(VFR::EVEN_ODD);
+         else if (iequals("inherit", StrValue)) Vector->setFillRule(VFR::INHERIT);
          else log.warning("Unsupported fill-rule value '%s'", StrValue.c_str());
          break;
 
       case SVF_clip_rule:
-         if (iequals("nonzero", StrValue)) Vector->setClipRule(int(VFR::NON_ZERO));
-         else if (iequals("evenodd", StrValue)) Vector->setClipRule(int(VFR::EVEN_ODD));
-         else if (iequals("inherit", StrValue)) Vector->setClipRule(int(VFR::INHERIT));
+         if (iequals("nonzero", StrValue)) Vector->setClipRule(VFR::NON_ZERO);
+         else if (iequals("evenodd", StrValue)) Vector->setClipRule(VFR::EVEN_ODD);
+         else if (iequals("inherit", StrValue)) Vector->setClipRule(VFR::INHERIT);
          else log.warning("Unsupported clip-rule value '%s'", StrValue.c_str());
          break;
 
@@ -3806,7 +3806,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_stroke:
          if (iequals("currentColor", StrValue)) {
             FRGB rgb;
-            if (!current_colour(Vector, rgb)) Vector->set(FID_StrokeColour, rgb);
+            if (current_colour(Vector, rgb)) Vector->setStrokeColour(rgb);
          }
          else set_paint_server(Vector, FID_Stroke, StrValue);
          break;
@@ -3814,7 +3814,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_fill:
          if (iequals("currentColor", StrValue)) {
             FRGB rgb;
-            if (!current_colour(Vector, rgb)) Vector->set(FID_FillColour, rgb);
+            if (current_colour(Vector, rgb)) Vector->setFillColour(rgb);
          }
          else set_paint_server(Vector, FID_Fill, StrValue);
          break;

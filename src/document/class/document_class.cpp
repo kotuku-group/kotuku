@@ -842,7 +842,7 @@ static ERR DOCUMENT_Init(extDocument *Self)
    if (not Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
    if (not Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
 
-   std::array<float,4> bkgd = { 1.0, 1.0, 1.0, 1.0 };
+   FRGB bkgd { 1.0, 1.0, 1.0, 1.0 };
    Self->Viewport->setFillColour(bkgd);
 
    // Allocate the view and page areas.  NB: If the parent Viewport is terminated then the

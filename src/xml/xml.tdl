@@ -117,6 +117,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
     int Modified      # Modification timestamp
     error ParseError  # Private
     int LineNo        # Private
+    ~array(struct(XTag)) Tags
   ]],
   nil,
   [[

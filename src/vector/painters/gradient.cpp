@@ -15,7 +15,7 @@ Gradient objects are definition objects and should normally be registered with a
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elements);
+static ERR GRADIENT_SET_Stops(extGradient *, std::span<const GradientStop> *);
 
 static ERR init_gradient_linear(void);
 static ERR init_gradient_radial(void);
@@ -180,33 +180,23 @@ The colour value in this field is applicable only when a gradient is in clip-mod
 flag in #SpreadMethod.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside
 the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.
 
-The Colour value is defined in floating-point RGBA format, using a range of 0 - 1.0 per component.
-
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_Colour(extGradient *Self, float **Value, int *Elements)
+static ERR GRADIENT_GET_Colour(extGradient *Self, FRGB **Value)
 {
-   *Value = (float *)&Self->Colour;
-   *Elements = 4;
+   *Value = &Self->Colour;
    return ERR::Okay;
 }
 
-static ERR GRADIENT_SET_Colour(extGradient *Self, float *Value, int Elements)
+static ERR GRADIENT_SET_Colour(extGradient *Self, FRGB *Value)
 {
-   kt::Log log;
    if (Value) {
-      if (Elements >= 3) {
-         Self->Colour.Red   = Value[0];
-         Self->Colour.Green = Value[1];
-         Self->Colour.Blue  = Value[2];
-         Self->Colour.Alpha = (Elements >= 4) ? Value[3] : 1.0;
+      Self->Colour = *Value;
 
-         Self->ColourRGB.Red   = int(Self->Colour.Red * 255.0);
-         Self->ColourRGB.Green = int(Self->Colour.Green * 255.0);
-         Self->ColourRGB.Blue  = int(Self->Colour.Blue * 255.0);
-         Self->ColourRGB.Alpha = int(Self->Colour.Alpha * 255.0);
-      }
-      else return log.warning(ERR::InvalidValue);
+      Self->ColourRGB.Red   = std::clamp<uint8_t>(Self->Colour.Red * 255.0, 0, 255);
+      Self->ColourRGB.Green = std::clamp<uint8_t>(Self->Colour.Green * 255.0, 0, 255);
+      Self->ColourRGB.Blue  = std::clamp<uint8_t>(Self->Colour.Blue * 255.0, 0, 255);
+      Self->ColourRGB.Alpha = std::clamp<uint8_t>(Self->Colour.Alpha * 255.0, 0, 255);
    }
    else Self->Colour.Alpha = 0;
 
@@ -393,8 +383,8 @@ static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
       if (Self->initialised()) {
          Self->modified();
          if (not Self->Stops.empty()) {
-            auto copy = Self->Stops;
-            GRADIENT_SET_Stops(Self, copy.data(), copy.size());
+            auto stops = std::span<const GradientStop>(Self->Stops);
+            GRADIENT_SET_Stops(Self, &stops);
          }
          else if (not Self->ColourMap.empty()) {
             auto map = Self->ColourMap;
@@ -435,17 +425,16 @@ to define a start and end point for interpolating the gradient colours.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_Stops(extGradient *Self, GradientStop **Value, int *Elements)
+static ERR GRADIENT_GET_Stops(extGradient *Self, std::span<GradientStop> *Value)
 {
-   *Value    = Self->Stops.data();
-   *Elements = Self->Stops.size();
+   *Value = std::span<GradientStop>(Self->Stops);
    return ERR::Okay;
 }
 
-static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elements)
+static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *Value)
 {
-   if (Elements >= 2) {
-      auto stops = std::vector<GradientStop>(&Value[0], &Value[Elements]);
+   if ((Value) and (Value->size() >= 2)) {
+      auto stops = std::vector<GradientStop>(Value->begin(), Value->end());
       auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
          stops, Self->ColourSpace, 1.0, Self->Resolution));
       if (not colours) return ERR::AllocMemory;
@@ -458,25 +447,9 @@ static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elemen
       return ERR::Okay;
    }
    else {
-      kt::Log log;
-      log.warning("Array size %d < 2", Elements);
+      kt::Log().warning("Array size %" PF64 " < 2", Value->size());
       return ERR::InvalidValue;
    }
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-TotalStops: Total number of stops defined in the Stops array.
-
-This read-only field indicates the total number of stops that have been defined in the #Stops array.
-
-*********************************************************************************************************************/
-
-static ERR GRADIENT_GET_TotalStops(extGradient *Self, int *Value)
-{
-   *Value = Self->Stops.size();
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -547,13 +520,12 @@ static const FieldArray clGradientFields[] = {
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clGradientUnits },
    { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clGradientColourSpace },
    // Virtual fields
-   { "Colour",       FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE, GRADIENT_GET_Colour, GRADIENT_SET_Colour },
+   { "Colour",       FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE, GRADIENT_GET_Colour, GRADIENT_SET_Colour, "FRGB" },
    { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, GRADIENT_GET_ColourMap, GRADIENT_SET_ColourMap },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Matrices, GRADIENT_SET_Matrices, "VectorMatrix" },
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENT_GET_NumericID, GRADIENT_SET_NumericID },
    { "ID",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, GRADIENT_GET_ID, GRADIENT_SET_ID },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Stops, GRADIENT_SET_Stops, "GradientStop" },
-   { "TotalStops",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, GRADIENT_GET_TotalStops },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD
 };

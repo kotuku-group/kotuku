@@ -289,18 +289,16 @@ points is required for the shape to be valid.  The !VectorPoint structure consis
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_PointsArray(extVectorPoly *Self, VectorPoint **Value, int *Elements)
+static ERR POLY_GET_PointsArray(extVectorPoly *Self, std::span<VectorPoint> &Value)
 {
-   *Value = Self->Points.data();
-   *Elements = Self->Points.size();
+   Value = std::span<VectorPoint>(Self->Points.data(), Self->Points.size());
    return ERR::Okay;
 }
 
-static ERR POLY_SET_PointsArray(extVectorPoly *Self, VectorPoint *Value, int Elements)
+static ERR POLY_SET_PointsArray(extVectorPoly *Self, std::span<const VectorPoint> &Value)
 {
-   if (Elements >= 2) {
-      Self->Points.clear();
-      Self->Points.insert(Self->Points.end(), &Value[0], &Value[Elements]);
+   if (Value.size() >= 2) {
+      Self->Points.assign(Value.begin(), Value.end());
       reset_path(Self);
       return ERR::Okay;
    }
@@ -458,15 +456,15 @@ static const ActionArray clPolygonActions[] = {
 };
 
 static const FieldArray clPolygonFields[] = {
-   { "Closed",      FDF_VIRTUAL|FDF_INT|FD_RW|FDF_PURE,                 POLY_GET_Closed, POLY_SET_Closed },
-   { "PathLength",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,                POLY_GET_PathLength, POLY_SET_PathLength },
-   { "PointsArray", FDF_VIRTUAL|FDF_ARRAY|FDF_POINTER|FDF_RW|FDF_PURE,  POLY_GET_PointsArray, POLY_SET_PointsArray },
-   { "Points",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,                    nullptr, POLY_SET_Points },
-   { "TotalPoints", FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,                 POLY_GET_TotalPoints },
-   { "X1",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_X1, POLY_SET_X1 },
-   { "Y1",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_Y1, POLY_SET_Y1 },
-   { "X2",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_X2, POLY_SET_X2 },
-   { "Y2",          FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_Y2, POLY_SET_Y2 },
+   { "Closed",      FDF_VIRTUAL|FDF_INT|FD_RW|FDF_PURE,               POLY_GET_Closed, POLY_SET_Closed },
+   { "PathLength",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              POLY_GET_PathLength, POLY_SET_PathLength },
+   { "PointsArray", FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, POLY_GET_PointsArray, POLY_SET_PointsArray, "VectorPoint" },
+   { "Points",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,                  nullptr, POLY_SET_Points },
+   { "TotalPoints", FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,               POLY_GET_TotalPoints },
+   { "X1",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_X1, POLY_SET_X1 },
+   { "Y1",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_Y1, POLY_SET_Y1 },
+   { "X2",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_X2, POLY_SET_X2 },
+   { "Y2",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_Y2, POLY_SET_Y2 },
    END_FIELD
 };
 
