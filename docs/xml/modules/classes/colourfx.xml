@@ -42,7 +42,7 @@
       <name>Mode</name>
       <comment>Defines the algorithm that will process the input source.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="CM">INT</type>
+      <type lookup="CM">CM</type>
       <description>
 <types lookup="CM"/>
       </description>

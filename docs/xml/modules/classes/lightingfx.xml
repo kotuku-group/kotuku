@@ -166,7 +166,7 @@ Lr,Lg,Lb = RGB components of light
       <name>Type</name>
       <comment>Defines the type of surface light scattering, which can be specular or diffuse.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="LT">INT</type>
+      <type lookup="LT">LT</type>
       <description>
 <types lookup="LT"/>
       </description>

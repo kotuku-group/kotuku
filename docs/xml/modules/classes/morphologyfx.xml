@@ -43,7 +43,7 @@
       <name>Operator</name>
       <comment>Set to either <code>ERODE</code> or <code>DILATE</code>.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="MOP">INT</type>
+      <type lookup="MOP">MOP</type>
       <description>
 <types lookup="MOP"/>
       </description>

@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects mut not be instantiated directly by the client.</p>
+<p>The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects must not be instantiated directly by the client.</p>
 <p>The documented fields and actions here are integral to all effects that utilise this class.</p></description>
     <source>
       <file path="filters/">filter_effect.cpp</file>

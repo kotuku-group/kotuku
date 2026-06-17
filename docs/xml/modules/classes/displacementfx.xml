@@ -55,7 +55,7 @@
       <name>XChannel</name>
       <comment>X axis channel selection.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="CMP">INT</type>
+      <type lookup="CMP">CMP</type>
       <description>
 <types lookup="CMP"/>
       </description>
@@ -73,7 +73,7 @@
       <name>YChannel</name>
       <comment>Y axis channel selection.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="CMP">INT</type>
+      <type lookup="CMP">CMP</type>
       <description>
 <types lookup="CMP"/>
       </description>

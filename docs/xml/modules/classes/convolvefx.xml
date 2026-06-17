@@ -71,9 +71,10 @@
       <name>EdgeMode</name>
       <comment>Defines the behaviour of the convolve algorithm around the edges of the input image.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="EM">EM</type>
       <description>
 <p>The EdgeMode determines how to extend the input image with colour values so that the matrix operations can be applied when the <fl>Matrix</fl> is positioned at or near the edge of the input image.</p>
+<types lookup="EM"/>
       </description>
     </field>
 
@@ -165,6 +166,14 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="EM">
+      <const name="DUPLICATE">The input image is extended along its borders by duplicating the color values at its edges.</const>
+      <const name="NONE">The input image is extended with colour values of zero.</const>
+      <const name="WRAP">The input image is extended by taking the color values from the opposite edge of the image.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

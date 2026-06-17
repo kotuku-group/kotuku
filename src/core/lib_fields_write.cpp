@@ -36,6 +36,7 @@ static ERR setval_strview(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR setval_double(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR setval_long(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR setval_function(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_struct(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR set_or_write_vector(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR set_or_write_array(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR setval_unit(OBJECTPTR, const Field *, int Flags, CPTR);
@@ -152,6 +153,7 @@ ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
       else if (Field->Flags & FD_STRING)  return setval_strview(Object, Field, flags, Data);
       else if (Field->Flags & FD_POINTER) return setval_pointer(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT64)   return setval_large(Object, Field, flags, Data);
+      else if (Field->Flags & FD_STRUCT)  return setval_struct(Object, Field, flags, Data);
       else return ERR::FieldTypeMismatch;
    }
 }
