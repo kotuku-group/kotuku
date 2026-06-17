@@ -185,8 +185,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
          ptr++
       elseif Type has FD_STRUCT then
          if Option?? then
-            -- We need the developer to declare a virtual reference in order to name the struct, e.g. `!struct(TheName)`
-            print(f'Field {CustomName} needs a virtual reference in the class definition')
+            -- We need the developer to declare a virtual reference in order to name the struct, e.g. `~struct(TheName)`
             result = 'REQUIRES_VIRTUAL_REF'
          else
             result = 'APTR'

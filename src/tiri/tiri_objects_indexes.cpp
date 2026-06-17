@@ -367,7 +367,9 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
 
          std::string_view source = lua_tostring(Lua, ValueIndex);
 
-         auto structbuf = std::make_unique<uint8_t[]>(ALIGN64(struct_def->Size));
+         const auto aligned_size = ALIGN64(struct_def->Size);
+         auto structbuf = std::make_unique<uint8_t[]>(aligned_size);
+         clearmem(structbuf.get(), aligned_size);
          if (auto error = parse_csv_struct(source, *struct_def, structbuf.get()); error != ERR::Okay) return error;
 
          if (Field->SetValue) return Object->set(Field->FieldID, structbuf.get());
