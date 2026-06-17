@@ -21,6 +21,7 @@
 #include <bit>
 #include <atomic>
 #include <array>
+#include <span>
 #include <charconv>
 #include <sstream>
 #include <cmath>
@@ -3571,28 +3572,32 @@ class objScript : public Object {
 };
 
 namespace sc {
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
+inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args) noexcept {
+   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
    return Action(sc::Callback::id, Function.Context, &args);
+}
+
+inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args, ERR &Result) noexcept {
+   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
+   ERR error = Action(sc::Callback::id, Function.Context, &args);
+   Result = args.Error;
+   return(error);
+}
+
+template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
+   return Call(Function, std::span<const ScriptArg>(Args));
 }
 
 template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
+   return Call(Function, std::span<const ScriptArg>(Args), Result);
 }
 
 inline ERR Call(const FUNCTION &Function) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
+   return Call(Function, std::span<const ScriptArg>());
 }
 
 inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
+   return Call(Function, std::span<const ScriptArg>(), Result);
 }
 } // namespace
 struct ActionEntry {

@@ -379,9 +379,9 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       if (fill_rule IS VFR::EVEN_ODD) xml::NewAttrib(tag, "fill-rule", "evenodd");
    }
 
-   if ((!error) and (!(error = Vector->get(FID_ID, str))) and not str.empty()) xml::NewAttrib(tag, "id", str);
+   if ((!error) and (!(error = Vector->getID(sv))) and not sv.empty()) xml::NewAttrib(tag, "id", sv);
 
-   if ((!error) and (!(error = Vector->getFilter(sv))) and not str.empty()) xml::NewAttrib(tag, "filter", sv);
+   if ((!error) and (!(error = Vector->getFilter(sv))) and not sv.empty()) xml::NewAttrib(tag, "filter", sv);
 
    VectorMatrix *transform;
    if ((!error) and (!Vector->get(FID_Transforms, transform)) and (transform)) {

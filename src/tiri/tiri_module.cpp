@@ -99,6 +99,8 @@ template <class T> static ERR make_cpp_array_result(cpp_array_result *Result)
    return ERR::Okay;
 }
 
+// Create an empty kt::vector<T> suitable for passing to a module API function.
+
 static ERR make_cpp_array_result(int Type, cpp_array_result *Result)
 {
    if (Type & FD_STR) return make_cpp_array_result<std::string>(Result);
