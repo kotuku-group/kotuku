@@ -895,25 +895,13 @@ static ERR VIEW_SET_YOffset(extVectorViewport *Self, Unit &Value)
 
 #include "viewport_def.cpp"
 
-static const FieldDef clViewDimensions[] = {
-   { "ScaledX",      DMF::SCALED_X },
-   { "ScaledY",      DMF::SCALED_Y },
-   { "ScaledWidth",  DMF::SCALED_WIDTH },
-   { "ScaledHeight", DMF::SCALED_HEIGHT },
-   { "FixedX",       DMF::FIXED_X },
-   { "FixedY",       DMF::FIXED_Y },
-   { "FixedWidth",   DMF::FIXED_WIDTH },
-   { "FixedHeight",  DMF::FIXED_HEIGHT },
-   { nullptr, 0 }
-};
-
 static const FieldArray clViewFields[] = {
    { "AbsX",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsX },
    { "AbsY",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsY },
    { "AspectRatio",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, VIEW_GET_AspectRatio, VIEW_SET_AspectRatio, &clAspectRatio },
    { "Buffer",       FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, VIEW_GET_Buffer },
    { "Buffered",     FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE, VIEW_GET_Buffered, VIEW_SET_Buffered },
-   { "Dimensions",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_R|FDF_PURE, VIEW_GET_Dimensions, VIEW_SET_Dimensions, &clViewDimensions },
+   { "Dimensions",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_R|FDF_PURE, VIEW_GET_Dimensions, VIEW_SET_Dimensions, &clVectorViewportDMF },
    { "DragCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DragCallback, VIEW_SET_DragCallback },
    { "Overflow",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_Overflow, VIEW_SET_Overflow, &clVectorViewportVOF },
    { "OverflowX",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_OverflowX, VIEW_SET_OverflowX, &clVectorViewportVOF },

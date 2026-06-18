@@ -313,8 +313,8 @@ static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
 
    int width = 0;
    int height = 0;
-   Self->Scene->get(FID_PageWidth, width);
-   Self->Scene->get(FID_PageHeight, height);
+   Self->Scene->getPageWidth(width);
+   Self->Scene->getPageHeight(height);
 
    if (!width) width = 1920;
    if (!height) height = 1080;
@@ -344,19 +344,19 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
    static const char header[] =
 "<?xml version=\"1.0\" standalone=\"no\"?>\n\
 <!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
-   ERR (**actions)(OBJECTPTR, APTR);
+   std::span<struct ActionEntry> actions;
 
    if (!Self->Viewport) return log.warning(ERR::NoData);
 
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SVG)) {
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
-      if ((!mc->get(FID_ActionTable, actions)) and (actions)) {
-         if ((actions[int(AC::SaveToObject)]) and (actions[int(AC::SaveToObject)] != (APTR)SVG_SaveToObject)) {
-            return actions[int(AC::SaveToObject)](Self, Args);
+      if ((!mc->getActionTable(actions)) and (not actions.empty())) {
+         if ((actions[int(AC::SaveToObject)].PerformAction) and (actions[int(AC::SaveToObject)].PerformAction != (APTR)SVG_SaveToObject)) {
+            return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
-         else if ((actions[int(AC::SaveImage)]) and (actions[int(AC::SaveImage)] != (APTR)SVG_SaveImage)) {
+         else if ((actions[int(AC::SaveImage)].PerformAction) and (actions[int(AC::SaveImage)].PerformAction != (APTR)SVG_SaveImage)) {
             struct acSaveImage saveimage = { .Dest = Args->Dest };
-            return actions[int(AC::SaveImage)](Self, &saveimage);
+            return actions[int(AC::SaveImage)].PerformAction(Self, &saveimage);
          }
          else return log.warning(ERR::NoSupport);
       }
@@ -387,10 +387,10 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
             else {
                double x, y, width, height;
 
-               if (!error) error = Self->Viewport->get(FID_ViewX, x);
-               if (!error) error = Self->Viewport->get(FID_ViewY, y);
-               if (!error) error = Self->Viewport->get(FID_ViewWidth, width);
-               if (!error) error = Self->Viewport->get(FID_ViewHeight, height);
+               if (!error) error = Self->Viewport->getViewX(x);
+               if (!error) error = Self->Viewport->getViewY(y);
+               if (!error) error = Self->Viewport->getViewWidth(width);
+               if (!error) error = Self->Viewport->getViewHeight(height);
 
                if (!error) {
                   char buffer[80];
@@ -399,17 +399,18 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                }
 
                if (!error) {
-                  auto dim = Self->Viewport->get<DMF>(FID_Dimensions);
-                  if (dmf::hasAnyX(dim) and (!Self->Viewport->get(FID_X, x)))
+                  DMF dim;
+                  Self->Viewport->getDimensions(dim);
+                  if (dmf::hasAnyX(dim) and (!Self->Viewport->getX(x)))
                      set_dimension(tag, "x", x, dmf::hasScaledX(dim));
 
-                  if (dmf::hasAnyY(dim) and (!Self->Viewport->get(FID_Y, y)))
+                  if (dmf::hasAnyY(dim) and (!Self->Viewport->getY(y)))
                      set_dimension(tag, "y", y, dmf::hasScaledY(dim));
 
-                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->get(FID_Width, width)))
+                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->getWidth(width)))
                      set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
 
-                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->get(FID_Height, height)))
+                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->getHeight(height)))
                      set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
                }
 

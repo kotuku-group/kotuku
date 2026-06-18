@@ -164,11 +164,11 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
       else if (iequals("inherit", m_visibility))  Vector->setVisibility(VIS::INHERIT);
    }
 
-   if (m_fill_opacity >= 0.0) Vector->set(FID_FillOpacity, m_fill_opacity);
-   if (m_opacity >= 0.0) Vector->set(FID_Opacity, m_opacity);
+   if (m_fill_opacity >= 0.0) Vector->setFillOpacity(m_fill_opacity);
+   if (m_opacity >= 0.0) Vector->setOpacity(m_opacity);
 
    if (Vector->classID() != CLASSID::VECTORTEXT) {
-      if (m_path_quality != RQ::AUTO) Vector->set(FID_PathQuality, int(m_path_quality));
+      if (m_path_quality != RQ::AUTO) Vector->setPathQuality(m_path_quality);
    }
 }
 
@@ -256,7 +256,7 @@ void svgState::applyTag(const XTag &Tag) noexcept
             }
             break;
 
-         case SVF_stroke_width: m_stroke_width = strtod(val.c_str(), nullptr); break;
+         case SVF_stroke_width: svtonum(val, m_stroke_width); break;
          case SVF_font_family:  m_font_family = val; break;
          case SVF_font_size:
             m_font_size = val;
@@ -264,7 +264,7 @@ void svgState::applyTag(const XTag &Tag) noexcept
             break;
 
          case SVF_font_weight: {
-            m_font_weight = strtod(val.c_str(), nullptr);
+            svtonum(val, m_font_weight);
             if (!m_font_weight) {
                switch(strhash(val)) {
                   case SVF_normal:  m_font_weight = 400; break;
@@ -279,9 +279,9 @@ void svgState::applyTag(const XTag &Tag) noexcept
             }
             break;
          }
-         case SVF_fill_opacity: m_fill_opacity = std::clamp(strtod(val.c_str(), nullptr), 0.0, 1.0); break;
-         case SVF_opacity:      m_opacity = std::clamp(strtod(val.c_str(), nullptr), 0.0, 1.0); break;
-         case SVF_stop_opacity: m_stop_opacity = std::clamp(strtod(val.c_str(), nullptr), 0.0, 1.0); break;
+         case SVF_fill_opacity: m_fill_opacity = std::clamp(svtonum<double>(val), 0.0, 1.0); break;
+         case SVF_opacity:      m_opacity = std::clamp(svtonum<double>(val), 0.0, 1.0); break;
+         case SVF_stop_opacity: m_stop_opacity = std::clamp(svtonum<double>(val), 0.0, 1.0); break;
          case SVF_shape_rendering: m_path_quality = shape_rendering_to_render_quality(val); break;
       }
    }
@@ -325,7 +325,7 @@ void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
                   auto buffer = child.getContent();
                   if (!buffer.empty()) {
                      kt::ltrim(buffer);
-                     Vector->set(FID_String, buffer);
+                     ((objVectorText *)Vector)->setString(buffer);
                   }
                   else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);
                }
@@ -349,7 +349,7 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
 
    log.traceBranch("Tag: %d", Tag.ID);
 
-   OBJECTPTR trans;
+   objVectorTransition *trans;
    if (!NewObject(CLASSID::VECTORTRANSITION, &trans)) {
       trans->setFields(
          fl::Owner(Self->Scene->UID), // All clips belong to the root page to prevent hierarchy issues.
@@ -368,7 +368,7 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
       if (!id.empty()) {
          auto stops = process_transition_stops(Self, Tag.Children);
          if (stops.size() >= 2) {
-            trans->set(FID_Stops, stops);
+            trans->setStops(stops);
 
             if (!InitObject(trans)) {
                if (!Self->Cloning) Self->Scene->addDef(id, trans);
@@ -418,16 +418,17 @@ void svgState::proc_clippath(XTag &Tag) noexcept
    // A clip-path with an ID can only be added once (important when a clip-path is repeatedly referenced)
 
    if (Self->Scene->findDef(id, nullptr) != ERR::Okay) {
-      objVector *clip;
+      objVectorClip *clip;
       if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
-         clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGClip"));
-         clip->set(FID_SID, id);
+         clip->setOwner(Self->Scene->UID);
+         clip->setName("SVGClip");
+         clip->setSID(id);
 
-         if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
+         if (not transform.empty()) parse_transform((objVector *)clip, transform, MTAG_SVG_TRANSFORM);
 
-         if (!units.empty()) {
-            if (iequals("userSpaceOnUse", units)) clip->set(FID_Units, int(VUNIT::USERSPACE));
-            else if (iequals("objectBoundingBox", units)) clip->set(FID_Units, int(VUNIT::BOUNDING_BOX));
+         if (not units.empty()) {
+            if (iequals("userSpaceOnUse", units)) clip->setUnits(VUNIT::USERSPACE);
+            else if (iequals("objectBoundingBox", units)) clip->setUnits(VUNIT::BOUNDING_BOX);
          }
 
          if (!InitObject(clip)) {
@@ -437,7 +438,8 @@ void svgState::proc_clippath(XTag &Tag) noexcept
             // Shapes:   circle, ellipse, line, path, polygon, polyline, rect, text, ...
             // Commands: use, animate
 
-            auto vp = clip->get<OBJECTPTR>(FID_Viewport);
+            objVectorViewport *vp;
+            clip->getViewport(vp);
             state.process_children(Tag, vp);
 
             Self->Scene->addDef(id, clip);
@@ -502,18 +504,20 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
    if (!Self->Scene->findDef(id, nullptr)) return;
 
-   objVector *clip;
+   objVectorClip *clip;
    if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
-      clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGMask"),
-         fl::Flags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES),
-         fl::Units(units));
-      clip->set(FID_SID, id);
+      clip->setOwner(Self->Scene->UID);
+      clip->setName("SVGMask");
+      clip->setFlags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES);
+      clip->setUnits(units);
+      clip->setSID(id);
 
-      if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
+      if (!transform.empty()) parse_transform((objVector *)clip, transform, MTAG_SVG_TRANSFORM);
 
       if (!InitObject(clip)) {
          svgState state(Self);
-         auto vp = clip->get<OBJECTPTR>(FID_Viewport);
+         objVectorViewport *vp;
+         clip->getViewport(vp);
          state.process_children(Tag, vp);
 
          Self->Scene->addDef(id, clip);
@@ -528,7 +532,7 @@ void svgState::proc_mask(XTag &Tag) noexcept
 ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objBlurFX *fx;
 
    if (NewObject(CLASSID::BLURFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -543,8 +547,8 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
             double x = -1, y = -1;
             read_numseq(val, { &x, &y });
             if ((x) and (y IS -1)) y = x;
-            if (x > 0) fx->set(FID_SX, x);
-            if (y > 0) fx->set(FID_SY, y);
+            if (x > 0) fx->setSX(x);
+            if (y > 0) fx->setSY(y);
             break;
          }
 
@@ -572,7 +576,7 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objOffsetFX *fx;
 
    if (NewObject(CLASSID::OFFSETFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -583,8 +587,8 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
       if (val.empty()) continue;
 
       switch(strhash(Tag.Attribs[a].Name)) {
-         case SVF_dx: fx->set(FID_XOffset, (int64_t)strtol(val.c_str(), nullptr, 0)); break;
-         case SVF_dy: fx->set(FID_YOffset, (int64_t)strtol(val.c_str(), nullptr, 0)); break;
+         case SVF_dx: fx->setXOffset(svtonum<int>(val)); break;
+         case SVF_dy: fx->setYOffset(svtonum<int>(val)); break;
          case SVF_in: parse_input(Self, fx, val, FID_SourceType, FID_Input); break;
          case SVF_result: result_name = val; break;
       }
@@ -605,7 +609,7 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objMergeFX *fx;
 
    if (NewObject(CLASSID::MERGEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -655,7 +659,7 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
    }
 
    if (!list.empty()) {
-      if (fx->set(FID_SourceList, list) != ERR::Okay) {
+      if (fx->setSourceList(list) != ERR::Okay) {
          FreeResource(fx);
          return log.warning(ERR::SetField);
       }
@@ -684,7 +688,7 @@ static const std::array<double,20> glAchromatomaly = { 0.618,0.320,0.062,0,0, 0.
 ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objColourFX *fx;
 
    if (NewObject(CLASSID::COLOURFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -726,14 +730,14 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcep
                   return ERR::InvalidValue;
             }
 
-            fx->set(FID_Mode, int(mode));
-            if ((mode IS CM::MATRIX) and (m)) fx->set(FID_Values, m);
+            fx->setMode(mode);
+            if ((mode IS CM::MATRIX) and (m)) fx->setValues(*m);
             break;
          }
 
          case SVF_values: {
             auto m = read_array<double>(val, CM_SIZE);
-            fx->set(FID_Values, m);
+            fx->setValues(m);
             break;
          }
 
@@ -761,7 +765,7 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcep
 ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objConvolveFX *fx;
 
    if (NewObject(CLASSID::CONVOLVEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -787,55 +791,55 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
          case SVF_kernelMatrix: {
             constexpr int max_matrix_dim = 9; // Matches ConvolveFX's internal matrix limit.
             auto matrix = read_array<double>(val, (max_matrix_dim * max_matrix_dim) + 1);
-            if (fx->set(FID_Matrix, matrix) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setMatrix(matrix) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }
 
          case SVF_divisor: {
             double divisor = 0;
             read_numseq(val, { &divisor });
-            if (fx->set(FID_Divisor, divisor) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setDivisor(divisor) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }
 
          case SVF_bias: {
             double bias = 0;
             read_numseq(val, { &bias });
-            fx->set(FID_Bias, bias);
+            fx->setBias(bias);
             break;
          }
 
          case SVF_targetX: {
             int target_x = 0;
             if (!read_integer_value(val, target_x)) return fail(ERR::InvalidValue);
-            if (fx->set(FID_TargetX, target_x) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setTargetX(target_x) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }
 
          case SVF_targetY: {
             int target_y = 0;
             if (!read_integer_value(val, target_y)) return fail(ERR::InvalidValue);
-            if (fx->set(FID_TargetY, target_y) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setTargetY(target_y) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }
 
          case SVF_edgeMode:
-            if (iequals("duplicate", val)) fx->set(FID_EdgeMode, int(EM::DUPLICATE));
-            else if (iequals("wrap", val)) fx->set(FID_EdgeMode, int(EM::WRAP));
-            else if (iequals("none", val)) fx->set(FID_EdgeMode, int(EM::NONE));
+            if (iequals("duplicate", val)) fx->setEdgeMode(EM::DUPLICATE);
+            else if (iequals("wrap", val)) fx->setEdgeMode(EM::WRAP);
+            else if (iequals("none", val)) fx->setEdgeMode(EM::NONE);
             break;
 
          case SVF_kernelUnitLength: {
             double kx = 1.0, ky = 1.0;
             if (!read_positive_number_pair(val, kx, ky)) return fail(ERR::InvalidValue);
-            if (fx->set(FID_UnitX, kx) != ERR::Okay) return fail(ERR::InvalidValue);
-            if (fx->set(FID_UnitY, ky) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setUnitX(kx) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setUnitY(ky) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }
 
          // The modifications will apply to R,G,B only when preserveAlpha is true.
          case SVF_preserveAlpha:
-            fx->set(FID_PreserveAlpha, iequals("true", val) or (std::string_view("1") IS val));
+            fx->setPreserveAlpha(iequals("true", val) or (std::string_view("1") IS val));
             break;
 
          case SVF_x:      UNIT(FID_X, val).set(fx); break;
@@ -867,7 +871,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
    if (NewObject(CLASSID::LIGHTINGFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
-   fx->set(FID_Type, int(Type));
+   fx->setType(Type);
 
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -891,8 +895,8 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             read_numseq(val, { &kx, &ky });
             if (kx < 1) kx = 1;
             if (ky < 1) ky = kx;
-            fx->set(FID_UnitX, kx);
-            fx->set(FID_UnitY, ky);
+            fx->setUnitX(kx);
+            fx->setUnitY(ky);
             break;
          }
 
@@ -921,8 +925,8 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
 
          for (int a=1; a < std::ssize(child.Attribs); a++) {
             switch(strhash(child.Attribs[a].Name)) {
-               case SVF_azimuth:   azimuth   = strtod(child.Attribs[a].Value.c_str(), nullptr); break;
-               case SVF_elevation: elevation = strtod(child.Attribs[a].Value.c_str(), nullptr); break;
+               case SVF_azimuth:   svtonum(child.Attribs[a].Value, azimuth); break;
+               case SVF_elevation: svtonum(child.Attribs[a].Value, elevation); break;
             }
          }
 
@@ -933,9 +937,9 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
 
          for (int a=1; a < std::ssize(child.Attribs); a++) {
             switch(strhash(child.Attribs[a].Name)) {
-               case SVF_x: x = strtod(child.Attribs[a].Value.c_str(), nullptr); break;
-               case SVF_y: y = strtod(child.Attribs[a].Value.c_str(), nullptr); break;
-               case SVF_z: z = strtod(child.Attribs[a].Value.c_str(), nullptr); break;
+               case SVF_x: svtonum(child.Attribs[a].Value, x); break;
+               case SVF_y: svtonum(child.Attribs[a].Value, y); break;
+               case SVF_z: svtonum(child.Attribs[a].Value, z); break;
             }
          }
 
@@ -948,14 +952,14 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
          for (int a=1; a < std::ssize(child.Attribs); a++) {
             auto &val = child.Attribs[a].Value;
             switch(strhash(child.Attribs[a].Name)) {
-               case SVF_x:                 x = strtod(val.c_str(), nullptr); break;
-               case SVF_y:                 y = strtod(val.c_str(), nullptr); break;
-               case SVF_z:                 z = strtod(val.c_str(), nullptr); break;
-               case SVF_pointsAtX:         px = strtod(val.c_str(), nullptr); break;
-               case SVF_pointsAtY:         py = strtod(val.c_str(), nullptr); break;
-               case SVF_pointsAtZ:         pz = strtod(val.c_str(), nullptr); break;
-               case SVF_specularExponent:  exponent   = strtod(val.c_str(), nullptr); break;
-               case SVF_limitingConeAngle: cone_angle = strtod(val.c_str(), nullptr); break;
+               case SVF_x:                 svtonum(val, x); break;
+               case SVF_y:                 svtonum(val, y); break;
+               case SVF_z:                 svtonum(val, z); break;
+               case SVF_pointsAtX:         svtonum(val, px); break;
+               case SVF_pointsAtY:         svtonum(val, py); break;
+               case SVF_pointsAtZ:         svtonum(val, pz); break;
+               case SVF_specularExponent:  svtonum(val, exponent); break;
+               case SVF_limitingConeAngle: svtonum(val, cone_angle); break;
             }
          }
 
@@ -987,7 +991,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
 ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objDisplacementFX *fx;
 
    if (NewObject(CLASSID::DISPLACEMENTFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1000,23 +1004,23 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
       switch(strhash(Tag.Attribs[a].Name)) {
          case SVF_xChannelSelector:
             switch(val[0]) {
-               case 'r': case 'R': fx->set(FID_XChannel, int(CMP::RED)); break;
-               case 'g': case 'G': fx->set(FID_XChannel, int(CMP::GREEN)); break;
-               case 'b': case 'B': fx->set(FID_XChannel, int(CMP::BLUE)); break;
-               case 'a': case 'A': fx->set(FID_XChannel, int(CMP::ALPHA)); break;
+               case 'r': case 'R': fx->setXChannel(CMP::RED); break;
+               case 'g': case 'G': fx->setXChannel(CMP::GREEN); break;
+               case 'b': case 'B': fx->setXChannel(CMP::BLUE); break;
+               case 'a': case 'A': fx->setXChannel(CMP::ALPHA); break;
             }
             break;
 
          case SVF_yChannelSelector:
             switch(val[0]) {
-               case 'r': case 'R': fx->set(FID_YChannel, int(CMP::RED)); break;
-               case 'g': case 'G': fx->set(FID_YChannel, int(CMP::GREEN)); break;
-               case 'b': case 'B': fx->set(FID_YChannel, int(CMP::BLUE)); break;
-               case 'a': case 'A': fx->set(FID_YChannel, int(CMP::ALPHA)); break;
+               case 'r': case 'R': fx->setYChannel(CMP::RED); break;
+               case 'g': case 'G': fx->setYChannel(CMP::GREEN); break;
+               case 'b': case 'B': fx->setYChannel(CMP::BLUE); break;
+               case 'a': case 'A': fx->setYChannel(CMP::ALPHA); break;
             }
             break;
 
-         case SVF_scale: fx->set(FID_Scale, strtod(val.c_str(), nullptr)); break;
+         case SVF_scale: fx->setScale(svtonum<double>(val)); break;
 
          case SVF_x:      UNIT(FID_X, val).set(fx); break;
          case SVF_y:      UNIT(FID_Y, val).set(fx); break;
@@ -1044,7 +1048,7 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
 
 ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
 {
-   objFilterEffect *fx;
+   objWaveFunctionFX *fx;
 
    if (NewObject(CLASSID::WAVEFUNCTIONFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1055,17 +1059,17 @@ ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
       if (val.empty()) continue;
 
       switch(strhash(Tag.Attribs[a].Name)) {
-         case SVF_resolution: fx->set(FID_Resolution, strtod(val.c_str(), nullptr)); break;
-         case SVF_preserveAspectRatio: fx->set(FID_AspectRatio, int(parse_aspect_ratio(val))); break;
-         case SVF_scale:    fx->set(FID_Scale, strtod(val.c_str(), nullptr)); break;
-         case SVF_n:        fx->set(FID_N, strtod(val.c_str(), nullptr)); break;
-         case SVF_l:        fx->set(FID_L, strtod(val.c_str(), nullptr)); break;
-         case SVF_m:        fx->set(FID_M, strtod(val.c_str(), nullptr)); break;
+         case SVF_resolution: fx->setResolution(svtonum<int>(val)); break;
+         case SVF_preserveAspectRatio: fx->setAspectRatio(parse_aspect_ratio(val)); break;
+         case SVF_scale:    fx->setScale(svtonum<double>(val)); break;
+         case SVF_n:        fx->setN(svtonum<int>(val)); break;
+         case SVF_l:        fx->setL(svtonum<int>(val)); break;
+         case SVF_m:        fx->setM(svtonum<int>(val)); break;
          case SVF_x:        UNIT(FID_X, val).set(fx); break;
          case SVF_y:        UNIT(FID_Y, val).set(fx); break;
          case SVF_width:    UNIT(FID_Width, val).set(fx); break;
          case SVF_height:   UNIT(FID_Height, val).set(fx); break;
-         case SVF_colormap: fx->set(FID_ColourMap, val); break;
+         case SVF_colormap: fx->setColourMap(val); break;
          case SVF_result:   result_name = val; break;
       }
    }
@@ -1075,7 +1079,7 @@ ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
 
       if (Tag.hasChildTags()) {
          auto stops = process_gradient_stops(Tag);
-         if (stops.size() >= 2) fx->set(FID_Stops, stops);
+         if (stops.size() >= 2) fx->setStops(stops);
       }
 
       return ERR::Okay;
@@ -1137,7 +1141,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
                case SVF_slope:       read_numseq(child.Attribs[a].Value, { &slope }); break;
                case SVF_exponent:    read_numseq(child.Attribs[a].Value, { &exp }); break;
                case SVF_offset:      read_numseq(child.Attribs[a].Value, { &offset }); break;
-               case SVF_mask:        mask = strtol(child.Attribs[a].Value.c_str(), nullptr, 0); break;
+               case SVF_mask:        svtonum(child.Attribs[a].Value, mask); break;
                case SVF_tableValues: {
                   values = read_array<double>(child.Attribs[a].Value, 64);
                   break;
@@ -1178,7 +1182,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
 ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objCompositeFX *fx;
 
    if (NewObject(CLASSID::COMPOSITEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1194,30 +1198,30 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
             switch (strhash(val)) {
                // SVG Operator types
                case SVF_normal:
-               case SVF_over:       fx->set(FID_Operator, int(OP::OVER)); break;
-               case SVF_in:         fx->set(FID_Operator, int(OP::IN)); break;
-               case SVF_out:        fx->set(FID_Operator, int(OP::OUT)); break;
-               case SVF_atop:       fx->set(FID_Operator, int(OP::ATOP)); break;
-               case SVF_xor:        fx->set(FID_Operator, int(OP::XOR)); break;
-               case SVF_arithmetic: fx->set(FID_Operator, int(OP::ARITHMETIC)); break;
+               case SVF_over:       fx->setOperator(OP::OVER); break;
+               case SVF_in:         fx->setOperator(OP::IN); break;
+               case SVF_out:        fx->setOperator(OP::OUT); break;
+               case SVF_atop:       fx->setOperator(OP::ATOP); break;
+               case SVF_xor:        fx->setOperator(OP::XOR); break;
+               case SVF_arithmetic: fx->setOperator(OP::ARITHMETIC); break;
                // SVG Mode types
-               case SVF_screen:   fx->set(FID_Operator, int(OP::SCREEN)); break;
-               case SVF_multiply: fx->set(FID_Operator, int(OP::MULTIPLY)); break;
-               case SVF_lighten:  fx->set(FID_Operator, int(OP::LIGHTEN)); break;
-               case SVF_darken:   fx->set(FID_Operator, int(OP::DARKEN)); break;
+               case SVF_screen:   fx->setOperator(OP::SCREEN); break;
+               case SVF_multiply: fx->setOperator(OP::MULTIPLY); break;
+               case SVF_lighten:  fx->setOperator(OP::LIGHTEN); break;
+               case SVF_darken:   fx->setOperator(OP::DARKEN); break;
                // Kotuku modes
-               case SVF_invertRGB:  fx->set(FID_Operator, int(OP::INVERT_RGB)); break;
-               case SVF_invert:     fx->set(FID_Operator, int(OP::INVERT)); break;
-               case SVF_contrast:   fx->set(FID_Operator, int(OP::CONTRAST)); break;
-               case SVF_dodge:      fx->set(FID_Operator, int(OP::DODGE)); break;
-               case SVF_burn:       fx->set(FID_Operator, int(OP::BURN)); break;
-               case SVF_hardLight:  fx->set(FID_Operator, int(OP::HARD_LIGHT)); break;
-               case SVF_softLight:  fx->set(FID_Operator, int(OP::SOFT_LIGHT)); break;
-               case SVF_difference: fx->set(FID_Operator, int(OP::DIFFERENCE)); break;
-               case SVF_exclusion:  fx->set(FID_Operator, int(OP::EXCLUSION)); break;
-               case SVF_plus:       fx->set(FID_Operator, int(OP::PLUS)); break;
-               case SVF_minus:      fx->set(FID_Operator, int(OP::MINUS)); break;
-               case SVF_overlay:    fx->set(FID_Operator, int(OP::OVERLAY)); break;
+               case SVF_invertRGB:  fx->setOperator(OP::INVERT_RGB); break;
+               case SVF_invert:     fx->setOperator(OP::INVERT); break;
+               case SVF_contrast:   fx->setOperator(OP::CONTRAST); break;
+               case SVF_dodge:      fx->setOperator(OP::DODGE); break;
+               case SVF_burn:       fx->setOperator(OP::BURN); break;
+               case SVF_hardLight:  fx->setOperator(OP::HARD_LIGHT); break;
+               case SVF_softLight:  fx->setOperator(OP::SOFT_LIGHT); break;
+               case SVF_difference: fx->setOperator(OP::DIFFERENCE); break;
+               case SVF_exclusion:  fx->setOperator(OP::EXCLUSION); break;
+               case SVF_plus:       fx->setOperator(OP::PLUS); break;
+               case SVF_minus:      fx->setOperator(OP::MINUS); break;
+               case SVF_overlay:    fx->setOperator(OP::OVERLAY); break;
                default:
                   log.warning("Composite operator '%s' not recognised.", val.c_str());
                   FreeResource(fx);
@@ -1229,28 +1233,28 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_k1: {
             double k1;
             read_numseq(val, { &k1 });
-            fx->set(FID_K1, k1);
+            fx->setK1(k1);
             break;
          }
 
          case SVF_k2: {
             double k2;
             read_numseq(val, { &k2 });
-            fx->set(FID_K2, k2);
+            fx->setK2(k2);
             break;
          }
 
          case SVF_k3: {
             double k3;
             read_numseq(val, { &k3 });
-            fx->set(FID_K3, k3);
+            fx->setK3(k3);
             break;
          }
 
          case SVF_k4: {
             double k4;
             read_numseq(val, { &k4 });
-            fx->set(FID_K4, k4);
+            fx->setK4(k4);
             break;
          }
 
@@ -1302,7 +1306,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
          }
 
          case SVF_flood_opacity: {
-            error = fx->set(FID_Opacity, std::clamp(strtod(val.c_str(), nullptr), 0.0, 1.0));
+            error = fx->setOpacity(std::clamp(svtonum<double>(val), 0.0, 1.0));
             break;
          }
 
@@ -1330,7 +1334,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objTurbulenceFX *fx;
 
    if (NewObject(CLASSID::TURBULENCEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1350,18 +1354,13 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
             break;
          }
 
-         case SVF_numOctaves: fx->set(FID_Octaves, (int64_t)strtol(val.c_str(), nullptr, 0)); break;
-
-         case SVF_seed: fx->set(FID_Seed, (int64_t)strtol(val.c_str(), nullptr, 0)); break;
-
-         case SVF_stitchTiles:
-            if (iequals("stitch", val)) fx->set(FID_Stitch, TRUE);
-            else fx->set(FID_Stitch, FALSE);
-            break;
+         case SVF_numOctaves: fx->setOctaves(svtonum<int>(val)); break;
+         case SVF_seed: fx->setSeed(svtonum<int>(val)); break;
+         case SVF_stitchTiles: fx->setStitch(iequals("stitch", val)); break;
 
          case SVF_type:
-            if (iequals("fractalNoise", val)) fx->set(FID_Type, int(TB::NOISE));
-            else fx->set(FID_Type, 0);
+            if (iequals("fractalNoise", val)) fx->setType(TB::NOISE);
+            else fx->setType(TB::NIL);
             break;
 
          case SVF_x:      UNIT(FID_X, val).set(fx); break;
@@ -1388,7 +1387,7 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objMorphologyFX *fx;
 
    if (NewObject(CLASSID::MORPHOLOGYFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1402,8 +1401,8 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_radius: {
             double x = -1, y = -1;
             read_numseq(val, { &x, &y });
-            if (x > 0) fx->set(FID_RadiusX, int(x));
-            if (y > 0) fx->set(FID_RadiusY, int(y));
+            if (x > 0) fx->setRadiusX(int(x));
+            if (y > 0) fx->setRadiusY(int(y));
             break;
          }
 
@@ -1433,7 +1432,7 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objSourceFX *fx;
 
    if (NewObject(CLASSID::SOURCEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1451,7 +1450,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_y:      UNIT(FID_Y, val).set(fx); break;
          case SVF_width:  UNIT(FID_Width, val).set(fx); break;
          case SVF_height: UNIT(FID_Height, val).set(fx); break;
-         case SVF_preserveAspectRatio: fx->set(FID_AspectRatio, int(parse_aspect_ratio(val))); break;
+         case SVF_preserveAspectRatio: fx->setAspectRatio(parse_aspect_ratio(val)); break;
          case SVF_xlink_href: ref = val; break;
          case SVF_externalResourcesRequired: required = iequals("true", val); break;
          case SVF_result: result_name = val; break;
@@ -1472,7 +1471,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
       }
 
       if (vector) {
-         fx->set(FID_SourceName, ref);
+         fx->setSourceName(ref);
          if (error = fx->init(); !error) {
             if (!result_name.empty()) parse_result(Self, fx, result_name);
             return ERR::Okay;
@@ -1505,7 +1504,7 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   objFilterEffect *fx;
+   objImageFX *fx;
    if (NewObject(CLASSID::IMAGEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
@@ -1524,8 +1523,8 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_height: UNIT(FID_Height, val).set(fx); break;
 
          case SVF_image_rendering: {
-            if ("optimizeSpeed" IS val) fx->set(FID_ResampleMethod, int(VSM::BILINEAR));
-            else if ("optimizeQuality" IS val) fx->set(FID_ResampleMethod, int(VSM::LANCZOS));
+            if ("optimizeSpeed" IS val) fx->setResampleMethod(VSM::BILINEAR);
+            else if ("optimizeQuality" IS val) fx->setResampleMethod(VSM::LANCZOS);
             else if ("auto" IS val);
             else if ("inherit" IS val);
             else log.warning("Unrecognised image-rendering option '%s'", val.c_str());
@@ -1533,7 +1532,7 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
          }
 
          case SVF_preserveAspectRatio:
-            fx->set(FID_AspectRatio, int(parse_aspect_ratio(val)));
+            fx->setAspectRatio(parse_aspect_ratio(val));
             break;
 
          case SVF_xlink_href:
@@ -1573,9 +1572,9 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
 
       if (auto fl = folder(Self)) {
          std::string comp_path = std::string(fl) + path;
-         fx->set(FID_Path, comp_path);
+         fx->setPath(comp_path);
       }
-      else fx->set(FID_Path, path);
+      else fx->setPath(path);
    }
 
    if (auto error = fx->init(); error != ERR::Okay) {
@@ -1622,7 +1621,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
             case SVF_y:       UNIT(FID_Y, val).set(filter); break;
             case SVF_width:   UNIT(FID_Width, val).set(filter); break;
             case SVF_height:  UNIT(FID_Height, val).set(filter); break;
-            case SVF_opacity: UNIT(FID_Opacity, std::clamp(strtod(val.c_str(), nullptr), 0.0, 1.0)).set(filter); break;
+            case SVF_opacity: UNIT(FID_Opacity, std::clamp(svtonum<double>(val), 0.0, 1.0)).set(filter); break;
 
             case SVF_filterRes: {
                double x = 0, y = 0;
@@ -1632,10 +1631,10 @@ void svgState::proc_filter(XTag &Tag) noexcept
             }
 
             case SVF_color_interpolation_filters: // The default is linearRGB
-               if ("auto" IS val) filter->set(FID_ColourSpace, int(VCS::LINEAR_RGB));
-               else if ("sRGB" IS val) filter->set(FID_ColourSpace, int(VCS::SRGB));
-               else if ("linearRGB" IS val) filter->set(FID_ColourSpace, int(VCS::LINEAR_RGB));
-               else if ("inherit" IS val) filter->set(FID_ColourSpace, int(VCS::INHERIT));
+               if ("auto" IS val) filter->setColourSpace(VCS::LINEAR_RGB);
+               else if ("sRGB" IS val) filter->setColourSpace(VCS::SRGB);
+               else if ("linearRGB" IS val) filter->setColourSpace(VCS::LINEAR_RGB);
+               else if ("inherit" IS val) filter->setColourSpace(VCS::INHERIT);
                break;
 
             case SVF_primitiveUnits:
@@ -1724,7 +1723,7 @@ void svgState::proc_pattern(XTag &Tag) noexcept
          fl::HostScene(Self->Scene));
 
       objVectorViewport *viewport;
-      pattern->get(FID_Viewport, viewport);
+      pattern->getViewport(viewport);
 
       bool rel_coords = true; // True because the default is 'objectBoundingBox'
       std::string x, y, width, height;
@@ -1912,14 +1911,14 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
 
       case SVF_line:
          if (auto error = proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); !error) {
-            Vector->set(FID_Closed, FALSE);
+            ((objVectorPolygon *)Vector)->setClosed(false);
             break;
          }
          else return error;
 
       case SVF_polyline:
          if (auto error = proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); !error) {
-            Vector->set(FID_Closed, FALSE);
+            ((objVectorPolygon *)Vector)->setClosed(false);
             break;
          }
          else return error;
@@ -1928,12 +1927,12 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
          if (!proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector)) {
             if (!Tag.Children.empty()) {
                std::string_view existing_str;
-               Vector->get(FID_String, existing_str);
+               ((objVectorText *)Vector)->getString(existing_str);
 
                if (auto buffer = Tag.getContent(); !buffer.empty()) {
                   kt::ltrim(buffer);
                   if (not existing_str.empty()) buffer.insert(0, existing_str.data(), existing_str.size());
-                  Vector->set(FID_String, buffer);
+                  ((objVectorText *)Vector)->setString(buffer);
                }
                else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);
             }
@@ -2147,7 +2146,7 @@ void svgState::proc_def_image(XTag &Tag) noexcept
       if ((!id.empty()) and (!src.empty())) {
          objImage *pic;
          if (!load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height)) {
-            image->set(FID_Image, pic);
+            image->setImage(pic);
             if (!InitObject(image)) {
                if (!Self->Cloning) {
                   Self->Scene->addDef(id, image);
@@ -2260,7 +2259,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
       if (!width.empty()) width.set(Vector);
       if (!height.empty()) height.set(Vector);
 
-      Vector->set(FID_Fill, "url(#" + id + ")");
+      Vector->setFill("url(#" + id + ")");
 
       if (!Vector->init()) {
          process_shape_children(Tag, Vector);
@@ -2469,9 +2468,10 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
       objVector *shape;
       svgState state(Self);
       state.proc_shape(class_id, *tagref, Self->Scene, shape);
-      Parent->set(FID_Morph, shape);
-      if (transvector) Parent->set(FID_Transition, transvector);
-      Parent->set(FID_MorphFlags, int(flags));
+      auto parent_vector = (objVector *)Parent;
+      parent_vector->setMorph(shape);
+      if (transvector) parent_vector->setTransition(transvector);
+      parent_vector->setMorphFlags(flags);
       if (!Self->Cloning) Self->Scene->addDef(uri, shape);
    }
 }
@@ -2888,7 +2888,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          }
 
          case SVF_version: {
-            double version = strtod(val.c_str(), nullptr);
+            auto version = svtonum<double>(val);
             if (version > Self->SVGVersion) Self->SVGVersion = version;
             break;
          }
@@ -2901,20 +2901,18 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
 
          case SVF_width:
             UNIT(FID_Width, val).set(viewport);
-            viewport->set(FID_OverflowX, int(VOF::HIDDEN));
+            viewport->setOverflowX(VOF::HIDDEN);
             break;
 
          case SVF_height:
             UNIT(FID_Height, val).set(viewport);
-            viewport->set(FID_OverflowY, int(VOF::HIDDEN));
+            viewport->setOverflowY(VOF::HIDDEN);
             break;
 
-         case SVF_preserveAspectRatio:
-            viewport->set(FID_AspectRatio, int(parse_aspect_ratio(val)));
-            break;
+         case SVF_preserveAspectRatio: viewport->setAspectRatio(parse_aspect_ratio(val)); break;
 
          case SVF_id:
-            viewport->set(FID_SID, val);
+            viewport->setSID(val);
             SetName(viewport, val);
             break;
 
@@ -2941,7 +2939,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          case SVF_mask: {
             OBJECTPTR clip;
             auto ref = uri_name(val);
-            if (!Self->Scene->findDef(ref, &clip)) viewport->set(FID_Mask, clip);
+            if (!Self->Scene->findDef(ref, &clip)) viewport->setMask(clip);
             else log.warning("Unable to find mask '%s'", val.c_str());
             break;
          }
@@ -2949,7 +2947,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          case SVF_clip_path: {
             OBJECTPTR clip;
             auto ref = uri_name(val);
-            if (!Self->Scene->findDef(ref, &clip)) viewport->set(FID_Mask, clip);
+            if (!Self->Scene->findDef(ref, &clip)) viewport->setMask(clip);
             else log.warning("Unable to find clip-path '%s'", val.c_str());
             break;
          }
@@ -2963,10 +2961,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
          // when drawn with xml:space="preserve", the string "a   b" (three spaces between "a" and "b") will produce a
          // larger separation between "a" and "b" than "a b" (one space between "a" and "b").
 
-         case SVF_xml_space:
-            if (iequals("preserve", val)) Self->PreserveWS = TRUE;
-            else Self->PreserveWS = FALSE;
-            break;
+         case SVF_xml_space: Self->PreserveWS = iequals("preserve", val); break;
 
          default: {
             // Print a warning unless this was a reference to some other namespace.
@@ -3175,7 +3170,7 @@ ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
             else if (iequals("auto-reverse", value)) anim.auto_rotate = ART::AUTO_REVERSE;
             else {
                anim.auto_rotate = ART::FIXED;
-               anim.rotate = strtod(value.c_str(), nullptr);
+               svtonum(value, anim.rotate);
             }
             break;
 
@@ -3457,7 +3452,13 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_y:         UNIT(FID_Y, StrValue).set(Vector); return ERR::Okay;
             case SVF_width:     UNIT(FID_Width, StrValue).set(Vector); return ERR::Okay;
             case SVF_height:    UNIT(FID_Height, StrValue).set(Vector); return ERR::Okay;
-            case SVF_close:     Vector->set(FID_Close, StrValue); return ERR::Okay;
+            case SVF_close:
+               if (iequals("top", StrValue) or iequals("true", StrValue) or (StrValue IS "1")) {
+                  ((objVectorWave *)Vector)->setClose(int(WVC::TOP));
+               }
+               else if (iequals("bottom", StrValue)) ((objVectorWave *)Vector)->setClose(int(WVC::BOTTOM));
+               else ((objVectorWave *)Vector)->setClose(int(WVC::NIL));
+               return ERR::Okay;
             case SVF_amplitude: UNIT(FID_Amplitude, StrValue).set(Vector); return ERR::Okay;
             case SVF_decay:     UNIT(FID_Decay, StrValue).set(Vector); return ERR::Okay;
             case SVF_frequency: UNIT(FID_Frequency, StrValue).set(Vector); return ERR::Okay;
@@ -3483,13 +3484,17 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                // Note: For the time being, VectorRectangle doesn't support X2/Y2 as a concept.  This would
                // cause problems if the client was to specify a scaled value here.
                auto width = UNIT(FID_Width, StrValue);
-               Vector->setFields(fl::Width(std::abs(width - Vector->get<double>(FID_X))));
+               double x = 0;
+               ((objVectorRectangle *)Vector)->getX(x);
+               Vector->setFields(fl::Width(std::abs(width - x)));
                return ERR::Okay;
             }
 
             case SVF_y2: {
                auto height = UNIT(FID_Height, StrValue);
-               Vector->setFields(fl::Height(std::abs(height - Vector->get<double>(FID_Y))));
+               double y = 0;
+               ((objVectorRectangle *)Vector)->getY(y);
+               Vector->setFields(fl::Height(std::abs(height - y)));
                return ERR::Okay;
             }
          }
@@ -3498,7 +3503,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       // VectorPolygon handles polygon, polyline and line.
       case CLASSID::VECTORPOLYGON:
          switch (Hash) {
-            case SVF_points: Vector->set(FID_Points, StrValue); return ERR::Okay;
+            case SVF_points: ((objVectorPolygon *)Vector)->setPoints(StrValue); return ERR::Okay;
             case SVF_x1: UNIT(FID_X1, StrValue).set(Vector); return ERR::Okay;
             case SVF_y1: UNIT(FID_Y1, StrValue).set(Vector); return ERR::Okay;
             case SVF_x2: UNIT(FID_X2, StrValue).set(Vector); return ERR::Okay;
@@ -3506,17 +3511,18 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          }
          break;
 
-      case CLASSID::VECTORTEXT:
+      case CLASSID::VECTORTEXT: {
+         auto vt = (objVectorText *)Vector;
          switch (Hash) {
-            case SVF_x: UNIT(FID_X, StrValue).set(Vector); return ERR::Okay;
-            case SVF_y: UNIT(FID_Y, StrValue).set(Vector); return ERR::Okay;
+            case SVF_x: UNIT(FID_X, StrValue).set(vt); return ERR::Okay;
+            case SVF_y: UNIT(FID_Y, StrValue).set(vt); return ERR::Okay;
 
-            case SVF_dx: Vector->set(FID_DX, StrValue); return ERR::Okay;
-            case SVF_dy: Vector->set(FID_DY, StrValue); return ERR::Okay;
+            case SVF_dx: vt->set(FID_DX, StrValue); return ERR::Okay;
+            case SVF_dy: vt->set(FID_DY, StrValue); return ERR::Okay;
 
             case SVF_lengthAdjust: // Can be set to either 'spacing' or 'spacingAndGlyphs'
-               //if (iequals("spacingAndGlyphs", va_arg(list, STRING))) Vector->VT.SpacingAndGlyphs = TRUE;
-               //else Vector->VT.SpacingAndGlyphs = FALSE;
+               //if (iequals("spacingAndGlyphs", va_arg(list, STRING))) vt->VT.SpacingAndGlyphs = TRUE;
+               //else vt->VT.SpacingAndGlyphs = FALSE;
                return ERR::Okay;
 
             case SVF_font: {
@@ -3535,13 +3541,13 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             }
 
             case SVF_font_family:
-               Vector->set(FID_Face, StrValue);
+               vt->setFace(StrValue);
                return ERR::Okay;
 
             case SVF_font_size:
                // A plain numeric font size is interpreted as "a height value corresponding to the current user
                // coordinate system".  Alternatively the user can specify the unit identifier, e.g. '12pt', '10%', '30px'
-               Vector->set(FID_FontSize, StrValue);
+               vt->setFontSize(StrValue);
                return ERR::Okay;
 
             case SVF_font_size_adjust:
@@ -3551,120 +3557,126 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                // c = 'font-size' to apply to available font
                return ERR::NoSupport;
 
-            case SVF_font_stretch:
-               switch(strhash(StrValue)) {
-                  case SVF_condensed:       Vector->set(FID_Stretch, int(VTS::CONDENSED)); return ERR::Okay;
-                  case SVF_expanded:        Vector->set(FID_Stretch, int(VTS::EXPANDED)); return ERR::Okay;
-                  case SVF_extra_condensed: Vector->set(FID_Stretch, int(VTS::EXTRA_CONDENSED)); return ERR::Okay;
-                  case SVF_extra_expanded:  Vector->set(FID_Stretch, int(VTS::EXTRA_EXPANDED)); return ERR::Okay;
-                  case SVF_narrower:        Vector->set(FID_Stretch, int(VTS::NARROWER)); return ERR::Okay;
-                  case SVF_normal:          Vector->set(FID_Stretch, int(VTS::NORMAL)); return ERR::Okay;
-                  case SVF_semi_condensed:  Vector->set(FID_Stretch, int(VTS::SEMI_CONDENSED)); return ERR::Okay;
-                  case SVF_semi_expanded:   Vector->set(FID_Stretch, int(VTS::SEMI_EXPANDED)); return ERR::Okay;
-                  case SVF_ultra_condensed: Vector->set(FID_Stretch, int(VTS::ULTRA_CONDENSED)); return ERR::Okay;
-                  case SVF_ultra_expanded:  Vector->set(FID_Stretch, int(VTS::ULTRA_EXPANDED)); return ERR::Okay;
-                  case SVF_wider:           Vector->set(FID_Stretch, int(VTS::WIDER)); return ERR::Okay;
-                  default: log.warning("no support for font-stretch value '%s'", StrValue.c_str());
-               }
-               break;
+            case SVF_font_stretch: // NYI
+               //switch(strhash(StrValue)) {
+               //   case SVF_condensed:       vt->set(FID_Stretch, int(VTS::CONDENSED)); return ERR::Okay;
+               //   case SVF_expanded:        vt->set(FID_Stretch, int(VTS::EXPANDED)); return ERR::Okay;
+               //   case SVF_extra_condensed: vt->set(FID_Stretch, int(VTS::EXTRA_CONDENSED)); return ERR::Okay;
+               //   case SVF_extra_expanded:  vt->set(FID_Stretch, int(VTS::EXTRA_EXPANDED)); return ERR::Okay;
+               //   case SVF_narrower:        vt->set(FID_Stretch, int(VTS::NARROWER)); return ERR::Okay;
+               //   case SVF_normal:          vt->set(FID_Stretch, int(VTS::NORMAL)); return ERR::Okay;
+               //   case SVF_semi_condensed:  vt->set(FID_Stretch, int(VTS::SEMI_CONDENSED)); return ERR::Okay;
+               //   case SVF_semi_expanded:   vt->set(FID_Stretch, int(VTS::SEMI_EXPANDED)); return ERR::Okay;
+               //   case SVF_ultra_condensed: vt->set(FID_Stretch, int(VTS::ULTRA_CONDENSED)); return ERR::Okay;
+               //   case SVF_ultra_expanded:  vt->set(FID_Stretch, int(VTS::ULTRA_EXPANDED)); return ERR::Okay;
+               //   case SVF_wider:           vt->set(FID_Stretch, int(VTS::WIDER)); return ERR::Okay;
+               //   default: log.warning("no support for font-stretch value '%s'", StrValue.c_str());
+               //}
+               return ERR::NoSupport;
 
             case SVF_font_style: return ERR::NoSupport;
             case SVF_font_variant: return ERR::NoSupport;
 
             case SVF_font_weight: { // SVG: normal | bold | bolder | lighter | inherit
-               double num = strtod(StrValue.c_str(), nullptr);
-               if (num) Vector->set(FID_Weight, num);
+               auto num = svtonum<double>(StrValue);
+               if (num) vt->setWeight(int(num));
                else switch(strhash(StrValue)) {
-                  case SVF_normal:  Vector->set(FID_Weight, 400); return ERR::Okay;
-                  case SVF_lighter: Vector->set(FID_Weight, 300); return ERR::Okay; // -100 off the inherited weight
-                  case SVF_bold:    Vector->set(FID_Weight, 700); return ERR::Okay;
-                  case SVF_bolder:  Vector->set(FID_Weight, 900); return ERR::Okay; // +100 on the inherited weight
-                  case SVF_inherit: Vector->set(FID_Weight, 400); return ERR::Okay; // Not supported correctly yet.
+                  case SVF_normal:  vt->setWeight(400); return ERR::Okay;
+                  case SVF_lighter: vt->setWeight(300); return ERR::Okay; // -100 off the inherited weight
+                  case SVF_bold:    vt->setWeight(700); return ERR::Okay;
+                  case SVF_bolder:  vt->setWeight(900); return ERR::Okay; // +100 on the inherited weight
+                  case SVF_inherit: vt->setWeight(400); return ERR::Okay; // Not supported correctly yet.
                   default: log.warning("No support for font-weight value '%s'", StrValue.c_str()); // Non-fatal
                }
                break;
             }
 
-            case SVF_rotate: Vector->set(FID_Rotate, StrValue); return ERR::Okay;
-            case SVF_string: Vector->set(FID_String, StrValue); return ERR::Okay;
+            case SVF_rotate: {
+               // SVG defines rotate as a comma or whitespace separated list of <number> values.
+               auto values = read_array(StrValue);
+               vt->setRotate(values);
+               return ERR::Okay;
+            }
+            case SVF_string: vt->setString(StrValue); return ERR::Okay;
 
             case SVF_text_anchor:
                switch(strhash(StrValue)) {
-                  case SVF_start:   Vector->set(FID_Align, int(ALIGN::LEFT)); return ERR::Okay;
-                  case SVF_middle:  Vector->set(FID_Align, int(ALIGN::HORIZONTAL)); return ERR::Okay;
-                  case SVF_end:     Vector->set(FID_Align, int(ALIGN::RIGHT)); return ERR::Okay;
-                  case SVF_inherit: Vector->set(FID_Align, int(ALIGN::NIL)); return ERR::Okay;
+                  case SVF_start:   vt->setAlign(ALIGN::LEFT); return ERR::Okay;
+                  case SVF_middle:  vt->setAlign(ALIGN::HORIZONTAL); return ERR::Okay;
+                  case SVF_end:     vt->setAlign(ALIGN::RIGHT); return ERR::Okay;
+                  case SVF_inherit: vt->setAlign(ALIGN::NIL); return ERR::Okay;
                   default: log.warning("text-anchor: No support for value '%s'", StrValue.c_str());
                }
                break;
 
-            case SVF_textLength: Vector->set(FID_TextLength, StrValue); return ERR::Okay;
+            case SVF_textLength: vt->set(FID_TextLength, StrValue); return ERR::Okay;
             // TextPath only
-            //case SVF_startOffset: Vector->set(FID_StartOffset, StrValue); return ERR::Okay;
+            //case SVF_startOffset: vt->set(FID_StartOffset, StrValue); return ERR::Okay;
             //case SVF_method: // The default is align.  For 'stretch' mode, set VMF::STRETCH in MorphFlags
-            //                      Vector->set(FID_MorphFlags, StrValue); return ERR::Okay;
-            //case SVF_spacing:     Vector->set(FID_Spacing, StrValue); return ERR::Okay;
+            //                      vt->set(FID_MorphFlags, StrValue); return ERR::Okay;
+            //case SVF_spacing:     vt->set(FID_Spacing, StrValue); return ERR::Okay;
             //case SVF_xlink_href:  // Used for drawing text along a path.
             //   return ERR::Okay;
 
-            case SVF_kerning: Vector->set(FID_Kerning, StrValue); return ERR::Okay; // Spacing between letters, default=1.0
-            case SVF_letter_spacing: Vector->set(FID_LetterSpacing, StrValue); return ERR::Okay;
-            case SVF_pathLength: Vector->set(FID_PathLength, StrValue); return ERR::Okay;
-            case SVF_word_spacing:   Vector->set(FID_WordSpacing, StrValue); return ERR::Okay;
+            //case SVF_kerning:        vt->set(FID_Kerning, StrValue); return ERR::Okay; // Spacing between letters, default=1.0
+            //case SVF_letter_spacing: vt->set(FID_LetterSpacing, StrValue); return ERR::Okay;
+            //case SVF_pathLength:     vt->set(FID_PathLength, StrValue); return ERR::Okay;
+            //case SVF_word_spacing:   vt->set(FID_WordSpacing, StrValue); return ERR::Okay;
             case SVF_text_decoration:
                switch(strhash(StrValue)) {
-                  case SVF_underline:    Vector->set(FID_Flags, int(VTXF::UNDERLINE)); return ERR::Okay;
-                  case SVF_overline:     Vector->set(FID_Flags, int(VTXF::OVERLINE)); return ERR::Okay;
-                  case SVF_line_through: Vector->set(FID_Flags, int(VTXF::LINE_THROUGH)); return ERR::Okay;
-                  case SVF_blink:        Vector->set(FID_Flags, int(VTXF::BLINK)); return ERR::Okay;
+                  case SVF_underline:    vt->setTextFlags(VTXF::UNDERLINE); return ERR::Okay;
+                  case SVF_overline:     vt->setTextFlags(VTXF::OVERLINE); return ERR::Okay;
+                  case SVF_line_through: vt->setTextFlags(VTXF::LINE_THROUGH); return ERR::Okay;
+                  case SVF_blink:        vt->setTextFlags(VTXF::BLINK); return ERR::Okay;
                   case SVF_inherit:      return ERR::Okay;
                   default: log.warning("No support for text-decoration value '%s'", StrValue.c_str());
                }
                return ERR::Okay;
          }
          break;
+      }
 
       case CLASSID::VECTORSPIRAL:
          switch (Hash) {
-            case SVF_pathLength: Vector->set(FID_PathLength, StrValue); return ERR::Okay;
-            case SVF_cx:       UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
-            case SVF_cy:       UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
-            case SVF_r:        UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
-            case SVF_offset:   UNIT(FID_Offset, StrValue).set(Vector); return ERR::Okay;
-            case SVF_step:     UNIT(FID_Step, StrValue).set(Vector); return ERR::Okay;
-            case SVF_vertices: UNIT(FID_Vertices, StrValue).set(Vector); return ERR::Okay;
-            case SVF_spacing:  UNIT(FID_Spacing, StrValue).set(Vector); return ERR::Okay;
+            case SVF_pathLength: ((objVectorSpiral *)Vector)->setPathLength(svtonum<int>(StrValue)); return ERR::Okay;
+            case SVF_cx:         UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cy:         UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
+            case SVF_r:          UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
+            case SVF_offset:     UNIT(FID_Offset, StrValue).set(Vector); return ERR::Okay;
+            case SVF_step:       UNIT(FID_Step, StrValue).set(Vector); return ERR::Okay;
+            case SVF_vertices:   UNIT(FID_Vertices, StrValue).set(Vector); return ERR::Okay;
+            case SVF_spacing:    UNIT(FID_Spacing, StrValue).set(Vector); return ERR::Okay;
             case SVF_loop_limit: UNIT(FID_LoopLimit, StrValue).set(Vector); return ERR::Okay;
          }
          break;
 
       case CLASSID::VECTORSHAPE:
          switch (Hash) {
-            case SVF_cx:   UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
-            case SVF_cy:   UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
-            case SVF_r:    UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
-            case SVF_n1:   UNIT(FID_N1, StrValue).set(Vector); return ERR::Okay;
-            case SVF_n2:   UNIT(FID_N2, StrValue).set(Vector); return ERR::Okay;
-            case SVF_n3:   UNIT(FID_N3, StrValue).set(Vector); return ERR::Okay;
-            case SVF_m:    UNIT(FID_M, StrValue).set(Vector); return ERR::Okay;
-            case SVF_a:    UNIT(FID_A, StrValue).set(Vector); return ERR::Okay;
-            case SVF_b:    UNIT(FID_B, StrValue).set(Vector); return ERR::Okay;
-            case SVF_phi:  UNIT(FID_Phi, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cx:       UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cy:       UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
+            case SVF_r:        UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
+            case SVF_n1:       UNIT(FID_N1, StrValue).set(Vector); return ERR::Okay;
+            case SVF_n2:       UNIT(FID_N2, StrValue).set(Vector); return ERR::Okay;
+            case SVF_n3:       UNIT(FID_N3, StrValue).set(Vector); return ERR::Okay;
+            case SVF_m:        UNIT(FID_M, StrValue).set(Vector); return ERR::Okay;
+            case SVF_a:        UNIT(FID_A, StrValue).set(Vector); return ERR::Okay;
+            case SVF_b:        UNIT(FID_B, StrValue).set(Vector); return ERR::Okay;
+            case SVF_phi:      UNIT(FID_Phi, StrValue).set(Vector); return ERR::Okay;
             case SVF_vertices: UNIT(FID_Vertices, StrValue).set(Vector); return ERR::Okay;
             case SVF_mod:      UNIT(FID_Mod, StrValue).set(Vector); return ERR::Okay;
             case SVF_spiral:   UNIT(FID_Spiral, StrValue).set(Vector); return ERR::Okay;
             case SVF_repeat:   UNIT(FID_Repeat, StrValue).set(Vector); return ERR::Okay;
             case SVF_close:
-               if ((iequals("true", StrValue)) or (iequals("1", StrValue))) Vector->set(FID_Close, TRUE);
-               else Vector->set(FID_Close, FALSE);
+               if ((iequals("true", StrValue)) or (iequals("1", StrValue))) ((objVectorShape *)Vector)->setClose(TRUE);
+               else ((objVectorShape *)Vector)->setClose(FALSE);
                break;
          }
          break;
 
       case CLASSID::VECTORPATH:
          switch (Hash) {
-            case SVF_d: Vector->set(FID_Sequence, StrValue); return ERR::Okay;
-            case SVF_pathLength: Vector->set(FID_PathLength, StrValue); return ERR::Okay;
+            case SVF_d: ((objVectorPath *)Vector)->setSequence(StrValue); return ERR::Okay;
+            case SVF_pathLength: ((objVectorPath *)Vector)->setPathLength(svtonum<int>(StrValue)); return ERR::Okay;
          }
          break;
 
@@ -3686,7 +3698,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          // The join-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
          if (!Self->Scene->findDef(StrValue, &other)) {
-            Vector->set(FID_AppendPath, other);
+            Vector->setAppendPath(other);
             Vector->setFlags(VF::JOIN_PATHS|Vector->Flags);
          }
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
@@ -3772,7 +3784,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_id:
          if (!Self->Cloning) {
-            Vector->set(FID_SID, StrValue);
+            Vector->setSID(StrValue);
             Self->Scene->addDef(StrValue, Vector);
             SetName(Vector, StrValue);
          }
@@ -3788,7 +3800,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          else if (iequals("inherit", StrValue))  Vector->setVisibility(VIS::INHERIT);
          break;
 
-      case SVF_numeric_id: Vector->set(FID_NumericID, StrValue); break;
+      case SVF_numeric_id: Vector->setNumeric(svtonum<int>(StrValue)); break;
 
       case SVF_overflow: // visible | hidden | scroll | auto | inherit
          log.trace("overflow is not supported.");
@@ -3829,22 +3841,22 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          break;
       }
 
-      case SVF_opacity:          Vector->set(FID_Opacity, std::clamp(strtod(StrValue.c_str(), nullptr), 0.0, 1.0)); break;
-      case SVF_fill_opacity:     Vector->set(FID_FillOpacity, std::clamp(strtod(StrValue.c_str(), nullptr), 0.0, 1.0)); break;
-      case SVF_shape_rendering:  Vector->set(FID_PathQuality, int(shape_rendering_to_render_quality(StrValue))); break;
+      case SVF_opacity:          Vector->setOpacity(std::clamp(svtonum<double>(StrValue), 0.0, 1.0)); break;
+      case SVF_fill_opacity:     Vector->setFillOpacity(std::clamp(svtonum<double>(StrValue), 0.0, 1.0)); break;
+      case SVF_shape_rendering:  Vector->setPathQuality(shape_rendering_to_render_quality(StrValue)); break;
 
       case SVF_stroke_width:            UNIT(FID_StrokeWidth, StrValue).set(Vector); break;
-      case SVF_stroke_opacity:          Vector->set(FID_StrokeOpacity, std::clamp(strtod(StrValue.c_str(), nullptr), 0.0, 1.0)); break;
-      case SVF_stroke_miterlimit:       Vector->set(FID_MiterLimit, StrValue); break;
-      case SVF_stroke_miterlimit_theta: Vector->set(FID_MiterLimitTheta, StrValue); break;
-      case SVF_stroke_inner_miterlimit: Vector->set(FID_InnerMiterLimit, StrValue); break;
+      case SVF_stroke_opacity:          Vector->setStrokeOpacity(std::clamp(svtonum<double>(StrValue), 0.0, 1.0)); break;
+      case SVF_stroke_miterlimit:       Vector->setMiterLimit(svtonum<double>(StrValue)); break;
+      //case SVF_stroke_miterlimit_theta: Vector->setMiterLimitTheta(svtonum<double>(StrValue)); break;
+      case SVF_stroke_inner_miterlimit: Vector->setInnerMiterLimit(svtonum<double>(StrValue)); break;
       case SVF_stroke_dashoffset:       UNIT(FID_DashOffset, StrValue).set(Vector); break;
 
       case SVF_mask: {
          OBJECTPTR clip;
          auto ref = uri_name(StrValue);
          if (!Self->Scene->findDef(ref, &clip)) {
-            Vector->set(FID_Mask, clip);
+            Vector->setMask(clip);
          }
          else {
             log.warning("Unable to find mask '%s'", StrValue.c_str());
@@ -3857,7 +3869,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          OBJECTPTR clip;
          auto ref = uri_name(StrValue);
          if (!Self->Scene->findDef(ref, &clip)) {
-            Vector->set(FID_Mask, clip);
+            Vector->setMask(clip);
          }
          else {
             log.warning("Unable to find clip-path '%s'", StrValue.c_str());

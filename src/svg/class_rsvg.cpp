@@ -53,16 +53,17 @@ static ERR RSVG_Init(extImage *Self)
    kt::Log log;
    std::string_view path;
 
-   Self->get(FID_Path, path);
+   Self->getPath(path);
 
    if (path.empty() or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
       return ERR::NoSupport; // Creating new SVG's is not supported in this module.
    }
 
-   char *buffer;
+   APTR header;
 
    if (wildcmp("*.svg|*.svgz", path));
-   else if (!Self->get(FID_Header, buffer)) {
+   else if (!Self->getHeader(header)) {
+      auto buffer = (char *)header;
       if (strisearch("<svg", buffer) >= 0) {
       }
       else return ERR::NoSupport;
@@ -96,7 +97,7 @@ static ERR RSVG_Query(extImage *Self)
 
    if (!prv->SVG) {
       std::string_view path;
-      if (!Self->get(FID_Path, path)) {
+      if (!Self->getPath(path)) {
          if ((prv->SVG = objSVG::create::local(fl::Path(path)))) {
          }
          else return log.warning(ERR::CreateObject);
@@ -106,7 +107,8 @@ static ERR RSVG_Query(extImage *Self)
 
    objVectorScene *scene;
    ERR error;
-   if ((!(error = prv->SVG->get(FID_Scene, scene))) and (scene)) {
+   OBJECTPTR scene_ref;
+   if ((!(error = prv->SVG->getScene(scene_ref))) and ((scene = (objVectorScene *)scene_ref))) {
       if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) {
          bmp->Flags |= BMF::ALPHA_CHANNEL;
          bmp->BitsPerPixel  = 32;
@@ -182,7 +184,8 @@ static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
 
       if (!Action(AC::Resize, Self->Bitmap, Args)) {
          objVectorScene *scene;
-         if ((!prv->SVG->get(FID_Scene, scene)) and (scene)) {
+         OBJECTPTR scene_ref;
+         if ((!prv->SVG->getScene(scene_ref)) and ((scene = (objVectorScene *)scene_ref))) {
             scene->setPageWidth(Self->Bitmap->Width);
             scene->setPageHeight(Self->Bitmap->Height);
 

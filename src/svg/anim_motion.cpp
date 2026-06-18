@@ -52,7 +52,8 @@ void anim_motion::perform()
    // animateMotion property.
 
    if ((mpath) or (not path.empty())) {
-      auto new_timestamp = vector->get<int>(FID_PathTimestamp);
+      int new_timestamp;
+      vector->getPathTimestamp(new_timestamp);
 
       if ((points.empty()) or (path_timestamp != new_timestamp)) {
          // Trace the path and store its points.  Transforms are completely ignored when pulling the path from
@@ -62,11 +63,13 @@ void anim_motion::perform()
 
          points.clear();
          if (mpath) {
-            if ((mpath->trace(call, vector->get<double>(FID_DisplayScale), false) != ERR::Okay) or (points.size() < 2)) return;
+            double display_scale;
+            vector->getDisplayScale(display_scale);
+            if ((mpath->trace(call, display_scale, false) != ERR::Okay) or (points.size() < 2)) return;
          }
          else if ((path->trace(call, 1.0, false) != ERR::Okay) or (points.size() < 2)) return;
 
-         path_timestamp = vector->get<int>(FID_PathTimestamp);
+         vector->getPathTimestamp(path_timestamp);
          total_dist = 0;
          distances.clear();
 
