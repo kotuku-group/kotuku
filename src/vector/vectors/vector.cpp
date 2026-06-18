@@ -1429,9 +1429,9 @@ If the Alpha component is set to zero then the FillColour will be ignored by the
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_FillColour(extVector *Self, struct FRGB &Value)
+static ERR VECTOR_GET_FillColour(extVector *Self, struct FRGB **Value)
 {
-   Value = Self->Fill[0].Colour;
+   *Value = &Self->Fill[0].Colour;
    return ERR::Okay;
 }
 
@@ -2249,9 +2249,9 @@ This field is complemented by the #StrokeOpacity and #Stroke fields.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_StrokeColour(extVector *Self, struct FRGB &Value)
+static ERR VECTOR_GET_StrokeColour(extVector *Self, struct FRGB **Value)
 {
-   Value = Self->Stroke.Colour;
+   *Value = &Self->Stroke.Colour;
    return ERR::Okay;
 }
 

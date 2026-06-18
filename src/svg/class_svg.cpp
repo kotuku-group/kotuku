@@ -363,16 +363,31 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
       else return log.warning(ERR::GetField);
    }
    else {
-      auto xml = objXML::create { fl::Flags(XMF::NEW|XMF::READABLE) };
+      // Seed the document with the XML header and root <svg> element in a single statement.  The XML API requires
+      // an existing anchor tag for InsertXML(), so an empty document cannot be populated incrementally - the initial
+      // tree must be supplied via the Statement field at creation time.
+
+      static const std::string root_doc = std::string(header) +
+         "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>";
+
+      auto xml = objXML::create { fl::Flags(XMF::NEW|XMF::READABLE), fl::Statement(root_doc) };
 
       if (xml.ok()) {
          Self->XML = *xml;
 
-         ERR error = xml->insertXML(0, XMI::NIL, header, nullptr);
-         int index = xml->Tags.back().ID;
+         ERR error = ERR::Okay;
 
-         XTag *tag;
-         if (!(error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>", &tag))) {
+         // Locate the root <svg> tag; child content and definitions are attached beneath it.
+
+         XTag *tag = nullptr;
+         for (auto &scan : xml->Tags) {
+            if ((scan.isTag()) and (kt::iequals(scan.name(), "svg"))) { tag = &scan; break; }
+         }
+         if (not tag) error = ERR::Search;
+
+         int index = (tag) ? tag->ID : 0;
+
+         if (!error) {
             bool multiple_viewports = (Self->Scene->Viewport->Next) ? true : false;
             if (multiple_viewports) {
                if (!(error = save_svg_defs(Self, *xml, Self->Scene, index))) {
