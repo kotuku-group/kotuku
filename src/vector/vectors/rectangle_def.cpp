@@ -19,3 +19,4 @@ static const struct ActionArray clVectorRectangleActions[] = {
    { AC::Resize, VECTORRECTANGLE_Resize },
    { AC::NIL, nullptr }
 };
+

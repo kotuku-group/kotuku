@@ -165,7 +165,7 @@ function selectGradient(Text):obj
 
       if not contourShape then
          contourShape = gradientVP.new('VectorSpiral', {
-            name='spiral', centerX='50%', centerY='50%',
+            name='spiral', cx='50%', cy='50%',
             fill='url(#GradientContour)', spacing=140, loopLimit=6, visibility='visible'
          })
       else
@@ -190,7 +190,7 @@ function selectGradient(Text):obj
 
       if not distalShape then
          distalShape = gradientVP.new('VectorShape', {
-            name='distalShape', centerX='50%', centerY='50%', radius=glRadius * 2,
+            name='distalShape', cx='50%', cy='50%', radius=glRadius * 2,
             fill='url(#GradientDistal)', visibility='visible', mod=4, stroke="white", strokeOpacity=0.5, strokeWidth=2
          })
       else

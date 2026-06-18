@@ -42,7 +42,7 @@
     </field>
 
     <field>
-      <name>CenterX</name>
+      <name>CX</name>
       <comment>The center of the shape on the x-axis.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
@@ -52,7 +52,7 @@
     </field>
 
     <field>
-      <name>CenterY</name>
+      <name>CY</name>
       <comment>The center of the shape on the y-axis.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>

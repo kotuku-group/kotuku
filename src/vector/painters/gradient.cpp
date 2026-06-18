@@ -446,10 +446,7 @@ static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *
       Self->modified();
       return ERR::Okay;
    }
-   else {
-      kt::Log().warning("Array size %" PF64 " < 2", Value->size());
-      return ERR::InvalidValue;
-   }
+   else return kt::Log().warning(ERR::InvalidValue);
 }
 
 /*********************************************************************************************************************

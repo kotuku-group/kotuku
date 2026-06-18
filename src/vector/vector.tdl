@@ -587,7 +587,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 
-  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', extended=true }, [[
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB' }, extended=true }, [[
     ~int(TB) Type
   ]])
 
@@ -688,27 +688,19 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true }, [[
-    ~int(DMF) Dimensions
-  ]])
+  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
 
-  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' }, [[
-  ]])
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' })
 
   klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true, output='vectors/polygon_def.cpp' }, [[
     ~array(struct(VectorPoint)) PointsArray
   ]])
 
-  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true }, [[
-  ]])
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true, output='vectors/supershape_def.cpp' })
 
-  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true }, [[
-    ~int(DMF) Dimensions
-  ]])
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true })
 
-  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true }, [[
-    ~int(DMF) Dimensions
-  ]])
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true, output='vectors/ellipse_def.cpp' })
 
   klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true }, [[
     ~int(ARF) AspectRatio

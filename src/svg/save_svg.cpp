@@ -484,22 +484,19 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORELLIPSE) {
       auto ellipse = (objVectorEllipse *)Vector;
       XTag *tag;
-      double rx, ry;
-      double cx, cy;
-      DMF dim;
+      Unit rx, ry, cx, cy;
 
-      ellipse->getDimensions(dim);
       if (!error) error = ellipse->getRadiusX(rx);
       if (!error) error = ellipse->getRadiusY(ry);
-      if (!error) error = ellipse->getCenterX(cx);
-      if (!error) error = ellipse->getCenterY(cy);
+      if (!error) error = ellipse->getCX(cx);
+      if (!error) error = ellipse->getCY(cy);
       if (!error) error = XML->insertStatement(Parent, XMI::CHILD_END, "<ellipse/>", &tag);
 
       if (!error) {
-         set_dimension(tag, "rx", rx, dmf::hasScaledRadiusX(dim));
-         set_dimension(tag, "ry", ry, dmf::hasScaledRadiusY(dim));
-         set_dimension(tag, "cx", cx, dmf::hasScaledCenterX(dim));
-         set_dimension(tag, "cy", cy, dmf::hasScaledCenterY(dim));
+         set_dimension(tag, "rx", rx);
+         set_dimension(tag, "ry", ry);
+         set_dimension(tag, "cx", cx);
+         set_dimension(tag, "cy", cy);
       }
 
       if (!error) error = save_svg_scan_std(Self, XML, Vector, new_index);
@@ -651,16 +648,15 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto wave = (objVectorWave *)Vector;
       XTag *tag;
       double dbl;
+      Unit unit;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
 
       if (!error) {
-         DMF dim;
-         wave->getDimensions(dim);
-         if (!wave->getX(dbl))         set_dimension(tag, "x", dbl, dmf::hasScaledX(dim));
-         if (!wave->getY(dbl))         set_dimension(tag, "y", dbl, dmf::hasScaledY(dim));
-         if (!wave->getWidth(dbl))     set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
-         if (!wave->getHeight(dbl))    set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
+         if (!wave->getX(unit))        set_dimension(tag, "x", unit);
+         if (!wave->getY(unit))        set_dimension(tag, "y", unit);
+         if (!wave->getWidth(unit))    set_dimension(tag, "width", unit);
+         if (!wave->getHeight(unit))   set_dimension(tag, "height", unit);
          if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
          if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
          if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
@@ -676,21 +672,20 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORSPIRAL) {
       auto spiral = (objVectorSpiral *)Vector;
       XTag *tag;
-      double dbl;
       int length;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:spiral/>", &tag);
       if (error != ERR::Okay) return error;
 
       if (!error) {
-         DMF dim;
-         spiral->getDimensions(dim);
-         if (!spiral->getCenterX(dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
-         if (!spiral->getCenterY(dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
-         if (!spiral->getWidth(dbl))   set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
-         if (!spiral->getHeight(dbl))  set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
+         Unit unit;
+         double dbl;
+         if (!spiral->getCX(unit))     set_dimension(tag, "cx", unit);
+         if (!spiral->getCY(unit))     set_dimension(tag, "cy", unit);
+         if (!spiral->getWidth(unit))  set_dimension(tag, "width", unit);
+         if (!spiral->getHeight(unit)) set_dimension(tag, "height", unit);
          if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", dbl);
-         if (!spiral->getRadius(dbl))  set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
+         if (!spiral->getRadius(unit)) set_dimension(tag, "r", unit);
          if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", dbl);
          if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
 
@@ -700,15 +695,15 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORSHAPE) {
       auto shape = (objVectorShape *)Vector;
       XTag *tag;
-      double dbl;
-      Unit val;
-      int num;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
 
       if (!error) {
-         if (!shape->getCenterX(val))  set_dimension(tag, "cx", val);
-         if (!shape->getCenterY(val))  set_dimension(tag, "cy", val);
+         double dbl;
+         Unit val;
+         int num;
+         if (!shape->getCX(val))       set_dimension(tag, "cx", val);
+         if (!shape->getCY(val))       set_dimension(tag, "cy", val);
          if (!shape->getRadius(val))   set_dimension(tag, "r", val);
          if (!shape->getA(dbl))        xml::NewAttrib(tag, "a", dbl);
          if (!shape->getB(dbl))        xml::NewAttrib(tag, "b", dbl);

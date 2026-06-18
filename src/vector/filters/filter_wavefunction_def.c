@@ -12,10 +12,7 @@ static ERR WAVEFUNCTIONFX_FreePlacement(extWaveFunctionFX *Self) {
 
 static const struct ActionArray clWaveFunctionFXActions[] = {
    { AC::Draw, WAVEFUNCTIONFX_Draw },
-   { AC::Free, WAVEFUNCTIONFX_Free },
    { AC::FreePlacement, WAVEFUNCTIONFX_FreePlacement },
-   { AC::Init, WAVEFUNCTIONFX_Init },
-   { AC::NewObject, WAVEFUNCTIONFX_NewObject },
    { AC::NewPlacement, WAVEFUNCTIONFX_NewPlacement },
    { AC::NIL, nullptr }
 };

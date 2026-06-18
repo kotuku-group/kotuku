@@ -1272,9 +1272,9 @@ static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &
 
       Self->DashArray = new (std::nothrow) DashedStroke(Self->BasePath, total);
       if (Self->DashArray) {
-         for (int i=0; i < Array.size(); i++) Self->DashArray->values[i] = Array[i];
+         for (unsigned i=0; i < Array.size(); i++) Self->DashArray->values[i] = Array[i];
          if (Array.size() & 1) {
-            for (int i=0; i < Array.size(); i++) Self->DashArray->values[Array.size()+i] = Array[i];
+            for (unsigned i=0; i < Array.size(); i++) Self->DashArray->values[Array.size()+i] = Array[i];
          }
 
          double total_length = 0;

@@ -28,7 +28,7 @@ class extWaveFunctionFX : public extFilterEffect {
    std::vector<std::vector<double>> psi;
    std::vector<GradientStop> Stops;
    std::string ColourMap;
-   GradientColours *Colours;
+   std::unique_ptr<GradientColours> Colours;
    objBitmap *Bitmap;
    ARF  AspectRatio;     // Aspect ratio flags.
    double Scale, Max;
@@ -36,6 +36,20 @@ class extWaveFunctionFX : public extFilterEffect {
    bool Dirty;
 
    void compute_wavefunction(int);
+
+   extWaveFunctionFX() {
+      AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
+      N = 1;
+      L = 0;
+      M = 1;
+      Scale = 1.0;
+      Dirty = true;
+      SourceType = VSF::NONE;
+   }
+
+   ~extWaveFunctionFX() {
+      if (Bitmap) FreeResource(Bitmap);
+   }
 };
 
 //********************************************************************************************************************
@@ -140,39 +154,6 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR WAVEFUNCTIONFX_Free(extWaveFunctionFX *Self)
-{
-   if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR WAVEFUNCTIONFX_Init(extWaveFunctionFX *Self)
-{
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR WAVEFUNCTIONFX_NewObject(extWaveFunctionFX *Self)
-{
-   new (&Self->psi) std::vector<std::vector<double>>;
-   new (&Self->Stops) std::vector<GradientStop>;
-   new (&Self->ColourMap) std::string;
-   Self->AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
-   Self->N = 1;
-   Self->L = 0;
-   Self->M = 1;
-   Self->Scale = 1.0;
-   Self->Dirty = true;
-   Self->SourceType = VSF::NONE;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -222,8 +203,7 @@ static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::stri
    if (Value.empty()) return ERR::NoData;
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
-      if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(it->second, 1);
+      Self->Colours.reset(new (std::nothrow) GradientColours(it->second, 1));
       if (not Self->Colours) return ERR::AllocMemory;
       Self->ColourMap = Value;
       return ERR::Okay;
@@ -380,8 +360,7 @@ static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const Gra
 
    if (Value.size() >= 2) {
       Self->Stops.assign(Value.begin(), Value.end());
-      if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(Self->Stops, /*Self->Filter->ColourSpace*/ VCS::SRGB, 1.0, 1);
+      Self->Colours.reset(new (std::nothrow) GradientColours(Self->Stops, /*Self->Filter->ColourSpace*/ VCS::SRGB, 1.0, 1));
       if (!Self->Colours) return ERR::AllocMemory;
       return ERR::Okay;
    }

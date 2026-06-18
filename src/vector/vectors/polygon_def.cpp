@@ -19,3 +19,4 @@ static const struct ActionArray clVectorPolygonActions[] = {
    { AC::Resize, VECTORPOLYGON_Resize },
    { AC::NIL, nullptr }
 };
+

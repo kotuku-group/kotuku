@@ -12,7 +12,6 @@ static ERR VECTORSPIRAL_FreePlacement(extVectorSpiral *Self) {
 
 static const struct ActionArray clVectorSpiralActions[] = {
    { AC::FreePlacement, VECTORSPIRAL_FreePlacement },
-   { AC::NewObject, VECTORSPIRAL_NewObject },
    { AC::NewPlacement, VECTORSPIRAL_NewPlacement },
    { AC::NIL, nullptr }
 };
