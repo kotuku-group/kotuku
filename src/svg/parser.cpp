@@ -371,7 +371,7 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
             trans->set(FID_Stops, stops);
 
             if (!InitObject(trans)) {
-               if (!Self->Cloning) Self->Scene->addDef(id.c_str(), trans);
+               if (!Self->Cloning) Self->Scene->addDef(id, trans);
                track_object(Self, trans);
                return;
             }
@@ -417,10 +417,11 @@ void svgState::proc_clippath(XTag &Tag) noexcept
 
    // A clip-path with an ID can only be added once (important when a clip-path is repeatedly referenced)
 
-   if (Self->Scene->findDef(id.c_str(), nullptr) != ERR::Okay) {
+   if (Self->Scene->findDef(id, nullptr) != ERR::Okay) {
       objVector *clip;
       if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
          clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGClip"));
+         clip->set(FID_SID, id);
 
          if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
 
@@ -439,7 +440,7 @@ void svgState::proc_clippath(XTag &Tag) noexcept
             auto vp = clip->get<OBJECTPTR>(FID_Viewport);
             state.process_children(Tag, vp);
 
-            Self->Scene->addDef(id.c_str(), clip);
+            Self->Scene->addDef(id, clip);
             track_object(Self, clip);
          }
          else FreeResource(clip);
@@ -499,13 +500,14 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
    // A clip-path with an ID can only be added once (important when a clip-path is repeatedly referenced)
 
-   if (!Self->Scene->findDef(id.c_str(), nullptr)) return;
+   if (!Self->Scene->findDef(id, nullptr)) return;
 
    objVector *clip;
    if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
       clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGMask"),
          fl::Flags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES),
          fl::Units(units));
+      clip->set(FID_SID, id);
 
       if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
 
@@ -514,7 +516,7 @@ void svgState::proc_mask(XTag &Tag) noexcept
          auto vp = clip->get<OBJECTPTR>(FID_Viewport);
          state.process_children(Tag, vp);
 
-         Self->Scene->addDef(id.c_str(), clip);
+         Self->Scene->addDef(id, clip);
          track_object(Self, clip);
       }
       else FreeResource(clip);
@@ -1111,7 +1113,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
 
    for (auto &child : Tag.Children) {
       auto child_name = svg_local_name(child);
-      if (wildcmp("feFunc?", std::string(child_name).c_str())) {
+      if (wildcmp("feFunc?", std::string(child_name))) {
          auto cmp = CMP::NIL;
          switch(child_name[6]) {
             case 'R': cmp = CMP::RED; break;
@@ -1458,7 +1460,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
 
    objVector *vector = nullptr;
    if (!ref.empty()) {
-      if (Self->Scene->findDef(ref.c_str(), (OBJECTPTR *)&vector) != ERR::Okay) {
+      if (Self->Scene->findDef(ref, (OBJECTPTR *)&vector) != ERR::Okay) {
          // The reference is not an existing vector but should be a pre-registered declaration that would allow
          // us to create it.  Note that creation only occurs once.  Subsequent use of the ID will result in the
          // live reference being found.
@@ -1656,7 +1658,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
       }
 
       if ((!id.empty()) and (!filter->init())) {
-         SetName(filter, id.c_str());
+         SetName(filter, id);
 
          for (auto child : Tag.Children) {
             log.trace("Parsing filter element '%s'", child.name());
@@ -1693,7 +1695,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
 
          Self->Effects.clear();
 
-         if (!Self->Cloning) Self->Scene->addDef(id.c_str(), filter);
+         if (!Self->Cloning) Self->Scene->addDef(id, filter);
 
          track_object(Self, filter);
       }
@@ -1814,7 +1816,7 @@ void svgState::proc_pattern(XTag &Tag) noexcept
          }
 
          if (!Self->Cloning) {
-            Self->Scene->addDef(id.c_str(), pattern);
+            Self->Scene->addDef(id, pattern);
             track_object(Self, pattern);
          }
       }
@@ -2148,7 +2150,7 @@ void svgState::proc_def_image(XTag &Tag) noexcept
             image->set(FID_Image, pic);
             if (!InitObject(image)) {
                if (!Self->Cloning) {
-                  Self->Scene->addDef(id.c_str(), image);
+                  Self->Scene->addDef(id, image);
                   track_object(Self, image);
                }
             }
@@ -2216,7 +2218,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
       xml::NewAttrib(Tag, "id", id);
    }
 
-   if (Self->Scene->findDef(id.c_str(), nullptr) != ERR::Okay) {
+   if (Self->Scene->findDef(id, nullptr) != ERR::Okay) {
       // Load the image and add it to the vector definition.  It will be rendered as a rectangle within the scene.
       // This may appear a little confusing because an image can be invoked in SVG like a first-class shape; however to
       // do so would be inconsistent with all other scene graph members being true path-based objects.
@@ -2233,7 +2235,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
             SetOwner(pic, image); // It's best if the pic belongs to the image.
 
-            Self->Scene->addDef(id.c_str(), image);
+            Self->Scene->addDef(id, image);
             track_object(Self, image);
          }
          else return ERR::CreateObject;
@@ -2436,7 +2438,7 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
 
    OBJECTPTR transvector = nullptr;
    if (!transition.empty()) {
-      if (Self->Scene->findDef(transition.c_str(), &transvector) != ERR::Okay) {
+      if (Self->Scene->findDef(transition, &transvector) != ERR::Okay) {
          log.warning("Unable to find element '%s' referenced at line %d", transition.c_str(), Tag.LineNo);
          return;
       }
@@ -2912,8 +2914,8 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
             break;
 
          case SVF_id:
-            viewport->set(FID_ID, val);
-            SetName(viewport, val.c_str());
+            viewport->set(FID_SID, val);
+            SetName(viewport, val);
             break;
 
          case SVF_enable_background: // Deprecated in favour of 'isolated'
@@ -3675,7 +3677,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_append_path: {
          // The append-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
-         if (!Self->Scene->findDef(StrValue.c_str(), &other)) Vector->setAppendPath(other);
+         if (!Self->Scene->findDef(StrValue, &other)) Vector->setAppendPath(other);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }
@@ -3683,7 +3685,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_join_path: {
          // The join-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
-         if (!Self->Scene->findDef(StrValue.c_str(), &other)) {
+         if (!Self->Scene->findDef(StrValue, &other)) {
             Vector->set(FID_AppendPath, other);
             Vector->setFlags(VF::JOIN_PATHS|Vector->Flags);
          }
@@ -3693,7 +3695,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_transition: {
          OBJECTPTR trans = nullptr;
-         if (!Self->Scene->findDef(StrValue.c_str(), &trans)) Vector->setTransition(trans);
+         if (!Self->Scene->findDef(StrValue, &trans)) Vector->setTransition(trans);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }
@@ -3770,9 +3772,9 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_id:
          if (!Self->Cloning) {
-            Vector->set(FID_ID, StrValue);
-            Self->Scene->addDef(StrValue.c_str(), Vector);
-            SetName(Vector, StrValue.c_str());
+            Vector->set(FID_SID, StrValue);
+            Self->Scene->addDef(StrValue, Vector);
+            SetName(Vector, StrValue);
          }
          break;
 

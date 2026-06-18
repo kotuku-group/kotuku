@@ -35,6 +35,16 @@
     </field>
 
     <field>
+      <name>SID</name>
+      <comment>String identifier for a vector.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>STRING</type>
+      <description>
+<p>The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other circumstances.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Units</name>
       <comment>Defines the coordinate system for fields X, Y, Width and Height.</comment>
       <access read="G" write="S">Get/Set</access>

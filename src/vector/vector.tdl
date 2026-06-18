@@ -599,6 +599,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp', extended=true }, [[
     obj(VectorViewport) Viewport # Hosts the Vector objects that will contribute to the clip path.
+    string SID
     int(VUNIT) Units             # Defines the coordinate system for fields X, Y, Width and Height.
     int(VCLF) Flags              # Optional flags.
   ]])
@@ -685,7 +686,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
+  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
   klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
 
@@ -693,11 +696,17 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~array(struct(VectorPoint)) PointsArray
   ]])
 
-  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true })
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
-  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', extended=true })
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
-  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true })
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
   klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true })
 

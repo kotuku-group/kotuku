@@ -379,7 +379,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       if (fill_rule IS VFR::EVEN_ODD) xml::NewAttrib(tag, "fill-rule", "evenodd");
    }
 
-   if ((!error) and (!(error = Vector->getID(sv))) and not sv.empty()) xml::NewAttrib(tag, "id", sv);
+   if ((!error) and (!(error = Vector->getSID(sv))) and not sv.empty()) xml::NewAttrib(tag, "id", sv);
 
    if ((!error) and (!(error = Vector->getFilter(sv))) and not sv.empty()) xml::NewAttrib(tag, "filter", sv);
 
@@ -472,8 +472,9 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       XTag *tag;
       double rx, ry;
       double cx, cy;
+      DMF dim;
 
-      auto dim = Vector->get<DMF>(FID_Dimensions);
+      ellipse->getDimensions(dim);
       if (!error) error = ellipse->getRadiusX(rx);
       if (!error) error = ellipse->getRadiusY(ry);
       if (!error) error = ellipse->getCenterX(cx);
@@ -498,7 +499,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       std::span<VectorPoint> points;
       int i;
 
-      if ((!vp->get(FID_Closed, i)) and (i IS FALSE)) { // Line or Polyline
+      if ((!vp->getClosed(i)) and (i IS FALSE)) { // Line or Polyline
          if (!(error = vp->getPointsArray(points))) {
             if (points.size() IS 2) {
                error = XML->insertStatement(Parent, XMI::CHILD_END, "<line/>", &tag);
@@ -533,8 +534,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
          }
       }
 
-      double path_length;
-      if ((!(error = vp->get(FID_PathLength, path_length))) and (path_length != 0)) {
+      int path_length;
+      if ((!(error = vp->getPathLength(path_length))) and (path_length != 0)) {
          xml::NewAttrib(tag, "pathLength", std::to_string(path_length));
       }
 
@@ -617,7 +618,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto clip = (objVectorClip *)Vector;
       XTag *tag;
       std::string_view str;
-      if ((!(error = clip->get(FID_ID, str))) and not str.empty()) { // The id is an essential requirement
+      if ((!(error = clip->getSID(str))) and not str.empty()) { // The id is an essential requirement
          error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
 
          VUNIT units;
@@ -640,7 +641,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
 
       if (!error) {
-         auto dim = wave->get<DMF>(FID_Dimensions);
+         DMF dim;
+         wave->getDimensions(dim);
          if (!wave->getX(dbl)) set_dimension(tag, "x", dbl, dmf::hasScaledX(dim));
          if (!wave->getY(dbl)) set_dimension(tag, "y", dbl, dmf::hasScaledY(dim));
          if (!wave->getWidth(dbl)) set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
@@ -667,15 +669,16 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if (error != ERR::Okay) return error;
 
       if (!error) {
-         auto dim = spiral->get<DMF>(FID_Dimensions);
+         DMF dim;
+         spiral->getDimensions(dim);
          if (!spiral->getCenterX(dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
          if (!spiral->getCenterY(dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
-         if (!spiral->getWidth(dbl)) set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
-         if (!spiral->getHeight(dbl)) set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
-         if (!spiral->getOffset(dbl)) xml::NewAttrib(tag, "offset", std::to_string(dbl));
+         if (!spiral->getWidth(dbl))   set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
+         if (!spiral->getHeight(dbl))  set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
+         if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", std::to_string(dbl));
+         if (!spiral->getRadius(dbl))  set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
+         if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", std::to_string(dbl));
          if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", std::to_string(length));
-         if (!spiral->getRadius(dbl)) set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
-         if (!spiral->getStep(dbl)) xml::NewAttrib(tag, "step", std::to_string(dbl));
 
          error = save_svg_scan_std(Self, XML, Vector, tag->ID);
       }
@@ -689,7 +692,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
 
       if (!error) {
-         auto dim = shape->get<DMF>(FID_Dimensions);
+         DMF dim;
+         shape->getDimensions(dim);
          if (!shape->get(FID_CenterX, dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
          if (!shape->get(FID_CenterY, dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
          if (!shape->get(FID_Radius, dbl)) set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
