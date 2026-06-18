@@ -317,14 +317,8 @@ static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string_view &Valu
 
 #include "filter_morphology_def.c"
 
-static const FieldDef clMorphologyFXOperator[] = {
-   { "Erode",  MOP::ERODE },
-   { "Dilate", MOP::DILATE },
-   { nullptr, 0 }
-};
-
 static const FieldArray clMorphologyFXFields[] = {
-   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_Operator, MORPHOLOGYFX_SET_Operator, &clMorphologyFXOperator },
+   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_Operator, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
    { "RadiusX",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_RadiusX, MORPHOLOGYFX_SET_RadiusX },
    { "RadiusY",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_RadiusY, MORPHOLOGYFX_SET_RadiusY },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, MORPHOLOGYFX_GET_XMLDef },

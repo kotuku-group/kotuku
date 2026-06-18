@@ -63,23 +63,23 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
       // "Any length values within the filter definitions represent fractions or percentages of the bounding box
       // on the referencing element."
 
-      if (dmf::hasAnyX(Self->Dimensions)) p_x = std::round(filter->TargetX + (Self->X * filter->BoundWidth));
-      if (dmf::hasAnyY(Self->Dimensions)) p_y = std::round(filter->TargetY + (Self->Y * filter->BoundHeight));
-      if (dmf::hasAnyWidth(Self->Dimensions)) p_width = std::round(Self->Width * filter->BoundWidth);
-      if (dmf::hasAnyHeight(Self->Dimensions)) p_height = std::round(Self->Height * filter->BoundHeight);
+      if (Self->X.defined()) p_x = std::round(filter->TargetX + (Self->X * filter->BoundWidth));
+      if (Self->Y.defined()) p_y = std::round(filter->TargetY + (Self->Y * filter->BoundHeight));
+      if (Self->Width.defined()) p_width = std::round(Self->Width * filter->BoundWidth);
+      if (Self->Height.defined()) p_height = std::round(Self->Height * filter->BoundHeight);
    }
    else {
-      if (dmf::hasScaledX(Self->Dimensions)) p_x = std::round(filter->TargetX + (Self->X * filter->TargetWidth));
-      else if (dmf::hasX(Self->Dimensions))  p_x = std::round(Self->X);
+      if (Self->X.scaled()) p_x = std::round(filter->TargetX + (Self->X * filter->TargetWidth));
+      else if (Self->X.defined()) p_x = std::round(Self->X);
 
-      if (dmf::hasScaledY(Self->Dimensions)) p_y = std::round(filter->TargetY + (Self->Y * filter->TargetHeight));
-      else if (dmf::hasY(Self->Dimensions))  p_y = std::round(Self->Y);
+      if (Self->Y.scaled()) p_y = std::round(filter->TargetY + (Self->Y * filter->TargetHeight));
+      else if (Self->Y.defined()) p_y = std::round(Self->Y);
 
-      if (dmf::hasScaledWidth(Self->Dimensions)) p_width = std::round(filter->TargetWidth * Self->Width);
-      else if (dmf::hasWidth(Self->Dimensions))  p_width = std::round(Self->Width);
+      if (Self->Width.scaled()) p_width = std::round(filter->TargetWidth * Self->Width);
+      else if (Self->Width.defined()) p_width = std::round(Self->Width);
 
-      if (dmf::hasScaledHeight(Self->Dimensions)) p_height = std::round(filter->TargetHeight * Self->Height);
-      else if (dmf::hasHeight(Self->Dimensions))  p_height = std::round(Self->Height);
+      if (Self->Height.scaled()) p_height = std::round(filter->TargetHeight * Self->Height);
+      else if (Self->Height.defined()) p_height = std::round(Self->Height);
    }
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
@@ -175,37 +175,33 @@ static void compute_target_area(extVectorFilter *Self)
    Self->BoundHeight = std::round(bounds.height());
 
    if (Self->Units IS VUNIT::BOUNDING_BOX) {
-      if (dmf::hasX(Self->Dimensions)) Self->TargetX = boundX;
-      else if (dmf::hasScaledX(Self->Dimensions)) Self->TargetX = std::round(boundX + (Self->X * Self->BoundWidth));
+      if (Self->X.defined()) Self->TargetX = std::round(boundX + (Self->X * Self->BoundWidth));
       else Self->TargetX = boundX;
 
-      if (dmf::hasY(Self->Dimensions)) Self->TargetY = boundY;
-      else if (dmf::hasScaledY(Self->Dimensions)) Self->TargetY = std::round(boundY + (Self->Y * Self->BoundHeight));
+      if (Self->Y.defined()) Self->TargetY = std::round(boundY + (Self->Y * Self->BoundHeight));
       else Self->TargetY = boundY;
 
-      if (dmf::hasWidth(Self->Dimensions)) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
-      else if (dmf::hasScaledWidth(Self->Dimensions)) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
+      if (Self->Width.defined()) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
       else Self->TargetWidth = Self->BoundWidth;
 
-      if (dmf::hasHeight(Self->Dimensions)) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
-      else if (dmf::hasScaledHeight(Self->Dimensions)) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
+      if (Self->Height.defined()) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
       else Self->TargetHeight = Self->BoundHeight;
    }
    else { // USERSPACE: Scaled dimensions are measured against the client's viewport rather than the vector.
-      if (dmf::hasX(Self->Dimensions)) Self->TargetX = std::round(Self->X);
-      else if (dmf::hasScaledX(Self->Dimensions)) Self->TargetX = std::round(Self->X * Self->ClientViewport->vpFixedWidth);
+      if (Self->X.scaled()) Self->TargetX = std::round(Self->X * Self->ClientViewport->vpFixedWidth);
+      else if (Self->X.defined()) Self->TargetX = std::round(Self->X);
       else Self->TargetX = boundX;
 
-      if (dmf::hasY(Self->Dimensions)) Self->TargetY = std::round(Self->Y);
-      else if (dmf::hasScaledY(Self->Dimensions)) Self->TargetY = std::round(Self->Y * Self->ClientViewport->vpFixedHeight);
+      if (Self->Y.scaled()) Self->TargetY = std::round(Self->Y * Self->ClientViewport->vpFixedHeight);
+      else if (Self->Y.defined()) Self->TargetY = std::round(Self->Y);
       else Self->TargetY = boundY;
 
-      if (dmf::hasWidth(Self->Dimensions)) Self->TargetWidth = Self->Width;
-      else if (dmf::hasScaledWidth(Self->Dimensions)) Self->TargetWidth = std::round(Self->Width * Self->ClientViewport->vpFixedWidth);
+      if (Self->Width.scaled()) Self->TargetWidth = std::round(Self->Width * Self->ClientViewport->vpFixedWidth);
+      else if (Self->Width.defined()) Self->TargetWidth = Self->Width;
       else Self->TargetWidth = Self->ClientViewport->vpFixedWidth;
 
-      if (dmf::hasHeight(Self->Dimensions)) Self->TargetHeight = Self->Height;
-      else if (dmf::hasScaledHeight(Self->Dimensions)) Self->TargetHeight = std::round(Self->Height * Self->ClientViewport->vpFixedHeight);
+      if (Self->Height.scaled()) Self->TargetHeight = std::round(Self->Height * Self->ClientViewport->vpFixedHeight);
+      else if (Self->Height.defined()) Self->TargetHeight = Self->Height;
       else Self->TargetHeight = Self->ClientViewport->vpFixedHeight;
    }
 }
@@ -489,38 +485,34 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
       auto const bound_width  = bounds.width();
       auto const bound_height = bounds.height();
 
-      if (dmf::hasX(Self->Dimensions)) Self->VectorClip.left = std::round(bounds.left + Self->X);
-      else if (dmf::hasScaledX(Self->Dimensions)) Self->VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
+      if (Self->X.defined()) Self->VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
       else Self->VectorClip.left = std::round(bounds.left);
 
-      if (dmf::hasY(Self->Dimensions)) Self->VectorClip.top = std::round(bounds.top + Self->Y);
-      else if (dmf::hasScaledY(Self->Dimensions)) Self->VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
+      if (Self->Y.defined()) Self->VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
       else Self->VectorClip.top = std::round(bounds.top);
 
-      if (dmf::hasWidth(Self->Dimensions)) Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
-      else if (dmf::hasScaledWidth(Self->Dimensions)) Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
+      if (Self->Width.defined()) Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
       else Self->VectorClip.right = Self->VectorClip.left + std::round(bound_width);
 
-      if (dmf::hasHeight(Self->Dimensions)) Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
-      else if (dmf::hasScaledHeight(Self->Dimensions)) Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
+      if (Self->Height.defined()) Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
       else Self->VectorClip.bottom = Self->VectorClip.top + std::round(bound_height);
    }
    else { // USERSPACE
       double x, y, w, h;
-      if (dmf::hasX(Self->Dimensions)) x = std::round(Self->X);
-      else if (dmf::hasScaledX(Self->Dimensions)) x = std::round(Self->X * container_width);
+      if (Self->X.scaled()) x = std::round(Self->X * container_width);
+      else if (Self->X.defined()) x = std::round(Self->X);
       else x = 0;
 
-      if (dmf::hasY(Self->Dimensions)) y = std::round(Self->Y);
-      else if (dmf::hasScaledY(Self->Dimensions)) y = std::round(Self->Y * container_height);
+      if (Self->Y.scaled()) y = std::round(Self->Y * container_height);
+      else if (Self->Y.defined()) y = std::round(Self->Y);
       else y = 0;
 
-      if (dmf::hasWidth(Self->Dimensions)) w = std::round(Self->Width);
-      else if (dmf::hasScaledWidth(Self->Dimensions)) w = std::round(Self->Width * container_width);
+      if (Self->Width.scaled()) w = std::round(Self->Width * container_width);
+      else if (Self->Width.defined()) w = std::round(Self->Width);
       else w = std::round(container_width);
 
-      if (dmf::hasHeight(Self->Dimensions)) h = std::round(Self->Height);
-      else if (dmf::hasScaledHeight(Self->Dimensions)) h = std::round(Self->Height * container_height);
+      if (Self->Height.scaled()) h = std::round(Self->Height * container_height);
+      else if (Self->Height.defined()) h = std::round(Self->Height);
       else h = std::round(container_height);
 
       agg::path_storage rect;
@@ -719,22 +711,6 @@ linear RGB is better suited for producing high quality results at a cost of spee
 Note that if SVG compatibility is required, linear RGB must be used as the default.
 
 -FIELD-
-Dimensions: Dimension flags define whether individual dimension fields contain fixed or scaled values.
-
-The following dimension flags are supported:
-
-<types lookup="DMF">
-<type name="FIXED_X">The #X value is a fixed coordinate.</>
-<type name="FIXED_Y">The #Y value is a fixed coordinate.</>
-<type name="SCALED_X">The #X value is a scaled coordinate.</>
-<type name="SCALED_Y">The #Y value is a scaled coordinate.</>
-<type name="FIXED_WIDTH">The #Width value is a fixed coordinate.</>
-<type name="FIXED_HEIGHT">The #Height value is a fixed coordinate.</>
-<type name="SCALED_WIDTH">The #Width value is a scaled coordinate.</>
-<type name="SCALED_HEIGHT">The #Height value is a scaled coordinate.</>
-</types>
-
--FIELD-
 EffectXML: Returns a SVG XML string that defines the filter's effects.
 
 This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.  The string
@@ -778,17 +754,15 @@ filter algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Height(extVectorFilter *Self, Unit *Value)
+static ERR VECTORFILTER_GET_Height(extVectorFilter *Self, Unit &Value)
 {
-   Value->set(Self->Height);
+   Value = Self->Height;
    return ERR::Okay;
 }
 
 static ERR VECTORFILTER_SET_Height(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
-      if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_HEIGHT) & (~DMF::FIXED_HEIGHT);
-      else Self->Dimensions = (Self->Dimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
       Self->Height = Value;
       return ERR::Okay;
    }
@@ -872,18 +846,15 @@ filter algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Width(extVectorFilter *Self, Unit *Value)
+static ERR VECTORFILTER_GET_Width(extVectorFilter *Self, Unit &Value)
 {
-   Value->set(Self->Width);
+   Value = Self->Width;
    return ERR::Okay;
 }
 
 static ERR VECTORFILTER_SET_Width(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
-      if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_WIDTH) & (~DMF::FIXED_WIDTH);
-      else Self->Dimensions = (Self->Dimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
-
       Self->Width = Value;
       return ERR::Okay;
    }
@@ -903,17 +874,14 @@ algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_X(extVectorFilter *Self, Unit *Value)
+static ERR VECTORFILTER_GET_X(extVectorFilter *Self, Unit &Value)
 {
-   Value->set(Self->X);
+   Value = Self->X;
    return ERR::Okay;
 }
 
 static ERR VECTORFILTER_SET_X(extVectorFilter *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
-
    Self->X = Value;
    return ERR::Okay;
 }
@@ -932,49 +900,33 @@ algorithms to work with, and is usually a sufficient default.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Y(extVectorFilter *Self, Unit *Value)
+static ERR VECTORFILTER_GET_Y(extVectorFilter *Self, Unit &Value)
 {
-   Value->set(Self->Y);
+   Value = Self->Y;
    return ERR::Okay;
 }
 
 static ERR VECTORFILTER_SET_Y(extVectorFilter *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
-
    Self->Y = Value;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static const FieldDef clFilterDimensions[] = {
-   { "FixedX",       DMF::FIXED_X },
-   { "FixedY",       DMF::FIXED_Y },
-   { "ScaledX",      DMF::SCALED_X },
-   { "ScaledY",      DMF::SCALED_Y },
-   { "FixedWidth",   DMF::FIXED_WIDTH },
-   { "FixedHeight",  DMF::FIXED_HEIGHT },
-   { "ScaledWidth",  DMF::SCALED_WIDTH },
-   { "ScaledHeight", DMF::SCALED_HEIGHT },
-   { nullptr, 0 }
-};
-
 #include "filter_def.c"
 
 static const FieldArray clFilterFields[] = {
-   { "X",              FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_X, VECTORFILTER_SET_X },
-   { "Y",              FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Y, VECTORFILTER_SET_Y },
-   { "Width",          FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Width, VECTORFILTER_SET_Width },
-   { "Height",         FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Height, VECTORFILTER_SET_Height },
+   { "X",              FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_X, VECTORFILTER_SET_X },
+   { "Y",              FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Y, VECTORFILTER_SET_Y },
+   { "Width",          FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Width, VECTORFILTER_SET_Width },
+   { "Height",         FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Height, VECTORFILTER_SET_Height },
    { "Opacity",        FDF_DOUBLE|FDF_RW, nullptr, VECTORFILTER_SET_Opacity },
    { "Inherit",        FDF_OBJECT|FDF_RW, nullptr, VECTORFILTER_SET_Inherit },
    { "ResX",           FDF_INT|FDF_RI },
    { "ResY",           FDF_INT|FDF_RI },
    { "Units",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterUnits },
    { "PrimitiveUnits", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterPrimitiveUnits },
-   { "Dimensions",     FDF_INTFLAGS|FDF_R, nullptr, nullptr,        &clFilterDimensions },
    { "ColourSpace",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterColourSpace },
    { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterAspectRatio },
    // Virtual fields

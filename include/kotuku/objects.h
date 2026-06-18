@@ -479,22 +479,20 @@ struct alignas(8) Object { // Must be 64-bit aligned
       return field->WriteValue(target, field, FD_POINTER, Value);
    }
 
-   // There are two mechanisms for retrieving object values; the first allows the value to be retrieved with an error
-   // code and the value itself; the second ignores the error code and returns a value that could potentially be invalid.
+   // Internal get helpers
 
    private:
-   template <class T> ERR get_unit(Object *Object, const struct Field &Field, T &Value) {
-      SetObjectContext(Object, &Field, AC::NIL);
-
-      ERR error = ERR::Okay;
-      if (Field.Flags & (FD_DOUBLE|FD_INT64|FD_INT)) {
-          Unit var(0, FD_DOUBLE);
-          error = Field.GetValue(Object, &var);
-          if (error IS ERR::Okay) Value = var.Value;
+   template <class T> ERR get_unit(Object *Object, const struct Field &Field, T &Value) requires std::integral<T> or std::floating_point<T> {
+      if (not Field.GetValue) { // No custom getter; the Unit is stored directly at the field offset
+         Value = ((Unit *)(((int8_t *)Object) + Field.Offset))->Value;
+         return ERR::Okay;
       }
-      else error = ERR::FieldTypeMismatch;
 
-      RestoreObjectContext();
+      if (not Field.pure()) SetObjectContext(Object, &Field, AC::NIL);
+      Unit var(0);
+      auto error = Field.GetValue(Object, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      if (not Field.pure()) RestoreObjectContext();
       return error;
    }
 
@@ -508,6 +506,9 @@ struct alignas(8) Object { // Must be 64-bit aligned
       }
       else return std::make_pair(ERR::Okay, ((int8_t *)Object) + Field.Offset);
    }
+
+   // There are two mechanisms for retrieving object values; the first allows the value to be retrieved with an error
+   // code and the value itself; the second ignores the error code and returns a value that could potentially be invalid.
 
    public:
 

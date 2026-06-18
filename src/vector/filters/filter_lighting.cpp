@@ -995,12 +995,6 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string_view &Value)
 
 //********************************************************************************************************************
 
-static const FieldDef clLightingType[] = {
-   { "Diffuse",  LT::DIFFUSE },
-   { "Specular", LT::SPECULAR },
-   { nullptr, 0 }
-};
-
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
@@ -1008,7 +1002,7 @@ static const FieldArray clLightingFXFields[] = {
    { "Constant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Constant, LIGHTINGFX_SET_Constant },
    { "Exponent", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Exponent, LIGHTINGFX_SET_Exponent },
    { "Scale",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Scale, LIGHTINGFX_SET_Scale },
-   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingType },
+   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingFXLT },
    { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
    { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       LIGHTINGFX_GET_XMLDef },

@@ -658,13 +658,12 @@ class extVectorFilter : public objVectorFilter {
       Units          = VUNIT::BOUNDING_BOX;
       PrimitiveUnits = VUNIT::UNDEFINED;
       Opacity        = 1.0;
-      X              = -0.1; // -10% default as per SVG requirements
-      Y              = -0.1;
-      Width          = 1.2;  // +120% default as per SVG requirements
-      Height         = 1.2;
+      X              = Unit(-0.1, FD_SCALED); // -10% default as per SVG requirements
+      Y              = Unit(-0.1, FD_SCALED);
+      Width          = Unit(1.2, FD_SCALED);  // +120% default as per SVG requirements
+      Height         = Unit(1.2, FD_SCALED);
       AspectRatio    = VFA::MEET; // Scale X/Y values independently
       ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
-      Dimensions     = DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT;
    }
 };
 
@@ -674,6 +673,25 @@ class extFilterEffect : public objFilterEffect {
 
    extVectorFilter *Filter; // Direct reference to the parent filter
    uint16_t UsageCount;        // Total number of other effects utilising this effect to build a pipeline
+
+   extFilterEffect() {
+      SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
+   }
+
+   ~extFilterEffect() {
+      if (Filter) {
+         for (auto e = Filter->Effects; (e) and (UsageCount > 0); e = (extFilterEffect *)e->Next) {
+            if (e->Input IS this) { e->Input = nullptr; UsageCount--; }
+            if (e->Mix IS this) { e->Mix = nullptr; UsageCount--; }
+         }
+
+         if (Filter->Effects IS this) Filter->Effects = (extFilterEffect *)Next;
+         if (Filter->LastEffect IS this) Filter->LastEffect = (extFilterEffect *)Prev;
+      }
+
+      if (Prev) Prev->Next = Next;
+      if (Next) Next->Prev = Prev;
+   }
 };
 
 class extPainter : public VectorPainter {

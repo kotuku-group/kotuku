@@ -31,8 +31,21 @@ class extSourceFX : public extFilterEffect {
    objVectorScene *Scene; // Internal scene for rendering.
    uint8_t *BitmapData;
    ARF  AspectRatio;      // Aspect ratio flags.
-   int DataSize;
+   int  DataSize;
    bool Render;           // Must be true if the bitmap cache needs to be rendered.
+
+   extSourceFX() {
+      AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
+      SourceType  = VSF::NONE;
+      Render      = true;
+   }
+
+   ~extSourceFX() {
+      if (Bitmap)     FreeResource(Bitmap);
+      if (Source)     UnsubscribeAction(Source, AC::Free);
+      if (Scene)      FreeResource(Scene);
+      if (BitmapData) FreeResource(BitmapData);
+   }
 };
 
 //********************************************************************************************************************
@@ -50,8 +63,6 @@ Draw: Render the source vector to the target bitmap.
 
 static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 {
-   kt::Log log;
-
    if (!Self->Source) return ERR::Okay;
 
    auto &filter = Self->Filter;
@@ -64,23 +75,23 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
    double img_height = filter->TargetHeight;
 
    if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (dmf::hasAnyX(Self->Dimensions)) img_x = trunc(filter->TargetX + (Self->X * filter->BoundWidth));
-      if (dmf::hasAnyY(Self->Dimensions)) img_y = trunc(filter->TargetY + (Self->Y * filter->BoundHeight));
-      if (dmf::hasAnyWidth(Self->Dimensions))  img_width = Self->Width * filter->BoundWidth;
-      if (dmf::hasAnyHeight(Self->Dimensions)) img_height = Self->Height * filter->BoundHeight;
+      if (Self->X.defined()) img_x = trunc(filter->TargetX + (Self->X * filter->BoundWidth));
+      if (Self->Y.defined()) img_y = trunc(filter->TargetY + (Self->Y * filter->BoundHeight));
+      if (Self->Width.defined()) img_width = Self->Width * filter->BoundWidth;
+      if (Self->Height.defined()) img_height = Self->Height * filter->BoundHeight;
    }
    else {
-      if (dmf::hasScaledX(Self->Dimensions)) img_x = filter->TargetX + (Self->X * filter->TargetWidth);
-      else if (dmf::hasX(Self->Dimensions))  img_x = Self->X;
+      if (Self->X.scaled()) img_x = filter->TargetX + (Self->X * filter->TargetWidth);
+      else if (Self->X.defined()) img_x = Self->X;
 
-      if (dmf::hasScaledY(Self->Dimensions)) img_y = filter->TargetY + (Self->Y * filter->TargetHeight);
-      else if (dmf::hasY(Self->Dimensions))  img_y = Self->Y;
+      if (Self->Y.scaled()) img_y = filter->TargetY + (Self->Y * filter->TargetHeight);
+      else if (Self->Y.defined()) img_y = Self->Y;
 
-      if (dmf::hasScaledWidth(Self->Dimensions)) img_width = filter->TargetWidth * Self->Width;
-      else if (dmf::hasWidth(Self->Dimensions))  img_width = Self->Width;
+      if (Self->Width.scaled()) img_width = filter->TargetWidth * Self->Width;
+      else if (Self->Width.defined()) img_width = Self->Width;
 
-      if (dmf::hasScaledHeight(Self->Dimensions)) img_height = filter->TargetHeight * Self->Height;
-      else if (dmf::hasHeight(Self->Dimensions))  img_height = Self->Height;
+      if (Self->Height.scaled()) img_height = filter->TargetHeight * Self->Height;
+      else if (Self->Height.defined()) img_height = Self->Height;
    }
 
    if ((filter->ClientViewport->Scene->PageWidth > Self->Scene->PageWidth) or
@@ -164,17 +175,6 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR SOURCEFX_Free(extSourceFX *Self)
-{
-   if (Self->Bitmap)     { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-   if (Self->Source)     { UnsubscribeAction(Self->Source, AC::Free); Self->Source = nullptr; }
-   if (Self->Scene)      { FreeResource(Self->Scene); Self->Scene = nullptr; }
-   if (Self->BitmapData) { FreeResource(Self->BitmapData); Self->BitmapData = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR SOURCEFX_Init(extSourceFX *Self)
 {
    kt::Log log;
@@ -190,10 +190,6 @@ static ERR SOURCEFX_Init(extSourceFX *Self)
 
 static ERR SOURCEFX_NewObject(extSourceFX *Self)
 {
-   Self->AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
-   Self->SourceType  = VSF::NONE;
-   Self->Render      = true;
-
    if ((Self->Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
       if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Self->Scene->UID))) {
          if ((Self->Bitmap = objBitmap::create::local(fl::Name("fx_src_cache"),

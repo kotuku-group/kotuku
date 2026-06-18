@@ -23,16 +23,12 @@ class extFloodFX : public extFilterEffect {
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
    double Opacity;
+
+   extFloodFX() {
+      Opacity = 1.0;
+      SourceType = VSF::NONE;
+   }
 };
-
-//********************************************************************************************************************
-
-static ERR FLOODFX_NewObject(extFloodFX *Self)
-{
-   Self->Opacity = 1.0;
-   Self->SourceType = VSF::NONE;
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 -ACTION-

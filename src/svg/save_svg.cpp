@@ -218,17 +218,10 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
             if (!error) xml::NewAttrib(tag, "id", key);
 
-            DMF dim;
-            filter->getDimensions(dim);
-
-            if ((!error) and dmf::hasAnyX(dim)) set_dimension(tag, "x", filter->X, dmf::hasScaledX(dim));
-            if ((!error) and dmf::hasAnyY(dim)) set_dimension(tag, "y", filter->Y, dmf::hasScaledY(dim));
-
-            if ((!error) and dmf::hasAnyWidth(dim))
-               set_dimension(tag, "width", filter->Width, dmf::hasScaledWidth(dim));
-
-            if ((!error) and dmf::hasAnyHeight(dim))
-               set_dimension(tag, "height", filter->Height, dmf::hasScaledHeight(dim));
+            if ((!error) and filter->X.defined()) set_dimension(tag, "x", filter->X);
+            if ((!error) and filter->Y.defined()) set_dimension(tag, "y", filter->Y);
+            if ((!error) and filter->Width.defined()) set_dimension(tag, "width", filter->Width);
+            if ((!error) and filter->Height.defined()) set_dimension(tag, "height", filter->Height);
 
             VUNIT units;
             if ((!error) and (!filter->getUnits(units))) {
@@ -555,7 +548,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORTEXT) {
       auto vt = (objVectorText *)Vector;
       XTag *tag;
-      double x, y, text_length;
+      Unit x, y;
+      double text_length;
       int weight;
       std::string str;
       std::string_view sv;
@@ -563,8 +557,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<text/>", &tag);
 
-      if ((!error) and (!vt->getX(x))) set_dimension(tag, "x", x, FALSE);
-      if ((!error) and (!vt->getY(y))) set_dimension(tag, "y", y, FALSE);
+      if ((!error) and (!vt->getX(x))) set_dimension(tag, "x", x);
+      if ((!error) and (!vt->getY(y))) set_dimension(tag, "y", y);
 
       std::span<double> dx;
       if ((!error) and (!(error = vt->getDX(dx))) and (not dx.empty())) {

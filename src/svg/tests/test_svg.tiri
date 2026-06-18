@@ -227,7 +227,7 @@ end
 @Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0x6534eb63) end
 @Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0xc628d603) end
 @Test global function W3Convolve1()        hashTestSVG('filters/w3-filters-conv-01-f.svg', -1) end
-@Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0xe2160428) end
+@Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0x47ded148) end
 @Test; @Disabled global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x3e4d8a13) end
 @Test; @Disabled global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0xda23deb4) end
 @Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x0c1b324a) end
@@ -249,7 +249,7 @@ end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0xe288d392) end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xb6c43a7e) end
 @Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0xda177689) end
-@Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0xf2887d80) end
+@Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x7f48ace7) end
 @Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x8806e9ac) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0xa62e7939) end
 
