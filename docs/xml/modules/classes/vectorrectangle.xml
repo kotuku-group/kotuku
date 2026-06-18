@@ -19,36 +19,52 @@
     </source>
   </info>
 
-  <fields>
-    <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or scaled values.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>The following dimension flags are supported:</p>
-<types lookup="DMF">
-<type name="FIXED_HEIGHT">The <fl>Height</fl> value is a fixed coordinate.</type>
-<type name="FIXED_WIDTH">The <fl>Width</fl> value is a fixed coordinate.</type>
-<type name="FIXED_X">The <fl>X</fl> value is a fixed coordinate.</type>
-<type name="FIXED_Y">The <fl>Y</fl> value is a fixed coordinate.</type>
-<type name="FIXED_RADIUS_X">The <fl>RoundX</fl> value is a fixed coordinate.</type>
-<type name="FIXED_RADIUS_Y">The <fl>RoundY</fl> value is a fixed coordinate.</type>
-<type name="SCALED_HEIGHT">The <fl>Height</fl> value is a scaled coordinate.</type>
-<type name="SCALED_WIDTH">The <fl>Width</fl> value is a scaled coordinate.</type>
-<type name="SCALED_X">The <fl>X</fl> value is a scaled coordinate.</type>
-<type name="SCALED_Y">The <fl>Y</fl> value is a scaled coordinate.</type>
-<type name="SCALED_RADIUS_X">The <fl>RoundX</fl> value is a scaled coordinate.</type>
-<type name="SCALED_RADIUS_Y">The <fl>RoundY</fl> value is a scaled coordinate.</type>
-</types>
-      </description>
-    </field>
+  <actions>
+    <action>
+      <name>Move</name>
+      <comment>Moves the vector to a new position.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
 
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves the vector to a new fixed position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Resize</name>
+      <comment>Changes the rectangle dimensions.</comment>
+      <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Width">The new width of the object.</param>
+        <param type="DOUBLE" name="Height">The new height of the object.</param>
+        <param type="DOUBLE" name="Depth">The new depth of the object.</param>
+      </input>
+    </action>
+
+  </actions>
+
+  <fields>
     <field>
       <name>Height</name>
       <comment>The height of the rectangle.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The height of the rectangle is defined here as either a fixed or scaled value.  Negative values are permitted (this will flip the rectangle on the vertical axis).</p>
       </description>
@@ -58,7 +74,7 @@
       <name>RoundX</name>
       <comment>Specifies the size of rounded corners on the horizontal axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The corners of a rectangle can be rounded by setting the RoundX and RoundY values.  Each value is interpreted as a radius along the relevant axis.  A value of zero (the default) turns off this feature.</p>
       </description>
@@ -68,7 +84,7 @@
       <name>RoundY</name>
       <comment>Specifies the size of rounded corners on the vertical axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The corners of a rectangle can be rounded by setting the RoundX and RoundY values.  Each value is interpreted as a radius along the relevant axis.  A value of zero (the default) turns off this feature.</p>
       </description>
@@ -78,10 +94,9 @@
       <name>Rounding</name>
       <comment>Precisely controls rounded corner positioning.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE []</type>
+      <type>Unit []</type>
       <description>
 <p>Set the Rounding field if all four corners of the rectangle need to be precisely controlled.  Four X,Y sizing pairs must be provided in sequence, with the first describing the top-left corner and proceeding in clockwise fashion. Each pair of values is equivalent to a <fl>RoundX</fl>,<fl>RoundY</fl> definition for that corner only.</p>
-<p>By default, values will be treated as fixed pixel units.  They can be changed to scaled values by defining the <code>DMF::SCALED_RADIUS_X</code> and/or <code>DMF::SCALED_RADIUS_Y</code> flags in the <fl>Dimensions</fl> field.  The scale is calculated against the rectangle's diagonal.</p>
       </description>
     </field>
 
@@ -89,7 +104,7 @@
       <name>Width</name>
       <comment>The width of the rectangle.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The width of the rectangle is defined here as either a fixed or scaled value.  Negative values are permitted (this will flip the rectangle on the horizontal axis).</p>
       </description>
@@ -99,28 +114,28 @@
       <name>X</name>
       <comment>The left-side of the rectangle.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
     </field>
 
     <field>
       <name>XOffset</name>
       <comment>The right-side of the rectangle, expressed as a fixed or scaled offset value.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
     </field>
 
     <field>
       <name>Y</name>
       <comment>The top of the rectangle.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
     </field>
 
     <field>
       <name>YOffset</name>
       <comment>The bottom of the rectangle, expressed as a fixed or scaled offset value.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
     </field>
 
   </fields>

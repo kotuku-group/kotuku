@@ -3484,7 +3484,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                // Note: For the time being, VectorRectangle doesn't support X2/Y2 as a concept.  This would
                // cause problems if the client was to specify a scaled value here.
                auto width = UNIT(FID_Width, StrValue);
-               double x = 0;
+               Unit x(0);
                ((objVectorRectangle *)Vector)->getX(x);
                Vector->setFields(fl::Width(std::abs(width - x)));
                return ERR::Okay;
@@ -3492,7 +3492,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
             case SVF_y2: {
                auto height = UNIT(FID_Height, StrValue);
-               double y = 0;
+               Unit y(0);
                ((objVectorRectangle *)Vector)->getY(y);
                Vector->setFields(fl::Height(std::abs(height - y)));
                return ERR::Okay;

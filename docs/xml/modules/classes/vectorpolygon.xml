@@ -26,6 +26,54 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Move</name>
+      <comment>Moves a polygon to a new position.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves a polygon to a new central position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+      <description>
+<p>This action will permanently modify the coordinates of a polygon so that they offset by the provided coordinate values.</p>
+<p>The operation will abort if any of the points in the polygon are discovered to be relative coordinates.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Resize</name>
+      <comment>Resize the polygon by its width and height.</comment>
+      <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Width">The new width of the object.</param>
+        <param type="DOUBLE" name="Height">The new height of the object.</param>
+        <param type="DOUBLE" name="Depth">The new depth of the object.</param>
+      </input>
+      <description>
+<p>This action will resize a polygon by adjusting all of its existing points.  The points are rescaled to guarantee that they are within the provided dimensions.</p>
+<p>If a Width and/or Height value of zero is passed, no scaling on the associated axis will occur.</p>
+      </description>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
       <name>Closed</name>

@@ -692,9 +692,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~int(DMF) Dimensions
   ]])
 
-  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' }, [[
+  ]])
 
-  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true }, [[
+  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true, output='vectors/polygon_def.cpp' }, [[
     ~array(struct(VectorPoint)) PointsArray
   ]])
 

@@ -23,7 +23,7 @@ TODO: Add a SetPoint(DOUBLE X, DOUBLE Y) method for modifying existing points.
 
 constexpr int MAX_POINTS = 1024 * 16; // Maximum of 16k points per polygon object.
 
-static void generate_polygon(extVectorPoly *Vector, agg::path_storage &Path)
+static void generate_polygon(extVectorPolygon *Vector, agg::path_storage &Path)
 {
    auto view_width = get_parent_width(Vector);
    auto view_height = get_parent_height(Vector);
@@ -72,7 +72,7 @@ static void generate_polygon(extVectorPoly *Vector, agg::path_storage &Path)
 //********************************************************************************************************************
 // Converts a string of paired coordinates into a VectorPoint array.
 
-static ERR read_points(extVectorPoly *Self, std::string_view Value)
+static ERR read_points(extVectorPolygon *Self, std::string_view Value)
 {
    Self->Points.clear();
 
@@ -102,7 +102,7 @@ static ERR read_points(extVectorPoly *Self, std::string_view Value)
 
 //********************************************************************************************************************
 
-static ERR POLYGON_Free(extVectorPoly *Self)
+static ERR VECTORPOLYGON_Free(extVectorPolygon *Self)
 {
    Self->Points.~vector<VectorPoint>();
    return ERR::Okay;
@@ -114,7 +114,7 @@ Move: Moves a polygon to a new position.
 -END-
 *********************************************************************************************************************/
 
-static ERR POLYGON_Move(extVectorPoly *Self, struct acMove *Args)
+static ERR VECTORPOLYGON_Move(extVectorPolygon *Self, struct acMove *Args)
 {
    kt::Log log;
 
@@ -149,7 +149,7 @@ The operation will abort if any of the points in the polygon are discovered to b
 -END-
 *********************************************************************************************************************/
 
-static ERR POLYGON_MoveToPoint(extVectorPoly *Self, struct acMoveToPoint *Args)
+static ERR VECTORPOLYGON_MoveToPoint(extVectorPolygon *Self, struct acMoveToPoint *Args)
 {
    kt::Log log;
 
@@ -187,7 +187,7 @@ static ERR POLYGON_MoveToPoint(extVectorPoly *Self, struct acMoveToPoint *Args)
 
 //********************************************************************************************************************
 
-static ERR POLYGON_NewObject(extVectorPoly *Self)
+static ERR VECTORPOLYGON_NewObject(extVectorPolygon *Self)
 {
    new (&Self->Points) std::vector<VectorPoint>;
    Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_polygon;
@@ -208,7 +208,7 @@ If a Width and/or Height value of zero is passed, no scaling on the associated a
 
 *********************************************************************************************************************/
 
-static ERR POLYGON_Resize(extVectorPoly *Self, struct acResize *Args)
+static ERR VECTORPOLYGON_Resize(extVectorPolygon *Self, struct acResize *Args)
 {
    kt::Log log;
 
@@ -237,13 +237,13 @@ the default.  If `false`, the polygon will not be closed, which results in the e
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_Closed(extVectorPoly *Self, int *Value)
+static ERR POLY_GET_Closed(extVectorPolygon *Self, int *Value)
 {
    *Value = Self->Closed;
    return ERR::Okay;
 }
 
-static ERR POLY_SET_Closed(extVectorPoly *Self, int Value)
+static ERR POLY_SET_Closed(extVectorPolygon *Self, int Value)
 {
    if (Value) Self->Closed = true;
    else Self->Closed = false;
@@ -263,13 +263,13 @@ operations.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_PathLength(extVectorPoly *Self, int *Value)
+static ERR POLY_GET_PathLength(extVectorPolygon *Self, int *Value)
 {
    *Value = Self->PathLength;
    return ERR::Okay;
 }
 
-static ERR POLY_SET_PathLength(extVectorPoly *Self, int Value)
+static ERR POLY_SET_PathLength(extVectorPolygon *Self, int Value)
 {
    if (Value >= 0) {
       Self->PathLength = Value;
@@ -289,13 +289,13 @@ points is required for the shape to be valid.  The !VectorPoint structure consis
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_PointsArray(extVectorPoly *Self, std::span<VectorPoint> &Value)
+static ERR POLY_GET_PointsArray(extVectorPolygon *Self, std::span<VectorPoint> &Value)
 {
    Value = std::span<VectorPoint>(Self->Points.data(), Self->Points.size());
    return ERR::Okay;
 }
 
-static ERR POLY_SET_PointsArray(extVectorPoly *Self, std::span<const VectorPoint> &Value)
+static ERR POLY_SET_PointsArray(extVectorPolygon *Self, std::span<const VectorPoint> &Value)
 {
    if (Value.size() >= 2) {
       Self->Points.assign(Value.begin(), Value.end());
@@ -315,7 +315,7 @@ a comma.
 
 *********************************************************************************************************************/
 
-static ERR POLY_SET_Points(extVectorPoly *Self, const std::string_view &Value)
+static ERR POLY_SET_Points(extVectorPolygon *Self, const std::string_view &Value)
 {
    if (auto error = read_points(Self, Value); !error) {
       reset_path(Self);
@@ -333,7 +333,7 @@ TotalPoints is a read-only field value that reflects the total number of coordin
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_TotalPoints(extVectorPoly *Self, int *Value)
+static ERR POLY_GET_TotalPoints(extVectorPolygon *Self, int *Value)
 {
    *Value = Self->Points.size();
    return ERR::Okay;
@@ -351,13 +351,13 @@ a percentage.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_X1(extVectorPoly *Self, Unit *Value)
+static ERR POLY_GET_X1(extVectorPolygon *Self, Unit *Value)
 {
    Value->set(Self->Points[0].X);
    return ERR::Okay;
 }
 
-static ERR POLY_SET_X1(extVectorPoly *Self, Unit &Value)
+static ERR POLY_SET_X1(extVectorPolygon *Self, Unit &Value)
 {
    Self->Points[0].XScaled = Value.scaled();
    Self->Points[0].X = Value;
@@ -377,13 +377,13 @@ a percentage.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_X2(extVectorPoly *Self, Unit *Value)
+static ERR POLY_GET_X2(extVectorPolygon *Self, Unit *Value)
 {
    Value->set(Self->Points[1].X);
    return ERR::Okay;
 }
 
-static ERR POLY_SET_X2(extVectorPoly *Self, Unit &Value)
+static ERR POLY_SET_X2(extVectorPolygon *Self, Unit &Value)
 {
    Self->Points[1].XScaled = Value.scaled();
    Self->Points[1].X = Value;
@@ -403,13 +403,13 @@ a percentage.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_Y1(extVectorPoly *Self, Unit *Value)
+static ERR POLY_GET_Y1(extVectorPolygon *Self, Unit *Value)
 {
    Value->set(Self->Points[0].Y);
    return ERR::Okay;
 }
 
-static ERR POLY_SET_Y1(extVectorPoly *Self, Unit &Value)
+static ERR POLY_SET_Y1(extVectorPolygon *Self, Unit &Value)
 {
    Self->Points[0].YScaled = Value.scaled();
    Self->Points[0].Y = Value;
@@ -429,13 +429,13 @@ a percentage.
 -END-
 *********************************************************************************************************************/
 
-static ERR POLY_GET_Y2(extVectorPoly *Self, Unit *Value)
+static ERR POLY_GET_Y2(extVectorPolygon *Self, Unit *Value)
 {
    Value->set(Self->Points[1].Y);
    return ERR::Okay;
 }
 
-static ERR POLY_SET_Y2(extVectorPoly *Self, Unit &Value)
+static ERR POLY_SET_Y2(extVectorPolygon *Self, Unit &Value)
 {
    Self->Points[1].YScaled = Value.scaled();
    Self->Points[1].Y = Value;
@@ -445,15 +445,7 @@ static ERR POLY_SET_Y2(extVectorPoly *Self, Unit &Value)
 
 //********************************************************************************************************************
 
-static const ActionArray clPolygonActions[] = {
-   { AC::Free,        POLYGON_Free },
-   { AC::NewObject,   POLYGON_NewObject },
-   { AC::Move,        POLYGON_Move },
-   { AC::MoveToPoint, POLYGON_MoveToPoint },
-   //{ AC::Redimension, POLYGON_Redimension },
-   { AC::Resize,      POLYGON_Resize },
-   { AC::NIL, nullptr }
-};
+#include "polygon_def.cpp"
 
 static const FieldArray clPolygonFields[] = {
    { "Closed",      FDF_VIRTUAL|FDF_INT|FD_RW|FDF_PURE,               POLY_GET_Closed, POLY_SET_Closed },
@@ -477,9 +469,9 @@ static ERR init_polygon(void)
       fl::ClassID(CLASSID::VECTORPOLYGON),
       fl::Name("VectorPolygon"),
       fl::Category(CCF::GRAPHICS),
-      fl::Actions(clPolygonActions),
+      fl::Actions(clVectorPolygonActions),
       fl::Fields(clPolygonFields),
-      fl::Size(sizeof(extVectorPoly)),
+      fl::Size(sizeof(extVectorPolygon)),
       fl::Path(MOD_PATH));
 
    return clVectorPolygon ? ERR::Okay : ERR::AddClass;

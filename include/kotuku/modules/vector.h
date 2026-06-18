@@ -4144,20 +4144,14 @@ class objVectorPath : public objVector {
       return error;
    }
 
-   inline ERR getX(double &Value) noexcept {
+   inline ERR getX(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[49];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY(double &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[48];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getTotalCommands(int &Value) noexcept {
@@ -4183,16 +4177,14 @@ class objVectorPath : public objVector {
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
-   inline ERR setX(const double Value) noexcept {
+   inline ERR setX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[49];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY(const double Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[48];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setTotalCommands(const int Value) noexcept {
@@ -4776,148 +4768,119 @@ class objVectorRectangle : public objVector {
 
    // Action stubs
 
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting
 
-   inline ERR getRounding(std::span<double> &Value) noexcept {
+   inline ERR getRounding(std::span<Unit> &Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRoundX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRoundY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[51];
-      auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getRoundX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getRoundY(double &Value) noexcept {
+   inline ERR getX(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[52];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getY(double &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[47];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getXOffset(double &Value) noexcept {
+   inline ERR getXOffset(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[46];
       SetObjectContext(this, field, AC::NIL);
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getYOffset(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+   inline ERR getYOffset(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
       SetObjectContext(this, field, AC::NIL);
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getWidth(double &Value) noexcept {
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[54];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getDimensions(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
       return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
-   inline ERR setRounding(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, 0x80101308, &Value);
-   }
-
-   inline ERR setRoundX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setRoundY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setXOffset(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setYOffset(const double Value) noexcept {
+   inline ERR setRounding(std::span<const Unit> Value) noexcept {
       auto field = &this->Class->Dictionary[50];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setDimensions(const int Value) noexcept {
+   inline ERR setRoundX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[48];
-      return field->WriteValue(this, field, FD_INT, &Value);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRoundY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setXOffset(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setYOffset(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
 };
@@ -4935,6 +4898,18 @@ class objVectorPolygon : public objVector {
 
    // Action stubs
 
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting

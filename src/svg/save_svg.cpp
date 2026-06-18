@@ -460,21 +460,18 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    if (Vector->classID() IS CLASSID::VECTORRECTANGLE) {
       auto rect = (objVectorRectangle *)Vector;
       XTag *tag;
-      double rx, ry, x, y, width, height;
+      Unit rx, ry, x, y, width, height;
 
       error = XML->insertXML(Parent, XMI::CHILD_END, "<rect/>", &new_index);
       if (!error) error = XML->getTag(new_index, &tag);
 
       if (!error) {
-         int dim_flags;
-         rect->getDimensions(dim_flags);
-         auto dim = DMF(dim_flags);
-         if ((!rect->getRoundX(rx)) and (rx != 0)) set_dimension(tag, "rx", rx, FALSE);
-         if ((!rect->getRoundY(ry)) and (ry != 0)) set_dimension(tag, "ry", ry, FALSE);
-         if ((!rect->getX(x))) set_dimension(tag, "x", x, dmf::hasScaledX(dim));
-         if ((!rect->getY(y))) set_dimension(tag, "y", y, dmf::hasScaledY(dim));
-         if ((!rect->getWidth(width))) set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
-         if ((!rect->getHeight(height))) set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
+         if ((!rect->getRoundX(rx)) and rx.defined() and (rx > 0)) set_dimension(tag, "rx", rx);
+         if ((!rect->getRoundY(ry)) and ry.defined() and (ry > 0)) set_dimension(tag, "ry", ry);
+         if ((!rect->getX(x))) set_dimension(tag, "x", x);
+         if ((!rect->getY(y))) set_dimension(tag, "y", y);
+         if ((!rect->getWidth(width))) set_dimension(tag, "width", width);
+         if ((!rect->getHeight(height))) set_dimension(tag, "height", height);
 
          save_svg_scan_std(Self, XML, Vector, new_index);
       }

@@ -855,11 +855,11 @@ class extVectorViewport : public extVector {
 
 //********************************************************************************************************************
 
-class extVectorPoly : public extVector {
+class extVectorPolygon : public extVector {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORPOLYGON;
    static constexpr CSTRING CLASS_NAME = "VectorPolygon";
-   using create = kt::Create<extVectorPoly>;
+   using create = kt::Create<extVectorPolygon>;
 
    std::vector<VectorPoint> Points;
    bool Closed:1;      // Polygons are closed (TRUE) and Polylines are open (FALSE)
@@ -874,8 +874,7 @@ class extVectorPath : public extVector, public SceneDef {
    std::vector<PathCommand> Commands;
    agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
    TClipRectangle<double> UnplacedBounds;
-   double pX, pY;
-   DMF pDimensions;
+   Unit pX, pY;
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 
    extVectorPath();
@@ -887,11 +886,10 @@ class extVectorRectangle : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorRectangle";
    using create = kt::Create<extVectorRectangle>;
 
-   struct coord { double x, y; };
-   double rX, rY, rWidth, rHeight, rXOffset, rYOffset;
-   std::array<coord, 4> rRound;
-   DMF    rDimensions;
-   bool   rFullControl;
+   struct coord { Unit x, y; };
+   Unit rX, rY, rWidth, rHeight, rXOffset, rYOffset;
+   std::array<coord, 4> rRound = {};
+   bool   rFullControl = false; // Full control of rounding values enabled
 };
 
 //********************************************************************************************************************
