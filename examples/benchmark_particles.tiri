@@ -131,10 +131,10 @@ function newParticle()
          particle.center = 0
       else
          particle.vector = glViewport.new('VectorEllipse', {
-            fill    = fill,
-            centerX = particle.x,
-            centerY = particle.y,
-            radius  = particle.radius
+            fill   = fill,
+            cx     = particle.x,
+            cy     = particle.y,
+            radius = particle.radius
          })
       end
    elseif glMode is MODE_DIRECTVECTOR then
