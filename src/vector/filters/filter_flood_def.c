@@ -13,7 +13,6 @@ static ERR FLOODFX_FreePlacement(extFloodFX *Self) {
 static const struct ActionArray clFloodFXActions[] = {
    { AC::Draw, FLOODFX_Draw },
    { AC::FreePlacement, FLOODFX_FreePlacement },
-   { AC::NewObject, FLOODFX_NewObject },
    { AC::NewPlacement, FLOODFX_NewPlacement },
    { AC::NIL, nullptr }
 };

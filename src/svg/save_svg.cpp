@@ -218,17 +218,10 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
             if (!error) xml::NewAttrib(tag, "id", key);
 
-            DMF dim;
-            filter->getDimensions(dim);
-
-            if ((!error) and dmf::hasAnyX(dim)) set_dimension(tag, "x", filter->X, dmf::hasScaledX(dim));
-            if ((!error) and dmf::hasAnyY(dim)) set_dimension(tag, "y", filter->Y, dmf::hasScaledY(dim));
-
-            if ((!error) and dmf::hasAnyWidth(dim))
-               set_dimension(tag, "width", filter->Width, dmf::hasScaledWidth(dim));
-
-            if ((!error) and dmf::hasAnyHeight(dim))
-               set_dimension(tag, "height", filter->Height, dmf::hasScaledHeight(dim));
+            if ((!error) and filter->X.defined()) set_dimension(tag, "x", filter->X);
+            if ((!error) and filter->Y.defined()) set_dimension(tag, "y", filter->Y);
+            if ((!error) and filter->Width.defined()) set_dimension(tag, "width", filter->Width);
+            if ((!error) and filter->Height.defined()) set_dimension(tag, "height", filter->Height);
 
             VUNIT units;
             if ((!error) and (!filter->getUnits(units))) {

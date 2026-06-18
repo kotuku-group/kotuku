@@ -505,11 +505,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     obj(Bitmap) Target      # Target bitmap for rendering the effect.
     obj(FilterEffect) Input # The effect uses another effect as an input.
     obj(FilterEffect) Mix   # Reference to an additional effect for mixing, e.g. compositing
-    double X                # Primitive x coordinate.
-    double Y                # Primitive y coordinate.
-    double Width            # Primitive width.
-    double Height           # Primitive height.
-    int(DMF) Dimensions     # Primitive dimensions.
+    unit X                  # Primitive x coordinate.
+    unit Y                  # Primitive y coordinate.
+    unit Width              # Primitive width.
+    unit Height             # Primitive height.
     int(VSF) SourceType     # Desired source input.
     int(VSF) MixType        # Optional input for mixing.
   ]])
@@ -538,7 +537,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=21, name='SetSpotLight' }
   })
 
-  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true }, [[
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[
     ~int(VSM) ResampleMethod
     ~int(ARF) AspectRatio
   ]])
@@ -570,7 +569,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~struct(FRGB) Colour
   ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true }, [[
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT' } }, [[
     ~struct(FRGB) Colour
     ~int(LT) Type
   ]])
@@ -579,7 +578,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~array(struct(MergeSource)) SourceList
   ]])
 
-  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true }, [[
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
     ~int(MOP) Operator
   ]])
 
@@ -604,17 +603,16 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[
-    double X                  # Left-most position of filter area
-    double Y                  # Top-most position of filter area
-    double Width              # Width of filter area
-    double Height             # Height of filter area
+    unit X                    # Left-most position of filter area
+    unit Y                    # Top-most position of filter area
+    unit Width                # Width of filter area
+    unit Height               # Height of filter area
     double Opacity            # Level of opacity from 0 - 1.0
     obj(VectorFilter) Inherit # Reference to another pattern from which to inherit attributes
     int ResX                  # Width of the intermediate images in pixels
     int ResY                  # Height of the intermediate images in pixels
     int(VUNIT) Units          # VUNIT constant
     int(VUNIT) PrimitiveUnits # VUNIT constant
-    int(DMF) Dimensions       # Flags for detailing area values
     int(VCS) ColourSpace      # Operating colour space for RGB values
     int(VFA) AspectRatio      # Aspect ratio to use when scaling X/Y values
   ]])

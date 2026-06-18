@@ -1890,13 +1890,12 @@ class objFilterEffect : public Object {
    objBitmap * Target;        // Target bitmap for rendering the effect.
    objFilterEffect * Input;   // Reference to another effect to be used as an input source.
    objFilterEffect * Mix;     // Reference to another effect to be used a mixer with Input.
-   double X;                  // Primitive X coordinate for the effect.
-   double Y;                  // Primitive Y coordinate for the effect.
-   double Width;              // Primitive width of the effect area.
-   double Height;             // Primitive height of the effect area.
-   DMF    Dimensions;         // Dimension flags are stored here.
-   VSF    SourceType;         // Specifies an input source for the effect algorithm, if required.
-   VSF    MixType;            // If a secondary mix input is required for the effect, specify it here.
+   Unit X;                    // Primitive X coordinate for the effect.
+   Unit Y;                    // Primitive Y coordinate for the effect.
+   Unit Width;                // Primitive width of the effect area.
+   Unit Height;               // Primitive height of the effect area.
+   VSF  SourceType;           // Specifies an input source for the effect algorithm, if required.
+   VSF  MixType;              // If a secondary mix input is required for the effect, specify it here.
 
    // Action stubs
 
@@ -1931,41 +1930,24 @@ class objFilterEffect : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY(double &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getDimensions(DMF &Value) noexcept {
-      Value = this->Dimensions;
-      return ERR::Okay;
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getSourceType(VSF &Value) noexcept {
@@ -1997,37 +1979,33 @@ class objFilterEffect : public Object {
    }
 
    inline ERR setInput(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
    inline ERR setMix(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
-   inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY(const double Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setSourceType(const VSF Value) noexcept {
@@ -2071,22 +2049,22 @@ class objImageFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getResampleMethod(VSM &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getBitmap(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[20];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -2095,7 +2073,7 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2112,17 +2090,17 @@ class objImageFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setResampleMethod(const VSM Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00804508, &Value);
    }
 
@@ -2151,17 +2129,17 @@ class objSourceFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSource(OBJECTPTR &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getXMLDef(std::string &Value) noexcept {
+   inline ERR getSource(OBJECTPTR &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2178,17 +2156,17 @@ class objSourceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSourceName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00804408, &Value);
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x08100109, Value);
    }
 
@@ -2217,17 +2195,17 @@ class objBlurFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getSX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getSY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2244,12 +2222,12 @@ class objBlurFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setSX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setSY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2278,18 +2256,18 @@ class objColourFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getMode(CM &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getValues(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2306,12 +2284,12 @@ class objColourFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setMode(const CM Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setValues(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x80101508, &Value);
    }
 
@@ -2340,32 +2318,32 @@ class objCompositeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(OP &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getK1(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getK2(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getK3(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getK4(double &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getXMLDef(std::string &Value) noexcept {
+   inline ERR getK1(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getK2(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getK3(double &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getK4(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2382,27 +2360,27 @@ class objCompositeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const OP Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setK1(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setK2(const double Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setK2(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setK3(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setK4(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2431,63 +2409,63 @@ class objConvolveFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getEdgeMode(EM &Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[26];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getBias(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[23];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getDivisor(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getMatrixRows(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getMatrixColumns(int &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getMatrixRows(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getMatrixColumns(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getMatrix(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[27];
       auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getPreserveAlpha(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getTargetX(int &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getTargetY(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getUnitX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getUnitY(double &Value) noexcept {
+   inline ERR getTargetX(int &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getTargetY(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getUnitX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getUnitY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2504,57 +2482,57 @@ class objConvolveFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setEdgeMode(const EM Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBias(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setDivisor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMatrixRows(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setMatrixColumns(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setMatrix(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(this, field, 0x80101508, &Value);
-   }
-
-   inline ERR setPreserveAlpha(const int Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setTargetX(const int Value) noexcept {
+   inline ERR setMatrixColumns(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMatrix(std::span<const double> Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, 0x80101508, &Value);
+   }
+
+   inline ERR setPreserveAlpha(const int Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setTargetX(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setTargetY(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setUnitX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setUnitY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2583,22 +2561,22 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXChannel(CMP &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getYChannel(CMP &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getScale(double &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getScale(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2615,17 +2593,17 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setXChannel(const CMP Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setYChannel(const CMP Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2654,17 +2632,17 @@ class objFloodFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getOpacity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2681,12 +2659,12 @@ class objFloodFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2736,42 +2714,42 @@ class objLightingFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getType(LT &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getConstant(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getExponent(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getScale(double &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getUnitX(double &Value) noexcept {
+   inline ERR getType(LT &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getConstant(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getExponent(double &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getUnitY(double &Value) noexcept {
+   inline ERR getScale(double &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getUnitX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getUnitY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2788,37 +2766,37 @@ class objLightingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setType(const LT Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setConstant(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setExponent(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setUnitX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setUnitY(const double Value) noexcept {
+   inline ERR setScale(const double Value) noexcept {
       auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setUnitX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setUnitY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2847,13 +2825,13 @@ class objMergeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getSourceList(std::span<struct MergeSource> &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       auto get_field = (ERR (*)(APTR, std::span<struct MergeSource> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2870,7 +2848,7 @@ class objMergeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setSourceList(std::span<const struct MergeSource> Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
@@ -2899,22 +2877,22 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(MOP &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getRadiusX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getRadiusY(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2931,17 +2909,17 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const MOP Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRadiusX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRadiusY(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2970,17 +2948,17 @@ class objOffsetFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXOffset(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getYOffset(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2997,12 +2975,12 @@ class objOffsetFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setXOffset(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setYOffset(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3074,7 +3052,7 @@ class objRemapFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3115,37 +3093,37 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getType(TB &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getFX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getFY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getOctaves(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSeed(int &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getStitch(int &Value) noexcept {
+   inline ERR getFY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getOctaves(int &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getSeed(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getStitch(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3162,32 +3140,32 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setType(const TB Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setOctaves(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSeed(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStitch(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3216,49 +3194,49 @@ class objWaveFunctionFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getStops(std::span<struct GradientStop> &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[24];
       auto get_field = (ERR (*)(APTR, std::span<struct GradientStop> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[23];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getColourMap(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getN(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getL(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getM(int &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getResolution(int &Value) noexcept {
+   inline ERR getL(int &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getScale(double &Value) noexcept {
+   inline ERR getM(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getResolution(int &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getScale(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3275,42 +3253,42 @@ class objWaveFunctionFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setStops(std::span<const struct GradientStop> Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, 0x00904308, &Value);
-   }
-
-   inline ERR setN(const int Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setL(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value);
+   inline ERR setColourMap(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
-   inline ERR setM(const int Value) noexcept {
+   inline ERR setN(const int Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setResolution(const int Value) noexcept {
+   inline ERR setL(const int Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setScale(const double Value) noexcept {
+   inline ERR setM(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setResolution(const int Value) noexcept {
       auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setScale(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3389,17 +3367,16 @@ class objVectorFilter : public Object {
 
    using create = kt::Create<objVectorFilter>;
 
-   double X;                     // X coordinate for the filter.
-   double Y;                     // Y coordinate for the filter.
-   double Width;                 // The width of the filter area.  Can be expressed as a fixed or scaled coordinate.
-   double Height;                // The height of the filter area.  Can be expressed as a fixed or scaled coordinate.
+   Unit   X;                     // X coordinate for the filter.
+   Unit   Y;                     // Y coordinate for the filter.
+   Unit   Width;                 // The width of the filter area.  Can be expressed as a fixed or scaled coordinate.
+   Unit   Height;                // The height of the filter area.  Can be expressed as a fixed or scaled coordinate.
    double Opacity;               // The opacity of the filter.
    objVectorFilter * Inherit;    // Inherit attributes from a VectorFilter referenced here.
    int    ResX;                  // Width of the intermediate images, measured in pixels.
    int    ResY;                  // Height of the intermediate images, measured in pixels.
    VUNIT  Units;                 // Defines the coordinate system for X, Y, Width and Height.
    VUNIT  PrimitiveUnits;        // Alters the behaviour of some effects that support alternative position calculations.
-   DMF    Dimensions;            // Dimension flags define whether individual dimension fields contain fixed or scaled values.
    VCS    ColourSpace;           // The colour space of the filter graphics (SRGB or linear RGB).
    VFA    AspectRatio;           // Aspect ratio to use when scaling X/Y values
 
@@ -3410,36 +3387,24 @@ class objVectorFilter : public Object {
 
    // Customised field getting
 
-   inline ERR getX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY(double &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getOpacity(double &Value) noexcept {
@@ -3472,11 +3437,6 @@ class objVectorFilter : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getDimensions(DMF &Value) noexcept {
-      Value = this->Dimensions;
-      return ERR::Okay;
-   }
-
    inline ERR getColourSpace(VCS &Value) noexcept {
       Value = this->ColourSpace;
       return ERR::Okay;
@@ -3488,7 +3448,7 @@ class objVectorFilter : public Object {
    }
 
    inline ERR getEffectXML(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[15];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3504,37 +3464,33 @@ class objVectorFilter : public Object {
 
    // Customised field setting
 
-   inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY(const double Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setInherit(objVectorFilter * Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
