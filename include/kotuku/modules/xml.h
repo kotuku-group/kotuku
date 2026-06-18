@@ -10,6 +10,8 @@
 
 #ifdef __cplusplus
 #include <functional>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <type_traits>
@@ -602,14 +604,29 @@ inline void NewAttrib(XTag *Tag, const std::string_view Name, const std::string_
    Tag->Attribs.emplace_back(Name, Value);
 }
 
+// Convert an arithmetic value to its attribute string representation.  Floating point values are formatted via a
+// stream so that insignificant trailing zeros are dropped (e.g. "10" rather than "10.000000") while retaining
+// sufficient precision; integral values use the more direct std::to_string().
+
+template <class T> requires std::is_arithmetic_v<T>
+inline std::string attrib_to_string(const T Value) {
+   if constexpr (std::is_floating_point_v<T>) {
+      std::ostringstream buffer;
+      buffer << std::setprecision(std::numeric_limits<T>::max_digits10);
+      buffer << Value;
+      return buffer.str();
+   }
+   else return std::to_string(Value);
+}
+
 template <class T> requires std::is_arithmetic_v<T>
 inline void NewAttrib(XTag &Tag, const std::string_view Name, const T Value) {
-   Tag.Attribs.emplace_back(Name, std::to_string(Value));
+   Tag.Attribs.emplace_back(Name, attrib_to_string(Value));
 }
 
 template <class T> requires std::is_arithmetic_v<T>
 inline void NewAttrib(XTag *Tag, const std::string_view Name, const T Value) {
-   Tag->Attribs.emplace_back(Name, std::to_string(Value));
+   Tag->Attribs.emplace_back(Name, attrib_to_string(Value));
 }
 
 inline std::string GetContent(const XTag &Tag) {

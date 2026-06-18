@@ -1,15 +1,24 @@
 
+// Format a floating point value for SVG output without trailing zeros, e.g. "10" rather than "10.000000".  Required
+// where the result is concatenated into a larger string (such as a percentage); plain attribute values are handled
+// by xml::NewAttrib() directly.
+
+static std::string fmt_num(double Value)
+{
+   return xml::attrib_to_string(Value);
+}
+
 static void set_dimension(XTag *Tag, const std::string Attrib, double Value, bool Scaled)
 {
-   if (Scaled) xml::NewAttrib(*Tag, Attrib, std::to_string(Value * 100.0) + "%");
-   else xml::NewAttrib(*Tag, Attrib, Value);
+   if (Scaled) xml::NewAttrib(*Tag, Attrib, fmt_num(Value * 100.0) + "%");
+   else xml::NewAttrib(*Tag, Attrib, fmt_num(Value));
 }
 
 static void set_dimension(XTag *Tag, const std::string Attrib, Unit &Value)
 {
    if (Value.defined()) {
-      if (Value.scaled()) xml::NewAttrib(*Tag, Attrib, std::to_string(Value * 100.0) + "%");
-      else xml::NewAttrib(*Tag, Attrib, double(Value));
+      if (Value.scaled()) xml::NewAttrib(*Tag, Attrib, fmt_num(double(Value) * 100.0) + "%");
+      else xml::NewAttrib(*Tag, Attrib, fmt_num(double(Value)));
    }
 }
 
@@ -367,10 +376,10 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    if ((!error) and (!Vector->getStrokeWidth(stroke_width))) {
       if (not stroke_width.defined()) stroke_width = 0;
       if (stroke_width.scaled()) {
-         xml::NewAttrib(tag, "stroke-width", std::to_string(stroke_width) + "%");
+         xml::NewAttrib(tag, "stroke-width", fmt_num(double(stroke_width)) + "%");
       }
       else if (stroke_width != 1) {
-         xml::NewAttrib(tag, "stroke-width", std::to_string(stroke_width));
+         xml::NewAttrib(tag, "stroke-width", fmt_num(double(stroke_width)));
       }
    }
 
@@ -445,319 +454,415 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
 }
 
 //*********************************************************************************************************************
+// Per-class serialisation handlers.  Each handler inserts the appropriate SVG element under Parent and, on success,
+// sets ChildIndex to the XML node index that any child vectors should be attached to (or leaves it untouched at -1
+// when no element was created, e.g. an unrecognised class or a clip with no id).  The dispatcher uses ChildIndex for
+// the recursion into Vector->Child.
+
+static ERR save_svg_scan_rectangle(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto rect = (objVectorRectangle *)Vector;
+   XTag *tag;
+   Unit rx, ry, x, y, width, height;
+   int new_index;
+
+   ERR error = XML->insertXML(Parent, XMI::CHILD_END, "<rect/>", &new_index);
+   if (!error) error = XML->getTag(new_index, &tag);
+
+   if (!error) {
+      if ((!rect->getRoundX(rx)) and rx.defined() and (rx > 0)) set_dimension(tag, "rx", rx);
+      if ((!rect->getRoundY(ry)) and ry.defined() and (ry > 0)) set_dimension(tag, "ry", ry);
+      if ((!rect->getX(x))) set_dimension(tag, "x", x);
+      if ((!rect->getY(y))) set_dimension(tag, "y", y);
+      if ((!rect->getWidth(width))) set_dimension(tag, "width", width);
+      if ((!rect->getHeight(height))) set_dimension(tag, "height", height);
+
+      ChildIndex = new_index;
+      error = save_svg_scan_std(Self, XML, Vector, new_index);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_ellipse(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto ellipse = (objVectorEllipse *)Vector;
+   XTag *tag;
+   Unit rx, ry, cx, cy;
+   ERR error;
+
+   if (!(error = ellipse->getRadiusX(rx)) and !(error = ellipse->getRadiusY(ry)) and
+       !(error = ellipse->getCX(cx)) and !(error = ellipse->getCY(cy)) and
+       !(error = XML->insertStatement(Parent, XMI::CHILD_END, "<ellipse/>", &tag))) {
+      set_dimension(tag, "rx", rx);
+      set_dimension(tag, "ry", ry);
+      set_dimension(tag, "cx", cx);
+      set_dimension(tag, "cy", cy);
+
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+// Serves <polygon>, <line> and <polyline>
+
+static ERR save_svg_scan_polygon(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto vp = (objVectorPolygon *)Vector;
+   XTag *tag = nullptr;
+   std::span<VectorPoint> points;
+   int i;
+   ERR error = ERR::Okay;
+
+   if ((!vp->getClosed(i)) and (i IS FALSE)) { // Line or Polyline
+      if (!(error = vp->getPointsArray(points))) {
+         if (points.size() IS 2) {
+            error = XML->insertStatement(Parent, XMI::CHILD_END, "<line/>", &tag);
+            if (!error) {
+               set_dimension(tag, "x1", points[0].X, points[0].XScaled);
+               set_dimension(tag, "y1", points[0].Y, points[0].YScaled);
+               set_dimension(tag, "x2", points[1].X, points[1].XScaled);
+               set_dimension(tag, "y2", points[1].Y, points[1].YScaled);
+            }
+         }
+         else {
+            std::stringstream buffer;
+            error = XML->insertStatement(Parent, XMI::CHILD_END, "<polyline/>", &tag);
+            if (!error) {
+               for (unsigned i=0; i < points.size(); i++) {
+                  buffer << points[i].X << "," << points[i].Y << " ";
+               }
+               xml::NewAttrib(tag, "points", buffer.str());
+            }
+         }
+      }
+   }
+   else {
+      std::stringstream buffer;
+      error = XML->insertStatement(Parent, XMI::CHILD_END, "<polygon/>", &tag);
+
+      if ((!error) and (!vp->getPointsArray(points))) {
+         for (unsigned i=0; i < points.size(); i++) {
+            buffer << points[i].X << "," << points[i].Y << " ";
+         }
+         xml::NewAttrib(tag, "points", buffer.str());
+      }
+   }
+
+   int path_length;
+   if ((!(error = vp->getPathLength(path_length))) and (path_length != 0)) {
+      xml::NewAttrib(tag, "pathLength", (path_length));
+   }
+
+   if (!error) {
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto vt = (objVectorText *)Vector;
+   XTag *tag;
+   Unit x, y;
+   double text_length;
+   int weight;
+   std::string str;
+   std::string_view sv;
+   char buffer[1024];
+
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<text/>", &tag);
+
+   if ((!error) and (!vt->getX(x))) set_dimension(tag, "x", x);
+   if ((!error) and (!vt->getY(y))) set_dimension(tag, "y", y);
+
+   std::span<double> dx;
+   if ((!error) and (!(error = vt->getDX(dx))) and (not dx.empty())) {
+      int pos = 0;
+      for (unsigned i=0; i < dx.size(); i++) {
+         if (pos != 0) buffer[pos++] = ',';
+         pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dx[i]);
+         if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
+      }
+      xml::NewAttrib(tag, "dx", buffer);
+   }
+
+   std::span<double> dy;
+   if ((!error) and (!(error = vt->getDY(dy))) and (not dy.empty())) {
+      int pos = 0;
+      for (unsigned i=0; i < dy.size(); i++) {
+         if (pos != 0) buffer[pos++] = ',';
+         pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dy[i]);
+         if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
+      }
+      xml::NewAttrib(tag, "dy", buffer);
+   }
+
+   if ((!error) and (!(error = vt->getFontSize(sv)))) {
+      xml::NewAttrib(tag, "font-size", sv);
+   }
+
+   std::span<double> rotate;
+   if ((!error) and (!(error = vt->getRotate(rotate))) and (not rotate.empty())) {
+      std::stringstream buffer;
+      bool comma = false;
+      for (unsigned i=0; i < rotate.size(); i++) {
+         if (comma) buffer << ',';
+         else comma = true;
+         buffer << rotate[i];
+      }
+      xml::NewAttrib(tag, "rotate", buffer.str());
+   }
+
+   if ((!error) and (!(error = vt->getTextLength(text_length))) and (text_length))
+      xml::NewAttrib(tag, "textLength", text_length);
+
+   if ((!error) and (!(error = vt->getFace(sv))))
+      xml::NewAttrib(tag, "font-family", sv);
+
+   if ((!error) and (!(error = vt->getWeight(weight))) and (weight != 400))
+      xml::NewAttrib(tag, "font-weight", weight);
+
+   if ((!error) and (!(error = vt->getString(sv))))
+      error = XML->insertContent(tag->ID, XMI::CHILD, sv, nullptr);
+
+   // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
+
+   if (!error) {
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_group(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   XTag *tag;
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<g/>", &tag);
+   if (!error) {
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_clip(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto clip = (objVectorClip *)Vector;
+   XTag *tag;
+   std::string_view str;
+   ERR error = ERR::Okay;
+
+   if ((!(error = clip->getSID(str))) and not str.empty()) { // The id is an essential requirement
+      error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
+
+      VUNIT units;
+      if (!clip->getUnits(units)) {
+         switch(units) {
+            default:
+            case VUNIT::USERSPACE:    break; // Default
+            case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "clipPathUnits", "objectBoundingBox"); break;
+         }
+      }
+
+      if (!error) {
+         ChildIndex = tag->ID;
+         error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+      }
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto wave = (objVectorWave *)Vector;
+   XTag *tag;
+   double dbl;
+   Unit unit;
+
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
+
+   if (!error) {
+      if (!wave->getX(unit))        set_dimension(tag, "x", unit);
+      if (!wave->getY(unit))        set_dimension(tag, "y", unit);
+      if (!wave->getWidth(unit))    set_dimension(tag, "width", unit);
+      if (!wave->getHeight(unit))   set_dimension(tag, "height", unit);
+      if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
+      if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
+      if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
+      if (!wave->getDegree(dbl))    xml::NewAttrib(tag, "degree", dbl);
+
+      int close;
+      if (!wave->getClose(close)) xml::NewAttrib(tag, "close", close);
+      if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", dbl);
+
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_spiral(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto spiral = (objVectorSpiral *)Vector;
+   XTag *tag;
+   int length;
+
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:spiral/>", &tag);
+
+   if (!error) {
+      Unit unit;
+      double dbl;
+      if (!spiral->getCX(unit))     set_dimension(tag, "cx", unit);
+      if (!spiral->getCY(unit))     set_dimension(tag, "cy", unit);
+      if (!spiral->getWidth(unit))  set_dimension(tag, "width", unit);
+      if (!spiral->getHeight(unit)) set_dimension(tag, "height", unit);
+      if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", dbl);
+      if (!spiral->getRadius(unit)) set_dimension(tag, "r", unit);
+      if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", dbl);
+      if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
+
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_shape(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   auto shape = (objVectorShape *)Vector;
+   XTag *tag;
+
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
+
+   if (!error) {
+      double dbl;
+      Unit val;
+      int num;
+      if (!shape->getCX(val))       set_dimension(tag, "cx", val);
+      if (!shape->getCY(val))       set_dimension(tag, "cy", val);
+      if (!shape->getRadius(val))   set_dimension(tag, "r", val);
+      if (!shape->getA(dbl))        xml::NewAttrib(tag, "a", dbl);
+      if (!shape->getB(dbl))        xml::NewAttrib(tag, "b", dbl);
+      if (!shape->getM(dbl))        xml::NewAttrib(tag, "m", dbl);
+      if (!shape->getN1(dbl))       xml::NewAttrib(tag, "n1", dbl);
+      if (!shape->getN2(dbl))       xml::NewAttrib(tag, "n2", dbl);
+      if (!shape->getN3(dbl))       xml::NewAttrib(tag, "n3", dbl);
+      if (!shape->getPhi(dbl))      xml::NewAttrib(tag, "phi", dbl);
+      if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", num);
+      if (!shape->getMod(num))      xml::NewAttrib(tag, "mod", num);
+      if (!shape->getSpiral(num))   xml::NewAttrib(tag, "spiral", num);
+      if (!shape->getRepeat(num))   xml::NewAttrib(tag, "repeat", num);
+      if (!shape->getClose(num))    xml::NewAttrib(tag, "close", num);
+
+      ChildIndex = tag->ID;
+      error = save_svg_scan_std(Self, XML, Vector, tag->ID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_viewport(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
+{
+   XTag *tag;
+   double x, y, width, height;
+
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<svg/>", &tag);
+
+   auto viewport = (objVectorViewport *)Vector;
+   if (!error) error = viewport->getViewX(x);
+   if (!error) error = viewport->getViewY(y);
+   if (!error) error = viewport->getViewWidth(width);
+   if (!error) error = viewport->getViewHeight(height);
+
+   if (!error) {
+      std::stringstream buffer;
+      buffer << x << " " << y << " " << width << " " << height;
+      xml::NewAttrib(tag, "viewBox", buffer.str());
+   }
+
+   if (!error) {
+      DMF dim;
+      viewport->getDimensions(dim);
+
+      if ((!error) and dmf::hasAnyX(dim) and (!viewport->getX(x)))
+         set_dimension(tag, "x", x, dmf::hasScaledX(dim));
+
+      if ((!error) and dmf::hasAnyY(dim) and (!viewport->getY(y)))
+         set_dimension(tag, "y", y, dmf::hasScaledY(dim));
+
+      if ((!error) and dmf::hasAnyWidth(dim) and (!viewport->getWidth(width)))
+         set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
+
+      if ((!error) and dmf::hasAnyHeight(dim) and (!viewport->getHeight(height)))
+         set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
+   }
+
+   if (!error) ChildIndex = tag->ID;
+
+   return error;
+}
+
+//*********************************************************************************************************************
 
 static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Parent)
 {
    kt::Log log(__FUNCTION__);
 
-   int new_index = -1;
-
    log.branch("%s", Vector->Class->ClassName.c_str());
 
+   // child_index identifies the XML node that child vectors attach to.  Handlers set it on success; the VECTORPATH
+   // branch handles its own child recursion via save_vectorpath(), and the default branch leaves it at -1 so that
+   // unrecognised classes are skipped without recursing.
+
+   int child_index = -1;
    ERR error = ERR::Okay;
-   if (Vector->classID() IS CLASSID::VECTORRECTANGLE) {
-      auto rect = (objVectorRectangle *)Vector;
-      XTag *tag;
-      Unit rx, ry, x, y, width, height;
 
-      error = XML->insertXML(Parent, XMI::CHILD_END, "<rect/>", &new_index);
-      if (!error) error = XML->getTag(new_index, &tag);
-
-      if (!error) {
-         if ((!rect->getRoundX(rx)) and rx.defined() and (rx > 0)) set_dimension(tag, "rx", rx);
-         if ((!rect->getRoundY(ry)) and ry.defined() and (ry > 0)) set_dimension(tag, "ry", ry);
-         if ((!rect->getX(x))) set_dimension(tag, "x", x);
-         if ((!rect->getY(y))) set_dimension(tag, "y", y);
-         if ((!rect->getWidth(width))) set_dimension(tag, "width", width);
-         if ((!rect->getHeight(height))) set_dimension(tag, "height", height);
-
-         save_svg_scan_std(Self, XML, Vector, new_index);
-      }
-   }
-   else if (Vector->classID() IS CLASSID::VECTORELLIPSE) {
-      auto ellipse = (objVectorEllipse *)Vector;
-      XTag *tag;
-      Unit rx, ry, cx, cy;
-
-      if (!error) error = ellipse->getRadiusX(rx);
-      if (!error) error = ellipse->getRadiusY(ry);
-      if (!error) error = ellipse->getCX(cx);
-      if (!error) error = ellipse->getCY(cy);
-      if (!error) error = XML->insertStatement(Parent, XMI::CHILD_END, "<ellipse/>", &tag);
-
-      if (!error) {
-         set_dimension(tag, "rx", rx);
-         set_dimension(tag, "ry", ry);
-         set_dimension(tag, "cx", cx);
-         set_dimension(tag, "cy", cy);
-      }
-
-      if (!error) error = save_svg_scan_std(Self, XML, Vector, new_index);
-   }
-   else if (Vector->classID() IS CLASSID::VECTORPATH) {
-      error = save_vectorpath(Self, XML, Vector, Parent);
-   }
-   else if (Vector->classID() IS CLASSID::VECTORPOLYGON) { // Serves <polygon>, <line> and <polyline>
-      auto vp = (objVectorPolygon *)Vector;
-      XTag *tag;
-      std::span<VectorPoint> points;
-      int i;
-
-      if ((!vp->getClosed(i)) and (i IS FALSE)) { // Line or Polyline
-         if (!(error = vp->getPointsArray(points))) {
-            if (points.size() IS 2) {
-               error = XML->insertStatement(Parent, XMI::CHILD_END, "<line/>", &tag);
-               if (!error) {
-                  set_dimension(tag, "x1", points[0].X, points[0].XScaled);
-                  set_dimension(tag, "y1", points[0].Y, points[0].YScaled);
-                  set_dimension(tag, "x2", points[1].X, points[1].XScaled);
-                  set_dimension(tag, "y2", points[1].Y, points[1].YScaled);
-               }
-            }
-            else {
-               std::stringstream buffer;
-               error = XML->insertStatement(Parent, XMI::CHILD_END, "<polyline/>", &tag);
-               if (!error) {
-                  for (unsigned i=0; i < points.size(); i++) {
-                     buffer << points[i].X << "," << points[i].Y << " ";
-                  }
-                  xml::NewAttrib(tag, "points", buffer.str());
-               }
-            }
-         }
-      }
-      else {
-         std::stringstream buffer;
-         error = XML->insertStatement(Parent, XMI::CHILD_END, "<polygon/>", &tag);
-
-         if ((!error) and (!vp->getPointsArray(points))) {
-            for (unsigned i=0; i < points.size(); i++) {
-               buffer << points[i].X << "," << points[i].Y << " ";
-            }
-            xml::NewAttrib(tag, "points", buffer.str());
-         }
-      }
-
-      int path_length;
-      if ((!(error = vp->getPathLength(path_length))) and (path_length != 0)) {
-         xml::NewAttrib(tag, "pathLength", (path_length));
-      }
-
-      if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-   }
-   else if (Vector->classID() IS CLASSID::VECTORTEXT) {
-      auto vt = (objVectorText *)Vector;
-      XTag *tag;
-      Unit x, y;
-      double text_length;
-      int weight;
-      std::string str;
-      std::string_view sv;
-      char buffer[1024];
-
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<text/>", &tag);
-
-      if ((!error) and (!vt->getX(x))) set_dimension(tag, "x", x);
-      if ((!error) and (!vt->getY(y))) set_dimension(tag, "y", y);
-
-      std::span<double> dx;
-      if ((!error) and (!(error = vt->getDX(dx))) and (not dx.empty())) {
-         int pos = 0;
-         for (unsigned i=0; i < dx.size(); i++) {
-            if (pos != 0) buffer[pos++] = ',';
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dx[i]);
-            if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
-         }
-         xml::NewAttrib(tag, "dx", buffer);
-      }
-
-      std::span<double> dy;
-      if ((!error) and (!(error = vt->getDY(dy))) and (not dy.empty())) {
-         int pos = 0;
-         for (unsigned i=0; i < dy.size(); i++) {
-            if (pos != 0) buffer[pos++] = ',';
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dy[i]);
-            if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
-         }
-         xml::NewAttrib(tag, "dy", buffer);
-      }
-
-      if ((!error) and (!(error = vt->getFontSize(sv)))) {
-         xml::NewAttrib(tag, "font-size", sv);
-      }
-
-      std::span<double> rotate;
-      if ((!error) and (!(error = vt->getRotate(rotate))) and (not rotate.empty())) {
-         std::stringstream buffer;
-         bool comma = false;
-         for (unsigned i=0; i < rotate.size(); i++) {
-            if (comma) buffer << ',';
-            else comma = true;
-            buffer << rotate[i];
-         }
-         xml::NewAttrib(tag, "rotate", buffer.str());
-      }
-
-      if ((!error) and (!(error = vt->getTextLength(text_length))) and (text_length))
-         xml::NewAttrib(tag, "textLength", text_length);
-
-      if ((!error) and (!(error = vt->getFace(sv))))
-         xml::NewAttrib(tag, "font-family", sv);
-
-      if ((!error) and (!(error = vt->getWeight(weight))) and (weight != 400))
-         xml::NewAttrib(tag, "font-weight", weight);
-
-      if ((!error) and (!(error = vt->getString(sv))))
-         error = XML->insertContent(tag->ID, XMI::CHILD, sv, nullptr);
-
-      // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
-
-      if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-   }
-   else if (Vector->classID() IS CLASSID::VECTORGROUP) {
-      XTag *tag;
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<g/>", &tag);
-      if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-   }
-   else if (Vector->classID() IS CLASSID::VECTORCLIP) {
-      auto clip = (objVectorClip *)Vector;
-      XTag *tag;
-      std::string_view str;
-      if ((!(error = clip->getSID(str))) and not str.empty()) { // The id is an essential requirement
-         error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
-
-         VUNIT units;
-         if (!clip->getUnits(units)) {
-            switch(units) {
-               default:
-               case VUNIT::USERSPACE:    break; // Default
-               case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "clipPathUnits", "objectBoundingBox"); break;
-            }
-         }
-
-         if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-      }
-   }
-   else if (Vector->classID() IS CLASSID::VECTORWAVE) {
-      auto wave = (objVectorWave *)Vector;
-      XTag *tag;
-      double dbl;
-      Unit unit;
-
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
-
-      if (!error) {
-         if (!wave->getX(unit))        set_dimension(tag, "x", unit);
-         if (!wave->getY(unit))        set_dimension(tag, "y", unit);
-         if (!wave->getWidth(unit))    set_dimension(tag, "width", unit);
-         if (!wave->getHeight(unit))   set_dimension(tag, "height", unit);
-         if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
-         if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
-         if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
-         if (!wave->getDegree(dbl))    xml::NewAttrib(tag, "degree", dbl);
-
-         int close;
-         if (!wave->getClose(close)) xml::NewAttrib(tag, "close", close);
-         if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", dbl);
-
-         if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-      }
-   }
-   else if (Vector->classID() IS CLASSID::VECTORSPIRAL) {
-      auto spiral = (objVectorSpiral *)Vector;
-      XTag *tag;
-      int length;
-
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:spiral/>", &tag);
-      if (error != ERR::Okay) return error;
-
-      if (!error) {
-         Unit unit;
-         double dbl;
-         if (!spiral->getCX(unit))     set_dimension(tag, "cx", unit);
-         if (!spiral->getCY(unit))     set_dimension(tag, "cy", unit);
-         if (!spiral->getWidth(unit))  set_dimension(tag, "width", unit);
-         if (!spiral->getHeight(unit)) set_dimension(tag, "height", unit);
-         if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", dbl);
-         if (!spiral->getRadius(unit)) set_dimension(tag, "r", unit);
-         if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", dbl);
-         if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
-
-         error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-      }
-   }
-   else if (Vector->classID() IS CLASSID::VECTORSHAPE) {
-      auto shape = (objVectorShape *)Vector;
-      XTag *tag;
-
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
-
-      if (!error) {
-         double dbl;
-         Unit val;
-         int num;
-         if (!shape->getCX(val))       set_dimension(tag, "cx", val);
-         if (!shape->getCY(val))       set_dimension(tag, "cy", val);
-         if (!shape->getRadius(val))   set_dimension(tag, "r", val);
-         if (!shape->getA(dbl))        xml::NewAttrib(tag, "a", dbl);
-         if (!shape->getB(dbl))        xml::NewAttrib(tag, "b", dbl);
-         if (!shape->getM(dbl))        xml::NewAttrib(tag, "m", dbl);
-         if (!shape->getN1(dbl))       xml::NewAttrib(tag, "n1", dbl);
-         if (!shape->getN2(dbl))       xml::NewAttrib(tag, "n2", dbl);
-         if (!shape->getN3(dbl))       xml::NewAttrib(tag, "n3", dbl);
-         if (!shape->getPhi(dbl))      xml::NewAttrib(tag, "phi", dbl);
-         if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", num);
-         if (!shape->getMod(num))      xml::NewAttrib(tag, "mod", num);
-         if (!shape->getSpiral(num))   xml::NewAttrib(tag, "spiral", num);
-         if (!shape->getRepeat(num))   xml::NewAttrib(tag, "repeat", num);
-         if (!shape->getClose(num))    xml::NewAttrib(tag, "close", num);
-
-         error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-      }
-   }
-   else if (Vector->classID() IS CLASSID::VECTORVIEWPORT) {
-      XTag *tag;
-      double x, y, width, height;
-
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<svg/>", &tag);
-
-      auto viewport = (objVectorViewport *)Vector;
-      if (!error) error = viewport->getViewX(x);
-      if (!error) error = viewport->getViewY(y);
-      if (!error) error = viewport->getViewWidth(width);
-      if (!error) error = viewport->getViewHeight(height);
-
-      if (!error) {
-         std::stringstream buffer;
-         buffer << x << " " << y << " " << width << " " << height;
-         xml::NewAttrib(tag, "viewBox", buffer.str());
-      }
-
-      if (!error) {
-         DMF dim;
-         viewport->getDimensions(dim);
-
-         if ((!error) and dmf::hasAnyX(dim) and (!viewport->getX(x)))
-            set_dimension(tag, "x", x, dmf::hasScaledX(dim));
-
-         if ((!error) and dmf::hasAnyY(dim) and (!viewport->getY(y)))
-            set_dimension(tag, "y", y, dmf::hasScaledY(dim));
-
-         if ((!error) and dmf::hasAnyWidth(dim) and (!viewport->getWidth(width)))
-            set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
-
-         if ((!error) and dmf::hasAnyHeight(dim) and (!viewport->getHeight(height)))
-            set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
-      }
-   }
-   else {
-      log.msg("Unrecognised class \"%s\"", Vector->Class->ClassName.c_str());
-      return ERR::Okay; // Skip objects in the scene graph that we don't recognise
+   switch (Vector->classID()) {
+      case CLASSID::VECTORRECTANGLE: error = save_svg_scan_rectangle(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORELLIPSE:   error = save_svg_scan_ellipse(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORPATH:      return save_vectorpath(Self, XML, Vector, Parent);
+      case CLASSID::VECTORPOLYGON:   error = save_svg_scan_polygon(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORTEXT:      error = save_svg_scan_text(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORGROUP:     error = save_svg_scan_group(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORCLIP:      error = save_svg_scan_clip(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORWAVE:      error = save_svg_scan_wave(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORSPIRAL:    error = save_svg_scan_spiral(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORSHAPE:     error = save_svg_scan_shape(Self, XML, Vector, Parent, child_index); break;
+      case CLASSID::VECTORVIEWPORT:  error = save_svg_scan_viewport(Self, XML, Vector, Parent, child_index); break;
+      default:
+         log.msg("Unrecognised class \"%s\"", Vector->Class->ClassName.c_str());
+         return ERR::Okay; // Skip objects in the scene graph that we don't recognise
    }
 
-   if (!error) {
+   if ((!error) and (child_index != -1)) {
       for (auto scan=Vector->Child; scan; scan=scan->Next) {
-         save_svg_scan(Self, XML, scan, new_index);
+         save_svg_scan(Self, XML, scan, child_index);
       }
    }
 
