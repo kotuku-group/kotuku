@@ -995,10 +995,10 @@ class objVectorPattern : public Object {
 
    using create = kt::Create<objVectorPattern>;
 
-   double  X;                       // X coordinate for the pattern.
-   double  Y;                       // Y coordinate for the pattern.
-   double  Width;                   // Width of the pattern tile.
-   double  Height;                  // Height of the pattern tile.
+   Unit    X;                       // X coordinate for the pattern.
+   Unit    Y;                       // Y coordinate for the pattern.
+   Unit    Width;                   // Width of the pattern tile.
+   Unit    Height;                  // Height of the pattern tile.
    double  Opacity;                 // The opacity of the pattern.
    objVectorScene * Scene;          // Refers to the internal VectorScene that will contain the rendered pattern.
    objVectorViewport * Viewport;    // Refers to the viewport that contains the pattern.
@@ -1006,7 +1006,6 @@ class objVectorPattern : public Object {
    VSPREAD SpreadMethod;            // The behaviour to use when the pattern bounds do not match the vector path.
    VUNIT   Units;                   // Defines the coordinate system for fields X, Y, Width and Height.
    VUNIT   ContentUnits;            // Private. Not yet implemented.
-   DMF     Dimensions;              // Dimension flags are stored here.
 
    // Action stubs
 
@@ -1019,36 +1018,24 @@ class objVectorPattern : public Object {
 
    // Customised field getting
 
-   inline ERR getX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY(double &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getOpacity(double &Value) noexcept {
@@ -1081,55 +1068,46 @@ class objVectorPattern : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getDimensions(DMF &Value) noexcept {
-      Value = this->Dimensions;
-      return ERR::Okay;
-   }
-
    inline ERR getMatrices(struct VectorMatrix * &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[6];
       return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
-   inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY(const double Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setInherit(objVectorPattern * Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1144,12 +1122,12 @@ class objVectorPattern : public Object {
    }
 
    inline ERR setMatrices(struct VectorMatrix * Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x08100318, Value);
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00804208, &Value);
    }
 

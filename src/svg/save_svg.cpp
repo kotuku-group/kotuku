@@ -526,7 +526,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
                std::stringstream buffer;
                error = XML->insertStatement(Parent, XMI::CHILD_END, "<polyline/>", &tag);
                if (!error) {
-                  for (i=0; i < points.size(); i++) {
+                  for (unsigned i=0; i < points.size(); i++) {
                      buffer << points[i].X << "," << points[i].Y << " ";
                   }
                   xml::NewAttrib(tag, "points", buffer.str());
@@ -539,7 +539,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
          error = XML->insertStatement(Parent, XMI::CHILD_END, "<polygon/>", &tag);
 
          if ((!error) and (!vp->getPointsArray(points))) {
-            for (i=0; i < points.size(); i++) {
+            for (unsigned i=0; i < points.size(); i++) {
                buffer << points[i].X << "," << points[i].Y << " ";
             }
             xml::NewAttrib(tag, "points", buffer.str());
@@ -557,7 +557,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto vt = (objVectorText *)Vector;
       XTag *tag;
       double x, y, text_length;
-      int total, i, weight;
+      int i, weight;
       std::string str;
       std::string_view sv;
       char buffer[1024];
@@ -570,7 +570,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       std::span<double> dx;
       if ((!error) and (!(error = vt->getDX(dx))) and (not dx.empty())) {
          int pos = 0;
-         for (int i=0; i < dx.size(); i++) {
+         for (unsigned i=0; i < dx.size(); i++) {
             if (pos != 0) buffer[pos++] = ',';
             pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dx[i]);
             if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
@@ -581,7 +581,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       std::span<double> dy;
       if ((!error) and (!(error = vt->getDY(dy))) and (not dy.empty())) {
          int pos = 0;
-         for (i=0; i < dy.size(); i++) {
+         for (unsigned i=0; i < dy.size(); i++) {
             if (pos != 0) buffer[pos++] = ',';
             pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dy[i]);
             if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
@@ -597,7 +597,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if ((!error) and (!(error = vt->getRotate(rotate))) and (not rotate.empty())) {
          std::stringstream buffer;
          bool comma = false;
-         for (i=0; i < rotate.size(); i++) {
+         for (unsigned i=0; i < rotate.size(); i++) {
             if (comma) buffer << ',';
             else comma = true;
             buffer << rotate[i];
