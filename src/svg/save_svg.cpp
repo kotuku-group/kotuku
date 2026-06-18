@@ -744,9 +744,9 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
 
       if (!error) {
-         int dim_flags;
-         viewport->getDimensions(dim_flags);
-         auto dim = DMF(dim_flags);
+         DMF dim;
+         viewport->getDimensions(dim);
+
          if ((!error) and dmf::hasAnyX(dim) and (!viewport->getX(x)))
             set_dimension(tag, "x", x, dmf::hasScaledX(dim));
 

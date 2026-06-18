@@ -100,7 +100,7 @@ static FRGB hsl_to_rgb(HSV Colour)
 
 bool svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 {
-   if (!m_color.empty()) {
+   if (not m_color.empty()) {
       VectorPainter painter;
       if (!vec::ReadPainter(nullptr, m_color, &painter, nullptr)) {
          RGB = painter.Colour;
@@ -132,7 +132,7 @@ bool svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 
 static void parse_result(extSVG *Self, objFilterEffect *Effect, std::string Value)
 {
-   if (!Self->Effects.contains(Value)) {
+   if (not Self->Effects.contains(Value)) {
       Self->Effects.emplace(Value, Effect);
    }
 }
@@ -208,7 +208,7 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
 
 static CSTRING folder(extSVG *Self)
 {
-   if (!Self->Folder.empty()) return Self->Folder.c_str();
+   if (not Self->Folder.empty()) return Self->Folder.c_str();
    if (Self->Path.empty()) return nullptr;
 
    // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
@@ -227,16 +227,13 @@ static CSTRING folder(extSVG *Self)
 
 static void parse_transform(objVector *Vector, const std::string Value, int Tag)
 {
-   if ((Vector->Class->BaseClassID IS CLASSID::VECTOR) and (!Value.empty())) {
+   if ((Vector->Class->BaseClassID IS CLASSID::VECTOR) and (not Value.empty())) {
       VectorMatrix *matrix;
       if (!Vector->newMatrix(&matrix, false)) {
          vec::ParseTransform(matrix, Value);
          matrix->Tag = Tag;
       }
-      else {
-         kt::Log log(__FUNCTION__);
-         log.warning("Failed to create vector transform matrix.");
-      }
+      else kt::Log(__FUNCTION__).warning("Failed to create vector transform matrix.");
    }
 }
 
@@ -412,8 +409,8 @@ template<class T = double> kt::vector<T> read_array(const std::string &Value, in
    if (iequals("none", Value)) return result;
 
    auto v = std::string_view(Value);
-   while ((!v.empty()) and (std::ssize(result) < Limit)) {
-      while ((!v.empty()) and ((v[0] <= 0x20) or (v[0] IS ',') or (v[0] IS '(') or (v[0] IS ')'))) v.remove_prefix(1);
+   while ((not v.empty()) and (std::ssize(result) < Limit)) {
+      while ((not v.empty()) and ((v[0] <= 0x20) or (v[0] IS ',') or (v[0] IS '(') or (v[0] IS ')'))) v.remove_prefix(1);
       if (v.empty()) return result;
 
       auto num = read_unit(v);
@@ -456,7 +453,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Path) and (!Buffer)) return ERR::NullArgs;
+   if ((not Path) and (not Buffer)) return ERR::NullArgs;
 
    log.branch("Path: %s [Log-level reduced]", Path ? Path : "<xml-statement>");
 
@@ -554,7 +551,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
       }
       else error = ERR::Init;
 
-      if (!working_path.empty()) task->setPath(working_path);
+      if (not working_path.empty()) task->setPath(working_path);
    }
    else error = ERR::NewObject;
 
@@ -574,7 +571,7 @@ static void convert_styles(objXML::TAGS &Tags)
 
    for (auto &tag : Tags) {
       for (int style=1; style < std::ssize(tag.Attribs); style++) {
-         if (!iequals("style", tag.Attribs[style].Name)) continue;
+         if (not iequals("style", tag.Attribs[style].Name)) continue;
 
          // Convert all the style values into real attributes.
 
@@ -605,7 +602,7 @@ static void convert_styles(objXML::TAGS &Tags)
          break;
       }
 
-      if (!tag.Children.empty()) convert_styles(tag.Children);
+      if (not tag.Children.empty()) convert_styles(tag.Children);
    }
 }
 
@@ -662,7 +659,7 @@ static bool read_positive_integer_pair(std::string_view Value, int &X, int &Y) n
       count++;
    }
 
-   if (!count) return false;
+   if (not count) return false;
    if (values[0] <= 0) return false;
    if ((count > 1) and (values[1] <= 0)) return false;
 
@@ -690,7 +687,7 @@ static bool read_positive_number_pair(std::string_view Value, double &X, double 
       count++;
    }
 
-   if (!count) return false;
+   if (not count) return false;
    if (values[0] <= 0.0) return false;
    if ((count > 1) and (values[1] <= 0.0)) return false;
 

@@ -4257,6 +4257,11 @@ class objVectorText : public objVector {
 
    // Customised field getting
 
+   inline ERR getAlign(ALIGN &Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getX(double &Value) noexcept {
       auto field = &this->Class->Dictionary[70];
       Unit var(0, FD_DOUBLE);
@@ -4282,11 +4287,6 @@ class objVectorText : public objVector {
       auto field = &this->Class->Dictionary[54];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
-   }
-
-   inline ERR getAlign(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->GetValue(this, &Value);
    }
 
    inline ERR getFill(std::string_view &Value) noexcept {
@@ -4454,6 +4454,16 @@ class objVectorText : public objVector {
 
    // Customised field setting
 
+   inline ERR setAlign(const ALIGN Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setTextFlags(const VTXF Value) noexcept {
+      auto field = &this->Class->Dictionary[64];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[70];
       Unit var(Value);
@@ -4474,11 +4484,6 @@ class objVectorText : public objVector {
    inline ERR setString(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, 0x00904308, &Value);
-   }
-
-   inline ERR setAlign(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFill(const std::string_view &Value) noexcept {
@@ -4539,11 +4544,6 @@ class objVectorText : public objVector {
    inline ERR setTextLength(const double Value) noexcept {
       auto field = &this->Class->Dictionary[80];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setTextFlags(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[64];
-      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStartOffset(const double Value) noexcept {
@@ -5571,6 +5571,31 @@ class objVectorViewport : public objVector {
 
    // Customised field getting
 
+   inline ERR getAspectRatio(ARF &Value) noexcept {
+      auto field = &this->Class->Dictionary[58];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getDimensions(DMF &Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getOverflow(VOF &Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getOverflowX(VOF &Value) noexcept {
+      auto field = &this->Class->Dictionary[65];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getOverflowY(VOF &Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getAbsX(int &Value) noexcept {
       auto field = &this->Class->Dictionary[62];
       SetObjectContext(this, field, AC::NIL);
@@ -5587,11 +5612,6 @@ class objVectorViewport : public objVector {
       return error;
    }
 
-   inline ERR getAspectRatio(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getBuffer(OBJECTPTR &Value) noexcept {
       auto field = &this->Class->Dictionary[56];
       return field->GetValue(this, &Value);
@@ -5602,30 +5622,10 @@ class objVectorViewport : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getDimensions(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getDragCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[57];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
-   }
-
-   inline ERR getOverflow(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getOverflowX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getOverflowY(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
    }
 
    inline ERR getX(double &Value) noexcept {
@@ -5711,8 +5711,28 @@ class objVectorViewport : public objVector {
 
    // Customised field setting
 
-   inline ERR setAspectRatio(const int Value) noexcept {
+   inline ERR setAspectRatio(const ARF Value) noexcept {
       auto field = &this->Class->Dictionary[58];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setDimensions(const DMF Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOverflow(const VOF Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOverflowX(const VOF Value) noexcept {
+      auto field = &this->Class->Dictionary[65];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOverflowY(const VOF Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -5721,29 +5741,9 @@ class objVectorViewport : public objVector {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setDimensions(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
    inline ERR setDragCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[57];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
-   }
-
-   inline ERR setOverflow(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setOverflowX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setOverflowY(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const double Value) noexcept {

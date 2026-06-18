@@ -357,6 +357,20 @@ struct alignas(8) Object { // Must be 64-bit aligned
       return obj ? true : false;
    }
 
+   inline ERR setName(const std::string_view &Name) { return SetName(this, Name); }
+
+   inline ERR setOwner(OBJECTID ID) {
+      Object *new_owner;
+      if (auto error = AccessObject(ID, 1000, &new_owner); error IS ERR::Okay) {
+         error = SetOwner(this, new_owner);
+         ReleaseObject(new_owner);
+         return error;
+      }
+      else return error;
+   }
+
+   inline ERR setOwner(OBJECTPTR NewOwner) { return SetOwner(this, NewOwner); }
+
    private:
    // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
    // reflected in the error code.

@@ -61,10 +61,10 @@ void anim_value::set_value(objVector &Vector)
 
             case SVF_text_anchor:
                switch(strhash(get_string())) {
-                  case SVF_start:   text->setAlign(int(ALIGN::LEFT)); return;
-                  case SVF_middle:  text->setAlign(int(ALIGN::HORIZONTAL)); return;
-                  case SVF_end:     text->setAlign(int(ALIGN::RIGHT)); return;
-                  case SVF_inherit: text->setAlign(int(ALIGN::NIL)); return;
+                  case SVF_start:   text->setAlign(ALIGN::LEFT); return;
+                  case SVF_middle:  text->setAlign(ALIGN::HORIZONTAL); return;
+                  case SVF_end:     text->setAlign(ALIGN::RIGHT); return;
+                  case SVF_inherit: text->setAlign(ALIGN::NIL); return;
                }
                break;
 
