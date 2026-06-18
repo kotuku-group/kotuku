@@ -102,12 +102,6 @@ static ERR read_points(extVectorPolygon *Self, std::string_view Value)
 
 //********************************************************************************************************************
 
-static ERR VECTORPOLYGON_Free(extVectorPolygon *Self)
-{
-   Self->Points.~vector<VectorPoint>();
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Move: Moves a polygon to a new position.
@@ -189,7 +183,6 @@ static ERR VECTORPOLYGON_MoveToPoint(extVectorPolygon *Self, struct acMoveToPoin
 
 static ERR VECTORPOLYGON_NewObject(extVectorPolygon *Self)
 {
-   new (&Self->Points) std::vector<VectorPoint>;
    Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_polygon;
    Self->Closed       = true;
    Self->Points.push_back({ 0, 0 }); // Two blank points are needed on construction in order to satisfy polyline requirements.

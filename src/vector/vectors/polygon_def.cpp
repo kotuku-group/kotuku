@@ -11,7 +11,6 @@ static ERR VECTORPOLYGON_FreePlacement(extVectorPolygon *Self) {
 }
 
 static const struct ActionArray clVectorPolygonActions[] = {
-   { AC::Free, VECTORPOLYGON_Free },
    { AC::FreePlacement, VECTORPOLYGON_FreePlacement },
    { AC::Move, VECTORPOLYGON_Move },
    { AC::MoveToPoint, VECTORPOLYGON_MoveToPoint },

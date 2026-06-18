@@ -282,7 +282,7 @@ static ERR VECTORRECTANGLE_GET_Rounding(extVectorRectangle *Self, std::span<Unit
 static ERR VECTORRECTANGLE_SET_Rounding(extVectorRectangle *Self, std::span<const Unit> &Array)
 {
    if (Array.size() IS 8) {
-      for (unsigned i=0; i < 4; i+=2) {
+      for (unsigned i=0; i < 4; i++) {
          Self->rRound[i].x = Array[i * 2];
          Self->rRound[i].y = Array[(i * 2) + 1];
       }
