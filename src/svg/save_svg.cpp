@@ -648,16 +648,15 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto wave = (objVectorWave *)Vector;
       XTag *tag;
       double dbl;
+      Unit unit;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
 
       if (!error) {
-         DMF dim;
-         wave->getDimensions(dim);
-         if (!wave->getX(dbl))         set_dimension(tag, "x", dbl, dmf::hasScaledX(dim));
-         if (!wave->getY(dbl))         set_dimension(tag, "y", dbl, dmf::hasScaledY(dim));
-         if (!wave->getWidth(dbl))     set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
-         if (!wave->getHeight(dbl))    set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
+         if (!wave->getX(unit))        set_dimension(tag, "x", unit);
+         if (!wave->getY(unit))        set_dimension(tag, "y", unit);
+         if (!wave->getWidth(unit))    set_dimension(tag, "width", unit);
+         if (!wave->getHeight(unit))   set_dimension(tag, "height", unit);
          if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
          if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
          if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);

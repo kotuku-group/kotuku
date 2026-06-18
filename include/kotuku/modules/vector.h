@@ -4614,18 +4614,13 @@ class objVectorWave : public objVector {
 
    // Customised field getting
 
-   inline ERR getDimensions(DMF &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getAmplitude(double &Value) noexcept {
       auto field = &this->Class->Dictionary[46];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getClose(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
+      auto field = &this->Class->Dictionary[50];
       return field->GetValue(this, &Value);
    }
 
@@ -4635,7 +4630,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR getDegree(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+      auto field = &this->Class->Dictionary[51];
       return field->GetValue(this, &Value);
    }
 
@@ -4644,55 +4639,38 @@ class objVectorWave : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getStyle(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getThickness(double &Value) noexcept {
+   inline ERR getHeight(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[56];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+   inline ERR getStyle(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getWidth(double &Value) noexcept {
+   inline ERR getThickness(double &Value) noexcept {
       auto field = &this->Class->Dictionary[55];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getY(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
+      return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
-
-   inline ERR setDimensions(const DMF Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
 
    inline ERR setAmplitude(const double Value) noexcept {
       auto field = &this->Class->Dictionary[46];
@@ -4700,7 +4678,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setClose(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
+      auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4710,7 +4688,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setDegree(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+      auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4719,38 +4697,34 @@ class objVectorWave : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setStyle(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
+      auto field = &this->Class->Dictionary[52];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setThickness(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[55];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY(const double Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[49];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
 };
