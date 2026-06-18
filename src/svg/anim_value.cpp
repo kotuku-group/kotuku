@@ -40,42 +40,48 @@ void anim_value::set_value(objVector &Vector)
 
    switch(Vector.Class->ClassID) {
       case CLASSID::VECTORWAVE:
+      {
+         auto wave = (objVectorWave *)&Vector;
          switch (hash) {
             case SVF_close:     Vector.set(FID_Close, get_string()); return;
-            case SVF_amplitude: Vector.set(FID_Amplitude, get_numeric_value(Vector, FID_Amplitude)); return;
-            case SVF_decay:     Vector.set(FID_Decay, get_numeric_value(Vector, FID_Decay)); return;
-            case SVF_frequency: Vector.set(FID_Frequency, get_numeric_value(Vector, FID_Frequency)); return;
-            case SVF_thickness: Vector.set(FID_Thickness, get_numeric_value(Vector, FID_Thickness)); return;
+            case SVF_amplitude: wave->setAmplitude(get_numeric_value(Vector, FID_Amplitude)); return;
+            case SVF_decay:     wave->setDecay(get_numeric_value(Vector, FID_Decay)); return;
+            case SVF_frequency: wave->setFrequency(get_numeric_value(Vector, FID_Frequency)); return;
+            case SVF_thickness: wave->setThickness(get_numeric_value(Vector, FID_Thickness)); return;
          }
          break;
+      }
 
       case CLASSID::VECTORTEXT:
+      {
+         auto text = (objVectorText *)&Vector;
          switch (hash) {
             case SVF_dx: Vector.set(FID_DX, get_string()); return;
             case SVF_dy: Vector.set(FID_DY, get_string()); return;
 
             case SVF_text_anchor:
                switch(strhash(get_string())) {
-                  case SVF_start:   Vector.set(FID_Align, int(ALIGN::LEFT)); return;
-                  case SVF_middle:  Vector.set(FID_Align, int(ALIGN::HORIZONTAL)); return;
-                  case SVF_end:     Vector.set(FID_Align, int(ALIGN::RIGHT)); return;
-                  case SVF_inherit: Vector.set(FID_Align, int(ALIGN::NIL)); return;
+                  case SVF_start:   text->setAlign(int(ALIGN::LEFT)); return;
+                  case SVF_middle:  text->setAlign(int(ALIGN::HORIZONTAL)); return;
+                  case SVF_end:     text->setAlign(int(ALIGN::RIGHT)); return;
+                  case SVF_inherit: text->setAlign(int(ALIGN::NIL)); return;
                }
                break;
 
             case SVF_rotate: Vector.set(FID_Rotate, get_string()); return;
-            case SVF_string: Vector.set(FID_String, get_string()); return;
+            case SVF_string: text->setString(get_string()); return;
 
             case SVF_kerning:        Vector.set(FID_Kerning, get_string()); return; // Spacing between letters, default=1.0
             case SVF_letter_spacing: Vector.set(FID_LetterSpacing, get_string()); return;
             case SVF_pathLength:     Vector.set(FID_PathLength, get_string()); return;
             case SVF_word_spacing:   Vector.set(FID_WordSpacing, get_string()); return;
 
-            case SVF_font_family: Vector.set(FID_Face, get_string()); return;
+            case SVF_font_family: text->setFace(get_string()); return;
 
             case SVF_font_size: Vector.set(FID_FontSize, get_numeric_value(Vector, FID_FontSize)); return;
          }
          break;
+      }
 
       default: break;
    }
@@ -127,7 +133,7 @@ void anim_value::set_value(objVector &Vector)
       }
 
       case SVF_stroke_width:
-         Vector.set(FID_StrokeWidth, get_numeric_value(Vector, FID_StrokeWidth));
+         Vector.setStrokeWidth(Unit(get_numeric_value(Vector, FID_StrokeWidth)));
          return;
 
       case SVF_stroke_linejoin:
@@ -160,13 +166,13 @@ void anim_value::set_value(objVector &Vector)
          }
          return;
 
-      case SVF_stroke_opacity:          Vector.set(FID_StrokeOpacity, get_numeric_value(Vector, FID_StrokeOpacity)); break;
+      case SVF_stroke_opacity:          Vector.setStrokeOpacity(get_numeric_value(Vector, FID_StrokeOpacity)); break;
       case SVF_stroke_miterlimit:       Vector.set(FID_MiterLimit, get_string()); break;
       case SVF_stroke_miterlimit_theta: Vector.set(FID_MiterLimitTheta, get_string()); break;
       case SVF_stroke_inner_miterlimit: Vector.set(FID_InnerMiterLimit, get_string()); break;
       case SVF_stroke_dasharray:        Vector.set(FID_DashArray, get_string()); return;
       case SVF_stroke_dashoffset:       Vector.set(FID_DashOffset, get_string()); return;
-      case SVF_opacity:                 Vector.set(FID_Opacity, get_numeric_value(Vector, FID_Opacity)); return;
+      case SVF_opacity:                 Vector.setOpacity(get_numeric_value(Vector, FID_Opacity)); return;
 
       case SVF_display: {
          auto val = get_string();

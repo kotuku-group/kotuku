@@ -137,34 +137,43 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
             else if (def->classID() IS CLASSID::GRADIENTRADIAL) {
+               auto radial = (objGradientRadial *)gradient;
                Unit val;
-               if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
-               if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
-               if ((!error) and (!gradient->get(FID_FX, val))) set_dimension(tag, "fx", val);
-               if ((!error) and (!gradient->get(FID_FY, val))) set_dimension(tag, "fy", val);
-               if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
+               if ((!error) and (!radial->getCX(val))) set_dimension(tag, "cx", val);
+               if ((!error) and (!radial->getCY(val))) set_dimension(tag, "cy", val);
+               if ((!error) and (!radial->getFX(val))) set_dimension(tag, "fx", val);
+               if ((!error) and (!radial->getFY(val))) set_dimension(tag, "fy", val);
+               if ((!error) and (!radial->getRadius(val))) set_dimension(tag, "r", val);
 
                int contain_focal;
-               if ((!error) and (!gradient->get(kt::fieldhash("ContainFocal"), contain_focal)) and (!contain_focal)) {
+               if ((!error) and (!radial->getContainFocal(contain_focal)) and (!contain_focal)) {
                   xml::NewAttrib(tag, "focal", "unbound");
                }
             }
             else if ((def->classID() IS CLASSID::GRADIENTDIAMOND) or (def->classID() IS CLASSID::GRADIENTCONIC)) {
                Unit val;
-               if ((!error) and (!gradient->get(FID_CX, val))) set_dimension(tag, "cx", val);
-               if ((!error) and (!gradient->get(FID_CY, val))) set_dimension(tag, "cy", val);
-               if ((!error) and (!gradient->get(FID_Radius, val))) set_dimension(tag, "r", val);
 
                if (def->classID() IS CLASSID::GRADIENTCONIC) {
+                  auto conic = (objGradientConic *)gradient;
+                  if ((!error) and (!conic->getCX(val))) set_dimension(tag, "cx", val);
+                  if ((!error) and (!conic->getCY(val))) set_dimension(tag, "cy", val);
+                  if ((!error) and (!conic->getRadius(val))) set_dimension(tag, "r", val);
+
                   double span;
-                  if ((!error) and (!gradient->get(kt::fieldhash("Span"), span)) and (span != 1.0)) {
+                  if ((!error) and (!conic->getSpan(span)) and (span != 1.0)) {
                      xml::NewAttrib(tag, "span", std::to_string(span));
                   }
+               }
+               else {
+                  auto diamond = (objGradientDiamond *)gradient;
+                  if ((!error) and (!diamond->getCX(val))) set_dimension(tag, "cx", val);
+                  if ((!error) and (!diamond->getCY(val))) set_dimension(tag, "cy", val);
+                  if ((!error) and (!diamond->getRadius(val))) set_dimension(tag, "r", val);
                }
             }
 
             VectorMatrix *transform;
-            if ((!error) and (!gradient->get(FID_Matrices, transform)) and (transform)) {
+            if ((!error) and (!gradient->getMatrices(transform)) and (transform)) {
                std::stringstream buffer;
                if (!save_svg_transform(transform, buffer)) {
                   xml::NewAttrib(tag, "gradientTransform", buffer.str());
@@ -209,7 +218,8 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
             if (!error) xml::NewAttrib(tag, "id", key);
 
-            auto dim = filter->get<DMF>(FID_Dimensions);
+            DMF dim;
+            filter->getDimensions(dim);
 
             if ((!error) and dmf::hasAnyX(dim)) set_dimension(tag, "x", filter->X, dmf::hasScaledX(dim));
             if ((!error) and dmf::hasAnyY(dim)) set_dimension(tag, "y", filter->Y, dmf::hasScaledY(dim));
@@ -238,7 +248,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
 
             std::string effect_xml;
-            if ((!error) and (!filter->get(FID_EffectXML, effect_xml))) {
+            if ((!error) and (!filter->getEffectXML(effect_xml))) {
                error = XML->insertStatement(tag->ID, XMI::CHILD, effect_xml, nullptr);
             }
          }
@@ -332,7 +342,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    std::span<double> dash_array;
    if ((!error) and (!Vector->getDashArray(dash_array)) and (not dash_array.empty())) {
       double dash_offset;
-      if ((!Vector->get(FID_DashOffset, dash_offset)) and (dash_offset != 0)) {
+      if ((!Vector->getDashOffset(dash_offset)) and (dash_offset != 0)) {
          xml::NewAttrib(tag, "stroke-dashoffset", std::to_string(Vector->DashOffset));
       }
 
@@ -404,7 +414,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
          xml::NewAttrib(morph_tag, "xlink:href", shape_ref);
       }
 
-      if (!error) error = Vector->get(FID_MorphFlags, (int &)morph_flags);
+      if (!error) error = Vector->getMorphFlags(morph_flags);
 
       if ((!error) and ((morph_flags & VMF::STRETCH) != VMF::NIL)) xml::NewAttrib(morph_tag, "method", "stretch");
       if ((!error) and ((morph_flags & VMF::AUTO_SPACING) != VMF::NIL)) xml::NewAttrib(morph_tag, "spacing", "auto");
@@ -422,8 +432,8 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
          xml::NewAttrib(morph_tag, "align", align);
       }
 
-      struct rkVectorTransition *tv;
-      if ((!error) and (!Vector->get(FID_Transition, tv))) {
+      OBJECTPTR tv;
+      if ((!error) and (!Vector->getTransition(tv))) {
          // TODO save_svg_scan_std transition support
 
 
@@ -456,7 +466,9 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if (!error) error = XML->getTag(new_index, &tag);
 
       if (!error) {
-         auto dim = rect->get<DMF>(FID_Dimensions);
+         int dim_flags;
+         rect->getDimensions(dim_flags);
+         auto dim = DMF(dim_flags);
          if ((!rect->getRoundX(rx)) and (rx != 0)) set_dimension(tag, "rx", rx, FALSE);
          if ((!rect->getRoundY(ry)) and (ry != 0)) set_dimension(tag, "ry", ry, FALSE);
          if ((!rect->getX(x))) set_dimension(tag, "x", x, dmf::hasScaledX(dim));
@@ -694,22 +706,21 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if (!error) {
          DMF dim;
          shape->getDimensions(dim);
-         if (!shape->get(FID_CenterX, dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
-         if (!shape->get(FID_CenterY, dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
-         if (!shape->get(FID_Radius, dbl)) set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
-         if (!shape->get(FID_A, dbl)) xml::NewAttrib(tag, "a", std::to_string(dbl));
-         if (!shape->get(FID_B, dbl)) xml::NewAttrib(tag, "b", std::to_string(dbl));
-         if (!shape->get(FID_M, dbl)) xml::NewAttrib(tag, "m", std::to_string(dbl));
-         if (!shape->get(FID_N1, dbl)) xml::NewAttrib(tag, "n1", std::to_string(dbl));
-         if (!shape->get(FID_N2, dbl)) xml::NewAttrib(tag, "n2", std::to_string(dbl));
-         if (!shape->get(FID_N3, dbl)) xml::NewAttrib(tag, "n3", std::to_string(dbl));
-         if (!shape->get(FID_Phi, dbl)) xml::NewAttrib(tag, "phi", std::to_string(dbl));
-         if (!shape->get(FID_Phi, num)) xml::NewAttrib(tag, "phi", std::to_string(num));
-         if (!shape->get(FID_Vertices, num)) xml::NewAttrib(tag, "vertices", std::to_string(num));
-         if (!shape->get(FID_Mod, num)) xml::NewAttrib(tag, "mod", std::to_string(num));
-         if (!shape->get(FID_Spiral, num)) xml::NewAttrib(tag, "spiral", std::to_string(num));
-         if (!shape->get(FID_Repeat, num)) xml::NewAttrib(tag, "repeat", std::to_string(num));
-         if (!shape->get(FID_Close, num)) xml::NewAttrib(tag, "close", std::to_string(num));
+         if (!shape->getCenterX(dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
+         if (!shape->getCenterY(dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
+         if (!shape->getRadius(dbl)) set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
+         if (!shape->getA(dbl)) xml::NewAttrib(tag, "a", std::to_string(dbl));
+         if (!shape->getB(dbl)) xml::NewAttrib(tag, "b", std::to_string(dbl));
+         if (!shape->getM(dbl)) xml::NewAttrib(tag, "m", std::to_string(dbl));
+         if (!shape->getN1(dbl)) xml::NewAttrib(tag, "n1", std::to_string(dbl));
+         if (!shape->getN2(dbl)) xml::NewAttrib(tag, "n2", std::to_string(dbl));
+         if (!shape->getN3(dbl)) xml::NewAttrib(tag, "n3", std::to_string(dbl));
+         if (!shape->getPhi(dbl)) xml::NewAttrib(tag, "phi", std::to_string(dbl));
+         if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", std::to_string(num));
+         if (!shape->getMod(num)) xml::NewAttrib(tag, "mod", std::to_string(num));
+         if (!shape->getSpiral(num)) xml::NewAttrib(tag, "spiral", std::to_string(num));
+         if (!shape->getRepeat(num)) xml::NewAttrib(tag, "repeat", std::to_string(num));
+         if (!shape->getClose(num)) xml::NewAttrib(tag, "close", std::to_string(num));
 
          error = save_svg_scan_std(Self, XML, Vector, tag->ID);
       }
@@ -720,10 +731,11 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<svg/>", &tag);
 
-      if (!error) error = Vector->get(FID_ViewX, x);
-      if (!error) error = Vector->get(FID_ViewY, y);
-      if (!error) error = Vector->get(FID_ViewWidth, width);
-      if (!error) error = Vector->get(FID_ViewHeight, height);
+      auto viewport = (objVectorViewport *)Vector;
+      if (!error) error = viewport->getViewX(x);
+      if (!error) error = viewport->getViewY(y);
+      if (!error) error = viewport->getViewWidth(width);
+      if (!error) error = viewport->getViewHeight(height);
 
       if (!error) {
          std::stringstream buffer;
@@ -732,17 +744,19 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
 
       if (!error) {
-         auto dim = Vector->get<DMF>(FID_Dimensions);
-         if ((!error) and dmf::hasAnyX(dim) and (!Vector->get(FID_X, x)))
+         int dim_flags;
+         viewport->getDimensions(dim_flags);
+         auto dim = DMF(dim_flags);
+         if ((!error) and dmf::hasAnyX(dim) and (!viewport->getX(x)))
             set_dimension(tag, "x", x, dmf::hasScaledX(dim));
 
-         if ((!error) and dmf::hasAnyY(dim) and (!Vector->get(FID_Y, y)))
+         if ((!error) and dmf::hasAnyY(dim) and (!viewport->getY(y)))
             set_dimension(tag, "y", y, dmf::hasScaledY(dim));
 
-         if ((!error) and dmf::hasAnyWidth(dim) and (!Vector->get(FID_Width, width)))
+         if ((!error) and dmf::hasAnyWidth(dim) and (!viewport->getWidth(width)))
             set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
 
-         if ((!error) and dmf::hasAnyHeight(dim) and (!Vector->get(FID_Height, height)))
+         if ((!error) and dmf::hasAnyHeight(dim) and (!viewport->getHeight(height)))
             set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
       }
    }

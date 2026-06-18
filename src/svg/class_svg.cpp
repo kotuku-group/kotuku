@@ -313,8 +313,8 @@ static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
 
    int width = 0;
    int height = 0;
-   Self->Scene->get(FID_PageWidth, width);
-   Self->Scene->get(FID_PageHeight, height);
+   Self->Scene->getPageWidth(width);
+   Self->Scene->getPageHeight(height);
 
    if (!width) width = 1920;
    if (!height) height = 1080;
@@ -387,10 +387,10 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
             else {
                double x, y, width, height;
 
-               if (!error) error = Self->Viewport->get(FID_ViewX, x);
-               if (!error) error = Self->Viewport->get(FID_ViewY, y);
-               if (!error) error = Self->Viewport->get(FID_ViewWidth, width);
-               if (!error) error = Self->Viewport->get(FID_ViewHeight, height);
+               if (!error) error = Self->Viewport->getViewX(x);
+               if (!error) error = Self->Viewport->getViewY(y);
+               if (!error) error = Self->Viewport->getViewWidth(width);
+               if (!error) error = Self->Viewport->getViewHeight(height);
 
                if (!error) {
                   char buffer[80];
@@ -399,17 +399,19 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                }
 
                if (!error) {
-                  auto dim = Self->Viewport->get<DMF>(FID_Dimensions);
-                  if (dmf::hasAnyX(dim) and (!Self->Viewport->get(FID_X, x)))
+                  int dim_flags;
+                  Self->Viewport->getDimensions(dim_flags);
+                  auto dim = DMF(dim_flags);
+                  if (dmf::hasAnyX(dim) and (!Self->Viewport->getX(x)))
                      set_dimension(tag, "x", x, dmf::hasScaledX(dim));
 
-                  if (dmf::hasAnyY(dim) and (!Self->Viewport->get(FID_Y, y)))
+                  if (dmf::hasAnyY(dim) and (!Self->Viewport->getY(y)))
                      set_dimension(tag, "y", y, dmf::hasScaledY(dim));
 
-                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->get(FID_Width, width)))
+                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->getWidth(width)))
                      set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
 
-                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->get(FID_Height, height)))
+                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->getHeight(height)))
                      set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
                }
 

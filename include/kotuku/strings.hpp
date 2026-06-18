@@ -458,15 +458,55 @@ inline int strcopy(T &&Source, std::span<char, N> Dest) noexcept
 }
 
 // std::string_view conversion to numeric type.  Returns zero on error.
-// Leading whitespace is not ignored, unlike strtol() and strtod()
+// Leading whitespace, an optional '+' sign and an optional '0x' hex prefix are
+// all supported to match strtol() and strtod() behaviour.
 
 template <class T>
 requires std::is_arithmetic_v<T>
-[[nodiscard]] T svtonum(const std::string_view String) noexcept {
+[[nodiscard]] T svtonum(std::string_view String) noexcept {
+   std::size_t i = 0;
+   while ((i < String.size()) and (unsigned(String[i]) <= 0x20)) i++;
+   String.remove_prefix(i);
+
+   // std::from_chars rejects a leading '+', whereas strtol()/strtod() accept it.
+
+   bool negative = false;
+   if (not String.empty()) {
+      if (String.front() == '+') String.remove_prefix(1);
+      else if (String.front() == '-') { negative = true; String.remove_prefix(1); }
+   }
+
+   // Detect and strip an '0x' / '0X' prefix.  std::from_chars does not consume the
+   // prefix itself, so hexadecimal parsing requires us to remove it first.
+
+   bool hex = false;
+   if ((String.size() >= 2) and (String[0] == '0') and ((String[1] == 'x') or (String[1] == 'X'))) {
+      hex = true;
+      String.remove_prefix(2);
+   }
+
    T val;
-   auto [ v, error ] = std::from_chars(String.data(), String.data() + String.size(), val);
-   if (error == std::errc()) return val;
-   else return 0;
+   std::errc error;
+   if constexpr (std::is_floating_point_v<T>) {
+      const auto fmt = hex ? std::chars_format::hex : std::chars_format::general;
+      error = std::from_chars(String.data(), String.data() + String.size(), val, fmt).ec;
+   }
+   else {
+      const int base = hex ? 16 : 10;
+      error = std::from_chars(String.data(), String.data() + String.size(), val, base).ec;
+   }
+
+   if (error != std::errc()) return 0;
+   return negative ? T(-val) : val;
+}
+
+// Output-parameter variant.  Deduces the numeric type from the destination, so the caller
+// can write svtonum(string, value) without an explicit template argument.
+
+template <class T>
+requires std::is_arithmetic_v<T>
+void svtonum(std::string_view String, T &Result) noexcept {
+   Result = svtonum<T>(String);
 }
 
 } // namespace

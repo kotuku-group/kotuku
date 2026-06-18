@@ -496,7 +496,8 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
          }
          else xml->setPath(Path);
 
-         task->get(FID_Path, working_path);
+         std::string_view working_path_view;
+         if (!task->getPath(working_path_view)) working_path.assign(working_path_view);
 
          // Set a new working path based on the path
 

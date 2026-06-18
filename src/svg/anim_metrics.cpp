@@ -66,19 +66,21 @@ void anim_base::set_orig_value(svgState &State)
             break;
 
          case SVF_stroke_width:
-            target_attrib_orig.assign(std::to_string(obj->get<double>(FID_StrokeWidth)));
+            if (Unit stroke_width; !obj->getStrokeWidth(stroke_width)) {
+               target_attrib_orig.assign(std::to_string(double(stroke_width)));
+            }
             break;
 
          case SVF_fill: {
             std::string_view val;
-            if ((!obj->get(FID_Fill, val)) and not val.empty()) target_attrib_orig = val;
+            if ((!obj->getFill(val)) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_fill;
             break;
          }
 
          case SVF_stroke: {
             std::string_view val;
-            if ((!obj->get(FID_Stroke, val)) and not val.empty()) target_attrib_orig = val;
+            if ((!obj->getStroke(val)) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_stroke;
             break;
          }
