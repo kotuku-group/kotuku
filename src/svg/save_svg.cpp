@@ -554,7 +554,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto vt = (objVectorText *)Vector;
       XTag *tag;
       double x, y, text_length;
-      int i, weight;
+      int weight;
       std::string str;
       std::string_view sv;
       char buffer[1024];

@@ -2519,8 +2519,7 @@ static ERR GET_Gamma(extDisplay *Self, std::span<const double> &Value)
 static ERR SET_Gamma(extDisplay *Self, std::span<const double> &Array)
 {
    if (Array.data()) {
-      int16_t i;
-      for (i=0; i < std::min<size_t>(Array.size(), 3); i++) Self->Gamma[i] = Array[i];
+      for (unsigned i=0; i < std::min<size_t>(Array.size(), 3); i++) Self->Gamma[i] = Array[i];
    }
    return ERR::Okay;
 }

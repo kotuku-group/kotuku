@@ -500,7 +500,7 @@ extern int object_newindex(lua_State *Lua)
       std::span<MethodEntry> table;
       ACTIONID action_id;
       if (!mc->get(FID_Methods, table)) {
-         for (int i=1; i < table.size(); i++) {
+         for (unsigned i=1; i < table.size(); i++) {
             if ((table[i].Name) and (iequals(action, table[i].Name))) {
                action_id = table[i].MethodID;
                *Args = table[i].Args;
