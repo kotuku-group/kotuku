@@ -21,31 +21,48 @@ class extVectorShape : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorShape";
    using create = kt::Create<extVectorShape>;
 
-   double Radius;
-   double CX, CY;
+   Unit Radius;
+   Unit CX, CY;
    double M, N1, N2, N3, A, B, Phi;
    int Vertices;
    int Spiral;
    int Repeat;
-   DMF Dimensions;
    bool Close;
    uint8_t Mod;
 };
 
 //********************************************************************************************************************
 
+static double shape_fixed_x(extVectorShape *Vector, const Unit &Value)
+{
+   if (!Value.defined()) return 0;
+   return Value.scaled() ? double(Value) * get_parent_width(Vector) : double(Value);
+}
+
+static double shape_fixed_y(extVectorShape *Vector, const Unit &Value)
+{
+   if (!Value.defined()) return 0;
+   return Value.scaled() ? double(Value) * get_parent_height(Vector) : double(Value);
+}
+
+static double shape_fixed_radius(extVectorShape *Vector, const Unit &Value)
+{
+   if (!Value.defined()) return 0;
+   return Value.scaled() ? double(Value) * svg_diag(get_parent_width(Vector), get_parent_height(Vector)) : double(Value);
+}
+
+//********************************************************************************************************************
+
 static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
 {
-   double cx = Vector->CX, cy = Vector->CY;
+   double cx = shape_fixed_x(Vector, Vector->CX);
+   double cy = shape_fixed_y(Vector, Vector->CY);
 
    agg::path_storage path_buffer, *target;
    if (Path.empty()) target = &Path;
    else target = &path_buffer;
 
-   if (dmf::hasScaledCenterX(Vector->Dimensions)) cx *= get_parent_width(Vector);
-   if (dmf::hasScaledCenterY(Vector->Dimensions)) cy *= get_parent_height(Vector);
-
-   const double scale = Vector->Radius;
+   const double scale = shape_fixed_radius(Vector, Vector->Radius);
    double rescale = 0;
    double tscale = Vector->Transform.scale();
 
@@ -146,6 +163,8 @@ static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
 static ERR SUPER_NewObject(extVectorShape *Self)
 {
    Self->Radius = 100;
+   Self->CX = 0;
+   Self->CY = 0;
    Self->N1 = 0.1;
    Self->N2 = 1.7;
    Self->N3 = 1.7;
@@ -211,14 +230,12 @@ The horizontal center of the shape is defined here as either a fixed or scaled v
 
 static ERR SUPER_GET_CenterX(extVectorShape *Self, Unit *Value)
 {
-   Value->set(Self->CX);
+   *Value = Self->CX.defined() ? Self->CX : Unit(0);
    return ERR::Okay;
 }
 
 static ERR SUPER_SET_CenterX(extVectorShape *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_CENTER_X) & (~DMF::FIXED_CENTER_X);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_CENTER_X) & (~DMF::SCALED_CENTER_X);
    Self->CX = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -234,14 +251,12 @@ The vertical center of the shape is defined here as either a fixed or scaled val
 
 static ERR SUPER_GET_CenterY(extVectorShape *Self, Unit *Value)
 {
-   Value->set(Self->CY);
+   *Value = Self->CY.defined() ? Self->CY : Unit(0);
    return ERR::Okay;
 }
 
 static ERR SUPER_SET_CenterY(extVectorShape *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_CENTER_Y) & (~DMF::FIXED_CENTER_Y);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_CENTER_Y) & (~DMF::SCALED_CENTER_Y);
    Self->CY = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -264,37 +279,6 @@ static ERR SUPER_GET_Close(extVectorShape *Self, int *Value)
 static ERR SUPER_SET_Close(extVectorShape *Self, int Value)
 {
    Self->Close = Value;
-   reset_path(Self);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-Dimensions: Dimension flags define whether individual dimension fields contain fixed or scaled values.
-
-The following dimension flags are supported:
-
-<types lookup="DMF">
-<type name="FIXED_CENTER_X">The #CenterX value is a fixed coordinate.</>
-<type name="FIXED_CENTER_Y">The #CenterY value is a fixed coordinate.</>
-<type name="FIXED_RADIUS">The #Radius value is a fixed coordinate.</>
-<type name="SCALED_CENTER_X">The #CenterX value is a scaled coordinate.</>
-<type name="SCALED_CENTER_Y">The #CenterY value is a scaled coordinate.</>
-<type name="SCALED_RADIUS">The #Radius value is a scaled coordinate.</>
-</types>
-
-*********************************************************************************************************************/
-
-static ERR SUPER_GET_Dimensions(extVectorShape *Self, DMF *Value)
-{
-   *Value = Self->Dimensions;
-   return ERR::Okay;
-}
-
-static ERR SUPER_SET_Dimensions(extVectorShape *Self, DMF Value)
-{
-   Self->Dimensions = Value;
    reset_path(Self);
    return ERR::Okay;
 }
@@ -455,15 +439,12 @@ The Radius defines the final size of the generated shape.  It can be expressed i
 
 static ERR SUPER_GET_Radius(extVectorShape *Self, Unit *Value)
 {
-   Value->set(Self->Radius);
+   *Value = Self->Radius.defined() ? Self->Radius : Unit(0);
    return ERR::Okay;
 }
 
 static ERR SUPER_SET_Radius(extVectorShape *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions|DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y) & (~(DMF::FIXED_RADIUS_X|DMF::FIXED_RADIUS_Y));
-   else Self->Dimensions = (Self->Dimensions|DMF::FIXED_RADIUS_X|DMF::FIXED_RADIUS_Y) & (~(DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y));
-
    Self->Radius = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -549,40 +530,31 @@ static ERR SUPER_SET_Vertices(extVectorShape *Self, int Value)
 
 //********************************************************************************************************************
 
-static const FieldDef clSuperDimensions[] = {
-   { "FixedCenterX",  DMF::FIXED_CENTER_X },
-   { "FixedCenterY",  DMF::FIXED_CENTER_Y },
-   { "ScaledCenterX", DMF::SCALED_CENTER_X },
-   { "ScaledCenterY", DMF::SCALED_CENTER_Y },
-   { nullptr, 0 }
-};
-
 static const ActionArray clVectorShapeActions[] = {
    { AC::NewObject, SUPER_NewObject },
    { AC::NIL, nullptr }
 };
 
 static const FieldArray clVectorShapeFields[] = {
-   { "CenterX",    FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterX, SUPER_SET_CenterX },
-   { "CenterY",    FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterY, SUPER_SET_CenterY },
-   { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_Radius,  SUPER_SET_Radius },
-   { "Close",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Close, SUPER_SET_Close },
-   { "Dimensions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, SUPER_GET_Dimensions, SUPER_SET_Dimensions, &clSuperDimensions },
-   { "Phi",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_Phi,  SUPER_SET_Phi },
-   { "A",          FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_A,  SUPER_SET_A },
-   { "B",          FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_B,  SUPER_SET_B },
-   { "M",          FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_M,  SUPER_SET_M },
-   { "N1",         FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_N1, SUPER_SET_N1 },
-   { "N2",         FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_N2, SUPER_SET_N2 },
-   { "N3",         FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_N3, SUPER_SET_N3 },
-   { "Vertices",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Vertices, SUPER_SET_Vertices },
-   { "Mod",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Mod, SUPER_SET_Mod },
-   { "Spiral",     FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Spiral, SUPER_SET_Spiral },
-   { "Repeat",     FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Repeat, SUPER_SET_Repeat },
+   { "CenterX",  FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterX, SUPER_SET_CenterX },
+   { "CenterY",  FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterY, SUPER_SET_CenterY },
+   { "Radius",   FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_Radius,  SUPER_SET_Radius },
+   { "Close",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Close, SUPER_SET_Close },
+   { "Phi",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_Phi,  SUPER_SET_Phi },
+   { "A",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_A,  SUPER_SET_A },
+   { "B",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_B,  SUPER_SET_B },
+   { "M",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_M,  SUPER_SET_M },
+   { "N1",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_N1, SUPER_SET_N1 },
+   { "N2",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_N2, SUPER_SET_N2 },
+   { "N3",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SUPER_GET_N3, SUPER_SET_N3 },
+   { "Vertices", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Vertices, SUPER_SET_Vertices },
+   { "Mod",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Mod, SUPER_SET_Mod },
+   { "Spiral",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Spiral, SUPER_SET_Spiral },
+   { "Repeat",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SUPER_GET_Repeat, SUPER_SET_Repeat },
    // Synonyms
-   { "CX", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterX, SUPER_SET_CenterX },
-   { "CY", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterY, SUPER_SET_CenterY },
-   { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_Radius,  SUPER_SET_Radius },
+   { "CX", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterX, SUPER_SET_CenterX },
+   { "CY", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_CenterY, SUPER_SET_CenterY },
+   { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, SUPER_GET_Radius,  SUPER_SET_Radius },
    END_FIELD
 };
 

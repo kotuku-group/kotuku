@@ -1,7 +1,7 @@
 --$TIRI:Include
 
 module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", version=1.0, timestamp=20240611 }, function()
-  cpp_include("<functional>", "<memory>", "<sstream>", "<kotuku/strings.hpp>")
+  cpp_include("<functional>", "<memory>", "<sstream>", "<type_traits>", "<kotuku/strings.hpp>")
 
   loadFile('./constants.tdl')
 
@@ -267,6 +267,16 @@ inline void NewAttrib(XTag &Tag, const std::string_view Name, const std::string_
 
 inline void NewAttrib(XTag *Tag, const std::string_view Name, const std::string_view Value) {
    Tag->Attribs.emplace_back(Name, Value);
+}
+
+template <class T> requires std::is_arithmetic_v<T>
+inline void NewAttrib(XTag &Tag, const std::string_view Name, const T Value) {
+   Tag.Attribs.emplace_back(Name, std::to_string(Value));
+}
+
+template <class T> requires std::is_arithmetic_v<T>
+inline void NewAttrib(XTag *Tag, const std::string_view Name, const T Value) {
+   Tag->Attribs.emplace_back(Name, std::to_string(Value));
 }
 
 inline std::string GetContent(const XTag &Tag) {

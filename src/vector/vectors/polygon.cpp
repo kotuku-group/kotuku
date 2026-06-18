@@ -78,13 +78,13 @@ static ERR read_points(extVectorPolygon *Self, std::string_view Value)
 
    double x = 0, y = 0;
    bool expect_x = true;
-   while (!Value.empty()) {
+   while (not Value.empty()) {
       if (std::isdigit(Value.front()) or (Value.front() == '-')) {
          auto [ptr, error] = std::from_chars(Value.data(), Value.data() + Value.size(), expect_x ? x : y);
          if (error != std::errc()) break;
          Value.remove_prefix(ptr - Value.data());
 
-         if (!expect_x) Self->Points.emplace_back(VectorPoint{x, y});
+         if (not expect_x) Self->Points.emplace_back(VectorPoint{x, y});
 
          expect_x = !expect_x;
       }
@@ -92,15 +92,11 @@ static ERR read_points(extVectorPolygon *Self, std::string_view Value)
    }
 
    if (Self->Points.size() < 2) {
-      kt::Log log(__FUNCTION__);
-      log.traceWarning("List of points requires a minimum of 2 number pairs.");
       Self->Points.clear();
-      return log.warning(ERR::InvalidValue);
+      return kt::Log(__FUNCTION__).warning(ERR::InvalidValue);
    }
    return ERR::Okay;
 }
-
-//********************************************************************************************************************
 
 /*********************************************************************************************************************
 -ACTION-
@@ -110,9 +106,7 @@ Move: Moves a polygon to a new position.
 
 static ERR VECTORPOLYGON_Move(extVectorPolygon *Self, struct acMove *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    // If any of the polygon's points are relative then we have to cancel the move.
    for (unsigned i=0; i < Self->Points.size(); i++) {
@@ -145,9 +139,7 @@ The operation will abort if any of the points in the polygon are discovered to b
 
 static ERR VECTORPOLYGON_MoveToPoint(extVectorPolygon *Self, struct acMoveToPoint *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    // Check if any of the polygon's points are relative, in which case we have to cancel the move.
    for (unsigned i=0; i < Self->Points.size(); i++) {
@@ -203,9 +195,7 @@ If a Width and/or Height value of zero is passed, no scaling on the associated a
 
 static ERR VECTORPOLYGON_Resize(extVectorPolygon *Self, struct acResize *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    double current_width = Self->Bounds.width();
    double current_height = Self->Bounds.height();
@@ -315,21 +305,6 @@ static ERR POLY_SET_Points(extVectorPolygon *Self, const std::string_view &Value
       return ERR::Okay;
    }
    else return error;
-}
-
-/*********************************************************************************************************************
--FIELD-
-TotalPoints: The total number of coordinates defined in the Points field.
-
-TotalPoints is a read-only field value that reflects the total number of coordinates that have been set in the
-#Points array.  The minimum value is 2.
-
-*********************************************************************************************************************/
-
-static ERR POLY_GET_TotalPoints(extVectorPolygon *Self, int *Value)
-{
-   *Value = Self->Points.size();
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -445,7 +420,6 @@ static const FieldArray clPolygonFields[] = {
    { "PathLength",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              POLY_GET_PathLength, POLY_SET_PathLength },
    { "PointsArray", FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, POLY_GET_PointsArray, POLY_SET_PointsArray, "VectorPoint" },
    { "Points",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,                  nullptr, POLY_SET_Points },
-   { "TotalPoints", FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,               POLY_GET_TotalPoints },
    { "X1",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_X1, POLY_SET_X1 },
    { "Y1",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_Y1, POLY_SET_Y1 },
    { "X2",          FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, POLY_GET_X2, POLY_SET_X2 },
