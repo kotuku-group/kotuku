@@ -313,7 +313,7 @@ static ERR load_doc(extDocument *Self, std::string_view Path, bool Unload, ULD U
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch("Loading file '%s', page '%.*s'", int(Path.size()), Path.data(), Self->PageName.c_str());
+   log.branch("Loading file '%.*s', page '%.*s'", int(Path.size()), Path.data(), Self->PageName.c_str());
 
    if (Unload) unload_doc(Self, UnloadFlags);
 

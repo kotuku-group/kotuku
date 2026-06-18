@@ -71,7 +71,7 @@ private:
 
 public:
    APTR  timer;
-   extVectorPoly *vector;
+   extVectorPolygon *vector;
    int  flash;
    int  savePos;
    int  endColumn, endRow; // For area selections
@@ -389,7 +389,7 @@ static ERR VECTORTEXT_Init(extVectorText *Self)
 
       // The editing cursor will inherit transforms from the VectorText as long as it is a direct child.
 
-      if ((Self->txCursor.vector = extVectorPoly::create::global(
+      if ((Self->txCursor.vector = extVectorPolygon::create::global(
             fl::Name("VTCursor"),
             fl::X1(0), fl::Y1(0), fl::X2(1), fl::Y2(1),
             fl::Closed(false),

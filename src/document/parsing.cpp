@@ -1798,7 +1798,7 @@ void parser::tag_combobox(const tag_view &Tag)
             fl::Fill("rgb(0 0 0 / .7)")
          });
 
-         std::array<double, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
+         std::array<Unit, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
          rect->setRounding(round);
 
          objVectorPath::create::global({ // Down arrow

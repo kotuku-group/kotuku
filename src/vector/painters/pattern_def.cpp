@@ -25,36 +25,6 @@ static const struct FieldDef clVectorPatternContentUnits[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clVectorPatternDimensions[] = {
-   { "ScaledX", 0x00000001 },
-   { "ScaledY", 0x00000002 },
-   { "FixedX", 0x00000004 },
-   { "FixedY", 0x00000008 },
-   { "ScaledXOffset", 0x00000010 },
-   { "ScaledYOffset", 0x00000020 },
-   { "FixedXOffset", 0x00000040 },
-   { "FixedYOffset", 0x00000080 },
-   { "FixedHeight", 0x00000100 },
-   { "FixedWidth", 0x00000200 },
-   { "ScaledHeight", 0x00000400 },
-   { "ScaledWidth", 0x00000800 },
-   { "FixedDepth", 0x00001000 },
-   { "ScaledDepth", 0x00002000 },
-   { "FixedZ", 0x00004000 },
-   { "ScaledZ", 0x00008000 },
-   { "ScaledRadiusX", 0x00010000 },
-   { "FixedRadiusX", 0x00020000 },
-   { "ScaledCenterX", 0x00040000 },
-   { "ScaledCenterY", 0x00080000 },
-   { "FixedCenterX", 0x00100000 },
-   { "FixedCenterY", 0x00200000 },
-   { "StatusChangeH", 0x00400000 },
-   { "StatusChangeV", 0x00800000 },
-   { "ScaledRadiusY", 0x01000000 },
-   { "FixedRadiusY", 0x02000000 },
-   { nullptr, 0 }
-};
-
 static ERR VECTORPATTERN_NewPlacement(extVectorPattern *Self) {
    new (Self) extVectorPattern;
    return ERR::Okay;

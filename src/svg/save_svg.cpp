@@ -460,21 +460,18 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    if (Vector->classID() IS CLASSID::VECTORRECTANGLE) {
       auto rect = (objVectorRectangle *)Vector;
       XTag *tag;
-      double rx, ry, x, y, width, height;
+      Unit rx, ry, x, y, width, height;
 
       error = XML->insertXML(Parent, XMI::CHILD_END, "<rect/>", &new_index);
       if (!error) error = XML->getTag(new_index, &tag);
 
       if (!error) {
-         int dim_flags;
-         rect->getDimensions(dim_flags);
-         auto dim = DMF(dim_flags);
-         if ((!rect->getRoundX(rx)) and (rx != 0)) set_dimension(tag, "rx", rx, FALSE);
-         if ((!rect->getRoundY(ry)) and (ry != 0)) set_dimension(tag, "ry", ry, FALSE);
-         if ((!rect->getX(x))) set_dimension(tag, "x", x, dmf::hasScaledX(dim));
-         if ((!rect->getY(y))) set_dimension(tag, "y", y, dmf::hasScaledY(dim));
-         if ((!rect->getWidth(width))) set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
-         if ((!rect->getHeight(height))) set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
+         if ((!rect->getRoundX(rx)) and rx.defined() and (rx > 0)) set_dimension(tag, "rx", rx);
+         if ((!rect->getRoundY(ry)) and ry.defined() and (ry > 0)) set_dimension(tag, "ry", ry);
+         if ((!rect->getX(x))) set_dimension(tag, "x", x);
+         if ((!rect->getY(y))) set_dimension(tag, "y", y);
+         if ((!rect->getWidth(width))) set_dimension(tag, "width", width);
+         if ((!rect->getHeight(height))) set_dimension(tag, "height", height);
 
          save_svg_scan_std(Self, XML, Vector, new_index);
       }
@@ -526,7 +523,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
                std::stringstream buffer;
                error = XML->insertStatement(Parent, XMI::CHILD_END, "<polyline/>", &tag);
                if (!error) {
-                  for (i=0; i < points.size(); i++) {
+                  for (unsigned i=0; i < points.size(); i++) {
                      buffer << points[i].X << "," << points[i].Y << " ";
                   }
                   xml::NewAttrib(tag, "points", buffer.str());
@@ -539,7 +536,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
          error = XML->insertStatement(Parent, XMI::CHILD_END, "<polygon/>", &tag);
 
          if ((!error) and (!vp->getPointsArray(points))) {
-            for (i=0; i < points.size(); i++) {
+            for (unsigned i=0; i < points.size(); i++) {
                buffer << points[i].X << "," << points[i].Y << " ";
             }
             xml::NewAttrib(tag, "points", buffer.str());
@@ -557,7 +554,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto vt = (objVectorText *)Vector;
       XTag *tag;
       double x, y, text_length;
-      int total, i, weight;
+      int weight;
       std::string str;
       std::string_view sv;
       char buffer[1024];
@@ -570,7 +567,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       std::span<double> dx;
       if ((!error) and (!(error = vt->getDX(dx))) and (not dx.empty())) {
          int pos = 0;
-         for (int i=0; i < dx.size(); i++) {
+         for (unsigned i=0; i < dx.size(); i++) {
             if (pos != 0) buffer[pos++] = ',';
             pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dx[i]);
             if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
@@ -581,7 +578,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       std::span<double> dy;
       if ((!error) and (!(error = vt->getDY(dy))) and (not dy.empty())) {
          int pos = 0;
-         for (i=0; i < dy.size(); i++) {
+         for (unsigned i=0; i < dy.size(); i++) {
             if (pos != 0) buffer[pos++] = ',';
             pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%g", dy[i]);
             if ((size_t)pos >= sizeof(buffer)-2) return ERR::BufferOverflow;
@@ -597,7 +594,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if ((!error) and (!(error = vt->getRotate(rotate))) and (not rotate.empty())) {
          std::stringstream buffer;
          bool comma = false;
-         for (i=0; i < rotate.size(); i++) {
+         for (unsigned i=0; i < rotate.size(); i++) {
             if (comma) buffer << ',';
             else comma = true;
             buffer << rotate[i];

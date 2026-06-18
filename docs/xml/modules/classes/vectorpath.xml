@@ -205,7 +205,7 @@ Z: Close Path
       <name>X</name>
       <comment>The left-side of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
       </description>
@@ -215,7 +215,7 @@ Z: Close Path
       <name>Y</name>
       <comment>The top of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>Setting Y moves the computed path so that its top-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
       </description>

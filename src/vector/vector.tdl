@@ -447,10 +447,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('VectorPattern', { src='painters/pattern.cpp', output='painters/pattern_def.cpp', extended=true }, [[
-    double X                      # Starting horizontal coordinate
-    double Y                      # Starting vertical coordinate
-    double Width                  # Width of the canvas
-    double Height                 # Height of the canvas
+    unit X                        # Starting horizontal coordinate
+    unit Y                        # Starting vertical coordinate
+    unit Width                    # Width of the canvas
+    unit Height                   # Height of the canvas
     double Opacity                # Level of opacity from 0 - 1.0
     obj(VectorScene) Scene        # Internal scene
     obj(VectorViewport) Viewport  # Internal viewport
@@ -458,7 +458,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VSPREAD) SpreadMethod     # Behaviour to use when pattern bounds do not match the vector path.
     int(VUNIT) Units              # VUNIT constant
     int(VUNIT) ContentUnits       # VUNIT constant
-    int(DMF) Dimensions           # Flags for the dimension values.
     ~struct(*VectorMatrix) Matrices
   ]])
 
@@ -693,9 +692,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~int(DMF) Dimensions
   ]])
 
-  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' }, [[
+  ]])
 
-  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true }, [[
+  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true, output='vectors/polygon_def.cpp' }, [[
     ~array(struct(VectorPoint)) PointsArray
   ]])
 
