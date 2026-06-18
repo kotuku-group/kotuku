@@ -2,14 +2,14 @@
 static void set_dimension(XTag *Tag, const std::string Attrib, double Value, bool Scaled)
 {
    if (Scaled) xml::NewAttrib(*Tag, Attrib, std::to_string(Value * 100.0) + "%");
-   else xml::NewAttrib(*Tag, Attrib, std::to_string(Value));
+   else xml::NewAttrib(*Tag, Attrib, Value);
 }
 
 static void set_dimension(XTag *Tag, const std::string Attrib, Unit &Value)
 {
    if (Value.defined()) {
       if (Value.scaled()) xml::NewAttrib(*Tag, Attrib, std::to_string(Value * 100.0) + "%");
-      else xml::NewAttrib(*Tag, Attrib, std::to_string(double(Value)));
+      else xml::NewAttrib(*Tag, Attrib, double(Value));
    }
 }
 
@@ -110,7 +110,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
             double resolution;
             if ((!error) and (!gradient->getResolution(resolution)) and (resolution != 1.0)) {
-               xml::NewAttrib(tag, "resolution", std::to_string(resolution));
+               xml::NewAttrib(tag, "resolution", resolution);
             }
 
             if (def->classID() IS CLASSID::GRADIENTLINEAR) {
@@ -161,7 +161,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
                   double span;
                   if ((!error) and (!conic->getSpan(span)) and (span != 1.0)) {
-                     xml::NewAttrib(tag, "span", std::to_string(span));
+                     xml::NewAttrib(tag, "span", span);
                   }
                }
                else {
@@ -188,14 +188,14 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                   if (!(error = XML->insertXML(tag->ID, XMI::CHILD_END, "<stop/>", &stop_index))) {
                      XTag *stop_tag;
                      error = XML->getTag(stop_index, &stop_tag);
-                     if (!error) xml::NewAttrib(stop_tag, "offset", std::to_string(stop.Offset));
+                     if (!error) xml::NewAttrib(stop_tag, "offset", stop.Offset);
 
                      std::stringstream buffer;
                      buffer << "rgb(" << stop.RGB.Red*255.0 << "," << stop.RGB.Green*255.0 << ","
                         << stop.RGB.Blue*255.0 << ")";
                      if (!error) xml::NewAttrib(stop_tag, "stop-color", buffer.str());
                      if ((!error) and (stop.RGB.Alpha != 1.0)) {
-                        xml::NewAttrib(stop_tag, "stop-opacity", std::to_string(stop.RGB.Alpha));
+                        xml::NewAttrib(stop_tag, "stop-opacity", stop.RGB.Alpha);
                      }
                   }
                }
@@ -302,9 +302,9 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    XTag *tag;
    if ((error = XML->getTag(TagID, &tag)) != ERR::Okay) return error;
 
-   if (Vector->Opacity != 1.0) xml::NewAttrib(tag, "opacity", std::to_string(Vector->Opacity));
-   if (Vector->FillOpacity != 1.0) xml::NewAttrib(tag, "fill-opacity", std::to_string(Vector->FillOpacity));
-   if (Vector->StrokeOpacity != 1.0) xml::NewAttrib(tag, "stroke-opacity", std::to_string(Vector->StrokeOpacity));
+   if (Vector->Opacity != 1.0) xml::NewAttrib(tag, "opacity", (Vector->Opacity));
+   if (Vector->FillOpacity != 1.0) xml::NewAttrib(tag, "fill-opacity", (Vector->FillOpacity));
+   if (Vector->StrokeOpacity != 1.0) xml::NewAttrib(tag, "stroke-opacity", (Vector->StrokeOpacity));
 
    if ((!Vector->getStroke(sv)) and not sv.empty()) {
       xml::NewAttrib(tag, "stroke", sv);
@@ -343,7 +343,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    if ((!error) and (!Vector->getDashArray(dash_array)) and (not dash_array.empty())) {
       double dash_offset;
       if ((!Vector->getDashOffset(dash_offset)) and (dash_offset != 0)) {
-         xml::NewAttrib(tag, "stroke-dashoffset", std::to_string(Vector->DashOffset));
+         xml::NewAttrib(tag, "stroke-dashoffset", (Vector->DashOffset));
       }
 
       int pos = 0;
@@ -373,7 +373,12 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    Unit stroke_width;
    if ((!error) and (!Vector->getStrokeWidth(stroke_width))) {
       if (not stroke_width.defined()) stroke_width = 0;
-      if (stroke_width != 1) xml::NewAttrib(tag, "stroke-width", std::to_string(stroke_width));
+      if (stroke_width.scaled()) {
+         xml::NewAttrib(tag, "stroke-width", std::to_string(stroke_width) + "%");
+      }
+      else if (stroke_width != 1) {
+         xml::NewAttrib(tag, "stroke-width", std::to_string(stroke_width));
+      }
    }
 
    if ((!error) and (!Vector->getFill(sv)) and not sv.empty()) {
@@ -545,7 +550,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
       int path_length;
       if ((!(error = vp->getPathLength(path_length))) and (path_length != 0)) {
-         xml::NewAttrib(tag, "pathLength", std::to_string(path_length));
+         xml::NewAttrib(tag, "pathLength", (path_length));
       }
 
       if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
@@ -603,13 +608,13 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
 
       if ((!error) and (!(error = vt->getTextLength(text_length))) and (text_length))
-         xml::NewAttrib(tag, "textLength", std::to_string(text_length));
+         xml::NewAttrib(tag, "textLength", text_length);
 
       if ((!error) and (!(error = vt->getFace(sv))))
          xml::NewAttrib(tag, "font-family", sv);
 
       if ((!error) and (!(error = vt->getWeight(weight))) and (weight != 400))
-         xml::NewAttrib(tag, "font-weight", std::to_string(weight));
+         xml::NewAttrib(tag, "font-weight", weight);
 
       if ((!error) and (!(error = vt->getString(sv))))
          error = XML->insertContent(tag->ID, XMI::CHILD, sv, nullptr);
@@ -652,18 +657,18 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if (!error) {
          DMF dim;
          wave->getDimensions(dim);
-         if (!wave->getX(dbl)) set_dimension(tag, "x", dbl, dmf::hasScaledX(dim));
-         if (!wave->getY(dbl)) set_dimension(tag, "y", dbl, dmf::hasScaledY(dim));
-         if (!wave->getWidth(dbl)) set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
-         if (!wave->getHeight(dbl)) set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
-         if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", std::to_string(dbl));
-         if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", std::to_string(dbl));
-         if (!wave->getDecay(dbl)) xml::NewAttrib(tag, "decay", std::to_string(dbl));
-         if (!wave->getDegree(dbl)) xml::NewAttrib(tag, "degree", std::to_string(dbl));
+         if (!wave->getX(dbl))         set_dimension(tag, "x", dbl, dmf::hasScaledX(dim));
+         if (!wave->getY(dbl))         set_dimension(tag, "y", dbl, dmf::hasScaledY(dim));
+         if (!wave->getWidth(dbl))     set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
+         if (!wave->getHeight(dbl))    set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
+         if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
+         if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
+         if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
+         if (!wave->getDegree(dbl))    xml::NewAttrib(tag, "degree", dbl);
 
          int close;
-         if (!wave->getClose(close)) xml::NewAttrib(tag, "close", std::to_string(close));
-         if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", std::to_string(dbl));
+         if (!wave->getClose(close)) xml::NewAttrib(tag, "close", close);
+         if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", dbl);
 
          if (!error) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
       }
@@ -684,10 +689,10 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
          if (!spiral->getCenterY(dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
          if (!spiral->getWidth(dbl))   set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
          if (!spiral->getHeight(dbl))  set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
-         if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", std::to_string(dbl));
+         if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", dbl);
          if (!spiral->getRadius(dbl))  set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
-         if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", std::to_string(dbl));
-         if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", std::to_string(length));
+         if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", dbl);
+         if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
 
          error = save_svg_scan_std(Self, XML, Vector, tag->ID);
       }
@@ -696,28 +701,27 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       auto shape = (objVectorShape *)Vector;
       XTag *tag;
       double dbl;
+      Unit val;
       int num;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
 
       if (!error) {
-         DMF dim;
-         shape->getDimensions(dim);
-         if (!shape->getCenterX(dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
-         if (!shape->getCenterY(dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
-         if (!shape->getRadius(dbl)) set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
-         if (!shape->getA(dbl)) xml::NewAttrib(tag, "a", std::to_string(dbl));
-         if (!shape->getB(dbl)) xml::NewAttrib(tag, "b", std::to_string(dbl));
-         if (!shape->getM(dbl)) xml::NewAttrib(tag, "m", std::to_string(dbl));
-         if (!shape->getN1(dbl)) xml::NewAttrib(tag, "n1", std::to_string(dbl));
-         if (!shape->getN2(dbl)) xml::NewAttrib(tag, "n2", std::to_string(dbl));
-         if (!shape->getN3(dbl)) xml::NewAttrib(tag, "n3", std::to_string(dbl));
-         if (!shape->getPhi(dbl)) xml::NewAttrib(tag, "phi", std::to_string(dbl));
-         if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", std::to_string(num));
-         if (!shape->getMod(num)) xml::NewAttrib(tag, "mod", std::to_string(num));
-         if (!shape->getSpiral(num)) xml::NewAttrib(tag, "spiral", std::to_string(num));
-         if (!shape->getRepeat(num)) xml::NewAttrib(tag, "repeat", std::to_string(num));
-         if (!shape->getClose(num)) xml::NewAttrib(tag, "close", std::to_string(num));
+         if (!shape->getCenterX(val))  set_dimension(tag, "cx", val);
+         if (!shape->getCenterY(val))  set_dimension(tag, "cy", val);
+         if (!shape->getRadius(val))   set_dimension(tag, "r", val);
+         if (!shape->getA(dbl))        xml::NewAttrib(tag, "a", dbl);
+         if (!shape->getB(dbl))        xml::NewAttrib(tag, "b", dbl);
+         if (!shape->getM(dbl))        xml::NewAttrib(tag, "m", dbl);
+         if (!shape->getN1(dbl))       xml::NewAttrib(tag, "n1", dbl);
+         if (!shape->getN2(dbl))       xml::NewAttrib(tag, "n2", dbl);
+         if (!shape->getN3(dbl))       xml::NewAttrib(tag, "n3", dbl);
+         if (!shape->getPhi(dbl))      xml::NewAttrib(tag, "phi", dbl);
+         if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", num);
+         if (!shape->getMod(num))      xml::NewAttrib(tag, "mod", num);
+         if (!shape->getSpiral(num))   xml::NewAttrib(tag, "spiral", num);
+         if (!shape->getRepeat(num))   xml::NewAttrib(tag, "repeat", num);
+         if (!shape->getClose(num))    xml::NewAttrib(tag, "close", num);
 
          error = save_svg_scan_std(Self, XML, Vector, tag->ID);
       }

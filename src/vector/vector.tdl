@@ -700,7 +700,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true }, [[
-    ~int(DMF) Dimensions
   ]])
 
   klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true }, [[

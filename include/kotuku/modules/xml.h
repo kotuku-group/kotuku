@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <sstream>
+#include <type_traits>
 #ifndef STRINGS_HPP
 #include <kotuku/strings.hpp>
 #endif
@@ -599,6 +600,16 @@ inline void NewAttrib(XTag &Tag, const std::string_view Name, const std::string_
 
 inline void NewAttrib(XTag *Tag, const std::string_view Name, const std::string_view Value) {
    Tag->Attribs.emplace_back(Name, Value);
+}
+
+template <class T> requires std::is_arithmetic_v<T>
+inline void NewAttrib(XTag &Tag, const std::string_view Name, const T Value) {
+   Tag.Attribs.emplace_back(Name, std::to_string(Value));
+}
+
+template <class T> requires std::is_arithmetic_v<T>
+inline void NewAttrib(XTag *Tag, const std::string_view Name, const T Value) {
+   Tag->Attribs.emplace_back(Name, std::to_string(Value));
 }
 
 inline std::string GetContent(const XTag &Tag) {

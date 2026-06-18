@@ -117,16 +117,6 @@
     </field>
 
     <field>
-      <name>TotalPoints</name>
-      <comment>The total number of coordinates defined in the Points field.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>TotalPoints is a read-only field value that reflects the total number of coordinates that have been set in the <fl>Points</fl> array.  The minimum value is 2.</p>
-      </description>
-    </field>
-
-    <field>
       <name>X1</name>
       <comment>Defines the X coordinate of the first point.</comment>
       <access read="G" write="S">Get/Set</access>
