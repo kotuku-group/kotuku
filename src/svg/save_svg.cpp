@@ -548,7 +548,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORTEXT) {
       auto vt = (objVectorText *)Vector;
       XTag *tag;
-      double x, y, text_length;
+      Unit x, y;
+      double text_length;
       int weight;
       std::string str;
       std::string_view sv;
@@ -556,8 +557,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<text/>", &tag);
 
-      if ((!error) and (!vt->getX(x))) set_dimension(tag, "x", x, FALSE);
-      if ((!error) and (!vt->getY(y))) set_dimension(tag, "y", y, FALSE);
+      if ((!error) and (!vt->getX(x))) set_dimension(tag, "x", x);
+      if ((!error) and (!vt->getY(y))) set_dimension(tag, "y", y);
 
       std::span<double> dx;
       if ((!error) and (!(error = vt->getDX(dx))) and (not dx.empty())) {

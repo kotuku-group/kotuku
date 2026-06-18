@@ -483,6 +483,11 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    private:
    template <class T> ERR get_unit(Object *Object, const struct Field &Field, T &Value) requires std::integral<T> or std::floating_point<T> {
+      if (not Field.GetValue) { // No custom getter; the Unit is stored directly at the field offset
+         Value = ((Unit *)(((int8_t *)Object) + Field.Offset))->Value;
+         return ERR::Okay;
+      }
+
       if (not Field.pure()) SetObjectContext(Object, &Field, AC::NIL);
       Unit var(0);
       auto error = Field.GetValue(Object, &var);

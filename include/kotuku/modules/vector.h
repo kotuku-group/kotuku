@@ -1293,63 +1293,47 @@ class objGradientLinear : public objGradient {
 
    // Customised field getting
 
-   inline ERR getX1(double &Value) noexcept {
+   inline ERR getX1(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY1(double &Value) noexcept {
+   inline ERR getY1(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getX2(double &Value) noexcept {
+   inline ERR getX2(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY2(double &Value) noexcept {
+   inline ERR getY2(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
-   inline ERR setX1(const double Value) noexcept {
+   inline ERR setX1(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY1(const double Value) noexcept {
+   inline ERR setY1(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setX2(const double Value) noexcept {
+   inline ERR setX2(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY2(const double Value) noexcept {
+   inline ERR setY2(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
 };
@@ -4188,20 +4172,14 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getX(double &Value) noexcept {
+   inline ERR getX(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[70];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getY(double &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[62];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getWeight(int &Value) noexcept {
@@ -4390,16 +4368,14 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setX(const double Value) noexcept {
+   inline ERR setX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[70];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY(const double Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[62];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setWeight(const int Value) noexcept {

@@ -369,7 +369,7 @@
       <name>X</name>
       <comment>The x coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The x-axis coordinate of the text is specified here as a fixed value.  Scaled coordinates are not supported.</p>
       </description>
@@ -379,7 +379,7 @@
       <name>Y</name>
       <comment>The base-line y coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Y-axis coordinate of the text is specified here as a fixed value.  Scaled coordinates are not supported.</p>
 <p>Unlike other vector shapes, the Y coordinate positions the text from its base line rather than the top of the shape.</p>

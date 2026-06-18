@@ -167,6 +167,19 @@ public:
 
 //********************************************************************************************************************
 
+static void add_line(class extVectorText *, std::string, int Offset, int Length, int Line = -1);
+static ERR cursor_timer(class extVectorText *, int64_t, int64_t);
+static void delete_selection(class extVectorText *);
+static void insert_char(class extVectorText *, int, int);
+static void generate_text(class extVectorText *, agg::path_storage &Path);
+static void raster_text_to_bitmap(class extVectorText *);
+static void key_event(evKey *, int, class extVectorText *);
+static ERR reset_font(class extVectorText *, bool = false);
+static ERR text_input_events(class extVector *Vector, const InputEvent *Events);
+static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta);
+
+//********************************************************************************************************************
+
 class extVectorText : public extVector {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORTEXT;
@@ -177,7 +190,7 @@ class extVectorText : public extVector {
    FUNCTION txValidateInput;
    FUNCTION txOnChange;
    double txInlineSize; // Enables word-wrapping
-   double txX, txY;
+   Unit txX = Unit(0), txY = Unit(0);
    double txTextLength;
    double txFontSize;  // Font size measured in pixels @ 72 DPI.  Should always be a whole number.
    double txLetterSpacing; // SVG: Acts as a multiplier or fixed unit addition to the spacing of each glyph
@@ -206,23 +219,43 @@ class extVectorText : public extVector {
    ALIGN txAlignFlags;
    VTXF  txFlags;
    bool txScaledFontSize;
-   bool txXScaled:1;
-   bool txYScaled:1;
 // bool txSpacingAndGlyphs:1;
+
+   extVectorText() {
+      txFontStyle     = "Regular";
+      GeneratePath    = (void (*)(extVector *, agg::path_storage &))&generate_text;
+      StrokeWidth     = 0.0;
+      txWeight        = DEFAULT_WEIGHT;
+      txFontSize      = 16; // Pixel units @ 72 DPI
+      txCharLimit     = 0x7fffffff;
+      txFamily        = "Noto Sans";
+      Fill[0].Colour  = FRGB(1, 1, 1, 1);
+      txLetterSpacing = 1.0;
+      DisableHitTesting = true;
+   }
+
+   ~extVectorText() {
+      if (txHandle) {
+         // TODO: This would be a good opportunity to garbage-collect stale glyphs
+      }
+
+      if ((((extVector *)this)->ParentView) and (((extVector *)this)->ParentView->Scene->SurfaceID)) {
+         ((extVector *)this)->ParentView->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
+      }
+
+      if (txBitmapImage)  FreeResource(txBitmapImage);
+      if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
+      if (txDX)           FreeResource(txDX);
+      if (txDY)           FreeResource(txDY);
+      if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
+
+      if (txFocusID) {
+         if (kt::ScopedObjectLock<extVector> focus(txFocusID, 5000); focus.granted()) {
+            focus->subscribeFeedback(FM::NIL, C_FUNCTION(text_focus_event));
+         }
+      }
+   }
 };
-
-//********************************************************************************************************************
-
-static void add_line(extVectorText *, std::string, int Offset, int Length, int Line = -1);
-static ERR cursor_timer(extVectorText *, int64_t, int64_t);
-static void delete_selection(extVectorText *);
-static void insert_char(extVectorText *, int, int);
-static void generate_text(extVectorText *, agg::path_storage &Path);
-static void raster_text_to_bitmap(extVectorText *);
-static void key_event(evKey *, int, extVectorText *);
-static ERR reset_font(extVectorText *, bool = false);
-static ERR text_input_events(extVector *, const InputEvent *);
-static ERR text_focus_event(extVector *, FM, OBJECTPTR, APTR);
 
 //********************************************************************************************************************
 
@@ -349,33 +382,6 @@ static ERR VECTORTEXT_DeleteLine(extVectorText *Self, struct vt::DeleteLine *Arg
 
 //********************************************************************************************************************
 
-static ERR VECTORTEXT_Free(extVectorText *Self)
-{
-   if (Self->txHandle) {
-      // TODO: This would be a good opportunity to garbage-collect stale glyphs
-   }
-
-   if ((((extVector *)Self)->ParentView) and (((extVector *)Self)->ParentView->Scene->SurfaceID)) {
-      ((extVector *)Self)->ParentView->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
-   }
-
-   if (Self->txBitmapImage)  { FreeResource(Self->txBitmapImage); Self->txBitmapImage = nullptr; }
-   if (Self->txAlphaBitmap)  { FreeResource(Self->txAlphaBitmap); Self->txAlphaBitmap = nullptr; }
-   if (Self->txDX)           { FreeResource(Self->txDX); Self->txDX = nullptr; }
-   if (Self->txDY)           { FreeResource(Self->txDY); Self->txDY = nullptr; }
-   if (Self->txKeyEvent)     { UnsubscribeEvent(Self->txKeyEvent); Self->txKeyEvent = nullptr; }
-
-   if (Self->txFocusID) {
-      if (kt::ScopedObjectLock<extVector> focus(Self->txFocusID, 5000); focus.granted()) {
-         focus->subscribeFeedback(FM::NIL, C_FUNCTION(text_focus_event));
-      }
-   }
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTORTEXT_Init(extVectorText *Self)
 {
    if ((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) {
@@ -407,29 +413,6 @@ static ERR VECTORTEXT_Init(extVectorText *Self)
    }
 
    return reset_font(Self, true);
-}
-
-//********************************************************************************************************************
-
-static ERR VECTORTEXT_NewObject(extVectorText *Self)
-{
-   new (&Self->txLines) std::vector<TextLine>;
-   new (&Self->txCursor) TextCursor;
-   new (&Self->txFamily) std::string;
-   new (&Self->txFontStyle) std::string;
-   new (&Self->txFontSizeString) std::string;
-
-   Self->txFontStyle = "Regular";
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_text;
-   Self->StrokeWidth  = 0.0;
-   Self->txWeight     = DEFAULT_WEIGHT;
-   Self->txFontSize   = 16; // Pixel units @ 72 DPI
-   Self->txCharLimit  = 0x7fffffff;
-   Self->txFamily     = "Noto Sans";
-   Self->Fill[0].Colour  = FRGB(1, 1, 1, 1);
-   Self->txLetterSpacing = 1.0;
-   Self->DisableHitTesting = true;
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1132,9 +1115,9 @@ The x-axis coordinate of the text is specified here as a fixed value.  Scaled co
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_X(extVectorText *Self, Unit *Value)
+static ERR TEXT_GET_X(extVectorText *Self, Unit &Value)
 {
-   Value->set(Self->txX);
+   Value = Self->txX;
    return ERR::Okay;
 }
 
@@ -1155,9 +1138,9 @@ Unlike other vector shapes, the Y coordinate positions the text from its base li
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_Y(extVectorText *Self, Unit *Value)
+static ERR TEXT_GET_Y(extVectorText *Self, Unit &Value)
 {
-   Value->set(Self->txY);
+   Value = Self->txY;
    return ERR::Okay;
 }
 
@@ -1431,17 +1414,17 @@ static void calc_caret_position(TextLine &Line, double FontSize, double PathScal
 
 extern void set_text_final_xy(extVectorText *Vector)
 {
-   double x = Vector->txX, y = Vector->txY;
+   Unit x = Vector->txX, y = Vector->txY;
 
-   if (Vector->txXScaled) x *= get_parent_width(Vector);
-   if (Vector->txYScaled) y *= get_parent_height(Vector);
+   if (x.scaled()) x = Unit(x * get_parent_width(Vector));
+   if (y.scaled()) y = Unit(y * get_parent_height(Vector));
 
-   if ((Vector->txAlignFlags & ALIGN::RIGHT) != ALIGN::NIL) x -= Vector->txWidth;
-   else if ((Vector->txAlignFlags & ALIGN::HORIZONTAL) != ALIGN::NIL) x -= Vector->txWidth * 0.5;
+   if ((Vector->txAlignFlags & ALIGN::RIGHT) != ALIGN::NIL) x = x - Vector->txWidth;
+   else if ((Vector->txAlignFlags & ALIGN::HORIZONTAL) != ALIGN::NIL) x = x - (Vector->txWidth * 0.5);
 
    if (Vector->txBitmapFont) {
       // Rastered fonts need an adjustment because the Y coordinate corresponds to the base-line.
-      y -= Vector->txBitmapFont->Height + Vector->txBitmapFont->Leading;
+      y = y - (Vector->txBitmapFont->Height + Vector->txBitmapFont->Leading);
    }
 
    Vector->FinalX = x + Vector->txXOffset;
@@ -1514,7 +1497,7 @@ static void add_line(extVectorText *Self, std::string String, int Offset, int Le
 
 //********************************************************************************************************************
 
-static ERR text_focus_event(extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta)
+static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta)
 {
    auto Self = (extVectorText *)CurrentContext();
 
@@ -1555,7 +1538,7 @@ static ERR text_focus_event(extVector *Vector, FM Event, OBJECTPTR EventObject, 
 
 //********************************************************************************************************************
 
-static ERR text_input_events(extVector *Vector, const InputEvent *Events)
+static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
 {
    auto Self = (extVectorText *)CurrentContext();
 
@@ -1946,6 +1929,11 @@ void TextCursor::reset_vector(extVectorText *Vector) const
          Vector->txCursor.vector->Points[1].Y = line.chars[col].y2;
          reset_path(Vector->txCursor.vector);
 
+         Unit x = Vector->txX, y = Vector->txY;
+
+         if (x.scaled()) x = Unit(x * get_parent_width(Vector));
+         if (y.scaled()) y = Unit(y * get_parent_height(Vector));
+
          // If the cursor X,Y lies outside of the parent viewport, offset the text so that it remains visible to
          // the user.
 
@@ -1954,8 +1942,8 @@ void TextCursor::reset_vector(extVectorText *Vector) const
             double xo = 0;
             const double CURSOR_MARGIN = Vector->txFontSize * 0.5;
             if (p_width > 8) {
-               if (Vector->txX + line.chars[col].x1 <= 0) xo = Vector->txX + line.chars[col].x1;
-               else if (Vector->txX + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(Vector->txX + line.chars[col].x1 + CURSOR_MARGIN - p_width);
+               if (x + line.chars[col].x1 <= 0) xo = x + line.chars[col].x1;
+               else if (y + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(x + line.chars[col].x1 + CURSOR_MARGIN - p_width);
             }
 
             auto p_height = Vector->ParentView->vpFixedHeight;
@@ -2057,8 +2045,8 @@ static const FieldDef clTextAlign[] = {
 };
 
 static const FieldArray clTextFields[] = {
-   { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, TEXT_GET_X, TEXT_SET_X },
-   { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, TEXT_GET_Y, TEXT_SET_Y },
+   { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, TEXT_GET_X, TEXT_SET_X },
+   { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, TEXT_GET_Y, TEXT_SET_Y },
    { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_Weight, TEXT_SET_Weight },
    { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },

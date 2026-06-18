@@ -33,11 +33,8 @@ static ERR VECTORTEXT_FreePlacement(extVectorText *Self) {
 }
 
 static const struct ActionArray clVectorTextActions[] = {
-   { AC::Free, VECTORTEXT_Free },
    { AC::FreePlacement, VECTORTEXT_FreePlacement },
    { AC::Init, VECTORTEXT_Init },
-   { AC::NewObject, VECTORTEXT_NewObject },
    { AC::NewPlacement, VECTORTEXT_NewPlacement },
    { AC::NIL, nullptr }
 };
-
