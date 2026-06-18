@@ -5302,128 +5302,98 @@ class objVectorEllipse : public objVector {
 
    // Action stubs
 
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting
 
-   inline ERR getDimensions(DMF &Value) noexcept {
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getCX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getCY(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRadius(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRadiusX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRadiusY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[49];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getCenterX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getCenterY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getRadius(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getRadiusX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
-   inline ERR getRadiusY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
-      return error;
-   }
-
    inline ERR getVertices(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
+      auto field = &this->Class->Dictionary[54];
       return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
-   inline ERR setDimensions(const DMF Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setCenterX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setCenterY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setRadius(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setRadiusX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
-   }
-
-   inline ERR setRadiusY(const double Value) noexcept {
+   inline ERR setWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[51];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadiusX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadiusY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setVertices(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
+      auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

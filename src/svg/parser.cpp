@@ -3437,8 +3437,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case CLASSID::VECTORELLIPSE:
          switch (Hash) {
-            case SVF_cx:       UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
-            case SVF_cy:       UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cx:       UNIT(FID_CX, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cy:       UNIT(FID_CY, StrValue).set(Vector); return ERR::Okay;
             case SVF_r:        UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
             case SVF_rx:       UNIT(FID_RadiusX, StrValue).set(Vector); return ERR::Okay;
             case SVF_ry:       UNIT(FID_RadiusY, StrValue).set(Vector); return ERR::Okay;

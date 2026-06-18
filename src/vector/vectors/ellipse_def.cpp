@@ -12,6 +12,8 @@ static ERR VECTORELLIPSE_FreePlacement(extVectorEllipse *Self) {
 
 static const struct ActionArray clVectorEllipseActions[] = {
    { AC::FreePlacement, VECTORELLIPSE_FreePlacement },
+   { AC::Move, VECTORELLIPSE_Move },
+   { AC::MoveToPoint, VECTORELLIPSE_MoveToPoint },
    { AC::NewPlacement, VECTORELLIPSE_NewPlacement },
    { AC::NIL, nullptr }
 };

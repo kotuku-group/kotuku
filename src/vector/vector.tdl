@@ -692,22 +692,17 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~int(DMF) Dimensions
   ]])
 
-  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' }, [[
-  ]])
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' })
 
   klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true, output='vectors/polygon_def.cpp' }, [[
     ~array(struct(VectorPoint)) PointsArray
   ]])
 
-  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true, output='vectors/supershape_def.cpp' }, [[
-  ]])
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true, output='vectors/supershape_def.cpp' })
 
-  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true }, [[
-  ]])
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true })
 
-  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true, output='vectors/ellipse_def.cpp' }, [[
-    ~int(DMF) Dimensions
-  ]])
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true, output='vectors/ellipse_def.cpp' })
 
   klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true }, [[
     ~int(ARF) AspectRatio

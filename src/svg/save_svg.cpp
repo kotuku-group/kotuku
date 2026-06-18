@@ -484,22 +484,19 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORELLIPSE) {
       auto ellipse = (objVectorEllipse *)Vector;
       XTag *tag;
-      double rx, ry;
-      double cx, cy;
-      DMF dim;
+      Unit rx, ry, cx, cy;
 
-      ellipse->getDimensions(dim);
       if (!error) error = ellipse->getRadiusX(rx);
       if (!error) error = ellipse->getRadiusY(ry);
-      if (!error) error = ellipse->getCenterX(cx);
-      if (!error) error = ellipse->getCenterY(cy);
+      if (!error) error = ellipse->getCX(cx);
+      if (!error) error = ellipse->getCY(cy);
       if (!error) error = XML->insertStatement(Parent, XMI::CHILD_END, "<ellipse/>", &tag);
 
       if (!error) {
-         set_dimension(tag, "rx", rx, dmf::hasScaledRadiusX(dim));
-         set_dimension(tag, "ry", ry, dmf::hasScaledRadiusY(dim));
-         set_dimension(tag, "cx", cx, dmf::hasScaledCenterX(dim));
-         set_dimension(tag, "cy", cy, dmf::hasScaledCenterY(dim));
+         set_dimension(tag, "rx", rx);
+         set_dimension(tag, "ry", ry);
+         set_dimension(tag, "cx", cx);
+         set_dimension(tag, "cy", cy);
       }
 
       if (!error) error = save_svg_scan_std(Self, XML, Vector, new_index);
