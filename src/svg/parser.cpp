@@ -3639,8 +3639,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case CLASSID::VECTORSPIRAL:
          switch (Hash) {
             case SVF_pathLength: ((objVectorSpiral *)Vector)->setPathLength(svtonum<int>(StrValue)); return ERR::Okay;
-            case SVF_cx:         UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
-            case SVF_cy:         UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cx:         UNIT(FID_CX, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cy:         UNIT(FID_CY, StrValue).set(Vector); return ERR::Okay;
             case SVF_r:          UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
             case SVF_offset:     UNIT(FID_Offset, StrValue).set(Vector); return ERR::Okay;
             case SVF_step:       UNIT(FID_Step, StrValue).set(Vector); return ERR::Okay;
@@ -3652,8 +3652,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case CLASSID::VECTORSHAPE:
          switch (Hash) {
-            case SVF_cx:       UNIT(FID_CenterX, StrValue).set(Vector); return ERR::Okay;
-            case SVF_cy:       UNIT(FID_CenterY, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cx:       UNIT(FID_CX, StrValue).set(Vector); return ERR::Okay;
+            case SVF_cy:       UNIT(FID_CY, StrValue).set(Vector); return ERR::Okay;
             case SVF_r:        UNIT(FID_Radius, StrValue).set(Vector); return ERR::Okay;
             case SVF_n1:       UNIT(FID_N1, StrValue).set(Vector); return ERR::Okay;
             case SVF_n2:       UNIT(FID_N2, StrValue).set(Vector); return ERR::Okay;

@@ -676,21 +676,20 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORSPIRAL) {
       auto spiral = (objVectorSpiral *)Vector;
       XTag *tag;
-      double dbl;
       int length;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:spiral/>", &tag);
       if (error != ERR::Okay) return error;
 
       if (!error) {
-         DMF dim;
-         spiral->getDimensions(dim);
-         if (!spiral->getCenterX(dbl)) set_dimension(tag, "cx", dbl, dmf::hasScaledCenterX(dim));
-         if (!spiral->getCenterY(dbl)) set_dimension(tag, "cy", dbl, dmf::hasScaledCenterY(dim));
-         if (!spiral->getWidth(dbl))   set_dimension(tag, "width", dbl, dmf::hasScaledWidth(dim));
-         if (!spiral->getHeight(dbl))  set_dimension(tag, "height", dbl, dmf::hasScaledHeight(dim));
+         Unit unit;
+         double dbl;
+         if (!spiral->getCX(unit))     set_dimension(tag, "cx", unit);
+         if (!spiral->getCY(unit))     set_dimension(tag, "cy", unit);
+         if (!spiral->getWidth(unit))  set_dimension(tag, "width", unit);
+         if (!spiral->getHeight(unit)) set_dimension(tag, "height", unit);
          if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", dbl);
-         if (!spiral->getRadius(dbl))  set_dimension(tag, "r", dbl, dmf::hasAnyScaledRadius(dim));
+         if (!spiral->getRadius(unit)) set_dimension(tag, "r", unit);
          if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", dbl);
          if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
 
@@ -700,15 +699,15 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    else if (Vector->classID() IS CLASSID::VECTORSHAPE) {
       auto shape = (objVectorShape *)Vector;
       XTag *tag;
-      double dbl;
-      Unit val;
-      int num;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
 
       if (!error) {
-         if (!shape->getCenterX(val))  set_dimension(tag, "cx", val);
-         if (!shape->getCenterY(val))  set_dimension(tag, "cy", val);
+         double dbl;
+         Unit val;
+         int num;
+         if (!shape->getCX(val))       set_dimension(tag, "cx", val);
+         if (!shape->getCY(val))       set_dimension(tag, "cy", val);
          if (!shape->getRadius(val))   set_dimension(tag, "r", val);
          if (!shape->getA(dbl))        xml::NewAttrib(tag, "a", dbl);
          if (!shape->getB(dbl))        xml::NewAttrib(tag, "b", dbl);
