@@ -309,11 +309,11 @@ static ERR insert_text(extDocument *Self, RSTREAM *Stream, stream_char &Index, c
 
 //********************************************************************************************************************
 
-static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD UnloadFlags)
+static ERR load_doc(extDocument *Self, std::string_view Path, bool Unload, ULD UnloadFlags)
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch("Loading file '%s', page '%s'", Path.c_str(), Self->PageName.c_str());
+   log.branch("Loading file '%s', page '%.*s'", int(Path.size()), Path.data(), Self->PageName.c_str());
 
    if (Unload) unload_doc(Self, UnloadFlags);
 
@@ -322,7 +322,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
    // Generate a path without parameter values.
 
    auto i = Path.find_first_of("&#?");
-   if (i != std::string::npos) Path.erase(i);
+   if (i != std::string::npos) Path = Path.substr(0, i);
 
    if (!AnalysePath(Path, nullptr)) {
       auto task = CurrentTask();
@@ -359,7 +359,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
          else return Self->Error;
       }
       else {
-         error_dialog("Document Load Error", std::string("Failed to load document file '") + Path + "'");
+         error_dialog("Document Load Error", std::format("Failed to load document file '{}'", Path));
          return log.warning(ERR::OpenFile);
       }
    }

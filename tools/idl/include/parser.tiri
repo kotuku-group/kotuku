@@ -340,6 +340,22 @@ global function parseMethod(Class:table, Extract:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Locate a field in the complete MetaClass dictionary.  Field.index is local to the field array that produced it, but
+-- generated accessors index the merged dictionary directly.
+
+function findDictionaryFieldIndex(Meta, FieldID)
+   Meta ?! return nil
+
+   local dictionary = Meta.dictionary
+   dictionary ?! return nil
+
+   for i=0,#dictionary-1 do
+      local field = dictionary[i]
+      if field and field.fieldID is FieldID then return i end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Process the formal field definitions in a class spec.
 
 global function parseClassFields(Class:table, ClientSpec:str)
@@ -393,10 +409,11 @@ global function parseClassFields(Class:table, ClientSpec:str)
    Class.lookupFields = { }
    if Class.fields then
       for f in values(Class.fields) do
-         local err, cf, _ = Class.meta.mtFindField(calcFieldHash(f.name))
+         local field_id = calcFieldHash(f.name)
+         local err, cf, _ = Class.meta.mtFindField(field_id)
          if err is ERR_Okay then
             f.offset = cf.offset
-            f.index  = cf.index
+            f.index  = findDictionaryFieldIndex(Class.meta, field_id) ?? cf.index
          end
 
          Class.lookupFields[f.name] = f

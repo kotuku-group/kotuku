@@ -3,7 +3,7 @@
 -CLASS-
 FilterEffect: FilterEffect is a support class for managing effects hosted by the VectorFilter class.
 
-The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects mut not be
+The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects must not be
 instantiated directly by the client.
 
 The documented fields and actions here are integral to all effects that utilise this class.

@@ -101,22 +101,22 @@ direct pointer to the referenced effect in the Effect field, or an error will be
 
 *********************************************************************************************************************/
 
-static ERR MERGEFX_SET_SourceList(extMergeFX *Self, MergeSource *Value, int Elements)
+static ERR MERGEFX_SET_SourceList(extMergeFX *Self, std::span<const MergeSource> &Value)
 {
-   if ((!Value) or (Elements <= 0)) {
+   if ((!Value.data()) or (Value.empty())) {
       release_merge_sources(Self->List);
       return ERR::Okay;
    }
 
    std::vector<MergeSource> list;
-   list.reserve(Elements);
+   list.reserve(Value.size());
 
-   for (int i=0; i < Elements; i++) {
-      if (Value[i].SourceType IS VSF::REFERENCE) {
-         if (!Value[i].Effect) return ERR::InvalidData;
+   for (auto &source : Value) {
+      if (source.SourceType IS VSF::REFERENCE) {
+         if (!source.Effect) return ERR::InvalidData;
       }
 
-      list.push_back(Value[i]);
+      list.push_back(source);
    }
 
    release_merge_sources(Self->List);
@@ -131,10 +131,9 @@ static ERR MERGEFX_SET_SourceList(extMergeFX *Self, MergeSource *Value, int Elem
    return ERR::Okay;
 }
 
-static ERR MERGEFX_GET_SourceList(extMergeFX *Self, MergeSource **Value, int *Elements)
+static ERR MERGEFX_GET_SourceList(extMergeFX *Self, std::span<MergeSource> &Value)
 {
-   *Value    = Self->List.data();
-   *Elements = int(Self->List.size());
+   Value = std::span<MergeSource>(Self->List.data(), Self->List.size());
    return ERR::Okay;
 }
 

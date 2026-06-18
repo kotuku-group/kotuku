@@ -1251,36 +1251,30 @@ then the list of values is repeated to yield an even number of values.  Thus `5,
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_DashArray(extVector *Self, double **Value, int *Elements)
+static ERR VECTOR_GET_DashArray(extVector *Self, std::span<const double> &Array)
 {
-   if (Self->DashArray) {
-      *Value    = Self->DashArray->values.data();
-      *Elements = std::ssize(Self->DashArray->values);
-   }
-   else {
-      *Value    = nullptr;
-      *Elements = 0;
-   }
+   if (Self->DashArray) Array = std::span<const double>(Self->DashArray->values.data(), Self->DashArray->values.size());
+   else Array = std::span<const double>{};
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_DashArray(extVector *Self, double *Value, int Elements)
+static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &Array)
 {
    kt::Log log;
 
    if (Self->DashArray) { delete Self->DashArray; Self->DashArray = nullptr; }
 
-   if ((Value) and (Elements >= 1)) {
+   if (Array.size() > 0) {
       int total;
 
-      if (Elements & 1) total = Elements * 2; // To satisfy requirements, the dash path can be doubled to make an even number.
-      else total = Elements;
+      if (Array.size() & 1) total = Array.size() * 2; // To satisfy requirements, the dash path can be doubled to make an even number.
+      else total = Array.size();
 
       Self->DashArray = new (std::nothrow) DashedStroke(Self->BasePath, total);
       if (Self->DashArray) {
-         for (int i=0; i < Elements; i++) Self->DashArray->values[i] = Value[i];
-         if (Elements & 1) {
-            for (int i=0; i < Elements; i++) Self->DashArray->values[Elements+i] = Value[i];
+         for (int i=0; i < Array.size(); i++) Self->DashArray->values[i] = Array[i];
+         if (Array.size() & 1) {
+            for (int i=0; i < Array.size(); i++) Self->DashArray->values[Array.size()+i] = Array[i];
          }
 
          double total_length = 0;
@@ -1427,29 +1421,24 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
 -FIELD-
 FillColour: Defines a solid colour for filling the vector path.
 
-Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array
-of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements
-consist of Red, Green, Blue and Alpha values in that order.
+Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an FRGB
+structuure of normalised values in sRGB colourspace.  Values are unclamped so that colour spaces other than sRGB are
+not negatively impacted.
 
 If the Alpha component is set to zero then the FillColour will be ignored by the renderer.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_FillColour(extVector *Self, float **Value, int *Elements)
+static ERR VECTOR_GET_FillColour(extVector *Self, struct FRGB &Value)
 {
-   *Value = (float *)&Self->Fill[0].Colour;
-   *Elements = 4;
+   Value = Self->Fill[0].Colour;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_FillColour(extVector *Self, float *Value, int Elements)
+static ERR VECTOR_SET_FillColour(extVector *Self, struct FRGB *Value)
 {
    if (Value) {
-      if (Elements >= 1) Self->Fill[0].Colour.Red   = Value[0];
-      if (Elements >= 2) Self->Fill[0].Colour.Green = Value[1];
-      if (Elements >= 3) Self->Fill[0].Colour.Blue  = Value[2];
-      if (Elements >= 4) Self->Fill[0].Colour.Alpha = Value[3];
-      else Self->Fill[0].Colour.Alpha = 1;
+      Self->Fill[0].Colour = Value[0];
 
       // If the raster filler doesn't exist for this vector then we'll need to regenerate it.
 
@@ -2260,22 +2249,15 @@ This field is complemented by the #StrokeOpacity and #Stroke fields.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_StrokeColour(extVector *Self, float **Value, int *Elements)
+static ERR VECTOR_GET_StrokeColour(extVector *Self, struct FRGB &Value)
 {
-   *Value = (float *)&Self->Stroke.Colour;
-   *Elements = 4;
+   Value = Self->Stroke.Colour;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_StrokeColour(extVector *Self, float *Value, int Elements)
+static ERR VECTOR_SET_StrokeColour(extVector *Self, struct FRGB *Value)
 {
-   if (Value) {
-      if (Elements >= 1) Self->Stroke.Colour.Red   = Value[0];
-      if (Elements >= 2) Self->Stroke.Colour.Green = Value[1];
-      if (Elements >= 3) Self->Stroke.Colour.Blue  = Value[2];
-      if (Elements >= 4) Self->Stroke.Colour.Alpha = Value[3];
-      else Self->Stroke.Colour.Alpha = 1;
-   }
+   if (Value) Self->Stroke.Colour = *Value;
    else Self->Stroke.Colour.Alpha = 0;
 
    Self->Stroked = Self->is_stroked();
@@ -2562,11 +2544,11 @@ static const FieldArray clVectorFields[] = {
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,                  nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       VECTOR_GET_Sequence },
    { "Stroke",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Stroke, VECTOR_SET_Stroke },
-   { "StrokeColour", FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE,   VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour },
-   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
+   { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,           VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
+   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
    { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Transition, VECTOR_SET_Transition },
    { "Fill",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Fill, VECTOR_SET_Fill },
-   { "FillColour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  VECTOR_GET_FillColour, VECTOR_SET_FillColour },
+   { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,          VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },
    { "FillRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  VECTOR_GET_FillRule, VECTOR_SET_FillRule, &clFillRule },
    { "Filter",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Filter, VECTOR_SET_Filter },
    { "LineJoin",     FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineJoin, VECTOR_SET_LineJoin, &clLineJoin },

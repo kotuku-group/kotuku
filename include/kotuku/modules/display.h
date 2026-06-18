@@ -808,10 +808,9 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getClip(struct ClipRectangle &Value) noexcept {
+   inline ERR getClip(struct ClipRectangle * &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getSize(int &Value) noexcept {
@@ -864,15 +863,13 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getTransColour(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 244);
+   inline ERR getTransColour(struct RGB8 * &Value) noexcept {
+      Value = &this->TransColour;
       return ERR::Okay;
    }
 
-   inline ERR getBkgd(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 248);
+   inline ERR getBkgd(struct RGB8 * &Value) noexcept {
+      Value = &this->Bkgd;
       return ERR::Okay;
    }
 
@@ -911,68 +908,68 @@ class objBitmap : public Object {
 
    inline ERR setPalette(struct RGBPalette * Value) noexcept {
       auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, 0x08000300, Value, 1);
+      return field->WriteValue(this, field, 0x08000300, Value);
    }
 
    inline ERR setData(uint8_t * Value) noexcept {
       auto field = &this->Class->Dictionary[27];
-      return field->WriteValue(this, field, 0x08000500, Value, 1);
+      return field->WriteValue(this, field, 0x08000500, Value);
    }
 
    inline ERR setWidth(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Width = Value;
       return ERR::Okay;
    }
 
    inline ERR setHeight(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Height = Value;
       return ERR::Okay;
    }
 
    inline ERR setType(const BMP Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Type = Value;
       return ERR::Okay;
    }
 
    inline ERR setClip(struct ClipRectangle * Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, 0x08100310, Value, 1);
+      return field->WriteValue(this, field, 0x08100310, Value);
    }
 
    inline ERR setDataFlags(const MEM Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->DataFlags = Value;
       return ERR::Okay;
    }
 
    inline ERR setAmtColours(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->AmtColours = Value;
       return ERR::Okay;
    }
 
    inline ERR setFlags(const BMF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
    inline ERR setTransIndex(const int Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBytesPerPixel(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->BytesPerPixel = Value;
       return ERR::Okay;
    }
 
    inline ERR setBitsPerPixel(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->BitsPerPixel = Value;
       return ERR::Okay;
    }
@@ -987,19 +984,19 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setTransColour(const struct RGB8 * Value, int Elements) noexcept {
+   inline ERR setTransColour(const struct RGB8 & Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x01001300, Value, Elements);
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
-   inline ERR setBkgd(const struct RGB8 * Value, int Elements) noexcept {
+   inline ERR setBkgd(const struct RGB8 & Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x01001300, Value, Elements);
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setBkgdIndex(const int Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColourSpace(const CS Value) noexcept {
@@ -1009,27 +1006,27 @@ class objBitmap : public Object {
 
    inline ERR setClipLeft(const int Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClipRight(const int Value) noexcept {
       auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClipBottom(const int Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClipTop(const int Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setHandle(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x08110300, Value, 1);
+      return field->WriteValue(this, field, 0x08110300, Value);
    }
 
 };
@@ -1279,95 +1276,78 @@ class objDisplay : public Object {
    inline ERR getChipset(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getGamma(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      double *values;
-      int size;
-      auto get_field = (ERR (*)(APTR, double *&, int &))field->GetValue;
-      auto error = get_field(this, values, size);
-      if (!error) Value = std::span<double>(values, size);
-      return error;
+      auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getHDensity(int &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getVDensity(int &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getDisplay(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getDisplayMfr(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getInsideWidth(int &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getInsideHeight(int &Value) noexcept {
       auto field = &this->Class->Dictionary[33];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getManufacturer(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[39];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getOpacity(double &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getResizeFeedback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getWindowHandle(APTR &Value) noexcept {
       auto field = &this->Class->Dictionary[34];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getTitle(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getTotalResolutions(int &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
@@ -1375,32 +1355,32 @@ class objDisplay : public Object {
 
    inline ERR setRefreshRate(const double Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFlags(const SCR Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWidth(const int Value) noexcept {
       auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setHeight(const int Value) noexcept {
       auto field = &this->Class->Dictionary[35];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const int Value) noexcept {
       auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setY(const int Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBmpX(const int Value) noexcept {
@@ -1420,42 +1400,42 @@ class objDisplay : public Object {
 
    inline ERR setPopOver(OBJECTID Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setGamma(const double * Value, int Elements) noexcept {
+   inline ERR setGamma(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x80101508, Value, Elements);
+      return field->WriteValue(this, field, 0x80101508, &Value);
    }
 
    inline ERR setHDensity(const int Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setVDensity(const int Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setResizeFeedback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setWindowHandle(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, 0x08100308, Value, 1);
+      return field->WriteValue(this, field, 0x08100308, Value);
    }
 
    inline ERR setTitle(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(this, field, 0x00904308, &Value, 1);
+      return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
 };
@@ -1530,22 +1510,21 @@ class objClipboard : public Object {
    inline ERR getRequestHandler(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
 
    // Customised field setting
 
    inline ERR setFlags(const CPF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
    inline ERR setRequestHandler(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };
@@ -1789,15 +1768,13 @@ class objPointer : public Object {
 
    inline ERR getButtonState(int &Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getButtonOrder(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
 
@@ -1825,17 +1802,17 @@ class objPointer : public Object {
 
    inline ERR setX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMaxSpeed(const int Value) noexcept {
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setInput(OBJECTID Value) noexcept {
@@ -1849,7 +1826,7 @@ class objPointer : public Object {
    }
 
    inline ERR setCursor(const PTC Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->CursorID = Value;
       return ERR::Okay;
    }
@@ -1860,7 +1837,7 @@ class objPointer : public Object {
    }
 
    inline ERR setFlags(const PF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
@@ -1872,7 +1849,7 @@ class objPointer : public Object {
 
    inline ERR setButtonOrder(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
 };
@@ -2131,9 +2108,8 @@ class objSurface : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getColour(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 164);
+   inline ERR getColour(struct RGB8 * &Value) noexcept {
+      Value = &this->Colour;
       return ERR::Okay;
    }
 
@@ -2144,26 +2120,22 @@ class objSurface : public Object {
 
    inline ERR getAbsX(int &Value) noexcept {
       auto field = &this->Class->Dictionary[35];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getAbsY(int &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getBitsPerPixel(int &Value) noexcept {
       auto field = &this->Class->Dictionary[33];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getBottom(int &Value) noexcept {
       auto field = &this->Class->Dictionary[38];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getMovement(int &Value) noexcept {
@@ -2176,26 +2148,22 @@ class objSurface : public Object {
 
    inline ERR getOpacity(double &Value) noexcept {
       auto field = &this->Class->Dictionary[28];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getRight(int &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getUserFocus(int &Value) noexcept {
       auto field = &this->Class->Dictionary[43];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getVisible(int &Value) noexcept {
       auto field = &this->Class->Dictionary[34];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getVisibleHeight(int &Value) noexcept {
@@ -2232,14 +2200,12 @@ class objSurface : public Object {
 
    inline ERR getWindowType(int &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getWindowHandle(APTR &Value) noexcept {
       auto field = &this->Class->Dictionary[36];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getXOffset(int &Value) noexcept {
@@ -2263,66 +2229,66 @@ class objSurface : public Object {
 
    inline ERR setDrag(OBJECTID Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setParent(OBJECTID Value) noexcept {
       auto field = &this->Class->Dictionary[44];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPopOver(OBJECTID Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMinWidth(const int Value) noexcept {
       auto field = &this->Class->Dictionary[30];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMinHeight(const int Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMaxWidth(const int Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMaxHeight(const int Value) noexcept {
       auto field = &this->Class->Dictionary[41];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFlags(const RNF Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const int Value) noexcept {
       auto field = &this->Class->Dictionary[26];
       Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
    inline ERR setY(const int Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
    inline ERR setWidth(const int Value) noexcept {
       auto field = &this->Class->Dictionary[32];
       Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
    inline ERR setHeight(const int Value) noexcept {
       auto field = &this->Class->Dictionary[40];
       Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
    inline ERR setAlign(const ALIGN Value) noexcept {
@@ -2332,12 +2298,12 @@ class objSurface : public Object {
 
    inline ERR setDimensions(const DMF Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCursor(const PTC Value) noexcept {
       auto field = &this->Class->Dictionary[42];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColour(const struct RGB8 Value) noexcept {
@@ -2346,76 +2312,76 @@ class objSurface : public Object {
    }
 
    inline ERR setType(const RT Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Type = Value;
       return ERR::Okay;
    }
 
    inline ERR setModal(const int Value) noexcept {
       auto field = &this->Class->Dictionary[39];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRootLayer(OBJECTID Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAbsX(const int Value) noexcept {
       auto field = &this->Class->Dictionary[35];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAbsY(const int Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBitsPerPixel(const int Value) noexcept {
       auto field = &this->Class->Dictionary[33];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMovement(const int Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setRevertFocus(OBJECTID Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setVisible(const int Value) noexcept {
       auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWindowType(const int Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWindowHandle(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[36];
-      return field->WriteValue(this, field, 0x08100308, Value, 1);
+      return field->WriteValue(this, field, 0x08100308, Value);
    }
 
    inline ERR setXOffset(const int Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
    inline ERR setYOffset(const int Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
 };

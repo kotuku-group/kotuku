@@ -39,7 +39,7 @@
       <name>IP</name>
       <comment>The IP address of the client.</comment>
       <access read="G">Get</access>
-      <type>APTR</type>
+      <type>struct IPAddress *</type>
     </field>
 
     <field>
@@ -65,5 +65,11 @@
 
   </fields>
   <structs>
+    <struct name="IPAddress">
+      <field name="Data" type="INT" size="4">128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</field>
+      <field name="Type" type="IPADDR" lookup="IPADDR">Identifies the address Data value as a V4 or V6 address type.</field>
+      <field name="Port" type="INT">For UDP packets, identifies the client port number in host byte order.</field>
+    </struct>
+
   </structs>
 </book>

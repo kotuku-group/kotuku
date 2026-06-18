@@ -141,9 +141,9 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
    if (!m_fill.empty())   Vector->setFill(m_fill);
    if (!m_stroke.empty()) Vector->setStroke(m_stroke);
    if (m_stroke_width)    Vector->setStrokeWidth(m_stroke_width);
-   if (m_line_join != VLJ::NIL)  Vector->setLineJoin(int(m_line_join));
-   if (m_inner_join != VIJ::NIL) Vector->setInnerJoin(int(m_inner_join));
-   if (m_line_cap != VLC::NIL)   Vector->setLineCap(int(m_line_cap));
+   if (m_line_join != VLJ::NIL)  Vector->setLineJoin(m_line_join);
+   if (m_inner_join != VIJ::NIL) Vector->setInnerJoin(m_inner_join);
+   if (m_line_cap != VLC::NIL)   Vector->setLineCap(m_line_cap);
 
    if (Vector->classID() IS CLASSID::VECTORTEXT) {
       if (!m_font_family.empty()) Vector->setFields(fl::Face(m_font_family));
@@ -228,11 +228,11 @@ void svgState::applyTag(const XTag &Tag) noexcept
 
          case SVF_stroke_linejoin:
             switch(strhash(val)) {
-               case SVF_miter:   m_line_join = VLJ::MITER; break;
-               case SVF_round:   m_line_join = VLJ::ROUND; break;
-               case SVF_bevel:   m_line_join = VLJ::BEVEL; break;
-               case SVF_inherit: m_line_join = VLJ::INHERIT; break;
-               case SVF_miter_clip: m_line_join = VLJ::MITER_SMART; break; // Special AGG only join type
+               case SVF_miter:       m_line_join = VLJ::MITER; break;
+               case SVF_round:       m_line_join = VLJ::ROUND; break;
+               case SVF_bevel:       m_line_join = VLJ::BEVEL; break;
+               case SVF_inherit:     m_line_join = VLJ::INHERIT; break;
+               case SVF_miter_clip:  m_line_join = VLJ::MITER_SMART; break; // Special AGG only join type
                case SVF_miter_round: m_line_join = VLJ::MITER_ROUND; break; // Special AGG only join type
             }
             break;
@@ -371,7 +371,7 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
             trans->set(FID_Stops, stops);
 
             if (!InitObject(trans)) {
-               if (!Self->Cloning) Self->Scene->addDef(id.c_str(), trans);
+               if (!Self->Cloning) Self->Scene->addDef(id, trans);
                track_object(Self, trans);
                return;
             }
@@ -417,10 +417,11 @@ void svgState::proc_clippath(XTag &Tag) noexcept
 
    // A clip-path with an ID can only be added once (important when a clip-path is repeatedly referenced)
 
-   if (Self->Scene->findDef(id.c_str(), nullptr) != ERR::Okay) {
+   if (Self->Scene->findDef(id, nullptr) != ERR::Okay) {
       objVector *clip;
       if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
          clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGClip"));
+         clip->set(FID_SID, id);
 
          if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
 
@@ -439,7 +440,7 @@ void svgState::proc_clippath(XTag &Tag) noexcept
             auto vp = clip->get<OBJECTPTR>(FID_Viewport);
             state.process_children(Tag, vp);
 
-            Self->Scene->addDef(id.c_str(), clip);
+            Self->Scene->addDef(id, clip);
             track_object(Self, clip);
          }
          else FreeResource(clip);
@@ -499,13 +500,14 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
    // A clip-path with an ID can only be added once (important when a clip-path is repeatedly referenced)
 
-   if (!Self->Scene->findDef(id.c_str(), nullptr)) return;
+   if (!Self->Scene->findDef(id, nullptr)) return;
 
    objVector *clip;
    if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
       clip->setFields(fl::Owner(Self->Scene->UID), fl::Name("SVGMask"),
          fl::Flags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES),
          fl::Units(units));
+      clip->set(FID_SID, id);
 
       if (!transform.empty()) parse_transform(clip, transform, MTAG_SVG_TRANSFORM);
 
@@ -514,7 +516,7 @@ void svgState::proc_mask(XTag &Tag) noexcept
          auto vp = clip->get<OBJECTPTR>(FID_Viewport);
          state.process_children(Tag, vp);
 
-         Self->Scene->addDef(id.c_str(), clip);
+         Self->Scene->addDef(id, clip);
          track_object(Self, clip);
       }
       else FreeResource(clip);
@@ -878,9 +880,9 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             VectorPainter painter;
             if (iequals("currentColor", val)) {
                FRGB rgb;
-               if (!current_colour(Self->Scene->Viewport, rgb)) fx->set(FID_Colour, rgb);
+               if (current_colour(Self->Scene->Viewport, rgb)) fx->setColour(rgb);
             }
-            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) fx->set(FID_Colour, painter.Colour);
+            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) fx->setColour(painter.Colour);
             break;
          }
 
@@ -1111,7 +1113,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
 
    for (auto &child : Tag.Children) {
       auto child_name = svg_local_name(child);
-      if (wildcmp("feFunc?", std::string(child_name).c_str())) {
+      if (wildcmp("feFunc?", std::string(child_name))) {
          auto cmp = CMP::NIL;
          switch(child_name[6]) {
             case 'R': cmp = CMP::RED; break;
@@ -1277,7 +1279,7 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
 ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
-   objFilterEffect *fx;
+   objFloodFX *fx;
 
    if (NewObject(CLASSID::FLOODFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
@@ -1293,9 +1295,9 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_flood_colour: {
             VectorPainter painter;
             if (iequals("currentColor", val)) {
-               if (!current_colour(Self->Scene->Viewport, painter.Colour)) error = fx->set(FID_Colour, painter.Colour);
+               if (current_colour(Self->Scene->Viewport, painter.Colour)) error = fx->setColour(painter.Colour);
             }
-            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) error = fx->set(FID_Colour, painter.Colour);
+            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) error = fx->setColour(painter.Colour);
             break;
          }
 
@@ -1458,7 +1460,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
 
    objVector *vector = nullptr;
    if (!ref.empty()) {
-      if (Self->Scene->findDef(ref.c_str(), (OBJECTPTR *)&vector) != ERR::Okay) {
+      if (Self->Scene->findDef(ref, (OBJECTPTR *)&vector) != ERR::Okay) {
          // The reference is not an existing vector but should be a pre-registered declaration that would allow
          // us to create it.  Note that creation only occurs once.  Subsequent use of the ID will result in the
          // live reference being found.
@@ -1656,7 +1658,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
       }
 
       if ((!id.empty()) and (!filter->init())) {
-         SetName(filter, id.c_str());
+         SetName(filter, id);
 
          for (auto child : Tag.Children) {
             log.trace("Parsing filter element '%s'", child.name());
@@ -1693,7 +1695,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
 
          Self->Effects.clear();
 
-         if (!Self->Cloning) Self->Scene->addDef(id.c_str(), filter);
+         if (!Self->Cloning) Self->Scene->addDef(id, filter);
 
          track_object(Self, filter);
       }
@@ -1814,7 +1816,7 @@ void svgState::proc_pattern(XTag &Tag) noexcept
          }
 
          if (!Self->Cloning) {
-            Self->Scene->addDef(id.c_str(), pattern);
+            Self->Scene->addDef(id, pattern);
             track_object(Self, pattern);
          }
       }
@@ -2148,7 +2150,7 @@ void svgState::proc_def_image(XTag &Tag) noexcept
             image->set(FID_Image, pic);
             if (!InitObject(image)) {
                if (!Self->Cloning) {
-                  Self->Scene->addDef(id.c_str(), image);
+                  Self->Scene->addDef(id, image);
                   track_object(Self, image);
                }
             }
@@ -2216,7 +2218,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
       xml::NewAttrib(Tag, "id", id);
    }
 
-   if (Self->Scene->findDef(id.c_str(), nullptr) != ERR::Okay) {
+   if (Self->Scene->findDef(id, nullptr) != ERR::Okay) {
       // Load the image and add it to the vector definition.  It will be rendered as a rectangle within the scene.
       // This may appear a little confusing because an image can be invoked in SVG like a first-class shape; however to
       // do so would be inconsistent with all other scene graph members being true path-based objects.
@@ -2233,7 +2235,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
             SetOwner(pic, image); // It's best if the pic belongs to the image.
 
-            Self->Scene->addDef(id.c_str(), image);
+            Self->Scene->addDef(id, image);
             track_object(Self, image);
          }
          else return ERR::CreateObject;
@@ -2436,7 +2438,7 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
 
    OBJECTPTR transvector = nullptr;
    if (!transition.empty()) {
-      if (Self->Scene->findDef(transition.c_str(), &transvector) != ERR::Okay) {
+      if (Self->Scene->findDef(transition, &transvector) != ERR::Okay) {
          log.warning("Unable to find element '%s' referenced at line %d", transition.c_str(), Tag.LineNo);
          return;
       }
@@ -2912,8 +2914,8 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
             break;
 
          case SVF_id:
-            viewport->set(FID_ID, val);
-            SetName(viewport, val.c_str());
+            viewport->set(FID_SID, val);
+            SetName(viewport, val);
             break;
 
          case SVF_enable_background: // Deprecated in favour of 'isolated'
@@ -3675,7 +3677,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_append_path: {
          // The append-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
-         if (!Self->Scene->findDef(StrValue.c_str(), &other)) Vector->setAppendPath(other);
+         if (!Self->Scene->findDef(StrValue, &other)) Vector->setAppendPath(other);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }
@@ -3683,7 +3685,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_join_path: {
          // The join-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
-         if (!Self->Scene->findDef(StrValue.c_str(), &other)) {
+         if (!Self->Scene->findDef(StrValue, &other)) {
             Vector->set(FID_AppendPath, other);
             Vector->setFlags(VF::JOIN_PATHS|Vector->Flags);
          }
@@ -3693,7 +3695,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_transition: {
          OBJECTPTR trans = nullptr;
-         if (!Self->Scene->findDef(StrValue.c_str(), &trans)) Vector->setTransition(trans);
+         if (!Self->Scene->findDef(StrValue, &trans)) Vector->setTransition(trans);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }
@@ -3709,31 +3711,31 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_stroke_linejoin:
          switch(strhash(StrValue)) {
-            case SVF_miter: Vector->setLineJoin(int(VLJ::MITER)); break;
-            case SVF_round: Vector->setLineJoin(int(VLJ::ROUND)); break;
-            case SVF_bevel: Vector->setLineJoin(int(VLJ::BEVEL)); break;
-            case SVF_inherit: Vector->setLineJoin(int(VLJ::INHERIT)); break;
-            case SVF_miter_clip: Vector->setLineJoin(int(VLJ::MITER_SMART)); break; // Special AGG only join type
-            case SVF_miter_round: Vector->setLineJoin(int(VLJ::MITER_ROUND)); break; // Special AGG only join type
+            case SVF_miter:       Vector->setLineJoin(VLJ::MITER); break;
+            case SVF_round:       Vector->setLineJoin(VLJ::ROUND); break;
+            case SVF_bevel:       Vector->setLineJoin(VLJ::BEVEL); break;
+            case SVF_inherit:     Vector->setLineJoin(VLJ::INHERIT); break;
+            case SVF_miter_clip:  Vector->setLineJoin(VLJ::MITER_SMART); break; // Special AGG only join type
+            case SVF_miter_round: Vector->setLineJoin(VLJ::MITER_ROUND); break; // Special AGG only join type
          }
          break;
 
       case SVF_stroke_innerjoin: // AGG ONLY
          switch(strhash(StrValue)) {
-            case SVF_miter:   Vector->setInnerJoin(int(VIJ::MITER));  break;
-            case SVF_round:   Vector->setInnerJoin(int(VIJ::ROUND)); break;
-            case SVF_bevel:   Vector->setInnerJoin(int(VIJ::BEVEL)); break;
-            case SVF_inherit: Vector->setInnerJoin(int(VIJ::INHERIT)); break;
-            case SVF_jag:     Vector->setInnerJoin(int(VIJ::JAG)); break;
+            case SVF_miter:   Vector->setInnerJoin(VIJ::MITER);  break;
+            case SVF_round:   Vector->setInnerJoin(VIJ::ROUND); break;
+            case SVF_bevel:   Vector->setInnerJoin(VIJ::BEVEL); break;
+            case SVF_inherit: Vector->setInnerJoin(VIJ::INHERIT); break;
+            case SVF_jag:     Vector->setInnerJoin(VIJ::JAG); break;
          }
          break;
 
       case SVF_stroke_linecap:
          switch(strhash(StrValue)) {
-            case SVF_butt:    Vector->setLineCap(int(VLC::BUTT)); break;
-            case SVF_square:  Vector->setLineCap(int(VLC::SQUARE)); break;
-            case SVF_round:   Vector->setLineCap(int(VLC::ROUND)); break;
-            case SVF_inherit: Vector->setLineCap(int(VLC::INHERIT)); break;
+            case SVF_butt:    Vector->setLineCap(VLC::BUTT); break;
+            case SVF_square:  Vector->setLineCap(VLC::SQUARE); break;
+            case SVF_round:   Vector->setLineCap(VLC::ROUND); break;
+            case SVF_inherit: Vector->setLineCap(VLC::INHERIT); break;
          }
          break;
 
@@ -3746,16 +3748,16 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          break;
 
       case SVF_fill_rule:
-         if (iequals("nonzero", StrValue)) Vector->setFillRule(int(VFR::NON_ZERO));
-         else if (iequals("evenodd", StrValue)) Vector->setFillRule(int(VFR::EVEN_ODD));
-         else if (iequals("inherit", StrValue)) Vector->setFillRule(int(VFR::INHERIT));
+         if (iequals("nonzero", StrValue))      Vector->setFillRule(VFR::NON_ZERO);
+         else if (iequals("evenodd", StrValue)) Vector->setFillRule(VFR::EVEN_ODD);
+         else if (iequals("inherit", StrValue)) Vector->setFillRule(VFR::INHERIT);
          else log.warning("Unsupported fill-rule value '%s'", StrValue.c_str());
          break;
 
       case SVF_clip_rule:
-         if (iequals("nonzero", StrValue)) Vector->setClipRule(int(VFR::NON_ZERO));
-         else if (iequals("evenodd", StrValue)) Vector->setClipRule(int(VFR::EVEN_ODD));
-         else if (iequals("inherit", StrValue)) Vector->setClipRule(int(VFR::INHERIT));
+         if (iequals("nonzero", StrValue)) Vector->setClipRule(VFR::NON_ZERO);
+         else if (iequals("evenodd", StrValue)) Vector->setClipRule(VFR::EVEN_ODD);
+         else if (iequals("inherit", StrValue)) Vector->setClipRule(VFR::INHERIT);
          else log.warning("Unsupported clip-rule value '%s'", StrValue.c_str());
          break;
 
@@ -3770,9 +3772,9 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_id:
          if (!Self->Cloning) {
-            Vector->set(FID_ID, StrValue);
-            Self->Scene->addDef(StrValue.c_str(), Vector);
-            SetName(Vector, StrValue.c_str());
+            Vector->set(FID_SID, StrValue);
+            Self->Scene->addDef(StrValue, Vector);
+            SetName(Vector, StrValue);
          }
          break;
 
@@ -3806,7 +3808,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_stroke:
          if (iequals("currentColor", StrValue)) {
             FRGB rgb;
-            if (!current_colour(Vector, rgb)) Vector->set(FID_StrokeColour, rgb);
+            if (current_colour(Vector, rgb)) Vector->setStrokeColour(rgb);
          }
          else set_paint_server(Vector, FID_Stroke, StrValue);
          break;
@@ -3814,7 +3816,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_fill:
          if (iequals("currentColor", StrValue)) {
             FRGB rgb;
-            if (!current_colour(Vector, rgb)) Vector->set(FID_FillColour, rgb);
+            if (current_colour(Vector, rgb)) Vector->setFillColour(rgb);
          }
          else set_paint_server(Vector, FID_Fill, StrValue);
          break;
@@ -3823,7 +3825,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 
       case SVF_stroke_dasharray: {
          auto values = read_array(StrValue);
-         Vector->setDashArray(values.data(), values.size());
+         Vector->setDashArray(values);
          break;
       }
 

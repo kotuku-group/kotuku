@@ -61,7 +61,7 @@
       <name>PointsArray</name>
       <comment>A series of numbered pairs that define the polygon.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>APTR []</type>
+      <type>VectorPoint[]</type>
       <description>
 <p>The PointsArray field can be set with a <st>VectorPoint</st> array that defines the shape of a polygon.  A minimum of two points is required for the shape to be valid.  The <st>VectorPoint</st> structure consists of the following fields:</p>
 <struct lookup="VectorPoint"/>
@@ -82,7 +82,7 @@
       <name>X1</name>
       <comment>Defines the X coordinate of the first point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the X coordinate of the first point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>
@@ -93,7 +93,7 @@
       <name>X2</name>
       <comment>Defines the X coordinate of the second point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the X coordinate of the second point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>
@@ -104,7 +104,7 @@
       <name>Y1</name>
       <comment>Defines the Y coordinate of the first point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the Y coordinate of the first point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>
@@ -115,7 +115,7 @@
       <name>Y2</name>
       <comment>Defines the Y coordinate of the second point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the Y coordinate of the second point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>

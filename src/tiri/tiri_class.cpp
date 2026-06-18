@@ -130,7 +130,7 @@ static const FieldDef clJitOptions[] = {
 
 static ERR GET_JitOptions(objScript *, JOF *);
 static ERR SET_JitOptions(objScript *, JOF);
-static ERR GET_Procedures(objScript *, std::string * &, int &);
+static ERR GET_Procedures(objScript *, std::span<std::string> &);
 
 static const FieldArray clFields[] = {
    { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clJitOptions },
@@ -519,8 +519,8 @@ static ERR TIRI_Init(objScript *Self)
       int64_t src_ts = 0, src_size = 0;
 
       if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
-         error = src_file->get(FID_Timestamp, src_ts);
-         if (!error) error = src_file->get(FID_Size, src_size);
+         error = src_file->getTimestamp(src_ts);
+         if (!error) error = src_file->getSize(src_size);
       }
       else error = ERR::File;
 
@@ -534,8 +534,8 @@ static ERR TIRI_Init(objScript *Self)
          {
             objFile::create cache_file = { fl::Path(Self->CacheFile) };
             if (cache_file.ok()) {
-               auto cache_error = cache_file->get(FID_Timestamp, cache_ts);
-               if (!cache_error) cache_error = cache_file->get(FID_Size, cache_size);
+               auto cache_error = cache_file->getTimestamp(cache_ts);
+               if (!cache_error) cache_error = cache_file->getSize(cache_size);
                if (cache_error != ERR::Okay) cache_ts = -1;
             }
          }
@@ -582,8 +582,8 @@ static ERR TIRI_Init(objScript *Self)
 
    if ((!error) and (prv->SaveCompiled = compile)) {
       DateTime *dt;
-      if (!src_file->get(FID_Date, dt)) prv->CacheDate = *dt;
-      src_file->get(FID_Permissions, (int &)prv->CachePermissions);
+      if (!src_file->getDate(dt)) prv->CacheDate = *dt;
+      src_file->getPermissions(prv->CachePermissions);
    }
 
    if (error != ERR::Okay) {
@@ -758,7 +758,7 @@ static ERR TIRI_Query(objScript *Self)
 
          if (cachefile.ok()) {
             save_binary(Self, *cachefile);
-            cachefile->setDate(&prv->CacheDate);
+            cachefile->setDate(prv->CacheDate);
          }
       }
 
@@ -850,7 +850,7 @@ It will otherwise return an empty array.
 
 *********************************************************************************************************************/
 
-static ERR GET_Procedures(objScript *Self, std::string * &Value, int &Elements)
+static ERR GET_Procedures(objScript *Self, std::span<std::string> &Value)
 {
    if (auto prv = (prvTiri *)Self->DerivedPtr) {
       prv->Procedures.clear();
@@ -864,8 +864,7 @@ static ERR GET_Procedures(objScript *Self, std::string * &Value, int &Elements)
          lua_pop(prv->Lua, 1);
       }
 
-      Value = prv->Procedures.data();
-      Elements = prv->Procedures.size();
+      Value = std::span<std::string>(prv->Procedures.data(), prv->Procedures.size());
       return ERR::Okay;
    }
    else return ERR::NotInitialised;
@@ -1007,10 +1006,9 @@ static ERR run_script(objScript *Self)
          log.warning("%s", str.c_str());
 
          #ifndef NDEBUG
-            std::string *list;
-            int total_procedures;
-            if (!GET_Procedures(Self, list, total_procedures)) {
-               for (int i=0; i < total_procedures; i++) log.trace("%s", list[i].c_str());
+            std::span<std::string> list;
+            if (!GET_Procedures(Self, list)) {
+               for (int i=0; i < list.size(); i++) log.trace("%s", list[i].c_str());
             }
          #endif
 

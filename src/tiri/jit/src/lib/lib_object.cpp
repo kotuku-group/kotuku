@@ -102,6 +102,7 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, const Field *, int);
 [[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, const Field *, int);
 [[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_struct(lua_State *, OBJECTPTR, const Field *, int);
 
 inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    lua_pushvalue(Lua, 1); // Duplicate the object reference
@@ -303,43 +304,40 @@ READ_TABLE * get_read_table(objMetaClass *Class)
       jmp.push_back(obj_read(hash, glJumpActions[code]));
    }
 
-   MethodEntry *methods;
-   int total_methods;
-   if (!Class->get(FID_Methods, methods, total_methods)) {
-      auto methods_span = std::span(methods, total_methods);
+   std::span<const MethodEntry> methods_span;
+   if (!Class->get(FID_Methods, methods_span)) {
       for (auto &method : methods_span | std::views::drop(1)) {
          if (method.MethodID != AC::NIL) {
             auto hash = simple_hash(method.Name, simple_hash("mt"));
-            jmp.push_back(obj_read(hash, obj_jump_method, &method));
+            jmp.push_back(obj_read(hash, obj_jump_method, (APTR)&method));
          }
       }
    }
 
-   Field *dict;
-   int total_dict;
-   if (!Class->get(FID_Dictionary, dict, total_dict)) {
-      auto dict_span = std::span(dict, total_dict);
+   std::span<const Field> dict_span;
+   if (!Class->get(FID_Dictionary, dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & FDF_R; })) {
          auto hash = field.FieldID;
+         auto field_ptr = (APTR)&field;
 
          if (field.Flags & FD_ARRAY) {
-            jmp.push_back(obj_read(hash, object_get_array, &field));
+            jmp.push_back(obj_read(hash, object_get_array, field_ptr));
          }
-         else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, &field));
-         else if (field.Flags & FD_STRING) jmp.push_back(obj_read(hash, object_get_string, &field));
+         else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, field_ptr));
+         else if (field.Flags & FD_STRING) jmp.push_back(obj_read(hash, object_get_string, field_ptr));
          else if (field.Flags & FD_POINTER) {
             if (field.Flags & (FD_OBJECT|FD_LOCAL)) {
-               jmp.push_back(obj_read(hash, object_get_object, &field));
+               jmp.push_back(obj_read(hash, object_get_object, field_ptr));
             }
-            else jmp.push_back(obj_read(hash, object_get_ptr, &field));
+            else jmp.push_back(obj_read(hash, object_get_ptr, field_ptr));
          }
-         else if (field.Flags & FD_DOUBLE) jmp.push_back(obj_read(hash, object_get_double, &field));
-         else if (field.Flags & FD_INT64) jmp.push_back(obj_read(hash, object_get_large, &field));
+         else if (field.Flags & FD_DOUBLE) jmp.push_back(obj_read(hash, object_get_double, field_ptr));
+         else if (field.Flags & FD_INT64) jmp.push_back(obj_read(hash, object_get_large, field_ptr));
          else if (field.Flags & FD_INT) {
-            if (field.Flags & FD_UNSIGNED) jmp.push_back(obj_read(hash, object_get_ulong, &field));
-            else jmp.push_back(obj_read(hash, object_get_long, &field));
+            if (field.Flags & FD_UNSIGNED) jmp.push_back(obj_read(hash, object_get_ulong, field_ptr));
+            else jmp.push_back(obj_read(hash, object_get_long, field_ptr));
          }
-         else if (field.Flags & FD_UNIT) jmp.push_back(obj_read(hash, object_get_unit, &field));
+         else if (field.Flags & FD_UNIT) jmp.push_back(obj_read(hash, object_get_unit, field_ptr));
          else if (field.Flags & FD_FUNCTION); // Unsupported
          else kt::Log().warning("Unable to support field %s.%s for reading", Class->Name, field.Name);
       }
@@ -374,10 +372,8 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
    kt::ScopedObjectLock lock(Class);
 
    WRITE_TABLE &jmp = Class->WriteTable;
-   Field *dict;
-   int total_dict;
-   if (!Class->get(FID_Dictionary, dict, total_dict)) {
-      auto dict_span = std::span(dict, total_dict);
+   std::span<const Field> dict_span;
+   if (!Class->get(FID_Dictionary, dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & (FD_W|FD_I); })) {
          char ch[2] = { field.Name[0], 0 };
          if ((ch[0] >= 'A') and (ch[0] <= 'Z')) ch[0] = ch[0] - 'A' + 'a';
@@ -409,6 +405,9 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
          }
          else if (field.Flags & (FD_INT|FD_INT64)) {
             jmp.push_back(obj_write(hash, object_set_number, &field));
+         }
+         else if (field.Flags & FD_STRUCT) {
+            jmp.push_back(obj_write(hash, object_set_struct, &field));
          }
          else if (field.Flags & FD_UNIT) {
             jmp.push_back(obj_write(hash, object_set_unit, &field));
@@ -498,11 +497,10 @@ extern int object_newindex(lua_State *Lua)
 
    *Args = nullptr;
    if (auto mc = FindClass(ClassID)) {
-      MethodEntry *table;
-      int total_methods;
+      std::span<MethodEntry> table;
       ACTIONID action_id;
-      if ((!mc->get(FID_Methods, table, total_methods)) and (table)) {
-         for (int i=1; i < total_methods; i++) {
+      if (!mc->get(FID_Methods, table)) {
+         for (int i=1; i < table.size(); i++) {
             if ((table[i].Name) and (iequals(action, table[i].Name))) {
                action_id = table[i].MethodID;
                *Args = table[i].Args;
@@ -578,9 +576,9 @@ LJLIB_CF(object_new)
             FreeResource(obj);
 
             if (field_error != ERR::Okay) {
-               luaL_error(L, field_error, "Failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
+               luaL_error(L, field_error, "obj.new() failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
             }
-            else luaL_error(L, error, "Failed to Init() %s: %s", class_name, GetErrorMsg(error));
+            else luaL_error(L, error, "obj.new() failed to Init() %s: %s", class_name, GetErrorMsg(error));
 
             return 0;
          }

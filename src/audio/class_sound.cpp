@@ -679,10 +679,10 @@ static ERR SOUND_Init(extSound *Self)
    }
    else Self->File->seekStart(0);
 
-   Self->File->read(Self->Header, (int)sizeof(Self->Header));
+   Self->File->read(Self->Header.data(), Self->Header.size());
 
-   if ((std::string_view((char *)Self->Header, 4) != "RIFF") or
-       (std::string_view((char *)Self->Header + 8, 4) != "WAVE")) {
+   if ((std::string_view((char *)Self->Header.data(), 4) != "RIFF") or
+       (std::string_view((char *)Self->Header.data() + 8, 4) != "WAVE")) {
       Self->File.reset();
       return ERR::NoSupport;
    }
@@ -787,10 +787,10 @@ static ERR SOUND_Init(extSound *Self)
    }
    else Self->File->seekStart(0);
 
-   Self->File->read(Self->Header, (int)sizeof(Self->Header));
+   Self->File->read(Self->Header.data(), Self->Header.size());
 
-   if ((std::string_view((char *)Self->Header, 4) != "RIFF") or
-       (std::string_view((char *)Self->Header + 8, 4) != "WAVE")) {
+   if ((std::string_view((char *)Self->Header.data(), 4) != "RIFF") or
+       (std::string_view((char *)Self->Header.data() + 8, 4) != "WAVE")) {
       Self->File.reset();
       return ERR::NoSupport;
    }
@@ -1185,10 +1185,9 @@ The buffer that is referred to by the Header field is not populated until the In
 
 *********************************************************************************************************************/
 
-static ERR SOUND_GET_Header(extSound *Self, int8_t **Value, int *Elements)
+static ERR SOUND_GET_Header(extSound *Self, std::span<uint8_t> &Array)
 {
-   *Value = (int8_t *)Self->Header;
-   *Elements = std::ssize(Self->Header);
+   Array = Self->Header;
    return ERR::Okay;
 }
 

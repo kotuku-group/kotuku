@@ -61,6 +61,7 @@ typedef int SOCKET_HANDLE;
     obj(ClientSocket) Connections  # Pointer to a list of connections opened by this client.
     ptr ClientData                 # Free for user data storage.
     int TotalConnections           # Count of all socket-based connections
+    ~struct(*IPAddress) IP
   ]],
   [[
     struct IPAddress IP; // IP address of the client.
@@ -111,6 +112,7 @@ typedef int SOCKET_HANDLE;
   klass("NetLookup", { src="class_netlookup.cpp", output="class_netlookup_def.c", extended=true }, [[
     large ClientData # Optional user data storage
     int(NLF) Flags   # Optional flags
+    ~array(struct(IPAddress)) Addresses
   ]])
 
   methods("NetSocket", "ns", {

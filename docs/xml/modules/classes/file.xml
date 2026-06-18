@@ -428,8 +428,8 @@
     <field>
       <name>Created</name>
       <comment>The creation date stamp for the file.</comment>
-      <access read="G" write="W">Get/Write</access>
-      <type>APTR</type>
+      <access read="G">Get</access>
+      <type>struct DateTime</type>
       <description>
 <p>The Created field returns the time at which the file was first created, if supported by the filesystem.  If not supported directly, the most recent 'modification date' is normally returned.</p>
 <p>To simplify time management, information is read and set via a <st>DateTime</st> structure.</p>
@@ -440,7 +440,7 @@
       <name>Date</name>
       <comment>The 'last modified' date stamp on the file.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>APTR</type>
+      <type>struct DateTime</type>
       <description>
 <p>The Date field reflects the time at which the file was last modified.  It can also be used to set a new modification date.  Please note that if the file is open for writing, then date-stamped, then modified; the file system driver will overwrite the previously defined date stamp with the time at which the file was last written.</p>
 <p>Information is read and set using a standard <st>DateTime</st> structure.</p>
@@ -520,7 +520,7 @@
       <name>Permissions</name>
       <comment>Manages the permissions of a file.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="PERMIT">INT</type>
+      <type lookup="PERMIT">PERMIT</type>
       <description>
 <types lookup="PERMIT"/>
       </description>

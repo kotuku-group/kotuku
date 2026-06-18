@@ -820,7 +820,7 @@ Duplicate function names are not removed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Functions(extXQuery *Self, std::string * &Value, int &Elements)
+static ERR GET_Functions(extXQuery *Self, std::span<std::string> &Value)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -844,8 +844,7 @@ static ERR GET_Functions(extXQuery *Self, std::string * &Value, int &Elements)
       }
    }
 
-   Value = Self->ListFunctions.data();
-   Elements = Self->ListFunctions.size();
+   Value = std::span<std::string>(Self->ListFunctions.data(), Self->ListFunctions.size());
    return ERR::Okay;
 }
 
@@ -1025,7 +1024,7 @@ Duplicate variable names are not removed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Variables(extXQuery *Self, std::string * &Value, int &Elements)
+static ERR GET_Variables(extXQuery *Self, std::span<std::string> &Value)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -1056,8 +1055,7 @@ static ERR GET_Variables(extXQuery *Self, std::string * &Value, int &Elements)
       }
    }
 
-   Value = Self->ListVariables.data();
-   Elements = Self->ListVariables.size();
+   Value = std::span<std::string>(Self->ListVariables.data(), Self->ListVariables.size());
    return ERR::Okay;
 }
 
@@ -1070,6 +1068,7 @@ static const FieldArray clFields[] = {
    { "Path",            FDF_CPPSTRING|FDF_RW },
    { "Statement",       FDF_CPPSTRING|FDF_RW, nullptr, SET_Statement },
    { "MemoryUsage",     FDF_INT64|FDF_R },
+   // Virtual fields
    { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_PURE|FDF_R, GET_Result, nullptr, "XPathValue" },
    { "ResultString",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_R, GET_ResultString },
    { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_PURE|FDF_R, GET_FeatureFlags, nullptr, &clXQueryXQF },

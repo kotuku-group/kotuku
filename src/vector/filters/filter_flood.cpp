@@ -85,29 +85,20 @@ The colour is complemented by the #Opacity field.
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_Colour(extFloodFX *Self, float **Value, int *Elements)
+static ERR FLOODFX_GET_Colour(extFloodFX *Self, FRGB * &Value)
 {
-   *Value = (float *)&Self->Colour;
-   *Elements = 4;
+   Value = &Self->Colour;
    return ERR::Okay;
 }
 
-static ERR FLOODFX_SET_Colour(extFloodFX *Self, float *Value, int Elements)
+static ERR FLOODFX_SET_Colour(extFloodFX *Self, FRGB *Value)
 {
-   kt::Log log;
    if (Value) {
-      if (Elements >= 3) {
-         Self->Colour.Red   = Value[0];
-         Self->Colour.Green = Value[1];
-         Self->Colour.Blue  = Value[2];
-         Self->Colour.Alpha = (Elements >= 4) ? Value[3] : 1.0;
-
-         Self->ColourRGB.Red   = int(Self->Colour.Red * 255.0);
-         Self->ColourRGB.Green = int(Self->Colour.Green * 255.0);
-         Self->ColourRGB.Blue  = int(Self->Colour.Blue * 255.0);
-         Self->ColourRGB.Alpha = int(Self->Colour.Alpha * 255.0);
-      }
-      else return log.warning(ERR::InvalidValue);
+      Self->Colour = *Value;
+      Self->ColourRGB.Red   = std::clamp(Self->Colour.Red * 255.0, 0.0, 255.0);
+      Self->ColourRGB.Green = std::clamp(Self->Colour.Green * 255.0, 0.0, 255.0);
+      Self->ColourRGB.Blue  = std::clamp(Self->Colour.Blue * 255.0, 0.0, 255.0);
+      Self->ColourRGB.Alpha = std::clamp(Self->Colour.Alpha * 255.0, 0.0, 255.0);
    }
    else Self->Colour.Alpha = 0;
    return ERR::Okay;
@@ -163,8 +154,8 @@ static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string_view &Value)
 #include "filter_flood_def.c"
 
 static const FieldArray clFloodFXFields[] = {
-   { "Colour",  FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE,   FLOODFX_GET_Colour, FLOODFX_SET_Colour },
-   { "Opacity", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          FLOODFX_GET_Opacity, FLOODFX_SET_Opacity },
+   { "Colour",  FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     FLOODFX_GET_Colour, FLOODFX_SET_Colour, "FRGB" },
+   { "Opacity", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,    FLOODFX_GET_Opacity, FLOODFX_SET_Opacity },
    { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, FLOODFX_GET_XMLDef },
    END_FIELD
 };

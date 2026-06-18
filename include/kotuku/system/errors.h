@@ -96,7 +96,7 @@ enum class ERR : int32_t {
    Draw = 72,
    NoMethods = 73,
    NoMatchingObject = 74,
-   DEP01 = 75,
+   ImmutableField = 75,
    MissingPath = 76,
    ResourceNotLocked = 77,
    NoSearchResult = 78,

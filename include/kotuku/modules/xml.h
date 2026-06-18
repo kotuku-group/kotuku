@@ -423,6 +423,12 @@ class objXML : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getTags(std::span<struct XTag> &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      auto get_field = (ERR (*)(APTR, std::span<struct XTag> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getStatement(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
@@ -437,22 +443,12 @@ class objXML : public Object {
       return error;
    }
 
-   inline ERR getTags(std::span<APTR> &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      APTR *values;
-      int size;
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, values, size);
-      if (!error) Value = std::span<APTR>(values, size);
-      return error;
-   }
-
 
    // Customised field setting
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setDocType(const std::string_view &Value) noexcept {
@@ -471,7 +467,7 @@ class objXML : public Object {
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Source = Value;
       return ERR::Okay;
    }
@@ -483,7 +479,7 @@ class objXML : public Object {
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, 0x00804328, &Value, 1);
+      return field->WriteValue(this, field, 0x00804328, &Value);
    }
 
 };

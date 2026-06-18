@@ -594,19 +594,18 @@ When values are not defined, they default to 0.
 
 *********************************************************************************************************************/
 
-static ERR COLOURFX_GET_Values(extColourFX *Self, double **Array, int *Elements)
+static ERR COLOURFX_GET_Values(extColourFX *Self, std::span<double> &Array)
 {
-   *Array = Self->Values;
-   *Elements = Self->TotalValues;
+   Array = std::span<double>(Self->Values, Self->TotalValues);
    return ERR::Okay;
 }
 
-static ERR COLOURFX_SET_Values(extColourFX *Self, double *Array, int Elements)
+static ERR COLOURFX_SET_Values(extColourFX *Self, std::span<const double> &Array)
 {
-   if (Elements > std::ssize(Self->Values)) return ERR::InvalidValue;
-   if (Array) copymem(Array, Self->Values, Elements * sizeof(double));
-   clearmem(Self->Values + Elements, (std::ssize(Self->Values) - Elements) * sizeof(double));
-   Self->TotalValues = Elements;
+   if (Array.size() > std::ssize(Self->Values)) return ERR::BufferOverflow;
+   if (Array.data()) copymem(Array.data(), Self->Values, Array.size() * sizeof(double));
+   clearmem(Self->Values + Array.size(), (std::ssize(Self->Values) - Array.size()) * sizeof(double));
+   Self->TotalValues = Array.size();
    return ERR::Okay;
 }
 

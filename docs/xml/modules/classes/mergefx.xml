@@ -41,7 +41,7 @@
       <name>SourceList</name>
       <comment>A list of source types to be processed in the merge.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>MergeSource[]</type>
       <description>
 <p>The list of sources is built as a simple array of MergeSource structures.</p>
 <p>Input sources are defined by the SourceType field value.  In the case of <code>REFERENCE</code>, it is necessary to provide a direct pointer to the referenced effect in the Effect field, or an error will be returned.</p>
@@ -58,5 +58,10 @@
 
   </fields>
   <structs>
+    <struct name="MergeSource" comment="Input source declaration for MergeFX">
+      <field name="SourceType" type="VSF" lookup="VSF">The type of the required source.</field>
+      <field name="Effect" type="objFilterEffect *">Effect pointer if the <code>SourceType</code> is <code>REFERENCE</code>.</field>
+    </struct>
+
   </structs>
 </book>

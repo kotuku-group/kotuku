@@ -368,19 +368,18 @@ If no stops are defined, the wave function will be drawn in greyscale.
 -END-
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_Stops(extWaveFunctionFX *Self, GradientStop **Value, int *Elements)
+static ERR WAVEFUNCTIONFX_GET_Stops(extWaveFunctionFX *Self, std::span<GradientStop> &Value)
 {
-   *Value    = Self->Stops.data();
-   *Elements = Self->Stops.size();
+   Value = std::span<GradientStop>(Self->Stops.data(), Self->Stops.size());
    return ERR::Okay;
 }
 
-static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, GradientStop *Value, int Elements)
+static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const GradientStop> &Value)
 {
    Self->Stops.clear();
 
-   if (Elements >= 2) {
-      Self->Stops.insert(Self->Stops.end(), &Value[0], &Value[Elements]);
+   if (Value.size() >= 2) {
+      Self->Stops.assign(Value.begin(), Value.end());
       if (Self->Colours) delete Self->Colours;
       Self->Colours = new (std::nothrow) GradientColours(Self->Stops, /*Self->Filter->ColourSpace*/ VCS::SRGB, 1.0, 1);
       if (!Self->Colours) return ERR::AllocMemory;
@@ -388,7 +387,7 @@ static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, GradientStop *Value
    }
    else {
       kt::Log log;
-      log.warning("Array size %d < 2", Elements);
+      log.warning("Array size %d < 2", int(Value.size()));
       return ERR::InvalidValue;
    }
 }
@@ -428,7 +427,7 @@ static const FieldArray clWaveFunctionFXFields[] = {
    { "Resolution",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              WAVEFUNCTIONFX_GET_Resolution,  WAVEFUNCTIONFX_SET_Resolution },
    { "Scale",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,           WAVEFUNCTIONFX_GET_Scale,       WAVEFUNCTIONFX_SET_Scale },
    { "Stops",       FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, WAVEFUNCTIONFX_GET_Stops,       WAVEFUNCTIONFX_SET_Stops, "GradientStop" },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, WAVEFUNCTIONFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,        WAVEFUNCTIONFX_GET_XMLDef },
    END_FIELD
 };
 

@@ -164,10 +164,9 @@ class objNetClient : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getIP(APTR &Value) noexcept {
+   inline ERR getIP(struct IPAddress * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
@@ -279,7 +278,7 @@ class objClientSocket : public Object {
 
    inline ERR setState(const NTC Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -420,22 +419,22 @@ class objProxy : public Object {
 
    inline ERR setPort(const int Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setServerPort(const int Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setEnabled(const int Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRecord(const int Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -496,28 +495,22 @@ class objNetLookup : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getAddresses(std::span<struct IPAddress> &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      auto get_field = (ERR (*)(APTR, std::span<struct IPAddress> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getHostName(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getAddresses(std::span<APTR> &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      APTR *values;
-      int size;
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, values, size);
-      if (!error) Value = std::span<APTR>(values, size);
-      return error;
+      return get_field(this, Value);
    }
 
 
@@ -535,7 +528,7 @@ class objNetLookup : public Object {
 
    inline ERR setCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };
@@ -751,18 +744,18 @@ class objNetSocket : public Object {
    }
 
    inline ERR setAddress(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Address = Value;
       return ERR::Okay;
    }
 
    inline ERR setState(const NTC Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPort(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Port = Value;
       return ERR::Okay;
    }
@@ -773,41 +766,41 @@ class objNetSocket : public Object {
    }
 
    inline ERR setMsgLimit(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MsgLimit = Value;
       return ERR::Okay;
    }
 
    inline ERR setMaxPacketSize(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MaxPacketSize = Value;
       return ERR::Okay;
    }
 
    inline ERR setMulticastTTL(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MulticastTTL = Value;
       return ERR::Okay;
    }
 
    inline ERR setHandle(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x08000508, Value, 1);
+      return field->WriteValue(this, field, 0x08000508, Value);
    }
 
    inline ERR setFeedback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setIncoming(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setOutgoing(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };
@@ -885,80 +878,73 @@ class objNetServer : public objNetSocket {
    // Customised field getting
 
    inline ERR getTotalClients(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      auto field = &this->Class->Dictionary[26];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getBacklog(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      auto field = &this->Class->Dictionary[23];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getClientLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      auto field = &this->Class->Dictionary[25];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getSocketLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      auto field = &this->Class->Dictionary[24];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getSSLCertificate(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
+      auto field = &this->Class->Dictionary[19];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getSSLKeyPassword(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getClients(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
    inline ERR setBacklog(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClientLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSocketLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSSLCertificate(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x00904508, &Value, 1);
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
    inline ERR setSSLPrivateKey(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x00904508, &Value, 1);
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
    inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00904508, &Value, 1);
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
 };

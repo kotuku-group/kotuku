@@ -235,10 +235,9 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    }
    glActionsWithResults = result_mask;
 
-   kt::vector<std::string> *pargs;
+   std::span<std::string> args;
    auto task = CurrentTask();
-   if (!task->getParameters(pargs)) {
-      kt::vector<std::string> &args = *pargs;
+   if (!task->getParameters(args)) {
       for (int i=0; i < std::ssize(args); i++) {
          if (kt::startswith(args[i], "--jit-options")) {
             // Parse --jit-options [csv] parameter

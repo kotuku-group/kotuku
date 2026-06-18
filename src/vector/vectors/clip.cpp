@@ -76,8 +76,7 @@ static ERR VECTORCLIP_Init(extVectorClip *Self)
 static ERR VECTORCLIP_NewChild(extVectorClip *Self, struct acNewChild *Args)
 {
    if (Self->initialised()) {
-      kt::Log log;
-      log.warning("Child objects not supported - assign this %s to Viewport instead.", Args->Object->className());
+      kt::Log().warning("Child objects not supported - assign this %s to Viewport instead.", Args->Object->className());
       return ERR::NoSupport;
    }
    else return ERR::Okay;
@@ -108,6 +107,12 @@ static ERR VECTORCLIP_SET_Flags(extVectorClip *Self, VCLF Value)
 }
 
 /*********************************************************************************************************************
+-FIELD-
+SID: String identifier for a vector.
+
+The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other
+circumstances.
+
 -FIELD-
 Units: Defines the coordinate system for fields X, Y, Width and Height.
 
@@ -154,6 +159,7 @@ static ERR VECTORCLIP_GET_Viewport(extVectorClip *Self, objVectorViewport **Valu
 
 static const FieldArray clClipFields[] = {
    { "Viewport", FDF_OBJECT|FDF_R|FDF_PURE, VECTORCLIP_GET_Viewport },
+   { "SID",      FDF_CPPSTRING|FDF_RW|FDF_PURE },
    { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORCLIP_GET_Units, VECTORCLIP_SET_Units, &clVectorClipUnits },
    { "Flags",    FDF_INTFLAGS|FDF_RW|FDF_PURE, VECTORCLIP_GET_Flags, VECTORCLIP_SET_Flags, &clVectorClipFlags },
    END_FIELD

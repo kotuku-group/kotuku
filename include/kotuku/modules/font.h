@@ -117,8 +117,7 @@ class objFont : public Object {
 
    inline ERR getPoint(double &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getGlyphSpacing(double &Value) noexcept {
@@ -151,21 +150,18 @@ class objFont : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getOutline(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 240);
+   inline ERR getOutline(struct RGB8 * &Value) noexcept {
+      Value = &this->Outline;
       return ERR::Okay;
    }
 
-   inline ERR getUnderline(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 244);
+   inline ERR getUnderline(struct RGB8 * &Value) noexcept {
+      Value = &this->Underline;
       return ERR::Okay;
    }
 
-   inline ERR getColour(struct RGB8 * &Value, int &Elements) noexcept {
-      Elements = 4;
-      Value = (struct RGB8 *)(((int8_t *)this) + 248);
+   inline ERR getColour(struct RGB8 * &Value) noexcept {
+      Value = &this->Colour;
       return ERR::Okay;
    }
 
@@ -280,8 +276,7 @@ class objFont : public Object {
 
    inline ERR getOpacity(double &Value) noexcept {
       auto field = &this->Class->Dictionary[29];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getWidth(int &Value) noexcept {
@@ -305,7 +300,7 @@ class objFont : public Object {
 
    inline ERR setPoint(const double Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setGlyphSpacing(const double Value) noexcept {
@@ -320,22 +315,22 @@ class objFont : public Object {
 
    inline ERR setString(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setStyle(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
    inline ERR setFace(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
    inline ERR setOutline(const struct RGB8 Value) noexcept {
@@ -355,11 +350,11 @@ class objFont : public Object {
 
    inline ERR setFlags(const FTF Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setGutter(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Gutter = Value;
       return ERR::Okay;
    }
@@ -395,13 +390,13 @@ class objFont : public Object {
    }
 
    inline ERR setHeight(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Height = Value;
       return ERR::Okay;
    }
 
    inline ERR setMaxHeight(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MaxHeight = Value;
       return ERR::Okay;
    }
@@ -433,17 +428,17 @@ class objFont : public Object {
 
    inline ERR setBold(const int Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setItalic(const int Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[29];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

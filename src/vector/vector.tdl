@@ -338,10 +338,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   struct("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
-    obj(VectorPattern)  Pattern   # A @VectorPattern object, suitable for pattern based fills.
-    obj(VectorImage)    Image     # A @VectorImage object, suitable for image fills.
-    obj(Gradient)      Gradient   # A @Gradient object, suitable for gradient fills.
-    struct(FRGB) Colour           # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
+    obj(VectorPattern) Pattern   # A @VectorPattern object, suitable for pattern based fills.
+    obj(VectorImage)   Image     # A @VectorImage object, suitable for image fills.
+    obj(Gradient)      Gradient  # A @Gradient object, suitable for gradient fills.
+    struct(FRGB)       Colour    # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
   ]],
   [[
    void reset() {
@@ -412,7 +412,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     src='transformers/transition.cpp',
     references={ 'Transition' }, extended=true,
     comment="Transitions are used to gradually apply transforms over distance."
-  })
+  }, [[
+    ~array(struct(Transition)) Stops
+  ]])
 
   methods('vectorscene', 'Sc', {
     { id=1, name='AddDef' },
@@ -457,6 +459,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VUNIT) Units              # VUNIT constant
     int(VUNIT) ContentUnits       # VUNIT constant
     int(DMF) Dimensions           # Flags for the dimension values.
+    ~struct(*VectorMatrix) Matrices
   ]])
 
   struct('VoronoiPoint', {
@@ -472,6 +475,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
     int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
+    ~struct(FRGB) Colour
+    ~struct(*VectorMatrix) Matrices
+    ~array(struct(GradientStop)) Stops
   ]])
 
   klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })
@@ -484,12 +490,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
 
-  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true })
+  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true }, [[
+    ~array(struct(GouraudVertex)) Vertices
+  ]])
 
   klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
 
   klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
-    !vector(struct(VoronoiPoint)) Points # User-defined Voronoi feature points.
+    ~array(struct(VoronoiPoint)) Points
   ]])
 
   klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
@@ -531,38 +539,67 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=21, name='SetSpotLight' }
   })
 
-  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true })
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true }, [[
+    ~int(VSM) ResampleMethod
+    ~int(ARF) AspectRatio
+  ]])
 
-  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true })
+  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true }, [[
+    ~int(ARF) AspectRatio
+  ]])
 
   klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
 
-  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true })
+  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true }, [[
+    ~int(CM) Mode
+  ]])
 
-  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true })
+  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true }, [[
+    ~int(OP) Operator
+  ]])
 
-  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true })
+  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true }, [[
+    ~int(EM) EdgeMode
+  ]])
 
-  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true })
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true }, [[
+    ~int(CMP) XChannel
+    ~int(CMP) YChannel
+  ]])
 
-  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true })
+  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[
+    ~struct(FRGB) Colour
+  ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true })
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true }, [[
+    ~struct(FRGB) Colour
+    ~int(LT) Type
+  ]])
 
-  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true })
+  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[
+    ~array(struct(MergeSource)) SourceList
+  ]])
 
-  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true })
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true }, [[
+    ~int(MOP) Operator
+  ]])
 
   klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
 
   klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 
-  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', extended=true })
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', extended=true }, [[
+    ~int(TB) Type
+  ]])
 
-  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true })
+  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
+    ~array(struct(GradientStop)) Stops
+    ~int(ARF) AspectRatio
+  ]])
 
   klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp', extended=true }, [[
     obj(VectorViewport) Viewport # Hosts the Vector objects that will contribute to the clip path.
+    string SID
     int(VUNIT) Units             # Defines the coordinate system for fields X, Y, Width and Height.
     int(VCLF) Flags              # Optional flags.
   ]])
@@ -615,6 +652,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(RQ)  PathQuality    # Defines the quality of rendered path outlines.
     int(VCS) ColourSpace    # Desired colour space to use when blending colours.
     int      PathTimestamp  # This counter is modified each time the path is regenerated.
+    ~struct(FRGB) StrokeColour
+    ~struct(FRGB) FillColour
+    ~int(VFR) FillRule
+    ~int(VFR) ClipRule
+    ~int(VMF) MorphFlags
+    ~int(VLJ) LineJoin
+    ~int(VLC) LineCap
+    ~int(VIJ) InnerJoin
   ]])
 
   // VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
@@ -627,7 +672,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=34, name='SetCommandList' }
   })
 
-  klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true })
+  klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true }, [[
+  ~array(struct(PathCommand)) Commands
+  ]])
 
   // VectorText method ID's start high enough to give a cushion from inherited Vector methods.
 
@@ -639,17 +686,27 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
+  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
   klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
 
-  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true })
+  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true }, [[
+    ~array(struct(VectorPoint)) PointsArray
+  ]])
 
-  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true })
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
-  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', extended=true })
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
-  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true })
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true }, [[
+    ~int(DMF) Dimensions
+  ]])
 
   klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true })
 
@@ -701,16 +758,6 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
    This.ScaleX     = t0;
    This.ShearX     = t2;
    This.TranslateX = t4;
-}
-
-//********************************************************************************************************************
-
-inline void SET_VECTOR_COLOUR(objVectorColour *Colour, double Red, double Green, double Blue, double Alpha) {
-   Colour->Class->ClassID = CLASSID::VECTORCOLOUR;
-   Colour->Red   = Red;
-   Colour->Green = Green;
-   Colour->Blue  = Blue;
-   Colour->Alpha = Alpha;
 }
   ]])
 

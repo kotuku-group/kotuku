@@ -74,10 +74,10 @@ end
       stops=rampStops(), x1=0, y1=0, x2='100%', y2=0, units=VUNIT_BOUNDING_BOX
    })
 
-   assert(gradient.totalStops is 2, 'Gradient should initially report custom stops')
+   assert(#gradient.stops is 2, 'Gradient should initially report custom stops')
 
    gradient.colourMap = 'cmap:viridis'
-   assert(gradient.totalStops is 0, 'Setting ColourMap should clear custom Stops')
+   assert(#gradient.stops is 0, 'Setting ColourMap should clear custom Stops')
 end
 
 @Test function CustomStopsReplaceColourMap()
@@ -86,10 +86,10 @@ end
       colourMap='cmap:magma', x1=0, y1=0, x2='100%', y2=0, units=VUNIT_BOUNDING_BOX
    })
 
-   assert(gradient.totalStops is 0, 'ColourMap-backed gradient should not report custom stops')
+   assert(#gradient.stops is 0, 'ColourMap-backed gradient should not report custom stops')
 
    gradient.stops = rampStops()
-   assert(gradient.totalStops is 2, 'Setting Stops should report the custom stop source')
+   assert(#gradient.stops is 2, 'Setting Stops should report the custom stop source')
 end
 
 @Test function PatternChildFillChangeInvalidatesPatternBitmap()

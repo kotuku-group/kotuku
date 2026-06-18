@@ -307,17 +307,16 @@ against the rectangle's diagonal.
 
 *********************************************************************************************************************/
 
-static ERR RECTANGLE_GET_Rounding(extVectorRectangle *Self, double **Value, int *Elements)
+static ERR RECTANGLE_GET_Rounding(extVectorRectangle *Self, std::span<double> &Array)
 {
-   *Value = (double *)Self->rRound.data();
-   *Elements = 8;
+   Array = std::span<double>((double *)Self->rRound.data(), 8);
    return ERR::Okay;
 }
 
-static ERR RECTANGLE_SET_Rounding(extVectorRectangle *Self, double *Value, int Elements)
+static ERR RECTANGLE_SET_Rounding(extVectorRectangle *Self, std::span<const double> &Array)
 {
-   if (Elements >= 8) {
-      copymem(Value, Self->rRound.data(), sizeof(double) * 8);
+   if (Array.size() >= 8) {
+      copymem(Array.data(), Self->rRound.data(), sizeof(double) * 8);
       Self->rFullControl = true;
       reset_path(Self);
       return ERR::Okay;

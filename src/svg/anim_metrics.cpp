@@ -459,15 +459,14 @@ FRGB anim_base::get_colour_value(objVector &Vector, FIELD Field)
       vec::ReadPainter(nullptr, to, &to_col, nullptr);
    }
    else if (not by.empty()) {
-      float *colour;
-      int elements;
-      if ((!Vector.get(Field, colour, elements)) and (elements IS 4)) {
-         from_col.Colour = { colour[0], colour[1], colour[2], colour[3] };
+      FRGB *colour;
+      if (!Vector.get(Field, colour)) {
+         from_col.Colour = *colour;
          vec::ReadPainter(nullptr, to, &to_col, nullptr);
-         to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + colour[0], 0.0, 1.0);
-         to_col.Colour.Green = std::clamp<float>(to_col.Colour.Green + colour[1], 0.0, 1.0);
-         to_col.Colour.Blue  = std::clamp<float>(to_col.Colour.Blue  + colour[2], 0.0, 1.0);
-         to_col.Colour.Alpha = std::clamp<float>(to_col.Colour.Alpha + colour[3], 0.0, 1.0);
+         to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + colour->Red, 0.0, 1.0);
+         to_col.Colour.Green = std::clamp<float>(to_col.Colour.Green + colour->Green, 0.0, 1.0);
+         to_col.Colour.Blue  = std::clamp<float>(to_col.Colour.Blue  + colour->Blue, 0.0, 1.0);
+         to_col.Colour.Alpha = std::clamp<float>(to_col.Colour.Alpha + colour->Alpha, 0.0, 1.0);
       }
       else return { 0, 0, 0, 0 };
    }

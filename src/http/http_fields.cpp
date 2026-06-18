@@ -621,10 +621,9 @@ HTTP object is activated.
 
 *********************************************************************************************************************/
 
-static ERR GET_RecvBuffer(extHTTP *Self, uint8_t **Value, int *Elements)
+static ERR GET_RecvBuffer(extHTTP *Self, std::span<int8_t> &Value)
 {
-   *Value = (uint8_t *)Self->RecvBuffer.data();
-   *Elements = Self->RecvBuffer.size();
+   Value = std::span<int8_t>((int8_t *)Self->RecvBuffer.data(), Self->RecvBuffer.size());
    return ERR::Okay;
 }
 
@@ -638,7 +637,7 @@ if no keys are found.
 
 *********************************************************************************************************************/
 
-static ERR GET_ResponseKeys(extHTTP *Self, std::string * &Value, int &Elements)
+static ERR GET_ResponseKeys(extHTTP *Self, std::span<std::string> &Value)
 {
    Self->ResponseKeys.clear();
    Self->ResponseKeys.reserve(Self->ResponseHeaders.size());
@@ -647,8 +646,7 @@ static ERR GET_ResponseKeys(extHTTP *Self, std::string * &Value, int &Elements)
       Self->ResponseKeys.emplace_back(response_header.first);
    }
 
-   Value = Self->ResponseKeys.data();
-   Elements = Self->ResponseKeys.size();
+   Value = std::span<std::string>(Self->ResponseKeys.data(), Self->ResponseKeys.size());
    return ERR::Okay;
 }
 

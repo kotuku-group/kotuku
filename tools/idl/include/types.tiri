@@ -3,7 +3,7 @@
 global glActiveRefs = { }
 global glCustomTypes = { }
 
-rx_special_type    = <{ regex.new([[^([!&^]+)(.+)]]) }> -- Alloc !, Result &, Mutable ^ symbols
+rx_special_type    = <{ regex.new([[^([~!&^]+)(.+)]]) }> -- Alloc !, Result &, Mutable ^ symbols
 rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
 rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
 rx_ptr_extract     = <{ regex.new([[([\*&])(.+)]]) }>
@@ -32,7 +32,7 @@ rx_string_type     = <{ regex.new([[^(str|cstr|string|strview)$]]) }>
 global glTypes = {
    -- fd: FD flags
    -- t_type: Tiri type
-   -- c_type: C99 type
+   -- c_type: C/C++ type to use in building function signatures
    -- doc_type: Simplified type for documentation
    arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   t_type='num', c_type='int', doc_type='INT' },
    bufsize    = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
@@ -85,6 +85,11 @@ function copyOf(Type:str)
    return result
 end
 
+function fieldStructType(Option:any):str
+   if Option?? and type(Option) is 'string' and Option != '' then return 'struct ' .. Option end
+   return 'STRUCT'
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Convert FD flags into a printable C type.  Used by getMetaFieldDefinition() for classes.
 
@@ -116,7 +121,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
          elseif Type has FD_POINTER then
             Def.innerType = 'APTR'
          elseif Type has FD_STRUCT then
-            Def.innerType = 'STRUCT'
+            Def.innerType = fieldStructType(Option)
          else
             Def.innerType = 'UNDEFINED'
          end
@@ -142,7 +147,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
          elseif Type has FD_POINTER then
             Def.type = 'APTR []'
          elseif Type has FD_STRUCT then
-            Def.type = 'STRUCT []'
+            Def.type = fieldStructType(Option) .. ' []'
          elseif Type has FD_OBJECT then
             Def.type = 'OBJECTPTR []'
          else
@@ -154,6 +159,8 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
    elseif Type has FD_FUNCTION then
       Def.type = 'FUNCTION'
    elseif (Type has FD_UNIT) and not (Type has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT)) then
+      -- If UNIT is paired with a primitive, the primitive is considered the base type and the getter/setter
+      -- functions accept the Unit struct.
       Def.type = 'Unit'
       Def.doc_type = 'UNIT'
    elseif Type has FD_POINTER then
@@ -177,8 +184,9 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
          result = 'FUNCTION'
          ptr++
       elseif Type has FD_STRUCT then
-         if Option?? then -- TODO: We need a way to convert the Option number to a string address...
-            result = 'APTR'
+         if Option?? then
+            -- We need the developer to declare a virtual reference in order to name the struct, e.g. `~struct(TheName)`
+            result = 'REQUIRES_VIRTUAL_REF'
          else
             result = 'APTR'
          end
@@ -208,6 +216,9 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
    elseif Type has FD_FLOAT then
       Def.type     = 'float'
       Def.doc_type = 'FLOAT'
+   elseif Type has FD_STRUCT then
+      Def.type     = fieldStructType(Option)
+      Def.doc_type = Def.type
    else
       print(string.format('Failed to identify field type $%.8x for field "%s"', Type, CustomName))
       Def.type = 'void'
@@ -227,6 +238,7 @@ global function cType(Value:table, Origin:str):table
    -- A ! symbol indicates that the value is a result that is allocated and can be removed with FreeResource()
    -- A & symbol indicates that the value is a pointer to a reserved area that will store a result value, e.g. INT *
    -- A ^ symbol indicates that the value's content is treated as mutable, for modification by the function
+   -- A ~ symbol indicates a virtual field declaration
 
    local result_value
    local special, rest_type = rx_special_type.extract(Value.type)
@@ -237,6 +249,7 @@ global function cType(Value:table, Origin:str):table
       end
       if special:find('&') then result_value = true end
       if special:find('^') then Value.mutable = true end
+      if special:find('~') then Value.virtual = true end
       Value.type = rest_type
    end
 
@@ -279,11 +292,15 @@ global function cType(Value:table, Origin:str):table
          Value.fullType.fd = 'FD_RESULT|' .. Value.fullType.fd
       end
 
-      local count = #Value.type:split('*') - 1
-      local b_count = #Value.docType:split('*') - 1
-      if count > 0 and b_count is 0 then
-         Value.docType = Value.docType .. ' ' .. string.rep('*', count)
+      if Value.isFunction or Value.isMethod then
+         local count = #Value.type:split('*') - 1
+         local b_count = #Value.docType:split('*') - 1
+         if count > 0 and b_count is 0 then
+            Value.docType = Value.docType .. ' ' .. string.rep('*', count)
+         end
       end
+
+      --print(json.encode(Value))
    end
 
    do -- class(Name) and struct(Name); Name can be prefixed with '*'
@@ -317,16 +334,16 @@ global function cType(Value:table, Origin:str):table
             Value.type ..= ' ' .. prefix
             Value.isPointer = true -- Explicit pointer
             Value.byRef = prefix is '&'
-            Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
+            Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type=Value.type, t_type='any' }
          elseif Value.isFunction then
             if Value.isArray then
-               Value.fullType = { fd='FD_STRUCT', c_type='APTR', t_type='any' }
+               Value.fullType = { fd='FD_STRUCT', c_type=Value.type, t_type='any' }
             else
                Value.type ..= ' *'
-               Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
+               Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type=Value.type, t_type='any' }
             end
          else
-            Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
+            Value.fullType = { fd='FD_STRUCT', c_type=Value.type, t_type='any' }
          end
 
          if const?? then
@@ -596,12 +613,18 @@ global function cType(Value:table, Origin:str):table
       if array_type then
          Value.isArray = true
          Value.type    = array_type
-         Value         = cType(Value, Origin)
+         Value         = cType(Value, Origin) -- Inner type will amend the value definition
+         if Value.docType and not Value.isFunction and not Value.isMethod then
+            Value.docType ..= '[]'
+            if Value.docType:startsWith('struct ') then
+               Value.docType = Value.docType:substr(7)
+            end
+         else
+            Value.docType = Value.type
+         end
          Value.type  ..= ' *'
          Value.fullType = {
             fd       = 'FD_ARRAY|' .. Value.fullType.fd,
-            c_type   = Value.fullType.c_type,
-            doc_type = Value.fullType.doc_type,
             t_type   = 'array'
          }
          return Value
@@ -618,11 +641,11 @@ global function cType(Value:table, Origin:str):table
          Value         = cType(Value, Origin)
          inner_type = Value.struct ?? Value.type
          if Value.isPointer then inner_type ..= ' *' end
-         Value.type = f'kt::vector<{inner_type}>'
-         Value.isComplex = true
+         Value.type       = f'kt::vector<{inner_type}>'
+         Value.isComplex  = true
          Value.isCompound = true
-         Value.docType = Value.type
-         Value.innerType = inner_type
+         Value.docType    = Value.type
+         Value.innerType  = inner_type
 
          Value.fullType = {
             fd       = 'FDF_VECTOR|' .. Value.fullType.fd,

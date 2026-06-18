@@ -664,24 +664,21 @@ A list of numbers that make up the kernel matrix for the convolution.  The numbe
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_Matrix(extConvolveFX *Self, double **Value, int *Elements)
+static ERR CONVOLVEFX_GET_Matrix(extConvolveFX *Self, std::span<double> &Array)
 {
-   *Elements = Self->MatrixSize;
-   *Value    = Self->Matrix;
+   Array = std::span<double>(Self->Matrix, Self->MatrixSize);
    return ERR::Okay;
 }
 
-static ERR CONVOLVEFX_SET_Matrix(extConvolveFX *Self, double *Value, int Elements)
+static ERR CONVOLVEFX_SET_Matrix(extConvolveFX *Self, std::span<const double> &Array)
 {
-   kt::Log log;
-
-   if ((Elements > 0) and (Elements <= std::ssize(Self->Matrix))) {
-      Self->MatrixSize = Elements;
+   if ((Array.size() > 0) and (std::ssize(Array) <= std::ssize(Self->Matrix))) {
+      Self->MatrixSize = Array.size();
       Self->MatrixProvided = true;
-      copymem(Value, Self->Matrix, sizeof(double) * Elements);
+      copymem(Array.data(), Self->Matrix, sizeof(double) * Array.size());
       return ERR::Okay;
    }
-   else return log.warning(ERR::InvalidValue);
+   else return kt::Log().warning(ERR::InvalidValue);
 }
 
 /*********************************************************************************************************************
