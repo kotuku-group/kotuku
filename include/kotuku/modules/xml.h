@@ -10,6 +10,8 @@
 
 #ifdef __cplusplus
 #include <functional>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <type_traits>
@@ -610,6 +612,7 @@ template <class T> requires std::is_arithmetic_v<T>
 inline std::string attrib_to_string(const T Value) {
    if constexpr (std::is_floating_point_v<T>) {
       std::ostringstream buffer;
+      buffer << std::setprecision(std::numeric_limits<T>::max_digits10);
       buffer << Value;
       return buffer.str();
    }
