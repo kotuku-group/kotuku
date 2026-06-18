@@ -1943,7 +1943,7 @@ void TextCursor::reset_vector(extVectorText *Vector) const
             const double CURSOR_MARGIN = Vector->txFontSize * 0.5;
             if (p_width > 8) {
                if (x + line.chars[col].x1 <= 0) xo = x + line.chars[col].x1;
-               else if (y + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(x + line.chars[col].x1 + CURSOR_MARGIN - p_width);
+               else if (x + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(x + line.chars[col].x1 + CURSOR_MARGIN - p_width);
             }
 
             auto p_height = Vector->ParentView->vpFixedHeight;
