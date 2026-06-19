@@ -24,7 +24,7 @@
     <field>
       <name>Colour</name>
       <comment>The default background colour to use when clipping is enabled.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>struct FRGB</type>
       <description>
 <p>The colour value in this field is applicable only when a gradient is in clip-mode by specifying the <code>VSPREAD::CLIP</code> flag in <fl>SpreadMethod</fl>.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.</p>
@@ -34,7 +34,7 @@
     <field>
       <name>ColourMap</name>
       <comment>Assigns a pre-defined colourmap to the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>An alternative to defining colour <fl>Stops</fl> in a gradient is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the gradient with the colours defined in the map.</p>
@@ -76,16 +76,6 @@
     </field>
 
     <field>
-      <name>SID</name>
-      <comment>String identifier for a gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
-      <description>
-<p>The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Matrices</name>
       <comment>Applies one or more transforms to a gradient.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -98,7 +88,7 @@
     <field>
       <name>NumericID</name>
       <comment>Numeric identifier for a vector.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client, then any value in <fl>SID</fl> will be immediately cleared.</p>
@@ -114,6 +104,16 @@
 <p>By default, the colours generated for a gradient will be spaced for a smooth transition between stops that maximise resolution.  The resolution can be reduced by setting the Resolution value to a fraction between 0 and 1.0.</p>
 <p>This results in the colour values being averaged to a single value for every block of n colours, where n is the value <code>1 / (1 - Resolution)</code>.</p>
 <p>Resolution is at its maximum when this value is set to 1 (the default).</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SID</name>
+      <comment>String identifier for a gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
       </description>
     </field>
 

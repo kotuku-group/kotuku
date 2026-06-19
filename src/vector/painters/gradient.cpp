@@ -249,12 +249,6 @@ the initial bounds of the gradient.  Setting any other colour value will otherwi
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_Colour(extGradient *Self, FRGB **Value)
-{
-   *Value = &Self->Colour;
-   return ERR::Okay;
-}
-
 static ERR GRADIENT_SET_Colour(extGradient *Self, FRGB *Value)
 {
    if (Value) {
@@ -286,13 +280,6 @@ We currently support the following established colourmaps from the matplotlib an
 The use of colourmaps and custom stops are mutually exclusive.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENT_GET_ColourMap(extGradient *Self, std::string_view &Value)
-{
-   if (not Self->ColourMap.empty()) Value = Self->ColourMap;
-   else Value = std::string_view{};
-   return ERR::Okay;
-}
 
 static ERR GRADIENT_SET_ColourMap(extGradient *Self, const std::string_view &Value)
 {
@@ -359,31 +346,7 @@ Gamma remaps the completed colour ramp before #Resolution is applied.  Values gr
 the first colour, while values between `0.0` and `1.0` bias it toward the last colour.  A value of `1.0` leaves the
 gradient unchanged.
 
-SID: String identifier for a gradient.
-
-The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
-object name and automatically assigned ID's for identifiers.
-
 *********************************************************************************************************************/
-
-static ERR GRADIENT_GET_SID(extGradient *Self, std::string_view &Value)
-{
-   Value = Self->SID;
-   return ERR::Okay;
-}
-
-static ERR GRADIENT_SET_SID(extGradient *Self, const std::string_view &Value)
-{
-   if (not Value.empty()) {
-      Self->SID = Value;
-      Self->NumericID = strhash(Value);
-   }
-   else {
-      Self->SID.clear();
-      Self->NumericID = 0;
-   }
-   return ERR::Okay;
-}
 
 static ERR GRADIENT_SET_Gamma(extGradient *Self, double Value)
 {
@@ -401,6 +364,29 @@ static ERR GRADIENT_SET_Gamma(extGradient *Self, double Value)
    }
 
    if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SID: String identifier for a gradient.
+
+The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
+object name and automatically assigned ID's for identifiers.
+
+*********************************************************************************************************************/
+
+static ERR GRADIENT_SET_SID(extGradient *Self, const std::string_view &Value)
+{
+   if (not Value.empty()) {
+      Self->SID = Value;
+      Self->NumericID = strhash(Value);
+   }
+   else {
+      Self->SID.clear();
+      Self->NumericID = 0;
+   }
    return ERR::Okay;
 }
 
@@ -466,12 +452,6 @@ The NumericID field is provided for internal use by the SVG and vector modules. 
 then any value in #SID will be immediately cleared.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENT_GET_NumericID(extGradient *Self, int *Value)
-{
-   *Value = Self->NumericID;
-   return ERR::Okay;
-}
 
 static ERR GRADIENT_SET_NumericID(extGradient *Self, int Value)
 {
@@ -629,18 +609,18 @@ extGradient::~extGradient() {
 #include "gradient_def.c"
 
 static const FieldArray clGradientFields[] = {
-   { "Resolution",   FDF_DOUBLE|FDF_RW, nullptr, GRADIENT_SET_Resolution },
-   { "Gamma",        FDF_DOUBLE|FDF_RW, nullptr, GRADIENT_SET_Gamma },
+   { "SID",          FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_SID },
+   { "ColourMap",    FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_ColourMap },
+   { "Resolution",   FDF_DOUBLE|FDF_RW,         nullptr, GRADIENT_SET_Resolution },
+   { "Gamma",        FDF_DOUBLE|FDF_RW,         nullptr, GRADIENT_SET_Gamma },
+   { "Colour",       FDF_STRUCT|FD_RW,          nullptr, GRADIENT_SET_Colour, "FRGB" },
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_SpreadMethod, &clGradientSpreadMethod },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clGradientUnits },
-   { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clGradientColourSpace },
+   { "ColourSpace",  FDF_INT|FDF_RI,            nullptr, nullptr, &clGradientColourSpace },
    { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
+   { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
-   { "Colour",       FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE, GRADIENT_GET_Colour, GRADIENT_SET_Colour, "FRGB" },
-   { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, GRADIENT_GET_ColourMap, GRADIENT_SET_ColourMap },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Matrices, GRADIENT_SET_Matrices, "VectorMatrix" },
-   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENT_GET_NumericID, GRADIENT_SET_NumericID },
-   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, GRADIENT_GET_SID, GRADIENT_SET_SID },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Stops, GRADIENT_SET_Stops, "GradientStop" },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD

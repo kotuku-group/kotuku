@@ -18,7 +18,7 @@ inline char read_nibble(const char Alpha)
    else return char(0xff);
 }
 
-static double linear_to_srgb(double V)
+inline double linear_to_srgb(double V)
 {
    if (V <= 0.0031308) return 12.92 * V;
    return 1.055 * pow(V, 1.0 / 2.4) - 0.055;
@@ -35,7 +35,7 @@ static void linear_rgb_to_painter(double LR, double LG, double LB, float Alpha, 
    rgb.Alpha = Alpha;
 }
 
-static void skip_whitespace(std::string_view &IRI)
+inline void skip_whitespace(std::string_view &IRI)
 {
    std::size_t i = 0;
    const auto size = IRI.size();
@@ -58,7 +58,7 @@ static double parse_number(std::string_view &IRI)
 
 // Advance the IRI past the current value and set the Result pointer.
 
-static void advance_result(std::string_view IRI, std::string_view &Result)
+inline void advance_result(std::string_view IRI, std::string_view &Result)
 {
    if (auto pos = IRI.find(';'); pos != std::string_view::npos) Result = IRI.substr(pos);
    else Result = std::string_view();
@@ -80,7 +80,7 @@ static void advance_function_result(std::string_view &IRI, std::string_view &Res
 
 // Parse a CSS colour component: reads a double, applies percentage scaling, and skips trailing whitespace.
 
-static double parse_css_value(std::string_view &IRI, double PercentScale = 0.01)
+inline double parse_css_value(std::string_view &IRI, double PercentScale = 0.01)
 {
    double value = parse_number(IRI);
    if (IRI.starts_with('%')) { value *= PercentScale; IRI.remove_prefix(1); }

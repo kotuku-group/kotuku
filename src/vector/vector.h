@@ -1,5 +1,6 @@
 
 #define PRV_VECTOR_MODULE
+#define PRV_GRADIENT
 
 template<class... Args> void DBG_TRANSFORM(Args...) {
    //log.trace(Args)
@@ -375,6 +376,7 @@ public:
 };
 
 //********************************************************************************************************************
+// All scene definitions inherit this class
 
 class SceneDef {
    public:
@@ -439,28 +441,6 @@ class extGradient : public objGradient, public SceneDef {
    static constexpr CLASSID CLASS_ID = CLASSID::GRADIENT;
    static constexpr CSTRING CLASS_NAME = "Gradient";
    using create = kt::Create<extGradient>;
-
-   std::vector<GradientStop> Stops;  // An array of gradient stop colours.
-   struct VectorMatrix *Matrices;
-   class GradientColours *Colours;
-   std::string ColourMap;
-   FRGB   Colour;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
-   std::string SID;
-   int   NumericID;
-
-   extGradient() {
-      Matrices     = nullptr;
-      Colours      = nullptr;
-      Gamma        = 1.0;
-      Easing       = GEZ::LINEAR;
-      SpreadMethod = VSPREAD::PAD;
-      Units        = VUNIT::BOUNDING_BOX;
-      Resolution   = 1;
-      Colour       = {};
-      ColourRGB    = {};
-      NumericID    = 0;
-   }
 
    ~extGradient();
 };
