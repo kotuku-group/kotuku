@@ -156,7 +156,6 @@
       <type>UNIT</type>
       <description>
 <p>The height of the viewport's target area is defined here as a fixed or scaled value.  The default value is <code>100%</code> for full coverage.</p>
-<p>The fixed value is always returned when retrieving the height.</p>
       </description>
     </field>
 

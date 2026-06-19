@@ -149,6 +149,8 @@ end
 @Test global function W3Coords07() hashTestSVG('coords/w3-coords-viewattr-02-b.svg', -1) end
 @Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xcd6e4c82) end
 
+@Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xc45a0cf6) end
+@Test global function ContourGradient() hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a) end
 @Test global function W3Gradients01() hashTestSVG('gradients/w3-pservers-grad-01-b.svg', 0xd6ab0e01) end
 @Test global function W3Gradients02() hashTestSVG('gradients/w3-pservers-grad-02-b.svg', 0xe8e84124) end
 @Test global function W3Gradients04() hashTestSVG('gradients/w3-pservers-grad-04-b.svg', 0x11d0611e) end
@@ -279,7 +281,6 @@ end
 
 @Test global function CSS()                hashTestSVG('misc/css.svg', 0x8c373aac) end
 @Test; @Disabled global function BrushStrokes()       hashTestSVG('misc/brush-strokes.svg', 0x656a5e37) end
-@Test global function ContourGradient()    hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a) end
 
 @Test global function BottleTree()         hashTestSVG('images/bottletree.svg', 0xfc741c6e) end
 @Test global function Button()             hashTestSVG('images/button.svg', 0x0642f760) end

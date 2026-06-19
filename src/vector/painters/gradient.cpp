@@ -15,7 +15,7 @@ Gradient objects are definition objects and should normally be registered with a
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elements);
+static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *Value);
 static ERR rebuild_gradient_colours(extGradient *Self);
 
 static ERR init_gradient_linear(void);
@@ -325,28 +325,27 @@ Gamma remaps the completed colour ramp before #Resolution is applied.  Values gr
 the first colour, while values between `0.0` and `1.0` bias it toward the last colour.  A value of `1.0` leaves the
 gradient unchanged.
 
--FIELD-
-ID: String identifier for a vector.
+SID: String identifier for a gradient.
 
-The ID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
+The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
 object name and automatically assigned ID's for identifiers.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_ID(extGradient *Self, std::string_view &Value)
+static ERR GRADIENT_GET_SID(extGradient *Self, std::string_view &Value)
 {
-   Value = Self->ID;
+   Value = Self->SID;
    return ERR::Okay;
 }
 
-static ERR GRADIENT_SET_ID(extGradient *Self, const std::string_view &Value)
+static ERR GRADIENT_SET_SID(extGradient *Self, const std::string_view &Value)
 {
    if (not Value.empty()) {
-      Self->ID = Value;
+      Self->SID = Value;
       Self->NumericID = strhash(Value);
    }
    else {
-      Self->ID.clear();
+      Self->SID.clear();
       Self->NumericID = 0;
    }
    return ERR::Okay;
@@ -430,7 +429,7 @@ static ERR GRADIENT_SET_Matrices(extGradient *Self, VectorMatrix *Value)
 NumericID: Numeric identifier for a vector.
 
 The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client,
-then any value in #ID will be immediately cleared.
+then any value in #SID will be immediately cleared.
 
 *********************************************************************************************************************/
 
@@ -443,7 +442,7 @@ static ERR GRADIENT_GET_NumericID(extGradient *Self, int *Value)
 static ERR GRADIENT_SET_NumericID(extGradient *Self, int Value)
 {
    Self->NumericID = Value;
-   Self->ID.clear();
+   Self->SID.clear();
    return ERR::Okay;
 }
 
@@ -606,7 +605,7 @@ static const FieldArray clGradientFields[] = {
    { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, GRADIENT_GET_ColourMap, GRADIENT_SET_ColourMap },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Matrices, GRADIENT_SET_Matrices, "VectorMatrix" },
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENT_GET_NumericID, GRADIENT_SET_NumericID },
-   { "ID",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, GRADIENT_GET_ID, GRADIENT_SET_ID },
+   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, GRADIENT_GET_SID, GRADIENT_SET_SID },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Stops, GRADIENT_SET_Stops, "GradientStop" },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD

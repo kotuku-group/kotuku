@@ -76,12 +76,12 @@
     </field>
 
     <field>
-      <name>ID</name>
-      <comment>String identifier for a vector.</comment>
+      <name>SID</name>
+      <comment>String identifier for a gradient.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
-<p>The ID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
+<p>The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
       </description>
     </field>
 
@@ -101,7 +101,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client, then any value in <fl>ID</fl> will be immediately cleared.</p>
+<p>The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client, then any value in <fl>SID</fl> will be immediately cleared.</p>
       </description>
     </field>
 

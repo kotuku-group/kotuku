@@ -446,7 +446,7 @@ class extGradient : public objGradient, public SceneDef {
    std::string ColourMap;
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
-   std::string ID;
+   std::string SID;
    int   NumericID;
 
    extGradient() {
