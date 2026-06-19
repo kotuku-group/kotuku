@@ -76,8 +76,8 @@ static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, Unit &Value)
 #include "gradient_contour_def.cpp"
 
 static const FieldArray clGradientContourFields[] = {
-   { "Floor",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_Floor, GRADIENTCONTOUR_SET_Floor },
-   { "Multiplier", FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_Multiplier, GRADIENTCONTOUR_SET_Multiplier },
+   { "Floor",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_Floor, GRADIENTCONTOUR_SET_Floor },
+   { "Multiplier", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTCONTOUR_GET_Multiplier, GRADIENTCONTOUR_SET_Multiplier },
    END_FIELD
 };
 

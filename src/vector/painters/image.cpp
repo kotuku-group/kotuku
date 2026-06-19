@@ -190,8 +190,8 @@ static const FieldDef clImageUnits[] = {
 };
 
 static const FieldArray clImageFields[] = {
-   { "X",            FDF_UNIT|FDF_SCALED|FDF_RW, nullptr, IMAGE_SET_X },
-   { "Y",            FDF_UNIT|FDF_SCALED|FDF_RW, nullptr, IMAGE_SET_Y },
+   { "X",            FDF_UNIT|FDF_RW, nullptr, IMAGE_SET_X },
+   { "Y",            FDF_UNIT|FDF_RW, nullptr, IMAGE_SET_Y },
    { "Image",        FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Image, CLASSID::IMAGE },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Bitmap, CLASSID::BITMAP },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageUnits },

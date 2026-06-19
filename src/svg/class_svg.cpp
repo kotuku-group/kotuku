@@ -3,8 +3,8 @@
 -CLASS-
 SVG: Provides comprehensive support for parsing, rendering and animating SVG documents.
 
-The SVG class serves as a complete solution for integrating Scalable Vector Graphics documents into applications.
-It parses SVG statements into a scene graph consisting of @Vector objects and related constructs, providing direct
+The SVG class serves as a complete solution for integrating Scalable Vector Graphics documents into applications.  It
+parses SVG statements into a scene graph consisting of @Vector objects and related constructs, providing direct
 programmatic access to all graphical elements.  The generated scene graph is accessible via the #Scene and #Viewport
 fields, enabling real-time manipulation of individual elements.
 

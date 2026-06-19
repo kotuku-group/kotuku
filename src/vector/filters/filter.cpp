@@ -917,10 +917,10 @@ static ERR VECTORFILTER_SET_Y(extVectorFilter *Self, Unit &Value)
 #include "filter_def.c"
 
 static const FieldArray clFilterFields[] = {
-   { "X",              FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_X, VECTORFILTER_SET_X },
-   { "Y",              FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Y, VECTORFILTER_SET_Y },
-   { "Width",          FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Width, VECTORFILTER_SET_Width },
-   { "Height",         FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORFILTER_GET_Height, VECTORFILTER_SET_Height },
+   { "X",              FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_X, VECTORFILTER_SET_X },
+   { "Y",              FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_Y, VECTORFILTER_SET_Y },
+   { "Width",          FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_Width, VECTORFILTER_SET_Width },
+   { "Height",         FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_Height, VECTORFILTER_SET_Height },
    { "Opacity",        FDF_DOUBLE|FDF_RW, nullptr, VECTORFILTER_SET_Opacity },
    { "Inherit",        FDF_OBJECT|FDF_RW, nullptr, VECTORFILTER_SET_Inherit },
    { "ResX",           FDF_INT|FDF_RI },

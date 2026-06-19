@@ -386,10 +386,10 @@ extVectorPattern::~extVectorPattern() {
 #include "pattern_def.cpp"
 
 static const FieldArray clVectorPatternFields[] = {
-   { "X",            FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_X, VECTORPATTERN_SET_X },
-   { "Y",            FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Y, VECTORPATTERN_SET_Y },
-   { "Width",        FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Width, VECTORPATTERN_SET_Width },
-   { "Height",       FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Height, VECTORPATTERN_SET_Height },
+   { "X",            FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_X, VECTORPATTERN_SET_X },
+   { "Y",            FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Y, VECTORPATTERN_SET_Y },
+   { "Width",        FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Width, VECTORPATTERN_SET_Width },
+   { "Height",       FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Height, VECTORPATTERN_SET_Height },
    { "Opacity",      FDF_DOUBLE|FDF_RW, nullptr, VECTORPATTERN_SET_Opacity },
    { "Scene",        FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::VECTORSCENE },
    { "Viewport",     FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },

@@ -439,17 +439,14 @@ static ERR setval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Dat
    else if (Flags & FD_STRING) {
       Unit unit;
       auto str = field_string_view(Flags, Data);
-      if (Field->Flags & FD_SCALED) {
-         // Percentages are only applicable to numeric variables, and require conversion in advance.
-         // NB: If a field needs total control over variable conversion, it should not specify FD_SCALED.
-         size_t end = 0;
-         unit.Value = parse_double(str, &end);
-         if ((end < str.size()) and (str[end] IS '%')) {
-            unit.Type = FD_SCALED;
-            unit.Value *= 0.01;
-         }
+      // Percentages are only applicable to numeric variables, and require conversion in advance.
+      // NB: If a field needs total control over variable conversion, it should not specify FD_SCALED.
+      size_t end = 0;
+      unit.Value = parse_double(str, &end);
+      if ((end < str.size()) and (str[end] IS '%')) {
+         unit.Type = FD_SCALED;
+         unit.Value *= 0.01;
       }
-      else unit.Value = parse_double(str);
       return ((ERR (*)(APTR, Unit *))(Field->SetValue))(Object, &unit);
    }
    else if (Flags & FD_UNIT) {

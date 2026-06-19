@@ -2545,7 +2545,7 @@ static const FieldArray clVectorFields[] = {
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       VECTOR_GET_Sequence },
    { "Stroke",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Stroke, VECTOR_SET_Stroke },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,           VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
-   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
+   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
    { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Transition, VECTOR_SET_Transition },
    { "Fill",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Fill, VECTOR_SET_Fill },
    { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,          VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },

@@ -2045,8 +2045,8 @@ static const FieldDef clTextAlign[] = {
 };
 
 static const FieldArray clTextFields[] = {
-   { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, TEXT_GET_X, TEXT_SET_X },
-   { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, TEXT_GET_Y, TEXT_SET_Y },
+   { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_X, TEXT_SET_X },
+   { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_Y, TEXT_SET_Y },
    { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_Weight, TEXT_SET_Weight },
    { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
