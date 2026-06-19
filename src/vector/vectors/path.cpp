@@ -15,7 +15,7 @@ VectorPath provides support for parsing SVG styled path strings.
 
 static void refresh_unplaced_path(extVectorPath *Vector)
 {
-   if (!Vector->CommandsChanged) return;
+   if (not Vector->CommandsChanged) return;
    Vector->UnplacedPath.free_all();
    convert_to_aggpath(Vector, Vector->Commands, Vector->UnplacedPath);
    Vector->UnplacedBounds = get_bounds(Vector->UnplacedPath);
@@ -29,11 +29,13 @@ static void generate_path(extVectorPath *Vector, agg::path_storage &Path)
    Vector->Bounds = Vector->UnplacedBounds;
 
    double tx = 0, ty = 0;
-   if (dmf::hasX(Vector->pDimensions)) tx = Vector->pX - Vector->Bounds.left;
-   else if (dmf::hasScaledX(Vector->pDimensions)) tx = (Vector->pX * get_parent_width(Vector)) - Vector->Bounds.left;
+   if (Vector->pX.defined()) {
+      if (Vector->pX.scaled()) tx = (Vector->pX * get_parent_width(Vector)) - Vector->Bounds.left;
+      else tx = Vector->pX - Vector->Bounds.left;
+   }
 
-   if (dmf::hasY(Vector->pDimensions)) ty = Vector->pY - Vector->Bounds.top;
-   else if (dmf::hasScaledY(Vector->pDimensions)) ty = (Vector->pY * get_parent_height(Vector)) - Vector->Bounds.top;
+   if (Vector->pY.scaled()) ty = (Vector->pY * get_parent_height(Vector)) - Vector->Bounds.top;
+   else if (Vector->pY.defined()) ty = Vector->pY - Vector->Bounds.top;
 
    if ((tx != 0) or (ty != 0)) {
       Path.transform(agg::trans_affine_translation(tx, ty));
@@ -103,7 +105,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::Line:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = path.Y;
             check_point(path);
@@ -112,7 +114,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::LineRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X + lp.x;
             path.AbsY = path.Y + lp.y;
             check_point(path);
@@ -121,7 +123,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::HLine:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = lp.y;
             check_point(path);
@@ -130,7 +132,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::HLineRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X + lp.x;
             path.AbsY = lp.y;
             check_point(path);
@@ -139,7 +141,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::VLine:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x;
             path.AbsY = path.Y;
             check_point(path);
@@ -148,7 +150,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::VLineRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x;
             path.AbsY = path.Y + lp.y;
             check_point(path);
@@ -157,7 +159,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::Curve: // curve4()
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = path.Y;
             check_point(path);
@@ -166,7 +168,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::CurveRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x + path.X;
             path.AbsY = lp.y + path.Y;
             check_point(path);
@@ -176,27 +178,27 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
 
          case PE::Smooth:
             // Simplified curve3/4 with one control inherited from the previous vertex
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = path.Y;
             check_point(path);
-            if (!lp_curved) BasePath.curve3(path.X2, path.Y2, path.AbsX, path.AbsY);
+            if (not lp_curved) BasePath.curve3(path.X2, path.Y2, path.AbsX, path.AbsY);
             else BasePath.curve4(path.X2, path.Y2, path.AbsX, path.AbsY);
             lp_curved = true;
             break;
 
          case PE::SmoothRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x + path.X;
             path.AbsY = lp.y + path.Y;
             check_point(path);
-            if (!lp_curved) BasePath.curve3(path.X2+lp.x, path.Y2+lp.y, path.AbsX, path.AbsY);
+            if (not lp_curved) BasePath.curve3(path.X2+lp.x, path.Y2+lp.y, path.AbsX, path.AbsY);
             else BasePath.curve4(path.X2+lp.x, path.Y2+lp.y, path.AbsX, path.AbsY);
             lp_curved = true;
             break;
 
          case PE::QuadCurve:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = path.Y;
             check_point(path);
@@ -205,7 +207,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::QuadCurveRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x + path.X;
             path.AbsY = lp.y + path.Y;
             check_point(path);
@@ -214,7 +216,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::QuadSmooth: // Inherits a control from previous vertex 'T'
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = path.Y;
             check_point(path);
@@ -223,7 +225,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::QuadSmoothRel: // Inherits a control from previous vertex 't'
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x + path.X;
             path.AbsY = lp.y + path.Y;
             check_point(path);
@@ -232,7 +234,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::Arc:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = path.X;
             path.AbsY = path.Y;
             check_point(path);
@@ -241,7 +243,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
             break;
 
          case PE::ArcRel:
-            if (!poly_started) { poly_started = true; start = lp; };
+            if (not poly_started) { poly_started = true; start = lp; };
             path.AbsX = lp.x + path.X;
             path.AbsY = lp.y + path.Y;
             check_point(path);
@@ -293,22 +295,18 @@ Move: Moves the path to a new position.
 
 static ERR VECTORPATH_Move(extVectorPath *Self, struct acMove *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    auto bounds = get_unplaced_path_bounds(Self);
 
-   if (dmf::hasScaledX(Self->pDimensions)) Self->pX *= get_parent_width(Self);
-   else if (!dmf::hasX(Self->pDimensions)) Self->pX = bounds.left;
-   Self->pDimensions = (Self->pDimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
+   if (Self->pX.scaled()) Self->pX.set(Self->pX * get_parent_width(Self));
+   else if (not Self->pX.defined()) Self->pX = bounds.left;
 
-   if (dmf::hasScaledY(Self->pDimensions)) Self->pY *= get_parent_height(Self);
-   else if (!dmf::hasY(Self->pDimensions)) Self->pY = bounds.top;
-   Self->pDimensions = (Self->pDimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
+   if (Self->pY.scaled()) Self->pY.set(Self->pY * get_parent_height(Self));
+   else if (not Self->pY.defined()) Self->pY = bounds.top;
 
-   Self->pX += Args->DeltaX;
-   Self->pY += Args->DeltaY;
+   Self->pX = Unit(Self->pX + Args->DeltaX);
+   Self->pY = Unit(Self->pY + Args->DeltaY);
    reset_path(Self);
    return ERR::Okay;
 }
@@ -323,29 +321,15 @@ This action updates the #X and #Y placement fields.  The path commands remain un
 
 static ERR VECTORPATH_MoveToPoint(extVectorPath *Self, struct acMoveToPoint *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    if ((Args->Flags & MTF::RELATIVE) != MTF::NIL) {
-      if ((Args->Flags & MTF::X) != MTF::NIL) {
-         Self->pX = Args->X;
-         Self->pDimensions = (Self->pDimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-      }
-      if ((Args->Flags & MTF::Y) != MTF::NIL) {
-         Self->pY = Args->Y;
-         Self->pDimensions = (Self->pDimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-      }
+      if ((Args->Flags & MTF::X) != MTF::NIL) Self->pX = Unit(Args->X, FD_SCALED);
+      if ((Args->Flags & MTF::Y) != MTF::NIL) Self->pY = Unit(Args->Y, FD_SCALED);
    }
    else {
-      if ((Args->Flags & MTF::X) != MTF::NIL) {
-         Self->pX = Args->X;
-         Self->pDimensions = (Self->pDimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
-      }
-      if ((Args->Flags & MTF::Y) != MTF::NIL) {
-         Self->pY = Args->Y;
-         Self->pDimensions = (Self->pDimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
-      }
+      if ((Args->Flags & MTF::X) != MTF::NIL) Self->pX = Unit(Args->X);
+      if ((Args->Flags & MTF::Y) != MTF::NIL) Self->pY = Unit(Args->Y);
    }
    reset_path(Self);
    return ERR::Okay;
@@ -378,7 +362,7 @@ static ERR VECTORPATH_AddCommand(extVectorPath *Self, struct vp::AddCommand *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Commands)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Commands)) return log.warning(ERR::NullArgs);
 
    const int total_cmds = Args->Size / sizeof(PathCommand);
 
@@ -419,10 +403,8 @@ pure-query, object-owns-result
 
 static ERR VECTORPATH_GetCommand(extVectorPath *Self, struct vp::GetCommand *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
-   if ((Args->Index < 0) or ((size_t)Args->Index >= Self->Commands.size())) return log.warning(ERR::OutOfRange);
+   if (not Args) return ERR::NullArgs;
+   if ((Args->Index < 0) or ((size_t)Args->Index >= Self->Commands.size())) return kt::Log().warning(ERR::OutOfRange);
 
    Args->Command = &Self->Commands[Args->Index];
    return ERR::Okay;
@@ -453,10 +435,8 @@ mutates-object
 
 static ERR VECTORPATH_RemoveCommand(extVectorPath *Self, struct vp::RemoveCommand *Args)
 {
-   kt::Log log;
-
-   if (!Args) return ERR::NullArgs;
-   if ((Args->Index < 0) or ((size_t)Args->Index > Self->Commands.size()-1)) return log.warning(ERR::OutOfRange);
+   if (not Args) return ERR::NullArgs;
+   if ((Args->Index < 0) or ((size_t)Args->Index > Self->Commands.size()-1)) return kt::Log().warning(ERR::OutOfRange);
    if (Self->Commands.empty()) return ERR::NothingDone;
 
    auto first = Self->Commands.begin() + Args->Index;
@@ -494,10 +474,8 @@ mutates-object, copies-input
 
 static ERR VECTORPATH_SetCommand(extVectorPath *Self, struct vp::SetCommand *Args)
 {
-   kt::Log log;
-
-   if ((!Args) or (!Args->Command)) return ERR::NullArgs;
-   if (Args->Index < 0) return log.warning(ERR::OutOfRange);
+   if ((not Args) or (not Args->Command)) return ERR::NullArgs;
+   if (Args->Index < 0) return ERR::OutOfRange;
 
    const int total_cmds = Args->Size / sizeof(PathCommand);
    if ((size_t)Args->Index + total_cmds > Self->Commands.size()) Self->Commands.resize(Args->Index + total_cmds);
@@ -539,9 +517,8 @@ static ERR VECTORPATH_SetCommandList(extVectorPath *Self, struct vp::SetCommandL
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Size)) return log.warning(ERR::NullArgs);
-
-   if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+   if ((not Args) or (not Args->Size)) return log.warning(ERR::NullArgs);
+   if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
    const int total_cmds = Args->Size / sizeof(PathCommand);
    if ((total_cmds < 0) or (total_cmds > 1000000)) return log.warning(ERR::Args);
@@ -572,22 +549,18 @@ existing path, if any.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_GET_Commands(extVectorPath *Self, PathCommand **Value, int *Elements)
+static ERR VECTORPATH_GET_Commands(extVectorPath *Self, std::span<PathCommand> &Value)
 {
-   *Value = Self->Commands.data();
-   *Elements = Self->Commands.size();
+   Value = std::span<PathCommand>(Self->Commands.data(), Self->Commands.size());
    return ERR::Okay;
 }
 
-static ERR VECTORPATH_SET_Commands(extVectorPath *Self, PathCommand *Value, int Elements)
+static ERR VECTORPATH_SET_Commands(extVectorPath *Self, std::span<const PathCommand> &Value)
 {
-   if (!Value) return ERR::NullArgs;
-   if ((Elements < 0) or (Elements > 1000000)) return ERR::Args;
+   if (not Value.data()) return ERR::NullArgs;
+   if (Value.size() > 1000000) return ERR::Args;
 
-   Self->Commands.clear();
-   for (int i=0; i < Elements; i++) {
-      Self->Commands.push_back(Value[i]);
-   }
+   Self->Commands.assign(Value.begin(), Value.end());
 
    Self->CommandsChanged = true;
    if (Self->initialised()) {
@@ -634,19 +607,17 @@ commands remain unchanged.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_GET_X(extVectorPath *Self, Unit *Value)
+static ERR VECTORPATH_GET_X(extVectorPath *Self, Unit &Value)
 {
    // With no X placement there is no horizontal translation, so the unplaced bounds are authoritative.  They are
    // computed on demand because Self->Bounds is only refreshed during path generation.
-   if (dmf::hasAnyX(Self->pDimensions)) Value->set(Self->pX);
-   else Value->set(get_unplaced_path_bounds(Self).left);
+   if (Self->pX.defined()) Value = Self->pX;
+   else Value = Unit(get_unplaced_path_bounds(Self).left);
    return ERR::Okay;
 }
 
 static ERR VECTORPATH_SET_X(extVectorPath *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->pDimensions = (Self->pDimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-   else Self->pDimensions = (Self->pDimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
    Self->pX = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -661,17 +632,15 @@ commands remain unchanged.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_GET_Y(extVectorPath *Self, Unit *Value)
+static ERR VECTORPATH_GET_Y(extVectorPath *Self, Unit &Value)
 {
-   if (dmf::hasAnyY(Self->pDimensions)) Value->set(Self->pY);
-   else Value->set(get_unplaced_path_bounds(Self).top);
+   if (Self->pY.defined()) Value = Self->pY;
+   else Value = Unit(get_unplaced_path_bounds(Self).top);
    return ERR::Okay;
 }
 
 static ERR VECTORPATH_SET_Y(extVectorPath *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->pDimensions = (Self->pDimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-   else Self->pDimensions = (Self->pDimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
    Self->pY = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -737,8 +706,7 @@ static ERR VECTORPATH_GET_TotalCommands(extVectorPath *Self, int *Value)
 
 static ERR VECTORPATH_SET_TotalCommands(extVectorPath *Self, int Value)
 {
-   kt::Log log;
-   if (Value < 0) return log.warning(ERR::OutOfRange);
+   if (Value < 0) return ERR::OutOfRange;
    Self->Commands.resize(Value);
    Self->CommandsChanged = true;
    Self->modified();
@@ -749,21 +717,17 @@ static ERR VECTORPATH_SET_TotalCommands(extVectorPath *Self, int Value)
 
 extVectorPath::extVectorPath() {
    GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_path;
-   pX = 0;
-   pY = 0;
-   pDimensions = DMF::NIL;
 }
 
 //********************************************************************************************************************
 
 static const FieldArray clPathFields[] = {
    { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
-   { "X",             FDF_VIRTUAL|FD_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_X, VECTORPATH_SET_X },
-   { "Y",             FDF_VIRTUAL|FD_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Y, VECTORPATH_SET_Y },
+   { "X",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_X, VECTORPATH_SET_X },
+   { "Y",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Y, VECTORPATH_SET_Y },
    { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },
    { "PathLength",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_PathLength, VECTORPATH_SET_PathLength },
-   { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORPATH_GET_Commands,
-      VECTORPATH_SET_Commands, "PathCommand" },
+   { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORPATH_GET_Commands, VECTORPATH_SET_Commands, "PathCommand" },
    END_FIELD
 };
 

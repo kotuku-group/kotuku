@@ -262,6 +262,18 @@ namespace agg
          }
       }
 
+      static void create_user_features(std::vector<worley_feature> &Features,
+         const std::vector<worley_feature> &Points, int Width, int Height)
+      {
+         const double x_scale = (Width > 1) ? double(Width - 1) : 1.0;
+         const double y_scale = (Height > 1) ? double(Height - 1) : 1.0;
+
+         Features.reserve(Points.size());
+         for (auto &point : Points) {
+            Features.push_back({ point.x * x_scale, point.y * y_scale, point.height });
+         }
+      }
+
    public:
       gradient_worley() : m_width(0), m_height(0), m_d1(0), m_d2(1.0) { build_lut(); }
       gradient_worley(double d1, double d2) : m_width(0), m_height(0), m_d2(d2) {
@@ -270,7 +282,7 @@ namespace agg
       }
 
       int8u* worley_create(path_storage &ps, uint64_t Seed, int PointCount, WLF Mode, WLM Metric,
-         double HeightMin, double HeightMax, double Jitter);
+         double HeightMin, double HeightMax, double Jitter, const std::vector<worley_feature> *Points = nullptr);
 
       int worley_width() { return m_width; }
       int worley_height() { return m_height; }
@@ -292,7 +304,7 @@ namespace agg
    };
 
    int8u * gradient_worley::worley_create(path_storage &ps, uint64_t Seed, int PointCount, WLF Mode, WLM Metric,
-      double HeightMin, double HeightMax, double Jitter)
+      double HeightMin, double HeightMax, double Jitter, const std::vector<worley_feature> *Points)
    {
       agg::conv_curve<agg::path_storage> conv(ps);
       agg::path_storage flat;
@@ -333,7 +345,8 @@ namespace agg
 
       splitmix64_generator prng(Seed ? Seed : 0x6a09e667f3bcc909ULL);
       std::vector<worley_feature> features;
-      if (Jitter > 0.0) {
+      if ((Points) and (not Points->empty())) create_user_features(features, *Points, width, height);
+      else if (Jitter > 0.0) {
          create_jittered_features(features, prng, mask, width, height, PointCount, HeightMin, HeightMax, Jitter);
       }
       else create_uniform_features(features, prng, mask, width, height, PointCount, HeightMin, HeightMax);

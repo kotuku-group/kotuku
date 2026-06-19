@@ -42,20 +42,20 @@
     </field>
 
     <field>
-      <name>CenterX</name>
+      <name>CX</name>
       <comment>The center of the shape on the x-axis.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The horizontal center of the shape is defined here as either a fixed or scaled value.</p>
       </description>
     </field>
 
     <field>
-      <name>CenterY</name>
+      <name>CY</name>
       <comment>The center of the shape on the y-axis.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The vertical center of the shape is defined here as either a fixed or scaled value.</p>
       </description>
@@ -68,24 +68,6 @@
       <type>INT</type>
       <description>
 <p>If TRUE, the shape path will be closed between the beginning and end points.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or scaled values.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>The following dimension flags are supported:</p>
-<types lookup="DMF">
-<type name="FIXED_CENTER_X">The <fl>CenterX</fl> value is a fixed coordinate.</type>
-<type name="FIXED_CENTER_Y">The <fl>CenterY</fl> value is a fixed coordinate.</type>
-<type name="FIXED_RADIUS">The <fl>Radius</fl> value is a fixed coordinate.</type>
-<type name="SCALED_CENTER_X">The <fl>CenterX</fl> value is a scaled coordinate.</type>
-<type name="SCALED_CENTER_Y">The <fl>CenterY</fl> value is a scaled coordinate.</type>
-<type name="SCALED_RADIUS">The <fl>Radius</fl> value is a scaled coordinate.</type>
-</types>
       </description>
     </field>
 
@@ -164,7 +146,7 @@
       <name>Radius</name>
       <comment>The radius of the generated shape.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Radius defines the final size of the generated shape.  It can be expressed in fixed or scaled terms.</p>
       </description>

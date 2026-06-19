@@ -597,6 +597,7 @@ class extGradientVoronoi : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
    using create = kt::Create<extGradientVoronoi>;
 
+   kt::vector<VoronoiPoint> Points; // Optional list of Voronoi feature points provided by the client
    agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
    uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
    Unit Floor, Multiplier;
@@ -659,13 +660,12 @@ class extVectorFilter : public objVectorFilter {
       Units          = VUNIT::BOUNDING_BOX;
       PrimitiveUnits = VUNIT::UNDEFINED;
       Opacity        = 1.0;
-      X              = -0.1; // -10% default as per SVG requirements
-      Y              = -0.1;
-      Width          = 1.2;  // +120% default as per SVG requirements
-      Height         = 1.2;
+      X              = Unit(-0.1, FD_SCALED); // -10% default as per SVG requirements
+      Y              = Unit(-0.1, FD_SCALED);
+      Width          = Unit(1.2, FD_SCALED);  // +120% default as per SVG requirements
+      Height         = Unit(1.2, FD_SCALED);
       AspectRatio    = VFA::MEET; // Scale X/Y values independently
       ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
-      Dimensions     = DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT;
    }
 };
 
@@ -675,6 +675,25 @@ class extFilterEffect : public objFilterEffect {
 
    extVectorFilter *Filter; // Direct reference to the parent filter
    uint16_t UsageCount;        // Total number of other effects utilising this effect to build a pipeline
+
+   extFilterEffect() {
+      SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
+   }
+
+   ~extFilterEffect() {
+      if (Filter) {
+         for (auto e = Filter->Effects; (e) and (UsageCount > 0); e = (extFilterEffect *)e->Next) {
+            if (e->Input IS this) { e->Input = nullptr; UsageCount--; }
+            if (e->Mix IS this) { e->Mix = nullptr; UsageCount--; }
+         }
+
+         if (Filter->Effects IS this) Filter->Effects = (extFilterEffect *)Next;
+         if (Filter->LastEffect IS this) Filter->LastEffect = (extFilterEffect *)Prev;
+      }
+
+      if (Prev) Prev->Next = Next;
+      if (Next) Next->Prev = Prev;
+   }
 };
 
 class extPainter : public VectorPainter {
@@ -827,7 +846,9 @@ class extVectorViewport : public extVector {
 
    FUNCTION vpDragCallback;
    double vpViewX, vpViewY, vpViewWidth, vpViewHeight;     // Viewbox values determine the area of the SVG content that is being sourced.  These values are always fixed pixel units.
-   double vpTargetX, vpTargetY, vpTargetXO, vpTargetYO, vpTargetWidth, vpTargetHeight; // Target dimensions
+   Unit vpTargetX, vpTargetY;
+   Unit vpTargetWidth, vpTargetHeight;
+   Unit vpTargetXO, vpTargetYO; // Target dimensions
    double vpXScale, vpYScale; // Internal scaling for ViewN -to-> TargetN; takes the AspectRatio into consideration.
    double vpFixedWidth, vpFixedHeight; // Fixed pixel position values, relative to parent viewport
    TClipRectangle<double> vpBounds; // Bounding box coordinates relative to (0,0), used for clipping
@@ -839,7 +860,6 @@ class extVectorViewport : public extVector {
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
-   DMF   vpDimensions;
    ARF   vpAspectRatio;
    VOF   vpOverflowX, vpOverflowY;
    uint8_t vpClipConfiguring:1;
@@ -854,13 +874,47 @@ class extVectorViewport : public extVector {
    }
 };
 
+inline static double unit_to_fixed(const Unit &Value, double ParentSize)
+{
+   return Value.scaled() ? (double(Value) * ParentSize) : double(Value);
+}
+
+// NB: If XOffset is defined without X then layout routines will presume X to be zero, effectively meaning XOffset is
+// always treatable as a width value.
+
+inline static bool viewport_has_target_width(const extVectorViewport *View)
+{
+   return View->vpTargetWidth.defined() or View->vpTargetXO.defined();
+}
+
+inline static bool viewport_has_target_height(const extVectorViewport *View)
+{
+   return View->vpTargetHeight.defined() or View->vpTargetYO.defined();
+}
+
+inline static double viewport_coordinate_width(const extVectorViewport *View)
+{
+   if (View->vpViewWidth > 0) return View->vpViewWidth;
+   else if (viewport_has_target_width(View)) return View->vpFixedWidth;
+   else if (View->Scene) return View->Scene->PageWidth;
+   else return 0;
+}
+
+inline static double viewport_coordinate_height(const extVectorViewport *View)
+{
+   if (View->vpViewHeight > 0) return View->vpViewHeight;
+   else if (viewport_has_target_height(View)) return View->vpFixedHeight;
+   else if (View->Scene) return View->Scene->PageHeight;
+   else return 0;
+}
+
 //********************************************************************************************************************
 
-class extVectorPoly : public extVector {
+class extVectorPolygon : public extVector {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORPOLYGON;
    static constexpr CSTRING CLASS_NAME = "VectorPolygon";
-   using create = kt::Create<extVectorPoly>;
+   using create = kt::Create<extVectorPolygon>;
 
    std::vector<VectorPoint> Points;
    bool Closed:1;      // Polygons are closed (TRUE) and Polylines are open (FALSE)
@@ -875,8 +929,7 @@ class extVectorPath : public extVector, public SceneDef {
    std::vector<PathCommand> Commands;
    agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
    TClipRectangle<double> UnplacedBounds;
-   double pX, pY;
-   DMF pDimensions;
+   Unit pX, pY;
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 
    extVectorPath();
@@ -888,11 +941,10 @@ class extVectorRectangle : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorRectangle";
    using create = kt::Create<extVectorRectangle>;
 
-   struct coord { double x, y; };
-   double rX, rY, rWidth, rHeight, rXOffset, rYOffset;
-   std::array<coord, 4> rRound;
-   DMF    rDimensions;
-   bool   rFullControl;
+   struct coord { Unit x, y; };
+   Unit rX, rY, rWidth, rHeight, rXOffset, rYOffset;
+   std::array<coord, 4> rRound = {};
+   bool   rFullControl = false; // Full control of rounding values enabled
 };
 
 //********************************************************************************************************************
@@ -1424,12 +1476,7 @@ inline static double get_parent_width(const objVector *Vector)
 {
    auto eVector = (const extVector *)Vector;
    if (auto view = (extVectorViewport *)eVector->ParentView) {
-      if (view->vpViewWidth > 0) return view->vpViewWidth;
-      else if ((dmf::hasAnyWidth(view->vpDimensions)) or
-          ((dmf::hasAnyX(view->vpDimensions)) and (dmf::hasAnyXOffset(view->vpDimensions)))) {
-         return view->vpFixedWidth;
-      }
-      else return eVector->Scene->PageWidth;
+      return viewport_coordinate_width(view);
    }
    else if (eVector->Scene) return eVector->Scene->PageWidth;
    else return 0;
@@ -1439,12 +1486,7 @@ inline static double get_parent_height(const objVector *Vector)
 {
    auto eVector = (const extVector *)Vector;
    if (auto view = (extVectorViewport *)eVector->ParentView) {
-      if (view->vpViewHeight > 0) return view->vpViewHeight;
-      else if ((dmf::hasAnyHeight(view->vpDimensions)) or
-          ((dmf::hasAnyY(view->vpDimensions)) and (dmf::hasAnyYOffset(view->vpDimensions)))) {
-         return view->vpFixedHeight;
-      }
-      else return eVector->Scene->PageHeight;
+      return viewport_coordinate_height(view);
    }
    else if (eVector->Scene) return eVector->Scene->PageHeight;
    else return 0;

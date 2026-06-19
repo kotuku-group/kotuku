@@ -49,8 +49,23 @@
 #define FDF_INTFLAGS    (FDF_INT|FDF_FLAGS)
 #define FDF_FIELDTYPES  (FD_INT|FD_DOUBLE|FD_INT64|FD_POINTER|FD_UNIT|FD_BYTE|FD_ARRAY|FD_FUNCTION)
 
+//********************************************************************************************************************
+// For testing if type T can be matched to an FD flag.  All integral types are mapped by size so that types without
+// an explicit branch (e.g. uint32_t, int16_t) cannot fall through to the pointer/struct default.
+
+template <class T> [[nodiscard]] constexpr int FIELD_TYPECHECK() {
+   if constexpr (std::is_same_v<T, double>) return FD_DOUBLE;
+   else if constexpr (std::is_same_v<T, float>) return FD_FLOAT;
+   else if constexpr (std::is_integral_v<T>) return (sizeof(T) > 4) ? FD_INT64 : FD_INT;
+   else if constexpr (std::is_same_v<T, std::string>) return FD_STRING|FD_CPP;
+   else if constexpr (std::is_same_v<T, CSTRING> or std::is_same_v<T, STRING>) return FD_STRING;
+   else if constexpr (std::is_same_v<T, OBJECTPTR> or std::is_same_v<T, APTR>) return FD_PTR;
+   else return FD_PTR|FD_STRUCT|FD_STRING;
+}
+
 namespace kt {
 
+//********************************************************************************************************************
 // FieldValue is used to simplify the initialisation of new objects.
 
 struct FieldValue {
@@ -58,6 +73,7 @@ struct FieldValue {
    int Type; // FD flags
    union {
       std::string_view CPPString;
+      std::span<const uint8_t> Span;
       APTR    Pointer;
       CPTR    CPointer;
       double  Double;
@@ -80,6 +96,10 @@ struct FieldValue {
    constexpr FieldValue(uint32_t pFID, CPTR pValue)     : FieldID(pFID), Type(FD_POINTER), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue, int pCustom) : FieldID(pFID), Type(pCustom), CPointer(pValue) { };
 
+   template <class T> constexpr FieldValue(uint32_t pFID, std::span<const T> pValue)
+      : FieldID(pFID), Type(FD_ARRAY | FIELD_TYPECHECK<T>()),
+        Span((const uint8_t *)pValue.data(), pValue.size()) { }
+
    constexpr FieldValue(std::string_view pFID, const std::string_view pValue) : FieldID(kt::fieldhash(pFID)), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(std::string_view pFID, int pValue)      : FieldID(kt::fieldhash(pFID)), Type(FD_INT), Int(pValue) { };
    constexpr FieldValue(std::string_view pFID, int64_t pValue)  : FieldID(kt::fieldhash(pFID)), Type(FD_INT64), Int64(pValue) { };
@@ -94,7 +114,7 @@ struct FieldValue {
    constexpr FieldValue(std::string_view pFID, CPTR pValue, int pCustom) : FieldID(kt::fieldhash(pFID)), Type(pCustom), CPointer(pValue) { };
 };
 
-inline ERR write_field_value(OBJECTPTR Target, struct Field *FieldPtr, const FieldValue &Value);
+inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, const FieldValue &Value);
 
 }
 
@@ -178,24 +198,10 @@ class SharedObjectAccess {
 };
 
 //********************************************************************************************************************
-// For testing if type T can be matched to an FD flag.  All integral types are mapped by size so that types without
-// an explicit branch (e.g. uint32_t, int16_t) cannot fall through to the pointer/struct default.
-
-template <class T> [[nodiscard]] constexpr int FIELD_TYPECHECK() {
-   if constexpr (std::is_same_v<T, double>) return FD_DOUBLE;
-   else if constexpr (std::is_same_v<T, float>) return FD_FLOAT;
-   else if constexpr (std::is_integral_v<T>) return (sizeof(T) > 4) ? FD_INT64 : FD_INT;
-   else if constexpr (std::is_same_v<T, std::string>) return FD_STRING|FD_CPP;
-   else if constexpr (std::is_same_v<T, CSTRING> or std::is_same_v<T, STRING>) return FD_STRING;
-   else if constexpr (std::is_same_v<T, OBJECTPTR> or std::is_same_v<T, APTR>) return FD_PTR;
-   else return FD_PTR|FD_STRUCT|FD_STRING;
-}
-
-//********************************************************************************************************************
 
 struct ObjectContext {
-   OBJECTPTR obj = nullptr;       // The object that currently has the operating context.
-   struct Field *field = nullptr; // Set if the context is linked to a get/set field operation.  For logging purposes only.
+   OBJECTPTR obj = nullptr;             // The object that currently has the operating context.
+   const struct Field *field = nullptr; // Set if the context is linked to a get/set field operation.  For logging purposes only.
    AC action = AC::NIL;           // Set if the context enters an action or method routine.
 };
 
@@ -351,10 +357,24 @@ struct alignas(8) Object { // Must be 64-bit aligned
       return obj ? true : false;
    }
 
+   inline ERR setName(const std::string_view &Name) { return SetName(this, Name); }
+
+   inline ERR setOwner(OBJECTID ID) {
+      Object *new_owner;
+      if (auto error = AccessObject(ID, 1000, &new_owner); error IS ERR::Okay) {
+         error = SetOwner(this, new_owner);
+         ReleaseObject(new_owner);
+         return error;
+      }
+      else return error;
+   }
+
+   inline ERR setOwner(OBJECTPTR NewOwner) { return SetOwner(this, NewOwner); }
+
    private:
    // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
    // reflected in the error code.
-   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, struct Field *&FieldPtr, bool Array) {
+   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, const struct Field *&FieldPtr, bool Array) {
       if (not (FieldPtr = FindField(this, FieldID, &Target))) return ERR::UnsupportedField;
       if ((Array) and not (FieldPtr->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
 
@@ -369,41 +389,25 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    // set() support for array fields
 
-   template <class T> ERR set(FIELD FieldID, const T *Data, size_t Elements, int Type = FIELD_TYPECHECK<T>()) {
+   template <class T> ERR set(FIELD FieldID, const std::span<const T> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_ARRAY|Type, Data, Elements);
+      return field->WriteValue(target, field, FD_ARRAY|Type, &Value);
    }
 
-   template <class T, std::size_t SIZE> ERR set(FIELD FieldID, const std::array<T, SIZE> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      Object *target;
-      struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_ARRAY|Type, Value.data(), SIZE);
+   // Mutable-span callers forward to the const-span overload (the value is only read).
+
+   template <class T> ERR set(FIELD FieldID, const std::span<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(FieldID, std::span<const T>(Value), Type);
    }
 
    template <class T> ERR set(FIELD FieldID, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      Object *target;
-      struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
+      return set(FieldID, std::span<const T>(Value), Type);
    }
 
    template <class T> ERR set(FIELD FieldID, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      Object *target;
-      struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-
-      if (field->Flags & FD_CPP) return field->WriteValue(target, field, FDF_VECTOR|Type, &Value, std::ssize(Value));
-      else return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
-   }
-
-   inline ERR set(FIELD FieldID, const FRGB &Value) {
-      Object *target;
-      struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_ARRAY|FD_FLOAT, &Value, 4);
+      return set(FieldID, std::span<const T>(Value.data(), Value.size()), Type);
    }
 
    // set() support for numeric types
@@ -415,51 +419,51 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    template <class T> ERR set(FIELD FieldID, const T Value) requires std::integral<T> or std::floating_point<T> {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       if constexpr (std::is_integral_v<T> and (sizeof(T) < sizeof(int))) {
          // Promote small integrals to int so that WriteValue does not read 4 bytes from a 1 or 2 byte value.
          const int promoted = int(Value);
-         return field->WriteValue(target, field, FD_INT, &promoted, 1);
+         return field->WriteValue(target, field, FD_INT, &promoted);
       }
-      else return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value, 1);
+      else return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value);
    }
 
    inline ERR set(FIELD FieldID, const FUNCTION *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_FUNCTION, Value, 1);
+      return field->WriteValue(target, field, FD_FUNCTION, Value);
    }
 
    inline ERR set(FIELD FieldID, const char *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       std::string_view sv(Value ? Value : "");
-      return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
+      return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv);
    }
 
    inline ERR set(FIELD FieldID, std::string_view Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_CPP|FD_STRING, &Value, 1);
+      return field->WriteValue(target, field, FD_CPP|FD_STRING, &Value);
    }
 
    inline ERR set(FIELD FieldID, const std::string &Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       auto sv = std::string_view(Value);
-      return field->WriteValue(target, field, FD_CPP|FD_STRING, &sv, 1);
+      return field->WriteValue(target, field, FD_CPP|FD_STRING, &sv);
    }
 
    inline ERR set(FIELD FieldID, const Unit *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_UNIT, Value, 1);
+      return field->WriteValue(target, field, FD_UNIT, Value);
    }
 
    inline ERR set(FIELD FieldID, const Unit &Value) {
@@ -470,40 +474,41 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR set(FIELD FieldID, const void *Value) {
       Object *target;
-      struct Field *field;
+      const struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_POINTER, Value, 1);
+      return field->WriteValue(target, field, FD_POINTER, Value);
    }
 
-   // There are two mechanisms for retrieving object values; the first allows the value to be retrieved with an error
-   // code and the value itself; the second ignores the error code and returns a value that could potentially be invalid.
+   // Internal get helpers
 
    private:
-   template <class T> ERR get_unit(Object *Object, struct Field &Field, T &Value) {
-      SetObjectContext(Object, &Field, AC::NIL);
-
-      ERR error = ERR::Okay;
-      if (Field.Flags & (FD_DOUBLE|FD_INT64|FD_INT)) {
-          Unit var(0, FD_DOUBLE);
-          error = Field.GetValue(Object, &var);
-          if (error IS ERR::Okay) Value = var.Value;
+   template <class T> ERR get_unit(Object *Object, const struct Field &Field, T &Value) requires std::integral<T> or std::floating_point<T> {
+      if (not Field.GetValue) { // No custom getter; the Unit is stored directly at the field offset
+         Value = ((Unit *)(((int8_t *)Object) + Field.Offset))->Value;
+         return ERR::Okay;
       }
-      else error = ERR::FieldTypeMismatch;
 
-      RestoreObjectContext();
+      if (not Field.pure()) SetObjectContext(Object, &Field, AC::NIL);
+      Unit var(0);
+      auto error = Field.GetValue(Object, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      if (not Field.pure()) RestoreObjectContext();
       return error;
    }
 
-   inline std::pair<ERR, APTR> get_field_value(Object *Object, struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)], int &ArraySize) {
+   inline std::pair<ERR, APTR> get_field_value(Object *Object, const struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)]) {
       if (Field.GetValue) {
          SetObjectContext(Object, &Field, AC::NIL);
-         auto get_field = (ERR (*)(APTR, APTR, int &))Field.GetValue;
-         auto pair = std::make_pair(get_field(Object, Buffer, ArraySize), Buffer);
+         auto get_field = (ERR (*)(APTR, APTR))Field.GetValue;
+         auto pair = std::make_pair(get_field(Object, Buffer), Buffer);
          RestoreObjectContext();
          return pair;
       }
       else return std::make_pair(ERR::Okay, ((int8_t *)Object) + Field.Offset);
    }
+
+   // There are two mechanisms for retrieving object values; the first allows the value to be retrieved with an error
+   // code and the value itself; the second ignores the error code and returns a value that could potentially be invalid.
 
    public:
 
@@ -518,8 +523,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          if (flags & FD_UNIT) return get_unit<T>(target, *field, Value);
 
          int8_t field_value[sizeof(std::string_view)];
-         int array_size;
-         auto fv = get_field_value(target, *field, field_value, array_size);
+         auto fv = get_field_value(target, *field, field_value);
 
          if (flags & FD_INT)         Value = *((int *)fv.second);
          else if (flags & FD_INT64)  Value = *((int64_t *)fv.second);
@@ -549,15 +553,14 @@ struct alignas(8) Object { // Must be 64-bit aligned
             if (auto error = get_unit<double>(target, *field, num); error IS ERR::Okay) {
                char buffer[64];
                auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), num);
-               if (ec == std::errc()) Value.assign(buffer, ptr);
+               if (ec IS std::errc()) Value.assign(buffer, ptr);
                return ERR::Okay;
             }
             else return error;
          }
 
          int8_t field_value[sizeof(std::string_view)];
-         int array_size = -1;
-         auto fv = get_field_value(target, *field, field_value, array_size);
+         auto fv = get_field_value(target, *field, field_value);
          APTR data = fv.second;
 
          if (fv.first != ERR::Okay) return fv.first;
@@ -601,7 +604,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          else if (flags & FD_DOUBLE) {
             char buffer[64];
             auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), *((double *)data));
-            if (ec == std::errc()) Value.assign(buffer, ptr);
+            if (ec IS std::errc()) Value.assign(buffer, ptr);
          }
          else if (flags & FD_STRING) {
             if (field->GetValue) {
@@ -637,8 +640,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          }
          else if ((field->Flags & FD_INT) and (field->Flags & FD_LOOKUP)) {
             int8_t field_value[sizeof(std::string_view)];
-            int array_size;
-            auto fv = get_field_value(target, *field, field_value, array_size);
+            auto fv = get_field_value(target, *field, field_value);
             if (fv.first != ERR::Okay) return fv.first;
 
             // Reading a lookup field as a string is permissible, we just return the string registered in the lookup table
@@ -659,27 +661,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
       else return ERR::UnsupportedField;
    }
 
-   template <class T> ERR get(FIELD FieldID, kt::vector<T> **Value) {
-      Object *target;
-      if (auto field = FindField(this, FieldID, &target)) {
-         if (not field->readable()) return ERR::NoFieldAccess;
-
-         if (field->GetValue) {
-            int array_size;
-            SetObjectContext(target, field, AC::NIL);
-            auto get_field = (ERR (*)(APTR, kt::vector<T> **, int &))field->GetValue;
-            auto error = get_field(target, Value, array_size);
-            RestoreObjectContext();
-            return error;
-         }
-         else {
-            *Value = ((kt::vector<T> *)(((int8_t *)target) + field->Offset));
-            return ERR::Okay;
-         }
-      }
-      else return ERR::UnsupportedField;
-   }
-
    template <class T> ERR get(FIELD FieldID, T &Value) requires pcPointer<T> {
       Object *target;
       Value = nullptr;
@@ -687,12 +668,16 @@ struct alignas(8) Object { // Must be 64-bit aligned
          if (not field->readable()) return ERR::NoFieldAccess;
 
          int8_t field_value[sizeof(std::string_view)];
-         int array_size;
-         auto fv = get_field_value(target, *field, field_value, array_size);
+         auto fv = get_field_value(target, *field, field_value);
          if (fv.first != ERR::Okay) return fv.first;
 
-         if (field->Flags & (FD_POINTER|FD_ARRAY)) {
+         if (field->Flags & FD_POINTER) {
             Value = *((T *)fv.second);
+            return ERR::Okay;
+         }
+         else if (field->Flags & FD_STRUCT) {
+            if (field->GetValue) Value = *((T *)fv.second);
+            else Value = (T)fv.second;
             return ERR::Okay;
          }
          else if (field->Flags & FD_STRING) {
@@ -769,45 +754,31 @@ struct alignas(8) Object { // Must be 64-bit aligned
       return T(result);
    };
 
-   // Fetch an array field.  Result is a direct pointer to the data, do not free it.  Elements is set to the number of elements
-
-   template <class T> ERR get(FIELD FieldID, T * &Result, int &Elements, bool TypeCheck = true) {
+   template <class T> ERR get(FIELD FieldID, std::span<T> &Value, bool TypeCheck = true) {
       Object *target;
-      Result = nullptr;
+      Value = std::span<T>();
       if (auto field = FindField(this, FieldID, &target)) {
          if ((not field->readable()) or (not (field->Flags & FD_ARRAY))) return ERR::NoFieldAccess;
 
          if ((TypeCheck) and (not (field->Flags & FIELD_TYPECHECK<T>()))) return ERR::FieldTypeMismatch;
 
-         ScopedObjectAccess objlock(target);
-
-         T *data;
-         Elements = -1;
-
          if (field->GetValue) {
-            SetObjectContext(target, field, AC::NIL);
-            auto get_field = (ERR (*)(APTR, T * &, int &))field->GetValue;
-            auto error = get_field(target, data, Elements);
-            RestoreObjectContext();
-            if (error != ERR::Okay) return error;
+            if (not field->pure()) SetObjectContext(target, field, AC::NIL);
+            auto get_field = (ERR (*)(APTR, std::span<T> &))field->GetValue;
+            auto error = get_field(target, Value);
+            if (not field->pure()) RestoreObjectContext();
+            return error;
          }
-         else if (field->Arg) { // Fixed-size array (embedded)
-            Elements = field->Arg;
-            data = (T *)(((int8_t *)target) + field->Offset);
+         else if (field->Flags & FD_CPP) { // Embedded kt::vector<T>
+            auto vec = (kt::vector<T> *)(((int8_t *)target) + field->Offset);
+            Value = std::span<T>(vec->data(), vec->size());
+            return ERR::Okay;
          }
-         else data = *((T **)(((int8_t *)target) + field->Offset));
-
-         if (field->Flags & FD_CPP) {// Source is kt::vector<>
-            auto vec = (kt::vector<APTR> *)data; // Data type doesn't matter, we just need the size().
-            Result = data; // Return a generic kt::vector<>, the caller must cast to the correct type.
-            Elements = vec->size();
+         else if (field->Arg) { // Fixed-size embedded array
+            Value = std::span<T>((T *)(((int8_t *)target) + field->Offset), size_t(field->Arg));
+            return ERR::Okay;
          }
-         else {
-            if (Elements IS -1) return ERR::Failed;
-            Result = data;
-         }
-
-         return ERR::Okay;
+         else return ERR::FieldTypeMismatch;
       }
       else return ERR::UnsupportedField;
    }
@@ -852,20 +823,23 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
 namespace kt {
 
-inline ERR write_field_value(OBJECTPTR Target, struct Field *FieldPtr, const FieldValue &Value) {
+inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, const FieldValue &Value) {
    if ((Value.Type & FD_STRING) and (Value.Type & FD_CPP)) {
-      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.CPPString, 0);
+      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.CPPString);
    }
-   else if (Value.Type & (FD_POINTER|FD_STRING|FD_ARRAY|FD_FUNCTION|FD_UNIT)) {
-      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, Value.Pointer, 0);
+   else if (Value.Type & FD_ARRAY) {
+      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Span);
+   }
+   else if (Value.Type & (FD_POINTER|FD_STRING|FD_FUNCTION|FD_UNIT)) {
+      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, Value.Pointer);
    }
    else if (Value.Type & (FD_DOUBLE|FD_FLOAT)) {
-      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Double, 1);
+      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Double);
    }
    else if (Value.Type & FD_INT64) {
-      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Int64, 1);
+      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Int64);
    }
-   else return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Int, 1);
+   else return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Int);
 }
 
 // Object creation helper class.  Usage examples:

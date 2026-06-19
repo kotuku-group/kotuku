@@ -99,6 +99,8 @@ template <class T> static ERR make_cpp_array_result(cpp_array_result *Result)
    return ERR::Okay;
 }
 
+// Create an empty kt::vector<T> suitable for passing to a module API function.
+
 static ERR make_cpp_array_result(int Type, cpp_array_result *Result)
 {
    if (Type & FD_STR) return make_cpp_array_result<std::string>(Result);
@@ -245,10 +247,6 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
       struct ModHeader *header;
       if ((error = root->get(FID_Header, header)) != ERR::Okay) return error;
       if (not header) return ERR::NoData;
-
-      if (auto structs = header->StructDefs) {
-         for (auto &s : structs[0]) glStructSizes[s.first] = s.second;
-      }
 
       if (auto idl = header->Definitions) {
          while ((idl) and (*idl)) {

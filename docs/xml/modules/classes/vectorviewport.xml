@@ -108,7 +108,7 @@
       <name>AspectRatio</name>
       <comment>Flags that affect the aspect ratio of vectors within the viewport.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="ARF">INT</type>
+      <type lookup="ARF">ARF</type>
       <description>
 <p>Defining an aspect ratio allows finer control over the position and scale of the viewport's content within its target area.</p>
 <types lookup="ARF"/>
@@ -135,16 +135,6 @@
     </field>
 
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or scaled values.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="DMF">INT</type>
-      <description>
-<types lookup="DMF"/>
-      </description>
-    </field>
-
-    <field>
       <name>DragCallback</name>
       <comment>Receiver for drag requests originating from the viewport.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -163,7 +153,7 @@
       <name>Height</name>
       <comment>The height of the viewport's target area.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The height of the viewport's target area is defined here as a fixed or scaled value.  The default value is <code>100%</code> for full coverage.</p>
 <p>The fixed value is always returned when retrieving the height.</p>
@@ -174,10 +164,11 @@
       <name>Overflow</name>
       <comment>Clipping options for the viewport's boundary.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="VOF">VOF</type>
       <description>
 <p>Choose an overflow option to enforce or disable clipping of the viewport's content.  The default state is <code>VISIBLE</code>. Altering the overflow state affects both the X and Y axis.  To set either axis independently, set <fl>OverflowX</fl> and <fl>OverflowY</fl>.</p>
 <p>If the viewport's <fl>AspectRatio</fl> is set to <code>SLICE</code> then it will have priority over the overflow setting.</p>
+<types lookup="VOF"/>
       </description>
     </field>
 
@@ -185,10 +176,11 @@
       <name>OverflowX</name>
       <comment>Clipping options for the viewport's boundary on the x axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="VOF">VOF</type>
       <description>
 <p>Choose an overflow option to enforce or disable clipping of the viewport's content.  The default state is <code>VISIBLE</code>. If the viewport's <fl>AspectRatio</fl> is set to <code>SLICE</code> then it will have priority over the overflow setting.</p>
 <p>This option controls the x axis only.</p>
+<types lookup="VOF"/>
       </description>
     </field>
 
@@ -196,10 +188,11 @@
       <name>OverflowY</name>
       <comment>Clipping options for the viewport's boundary on the y axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="VOF">VOF</type>
       <description>
 <p>Choose an overflow option to enforce or disable clipping of the viewport's content.  The default state is <code>VISIBLE</code>. If the viewport's <fl>AspectRatio</fl> is set to <code>SLICE</code> then it will have priority over the overflow setting.</p>
 <p>This option controls the y axis only.</p>
+<types lookup="VOF"/>
       </description>
     </field>
 
@@ -247,7 +240,7 @@
       <name>Width</name>
       <comment>The width of the viewport's target area.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The width of the viewport's target area is defined here as a fixed or scaled value.  The default value is <code>100%</code> for full coverage.</p>
       </description>
@@ -257,7 +250,7 @@
       <name>X</name>
       <comment>Positions the viewport on the x-axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The display position targeted by the viewport is declared by the (<fl>X</fl>,<fl>Y</fl>) field values.  Coordinates can be expressed as fixed or scaled pixel units.</p>
 <p>If an offset from the edge of the parent is desired, the <fl>XOffset</fl> field must be defined.  If a X and <fl>XOffset</fl> value are defined together, the width of the viewport is computed on-the-fly and will change in response to the parent's width.</p>
@@ -268,7 +261,7 @@
       <name>XOffset</name>
       <comment>Positions the viewport on the x-axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The display position targeted by the viewport is declared by the (<fl>X</fl>,<fl>Y</fl>) field values.  Coordinates can be expressed as fixed or scaled pixel units.</p>
 <p>If an offset from the edge of the parent is desired, the <fl>XOffset</fl> field must be defined.  If the <fl>X</fl> and XOffset values are defined together, the width of the viewport is computed on-the-fly and will change in response to the parent's width.</p>
@@ -279,7 +272,7 @@
       <name>Y</name>
       <comment>Positions the viewport on the y-axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The display position targeted by the viewport is declared by the (<fl>X</fl>,<fl>Y</fl>) field values.  Coordinates can be expressed as fixed or scaled pixel units.</p>
 <p>If an offset from the edge of the parent is desired, the <fl>YOffset</fl> must be defined.  If the Y and <fl>YOffset</fl> values are defined together, the height of the viewport is computed on-the-fly and will change in response to the parent's height.</p>
@@ -290,7 +283,7 @@
       <name>YOffset</name>
       <comment>Positions the viewport on the y-axis.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The display position targeted by the viewport is declared by the (<fl>X</fl>,<fl>Y</fl>) field values.  Coordinates can be expressed as fixed or scaled pixel units.</p>
 <p>If an offset from the edge of the parent is desired, the <fl>YOffset</fl> must be defined.  If a <fl>Y</fl> and YOffset value are defined together, the height of the viewport is computed on-the-fly and will change in response to the parent's height.</p>
@@ -316,33 +309,11 @@
       <const name="Y_MIN">Align to the top.</const>
     </constants>
 
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
+    <constants lookup="VOF" comment="Viewport overflow options.">
+      <const name="HIDDEN">All content is clipped to within the viewport's boundary.</const>
+      <const name="INHERIT">The overflow state is inherited from the parent.</const>
+      <const name="SCROLL">All content is clipped to within the viewport's boundary.  A mechanism to scroll the viewport's content may be provided to the user (SVG capability not currently implemented).</const>
+      <const name="VISIBLE">The content is not clipped to the viewport's boundary.  This is the default.</const>
     </constants>
 
   </types>

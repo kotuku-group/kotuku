@@ -2510,19 +2510,16 @@ To modify the display gamma values, please refer to the #SetGamma() and #SetGamm
 
 *********************************************************************************************************************/
 
-static ERR GET_Gamma(extDisplay *Self, double **Value, int *Elements)
+static ERR GET_Gamma(extDisplay *Self, std::span<const double> &Value)
 {
-   *Elements = 3;
-   *Value = Self->Gamma;
+   Value = std::span<const double>(Self->Gamma, 3);
    return ERR::Okay;
 }
 
-static ERR SET_Gamma(extDisplay *Self, double *Value, int Elements)
+static ERR SET_Gamma(extDisplay *Self, std::span<const double> &Array)
 {
-   if (Value) {
-      if (Elements > 3) Elements = 3;
-      int16_t i;
-      for (i=0; i < Elements; i++) Self->Gamma[i] = Value[i];
+   if (Array.data()) {
+      for (unsigned i=0; i < std::min<size_t>(Array.size(), 3); i++) Self->Gamma[i] = Array[i];
    }
    return ERR::Okay;
 }

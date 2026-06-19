@@ -68,7 +68,7 @@
       <name>Operator</name>
       <comment>The compositing algorithm to use for rendering.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="OP">INT</type>
+      <type lookup="OP">OP</type>
       <description>
 <p>Setting the Operator will determine the algorithm that is used for compositing.  The default is <code>OVER</code>.</p>
 <types lookup="OP"/>

@@ -25,9 +25,6 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
    if (class_id IS CLASSID::PARC) glSandbox = true;
 
    if (glSandbox) {
-      kt::vector<std::string> *params = nullptr;
-      glTask->get(FID_Parameters, &params);
-
       #ifdef _WIN32
          IntegrityLevel il = get_integrity_level();
          if (il < INTEGRITY_LEVEL_LOW) {
@@ -47,19 +44,18 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
             if (GetResource(RES::LOG_LEVEL) >= 5) cmdline << " --log-debug";
             else if (GetResource(RES::LOG_LEVEL) >= 3) cmdline << "--log-info";
 
-            kt::vector<std::string> &args = *params;
-            for (int a=0; a < std::ssize(args); a++) {
-               if (kt::iequals("--sandbox", args[a])) continue;
+            for (int a=0; a < std::ssize(glArgs); a++) {
+               if (kt::iequals("--sandbox", glArgs[a])) continue;
                cmdline << " \"";
-               if (args[a].find('"') != std::string::npos) {
-                  std::string sub = args[a];
+               if (glArgs[a].find('"') != std::string::npos) {
+                  std::string sub = glArgs[a];
                   std::size_t it;
                   while ((it = sub.find('"')) != std::string::npos) {
                      sub.replace(sub.begin() + it, sub.begin() + it + 1, "\\\"");
                   }
                   cmdline << sub;
                }
-               else cmdline << args[a];
+               else cmdline << glArgs[a];
                cmdline << '"';
             }
 
@@ -77,7 +73,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
       #else
 /*
-         error = init_sandbox(args, glRelaunched ? false : true);
+         error = init_sandbox(glArgs, glRelaunched ? false : true);
          if (error IS ERR::LimitedSuccess) {
             // Limited success means that the process was re-launched with a lower priority.
             return error;
@@ -123,35 +119,33 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
       if (!Procedure.empty()) glScript->setProcedure(Procedure);
 
       if (glArgsIndex) {
-         kt::vector<std::string> &args = *glArgs;
-
-         for (unsigned i=glArgsIndex; i < args.size(); i++) {
-            auto eq = args[i].find('=');
-            if (eq IS std::string::npos) acSetKey(glScript, args[i].c_str(), "true");
+         for (unsigned i=glArgsIndex; i < glArgs.size(); i++) {
+            auto eq = glArgs[i].find('=');
+            if (eq IS std::string::npos) acSetKey(glScript, glArgs[i].c_str(), "true");
             else {
-               auto argname = std::string(args[i], 0, eq);
+               auto argname = std::string(glArgs[i], 0, eq);
                eq++;
-               if (args[i][eq] IS '{') {
+               if (glArgs[i][eq] IS '{') {
                   // Array definition, e.g. files={ file1.txt file2.txt }
                   // This will be converted to files(0)=file.txt files(1)=file2.txt
 
-                  if (args[i][eq+1] > 0x20) acSetKey(glScript, argname.c_str(), args[i].c_str() + eq);
+                  if (glArgs[i][eq+1] > 0x20) acSetKey(glScript, argname.c_str(), glArgs[i].c_str() + eq);
                   else {
                      unsigned arg_index = 0;
-                     for (++i; (i < args.size()) and (args[i][0] != '}'); i++) {
+                     for (++i; (i < glArgs.size()) and (glArgs[i][0] != '}'); i++) {
                         auto argindex = argname + '(' + std::to_string(arg_index) + ')';
-                        acSetKey(glScript, argindex.c_str(), args[i].c_str());
+                        acSetKey(glScript, argindex.c_str(), glArgs[i].c_str());
                         arg_index++;
                      }
 
-                     if (i >= args.size()) break;
+                     if (i >= glArgs.size()) break;
 
                      // Note that the last arg in the array will be the "}" that closes it
 
                      acSetKey(glScript, (argname + ":size").c_str(), std::to_string(arg_index).c_str());
                   }
                }
-               else acSetKey(glScript, argname.c_str(), args[i].c_str() + eq);
+               else acSetKey(glScript, argname.c_str(), glArgs[i].c_str() + eq);
             }
          }
       }

@@ -842,19 +842,37 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       const auto path_hash = path_fingerprint(*Path);
       const auto resolved_seed = voronoi.Seed ? uint64_t(voronoi.Seed) : path_hash;
+      const bool use_points = not voronoi.Points.empty();
 
       uint64_t hash = path_hash;
-      hash = mix_fingerprint(hash, resolved_seed);
-      hash = mix_fingerprint(hash, uint64_t(voronoi.PointCount));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMetric)));
-      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMin));
-      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMax));
-      hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.Jitter));
+      if (use_points) {
+         hash = mix_fingerprint(hash, uint64_t(voronoi.Points.size()));
+         for (auto &point : voronoi.Points) {
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.X));
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.Y));
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.Height));
+         }
+      }
+      else {
+         hash = mix_fingerprint(hash, resolved_seed);
+         hash = mix_fingerprint(hash, uint64_t(voronoi.PointCount));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMin));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMax));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.Jitter));
+      }
 
       if ((rebuild) or (hash != voronoi.WorleyHash)) {
+         std::vector<agg::worley_feature> points;
+         if (use_points) {
+            points.reserve(voronoi.Points.size());
+            for (auto &point : voronoi.Points) points.push_back({ point.X, point.Y, point.Height });
+         }
+
          gradient_func.worley_create(*Path, resolved_seed, voronoi.PointCount, voronoi.WorleyMode,
-            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter);
+            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter,
+            use_points ? &points : nullptr);
          voronoi.WorleyHash = hash;
       }
 
@@ -1031,27 +1049,27 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
 
    if (Pattern.Units IS VUNIT::USERSPACE) { // Use fixed coords in the pattern; equiv. to 'userSpaceOnUse' in SVG
       double target_width, target_height;
-      if (dmf::hasScaledWidth(Pattern.Dimensions)) target_width = elem_width * Pattern.Width;
-      else if (dmf::hasWidth(Pattern.Dimensions)) target_width = Pattern.Width;
+      if (Pattern.Width.scaled()) target_width = elem_width * Pattern.Width;
+      else if (Pattern.Width.defined()) target_width = Pattern.Width;
       else target_width = 1;
 
-      if (dmf::hasScaledHeight(Pattern.Dimensions)) target_height = elem_height * Pattern.Height;
-      else if (dmf::hasHeight(Pattern.Dimensions)) target_height = Pattern.Height;
+      if (Pattern.Height.scaled()) target_height = elem_height * Pattern.Height;
+      else if (Pattern.Height.defined()) target_height = Pattern.Height;
       else target_height = 1;
 
-      if (dmf::hasScaledX(Pattern.Dimensions)) dx = x_offset + (elem_width * Pattern.X);
-      else if (dmf::hasX(Pattern.Dimensions)) dx = x_offset + Pattern.X;
+      if (Pattern.X.scaled()) dx = x_offset + (elem_width * Pattern.X);
+      else if (Pattern.X.defined()) dx = x_offset + Pattern.X;
       else dx = x_offset;
 
-      if (dmf::hasScaledY(Pattern.Dimensions)) dy = y_offset + (elem_height * Pattern.Y);
-      else if (dmf::hasY(Pattern.Dimensions)) dy = y_offset + Pattern.Y;
+      if (Pattern.Y.scaled()) dy = y_offset + (elem_height * Pattern.Y);
+      else if (Pattern.Y.defined()) dy = y_offset + Pattern.Y;
       else dy = y_offset;
 
-      int page_width = int(target_width);
-      int page_height = int(target_height);
+      auto page_width = int(target_width);
+      auto page_height = int(target_height);
 
       if ((page_width != Pattern.Scene->PageWidth) or (page_height != Pattern.Scene->PageHeight)) {
-         Pattern.Scene->PageWidth = page_width;
+         Pattern.Scene->PageWidth  = page_width;
          Pattern.Scene->PageHeight = page_height;
          mark_dirty(Pattern.Scene->Viewport, RC::DIRTY);
       }
@@ -1066,13 +1084,14 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       ((extVectorViewport *)Pattern.Viewport)->vpAspectRatio = ARF::X_MAX|ARF::Y_MAX; // Stretch the 1x1 viewport to match the PageW/H
 
       if (Pattern.ContentUnits IS VUNIT::BOUNDING_BOX) {
-         Pattern.Viewport->setFields(fl::ViewWidth(Pattern.Width), fl::ViewHeight(Pattern.Height));
+         Pattern.Viewport->setViewWidth(double(Pattern.Width));
+         Pattern.Viewport->setViewHeight(double(Pattern.Height));
       }
 
-      if (dmf::hasScaledWidth(Pattern.Dimensions)) target_width = Pattern.Width * elem_width;
+      if (Pattern.Width.scaled()) target_width = Pattern.Width * elem_width;
       else target_width = Pattern.Width;
 
-      if (dmf::hasScaledHeight(Pattern.Dimensions)) target_height = Pattern.Height * elem_height;
+      if (Pattern.Height.scaled()) target_height = Pattern.Height * elem_height;
       else target_height = Pattern.Height;
 
       dx = x_offset + ((elem_width * Pattern.X) * (SCALE_BITMAP ? t_scale : 1.0));
@@ -1081,8 +1100,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       // Scale the bitmap so that it matches the final scale on the display.  This requires a matching inverse
       // adjustment when computing the final transform.
 
-      int page_width = int(target_width * (SCALE_BITMAP ? t_scale : 1.0));
-      int page_height = int(target_height * (SCALE_BITMAP ? t_scale : 1.0));
+      auto page_width = int(target_width * (SCALE_BITMAP ? t_scale : 1.0));
+      auto page_height = int(target_height * (SCALE_BITMAP ? t_scale : 1.0));
 
       // Mark the bitmap for recomputation if needed.
 

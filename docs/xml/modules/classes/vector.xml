@@ -334,7 +334,7 @@
       <name>ClipRule</name>
       <comment>Determines the algorithm to use when clipping the shape.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="VFR">INT</type>
+      <type lookup="VFR">VFR</type>
       <description>
 <p>The ClipRule attribute only applies to vector shapes when they are contained within a <class name="VectorClip">VectorClip</class> object.  In terms of outcome, the ClipRule works similarly to <fl>FillRule</fl>.</p>
 <types lookup="VFR"/>
@@ -409,9 +409,9 @@
       <name>FillColour</name>
       <comment>Defines a solid colour for filling the vector path.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>FLOAT []</type>
+      <type>struct FRGB</type>
       <description>
-<p>Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements consist of Red, Green, Blue and Alpha values in that order.</p>
+<p>Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an FRGB structuure of normalised values in sRGB colourspace.  Values are unclamped so that colour spaces other than sRGB are not negatively impacted.</p>
 <p>If the Alpha component is set to zero then the FillColour will be ignored by the renderer.</p>
       </description>
     </field>
@@ -430,9 +430,10 @@
       <name>FillRule</name>
       <comment>Determines the algorithm to use when filling the shape.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="VFR">VFR</type>
       <description>
 <p>The FillRule field indicates the algorithm which is to be used to determine what parts of the canvas are included when filling the shape. For a simple, non-intersecting path, it is intuitively clear what region lies &quot;inside&quot;; however, for a more complex path, such as a path that intersects itself or where one sub-path encloses another, the interpretation of &quot;inside&quot; is not so obvious.</p>
+<types lookup="VFR"/>
       </description>
     </field>
 
@@ -461,7 +462,7 @@
       <name>InnerJoin</name>
       <comment>Adjusts the handling of thickly stroked paths that cross back at the join.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="VIJ">INT</type>
+      <type lookup="VIJ">VIJ</type>
       <description>
 <p>The InnerJoin value is used to make very technical adjustments to the way that paths are stroked when they form corners.  Visually, the impact of this setting is only noticeable when a path forms an awkward corner that crosses over itself - usually due to the placement of bezier control points.</p>
 <p>The available settings are <code>MITER</code>, <code>ROUND</code>, <code>BEVEL</code>, <code>JAG</code> and <code>INHERIT</code>.  The default of <code>MITER</code> is recommended as it is the fastest, but <code>ROUND</code> produces the best results in ensuring that the stroked path is filled correctly.  The most optimal approach is to use the default setting and switch to <code>ROUND</code> if issues are noted near the corners of the path.</p>
@@ -473,7 +474,7 @@
       <name>LineCap</name>
       <comment>The shape to be used at the start and end of a stroked path.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="VLC">INT</type>
+      <type lookup="VLC">VLC</type>
       <description>
 <p>LineCap is the equivalent of SVG's stroke-linecap attribute.  It defines the shape to be used at the start and end of a stroked path.</p>
 <types lookup="VLC"/>
@@ -484,7 +485,7 @@
       <name>LineJoin</name>
       <comment>The shape to be used at path corners that are stroked.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="VLJ">INT</type>
+      <type lookup="VLJ">VLJ</type>
       <description>
 <p>LineJoin is the equivalent of SVG's stroke-linejoin attribute.  It defines the shape to be used at path corners that are being stroked.</p>
 <types lookup="VLJ"/>
@@ -539,7 +540,10 @@
       <name>MorphFlags</name>
       <comment>Optional flags that affect morphing.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="VMF">VMF</type>
+      <description>
+<types lookup="VMF"/>
+      </description>
     </field>
 
     <field>
@@ -687,7 +691,7 @@ Z: Close Path
       <name>StrokeColour</name>
       <comment>Defines the colour of the path stroke in RGB float format.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>FLOAT []</type>
+      <type>struct FRGB</type>
       <description>
 <p>This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values. The intensity of each component is measured from 0 - 1.0 if restricted to sRGB colourspace, but may otherwise exceed these limits.  Stroking is disabled if the alpha value is 0.</p>
 <p>This field is complemented by the <fl>StrokeOpacity</fl> and <fl>Stroke</fl> fields.</p>
@@ -709,7 +713,7 @@ Z: Close Path
       <name>StrokeWidth</name>
       <comment>The width to use when stroking the path.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The StrokeWidth defines the pixel width of a path when it is stroked.  The path will not be stroked if the value is zero.  A percentage can be used to define the stroke width if it should be scaled to the size of the viewbox (along its diagonal).  Note that this incurs a slight computational penalty when drawing.</p>
 <p>The size of the stroke is also affected by scaling factors imposed by transforms and viewports.</p>
@@ -817,6 +821,17 @@ Z: Close Path
       <const name="MITER_ROUND">Default to <code>MITER</code>, but switch to <code>ROUND</code> if the miter limit is exceeded.</const>
       <const name="MITER_SMART">An alternative form of MITER that extends beyond the intersection point, similarly to the miter-clip SVG rules.</const>
       <const name="ROUND">The join is rounded.</const>
+    </constants>
+
+    <constants lookup="VMF" comment="Morph flags">
+      <const name="AUTO_SPACING">Applicable when used on <class name="VectorText">VectorText</class>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</const>
+      <const name="STRETCH">Applicable when used on <class name="VectorText">VectorText</class>, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.</const>
+      <const name="X_MAX">Align the source so that it is morphed along the right of the target path.</const>
+      <const name="X_MID">Align the source so that it is morphed along the middle of the target path.</const>
+      <const name="X_MIN">Align the source so that it is morphed along the left of the target path.</const>
+      <const name="Y_MAX">Align the source so that it is morphed along the bottom of the target path.</const>
+      <const name="Y_MID">Align the source so that it is morphed along the middle of the target path.</const>
+      <const name="Y_MIN">Align the source so that it is morphed along the top of the target path.</const>
     </constants>
 
   </types>

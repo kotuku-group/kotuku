@@ -1796,12 +1796,12 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "BitmapSurface", sizeof(BitmapSurface) },
-   { "CursorInfo",    sizeof(CursorInfo) },
-   { "DisplayInfo",   sizeof(DisplayInfo) },
-   { "PixelFormat",   sizeof(PixelFormat) },
-   { "SurfaceCoords", sizeof(SurfaceCoords) },
-   { "SurfaceInfo",   sizeof(SurfaceInfo) }
+   { "BitmapSurface", { sizeof(BitmapSurface), alignof(BitmapSurface) } },
+   { "CursorInfo",    { sizeof(CursorInfo),    alignof(CursorInfo)    } },
+   { "DisplayInfo",   { sizeof(DisplayInfo),   alignof(DisplayInfo)   } },
+   { "PixelFormat",   { sizeof(PixelFormat),   alignof(PixelFormat)   } },
+   { "SurfaceCoords", { sizeof(SurfaceCoords), alignof(SurfaceCoords) } },
+   { "SurfaceInfo",   { sizeof(SurfaceInfo),   alignof(SurfaceInfo)   } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

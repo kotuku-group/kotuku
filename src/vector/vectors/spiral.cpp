@@ -8,7 +8,9 @@ The VectorSpiral class generates spiral paths that extend from a central point.
 
 *********************************************************************************************************************/
 
-#define MAX_SPIRAL_VERTICES 65536
+const int MAX_SPIRAL_VERTICES = 0xffff;
+
+static void generate_spiral(class extVectorSpiral *Vector, agg::path_storage &Path);
 
 class extVectorSpiral : public extVector {
    public:
@@ -18,25 +20,36 @@ class extVectorSpiral : public extVector {
 
    double Spacing;
    double Offset;
-   double Radius;
-   double CX, CY;
    double Step;
    double LoopLimit;
-   DMF Dimensions;
+   Unit Radius;
+   Unit CX, CY;
+
+   extVectorSpiral() {
+      Spacing = 0;
+      Offset = 0;
+      Radius = 0;
+      CX = 0;
+      CY = 0;
+      Step = 1.0;
+      LoopLimit = 0;
+      GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_spiral;
+   }
 };
 
 //********************************************************************************************************************
 
 static void generate_spiral(extVectorSpiral *Vector, agg::path_storage &Path)
 {
-   const double cx = dmf::hasScaledCenterX(Vector->Dimensions) ? Vector->CX * get_parent_width(Vector) : Vector->CX;
-   const double cy = dmf::hasScaledCenterY(Vector->Dimensions) ? Vector->CY * get_parent_height(Vector) : Vector->CY;
+   const double cx = Vector->CX.scaled() ? Vector->CX * get_parent_width(Vector) : double(Vector->CX);
+   const double cy = Vector->CY.scaled() ? Vector->CY * get_parent_height(Vector) : double(Vector->CY);
 
    double min_x = DBL_MAX, max_x = -DBL_MAX, min_y = DBL_MAX, max_y = -DBL_MAX;
    double angle  = 0;
    double radius = Vector->Offset;
    double limit  = Vector->LoopLimit * 360.0;
-   double max_radius = Vector->Radius ? Vector->Radius : DBL_MAX;
+   const bool has_radius_limit = Vector->Radius.defined() and (double(Vector->Radius) != 0);
+   double max_radius = has_radius_limit ? double(Vector->Radius) : DBL_MAX;
    double lx = -DBL_MAX, ly = -DBL_MAX;
    double step = std::clamp(Vector->Step, 0.1, 180.0);
 
@@ -76,33 +89,22 @@ static void generate_spiral(extVectorSpiral *Vector, agg::path_storage &Path)
    Vector->Bounds = { min_x, min_y, max_x, max_y };
 }
 
-//********************************************************************************************************************
-
-static ERR SPIRAL_NewObject(extVectorSpiral *Self)
-{
-   Self->Step   = 1.0;
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_spiral;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -FIELD-
-CenterX: The horizontal center of the spiral.  Expressed as a fixed or scaled coordinate.
+CX: The horizontal center of the spiral.  Expressed as a fixed or scaled coordinate.
 
 The horizontal center of the spiral is defined here as either a fixed or scaled value.
 -END-
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_CenterX(extVectorSpiral *Self, Unit *Value)
+static ERR VECTORSPIRAL_GET_CX(extVectorSpiral *Self, Unit &Value)
 {
-   Value->set(Self->CX);
+   Value = Self->CX;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_CenterX(extVectorSpiral *Self, Unit &Value)
+static ERR VECTORSPIRAL_SET_CX(extVectorSpiral *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_CENTER_X) & (~DMF::FIXED_CENTER_X);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_CENTER_X) & (~DMF::SCALED_CENTER_X);
    Self->CX = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -110,22 +112,20 @@ static ERR SPIRAL_SET_CenterX(extVectorSpiral *Self, Unit &Value)
 
 /*********************************************************************************************************************
 -FIELD-
-CenterY: The vertical center of the spiral.  Expressed as a fixed or scaled coordinate.
+CY: The vertical center of the spiral.  Expressed as a fixed or scaled coordinate.
 
 The vertical center of the spiral is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_CenterY(extVectorSpiral *Self, Unit *Value)
+static ERR VECTORSPIRAL_GET_CY(extVectorSpiral *Self, Unit &Value)
 {
-   Value->set(Self->CY);
+   Value = Self->CY;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_CenterY(extVectorSpiral *Self, Unit &Value)
+static ERR VECTORSPIRAL_SET_CY(extVectorSpiral *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_CENTER_Y) & (~DMF::FIXED_CENTER_Y);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_CENTER_Y) & (~DMF::SCALED_CENTER_Y);
    Self->CY = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -142,13 +142,13 @@ If the LoopLimit is not set, the #Radius will take precedence.
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_LoopLimit(extVectorSpiral *Self, double *Value)
+static ERR VECTORSPIRAL_GET_LoopLimit(extVectorSpiral *Self, double &Value)
 {
-   *Value = Self->LoopLimit;
+   Value = Self->LoopLimit;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_LoopLimit(extVectorSpiral *Self, double Value)
+static ERR VECTORSPIRAL_SET_LoopLimit(extVectorSpiral *Self, double Value)
 {
    if (Value >= 0) {
       Self->LoopLimit = Value;
@@ -169,13 +169,13 @@ If Spacing is undeclared, the spiral expands at an incremental rate of `Step * 0
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_Spacing(extVectorSpiral *Self, double *Value)
+static ERR VECTORSPIRAL_GET_Spacing(extVectorSpiral *Self, double &Value)
 {
-   *Value = Self->Spacing;
+   Value = Self->Spacing;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_Spacing(extVectorSpiral *Self, double Value)
+static ERR VECTORSPIRAL_SET_Spacing(extVectorSpiral *Self, double Value)
 {
    if (Value >= 0.0) {
       Self->Spacing = Value;
@@ -193,15 +193,15 @@ The height of the spiral is expressed as `Radius * 2.0`.
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_Height(extVectorSpiral *Self, Unit *Value)
+static ERR VECTORSPIRAL_GET_Height(extVectorSpiral *Self, Unit &Value)
 {
-   Value->set(Self->Radius * 2.0);
+   Value = Unit(Self->Radius * 2.0, Self->Radius.Type);
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_Height(extVectorSpiral *Self, Unit &Value)
+static ERR VECTORSPIRAL_SET_Height(extVectorSpiral *Self, Unit &Value)
 {
-   Self->Radius = Value * 0.5;
+   Self->Radius = Unit(Value * 0.5, Value.Type);
    reset_path(Self);
    return ERR::Okay;
 }
@@ -215,13 +215,13 @@ Offset is set to zero.
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_Offset(extVectorSpiral *Self, double *Value)
+static ERR VECTORSPIRAL_GET_Offset(extVectorSpiral *Self, double &Value)
 {
-   *Value = Self->Offset;
+   Value = Self->Offset;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_Offset(extVectorSpiral *Self, double Value)
+static ERR VECTORSPIRAL_SET_Offset(extVectorSpiral *Self, double Value)
 {
    if (Value >= 0.0) {
       Self->Offset = Value;
@@ -242,13 +242,13 @@ length.
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_PathLength(extVectorSpiral *Self, int *Value)
+static ERR VECTORSPIRAL_GET_PathLength(extVectorSpiral *Self, int &Value)
 {
-   *Value = Self->PathLength;
+   Value = Self->PathLength;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_PathLength(extVectorSpiral *Self, int Value)
+static ERR VECTORSPIRAL_SET_PathLength(extVectorSpiral *Self, int Value)
 {
    if (Value >= 0) {
       Self->PathLength = Value;
@@ -266,17 +266,15 @@ The radius of the spiral is defined here as either a fixed or scaled value.  If 
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_Radius(extVectorSpiral *Self, Unit *Value)
+static ERR VECTORSPIRAL_GET_Radius(extVectorSpiral *Self, Unit &Value)
 {
-   Value->set(Self->Radius);
+   Value = Self->Radius;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_Radius(extVectorSpiral *Self, Unit &Value)
+static ERR VECTORSPIRAL_SET_Radius(extVectorSpiral *Self, Unit &Value)
 {
    if (Value < 0) return ERR::InvalidDimension;
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions|DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y) & (~(DMF::FIXED_RADIUS_X|DMF::FIXED_RADIUS_Y));
-   else Self->Dimensions = (Self->Dimensions | (DMF::FIXED_RADIUS_X|DMF::FIXED_RADIUS_Y)) & (~(DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y));
    Self->Radius = Value;
    reset_path(Self);
    return ERR::Okay;
@@ -291,13 +289,13 @@ is `1.0`.  Using larger values will create a spiral with jagged corners due to t
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_Step(extVectorSpiral *Self, double *Value)
+static ERR VECTORSPIRAL_GET_Step(extVectorSpiral *Self, double &Value)
 {
-   *Value = Self->Step;
+   Value = Self->Step;
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_Step(extVectorSpiral *Self, double Value)
+static ERR VECTORSPIRAL_SET_Step(extVectorSpiral *Self, double Value)
 {
    if (Value != 0.0) {
       Self->Step = Value;
@@ -317,41 +315,36 @@ The width of the spiral is expressed as `Radius * 2.0`.
 
 *********************************************************************************************************************/
 
-static ERR SPIRAL_GET_Width(extVectorSpiral *Self, Unit *Value)
+static ERR VECTORSPIRAL_GET_Width(extVectorSpiral *Self, Unit &Value)
 {
-   Value->set(Self->Radius * 2.0);
+   Value = Unit(Self->Radius * 2.0, Self->Radius.Type);
    return ERR::Okay;
 }
 
-static ERR SPIRAL_SET_Width(extVectorSpiral *Self, Unit &Value)
+static ERR VECTORSPIRAL_SET_Width(extVectorSpiral *Self, Unit &Value)
 {
-   Self->Radius = Value * 0.5;
+   Self->Radius = Unit(Value * 0.5, Value.Type);
    reset_path(Self);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static const ActionArray clVectorSpiralActions[] = {
-   { AC::NewObject, SPIRAL_NewObject },
-   { AC::NIL, nullptr }
-};
+#include "spiral_def.cpp"
 
 static const FieldArray clVectorSpiralFields[] = {
-   { "PathLength", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, SPIRAL_GET_PathLength, SPIRAL_SET_PathLength },
-   { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_Width,   SPIRAL_SET_Width },
-   { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_Height,  SPIRAL_SET_Height },
-   { "CenterX",    FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_CenterX, SPIRAL_SET_CenterX },
-   { "CenterY",    FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_CenterY, SPIRAL_SET_CenterY },
-   { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_Radius,  SPIRAL_SET_Radius },
-   { "Offset",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SPIRAL_GET_Offset, SPIRAL_SET_Offset },
-   { "Step",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SPIRAL_GET_Step, SPIRAL_SET_Step },
-   { "Spacing",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SPIRAL_GET_Spacing, SPIRAL_SET_Spacing },
-   { "LoopLimit",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, SPIRAL_GET_LoopLimit, SPIRAL_SET_LoopLimit },
+   { "PathLength", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_PathLength, VECTORSPIRAL_SET_PathLength },
+   { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Width,   VECTORSPIRAL_SET_Width },
+   { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Height,  VECTORSPIRAL_SET_Height },
+   { "CX",         FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_CX, VECTORSPIRAL_SET_CX },
+   { "CY",         FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_CY, VECTORSPIRAL_SET_CY },
+   { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Radius,  VECTORSPIRAL_SET_Radius },
+   { "Offset",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Offset, VECTORSPIRAL_SET_Offset },
+   { "Step",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Step, VECTORSPIRAL_SET_Step },
+   { "Spacing",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Spacing, VECTORSPIRAL_SET_Spacing },
+   { "LoopLimit",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_LoopLimit, VECTORSPIRAL_SET_LoopLimit },
    // Synonyms
-   { "CX", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_CenterX, SPIRAL_SET_CenterX },
-   { "CY", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_CenterY, SPIRAL_SET_CenterY },
-   { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, SPIRAL_GET_Radius,  SPIRAL_SET_Radius },
+   { "R",          FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Radius,  VECTORSPIRAL_SET_Radius },
    END_FIELD
 };
 
@@ -371,4 +364,3 @@ static ERR init_spiral(void)
 
    return clVectorSpiral ? ERR::Okay : ERR::AddClass;
 }
-

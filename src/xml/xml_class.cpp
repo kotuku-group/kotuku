@@ -2066,10 +2066,9 @@ NOTE: Tiri will copy this field on read, caching the value is therefore recommen
 
 *********************************************************************************************************************/
 
-static ERR GET_Tags(extXML *Self, XTag **Values, int *Elements)
+static ERR GET_Tags(extXML *Self, std::span<XTag> &Array)
 {
-   *Values = Self->Tags.data();
-   *Elements = Self->Tags.size();
+   Array = std::span<XTag>(Self->Tags.data(), Self->Tags.size());
    return ERR::Okay;
 }
 

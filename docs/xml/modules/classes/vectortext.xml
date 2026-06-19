@@ -54,10 +54,11 @@
       <name>Align</name>
       <comment>Defines the alignment of the text string.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="ALIGN">ALIGN</type>
       <description>
 <p>This field specifies the horizontal alignment of the text string.  The standard alignment flags are supported in the form of <code>ALIGN::LEFT</code>, <code>ALIGN::HORIZONTAL</code> and <code>ALIGN::RIGHT</code>.</p>
 <p>In addition, the SVG equivalent values of <code>start</code>, <code>middle</code> and <code>end</code> are supported and map directly to the formerly mentioned align flags.</p>
+<types lookup="ALIGN"/>
       </description>
     </field>
 
@@ -368,7 +369,7 @@
       <name>X</name>
       <comment>The x coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The x-axis coordinate of the text is specified here as a fixed value.  Scaled coordinates are not supported.</p>
       </description>
@@ -378,7 +379,7 @@
       <name>Y</name>
       <comment>The base-line y coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Y-axis coordinate of the text is specified here as a fixed value.  Scaled coordinates are not supported.</p>
 <p>Unlike other vector shapes, the Y coordinate positions the text from its base line rather than the top of the shape.</p>
@@ -386,6 +387,22 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="VTXF" comment="VectorText flags.">
+      <const name="AREA_SELECTED">Automatically set if a region of text has been selected.</const>
+      <const name="BLINK">Enable animated blinking (not supported - exists as SVG dummy option).</const>
+      <const name="EDIT">Allow user editing of the text if the nearest viewport has the focus.</const>
+      <const name="EDITABLE">Allow user editing of the text if the nearest viewport has the focus.</const>
+      <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
+      <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
+      <const name="OVERLINE">Enable overlining of the text.</const>
+      <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>
+      <const name="RASTER">Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</const>
+      <const name="SECRET">Hide all characters from the UI by using generic symbols in place of glyphs.</const>
+      <const name="UNDERLINE">Enable underlining of the text.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

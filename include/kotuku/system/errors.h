@@ -96,7 +96,7 @@ enum class ERR : int32_t {
    Draw = 72,
    NoMethods = 73,
    NoMatchingObject = 74,
-   DEP01 = 75,
+   ImmutableField = 75,
    MissingPath = 76,
    ResourceNotLocked = 77,
    NoSearchResult = 78,
@@ -228,7 +228,8 @@ enum class ERR : int32_t {
    NoSecureSockets = 196,
    ParameterRequired = 197,
    ParameterUnknown = 198,
-   END = 199,
+   SetValueNotStruct = 199,
+   END = 200,
    Notified = 1073741824,
 };
 

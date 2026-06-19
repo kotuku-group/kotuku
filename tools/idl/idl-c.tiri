@@ -96,7 +96,16 @@ global function extractFields(Def:str, Origin:str):table
       local type, name = rx_type_name.extract(content)
 
       if type?? then
-         field = cType({ type=type:trim(), name=name:trim(), comment=string.trim(comment) }, Origin)
+         local virtual = false
+         type = type:trim()
+
+         if type:startsWith('~') then
+            virtual = true
+            type = type:sub(1):trim()
+         end
+
+         field = cType({ type=type, name=name:trim(), comment=string.trim(comment) }, Origin)
+         if virtual then field.virtual = true end
          table.insert(fields, field)
       elseif not content:trim()?? then
          -- Ignore empty line

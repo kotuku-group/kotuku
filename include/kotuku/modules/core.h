@@ -21,6 +21,7 @@
 #include <bit>
 #include <atomic>
 #include <array>
+#include <span>
 #include <charconv>
 #include <sstream>
 #include <cmath>
@@ -1087,6 +1088,7 @@ enum class RES : int {
    MAIN_THREAD = 19,
    MAIN_THREAD_ID = 20,
    WINDOWS_ICON = 21,
+   STRUCT_DB = 22,
 };
 
 // Path types for SetResourcePath()
@@ -1571,7 +1573,12 @@ typedef AC ACTIONID;
 #define __attribute__(a)
 #endif
 
-typedef const std::vector<std::pair<std::string, uint32_t>> STRUCTS;
+struct StructInfo {
+   uint16_t Size;       // Byte size of the structure (sizeof)
+   uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+};
+
+typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
 typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
@@ -1834,6 +1841,7 @@ struct Unit {
 
    constexpr void set(const double pValue) { Value = pValue; }
    constexpr bool scaled() const { return (Type & FD_SCALED) ? true : false; }
+   constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
    inline void read(std::string_view String) {
@@ -2011,17 +2019,18 @@ struct FileFeedback {
 };
 
 struct Field {
-   MAXINT   Arg;                                                             // An option to complement the field type.  Can be a pointer or an integer value
-   ERR (*GetValue)(APTR, APTR);                                              // A virtual function that will retrieve the value for this field
-   APTR     SetValue;                                                        // A virtual function that will set the value for this field
-   ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int);     // An internal function for writing to this field
-   CSTRING  Name;                                                            // The English name for the field, e.g. Width
-   uint32_t FieldID;                                                         // 32-bit hash from fieldhash(). Represented by FID constants, e.g. FID_Width
-   uint16_t Offset;                                                          // Field offset within the object
-   uint16_t Index;                                                           // Field array index
-   uint32_t Flags;                                                           // Special flags that describe the field
-   inline bool readable() { return (Flags & FD_READ) ? true : false; }
-   inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   MAXINT   Arg;                                                              // An option to complement the field type.  Can be a pointer or an integer value
+   ERR (*GetValue)(APTR, APTR);                                               // A virtual function that will retrieve the value for this field
+   APTR     SetValue;                                                         // A virtual function that will set the value for this field
+   ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *);     // An internal function for writing to this field
+   CSTRING  Name;                                                             // The English name for the field, e.g. Width
+   uint32_t FieldID;                                                          // 32-bit hash from fieldhash(). Represented by FID constants, e.g. FID_Width
+   uint16_t Offset;                                                           // Field offset within the object
+   uint16_t Index;                                                            // Field array index
+   uint32_t Flags;                                                            // Special flags that describe the field
+   inline bool readable() const { return (Flags & FD_READ) ? true : false; }
+   inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
 };
 
 struct ClassRecord {
@@ -2103,7 +2112,7 @@ struct CoreBase {
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
    ERR (*_ProtectMemory)(APTR Address, MEM Flags);
-   void (*_SetObjectContext)(OBJECTPTR Object, struct Field *Field, AC ActionID);
+   void (*_SetObjectContext)(OBJECTPTR Object, const struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
    ERR (*_ScanDir)(struct DirInfo *Info);
    ERR (*_SetName)(OBJECTPTR Object, const std::string_view &Name);
@@ -2134,7 +2143,7 @@ struct CoreBase {
    int64_t (*_PreciseTime)(void);
    ERR (*_OpenDir)(const std::string_view &Path, RDF Flags, struct DirInfo **Info);
    OBJECTPTR (*_GetObjectPtr)(OBJECTID Object);
-   struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
+   const struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
    CSTRING (*_GetErrorMsg)(ERR Error);
    struct Message * (*_GetActionMsg)(AC Action);
    ERR (*_FuncError)(CSTRING Header, ERR Error);
@@ -2199,7 +2208,7 @@ inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase-
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
 inline ERR ProtectMemory(APTR Address, MEM Flags) { return CoreBase->_ProtectMemory(Address,Flags); }
-inline void SetObjectContext(OBJECTPTR Object, struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
+inline void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
 inline ERR ScanDir(struct DirInfo *Info) { return CoreBase->_ScanDir(Info); }
 inline ERR SetName(OBJECTPTR Object, const std::string_view &Name) { return CoreBase->_SetName(Object,Name); }
@@ -2230,7 +2239,7 @@ inline ERR QueueAction(AC Action, OBJECTID Object, APTR Args) { return CoreBase-
 inline int64_t PreciseTime(void) { return CoreBase->_PreciseTime(); }
 inline ERR OpenDir(const std::string_view &Path, RDF Flags, struct DirInfo **Info) { return CoreBase->_OpenDir(Path,Flags,Info); }
 inline OBJECTPTR GetObjectPtr(OBJECTID Object) { return CoreBase->_GetObjectPtr(Object); }
-inline struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
+inline const struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
 inline CSTRING GetErrorMsg(ERR Error) { return CoreBase->_GetErrorMsg(Error); }
 inline struct Message * GetActionMsg(AC Action) { return CoreBase->_GetActionMsg(Action); }
 inline ERR FuncError(CSTRING Header, ERR Error) { return CoreBase->_FuncError(Header,Error); }
@@ -2290,7 +2299,7 @@ extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
 extern "C" ERR ProtectMemory(APTR Address, MEM Flags);
-extern "C" void SetObjectContext(OBJECTPTR Object, struct Field *Field, AC ActionID);
+extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
 extern "C" ERR ScanDir(struct DirInfo *Info);
 extern "C" ERR SetName(OBJECTPTR Object, const std::string_view &Name);
@@ -2321,7 +2330,7 @@ extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime(void);
 extern "C" ERR OpenDir(const std::string_view &Path, RDF Flags, struct DirInfo **Info);
 extern "C" OBJECTPTR GetObjectPtr(OBJECTID Object);
-extern "C" struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
+extern "C" const struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
 extern "C" CSTRING GetErrorMsg(ERR Error);
 extern "C" struct Message * GetActionMsg(AC Action);
 extern "C" ERR FuncError(CSTRING Header, ERR Error);
@@ -2467,11 +2476,11 @@ typedef std::vector<obj_read> READ_TABLE;
 // Object field write handler structure for Tiri code
 
 struct obj_write {
-   typedef ERR JUMP(struct lua_State *, OBJECTPTR, struct Field *, int);
+   typedef ERR JUMP(struct lua_State *, OBJECTPTR, const struct Field *, int);
 
    uint32_t Hash;
    JUMP *Call;
-   struct Field *Field;
+   const struct Field *Field;
 
    auto operator<=>(const obj_write &Other) const {
        if (Hash < Other.Hash) return -1;
@@ -2479,7 +2488,7 @@ struct obj_write {
        return 0;
    }
 
-   obj_write(uint32_t pHash, JUMP pJump, struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
+   obj_write(uint32_t pHash, JUMP pJump, const struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
    obj_write(uint32_t pHash, JUMP pJump) : Hash(pHash), Call(pJump) { }
    obj_write(uint32_t pHash) : Hash(pHash) { }
 };
@@ -2547,18 +2556,17 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getFields(const struct FieldArray * &Value, int &Elements) noexcept {
+   inline ERR getFields(std::span<const struct FieldArray> &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      auto get_field = (ERR (*)(APTR, const struct FieldArray *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
+      auto get_field = (ERR (*)(APTR, std::span<const struct FieldArray> &))field->GetValue;
+      return get_field(this, Value);
    }
 
-   inline ERR getDictionary(struct Field * &Value, int &Elements) noexcept {
+   inline ERR getDictionary(std::span<struct Field> &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, struct Field *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto get_field = (ERR (*)(APTR, std::span<struct Field> &))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }
@@ -2623,18 +2631,16 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getMethods(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
+   inline ERR getActionTable(std::span<struct ActionEntry> &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
+      return get_field(this, Value);
    }
 
-   inline ERR getActionTable(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
+   inline ERR getMethods(std::span<struct MethodEntry> &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      auto get_field = (ERR (*)(APTR, std::span<struct MethodEntry> &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getLocation(std::string_view &Value) noexcept {
@@ -2655,122 +2661,120 @@ class objMetaClass : public Object {
       return error;
    }
 
-   inline ERR getObjects(int * &Value, int &Elements) noexcept {
+   inline ERR getObjects(std::span<int> &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
+      auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getSubClasses(OBJECTPTR * &Value, int &Elements) noexcept {
+   inline ERR getSubClasses(std::span<OBJECTPTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      auto get_field = (ERR (*)(APTR, OBJECTPTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
+      auto get_field = (ERR (*)(APTR, std::span<OBJECTPTR> &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getRootModule(OBJECTPTR &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
    inline ERR setClassVersion(const double Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->ClassVersion = Value;
       return ERR::Okay;
    }
 
-   inline ERR setFields(const struct FieldArray * Value, int Elements) noexcept {
+   inline ERR setFields(std::span<const struct FieldArray> Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, 0x00101510, Value, Elements);
+      return field->WriteValue(this, field, 0x00101510, &Value);
    }
 
    inline ERR setClassName(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->ClassName = Value;
       return ERR::Okay;
    }
 
    inline ERR setFileExtension(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->FileExtension = Value;
       return ERR::Okay;
    }
 
    inline ERR setFileDescription(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->FileDescription = Value;
       return ERR::Okay;
    }
 
    inline ERR setFileHeader(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->FileHeader = Value;
       return ERR::Okay;
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Path = Value;
       return ERR::Okay;
    }
 
    inline ERR setIcon(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Icon = Value;
       return ERR::Okay;
    }
 
    inline ERR setSize(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Size = Value;
       return ERR::Okay;
    }
 
    inline ERR setFlags(const CLF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
    inline ERR setClass(const CLASSID Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->ClassID = Value;
       return ERR::Okay;
    }
 
    inline ERR setBaseClass(const CLASSID Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->BaseClassID = Value;
       return ERR::Okay;
    }
 
    inline ERR setCategory(const CCF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Category = Value;
       return ERR::Okay;
    }
 
-   inline ERR setMethods(APTR Value, int Elements) noexcept {
+   inline ERR setMethods(std::span<const struct MethodEntry> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, 0x00101510, Value, Elements);
+      return field->WriteValue(this, field, 0x00101510, &Value);
    }
 
    inline ERR setActions(APTR Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x08000400, Value, 1);
+      return field->WriteValue(this, field, 0x08000400, Value);
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00914500, &Value, 1);
+      return field->WriteValue(this, field, 0x00914500, &Value);
    }
 
 };
@@ -2838,7 +2842,7 @@ class objStorageDevice : public Object {
 
    inline ERR setVolume(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
+      return field->WriteValue(this, field, 0x00904500, &Value);
    }
 
 };
@@ -3001,14 +3005,13 @@ class objFile : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getBuffer(int8_t * &Value, int &Elements) noexcept {
+   inline ERR getBuffer(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      auto get_field = (ERR (*)(APTR, int8_t *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
+      auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
+      return get_field(this, Value);
    }
 
-   inline ERR getDate(APTR &Value) noexcept {
+   inline ERR getDate(struct DateTime * &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
@@ -3016,8 +3019,16 @@ class objFile : public Object {
       return error;
    }
 
-   inline ERR getCreated(APTR &Value) noexcept {
+   inline ERR getCreated(struct DateTime * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPermissions(PERMIT &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -3026,8 +3037,7 @@ class objFile : public Object {
 
    inline ERR getHandle(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getIcon(std::string_view &Value) noexcept {
@@ -3035,14 +3045,6 @@ class objFile : public Object {
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPermissions(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -3102,52 +3104,47 @@ class objFile : public Object {
 
    inline ERR setPosition(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
    inline ERR setFlags(const FL Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setDate(APTR Value) noexcept {
+   inline ERR setDate(const struct DateTime & Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, 0x08000310, Value, 1);
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
-   inline ERR setCreated(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x08000310, Value, 1);
-   }
-
-   inline ERR setPermissions(const int Value) noexcept {
+   inline ERR setPermissions(const PERMIT Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSize(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setLink(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
    inline ERR setUser(const int Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setGroup(const int Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -3302,15 +3299,13 @@ class objConfig : public Object {
    inline ERR getKeyFilter(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getGroupFilter(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getFlags(CNF &Value) noexcept {
@@ -3320,20 +3315,17 @@ class objConfig : public Object {
 
    inline ERR getData(APTR &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getTotalGroups(int &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getTotalKeys(int &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
@@ -3341,17 +3333,17 @@ class objConfig : public Object {
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setKeyFilter(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
    inline ERR setGroupFilter(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
    inline ERR setFlags(const CNF Value) noexcept {
@@ -3492,11 +3484,16 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getResults(std::span<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getCacheFile(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getWorkingPath(std::string_view &Value) noexcept {
@@ -3508,24 +3505,15 @@ class objScript : public Object {
       return error;
    }
 
-   inline ERR getResults(kt::vector<std::string> * &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
    inline ERR getStatement(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getTotalArgs(int &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
@@ -3533,7 +3521,7 @@ class objScript : public Object {
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value, 1);
+      return field->WriteValue(this, field, 0x00904500, &Value);
    }
 
    inline ERR setProcedure(const std::string_view &Value) noexcept {
@@ -3552,7 +3540,7 @@ class objScript : public Object {
    }
 
    inline ERR setFlags(const SCF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
@@ -3562,51 +3550,55 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setResults(const kt::vector<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, 0x00905300, &Value);
+   }
+
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
    inline ERR setWorkingPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
-   }
-
-   inline ERR setResults(const kt::vector<std::string> *Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00905300, Value, int(Value->size()));
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x00904300, &Value, 1);
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
 };
 
 namespace sc {
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
+inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args) noexcept {
+   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
    return Action(sc::Callback::id, Function.Context, &args);
+}
+
+inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args, ERR &Result) noexcept {
+   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
+   ERR error = Action(sc::Callback::id, Function.Context, &args);
+   Result = args.Error;
+   return(error);
+}
+
+template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
+   return Call(Function, std::span<const ScriptArg>(Args));
 }
 
 template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
+   return Call(Function, std::span<const ScriptArg>(Args), Result);
 }
 
 inline ERR Call(const FUNCTION &Function) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
+   return Call(Function, std::span<const ScriptArg>());
 }
 
 inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
+   return Call(Function, std::span<const ScriptArg>(), Result);
 }
 } // namespace
 struct ActionEntry {
@@ -3735,8 +3727,9 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getParameters(kt::vector<std::string> * &Value) noexcept {
-      Value = (kt::vector<std::string> *)(((int8_t *)this) + 256);
+   inline ERR getParameters(std::span<std::string> &Value) noexcept {
+      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 256);
+      Value = std::span<std::string>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
@@ -3760,20 +3753,18 @@ class objTask : public Object {
 
    inline ERR getActions(APTR &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getAffinityMask(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR getKeys(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getKeys(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
@@ -3782,29 +3773,25 @@ class objTask : public Object {
    inline ERR getErrorCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getExitCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getInputCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[14];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getOutputCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
    inline ERR getPriority(int &Value) noexcept {
@@ -3830,12 +3817,12 @@ class objTask : public Object {
 
    inline ERR setLocation(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setTimeOut(const double Value) noexcept {
@@ -3849,55 +3836,55 @@ class objTask : public Object {
    }
 
    inline ERR setFlags(const TSF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
    inline ERR setReturnCode(const int Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setProcess(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->ProcessID = Value;
       return ERR::Okay;
    }
 
    inline ERR setAffinityMask(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setArgs(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x00804208, &Value, 1);
+      return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
    inline ERR setErrorCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setExitCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setInputCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setOutputCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setPriority(const int Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -3949,11 +3936,10 @@ class objThread : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getData(APTR * &Value, int &Elements) noexcept {
+   inline ERR getData(std::span<APTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
+      auto get_field = (ERR (*)(APTR, std::span<APTR> &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getDataSize(int &Value) noexcept {
@@ -3985,7 +3971,7 @@ class objThread : public Object {
    }
 
    inline ERR setFlags(const THF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
@@ -4079,8 +4065,7 @@ class objModule : public Object {
    inline ERR getDefs(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
 
@@ -4093,16 +4078,16 @@ class objModule : public Object {
 
    inline ERR setHeader(struct ModHeader * Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, 0x08000510, Value, 1);
+      return field->WriteValue(this, field, 0x08000510, Value);
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
    inline ERR setFlags(const MOF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
@@ -4209,8 +4194,7 @@ class objTime : public Object {
 
    inline ERR getTimestamp(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
@@ -4462,14 +4446,14 @@ class objCompression : public Object {
    // Customised field setting
 
    inline ERR setOutput(OBJECTID Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->OutputID = Value;
       return ERR::Okay;
    }
 
    inline ERR setCompressionLevel(const int Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFlags(const CMF Value) noexcept {
@@ -4489,27 +4473,27 @@ class objCompression : public Object {
 
    inline ERR setWindowBits(const int Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setArchiveName(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x00804200, &Value, 1);
+      return field->WriteValue(this, field, 0x00804200, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setFeedback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setPassword(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
 };
@@ -4605,27 +4589,26 @@ class objCompressedStream : public Object {
 
    inline ERR getSize(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
    inline ERR setInput(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Input = Value;
       return ERR::Okay;
    }
 
    inline ERR setOutput(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Output = Value;
       return ERR::Okay;
    }
 
    inline ERR setFormat(const CF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Format = Value;
       return ERR::Okay;
    }

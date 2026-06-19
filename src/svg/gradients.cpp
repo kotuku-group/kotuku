@@ -198,7 +198,7 @@ void svgState::parse_lineargradient(const XTag &Tag, objGradient *Gradient, std:
    }
 
    auto stops = process_gradient_stops(Tag);
-   if (stops.size() >= 2) Gradient->set(FID_Stops, stops);
+   if (stops.size() >= 2) Gradient->setStops(stops);
 }
 
 //********************************************************************************************************************
@@ -282,7 +282,7 @@ void svgState::parse_radialgradient(const XTag &Tag, objGradient &Gradient, std:
 
    if (process_stops) {
       auto stops = process_gradient_stops(Tag);
-      if (stops.size() >= 2) Gradient.set(FID_Stops, stops);
+      if (stops.size() >= 2) Gradient.setStops(stops);
    }
 }
 
@@ -359,7 +359,7 @@ void svgState::parse_diamondgradient(const XTag &Tag, objGradient *Gradient, std
    }
 
    auto stops = process_gradient_stops(Tag);
-   if (stops.size() >= 2) Gradient->set(FID_Stops, stops);
+   if (stops.size() >= 2) Gradient->setStops(stops);
 }
 
 //********************************************************************************************************************
@@ -556,7 +556,7 @@ ERR svgState::proc_contourgradient(const XTag &Tag) noexcept
       state.parse_contourgradient(Tag, gradient, id);
 
       auto stops = process_gradient_stops(Tag);
-      if (stops.size() >= 2) gradient->set(FID_Stops, stops);
+      if (stops.size() >= 2) gradient->setStops(stops);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {
@@ -604,7 +604,7 @@ void svgState::parse_distalgradient(const XTag &Tag, objGradient *Gradient, std:
          case SVF_x1: set_double_units(Gradient, FID_Floor, val, Gradient->Units); break;
          case SVF_x2: set_double_units(Gradient, FID_Multiplier, val, Gradient->Units); break;
          // Radius controls the exterior margin (in path units) around the path bounds.
-         case SVF_radius: Gradient->set(FID_Radius, strtod(val.c_str(), nullptr)); break;
+         case SVF_radius: ((objGradientDistal *)Gradient)->setRadius(Unit(strtod(val.c_str(), nullptr))); break;
          case SVF_spreadMethod: {
             if (iequals("pad", val))          Gradient->setSpreadMethod(VSPREAD::PAD);
             else if (iequals("reflect", val)) Gradient->setSpreadMethod(VSPREAD::REFLECT);
@@ -650,7 +650,7 @@ void svgState::parse_distalgradient(const XTag &Tag, objGradient *Gradient, std:
 
    if (process_stops) {
       auto stops = process_gradient_stops(Tag);
-      if (stops.size() >= 2) Gradient->set(FID_Stops, stops);
+      if (stops.size() >= 2) Gradient->setStops(stops);
    }
 }
 
@@ -746,7 +746,7 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
       }
 
       auto stops = process_gradient_stops(Tag);
-      if (stops.size() >= 2) gradient->set(FID_Stops, stops);
+      if (stops.size() >= 2) gradient->setStops(stops);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {

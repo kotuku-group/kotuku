@@ -330,7 +330,7 @@ if (query.ok()) {
       <name>Result</name>
       <comment>Returns the results of the most recently executed query.</comment>
       <access read="G">Get</access>
-      <type>APTR</type>
+      <type>struct XPathValue *</type>
       <description>
 <p>Following the successful execution of an XQuery expression, the results can be retrieved as an XPathValue object through this field.</p>
       </description>

@@ -251,6 +251,7 @@ extern std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
 extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
 extern std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes;
 
 extern std::condition_variable_any cvObjects;
 
@@ -974,7 +975,7 @@ class extObjectContext : public ObjectContext {
       action = pAction;
    }
 
-   inline extObjectContext(OBJECTPTR pObject, struct Field *pField = nullptr) noexcept {
+   inline extObjectContext(OBJECTPTR pObject, const struct Field *pField = nullptr) noexcept {
       tlContext.emplace_back(pObject, pField, AC::NIL);
 
       obj    = pObject;
@@ -982,7 +983,7 @@ class extObjectContext : public ObjectContext {
       action = AC::NIL;
    }
 
-   inline extObjectContext(OBJECTPTR pObject, struct Field *pField, AC pAction) noexcept {
+   inline extObjectContext(OBJECTPTR pObject, const struct Field *pField, AC pAction) noexcept {
       tlContext.emplace_back(pObject, pField, pAction);
 
       obj    = pObject;
@@ -1160,7 +1161,7 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 void   scan_classes(void);
 #endif
 
-ERR  writeval_default(OBJECTPTR, Field *, int, const void *, int);
+ERR  writeval_default(OBJECTPTR, const Field *, int, const void *);
 ERR  check_paths(std::string_view, PERMIT);
 extern "C" ERR validate_process(int);
 

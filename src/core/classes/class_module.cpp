@@ -39,54 +39,10 @@ It is critical that the module object is permanently retained until the program 
 #include "../defs.h"
 #include <kotuku/main.h>
 
-static STRUCTS glStructures = {
-   { "ActionArray",         sizeof(ActionArray) },
-   { "ActionEntry",         sizeof(ActionEntry) },
-   //{ "ActionTable",         sizeof(ActionTable) },
-   { "CacheFile",           sizeof(CacheFile) },
-   { "ChildEntry",          sizeof(ChildEntry) },
-   { "ClipRectangle",       sizeof(ClipRectangle) },
-   { "ColourFormat",        sizeof(ColourFormat) },
-   { "CompressedItem",      sizeof(CompressedItem) },
-   { "CompressionFeedback", sizeof(CompressionFeedback) },
-   { "DateTime",            sizeof(DateTime) },
-   { "DirInfo",             sizeof(DirInfo) },
-   { "Edges",               sizeof(Edges) },
-   { "FRGB",                sizeof(FRGB) },
-   { "Field",               sizeof(Field) },
-   { "FieldArray",          sizeof(FieldArray) },
-   { "FieldDef",            sizeof(FieldDef) },
-   { "FileFeedback",        sizeof(FileFeedback) },
-   { "FileInfo",            sizeof(FileInfo) },
-   { "Function",            sizeof(Function) },
-   { "FunctionField",       sizeof(FunctionField) },
-   { "HSV",                 sizeof(HSV) },
-   { "InputEvent",          sizeof(InputEvent) },
-   { "MemInfo",             sizeof(MemInfo) },
-   { "Message",             sizeof(Message) },
-   { "MethodEntry",         sizeof(MethodEntry) },
-   { "ModHeader",           sizeof(struct ModHeader) },
-   { "MsgHandler",          sizeof(MsgHandler) },
-   { "ObjectSignal",        sizeof(ObjectSignal) },
-   { "RGB16",               sizeof(RGB16) },
-   { "RGB32",               sizeof(RGB32) },
-   { "RGB8",                sizeof(RGB8) },
-   { "RGBPalette",          sizeof(RGBPalette) },
-   { "ResourceManager",     sizeof(ResourceManager) },
-   { "SystemState",         sizeof(SystemState) },
-   { "ThreadActionMessage", sizeof(ThreadActionMessage) },
-   { "ThreadMessage",       sizeof(ThreadMessage) },
-   { "Unit",                sizeof(Unit) },
-   { "dcAudio",             sizeof(dcAudio) },
-   { "dcDeviceInput",       sizeof(dcDeviceInput) },
-   { "dcKeyEntry",          sizeof(dcKeyEntry) },
-   { "dcRequest",           sizeof(dcRequest) }
-};
-
 #include "../idl.h"
 
 static objRootModule glCoreRoot;
-struct ModHeader glCoreHeader(nullptr, nullptr, nullptr, nullptr, nullptr, glIDL, &glStructures, "core", "Sys");
+struct ModHeader glCoreHeader(nullptr, nullptr, nullptr, nullptr, nullptr, glIDL, nullptr, "core", "Sys");
 
 static objRootModule * check_resident(extModule *, std::string_view);
 static void free_module(MODHANDLE handle);
@@ -301,31 +257,26 @@ static ERR MODULE_Init(extModule *Self)
    // Check if the module is resident.  If not, we need to load and prepare the module for a shared environment.
 
    std::string_view name(Self->Name);
-   if (auto i = name.find_last_of(":/\\"); i != std::string::npos) {
-      name.remove_prefix(i+1);
-   }
-
-   if (auto sep = name.find_last_of("."); sep != std::string::npos) {
-      name.remove_suffix(name.size() - sep);
-   }
+   if (auto i = name.find_last_of(":/\\"); i != std::string::npos) name.remove_prefix(i+1);
+   if (auto sep = name.find_last_of("."); sep != std::string::npos) name.remove_suffix(name.size() - sep);
 
    log.trace("Finding module %s (%s)", Self->Name.c_str(), name.data());
 
-   objRootModule *master;
+   objRootModule *root;
    struct ModHeader *table = nullptr;
-   if ((master = check_resident(Self, name))) {
-      Self->Root = master;
+   if ((root = check_resident(Self, name))) {
+      Self->Root = root;
    }
-   else if (!NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&master)) {
-      master->Next = glModuleList; // Insert the RootModule at the start of the chain.
-      if (glModuleList) glModuleList->Prev = master;
-      glModuleList = master;
+   else if (!NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&root)) {
+      root->Next = glModuleList; // Insert the RootModule at the start of the chain.
+      if (glModuleList) glModuleList->Prev = root;
+      glModuleList = root;
 
       root_mod = true;
 
-      kt::SwitchContext ctx(master);
+      kt::SwitchContext ctx(root);
 
-      master->LibraryName.assign(name);
+      root->LibraryName.assign(name);
 
       if (Self->Header) {
          // If the developer has specified a module header, then the module code is memory-resident and not to be
@@ -342,39 +293,43 @@ static ERR MODULE_Init(extModule *Self)
             goto exit;
          }
          #else
-         if ((error = load_mod(Self, master, &table)) != ERR::Okay) goto exit;
+         if ((error = load_mod(Self, root, &table)) != ERR::Okay) goto exit;
          #endif
       }
 
-      master->OpenCount  = 0;
-      master->Version    = 1;
-      Self->Root = master;
+      root->OpenCount  = 0;
+      root->Version    = 1;
+      Self->Root = root;
 
       if (table) {
          if (not table->Init) { log.warning(ERR::ModuleMissingInit); goto exit; }
          if (not table->Name) { log.warning(ERR::ModuleMissingName); goto exit; }
 
-         master->Header  = table;
-         master->Table   = table;
-         master->Name    = table->Name;
-         master->Init    = table->Init;
-         master->Open    = table->Open;
-         master->Expunge = table->Expunge;
-         master->Test    = table->Test;
-         master->Flags   = table->Flags;
+         root->Header  = table;
+         root->Table   = table;
+         root->Name    = table->Name;
+         root->Init    = table->Init;
+         root->Open    = table->Open;
+         root->Expunge = table->Expunge;
+         root->Test    = table->Test;
+         root->Flags   = table->Flags;
+
+         if (auto structs = table->StructDefs) {
+            for (auto &s : structs[0]) glStructSizes[kt::strhash(s.first)] = s.second;
+         }
       }
 
       // INIT
 
-      if (master->Init) {
+      if (root->Init) {
          #ifdef KOTUKU_STATIC
-            error = master->Init(Self, nullptr);
+            error = root->Init(Self, nullptr);
          #else
             // Build a Core base for the module to use
             if (auto modkb = (struct CoreBase *)build_jump_table(glFunctions)) {
-               master->CoreBase = modkb;
+               root->CoreBase = modkb;
                log.traceBranch("Initialising the module.");
-               error = master->Init(Self, modkb);
+               error = root->Init(Self, modkb);
             }
          #endif
          if (error != ERR::Okay) goto exit;
@@ -395,23 +350,23 @@ static ERR MODULE_Init(extModule *Self)
    // If the STATIC option is set then the loaded module must not be removed when the Module object is freed.  This is
    // typically used for symbolic linked libraries.
 
-   if ((Self->Flags & MOF::STATIC) != MOF::NIL) master->Flags |= MHF::STATIC;
+   if ((Self->Flags & MOF::STATIC) != MOF::NIL) root->Flags |= MHF::STATIC;
 
    // At this stage the module is 100% resident and it is not possible to reverse the process.  Because of this, if an
    // error occurs we must not try to free any resident allocations from memory.
 
    root_mod = false;
 
-   if (master->Open) {
+   if (root->Open) {
       log.trace("Opening %s module.", Self->Name.c_str());
-      if (master->Open(Self) != ERR::Okay) {
+      if (root->Open(Self) != ERR::Okay) {
          log.warning(ERR::ModuleOpenFailed);
          goto exit;
       }
    }
 
-   if (master->Table) master->Close = master->Table->Close;
-   master->OpenCount++;
+   if (root->Table) root->Close = root->Table->Close;
+   root->OpenCount++;
 
    // Build the jump table for the program
 
@@ -440,8 +395,8 @@ exit:
       error &= ~(ERR::Notified);
 
       if (root_mod) {
-         if (master->Expunge) master->Expunge();
-         FreeResource(master);
+         if (root->Expunge) root->Expunge();
+         FreeResource(root);
          Self->Root = nullptr;
       }
    }
@@ -682,9 +637,9 @@ static objRootModule * check_resident(extModule *Self, const std::string_view Mo
       Self->FunctionList = glFunctions;
       return &glCoreRoot;
    }
-   else if (auto master = glModuleList) {
-      while (master) {
-         auto record_name = std::string_view(master->Name);
+   else if (auto root = glModuleList) {
+      while (root) {
+         auto record_name = std::string_view(root->Name);
 
          auto sep = record_name.find_last_of(":/");
          if (sep != std::string::npos) record_name.remove_prefix(sep+1);
@@ -692,8 +647,8 @@ static objRootModule * check_resident(extModule *Self, const std::string_view Mo
          sep = record_name.find_last_of(".");
          if (sep != std::string::npos) record_name.remove_suffix(record_name.size() - sep);
 
-         if (iequals(record_name, ModuleName)) return master;
-         master = master->Next;
+         if (iequals(record_name, ModuleName)) return root;
+         root = root->Next;
       }
    }
 
@@ -743,7 +698,7 @@ extModule::~extModule() {
 //********************************************************************************************************************
 
 objRootModule::~objRootModule() {
-   if (Table) Table->Root = nullptr; // Remove the DLL's reference to the master.
+   if (Table) Table->Root = nullptr; // Remove the DLL's reference to the root.
 
    // Note that the order in which we perform the following actions is very important.
 

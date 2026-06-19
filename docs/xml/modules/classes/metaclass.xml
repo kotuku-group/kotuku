@@ -47,7 +47,7 @@
       <name>ActionTable</name>
       <comment>This field can be read to retrieve a MetaClass object's internal action table.</comment>
       <access read="G">Get</access>
-      <type>APTR []</type>
+      <type>ActionEntry[]</type>
       <description>
 <p>This field retrieves the internal action table of a class. The action table is arranged into a jump table of action routines, with each routine pointing directly to the object support functions.  The size of the jump table is defined by the global constant <code>AC::END</code>.  The table is sorted by action ID.</p>
 <p>It is possible to check if an action is supported by a class by looking up its index within the ActionTable, for example <code>Routine[AC::Read]</code>.  Calling an action routine directly from client code is an illegal operation.</p>
@@ -136,7 +136,7 @@
       <name>Dictionary</name>
       <comment>Returns a field lookup table sorted by field IDs.</comment>
       <access read="G">Get</access>
-      <type>struct Field *</type>
+      <type>Field[]</type>
       <description>
 <p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For derived classes, use linear scanning.</p>
       </description>
@@ -222,7 +222,7 @@
       <name>Methods</name>
       <comment>Set this field to define the methods supported by the class.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>MethodEntry[]</type>
       <description>
 <p>If a class design will include support for methods, create a MethodEntry list and set this field prior to initialisation.  The array must provide information on each method's ID, name, parameters, and structure size.</p>
 <p>Note that method lists can be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
@@ -329,7 +329,7 @@
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
       <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>

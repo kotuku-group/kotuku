@@ -418,7 +418,9 @@ int lj_opt_loop(jit_State* J)
    SnapNo nsnap = J->cur.nsnap;
    MSize nsnapmap = J->cur.nsnapmap;
    LoopState lps;
+#ifdef LUA_USE_ASSERT
    ptrdiff_t base_before = savestack(L, L->base);
+#endif
    ptrdiff_t top_before = savestack(L, L->top);
    int32_t cframe_nres_before = L->cframe ? cframe_nres(cframe_raw(L->cframe)) : 0;
    int errcode;

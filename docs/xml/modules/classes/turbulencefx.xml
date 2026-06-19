@@ -93,7 +93,10 @@
       <name>Type</name>
       <comment>Can be set to 'noise' or 'turbulence'.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="TB">TB</type>
+      <description>
+<types lookup="TB"/>
+      </description>
     </field>
 
     <field>
@@ -105,6 +108,13 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="TB">
+      <const name="NOISE">Use the fractal noise function.</const>
+      <const name="TURBULENCE">Use the standard turbulence function.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

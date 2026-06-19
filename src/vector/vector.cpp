@@ -199,12 +199,12 @@ static ERR MODExpunge(void)
 extern ERR MODOpen(OBJECTPTR Module);
 
 static STRUCTS glStructures = {
-   { "GradientStop", sizeof(GradientStop) },
-   { "MergeSource",  sizeof(MergeSource) },
-   { "PathCommand",  sizeof(PathCommand) },
-   { "Transition",   sizeof(Transition) },
-   { "VectorMatrix", sizeof(VectorMatrix) },
-   { "VectorPoint",  sizeof(VectorPoint) }
+   { "GradientStop", { sizeof(GradientStop), alignof(GradientStop) } },
+   { "MergeSource",  { sizeof(MergeSource),  alignof(MergeSource)  } },
+   { "PathCommand",  { sizeof(PathCommand),  alignof(PathCommand)  } },
+   { "Transition",   { sizeof(Transition),   alignof(Transition)   } },
+   { "VectorMatrix", { sizeof(VectorMatrix), alignof(VectorMatrix) } },
+   { "VectorPoint",  { sizeof(VectorPoint),  alignof(VectorPoint)  } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

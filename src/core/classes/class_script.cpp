@@ -577,16 +577,15 @@ For maximum compatibility in type conversion, the results are stored as an array
 
 *********************************************************************************************************************/
 
-static ERR GET_Results(objScript *Self, kt::vector<std::string> **Value, int *Elements)
+static ERR GET_Results(objScript *Self, std::span<const std::string> &Value)
 {
-   *Value = &Self->Results;
-   *Elements = Self->Results.size();
+   Value = std::span<const std::string>(Self->Results.data(), Self->Results.size());
    return ERR::Okay;
 }
 
-static ERR SET_Results(objScript *Self, const kt::vector<std::string> *Value, int Elements)
+static ERR SET_Results(objScript *Self, const std::span<const std::string> &Value)
 {
-   if (Value) Self->Results = *Value;
+   if (Value.data()) Self->Results.assign(Value.data(), Value.data() + Value.size());
    else Self->Results.clear();
    return ERR::Okay;
 }
@@ -733,7 +732,7 @@ static const FieldArray clScriptFields[] = {
    // Virtual Fields
    { "CacheFile",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_CacheFile, SET_CacheFile },
    { "WorkingPath",  FDF_CPPSTRING|FDF_RW,                      GET_WorkingPath, SET_WorkingPath },
-   { "Results",      FDF_ARRAY|FDF_CPPSTRING|FDF_RW|FDF_PURE,   GET_Results, SET_Results },
+   { "Results",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Results, SET_Results },
    { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
    { "Statement",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_String, SET_String },
    { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_String, SET_String },

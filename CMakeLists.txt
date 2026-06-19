@@ -4,7 +4,7 @@
 # Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 # Fast Config:     cmake -S . -B build/fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #                  (FastBuild optimises for compilation speed rather than runtime performance - uses -O0, faster linkers, minimal debug info)
-# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF -DBUILD_DEFS=OFF
+# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF
 #
 # A build can target a local folder by adding -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #

@@ -155,6 +155,21 @@ class extTurbulenceFX : public extFilterEffect {
 
       return (col < 0) ? 0 : (col > 255) ? 255 : col;
    }
+
+   ~extTurbulenceFX() {
+      if (Bitmap) FreeResource(Bitmap);
+   }
+
+   extTurbulenceFX() {
+      Octaves    = 1;
+      Stitch     = false;
+      Seed       = 0;
+      Type       = TB::TURBULENCE;
+      FX         = 0;
+      FY         = 0;
+      SourceType = VSF::NONE;
+      Dirty      = true;
+   }
 };
 
 //********************************************************************************************************************
@@ -282,14 +297,6 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR TURBULENCEFX_Free(extTurbulenceFX *Self)
-{
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
 {
    int lSeed = setup_seed(Self->Seed);
@@ -325,21 +332,6 @@ static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
       }
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR TURBULENCEFX_NewObject(extTurbulenceFX *Self)
-{
-   Self->Octaves    = 1;
-   Self->Stitch     = false;
-   Self->Seed       = 0;
-   Self->Type       = TB::TURBULENCE;
-   Self->FX         = 0;
-   Self->FY         = 0;
-   Self->SourceType = VSF::NONE;
-   Self->Dirty      = true;
    return ERR::Okay;
 }
 
@@ -517,19 +509,14 @@ static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, std::string_view &Valu
 
 #include "filter_turbulence_def.c"
 
-static const FieldDef clTurbulenceType[] = {
-   { "Turbulence", TB::TURBULENCE },
-   { "Noise",      TB::NOISE },
-   { nullptr, 0 }
-};
 static const FieldArray clTurbulenceFXFields[] = {
-   { "FX",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,          TURBULENCEFX_GET_FX,      TURBULENCEFX_SET_FX },
-   { "FY",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,          TURBULENCEFX_GET_FY,      TURBULENCEFX_SET_FY },
-   { "Octaves", FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,             TURBULENCEFX_GET_Octaves, TURBULENCEFX_SET_Octaves },
-   { "Seed",    FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,             TURBULENCEFX_GET_Seed,    TURBULENCEFX_SET_Seed },
-   { "Stitch",  FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,             TURBULENCEFX_GET_Stitch,  TURBULENCEFX_SET_Stitch },
-   { "Type",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI|FDF_PURE,  TURBULENCEFX_GET_Type,    TURBULENCEFX_SET_Type, &clTurbulenceType },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, TURBULENCEFX_GET_XMLDef },
+   { "FX",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,         TURBULENCEFX_GET_FX,      TURBULENCEFX_SET_FX },
+   { "FY",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,         TURBULENCEFX_GET_FY,      TURBULENCEFX_SET_FY },
+   { "Octaves", FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,            TURBULENCEFX_GET_Octaves, TURBULENCEFX_SET_Octaves },
+   { "Seed",    FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,            TURBULENCEFX_GET_Seed,    TURBULENCEFX_SET_Seed },
+   { "Stitch",  FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,            TURBULENCEFX_GET_Stitch,  TURBULENCEFX_SET_Stitch },
+   { "Type",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI|FDF_PURE, TURBULENCEFX_GET_Type,    TURBULENCEFX_SET_Type, &clTurbulenceFXTB },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,      TURBULENCEFX_GET_XMLDef },
    END_FIELD
 };
 

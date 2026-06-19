@@ -264,25 +264,25 @@ static int async_method(lua_State *Lua)
    auto gc_obj = lj_lib_checkobject(Lua, 1);
    if (not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
-   MethodEntry *table;
-   int total_methods, i;
+   std::span<const MethodEntry> table;
+   int i;
 
    auto type = lua_type(Lua, 2);
    CSTRING method = nullptr;
    AC method_id = AC::NIL;
 
-   if ((!gc_obj->classptr->get(FID_Methods, table, total_methods)) and (table)) {
+   if (!gc_obj->classptr->get(FID_Methods, table)) {
       bool found = false;
 
       if (type IS LUA_TSTRING) {
          method = lua_tostring(Lua, 2);
-         for (i=1; i < total_methods; i++) {
+         for (unsigned i=1; i < table.size(); i++) {
             if ((table[i].Name) and (iequals(table[i].Name, method))) { found = true; break; }
          }
       }
       else if (type IS LUA_TNUMBER) {
          method_id = AC(lua_tointeger(Lua, 2));
-         for (i=1; i < total_methods; i++) {
+         for (unsigned i=1; i < table.size(); i++) {
             if (table[i].MethodID IS method_id) { found = true; break; }
          }
       }

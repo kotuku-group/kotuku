@@ -21,20 +21,20 @@
 
   <fields>
     <field>
-      <name>CenterX</name>
+      <name>CX</name>
       <comment>The horizontal center of the spiral.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The horizontal center of the spiral is defined here as either a fixed or scaled value.</p>
       </description>
     </field>
 
     <field>
-      <name>CenterY</name>
+      <name>CY</name>
       <comment>The vertical center of the spiral.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The vertical center of the spiral is defined here as either a fixed or scaled value.</p>
       </description>
@@ -44,7 +44,7 @@
       <name>Height</name>
       <comment>The height (vertical diameter) of the spiral.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The height of the spiral is expressed as <code>Radius * 2.0</code>.</p>
       </description>
@@ -85,7 +85,7 @@
       <name>Radius</name>
       <comment>The radius of the spiral.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The radius of the spiral is defined here as either a fixed or scaled value.  If zero, preference is given to <fl>LoopLimit</fl>.</p>
       </description>
@@ -116,7 +116,7 @@
       <name>Width</name>
       <comment>The width (horizontal diameter) of the spiral.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The width of the spiral is expressed as <code>Radius * 2.0</code>.</p>
       </description>

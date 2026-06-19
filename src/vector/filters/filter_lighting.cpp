@@ -801,37 +801,27 @@ static ERR LIGHTINGFX_SetSpotLight(extLightingFX *Self, struct lt::SetSpotLight 
 -FIELD-
 Colour: Defines the colour of the light source.
 
-Set the Colour field to define the colour of the light source.  The colour is defined as an array of four 32-bit
-floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha values in that
-order.
+Set the Colour field to define the colour of the light source.
 
 If the algorithm supports it, the Alpha component defines the intensity of the light source.
 
-The default colour is pure white, `1.0,1.0,1.0,1.0`.
+The default colour is pure white.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_Colour(extLightingFX *Self, float **Value, int *Elements)
+static ERR LIGHTINGFX_GET_Colour(extLightingFX *Self, FRGB **Value)
 {
-   *Value = (float *)&Self->Colour;
-   *Elements = 4;
+   *Value = &Self->Colour;
    return ERR::Okay;
 }
 
-static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, float *Value, int Elements)
+static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, FRGB *Value)
 {
-   if (Value) {
-      if (Elements >= 1) Self->Colour.Red   = Value[0];
-      if (Elements >= 2) Self->Colour.Green = Value[1];
-      if (Elements >= 3) Self->Colour.Blue  = Value[2];
-      if (Elements >= 4) Self->Colour.Alpha = Value[3];
-      else Self->Colour.Alpha = 1;
-   }
+   if (Value) Self->Colour = *Value;
    else Self->Colour.Alpha = 0;
 
    Self->LinearColour = Self->Colour;
    glLinearRGB.convert(Self->LinearColour);
-
    return ERR::Okay;
 }
 
@@ -1005,23 +995,17 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string_view &Value)
 
 //********************************************************************************************************************
 
-static const FieldDef clLightingType[] = {
-   { "Diffuse",  LT::DIFFUSE },
-   { "Specular", LT::SPECULAR },
-   { nullptr, 0 }
-};
-
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
-   { "Colour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Colour, LIGHTINGFX_SET_Colour },
+   { "Colour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Colour, LIGHTINGFX_SET_Colour, "FRGB" },
    { "Constant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Constant, LIGHTINGFX_SET_Constant },
    { "Exponent", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Exponent, LIGHTINGFX_SET_Exponent },
    { "Scale",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Scale, LIGHTINGFX_SET_Scale },
-   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingType },
+   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingFXLT },
    { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
    { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, LIGHTINGFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };
 

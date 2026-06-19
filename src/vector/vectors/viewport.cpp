@@ -23,6 +23,26 @@ NOTE: Refer to gen_vector_path() for the code that manages viewport dimensions i
 
 *********************************************************************************************************************/
 
+static double viewport_parent_width(extVectorViewport *Self)
+{
+   if (Self->ParentView) return viewport_coordinate_width(Self->ParentView);
+   else if (Self->Scene) return Self->Scene->PageWidth;
+   else return 0;
+}
+
+static double viewport_parent_height(extVectorViewport *Self)
+{
+   if (Self->ParentView) return viewport_coordinate_height(Self->ParentView);
+   else if (Self->Scene) return Self->Scene->PageHeight;
+   else return 0;
+}
+
+static Unit fixed_to_requested_unit(double Value, double ParentSize, bool Scaled)
+{
+   if (Scaled) return Unit(ParentSize ? Value / ParentSize : 0, FD_SCALED);
+   else return Unit(Value);
+}
+
 //********************************************************************************************************************
 // Input event handler for the dragging of viewports by the user.  Requires the client to set the DragCallback field
 // to be active.
@@ -68,12 +88,6 @@ static ERR drag_callback(extVectorViewport *Viewport, const InputEvent *Events)
 
             Viewport->get(FID_X, glDragOriginX);
             Viewport->get(FID_Y, glDragOriginY);
-
-            // Ensure that the X,Y coordinates are fixed.
-
-            Viewport->vpDimensions = (Viewport->vpDimensions | DMF::FIXED_X | DMF::FIXED_Y) &
-               (~(DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_X_OFFSET|DMF::SCALED_Y_OFFSET));
-
          }
          else Viewport->vpDragging = 0; // Released
       }
@@ -151,9 +165,12 @@ static ERR VECTORVIEWPORT_Move(extVectorViewport *Self, struct acMove *Args)
 {
    if (!Args) return ERR::NullArgs;
 
-   Self->vpDimensions = (Self->vpDimensions|DMF::FIXED_X|DMF::FIXED_Y) & (~(DMF::SCALED_X|DMF::SCALED_Y));
-   Self->vpTargetX += Args->DeltaX;
-   Self->vpTargetY += Args->DeltaY;
+   Unit x, y;
+   Self->get(FID_X, x);
+   Self->get(FID_Y, y);
+
+   Self->vpTargetX = Unit(x + Args->DeltaX);
+   Self->vpTargetY = Unit(y + Args->DeltaY);
 
    mark_dirty((extVector *)Self, RC::FINAL_PATH|RC::TRANSFORM);
    return ERR::Okay;
@@ -169,15 +186,8 @@ static ERR VECTORVIEWPORT_MoveToPoint(extVectorViewport *Self, struct acMoveToPo
 {
    if (!Args) return ERR::NullArgs;
 
-   if ((Args->Flags & MTF::X) != MTF::NIL) {
-      Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
-      Self->vpTargetX = Args->X;
-   }
-
-   if ((Args->Flags & MTF::Y) != MTF::NIL) {
-      Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
-      Self->vpTargetY = Args->Y;
-   }
+   if ((Args->Flags & MTF::X) != MTF::NIL) Self->vpTargetX = Args->X;
+   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->vpTargetY = Args->Y;
 
    mark_dirty((extVector *)Self, RC::FINAL_PATH|RC::TRANSFORM);
    return ERR::Okay;
@@ -207,16 +217,13 @@ static ERR VECTORVIEWPORT_Redimension(extVectorViewport *Self, struct acRedimens
 {
    if (!Args) return ERR::NullArgs;
 
-   Self->vpDimensions = (Self->vpDimensions|DMF::FIXED_X|DMF::FIXED_Y|DMF::FIXED_WIDTH|DMF::FIXED_HEIGHT) &
-      (~(DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT));
+   Self->vpTargetX      = Unit(Args->X);
+   Self->vpTargetY      = Unit(Args->Y);
+   Self->vpTargetWidth  = Unit(Args->Width);
+   Self->vpTargetHeight = Unit(Args->Height);
 
-   Self->vpTargetX      = Args->X;
-   Self->vpTargetY      = Args->Y;
-   Self->vpTargetWidth  = Args->Width;
-   Self->vpTargetHeight = Args->Height;
-
-   if (Self->vpTargetWidth < 1) Self->vpTargetWidth = 1;
-   if (Self->vpTargetHeight < 1) Self->vpTargetHeight = 1;
+   if (Self->vpTargetWidth < 1) Self->vpTargetWidth = Unit(1);
+   if (Self->vpTargetHeight < 1) Self->vpTargetHeight = Unit(1);
    mark_dirty((extVector *)Self, RC::FINAL_PATH|RC::TRANSFORM);
    return ERR::Okay;
 }
@@ -231,14 +238,11 @@ static ERR VECTORVIEWPORT_Resize(extVectorViewport *Self, struct acResize *Args)
 {
    if (!Args) return ERR::NullArgs;
 
-   Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
-   Self->vpTargetWidth = Args->Width;
+   Self->vpTargetWidth  = Unit(Args->Width);
+   Self->vpTargetHeight = Unit(Args->Height);
 
-   Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
-   Self->vpTargetHeight = Args->Height;
-
-   if (Self->vpTargetWidth < 1) Self->vpTargetWidth = 1;
-   if (Self->vpTargetHeight < 1) Self->vpTargetHeight = 1;
+   if (Self->vpTargetWidth < 1) Self->vpTargetWidth = Unit(1);
+   if (Self->vpTargetHeight < 1) Self->vpTargetHeight = Unit(1);
    mark_dirty((extVector *)Self, RC::FINAL_PATH|RC::TRANSFORM);
    return ERR::Okay;
 }
@@ -345,28 +349,6 @@ static ERR VIEW_SET_Buffered(extVectorViewport *Self, int Value)
 }
 
 /*********************************************************************************************************************
--FIELD-
-Dimensions: Dimension flags define whether individual dimension fields contain fixed or scaled values.
-Lookup: DMF
-
-<types lookup="DMF"/>
-
-*********************************************************************************************************************/
-
-static ERR VIEW_GET_Dimensions(extVectorViewport *Self, DMF &Value)
-{
-   Value = Self->vpDimensions;
-   return ERR::Okay;
-}
-
-static ERR VIEW_SET_Dimensions(extVectorViewport *Self, DMF Value)
-{
-   Self->vpDimensions = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 DragCallback: Receiver for drag requests originating from the viewport.
@@ -423,54 +405,35 @@ Height: The height of the viewport's target area.
 The height of the viewport's target area is defined here as a fixed or scaled value.  The default value is `100%` for
 full coverage.
 
-The fixed value is always returned when retrieving the height.
-
 *********************************************************************************************************************/
 
 static ERR VIEW_GET_Height(extVectorViewport *Self, Unit &Value)
 {
-   double val;
-
    gen_vector_tree(Self);
 
-   if (dmf::hasHeight(Self->vpDimensions)) { // Working with a fixed dimension
-      if (Value.Type & FD_SCALED) {
-         if (Self->ParentView) val = Self->vpFixedHeight * Self->ParentView->vpFixedHeight;
-         else val = Self->vpFixedHeight * Self->Scene->PageHeight;
-      }
-      else val = Self->vpTargetHeight;
-   }
-   else if (dmf::hasScaledHeight(Self->vpDimensions)) { // Working with a scaled dimension
-      if (Value.Type & FD_SCALED) val = Self->vpTargetHeight;
-      else if (Self->ParentView) val = Self->vpTargetHeight * Self->ParentView->vpFixedHeight;
-      else val = Self->vpTargetHeight * Self->Scene->PageHeight;
-   }
-   else if (dmf::hasAnyYOffset(Self->vpDimensions)) {
-      double y, parent_height;
-
-      if (dmf::hasScaledY(Self->vpDimensions)) y = Self->vpTargetY * Self->ParentView->vpFixedHeight;
-      else y = Self->vpTargetY;
-
-      if (Self->ParentView) Self->ParentView->get(FID_Height, parent_height);
-      else parent_height = Self->Scene->PageHeight;
-
-      if (dmf::hasYOffset(Self->vpDimensions)) val = parent_height - Self->vpTargetYO - y;
-      else val = parent_height - (Self->vpTargetYO * parent_height) - y;
-   }
-   else { // If no height set by the client, the full height is inherited from the parent
-      if (Self->ParentView) return Self->ParentView->get(FID_Height, Value);
-      else Self->Scene->get(FID_PageHeight, val);
+   if (Value.verbatim()) {
+      Value = Self->vpTargetHeight;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
    }
 
-   Value.set(val);
+   auto parent_height = viewport_parent_height(Self);
+   double val;
+
+   if (Self->vpTargetHeight.defined()) val = unit_to_fixed(Self->vpTargetHeight, parent_height);
+   else if (Self->vpTargetYO.defined()) {
+      auto y = Self->vpTargetY.defined() ? unit_to_fixed(Self->vpTargetY, parent_height) : 0;
+      val = parent_height - unit_to_fixed(Self->vpTargetYO, parent_height) - y;
+   }
+   else val = parent_height;
+
+   Value = fixed_to_requested_unit(val, parent_height, Value.scaled());
    return ERR::Okay;
 }
 
 static ERR VIEW_SET_Height(extVectorViewport *Self, Unit &Value)
 {
    Self->vpTargetHeight = Value;
-   if (Value.scaled()) Self->vpDimensions = (Self->vpDimensions | DMF::SCALED_HEIGHT) & (~DMF::FIXED_HEIGHT);
-   else Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
    mark_dirty((extVector *)Self, RC::DIRTY);
    return ERR::Okay;
 }
@@ -660,48 +623,31 @@ full coverage.
 
 static ERR VIEW_GET_Width(extVectorViewport *Self, Unit &Value)
 {
-   double val;
-
    gen_vector_tree(Self);
 
-   if (dmf::hasWidth(Self->vpDimensions)) { // Working with a fixed dimension
-      if (Value.Type & FD_SCALED) {
-         if (Self->ParentView) val = Self->vpFixedWidth * Self->ParentView->vpFixedWidth;
-         else val = Self->vpFixedWidth * Self->Scene->PageWidth;
-      }
-      else val = Self->vpTargetWidth;
-   }
-   else if (dmf::hasScaledWidth(Self->vpDimensions)) { // Working with a scaled dimension
-      if (Value.Type & FD_SCALED) val = Self->vpTargetWidth;
-      else if (Self->ParentView) val = Self->vpTargetWidth * Self->ParentView->vpFixedWidth;
-      else val = Self->vpTargetWidth * Self->Scene->PageWidth;
-   }
-   else if (dmf::hasAnyXOffset(Self->vpDimensions)) {
-      double x, parent_width;
-
-      if (dmf::hasScaledX(Self->vpDimensions)) x = Self->vpTargetX * Self->ParentView->vpFixedWidth;
-      else x = Self->vpTargetX;
-
-      if (Self->ParentView) Self->ParentView->get(FID_Width, parent_width);
-      else parent_width = Self->Scene->PageWidth;
-
-      if (dmf::hasXOffset(Self->vpDimensions)) val = parent_width - Self->vpTargetXO - x;
-      else val = parent_width - (Self->vpTargetXO * parent_width) - x;
-   }
-   else { // If no width set by the client, the full width is inherited from the parent
-      if (Self->ParentView) return Self->ParentView->get(FID_Width, Value);
-      else Self->Scene->get(FID_PageWidth, val);
+   if (Value.verbatim()) {
+      Value = Self->vpTargetWidth;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
    }
 
-   Value.set(val);
+   auto parent_width = viewport_parent_width(Self);
+   double val;
+
+   if (Self->vpTargetWidth.defined()) val = unit_to_fixed(Self->vpTargetWidth, parent_width);
+   else if (Self->vpTargetXO.defined()) {
+      auto x = Self->vpTargetX.defined() ? unit_to_fixed(Self->vpTargetX, parent_width) : 0;
+      val = parent_width - unit_to_fixed(Self->vpTargetXO, parent_width) - x;
+   }
+   else val = parent_width;
+
+   Value = fixed_to_requested_unit(val, parent_width, Value.scaled());
    return ERR::Okay;
 }
 
 static ERR VIEW_SET_Width(extVectorViewport *Self, Unit &Value)
 {
    Self->vpTargetWidth = Value;
-   if (Value.scaled()) Self->vpDimensions = (Self->vpDimensions | DMF::SCALED_WIDTH) & (~DMF::FIXED_WIDTH);
-   else Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
    mark_dirty((extVector *)Self, RC::DIRTY);
    return ERR::Okay;
 }
@@ -721,32 +667,30 @@ width.
 
 static ERR VIEW_GET_X(extVectorViewport *Self, Unit &Value)
 {
-   double width, value;
-
    gen_vector_tree(Self);
 
-   if (dmf::hasX(Self->vpDimensions)) value = Self->vpTargetX;
-   else if (dmf::hasScaledX(Self->vpDimensions)) {
-      value = Self->vpTargetX * Self->ParentView->vpFixedWidth;
+   if (Value.verbatim()) {
+      Value = Self->vpTargetX;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
    }
-   else if ((dmf::hasAnyWidth(Self->vpDimensions)) and (dmf::hasAnyXOffset(Self->vpDimensions))) {
-      if (dmf::hasWidth(Self->vpDimensions)) width = Self->vpTargetWidth;
-      else width = Self->ParentView->vpFixedWidth * Self->vpTargetWidth;
-      if (dmf::hasXOffset(Self->vpDimensions)) value = Self->ParentView->vpFixedWidth - width - Self->vpTargetXO;
-      else value = Self->ParentView->vpFixedWidth - width - (Self->ParentView->vpFixedWidth * Self->vpTargetXO);
-   }
-   else value = 0;
 
-   if (Value.scaled()) Value.set(value / Self->ParentView->vpFixedWidth);
-   else Value.set(value);
+   auto parent_width = viewport_parent_width(Self);
+   double value = 0;
+
+   if (Self->vpTargetX.defined()) value = unit_to_fixed(Self->vpTargetX, parent_width);
+   else if (Self->vpTargetWidth.defined() and Self->vpTargetXO.defined()) {
+      value = parent_width - unit_to_fixed(Self->vpTargetWidth, parent_width) -
+         unit_to_fixed(Self->vpTargetXO, parent_width);
+   }
+
+   Value = fixed_to_requested_unit(value, parent_width, Value.scaled());
    return ERR::Okay;
 }
 
 static ERR VIEW_SET_X(extVectorViewport *Self, Unit &Value)
 {
    Self->vpTargetX = Value;
-   if (Value.scaled()) Self->vpDimensions = (Self->vpDimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-   else Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
    mark_dirty((extVector *)Self, RC::DIRTY);
    return ERR::Okay;
 }
@@ -766,34 +710,30 @@ parent's width.
 
 static ERR VIEW_GET_XOffset(extVectorViewport *Self, Unit &Value)
 {
-   double width;
-   double value = 0;
-
    gen_vector_tree(Self);
 
-   if (dmf::hasXOffset(Self->vpDimensions)) value = Self->vpTargetXO;
-   else if (dmf::hasScaledXOffset(Self->vpDimensions)) {
-      value = Self->vpTargetXO * Self->ParentView->vpFixedWidth;
+   if (Value.verbatim()) {
+      Value = Self->vpTargetXO;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
    }
-   else if ((dmf::hasAnyX(Self->vpDimensions)) and (dmf::hasAnyWidth(Self->vpDimensions))) {
-      if (dmf::hasWidth(Self->vpDimensions)) width = Self->vpTargetWidth;
-      else width = Self->ParentView->vpFixedWidth * Self->vpTargetWidth;
 
-      if (dmf::hasX(Self->vpDimensions)) value = Self->ParentView->vpFixedWidth - (Self->vpTargetX + width);
-      else value = Self->ParentView->vpFixedWidth - ((Self->vpTargetX * Self->ParentView->vpFixedWidth) + width);
+   auto parent_width = viewport_parent_width(Self);
+   double value = 0;
+
+   if (Self->vpTargetXO.defined()) value = unit_to_fixed(Self->vpTargetXO, parent_width);
+   else if (Self->vpTargetX.defined() and Self->vpTargetWidth.defined()) {
+      value = parent_width - unit_to_fixed(Self->vpTargetX, parent_width) -
+         unit_to_fixed(Self->vpTargetWidth, parent_width);
    }
-   else value = 0;
 
-   if (Value.scaled()) Value.set(value / Self->ParentView->vpFixedWidth);
-   else Value.set(value);
+   Value = fixed_to_requested_unit(value, parent_width, Value.scaled());
    return ERR::Okay;
 }
 
 static ERR VIEW_SET_XOffset(extVectorViewport *Self, Unit &Value)
 {
    Self->vpTargetXO = Value;
-   if (Value.scaled()) Self->vpDimensions = (Self->vpDimensions | DMF::SCALED_X_OFFSET) & (~DMF::FIXED_X_OFFSET);
-   else Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_X_OFFSET) & (~DMF::SCALED_X_OFFSET);
    mark_dirty((extVector *)Self, RC::DIRTY);
    return ERR::Okay;
 }
@@ -813,33 +753,30 @@ height.
 
 static ERR VIEW_GET_Y(extVectorViewport *Self, Unit &Value)
 {
-   double value, height;
-
    gen_vector_tree(Self);
 
-   if (dmf::hasY(Self->vpDimensions)) value = Self->vpTargetY;
-   else if (dmf::hasScaledY(Self->vpDimensions)) {
-      value = Self->vpTargetY * Self->ParentView->vpFixedHeight;
+   if (Value.verbatim()) {
+      Value = Self->vpTargetY;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
    }
-   else if ((dmf::hasAnyHeight(Self->vpDimensions)) and (dmf::hasAnyYOffset(Self->vpDimensions))) {
-      if (dmf::hasHeight(Self->vpDimensions)) height = Self->vpTargetHeight;
-      else height = Self->ParentView->vpFixedHeight * Self->vpTargetHeight;
 
-      if (dmf::hasYOffset(Self->vpDimensions)) value = Self->ParentView->vpFixedHeight - height - Self->vpTargetYO;
-      else value = Self->ParentView->vpFixedHeight - height - (Self->ParentView->vpFixedHeight * Self->vpTargetYO);
+   auto parent_height = viewport_parent_height(Self);
+   double value = 0;
+
+   if (Self->vpTargetY.defined()) value = unit_to_fixed(Self->vpTargetY, parent_height);
+   else if (Self->vpTargetHeight.defined() and Self->vpTargetYO.defined()) {
+      value = parent_height - unit_to_fixed(Self->vpTargetHeight, parent_height) -
+         unit_to_fixed(Self->vpTargetYO, parent_height);
    }
-   else value = 0;
 
-   if (Value.scaled()) Value.set(value / Self->ParentView->vpFixedHeight);
-   else Value.set(value);
+   Value = fixed_to_requested_unit(value, parent_height, Value.scaled());
    return ERR::Okay;
 }
 
 static ERR VIEW_SET_Y(extVectorViewport *Self, Unit &Value)
 {
    Self->vpTargetY = Value;
-   if (Value.scaled()) Self->vpDimensions = (Self->vpDimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-   else Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
    mark_dirty((extVector *)Self, RC::DIRTY);
    return ERR::Okay;
 }
@@ -859,34 +796,30 @@ height.
 
 static ERR VIEW_GET_YOffset(extVectorViewport *Self, Unit &Value)
 {
-   double height;
-   double value = 0;
-
    gen_vector_tree(Self);
 
-   if (dmf::hasYOffset(Self->vpDimensions)) value = Self->vpTargetYO;
-   else if (dmf::hasScaledYOffset(Self->vpDimensions)) {
-      value = Self->vpTargetYO * Self->ParentView->vpFixedHeight;
+   if (Value.verbatim()) {
+      Value = Self->vpTargetYO;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
    }
-   else if ((dmf::hasAnyY(Self->vpDimensions)) and (dmf::hasAnyHeight(Self->vpDimensions))) {
-      if (dmf::hasHeight(Self->vpDimensions)) height = Self->vpTargetHeight;
-      else height = Self->ParentView->vpFixedHeight * Self->vpTargetHeight;
 
-      if (dmf::hasY(Self->vpDimensions)) value = Self->ParentView->vpFixedHeight - (Self->vpTargetY + height);
-      else value = Self->ParentView->vpFixedHeight - ((Self->vpTargetY * Self->ParentView->vpFixedHeight) + height);
+   auto parent_height = viewport_parent_height(Self);
+   double value = 0;
+
+   if (Self->vpTargetYO.defined()) value = unit_to_fixed(Self->vpTargetYO, parent_height);
+   else if (Self->vpTargetY.defined() and Self->vpTargetHeight.defined()) {
+      value = parent_height - unit_to_fixed(Self->vpTargetY, parent_height) -
+         unit_to_fixed(Self->vpTargetHeight, parent_height);
    }
-   else value = 0;
 
-   if (Value.scaled()) Value.set(value / Self->ParentView->vpFixedHeight);
-   else Value.set(value);
+   Value = fixed_to_requested_unit(value, parent_height, Value.scaled());
    return ERR::Okay;
 }
 
 static ERR VIEW_SET_YOffset(extVectorViewport *Self, Unit &Value)
 {
    Self->vpTargetYO = Value;
-   if (Value.scaled()) Self->vpDimensions = (Self->vpDimensions | DMF::SCALED_Y_OFFSET) & (~DMF::FIXED_Y_OFFSET);
-   else Self->vpDimensions = (Self->vpDimensions | DMF::FIXED_Y_OFFSET) & (~DMF::SCALED_Y_OFFSET);
    mark_dirty((extVector *)Self, RC::DIRTY);
    return ERR::Okay;
 }
@@ -895,35 +828,22 @@ static ERR VIEW_SET_YOffset(extVectorViewport *Self, Unit &Value)
 
 #include "viewport_def.cpp"
 
-static const FieldDef clViewDimensions[] = {
-   { "ScaledX",      DMF::SCALED_X },
-   { "ScaledY",      DMF::SCALED_Y },
-   { "ScaledWidth",  DMF::SCALED_WIDTH },
-   { "ScaledHeight", DMF::SCALED_HEIGHT },
-   { "FixedX",       DMF::FIXED_X },
-   { "FixedY",       DMF::FIXED_Y },
-   { "FixedWidth",   DMF::FIXED_WIDTH },
-   { "FixedHeight",  DMF::FIXED_HEIGHT },
-   { nullptr, 0 }
-};
-
 static const FieldArray clViewFields[] = {
    { "AbsX",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsX },
    { "AbsY",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsY },
    { "AspectRatio",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, VIEW_GET_AspectRatio, VIEW_SET_AspectRatio, &clAspectRatio },
    { "Buffer",       FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, VIEW_GET_Buffer },
    { "Buffered",     FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE, VIEW_GET_Buffered, VIEW_SET_Buffered },
-   { "Dimensions",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_R|FDF_PURE, VIEW_GET_Dimensions, VIEW_SET_Dimensions, &clViewDimensions },
    { "DragCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DragCallback, VIEW_SET_DragCallback },
    { "Overflow",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_Overflow, VIEW_SET_Overflow, &clVectorViewportVOF },
    { "OverflowX",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_OverflowX, VIEW_SET_OverflowX, &clVectorViewportVOF },
    { "OverflowY",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_OverflowY, VIEW_SET_OverflowY, &clVectorViewportVOF },
-   { "X",            FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VIEW_GET_X,       VIEW_SET_X },
-   { "Y",            FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VIEW_GET_Y,       VIEW_SET_Y },
-   { "XOffset",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VIEW_GET_XOffset, VIEW_SET_XOffset },
-   { "YOffset",      FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VIEW_GET_YOffset, VIEW_SET_YOffset },
-   { "Width",        FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VIEW_GET_Width,   VIEW_SET_Width },
-   { "Height",       FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VIEW_GET_Height,  VIEW_SET_Height },
+   { "X",            FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW, VIEW_GET_X,       VIEW_SET_X },
+   { "Y",            FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW, VIEW_GET_Y,       VIEW_SET_Y },
+   { "XOffset",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW, VIEW_GET_XOffset, VIEW_SET_XOffset },
+   { "YOffset",      FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW, VIEW_GET_YOffset, VIEW_SET_YOffset },
+   { "Width",        FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW, VIEW_GET_Width,   VIEW_SET_Width },
+   { "Height",       FDF_VIRTUAL|FDF_UNIT|FDF_SCALED|FDF_RW, VIEW_GET_Height,  VIEW_SET_Height },
    { "ViewX",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewX,      VIEW_SET_ViewX },
    { "ViewY",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewY,      VIEW_SET_ViewY },
    { "ViewWidth",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewWidth,  VIEW_SET_ViewWidth },

@@ -13,7 +13,7 @@ Per-vertex colour values are supplied directly through #Vertices.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTGOURAUD_SET_Colour(extGradientGouraud *, float *, int)
+static ERR GRADIENTGOURAUD_SET_Colour(extGradientGouraud *, const std::span<const float> &)
 {
    return kt::Log().warning(ERR::UnsupportedField);
 }
@@ -28,7 +28,7 @@ static ERR GRADIENTGOURAUD_SET_SpreadMethod(extGradientGouraud *, VSPREAD)
    return kt::Log().warning(ERR::UnsupportedField);
 }
 
-static ERR GRADIENTGOURAUD_SET_Stops(extGradientGouraud *, GradientStop *, int)
+static ERR GRADIENTGOURAUD_SET_Stops(extGradientGouraud *, const std::span<const GradientStop> &)
 {
    return kt::Log().warning(ERR::UnsupportedField);
 }
@@ -47,43 +47,35 @@ one triangle.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTGOURAUD_GET_Indices(extGradientGouraud *Self, int **Value, int *Elements)
+static ERR GRADIENTGOURAUD_GET_Indices(extGradientGouraud *Self, std::span<int> &Array)
 {
-   if (Self->Gouraud) {
-      *Value    = Self->Gouraud->Indices.data();
-      *Elements = Self->Gouraud->Indices.size();
-   }
-   else {
-      *Value    = nullptr;
-      *Elements = 0;
-   }
+   if (Self->Gouraud) Array = std::span<int>(Self->Gouraud->Indices.data(), Self->Gouraud->Indices.size());
+   else Array = std::span<int>{};
    return ERR::Okay;
 }
 
-static ERR GRADIENTGOURAUD_SET_Indices(extGradientGouraud *Self, int *Value, int Elements)
+static ERR GRADIENTGOURAUD_SET_Indices(extGradientGouraud *Self, std::span<const int> &Array)
 {
    if (not Self->Gouraud) Self->Gouraud = std::make_unique<GouraudMesh>();
 
-   if ((not Value) or (Elements <= 0)) Self->Gouraud->Indices.clear();
-   else if ((Elements % 3) != 0) {
-      kt::Log().warning("The Indices array length %d is not a multiple of three.", Elements);
-      return ERR::InvalidValue;
-   }
+   const auto elements = Array.size();
+   if ((not Array.data()) or (elements <= 0)) Self->Gouraud->Indices.clear();
+   else if ((elements % 3) != 0) return kt::Log().warning(ERR::InvalidValue);
    else {
       const auto total_vertices = Self->Gouraud->Vertices.size();
-      for (int i=0; i < Elements; i++) {
-         if (Value[i] < 0) {
-            kt::Log().warning("Gouraud index %d at position %d is negative.", Value[i], i);
+      for (int i=0; i < elements; i++) {
+         if (Array[i] < 0) {
+            kt::Log().warning("Gouraud index %d at position %d is negative.", Array[i], i);
             return ERR::OutOfRange;
          }
-         if ((total_vertices > 0) and (size_t(Value[i]) >= total_vertices)) {
+         if ((total_vertices > 0) and (size_t(Array[i]) >= total_vertices)) {
             kt::Log().warning("Gouraud index %d at position %d is outside the vertex range 0 - %d.",
-               Value[i], i, int(total_vertices) - 1);
+               Array[i], i, int(total_vertices) - 1);
             return ERR::OutOfRange;
          }
       }
 
-      Self->Gouraud->Indices.assign(&Value[0], &Value[Elements]);
+      Self->Gouraud->Indices.assign(Array.begin(), Array.end());
    }
 
    Self->GouraudTriangles.Valid = false;
@@ -109,38 +101,32 @@ viewport's coordinate space.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTGOURAUD_GET_Vertices(extGradientGouraud *Self, GouraudVertex **Value, int *Elements)
+static ERR GRADIENTGOURAUD_GET_Vertices(extGradientGouraud *Self, std::span<GouraudVertex> &Array)
 {
    if (Self->Gouraud) {
-      *Value    = Self->Gouraud->Vertices.data();
-      *Elements = Self->Gouraud->Vertices.size();
+      Array = std::span<GouraudVertex>(Self->Gouraud->Vertices.data(), Self->Gouraud->Vertices.size());
    }
-   else {
-      *Value    = nullptr;
-      *Elements = 0;
-   }
+   else Array = std::span<GouraudVertex>{};
    return ERR::Okay;
 }
 
-static ERR GRADIENTGOURAUD_SET_Vertices(extGradientGouraud *Self, GouraudVertex *Value, int Elements)
+static ERR GRADIENTGOURAUD_SET_Vertices(extGradientGouraud *Self, std::span<const GouraudVertex> &Array)
 {
-   if ((not Value) or (Elements < 3)) {
-      kt::Log().warning("A Gouraud gradient requires at least three vertices (got %d).", Elements);
-      return ERR::InvalidValue;
-   }
+   const int elements = Array.size();
+   if ((not Array.data()) or (elements < 3)) return kt::Log().warning(ERR::InvalidValue);
 
    if (not Self->Gouraud) Self->Gouraud = std::make_unique<GouraudMesh>();
 
    if (not Self->Gouraud->Indices.empty()) {
       for (auto idx : Self->Gouraud->Indices) {
-         if ((idx < 0) or (idx >= Elements)) {
-            kt::Log().warning("Gouraud index %d is outside the new vertex range 0 - %d.", idx, Elements - 1);
+         if ((idx < 0) or (idx >= elements)) {
+            kt::Log().warning("Gouraud index %d is outside the new vertex range 0 - %d.", idx, elements - 1);
             return ERR::OutOfRange;
          }
       }
    }
 
-   Self->Gouraud->Vertices.assign(&Value[0], &Value[Elements]);
+   Self->Gouraud->Vertices.assign(Array.begin(), Array.end());
    Self->GouraudTriangles.Valid = false;
    if (Self->initialised()) Self->modified();
    return ERR::Okay;

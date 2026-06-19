@@ -104,26 +104,6 @@
     </field>
 
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or scaled values.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>The following dimension flags are supported:</p>
-<types lookup="DMF">
-<type name="FIXED_HEIGHT">The <fl>Height</fl> value is a fixed coordinate.</type>
-<type name="FIXED_WIDTH">The <fl>Width</fl> value is a fixed coordinate.</type>
-<type name="FIXED_X">The <fl>X</fl> value is a fixed coordinate.</type>
-<type name="FIXED_Y">The <fl>Y</fl> value is a fixed coordinate.</type>
-<type name="SCALED_HEIGHT">The <fl>Height</fl> value is a scaled coordinate.</type>
-<type name="SCALED_WIDTH">The <fl>Width</fl> value is a scaled coordinate.</type>
-<type name="SCALED_X">The <fl>X</fl> value is a scaled coordinate.</type>
-<type name="SCALED_Y">The <fl>Y</fl> value is a scaled coordinate.</type>
-</types>
-      </description>
-    </field>
-
-    <field>
       <name>Frequency</name>
       <comment>Defines the wave frequency (the distance between each wave).</comment>
       <access read="G" write="S">Get/Set</access>
@@ -137,7 +117,7 @@
       <name>Height</name>
       <comment>The height of the area containing the wave.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The height of the area containing the wave is defined here as a fixed or scaled value.</p>
       </description>
@@ -168,7 +148,7 @@
       <name>Width</name>
       <comment>The width of the area containing the wave.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The width of the area containing the wave is defined here as a fixed or scaled value.</p>
       </description>
@@ -178,7 +158,7 @@
       <name>X</name>
       <comment>The x coordinate of the wave.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The x coordinate of the wave is defined here as either a fixed or scaled value.</p>
       </description>
@@ -188,7 +168,7 @@
       <name>Y</name>
       <comment>The y coordinate of the wave.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The y coordinate of the wave is defined here as either a fixed or scaled value.</p>
       </description>

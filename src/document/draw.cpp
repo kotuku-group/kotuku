@@ -356,8 +356,8 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         const double cy = y - (std::ceil(font->metrics.Ascent) * 0.5);
 
                         para.icon->setFields(
-                           fl::CenterX(x - para.item_indent.px(*this) + radius),
-                           fl::CenterY(cy),
+                           fl::CX(x - para.item_indent.px(*this) + radius),
+                           fl::CY(cy),
                            fl::Radius(radius));
                      }
                   }

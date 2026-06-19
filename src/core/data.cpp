@@ -89,6 +89,57 @@ std::unordered_set<OBJECTID> glActiveAsyncObjects;
 std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
+// Registers a built-in struct as { name-hash, { sizeof, alignof } }.  The alignment is required so that the
+// metaclass can position FD_STRUCT fields at the offsets the compiler actually uses (alignment cannot be
+// derived from size alone).
+
+#define REG_STRUCT(name) { kt::strhash(#name), { uint16_t(sizeof(name)), uint16_t(alignof(name)) } }
+
+ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
+   REG_STRUCT(ActionArray),
+   REG_STRUCT(ActionEntry),
+   REG_STRUCT(CacheFile),
+   REG_STRUCT(ChildEntry),
+   REG_STRUCT(ClipRectangle),
+   REG_STRUCT(ColourFormat),
+   REG_STRUCT(CompressedItem),
+   REG_STRUCT(CompressionFeedback),
+   REG_STRUCT(DateTime),
+   REG_STRUCT(DirInfo),
+   REG_STRUCT(Edges),
+   REG_STRUCT(FRGB),
+   REG_STRUCT(Field),
+   REG_STRUCT(FieldArray),
+   REG_STRUCT(FieldDef),
+   REG_STRUCT(FileFeedback),
+   REG_STRUCT(FileInfo),
+   REG_STRUCT(Function),
+   REG_STRUCT(FunctionField),
+   REG_STRUCT(HSV),
+   REG_STRUCT(InputEvent),
+   REG_STRUCT(MemInfo),
+   REG_STRUCT(Message),
+   REG_STRUCT(MethodEntry),
+   { kt::strhash("ModHeader"), { uint16_t(sizeof(struct ModHeader)), uint16_t(alignof(struct ModHeader)) } },
+   REG_STRUCT(MsgHandler),
+   REG_STRUCT(ObjectSignal),
+   REG_STRUCT(RGB16),
+   REG_STRUCT(RGB32),
+   REG_STRUCT(RGB8),
+   REG_STRUCT(RGBPalette),
+   REG_STRUCT(ResourceManager),
+   REG_STRUCT(SystemState),
+   REG_STRUCT(ThreadActionMessage),
+   REG_STRUCT(ThreadMessage),
+   REG_STRUCT(Unit),
+   REG_STRUCT(dcAudio),
+   REG_STRUCT(dcDeviceInput),
+   REG_STRUCT(dcKeyEntry),
+   REG_STRUCT(dcRequest)
+};
+
+#undef REG_STRUCT
+
 std::condition_variable_any cvObjects;
 
 std::mutex glmThreadRegistry;

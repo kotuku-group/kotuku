@@ -135,7 +135,7 @@ function newShapeScene()
    check scene.mtAddDef('distal_shape', gradient)
 
    local shape = viewport.new('VectorShape', {
-      centerX=80, centerY=80, radius=40, fill='url(#distal_shape)', mod=8
+      cx=80, cy=80, radius=40, fill='url(#distal_shape)', mod=8
    })
    return scene, shape
 end

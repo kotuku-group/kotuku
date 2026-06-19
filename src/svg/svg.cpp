@@ -246,7 +246,7 @@ private:
    void process_inherit_refs(XTag &) noexcept;
    void process_shape_children(XTag &, OBJECTPTR) noexcept;
    ERR  set_paint_server(objVector *, FIELD, const std::string);
-   ERR  current_colour(objVector *, FRGB &) noexcept;
+   bool current_colour(objVector *, FRGB &) noexcept;
 
    void parse_contourgradient(const XTag &, objGradient *, std::string &) noexcept;
    void parse_diamondgradient(const XTag &, objGradient *, std::string &) noexcept;

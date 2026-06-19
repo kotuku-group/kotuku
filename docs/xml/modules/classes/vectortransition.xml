@@ -38,7 +38,7 @@
       <name>Stops</name>
       <comment>Defines the transforms that will be used at specific stop points.</comment>
       <access write="S">Set</access>
-      <type>STRUCT []</type>
+      <type>Transition[]</type>
       <description>
 <p>A valid transition object must consist of at least two stop points in order to transition from one transform to another. This is achieved by setting the Stops field with an array of Transition structures that define each stop point with a transform string.  The Transition structure consists of the following fields:</p>
 <struct lookup="Transition"/>

@@ -121,7 +121,7 @@ uint FieldID: The 'FID' number to lookup.
 &obj Target:  (Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object).
 
 -RESULT-
-struct(Field): Returns a pointer to the !Field descriptor, otherwise `NULL` if not found.
+cstruct(Field): Returns a pointer to the !Field descriptor, otherwise `NULL` if not found.
 
 -TAGS-
 object-owns-result, nullable-result, pure-query
@@ -130,7 +130,7 @@ object-owns-result, nullable-result, pure-query
 *********************************************************************************************************************/
 
 // Please note that FieldID is explicitly defined as 32-bit because using the FIELD type would make it 64-bit.
-Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) // Read-only, thread safe function.
+const Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) // Read-only, thread safe function.
 {
    OBJECTPTR dummy;
    if (!Target) Target = &dummy;

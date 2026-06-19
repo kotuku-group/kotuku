@@ -75,7 +75,7 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 - The `build_headers` target generates C/C++ headers and XML documentation from TDL using tools in `tools/idl/`
 - Class implementations are in `class_*.cpp` files
 - Generated headers go to `include/kotuku/` directory
-- Normal builds consume the existing generated headers.  After changing `.tdl` files, C++ blueprints or embedded documentation, run `build_headers` to regenerate headers and XML documentation.
+- Normal builds consume the existing generated headers.  After changing `.tdl` files, C++ blueprints or embedded documentation, run `build_headers` to regenerate headers and XML documentation.  Use `touch` on any `.tdl` file beforehand if needing to force regeneration of its downstream files.
 
 ### Scripting Integration
 

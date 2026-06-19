@@ -583,7 +583,7 @@ static void make_camel_case(std::string &String)
       return error;
    }
 
-   if (auto it = glStructSizes.find(StructName); it != glStructSizes.end()) glStructs[StructName].Size = it->second;
+   if (auto it = glStructSizes->find(kt::strhash(StructName)); it != glStructSizes->end()) glStructs[StructName].Size = it->second.Size;
    else glStructs[StructName].Size = computed_size;
 
    return ERR::Okay;

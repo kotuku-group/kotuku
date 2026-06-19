@@ -12,7 +12,6 @@ static ERR SOURCEFX_FreePlacement(extSourceFX *Self) {
 
 static const struct ActionArray clSourceFXActions[] = {
    { AC::Draw, SOURCEFX_Draw },
-   { AC::Free, SOURCEFX_Free },
    { AC::FreePlacement, SOURCEFX_FreePlacement },
    { AC::Init, SOURCEFX_Init },
    { AC::NewObject, SOURCEFX_NewObject },

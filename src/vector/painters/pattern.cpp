@@ -68,15 +68,8 @@ static ERR VECTORPATTERN_Init(extVectorPattern *Self)
       return log.warning(ERR::OutOfRange);
    }
 
-   if (!Self->Width) {
-      Self->Width = 1.0;
-      Self->Dimensions |= DMF::SCALED_WIDTH;
-   }
-
-   if (!Self->Height) {
-      Self->Height = 1.0;
-      Self->Dimensions |= DMF::SCALED_HEIGHT;
-   }
+   if ((not Self->Width.defined()) or (double(Self->Width) IS 0)) Self->Width = Unit(1.0, FD_SCALED);
+   if ((not Self->Height.defined()) or (double(Self->Height) IS 0)) Self->Height = Unit(1.0, FD_SCALED);
 
    if (InitObject(Self->Scene) != ERR::Okay) return ERR::Init;
    if (InitObject(Self->Viewport) != ERR::Okay) return ERR::Init;
@@ -95,6 +88,8 @@ static ERR VECTORPATTERN_NewObject(extVectorPattern *Self)
          Self->Units        = VUNIT::BOUNDING_BOX;
          Self->ContentUnits = VUNIT::USERSPACE;
          Self->Opacity      = 1.0;
+         Self->X            = Unit(0);
+         Self->Y            = Unit(0);
          return ERR::Okay;
       }
       else return ERR::NewObject;
@@ -111,9 +106,6 @@ In compliance with SVG requirements, the application of ContentUnits is only eff
 and Height fields have been defined.  The default setting is `USERSPACE`.
 
 -FIELD-
-Dimensions: Dimension flags are stored here.
-
--FIELD-
 Height: Height of the pattern tile.
 
 The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled,
@@ -122,16 +114,14 @@ then the dimension is calculated relative to the bounding box or viewport applyi
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Height(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_Height(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->Height);
+   Value = Self->Height;
    return ERR::Okay;
 }
 
 static ERR VECTORPATTERN_SET_Height(extVectorPattern *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_HEIGHT) & (~DMF::FIXED_HEIGHT);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
    Self->Height = Value;
    Self->modified();
    return ERR::Okay;
@@ -227,9 +217,7 @@ is 1.0.
 
 static ERR VECTORPATTERN_SET_Opacity(extVectorPattern *Self, double Value)
 {
-   if (Value < 0.0) Value = 0;
-   else if (Value > 1.0) Value = 1.0;
-   Self->Opacity = Value;
+   Self->Opacity = std::clamp(Value, 0.0, 1.0);
    Self->modified();
    return ERR::Okay;
 }
@@ -321,16 +309,14 @@ the dimension is calculated relative to the bounding box or viewport applying th
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Width(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_Width(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->Width);
+   Value = Self->Width;
    return ERR::Okay;
 }
 
 static ERR VECTORPATTERN_SET_Width(extVectorPattern *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_WIDTH) & (~DMF::FIXED_WIDTH);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
    Self->Width = Value;
    Self->modified();
    return ERR::Okay;
@@ -345,16 +331,14 @@ The (X,Y) field values define the starting coordinate for mapping patterns.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_X(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_X(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->X);
+   Value = Self->X;
    return ERR::Okay;
 }
 
 static ERR VECTORPATTERN_SET_X(extVectorPattern *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
    Self->X = Value;
    Self->modified();
    return ERR::Okay;
@@ -370,16 +354,14 @@ The (X,Y) field values define the starting coordinate for mapping patterns.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Y(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_Y(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->Y);
+   Value = Self->Y;
    return ERR::Okay;
 }
 
 static ERR VECTORPATTERN_SET_Y(extVectorPattern *Self, Unit &Value)
 {
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
    Self->Y = Value;
    Self->modified();
    return ERR::Okay;
@@ -404,10 +386,10 @@ extVectorPattern::~extVectorPattern() {
 #include "pattern_def.cpp"
 
 static const FieldArray clVectorPatternFields[] = {
-   { "X",            FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_X, VECTORPATTERN_SET_X },
-   { "Y",            FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Y, VECTORPATTERN_SET_Y },
-   { "Width",        FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Width, VECTORPATTERN_SET_Width },
-   { "Height",       FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Height, VECTORPATTERN_SET_Height },
+   { "X",            FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_X, VECTORPATTERN_SET_X },
+   { "Y",            FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Y, VECTORPATTERN_SET_Y },
+   { "Width",        FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Width, VECTORPATTERN_SET_Width },
+   { "Height",       FDF_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Height, VECTORPATTERN_SET_Height },
    { "Opacity",      FDF_DOUBLE|FDF_RW, nullptr, VECTORPATTERN_SET_Opacity },
    { "Scene",        FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::VECTORSCENE },
    { "Viewport",     FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
@@ -415,7 +397,6 @@ static const FieldArray clVectorPatternFields[] = {
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORPATTERN_SET_SpreadMethod, &clVectorPatternSpreadMethod },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorPatternUnits },
    { "ContentUnits", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorPatternContentUnits },
-   { "Dimensions",   FDF_INTFLAGS|FDF_R, nullptr, nullptr, &clVectorPatternDimensions },
    //{ "AspectRatio", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, VECTORPATTERN_GET_AspectRatio, VECTORPATTERN_SET_AspectRatio, &clAspectRatio },
    // Virtual fields
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORVECTORPATTERN_GET_Matrices, VECTORVECTORPATTERN_SET_Matrices, "VectorMatrix" },

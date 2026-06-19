@@ -154,6 +154,19 @@ function fieldArrayElementType(Field:table):str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Return the element type for generated array setters.  Array fields are stored as pointer-shaped C types after type
+-- resolution, but the setter receives a span of elements, not a span of the storage pointer type.
+
+function fieldArraySetterElementType(Field:table):str
+   local array_type = fieldArrayElementType(Field)
+
+   if array_type is 'STRUCT' then return 'APTR' end
+   if array_type:startsWith('const ') then return array_type end
+
+   return 'const ' .. array_type
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Select the C++ result type used by generated get-field functions.
 
 function fieldGetType(Field:table):str
@@ -162,6 +175,7 @@ function fieldGetType(Field:table):str
    if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
 
    if Field.flags has FD_ARRAY then
+      if (Field.flags has FD_CPP) and (Field.read is 'Get') then return Field.innerType end
       if Field.flags has FD_CPP then return field_type end
       return fieldArrayElementType(Field)
    elseif Field.flags has FD_STRING then
@@ -197,18 +211,24 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Emit the opening signature for a generated getter.
 
-function outputFieldGetSignature(Field:table, FidName:str, FieldType:str)
+function outputFieldGetSignature(Field:table, Name:str, FieldType:str, Reader:str)
+   -- Reader is 'Get' or 'Read'
+
    if Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- kt::vector
-         output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
+      if Field.innerType then
+         FieldType = f'std::span<{Field.innerType}>'
       else
-         output(f'   inline ERR get{FidName}({FieldType} * &Value, int &Elements) noexcept {{')
+         FieldType = f'std::span<{FieldType}>'
       end
    elseif Field.flags has FD_FUNCTION then
-      output(f'   inline ERR get{FidName}({FieldType} * &Value) noexcept {{')
-   else
-      output(f'   inline ERR get{FidName}({FieldType} &Value) noexcept {{')
+      FieldType ..= ' *'
+   elseif Field.flags has FD_STRUCT then
+      if not FieldType:endsWith('*') then
+         FieldType ..= ' *'
+      end
    end
+
+   output(f'   inline ERR get{Name}({FieldType} &Value) noexcept {{')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -222,20 +242,27 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
       output(Indent .. 'SetObjectContext(this, field, AC::NIL);')
    end
 
+   function outputResult(Call:str)
+      if Field.flags has FD_PURE then
+         output(Indent .. 'return ' .. Call)
+      else
+         output(Indent .. 'auto error = ' .. Call)
+         output(Indent .. 'RestoreObjectContext();')
+         output(Indent .. 'return error;')
+      end
+   end
+
    if fieldUnitUsesNumericStorage(Field) then
       output(Indent .. 'Unit var(0, FD_DOUBLE);')
       output(Indent .. 'auto error = field->GetValue(this, &var);')
       output(Indent .. 'if (error IS ERR::Okay) Value = var.Value;')
    elseif Field.flags has FD_UNIT then
-      output(Indent .. 'auto error = field->GetValue(this, &Value);')
+      outputResult('field->GetValue(this, &Value);')
+      return
    elseif Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then
-         output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, Value);')
-      else
-         output(Indent .. f'auto get_field = (ERR (*)(APTR, {FieldType} *&, int &))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, Value, Elements);')
-      end
+      output(Indent .. f'auto get_field = (ERR (*)(APTR, std::span<{FieldType}> &))field->GetValue;')
+      outputResult('get_field(this, Value);')
+      return
    elseif Field.flags has FD_STRING then
       if Field.flags has FD_ALLOC then
          output(Indent .. 'std::string_view view;')
@@ -247,14 +274,16 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
          output(Indent .. '}')
       else
          output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, Value);')
+         outputResult('get_field(this, Value);')
+         return
       end
    elseif Field.flags has FD_FUNCTION then
       output(Indent .. 'auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;')
-      output(Indent .. 'auto error = get_field(this, Value);')
-
+      outputResult('get_field(this, Value);')
+      return
    else -- Suitable for primitives only.
-      output(Indent .. 'auto error = field->GetValue(this, &Value);')
+      outputResult('field->GetValue(this, &Value);')
+      return
    end
 
    if not (Field.flags has FD_PURE) then
@@ -268,7 +297,7 @@ end
 -- Emit a complete getter body that delegates reads to the field description.
 
 function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
-   outputFieldGetSignature(Field, FidName, FieldType)
+   outputFieldGetSignature(Field, FidName, FieldType, 'Get')
 
    if Field.read is 'Get' then
       -- Virtual access to value
@@ -279,15 +308,15 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
       offset = tostring(Field.offset)
 
       if Field.flags has FD_ARRAY then
-         if Field.flags has FD_CPP then -- kt::vector
-            output(Indent .. f'Value = ({FieldType} *)(((int8_t *)this) + {offset});')
-         else -- Primitive array
+         if Field.flags has FD_CPP then -- Embedded kt::vector
+            output(Indent .. f'auto ktv = ({FieldType} *)(((int8_t *)this) + {offset});')
+            output(Indent .. f'Value = std::span<{Field.innerType}>(ktv->data(), ktv->size());')
+         else -- Embedded primitive array []
             if Field.arg >= 1 and not (Field.flags has FD_STRUCT) then -- Embedded array with known size
                output(Indent .. f'Elements = {Field.arg};')
                output(Indent .. f'Value = ({FieldType} *)(((int8_t *)this) + {offset});')
             else
-               output(Indent .. f'Value = *(({FieldType} **)(((int8_t *)this) + {offset}));')
-               output(Indent .. 'Elements = -1;')
+               error(f"Detected embedded field array '{FidName}' with no size defined.")
             end
          end
       elseif Field.flags has FD_STRING then
@@ -307,19 +336,6 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Emit a complete getter body that reads directly from class storage.
-
-function outputDirectFieldGetter(Field:table, FieldName:str, FidName:str, FieldType:str, Indent:str)
-   outputFieldGetSignature(Field, FidName, FieldType)
-   if Field.flags has FD_FUNCTION then
-      output(Indent .. f'Value = &this->{FieldName};')
-   else
-      output(Indent .. f'Value = this->{FieldName};')
-   end
-   output(Indent .. 'return ERR::Okay;')
-end
-
-----------------------------------------------------------------------------------------------------------------------
 -- Emit a getter for a single field when the TDL definition allows reads.
 
 function outputFieldGetter(Class:table, Field:table)
@@ -332,10 +348,27 @@ function outputFieldGetter(Class:table, Field:table)
    local field_type = fieldGetType(Field)
    local indent = '      '
 
-   if useFieldGetValue(Field) then
+   virtual = (Field.read is 'Get') or Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+      ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
+
+   if virtual then
       outputFieldReadGetter(Class, Field, fid_name, field_type, indent)
    else
-      outputDirectFieldGetter(Field, field_name, fid_name, field_type, indent)
+      -- Emit a complete getter body that reads directly from class storage.
+
+      outputFieldGetSignature(Field, fid_name, field_type, 'Read')
+
+      embedded = Field.flags has FD_FUNCTION
+      if Field.flags has FD_STRUCT and (not (Field.flags has FD_POINTER)) then
+         embedded = true
+      end
+
+      if embedded then
+         output(indent .. f'Value = &this->{field_name};')
+      else
+         output(indent .. f'Value = this->{field_name};')
+      end
+      output(indent .. 'return ERR::Okay;')
    end
 
    output('   }\n')
@@ -358,12 +391,10 @@ end
 
 function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- kt::vector
+      if Field.flags has FD_CPP then -- Embedded kt::vector
          output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
-      elseif FieldType is 'const struct RGB8' then
-         output(f'   inline ERR set{FidName}({FieldType} Value) noexcept {{')
       else
-         output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
+         output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')
       end
    elseif FieldType is 'T &&' then
       output(f'   template <class T> inline ERR set{FidName}({FieldType} Value) noexcept {{')
@@ -379,16 +410,16 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Emit the opening signature for a setter that calls FIELD::WriteValue().
 
-function outputFieldWriteSignature(Field:table, FidName:str, FieldType:str)
-   if FieldType:endsWith('[]') then
-      local array_type = FieldType:sub(0,-3) .. '*'
-      output(f'   inline ERR set{FidName}({array_type} Value, int Elements) noexcept {{')
-   elseif Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- kt::vector
-         output(f'   inline ERR set{FidName}({FieldType} *Value) noexcept {{')
+function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
+   if Field.flags has FD_ARRAY then
+      if Field.flags has FD_CPP then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
+         output(f'   inline ERR set{FidName}(const {Field.basicType} &Value) noexcept {{')
       else
-         output(f'   inline ERR set{FidName}({FieldType} Value, int Elements) noexcept {{')
+         output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')
       end
+   elseif FieldType:endsWith('[]') then
+      local array_type = FieldType:sub(0,-3):trim()
+      output(f'   inline ERR set{FidName}(std::span<{array_type}> Value) noexcept {{')
    elseif Field.flags has FD_STRING then -- std::string internally, accessed as std::string_view.
       output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
    elseif FieldType is 'T &&' then
@@ -399,53 +430,54 @@ function outputFieldWriteSignature(Field:table, FidName:str, FieldType:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Emit the run-time guard for fields that can only be written before initialisation.
-
-function outputInitialisedCheck(Field:table, Indent:str)
-   if Field.write is 'Init' then
-      output(Indent .. 'if (this->initialised()) return ERR::NoFieldAccess;')
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
 -- Emit a complete setter body that delegates assignment to FIELD::WriteValue().
 
 function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
-   if Field.struct and not FieldType:endsWith('*') then
-      FieldType = FieldType .. ' *'
+   if Field.struct and not (Field.flags has FD_ARRAY) and not FieldType:endsWith('*') then
+      if Field.flags has FD_POINTER then
+         FieldType ..= ' *'
+      else
+         FieldType ..= ' &'
+      end
    end
 
-   outputFieldWriteSignature(Field, FidName, FieldType)
-   outputInitialisedCheck(Field, Indent)
+   outputFieldSetterSignature(Field, FidName, FieldType)
+   if Field.write is 'Init' then
+      output(Indent .. 'if (this->initialised()) return ERR::ImmutableField;')
+   end
 
    output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
 
    if fieldUnitUsesNumericStorage(Field) then
       output(Indent .. 'Unit var(Value);')
-      output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var, 1);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var);')
    elseif Field.flags has FD_UNIT then
-      output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &Value, 1);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &Value);')
    elseif Field.flags has FD_ARRAY then
       local flags = fieldFlagsHex(Field.flags)
-      if Field.flags has FD_CPP then -- kt::vector
-         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, int(Value->size()));')
+      if Field.flags has FD_CPP then -- Virtual kt::vector; setter will match the regular C signature for type compatibility
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value);')
       else
-         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, Elements);')
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value);')
       end
    elseif Field.flags has FD_FUNCTION then
-      output(Indent .. 'return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_FUNCTION, &Value);')
    elseif Field.flags has FD_STRING then -- Embedded std::string, or std::string_view set-value.
       local flags = fieldFlagsHex((Field.flags | FD_CPP) & ~FD_POINTER)
-      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, &Value, 1);')
+      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, &Value);')
    elseif Field.flags has FD_POINTER then
       local flags = fieldFlagsHex(Field.flags)
-      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, Value, 1);')
+      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, Value);')
    elseif Field.flags has (FD_DOUBLE | FD_FLOAT) then
-      output(Indent .. 'return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_DOUBLE, &Value);')
    elseif Field.flags has FD_INT64 then
-      output(Indent .. 'return field->WriteValue(this, field, FD_INT64, &Value, 1);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_INT64, &Value);')
+   elseif Field.flags has FD_INT then
+      output(Indent .. 'return field->WriteValue(this, field, FD_INT, &Value);')
+   elseif Field.flags has FD_STRUCT then
+      output(Indent .. 'return field->WriteValue(this, field, FD_STRUCT, &Value);')
    else
-      output(Indent .. 'return field->WriteValue(this, field, FD_INT, &Value, 1);')
+      output(Indent .. 'return field->WriteValue(this, field, FD_UNKNOWN, &Value);')
    end
 end
 
@@ -454,7 +486,9 @@ end
 
 function outputDirectFieldSetter(Field:table, FieldName:str, FidName:str, FieldType:str, Indent:str)
    outputDirectSetSignature(Field, FidName, FieldType)
-   outputInitialisedCheck(Field, Indent)
+   if Field.write is 'Init' then
+      output(Indent .. 'if (this->initialised()) return ERR::ImmutableField;')
+   end
    output(Indent .. f'this->{FieldName} = Value;')
    output(Indent .. 'return ERR::Okay;')
 end

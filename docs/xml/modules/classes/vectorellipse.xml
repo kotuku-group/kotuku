@@ -19,44 +19,52 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Move</name>
+      <comment>Moves the center of the ellipse by a relative distance.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves the center of the ellipse to a new position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
-      <name>CenterX</name>
+      <name>CX</name>
       <comment>The horizontal center of the ellipse.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The horizontal center of the ellipse is defined here as either a fixed or scaled value.</p>
       </description>
     </field>
 
     <field>
-      <name>CenterY</name>
+      <name>CY</name>
       <comment>The vertical center of the ellipse.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The vertical center of the ellipse is defined here as either a fixed or scaled value.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or relative values.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>The following dimension flags are supported:</p>
-<types lookup="DMF">
-<type name="FIXED_RADIUS_X">The <fl>RadiusX</fl> value is a fixed coordinate.</type>
-<type name="FIXED_RADIUS_Y">The <fl>RadiusY</fl> value is a fixed coordinate.</type>
-<type name="FIXED_CENTER_X">The <fl>CenterX</fl> value is a fixed coordinate.</type>
-<type name="FIXED_CENTER_Y">The <fl>CenterY</fl> value is a fixed coordinate.</type>
-<type name="SCALED_RADIUS_X">The <fl>RadiusX</fl> value is a scaled coordinate.</type>
-<type name="SCALED_RADIUS_Y">The <fl>RadiusY</fl> value is a scaled coordinate.</type>
-<type name="SCALED_CENTER_X">The <fl>CenterX</fl> value is a scaled coordinate.</type>
-<type name="SCALED_CENTER_Y">The <fl>CenterY</fl> value is a scaled coordinate.</type>
-</types>
       </description>
     </field>
 
@@ -64,7 +72,7 @@
       <name>Height</name>
       <comment>The height (vertical diameter) of the ellipse.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The height of the ellipse is defined here as the equivalent of <code>RadiusY * 2.0</code>.</p>
       </description>
@@ -74,7 +82,7 @@
       <name>Radius</name>
       <comment>The radius of the ellipse.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The radius of the ellipse is defined here as either a fixed or scaled value.  Updating the radius will set both the <fl>RadiusX</fl> and <fl>RadiusY</fl> values simultaneously.</p>
       </description>
@@ -84,7 +92,7 @@
       <name>RadiusX</name>
       <comment>The horizontal radius of the ellipse.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The horizontal radius of the ellipse is defined here as either a fixed or scaled value.</p>
       </description>
@@ -94,7 +102,7 @@
       <name>RadiusY</name>
       <comment>The vertical radius of the ellipse.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The vertical radius of the ellipse is defined here as either a fixed or scaled value.</p>
       </description>
@@ -115,7 +123,7 @@
       <name>Width</name>
       <comment>The width (horizontal diameter) of the ellipse.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The width of the ellipse is defined here as the equivalent of <code>RadiusX * 2.0</code>.</p>
       </description>

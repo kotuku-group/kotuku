@@ -204,23 +204,6 @@ static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string_view &Value)
 
 //********************************************************************************************************************
 
-static const FieldDef clResampleMethod[] = {
-   { "Auto",      VSM::AUTO },
-   { "Neighbour", VSM::NEIGHBOUR },
-   { "Bilinear",  VSM::BILINEAR },
-   { "Bicubic",   VSM::BICUBIC },
-   { "Spline16",  VSM::SPLINE16 },
-   { "Kaiser",    VSM::KAISER },
-   { "Quadric",   VSM::QUADRIC },
-   { "Gaussian",  VSM::GAUSSIAN },
-   { "Bessel",    VSM::BESSEL },
-   { "Mitchell",  VSM::MITCHELL },
-   { "Sinc",      VSM::SINC },
-   { "Lanczos",   VSM::LANCZOS },
-   { "Blackman",  VSM::BLACKMAN },
-   { nullptr, 0 }
-};
-
 #include "filter_image_def.c"
 
 static const FieldArray clImageFXFields[] = {
@@ -228,7 +211,7 @@ static const FieldArray clImageFXFields[] = {
    { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
    { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
    { "AspectRatio",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_AspectRatio, IMAGEFX_SET_AspectRatio, &clAspectRatio },
-   { "ResampleMethod", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_ResampleMethod, IMAGEFX_SET_ResampleMethod, &clResampleMethod },
+   { "ResampleMethod", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_ResampleMethod, IMAGEFX_SET_ResampleMethod, &clImageFXVSM },
    END_FIELD
 };
 

@@ -25,10 +25,9 @@
       <name>Colour</name>
       <comment>The default background colour to use when clipping is enabled.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>FLOAT []</type>
+      <type>struct FRGB</type>
       <description>
 <p>The colour value in this field is applicable only when a gradient is in clip-mode by specifying the <code>VSPREAD::CLIP</code> flag in <fl>SpreadMethod</fl>.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.</p>
-<p>The Colour value is defined in floating-point RGBA format, using a range of 0 - 1.0 per component.</p>
       </description>
     </field>
 
@@ -90,7 +89,7 @@
       <name>Matrices</name>
       <comment>Applies one or more transforms to a gradient.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>APTR</type>
+      <type>struct VectorMatrix *</type>
       <description>
 <p>A transform can be applied to a gradient via one or more matrices.  These will influence how gradient fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
       </description>
@@ -133,19 +132,9 @@
       <name>Stops</name>
       <comment>Defines the colours to use for the gradient.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>GradientStop[]</type>
       <description>
 <p>The colours that will be used for drawing a gradient are defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>TotalStops</name>
-      <comment>Total number of stops defined in the Stops array.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>This read-only field indicates the total number of stops that have been defined in the <fl>Stops</fl> array.</p>
       </description>
     </field>
 
@@ -206,6 +195,11 @@
 
   </types>
   <structs>
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
+      <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
+      <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
     <struct name="VectorMatrix" comment="Vector transformation matrix.">
       <field name="Next" type="struct VectorMatrix *">The next transform in the list.</field>
       <field name="Vector" type="objVector *">The vector associated with the transform.</field>
