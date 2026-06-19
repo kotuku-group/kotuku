@@ -484,13 +484,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
     int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
-<<<<<<< HEAD
     int(GEZ) Easing              # Easing function applied between gradient stops.
-=======
     ~struct(FRGB) Colour
     ~struct(*VectorMatrix) Matrices
     ~array(struct(GradientStop)) Stops
->>>>>>> master
   ]])
 
   klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })

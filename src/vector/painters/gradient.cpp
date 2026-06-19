@@ -15,12 +15,8 @@ Gradient objects are definition objects and should normally be registered with a
 
 *********************************************************************************************************************/
 
-<<<<<<< HEAD
 static ERR GRADIENT_SET_Stops(extGradient *Self, GradientStop *Value, int Elements);
 static ERR rebuild_gradient_colours(extGradient *Self);
-=======
-static ERR GRADIENT_SET_Stops(extGradient *, std::span<const GradientStop> *);
->>>>>>> master
 
 static ERR init_gradient_linear(void);
 static ERR init_gradient_radial(void);
@@ -476,18 +472,7 @@ static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
    if ((Self->Colours) and (Self->Colours->resolution != Value)) {
       if (Self->initialised()) {
          Self->modified();
-<<<<<<< HEAD
          if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) return error;
-=======
-         if (not Self->Stops.empty()) {
-            auto stops = std::span<const GradientStop>(Self->Stops);
-            GRADIENT_SET_Stops(Self, &stops);
-         }
-         else if (not Self->ColourMap.empty()) {
-            auto map = Self->ColourMap;
-            GRADIENT_SET_ColourMap(Self, map);
-         }
->>>>>>> master
       }
       else Self->Colours->apply_resolution(Value);
    }
