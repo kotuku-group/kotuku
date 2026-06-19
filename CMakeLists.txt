@@ -132,6 +132,12 @@ set (BUILD_RPATH_USE_ORIGIN TRUE)
 set (INCLUDE_OUTPUT "${PROJECT_SOURCE_DIR}/include/kotuku")
 set (DOCS "${PROJECT_SOURCE_DIR}/docs/xml")
 
+# Ensure the top-level include directory is visible to all builds and tools that
+# run during the build (some generated-header steps and tools may compile
+# helper sources outside target-specific include directories). This helps
+# avoid C1083 errors when headers under include/kotuku are referenced.
+include_directories("${PROJECT_SOURCE_DIR}/include")
+
 set(REQUIRED_MODS core tiri xml xquery regex json)
 
 if (KOTUKU_STATIC)

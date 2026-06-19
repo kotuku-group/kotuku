@@ -367,12 +367,12 @@
                         <li class="api-ref"><a class="rounded" href="gradientgouraud.html">GradientGouraud</a></li>
                         <li class="api-ref"><a class="rounded" href="gradientlinear.html">GradientLinear</a></li>
                         <li class="api-ref"><a class="rounded" href="gradientradial.html">GradientRadial</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientvoronoi.html">GradientVoronoi</a></li>
                         <li class="api-ref"><a class="rounded" href="vector.html">Vector</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorclip.html">VectorClip</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorcolour.html">VectorColour</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorellipse.html">VectorEllipse</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorfilter.html">VectorFilter</a></li>
-                        <li class="api-ref"><a class="rounded" href="vectorgradient.html">VectorGradient</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorgroup.html">VectorGroup</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorimage.html">VectorImage</a></li>
                         <li class="api-ref"><a class="rounded" href="vectorpath.html">VectorPath</a></li>
@@ -420,9 +420,7 @@
                             <xsl:when test="access/@read='R'"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"/></xsl:when>
                             <xsl:when test="access/@read='G'"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"/></xsl:when>
                             <xsl:otherwise><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"/></xsl:otherwise>
-                          </xsl:choose>
-                          &#160;
-                          <xsl:choose>
+                          </xsl:choose>&#160;<xsl:choose>
                             <xsl:when test="access/@write='W'"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"/></xsl:when>
                             <xsl:when test="access/@write='S'"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"/></xsl:when>
                             <xsl:when test="access/@write='I'"><i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"/></xsl:when>
