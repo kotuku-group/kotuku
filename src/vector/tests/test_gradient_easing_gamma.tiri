@@ -1,0 +1,180 @@
+   include 'display'
+   include 'vector'
+
+   mGfx ?= mod.load('display')
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function stop(Offset, R, G, B)
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+function blackWhiteStops()
+   local stops = { }
+   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
+   table.insert(stops, stop(1.0, 1.0, 1.0, 1.0))
+   return stops
+end
+
+function newLinearScene(Options, RectOptions)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=20 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient_options = {
+      units=VUNIT_USERSPACE,
+      x1=0,
+      y1=0,
+      x2=100,
+      y2=0,
+      stops=blackWhiteStops()
+   }
+
+   for key, value in pairs(Options) do
+      gradient_options[key] = value
+   end
+
+   local gradient = scene.new('GradientLinear', gradient_options)
+   check scene.mtAddDef('linear', gradient)
+
+   local rect_options = { x=0, y=0, width='100%', height='100%', fill='url(#linear)' }
+   if RectOptions != nil then
+      for key, value in pairs(RectOptions) do
+         rect_options[key] = value
+      end
+   end
+
+   viewport.new('VectorRectangle', rect_options)
+   return scene, gradient
+end
+
+function newColourMapScene(Easing)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=20 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('GradientLinear', {
+      units=VUNIT_USERSPACE,
+      x1=0,
+      y1=0,
+      x2=100,
+      y2=0,
+      colourMap='cmap:viridis',
+      easing=Easing
+   })
+   check scene.mtAddDef('colourmap', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#colourmap)' })
+   return scene, gradient
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function sampleMiddleRed(Scene)
+   local bmp = newBitmap(100, 20)
+   drawScene(Scene, bmp)
+   return mGfx.ReadRGBPixel(bmp, 50, 10).red
+end
+
+@Test function LinearEasingMatchesDefault()
+   local default_scene = newLinearScene({ })
+   local linear_scene = newLinearScene({ easing=GEZ_LINEAR })
+
+   assert(sampleMiddleRed(default_scene) is sampleMiddleRed(linear_scene),
+      'GEZ_LINEAR should match the default gradient ramp')
+end
+
+@Test function CubicInEasingDarkensMidpoint()
+   local linear_scene = newLinearScene({ easing=GEZ_LINEAR })
+   local eased_scene = newLinearScene({ easing=GEZ_CUBIC_IN })
+
+   local linear_mid = sampleMiddleRed(linear_scene)
+   local eased_mid = sampleMiddleRed(eased_scene)
+
+   assert(eased_mid < linear_mid - 40,
+      'CUBIC_IN easing should move the midpoint toward the first stop (linear ' ..
+      linear_mid .. ', eased ' .. eased_mid .. ')')
+end
+
+@Test function PostInitEasingChangeRebuildsTable()
+   local scene, gradient = newLinearScene({ easing=GEZ_LINEAR })
+
+   local linear_mid = sampleMiddleRed(scene)
+   gradient.easing = GEZ_CUBIC_IN
+   local eased_mid = sampleMiddleRed(scene)
+
+   assert(eased_mid < linear_mid - 40,
+      'Changing Easing after initialisation should rebuild the colour table (linear ' ..
+      linear_mid .. ', eased ' .. eased_mid .. ')')
+end
+
+@Test function PostInitEasingChangeRefreshesOpacityTable()
+   local scene, gradient = newLinearScene({ easing=GEZ_LINEAR }, { opacity=0.5 })
+
+   local linear_mid = sampleMiddleRed(scene)
+   gradient.easing = GEZ_CUBIC_IN
+   local eased_mid = sampleMiddleRed(scene)
+
+   assert(eased_mid < linear_mid - 20,
+      'Changing Easing should refresh cached opacity-adjusted gradient tables (linear ' ..
+      linear_mid .. ', eased ' .. eased_mid .. ')')
+end
+
+@Test function GammaOneMatchesDefault()
+   local default_scene = newLinearScene({ })
+   local gamma_scene = newLinearScene({ gamma=1.0 })
+
+   assert(sampleMiddleRed(default_scene) is sampleMiddleRed(gamma_scene),
+      'Gamma 1.0 should match the default gradient ramp')
+end
+
+@Test function GammaTwoDarkensMidpoint()
+   local default_scene = newLinearScene({ })
+   local gamma_scene = newLinearScene({ gamma=2.0 })
+
+   local normal_mid = sampleMiddleRed(default_scene)
+   local gamma_mid = sampleMiddleRed(gamma_scene)
+
+   assert(gamma_mid < normal_mid - 40,
+      'Gamma 2.0 should move the midpoint toward the first stop (normal ' ..
+      normal_mid .. ', gamma ' .. gamma_mid .. ')')
+end
+
+@Test function ColourMapEasingChangesRamp()
+   local linear_scene = newColourMapScene(GEZ_LINEAR)
+   local eased_scene = newColourMapScene(GEZ_CUBIC_IN)
+   local linear_bmp = newBitmap(100, 20)
+   local eased_bmp = newBitmap(100, 20)
+
+   assert(drawHash(linear_scene, linear_bmp) != drawHash(eased_scene, eased_bmp),
+      'Easing should alter ColourMap-backed gradients')
+end
+
+@Test function PostInitColourMapEasingChangeRebuildsTable()
+   local scene, gradient = newColourMapScene(GEZ_LINEAR)
+   local bmp = newBitmap(100, 20)
+   local linear_hash = drawHash(scene, bmp)
+
+   gradient.easing = GEZ_CUBIC_IN
+   local eased_hash = drawHash(scene, bmp)
+
+   assert(eased_hash != linear_hash,
+      'Changing Easing after initialisation should rebuild ColourMap-backed gradients')
+end
