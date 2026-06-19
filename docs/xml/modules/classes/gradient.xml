@@ -78,8 +78,8 @@
     <field>
       <name>Matrices</name>
       <comment>Applies one or more transforms to a gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>struct VectorMatrix *</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;VectorMatrix&gt;</type>
       <description>
 <p>A transform can be applied to a gradient via one or more matrices.  These will influence how gradient fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
       </description>

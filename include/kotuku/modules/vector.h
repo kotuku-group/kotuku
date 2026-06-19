@@ -616,6 +616,33 @@ struct VectorMatrix {
    double TranslateX;             // Matrix value E
    double TranslateY;             // Matrix value F
    int    Tag;                    // An optional tag value defined by the client for matrix identification.
+   void reset() {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = 1.0;
+      ShearY = 0.0;
+      ShearX = 0.0;
+      ScaleY = 1.0;
+      TranslateX = 0.0;
+      TranslateY = 0.0;
+      Tag = 0;
+   }
+
+   VectorMatrix() {
+      reset();
+   }
+
+   VectorMatrix(const VectorMatrix &Other) {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = Other.ScaleX;
+      ShearY = Other.ShearY;
+      ShearX = Other.ShearX;
+      ScaleY = Other.ScaleY;
+      TranslateX = Other.TranslateX;
+      TranslateY = Other.TranslateY;
+      Tag = Other.Tag;
+   }
 };
 
 #define MTAG_ANIMATE_MOTION 0x1da6b394
@@ -1163,16 +1190,17 @@ class objGradient : public Object {
 
    using create = kt::Create<objGradient>;
 
-   std::string SID;          // String identifier for a gradient.
-   std::string ColourMap;    // Assigns a pre-defined colourmap to the gradient.
-   struct FRGB Colour;       // The default background colour to use when clipping is enabled.
-   double  Resolution;       // Affects the rate of change for colours in the gradient.
-   double  Gamma;            // Applies a gamma curve to the gradient ramp.
-   VSPREAD SpreadMethod;     // Determines the rendering behaviour to use when gradient colours are cycled.
-   VUNIT   Units;            // Defines the coordinate system for gradient coordinates.
-   VCS     ColourSpace;      // Defines the colour space to use when interpolating gradient colours.
-   GEZ     Easing;           // Selects the easing function for interpolation between gradient stops.
-   int     NumericID;        // Numeric identifier for a vector.
+   kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a gradient.
+   std::string SID;                      // String identifier for a gradient.
+   std::string ColourMap;                // Assigns a pre-defined colourmap to the gradient.
+   struct FRGB Colour;                   // The default background colour to use when clipping is enabled.
+   double  Resolution;                   // Affects the rate of change for colours in the gradient.
+   double  Gamma;                        // Applies a gamma curve to the gradient ramp.
+   VSPREAD SpreadMethod;                 // Determines the rendering behaviour to use when gradient colours are cycled.
+   VUNIT   Units;                        // Defines the coordinate system for gradient coordinates.
+   VCS     ColourSpace;                  // Defines the colour space to use when interpolating gradient colours.
+   GEZ     Easing;                       // Selects the easing function for interpolation between gradient stops.
+   int     NumericID;                    // Numeric identifier for a vector.
 
 #ifdef PRV_GRADIENT
    objGradient() {
@@ -1184,7 +1212,6 @@ class objGradient : public Object {
    }
 
    std::vector<GradientStop> Stops;  // An array of gradient stop colours.
-   struct VectorMatrix *Matrices;
    class GradientColours *Colours;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
 #endif
@@ -1194,6 +1221,12 @@ class objGradient : public Object {
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting
+
+   inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
+      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + 88);
+      Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
 
    inline ERR getSID(std::string_view &Value) noexcept {
       Value = this->SID;
@@ -1245,11 +1278,6 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getMatrices(struct VectorMatrix * &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getStops(std::span<struct GradientStop> &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       auto get_field = (ERR (*)(APTR, std::span<struct GradientStop> &))field->GetValue;
@@ -1258,6 +1286,11 @@ class objGradient : public Object {
 
 
    // Customised field setting
+
+   inline ERR setMatrices(const kt::vector<VectorMatrix> &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, 0x00005310, &Value);
+   }
 
    inline ERR setSID(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
@@ -1309,11 +1342,6 @@ class objGradient : public Object {
    inline ERR setNumeric(const int Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setMatrices(struct VectorMatrix * Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x08100318, Value);
    }
 
    inline ERR setStops(std::span<const struct GradientStop> Value) noexcept {

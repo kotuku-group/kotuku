@@ -1283,8 +1283,16 @@ inline static void reset_final_path(objVector *Vector)
 template <class T>
 inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTransform)
 {
-   for (auto t=Vector.Matrices; t; t=t->Next) {
-      AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
+   if constexpr (std::is_pointer_v<std::decay_t<decltype(Vector.Matrices)>>) {
+      // Linked-list storage (objVector, viewports and patterns)
+      for (auto t=Vector.Matrices; t; t=t->Next) {
+         AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
+      }
+   }
+   else { // Contiguous kt::vector storage (gradients)
+      for (auto &t : Vector.Matrices) {
+         AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
+      }
    }
 }
 

@@ -181,10 +181,10 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
-            VectorMatrix *transform;
-            if ((!error) and (!gradient->getMatrices(transform)) and (transform)) {
+            std::span<VectorMatrix> transform;
+            if ((!error) and (!gradient->getMatrices(transform)) and (not transform.empty())) {
                std::stringstream buffer;
-               if (!save_svg_transform(transform, buffer)) {
+               if (!save_svg_transform(transform.data(), buffer)) {
                   xml::NewAttrib(tag, "gradientTransform", buffer.str());
                }
             }

@@ -401,43 +401,20 @@ linked in the order in which they should be applied.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_Matrices(extGradient *Self, VectorMatrix **Value)
-{
-   *Value = Self->Matrices;
-   return ERR::Okay;
-}
-
-static ERR GRADIENT_SET_Matrices(extGradient *Self, VectorMatrix *Value)
+static ERR GRADIENT_SET_Matrices(extGradient *Self, kt::vector<VectorMatrix> *Value)
 {
    if (Value) {
-      auto hook = &Self->Matrices;
-      while (Value) {
-         VectorMatrix *matrix;
-         if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
-            matrix->Vector = nullptr;
-            matrix->Next   = nullptr;
-            matrix->ScaleX = Value->ScaleX;
-            matrix->ScaleY = Value->ScaleY;
-            matrix->ShearX = Value->ShearX;
-            matrix->ShearY = Value->ShearY;
-            matrix->TranslateX = Value->TranslateX;
-            matrix->TranslateY = Value->TranslateY;
-            *hook = matrix;
-            hook = &matrix->Next;
-         }
-         else return ERR::AllocMemory;
+      Self->Matrices = *Value;
 
-         Value = Value->Next;
+      VectorMatrix *prev = nullptr;
+      for (auto &matrix : Self->Matrices) {
+         matrix.Vector = nullptr;
+         matrix.Next = nullptr;
+         if (prev) prev->Next = &matrix;
+         prev = &matrix;
       }
    }
-   else {
-      VectorMatrix *next;
-      for (auto node=Self->Matrices; node; node=next) {
-         next = node->Next;
-         FreeResource(node);
-      }
-      Self->Matrices = nullptr;
-   }
+   else Self->Matrices.clear();
 
    if (Self->initialised()) Self->modified();
    return ERR::Okay;
@@ -561,26 +538,13 @@ static ERR GRADIENT_SET_Transform(extGradient *Self, const std::string_view &Com
 
    if (Self->initialised()) Self->modified();
 
-   if (not Self->Matrices) {
-      VectorMatrix *matrix;
-      if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
-         matrix->Vector = nullptr;
-         matrix->Next   = Self->Matrices;
-         matrix->ScaleX = 1.0;
-         matrix->ScaleY = 1.0;
-         matrix->ShearX = 0;
-         matrix->ShearY = 0;
-         matrix->TranslateX = 0;
-         matrix->TranslateY = 0;
-
-         Self->Matrices = matrix;
-         return vec::ParseTransform(Self->Matrices, Commands);
-      }
-      else return ERR::AllocMemory;
+   if (Self->Matrices.empty()) {
+      Self->Matrices.resize(1);
+      return vec::ParseTransform(Self->Matrices.data(), Commands);
    }
    else {
-      vec::ResetMatrix(Self->Matrices);
-      return vec::ParseTransform(Self->Matrices, Commands);
+      vec::ResetMatrix(Self->Matrices.data());
+      return vec::ParseTransform(Self->Matrices.data(), Commands);
    }
 }
 
@@ -596,12 +560,6 @@ references it.  The alternative is `USERSPACE`, which positions the gradient sca
 
 extGradient::~extGradient() {
    if (Colours) delete Colours;
-
-   VectorMatrix *next;
-   for (auto node=Matrices; node; node=next) {
-      next = node->Next;
-      FreeResource(node);
-   }
 }
 
 //********************************************************************************************************************
@@ -609,6 +567,7 @@ extGradient::~extGradient() {
 #include "gradient_def.c"
 
 static const FieldArray clGradientFields[] = {
+   { "Matrices",     FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENT_SET_Matrices, "VectorMatrix" },
    { "SID",          FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_SID },
    { "ColourMap",    FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_ColourMap },
    { "Resolution",   FDF_DOUBLE|FDF_RW,         nullptr, GRADIENT_SET_Resolution },
@@ -620,7 +579,6 @@ static const FieldArray clGradientFields[] = {
    { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
    { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
-   { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Matrices, GRADIENT_SET_Matrices, "VectorMatrix" },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Stops, GRADIENT_SET_Stops, "GradientStop" },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD
