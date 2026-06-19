@@ -877,14 +877,17 @@ inline static double unit_to_fixed(const Unit &Value, double ParentSize)
    return Value.scaled() ? (double(Value) * ParentSize) : double(Value);
 }
 
+// NB: If XOffset is defined without X then layout routines will presume X to be zero, effectively meaning XOffset is
+// always treatable as a width value.
+
 inline static bool viewport_has_target_width(const extVectorViewport *View)
 {
-   return View->vpTargetWidth.defined() or (View->vpTargetX.defined() and View->vpTargetXO.defined());
+   return View->vpTargetWidth.defined() or View->vpTargetXO.defined();
 }
 
 inline static bool viewport_has_target_height(const extVectorViewport *View)
 {
-   return View->vpTargetHeight.defined() or (View->vpTargetY.defined() and View->vpTargetYO.defined());
+   return View->vpTargetHeight.defined() or View->vpTargetYO.defined();
 }
 
 inline static double viewport_coordinate_width(const extVectorViewport *View)
