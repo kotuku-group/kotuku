@@ -208,6 +208,15 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
     "CLEAR:      Disables the gradient.")
 
+  enums("GEZ", { type="int", start=0, comment="Gradient easing functions." },
+    "LINEAR:       Linear interpolation (no easing) - the default.",
+    "IN:           Ease-in (slow start).",
+    "OUT:          Ease-out (slow end).",
+    "IN_OUT:       Smoothstep-style ease-in and ease-out.",
+    "CUBIC_IN:     Cubic ease-in.",
+    "CUBIC_OUT:    Cubic ease-out.",
+    "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
+
   enums("WLF", { type="int", start=0, comment="Worley field modes." },
     "F1: Distance to nearest point.",
     "F2_F1: Distance between the nearest and second-nearest points.",
@@ -471,9 +480,11 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
     double Resolution            # Alters the rate of change for gradient colours.
+    double Gamma                 # Applies a gamma curve to the gradient ramp.
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
     int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
+    int(GEZ) Easing              # Easing function applied between gradient stops.
     ~struct(FRGB) Colour
     ~struct(*VectorMatrix) Matrices
     ~array(struct(GradientStop)) Stops

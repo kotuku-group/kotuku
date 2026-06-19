@@ -15,7 +15,9 @@ Gradient objects are definition objects and should normally be registered with a
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_SET_Stops(extGradient *, std::span<const GradientStop> *);
+static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *Value);
+static ERR rebuild_gradient_colours(extGradient *Self);
+static void invalidate_gradient_tables(extGradient *Self);
 
 static ERR init_gradient_linear(void);
 static ERR init_gradient_radial(void);
@@ -101,11 +103,44 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
 }
 
 //********************************************************************************************************************
+// Clear cached opacity-adjusted gradient tables on vectors that reference a modified shared gradient.
+
+static void invalidate_gradient_painter_table(extPainter &Painter, extGradient *Target)
+{
+   if (Painter.Gradient IS Target) {
+      delete Painter.GradientTable;
+      Painter.GradientTable = nullptr;
+   }
+}
+
+static void invalidate_gradient_tables(extVector *Vector, extGradient *Target)
+{
+   for (auto node=Vector; node; node=(extVector *)node->Next) {
+      invalidate_gradient_painter_table(node->Fill[0], Target);
+      invalidate_gradient_painter_table(node->Fill[1], Target);
+      invalidate_gradient_painter_table(node->Stroke, Target);
+
+      if (node->Child) invalidate_gradient_tables((extVector *)node->Child, Target);
+   }
+}
+
+static void invalidate_gradient_tables(extGradient *Self)
+{
+   if ((Self->HostScene) and (Self->HostScene->Viewport)) {
+      invalidate_gradient_tables((extVector *)Self->HostScene->Viewport, Self);
+   }
+}
+
+//********************************************************************************************************************
 // Constructor for the GradientColours class.  This expects to be called whenever the Gradient class updates the
 // Stops array.
 
-GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution)
+GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
+   double Gamma, GEZ Easing)
 {
+   resolution = 1.0;
+   gamma = 1.0;
+
    int stop, i1, i2, i;
 
    for (stop=0; stop < std::ssize(Stops)-1; stop++) {
@@ -129,6 +164,7 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
       if (i1 < i2) {
          for (i=i1; i <= i2; i++) {
             double j = double(i - i1) / double(i2 - i1);
+            j = GradientColours::ease(Easing, j);
             if (ColourSpace IS VCS::LINEAR_RGB) table[i] = begin.linear_gradient(end, j);
             else table[i] = begin.gradient(end, j);
          }
@@ -140,16 +176,47 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
       }
    }
 
+   apply_gamma(Gamma);
    if (Resolution < 1) apply_resolution(Resolution);
 }
 
-GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution)
+GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution, double Gamma, GEZ Easing)
 {
+   resolution = 1.0;
+   gamma = 1.0;
+
    for (int i=0; i < std::ssize(Map); i++) {
       table[i] = agg::rgba8(Map[i]);
    }
 
+   apply_easing(Easing);
+   apply_gamma(Gamma);
    if (Resolution < 1) apply_resolution(Resolution);
+}
+
+static ERR rebuild_gradient_colours(extGradient *Self)
+{
+   kt::Log log(__FUNCTION__);
+   std::unique_ptr<GradientColours> colours;
+
+   if (not Self->Stops.empty()) {
+      colours.reset(new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution,
+         Self->Gamma, Self->Easing));
+   }
+   else if (not Self->ColourMap.empty()) {
+      if (auto it = glColourMaps.find(Self->ColourMap); it != glColourMaps.end()) {
+         colours.reset(new (std::nothrow) GradientColours(it->second, Self->Resolution, Self->Gamma, Self->Easing));
+      }
+      else return log.warning(ERR::NotFound);
+   }
+   else return ERR::Okay;
+
+   if (not colours) return log.warning(ERR::AllocMemory);
+
+   if (Self->Colours) delete Self->Colours;
+   Self->Colours = colours.release();
+   invalidate_gradient_tables(Self);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -232,13 +299,15 @@ static ERR GRADIENT_SET_ColourMap(extGradient *Self, const std::string_view &Val
    if (Value.empty()) return ERR::NoData;
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
-      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, Self->Resolution));
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, Self->Resolution,
+         Self->Gamma, Self->Easing));
       if (not colours) return ERR::AllocMemory;
 
       if (Self->Colours) delete Self->Colours;
       Self->Colours = colours.release();
       Self->Stops.clear();
       Self->ColourMap = Value;
+      invalidate_gradient_tables(Self);
       if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
@@ -255,29 +324,83 @@ By default, gradients are rendered using the standard RGB colour space and alpha
 space to `LINEAR_RGB` will force the renderer to automatically convert sRGB values to linear RGB when blending.
 
 -FIELD-
-ID: String identifier for a vector.
+Easing: Selects the easing function for interpolation between gradient stops.
+Lookup: GEZ
 
-The ID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
+Easing modifies the interpolation position between each adjacent pair of #Stops.  For gradients sourced from #ColourMap,
+it remaps the lookup position through the selected easing function before #Gamma and #Resolution are applied.  The
+default `GEZ::LINEAR` mode leaves the gradient unchanged.
+
+*********************************************************************************************************************/
+
+static ERR GRADIENT_SET_Easing(extGradient *Self, GEZ Value)
+{
+   const GEZ old_easing = Self->Easing;
+   if (old_easing IS Value) return ERR::Okay;
+
+   Self->Easing = Value;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Easing = old_easing;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Gamma: Applies a gamma curve to the gradient ramp.
+
+Gamma remaps the completed colour ramp before #Resolution is applied.  Values greater than `1.0` bias the ramp toward
+the first colour, while values between `0.0` and `1.0` bias it toward the last colour.  A value of `1.0` leaves the
+gradient unchanged.
+
+SID: String identifier for a gradient.
+
+The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
 object name and automatically assigned ID's for identifiers.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_ID(extGradient *Self, std::string_view &Value)
+static ERR GRADIENT_GET_SID(extGradient *Self, std::string_view &Value)
 {
-   Value = Self->ID;
+   Value = Self->SID;
    return ERR::Okay;
 }
 
-static ERR GRADIENT_SET_ID(extGradient *Self, const std::string_view &Value)
+static ERR GRADIENT_SET_SID(extGradient *Self, const std::string_view &Value)
 {
    if (not Value.empty()) {
-      Self->ID = Value;
+      Self->SID = Value;
       Self->NumericID = strhash(Value);
    }
    else {
-      Self->ID.clear();
+      Self->SID.clear();
       Self->NumericID = 0;
    }
+   return ERR::Okay;
+}
+
+static ERR GRADIENT_SET_Gamma(extGradient *Self, double Value)
+{
+   if (Value <= 0) return ERR::OutOfRange;
+
+   const double old_gamma = Self->Gamma;
+   if (old_gamma IS Value) return ERR::Okay;
+
+   Self->Gamma = Value;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Gamma = old_gamma;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -340,7 +463,7 @@ static ERR GRADIENT_SET_Matrices(extGradient *Self, VectorMatrix *Value)
 NumericID: Numeric identifier for a vector.
 
 The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client,
-then any value in #ID will be immediately cleared.
+then any value in #SID will be immediately cleared.
 
 *********************************************************************************************************************/
 
@@ -353,7 +476,7 @@ static ERR GRADIENT_GET_NumericID(extGradient *Self, int *Value)
 static ERR GRADIENT_SET_NumericID(extGradient *Self, int Value)
 {
    Self->NumericID = Value;
-   Self->ID.clear();
+   Self->SID.clear();
    return ERR::Okay;
 }
 
@@ -382,14 +505,7 @@ static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
    if ((Self->Colours) and (Self->Colours->resolution != Value)) {
       if (Self->initialised()) {
          Self->modified();
-         if (not Self->Stops.empty()) {
-            auto stops = std::span<const GradientStop>(Self->Stops);
-            GRADIENT_SET_Stops(Self, &stops);
-         }
-         else if (not Self->ColourMap.empty()) {
-            auto map = Self->ColourMap;
-            GRADIENT_SET_ColourMap(Self, map);
-         }
+         if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) return error;
       }
       else Self->Colours->apply_resolution(Value);
    }
@@ -436,13 +552,14 @@ static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *
    if ((Value) and (Value->size() >= 2)) {
       auto stops = std::vector<GradientStop>(Value->begin(), Value->end());
       auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
-         stops, Self->ColourSpace, 1.0, Self->Resolution));
+         stops, Self->ColourSpace, 1.0, Self->Resolution, Self->Gamma, Self->Easing));
       if (not colours) return ERR::AllocMemory;
 
       Self->Stops = std::move(stops);
       if (Self->Colours) delete Self->Colours;
       Self->Colours = colours.release();
       Self->ColourMap.clear();
+      invalidate_gradient_tables(Self);
       Self->modified();
       return ERR::Okay;
    }
@@ -513,15 +630,17 @@ extGradient::~extGradient() {
 
 static const FieldArray clGradientFields[] = {
    { "Resolution",   FDF_DOUBLE|FDF_RW, nullptr, GRADIENT_SET_Resolution },
+   { "Gamma",        FDF_DOUBLE|FDF_RW, nullptr, GRADIENT_SET_Gamma },
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_SpreadMethod, &clGradientSpreadMethod },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clGradientUnits },
    { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clGradientColourSpace },
+   { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
    // Virtual fields
    { "Colour",       FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE, GRADIENT_GET_Colour, GRADIENT_SET_Colour, "FRGB" },
    { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, GRADIENT_GET_ColourMap, GRADIENT_SET_ColourMap },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Matrices, GRADIENT_SET_Matrices, "VectorMatrix" },
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENT_GET_NumericID, GRADIENT_SET_NumericID },
-   { "ID",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, GRADIENT_GET_ID, GRADIENT_SET_ID },
+   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, GRADIENT_GET_SID, GRADIENT_SET_SID },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Stops, GRADIENT_SET_Stops, "GradientStop" },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD

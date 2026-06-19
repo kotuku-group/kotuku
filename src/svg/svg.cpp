@@ -248,11 +248,17 @@ private:
    ERR  set_paint_server(objVector *, FIELD, const std::string);
    bool current_colour(objVector *, FRGB &) noexcept;
 
-   void parse_contourgradient(const XTag &, objGradient *, std::string &) noexcept;
-   void parse_diamondgradient(const XTag &, objGradient *, std::string &) noexcept;
-   void parse_distalgradient(const XTag &, objGradient *, std::string &) noexcept;
-   void parse_lineargradient(const XTag &, objGradient *, std::string &) noexcept;
-   void parse_radialgradient(const XTag &, objGradient &, std::string &) noexcept;
+   void parse_contourgradient(const XTag &, objGradientContour *, std::string &) noexcept;
+   void parse_conicgradient(const XTag &, objGradientConic *, std::string &) noexcept;
+   void parse_diamondgradient(const XTag &, objGradientDiamond *, std::string &) noexcept;
+   void parse_distalgradient(const XTag &, objGradientDistal *, std::string &) noexcept;
+   void parse_lineargradient(const XTag &, objGradientLinear *, std::string &) noexcept;
+   void parse_radialgradient(const XTag &, objGradientRadial *, std::string &) noexcept;
+   bool parse_gradient_href(const std::string &, objGradient *) noexcept;
+   void parse_gradient_hrefs(const XTag &, objGradient *, bool &) noexcept;
+   void parse_gradient_defaults(kt::Log &, const XTag &, objGradient *, uint32_t, const std::string &,
+      const std::string &, std::string &) noexcept;
+   void set_gradient_stops(const XTag &, objGradient *, bool) noexcept;
 
    ERR  parse_fe_blur(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_colour_matrix(objVectorFilter *, XTag &) noexcept;
@@ -641,6 +647,11 @@ static constexpr auto SVF_morph            = strhash("morph");
 static constexpr auto SVF_pathTransition   = strhash("pathTransition");
 static constexpr auto SVF_shape            = strhash("shape");
 static constexpr auto SVF_wave             = strhash("wave");
+static constexpr auto SVF_inOut            = strhash("inOut");
+static constexpr auto SVF_cubicIn          = strhash("cubicIn");
+static constexpr auto SVF_cubicOut         = strhash("cubicOut");
+static constexpr auto SVF_cubicInOut       = strhash("cubicInOut");
+static constexpr auto SVF_easing           = strhash("easing");
 
 static constexpr auto glSVGNamespace = strhash("http://www.w3.org/2000/svg");
 static constexpr auto glKotukuNamespace = strhash("http://www.kotuku.dev/namespaces/kotuku");

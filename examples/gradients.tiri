@@ -17,6 +17,8 @@ local glColourMap = 'cmap:magma'
 local glSpreadMethod = VSPREAD_REFLECT
 local glRadius = 100
 local glResolution = 1.0
+local glEasing = GEZ_LINEAR
+local glGamma = 1.0
 local glActiveGradient
 local MIN_RADIUS <const> = 2
 local MAX_RADIUS <const> = 400
@@ -274,6 +276,8 @@ function selectGradient(Text):obj
       end
    end
 
+   gradient.gamma      = glGamma
+   gradient.easing     = glEasing
    gradient.resolution = glResolution
    gradientVP.scene.surface.mtScheduleRedraw()
    return gradient
@@ -354,13 +358,41 @@ function buildScene()
       }
    })
 
+   cmbEasing = gui.combobox({
+      target = viewport,
+      label  = 'Easing:',
+      text   = 'Linear',
+      x      = cmbColours.viewport.x + cmbColours.viewport.width + 10,
+      y      = 10,
+      items  = array<table> {
+         { item='Cubic In' }, { item='Cubic In Out' }, { item='Cubic Out' },
+         { item='In' }, { item='In Out' }, { item='Linear' }, { item='Out' }
+      },
+      events = {
+         activate = function(Widget:table, Text:str)
+            glEasing = choose Text from
+               'Cubic In'     -> GEZ_CUBIC_IN
+               'Cubic In Out' -> GEZ_CUBIC_IN_OUT
+               'Cubic Out'    -> GEZ_CUBIC_OUT
+               'In'           -> GEZ_IN
+               'In Out'       -> GEZ_IN_OUT
+               'Linear'       -> GEZ_LINEAR
+               'Out'          -> GEZ_OUT
+               else           -> GEZ_LINEAR
+            end
+            glActiveGradient.easing = glEasing
+            gradientVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
    slResolution = gui.slider({
       target = viewport,
       label  = 'Resolution:',
       value  = 1,
       min    = 0.5,
       max    = 1,
-      x      = cmbColours.viewport.x + cmbColours.viewport.width + 10,
+      x      = cmbEasing.viewport.x + cmbEasing.viewport.width + 10,
       y      = 10,
       events = {
          activate = function(Widget, Value)

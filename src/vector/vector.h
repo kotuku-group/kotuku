@@ -446,12 +446,14 @@ class extGradient : public objGradient, public SceneDef {
    std::string ColourMap;
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
-   std::string ID;
+   std::string SID;
    int   NumericID;
 
    extGradient() {
       Matrices     = nullptr;
       Colours      = nullptr;
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
       SpreadMethod = VSPREAD::PAD;
       Units        = VUNIT::BOUNDING_BOX;
       Resolution   = 1;
@@ -949,10 +951,76 @@ class extVectorRectangle : public extVector {
 
 class GradientColours {
    public:
-      GradientColours(const std::vector<GradientStop> &, VCS, double, double);
-      GradientColours(const std::array<FRGB, 256> &, double);
+      GradientColours(const std::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
+      GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
       double resolution;
+      double gamma;
+
+      static double ease(GEZ Easing, double Value) {
+         switch (Easing) {
+            case GEZ::IN:
+               return Value * Value;
+
+            case GEZ::OUT: {
+               const double inverse = 1.0 - Value;
+               return 1.0 - (inverse * inverse);
+            }
+
+            case GEZ::IN_OUT:
+               return Value * Value * (3.0 - (2.0 * Value));
+
+            case GEZ::CUBIC_IN:
+               return Value * Value * Value;
+
+            case GEZ::CUBIC_OUT: {
+               const double inverse = 1.0 - Value;
+               return 1.0 - (inverse * inverse * inverse);
+            }
+
+            case GEZ::CUBIC_IN_OUT:
+               if (Value < 0.5) return 4.0 * Value * Value * Value;
+               else {
+                  const double inverse = -2.0 * Value + 2.0;
+                  return 1.0 - ((inverse * inverse * inverse) * 0.5);
+               }
+
+            case GEZ::LINEAR:
+            default:
+               return Value;
+         }
+      }
+
+      void apply_easing(GEZ Easing) {
+         if (Easing IS GEZ::LINEAR) return;
+
+         GRADIENT_TABLE src = table;
+
+         for (int i=0; i < std::ssize(table); i++) {
+            const double source = ease(Easing, double(i) / 255.0) * 255.0;
+            const int index = std::clamp(int(source), 0, 255);
+            const double blend = source - double(index);
+
+            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
+            else table[i] = src[255];
+         }
+      }
+
+      void apply_gamma(double Gamma) {
+         gamma = Gamma;
+         if (Gamma IS 1.0) return;
+
+         GRADIENT_TABLE src = table;
+
+         for (int i=0; i < std::ssize(table); i++) {
+            const double source = pow(double(i) / 255.0, Gamma) * 255.0;
+            const int index = std::clamp(int(source), 0, 255);
+            const double blend = source - double(index);
+
+            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
+            else table[i] = src[255];
+         }
+      }
 
       void apply_resolution(double Resolution) {
          resolution = 1.0 - Resolution;
