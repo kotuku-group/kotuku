@@ -607,12 +607,12 @@ commands remain unchanged.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_GET_X(extVectorPath *Self, Unit *Value)
+static ERR VECTORPATH_GET_X(extVectorPath *Self, Unit &Value)
 {
    // With no X placement there is no horizontal translation, so the unplaced bounds are authoritative.  They are
    // computed on demand because Self->Bounds is only refreshed during path generation.
-   if (Self->pX.defined()) Value->set(Self->pX);
-   else Value->set(get_unplaced_path_bounds(Self).left);
+   if (Self->pX.defined()) Value = Self->pX;
+   else Value = Unit(get_unplaced_path_bounds(Self).left);
    return ERR::Okay;
 }
 
@@ -632,10 +632,10 @@ commands remain unchanged.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_GET_Y(extVectorPath *Self, Unit *Value)
+static ERR VECTORPATH_GET_Y(extVectorPath *Self, Unit &Value)
 {
-   if (Self->pY.defined()) Value->set(Self->pY);
-   else Value->set(get_unplaced_path_bounds(Self).top);
+   if (Self->pY.defined()) Value = Self->pY;
+   else Value = Unit(get_unplaced_path_bounds(Self).top);
    return ERR::Okay;
 }
 

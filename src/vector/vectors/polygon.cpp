@@ -319,9 +319,9 @@ a percentage.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_X1(extVectorPolygon *Self, Unit *Value)
+static ERR POLY_GET_X1(extVectorPolygon *Self, Unit &Value)
 {
-   Value->set(Self->Points[0].X);
+   Value = Self->Points[0].X;
    return ERR::Okay;
 }
 
@@ -345,9 +345,9 @@ a percentage.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_X2(extVectorPolygon *Self, Unit *Value)
+static ERR POLY_GET_X2(extVectorPolygon *Self, Unit &Value)
 {
-   Value->set(Self->Points[1].X);
+   Value = Self->Points[1].X;
    return ERR::Okay;
 }
 
@@ -371,9 +371,9 @@ a percentage.
 
 *********************************************************************************************************************/
 
-static ERR POLY_GET_Y1(extVectorPolygon *Self, Unit *Value)
+static ERR POLY_GET_Y1(extVectorPolygon *Self, Unit &Value)
 {
-   Value->set(Self->Points[0].Y);
+   Value = Self->Points[0].Y;
    return ERR::Okay;
 }
 
@@ -397,9 +397,9 @@ a percentage.
 -END-
 *********************************************************************************************************************/
 
-static ERR POLY_GET_Y2(extVectorPolygon *Self, Unit *Value)
+static ERR POLY_GET_Y2(extVectorPolygon *Self, Unit &Value)
 {
-   Value->set(Self->Points[1].Y);
+   Value = Self->Points[1].Y;
    return ERR::Okay;
 }
 

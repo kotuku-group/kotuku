@@ -45,10 +45,10 @@ static bool viewport_has_fixed_size(const objVectorViewport *Viewport, double Wi
 {
    auto viewport = (const extVectorViewport *)Viewport;
 
-   return dmf::hasWidth(viewport->vpDimensions) and
-      dmf::hasHeight(viewport->vpDimensions) and
-      (not dmf::hasScaledWidth(viewport->vpDimensions)) and
-      (not dmf::hasScaledHeight(viewport->vpDimensions)) and
+   return viewport->vpTargetWidth.defined() and
+      viewport->vpTargetHeight.defined() and
+      (not viewport->vpTargetWidth.scaled()) and
+      (not viewport->vpTargetHeight.scaled()) and
       (viewport->vpTargetWidth IS Width) and
       (viewport->vpTargetHeight IS Height);
 }
@@ -68,11 +68,11 @@ static bool viewport_has_fixed_bounds(const objVectorViewport *Viewport, double 
    if (Width < 1) Width = 1;
    if (Height < 1) Height = 1;
 
-   return dmf::hasX(viewport->vpDimensions) and
-      dmf::hasY(viewport->vpDimensions) and
+   return viewport->vpTargetX.defined() and
+      viewport->vpTargetY.defined() and
       viewport_has_fixed_size(Viewport, Width, Height) and
-      (not dmf::hasScaledX(viewport->vpDimensions)) and
-      (not dmf::hasScaledY(viewport->vpDimensions)) and
+      (not viewport->vpTargetX.scaled()) and
+      (not viewport->vpTargetY.scaled()) and
       (viewport->vpTargetX IS X) and
       (viewport->vpTargetY IS Y);
 }
@@ -143,16 +143,14 @@ public:
 private:
    std::stack<ClipBuffer> mClipStack;
 
-   constexpr double view_width() {
+   double view_width() {
       if (mView->vpViewWidth > 0) return mView->vpViewWidth;
-      else if (dmf::hasAnyWidth(mView->vpDimensions)) return mView->vpFixedWidth;
-      else return mView->Scene->PageWidth;
+      else return viewport_coordinate_width(mView);
    }
 
-   constexpr double view_height() {
+   double view_height() {
       if (mView->vpViewHeight > 0) return mView->vpViewHeight;
-      else if (dmf::hasAnyHeight(mView->vpDimensions)) return mView->vpFixedHeight;
-      else return mView->Scene->PageHeight;
+      else return viewport_coordinate_height(mView);
    }
 
    void render_fill(VectorState &, extVector &, agg::rasterizer_scanline_aa<> &, extPainter &);

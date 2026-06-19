@@ -1841,6 +1841,7 @@ struct Unit {
 
    constexpr void set(const double pValue) { Value = pValue; }
    constexpr bool scaled() const { return (Type & FD_SCALED) ? true : false; }
+   constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
    inline void read(std::string_view String) {
