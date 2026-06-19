@@ -844,7 +844,9 @@ class extVectorViewport : public extVector {
 
    FUNCTION vpDragCallback;
    double vpViewX, vpViewY, vpViewWidth, vpViewHeight;     // Viewbox values determine the area of the SVG content that is being sourced.  These values are always fixed pixel units.
-   double vpTargetX, vpTargetY, vpTargetXO, vpTargetYO, vpTargetWidth, vpTargetHeight; // Target dimensions
+   Unit vpTargetX, vpTargetY;
+   Unit vpTargetWidth, vpTargetHeight;
+   Unit vpTargetXO, vpTargetYO; // Target dimensions
    double vpXScale, vpYScale; // Internal scaling for ViewN -to-> TargetN; takes the AspectRatio into consideration.
    double vpFixedWidth, vpFixedHeight; // Fixed pixel position values, relative to parent viewport
    TClipRectangle<double> vpBounds; // Bounding box coordinates relative to (0,0), used for clipping
@@ -856,7 +858,6 @@ class extVectorViewport : public extVector {
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
-   DMF   vpDimensions;
    ARF   vpAspectRatio;
    VOF   vpOverflowX, vpOverflowY;
    uint8_t vpClipConfiguring:1;
@@ -870,6 +871,37 @@ class extVectorViewport : public extVector {
       vpSeenShareVersion = 0;
    }
 };
+
+inline static double unit_to_fixed(const Unit &Value, double ParentSize)
+{
+   return Value.scaled() ? (double(Value) * ParentSize) : double(Value);
+}
+
+inline static bool viewport_has_target_width(const extVectorViewport *View)
+{
+   return View->vpTargetWidth.defined() or (View->vpTargetX.defined() and View->vpTargetXO.defined());
+}
+
+inline static bool viewport_has_target_height(const extVectorViewport *View)
+{
+   return View->vpTargetHeight.defined() or (View->vpTargetY.defined() and View->vpTargetYO.defined());
+}
+
+inline static double viewport_coordinate_width(const extVectorViewport *View)
+{
+   if (View->vpViewWidth > 0) return View->vpViewWidth;
+   else if (viewport_has_target_width(View)) return View->vpFixedWidth;
+   else if (View->Scene) return View->Scene->PageWidth;
+   else return 0;
+}
+
+inline static double viewport_coordinate_height(const extVectorViewport *View)
+{
+   if (View->vpViewHeight > 0) return View->vpViewHeight;
+   else if (viewport_has_target_height(View)) return View->vpFixedHeight;
+   else if (View->Scene) return View->Scene->PageHeight;
+   else return 0;
+}
 
 //********************************************************************************************************************
 
@@ -1388,12 +1420,7 @@ inline static double get_parent_width(const objVector *Vector)
 {
    auto eVector = (const extVector *)Vector;
    if (auto view = (extVectorViewport *)eVector->ParentView) {
-      if (view->vpViewWidth > 0) return view->vpViewWidth;
-      else if ((dmf::hasAnyWidth(view->vpDimensions)) or
-          ((dmf::hasAnyX(view->vpDimensions)) and (dmf::hasAnyXOffset(view->vpDimensions)))) {
-         return view->vpFixedWidth;
-      }
-      else return eVector->Scene->PageWidth;
+      return viewport_coordinate_width(view);
    }
    else if (eVector->Scene) return eVector->Scene->PageWidth;
    else return 0;
@@ -1403,12 +1430,7 @@ inline static double get_parent_height(const objVector *Vector)
 {
    auto eVector = (const extVector *)Vector;
    if (auto view = (extVectorViewport *)eVector->ParentView) {
-      if (view->vpViewHeight > 0) return view->vpViewHeight;
-      else if ((dmf::hasAnyHeight(view->vpDimensions)) or
-          ((dmf::hasAnyY(view->vpDimensions)) and (dmf::hasAnyYOffset(view->vpDimensions)))) {
-         return view->vpFixedHeight;
-      }
-      else return eVector->Scene->PageHeight;
+      return viewport_coordinate_height(view);
    }
    else if (eVector->Scene) return eVector->Scene->PageHeight;
    else return 0;

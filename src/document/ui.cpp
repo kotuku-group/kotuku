@@ -1280,18 +1280,18 @@ static ERR inputevent_button(objVectorViewport *Viewport, const InputEvent *Even
                button->viewport->newMatrix(&matrix, false);
             }
 
-            double width;
+            Unit width;
             button->viewport->getWidth(width);
-            double height;
+            Unit height;
             button->viewport->getHeight(height);
 
             if (auto m = button->viewport->Matrices) {
                const auto SCALE = 0.95;
-               m->TranslateX -= width * 0.5;
-               m->TranslateY -= height * 0.5;
+               m->TranslateX -= double(width) * 0.5;
+               m->TranslateY -= double(height) * 0.5;
                vec::Scale(m, SCALE, SCALE);
-               m->TranslateX += width * 0.5;
-               m->TranslateY += height * 0.5;
+               m->TranslateX += double(width) * 0.5;
+               m->TranslateY += double(height) * 0.5;
                vec::FlushMatrix(button->viewport->Matrices);
             }
          }

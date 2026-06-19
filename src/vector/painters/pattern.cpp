@@ -114,9 +114,9 @@ then the dimension is calculated relative to the bounding box or viewport applyi
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Height(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_Height(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->Height);
+   Value = Self->Height;
    return ERR::Okay;
 }
 
@@ -309,9 +309,9 @@ the dimension is calculated relative to the bounding box or viewport applying th
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Width(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_Width(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->Width);
+   Value = Self->Width;
    return ERR::Okay;
 }
 
@@ -331,9 +331,9 @@ The (X,Y) field values define the starting coordinate for mapping patterns.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_X(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_X(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->X);
+   Value = Self->X;
    return ERR::Okay;
 }
 
@@ -354,9 +354,9 @@ The (X,Y) field values define the starting coordinate for mapping patterns.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Y(extVectorPattern *Self, Unit *Value)
+static ERR VECTORPATTERN_GET_Y(extVectorPattern *Self, Unit &Value)
 {
-   Value->set(Self->Y);
+   Value = Self->Y;
    return ERR::Okay;
 }
 

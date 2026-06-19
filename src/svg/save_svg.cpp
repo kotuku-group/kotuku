@@ -795,6 +795,9 @@ static ERR save_svg_scan_viewport(extSVG *Self, objXML *XML, objVector *Vector, 
    ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<svg/>", &tag);
 
    auto viewport = (objVectorViewport *)Vector;
+
+   // Build the viewBox value
+
    if (!error) error = viewport->getViewX(x);
    if (!error) error = viewport->getViewY(y);
    if (!error) error = viewport->getViewWidth(width);
@@ -806,21 +809,15 @@ static ERR save_svg_scan_viewport(extSVG *Self, objXML *XML, objVector *Vector, 
       xml::NewAttrib(tag, "viewBox", buffer.str());
    }
 
+   // Output viewport dimensions, if defined
+
    if (!error) {
-      DMF dim;
-      viewport->getDimensions(dim);
+      Unit unit(0, FD_PURE); // Request original client setting
 
-      if ((!error) and dmf::hasAnyX(dim) and (!viewport->getX(x)))
-         set_dimension(tag, "x", x, dmf::hasScaledX(dim));
-
-      if ((!error) and dmf::hasAnyY(dim) and (!viewport->getY(y)))
-         set_dimension(tag, "y", y, dmf::hasScaledY(dim));
-
-      if ((!error) and dmf::hasAnyWidth(dim) and (!viewport->getWidth(width)))
-         set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
-
-      if ((!error) and dmf::hasAnyHeight(dim) and (!viewport->getHeight(height)))
-         set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
+      if ((!error) and (!viewport->getX(unit))) set_dimension(tag, "x", unit);
+      if ((!error) and (!viewport->getY(unit))) set_dimension(tag, "y", unit);
+      if ((!error) and (!viewport->getWidth(unit))) set_dimension(tag, "width", unit);
+      if ((!error) and (!viewport->getHeight(unit))) set_dimension(tag, "height", unit);
    }
 
    if (!error) ChildIndex = tag->ID;

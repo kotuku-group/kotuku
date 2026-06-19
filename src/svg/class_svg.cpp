@@ -3,7 +3,10 @@
 -CLASS-
 SVG: Provides comprehensive support for parsing, rendering and animating SVG documents.
 
-The SVG class serves as a complete solution for integrating Scalable Vector Graphics documents into applications.  It parses SVG statements into a scene graph consisting of @Vector objects and related constructs, providing direct programmatic access to all graphical elements.  The generated scene graph is accessible via the #Scene and #Viewport fields, enabling real-time manipulation of individual elements.
+The SVG class serves as a complete solution for integrating Scalable Vector Graphics documents into applications.
+It parses SVG statements into a scene graph consisting of @Vector objects and related constructs, providing direct
+programmatic access to all graphical elements.  The generated scene graph is accessible via the #Scene and #Viewport
+fields, enabling real-time manipulation of individual elements.
 
 Key capabilities include:
 
@@ -17,9 +20,13 @@ Key capabilities include:
 <li>Export capabilities to multiple formats including PNG images</li>
 </list>
 
-The class supports both file-based loading via #Path and direct string-based parsing via #Statement.  SVG documents can be integrated into existing scene graphs by setting the #Target field, or rendered independently through the automatically created scene structure.
+The class supports both file-based loading via #Path and direct string-based parsing via #Statement.  SVG documents
+can be integrated into existing scene graphs by setting the #Target field, or rendered independently through the
+automatically created scene structure.
 
-Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.
+Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
+rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
+enhanced programmatic access unique to Kotuku.
 
 Please refer to the W3C's online documentation for exhaustive information on the SVG standard.
 
@@ -73,11 +80,15 @@ static ERR SVG_Activate(extSVG *Self)
 -ACTION-
 Deactivate: Halts all SVG animation playback and suspends frame processing.
 
-This action immediately terminates any active animation playback, stopping all animation timers and suspending frame processing.  The SVG document will remain visible in its current state, but no further animation updates will occur until the object is reactivated.
+This action immediately terminates any active animation playback, stopping all animation timers and suspending
+frame processing.  The SVG document will remain visible in its current state, but no further animation updates will
+occur until the object is reactivated.
 
-The deactivation process is immediate and does not affect the underlying scene graph structure.  Animation sequences can be resumed from their current positions by calling the #Activate() action again.
+The deactivation process is immediate and does not affect the underlying scene graph structure.  Animation sequences
+can be resumed from their current positions by calling the #Activate() action again.
 
-This action is particularly useful for implementing pause functionality or conserving system resources when animations are not required.
+This action is particularly useful for implementing pause functionality or conserving system resources when
+animations are not required.
 
 -END-
 *********************************************************************************************************************/
@@ -92,13 +103,17 @@ static ERR SVG_Deactivate(extSVG *Self)
 -ACTION-
 DataFeed: Processes SVG data streams for incremental document parsing.
 
-The DataFeed action enables real-time processing of SVG data streams, allowing documents to be parsed incrementally as data becomes available.  This is particularly useful for network-based loading scenarios or when processing large SVG documents that may arrive in segments.
+The DataFeed action enables real-time processing of SVG data streams, allowing documents to be parsed incrementally
+as data becomes available.  This is particularly useful for network-based loading scenarios or when processing large
+SVG documents that may arrive in segments.
 
-The action accepts XML data streams and integrates them into the existing document structure.  Multiple DataFeed calls can be made to build up complex SVG documents progressively.
+The action accepts XML data streams and integrates them into the existing document structure.  Multiple DataFeed
+calls can be made to build up complex SVG documents progressively.
 
 <b>Supported data types:</b> `DATA::XML` for SVG content streams.
 
-This mechanism provides an alternative to the static #Statement field for scenarios requiring dynamic content loading or streaming workflows.
+This mechanism provides an alternative to the static #Statement field for scenarios requiring dynamic content
+loading or streaming workflows.
 
 -END-
 *********************************************************************************************************************/
@@ -147,9 +162,13 @@ static ERR SVG_Free(extSVG *Self)
 -ACTION-
 Init: Initialises the SVG object and processes source content.
 
-The initialisation process establishes the scene graph structure and processes any specified SVG source content.  If a #Path has been configured, the referenced SVG file will be loaded and parsed immediately.  Alternatively, if #Statement contains SVG data, that content will be processed instead.
+The initialisation process establishes the scene graph structure and processes any specified SVG source content.  If
+a #Path has been configured, the referenced SVG file will be loaded and parsed immediately.  Alternatively, if
+#Statement contains SVG data, that content will be processed instead.
 
-The default behaviour creates a local @VectorScene object to contain the generated scene graph.  This can be overridden by setting the #Target field to redirect content into an existing scene graph structure, enabling integration with existing UI components.
+The default behaviour creates a local @VectorScene object to contain the generated scene graph.  This can be
+overridden by setting the #Target field to redirect content into an existing scene graph structure, enabling
+integration with existing UI components.
 
 The initialisation sequence includes:
 
@@ -160,7 +179,8 @@ The initialisation sequence includes:
 <li>Animation sequence preparation for documents containing SMIL features</li>
 </list>
 
-Successfully initialised SVG objects provide immediate access to the generated scene graph via the #Scene and #Viewport fields, enabling programmatic manipulation of individual graphic elements.
+Successfully initialised SVG objects provide immediate access to the generated scene graph via the #Scene and
+#Viewport fields, enabling programmatic manipulation of individual graphic elements.
 
 -END-
 *********************************************************************************************************************/
@@ -244,13 +264,21 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
 -METHOD-
 Render: Performs high-quality rasterisation of the SVG document to a target bitmap.
 
-This method executes complete rasterisation of the SVG scene graph, producing a pixel-based representation within the specified target bitmap.  The rendering process handles all vector elements, gradients, filters, and effects with full anti-aliasing and precision.
+This method executes complete rasterisation of the SVG scene graph, producing a pixel-based representation within the
+specified target bitmap.  The rendering process handles all vector elements, gradients, filters, and effects with
+full anti-aliasing and precision.
 
-The rendered output is positioned at coordinates `(X,Y)` within the target bitmap and scaled to the specified `(Width,Height)` dimensions.  The scaling operation maintains aspect ratios and applies appropriate filtering to ensure optimal visual quality.
+The rendered output is positioned at coordinates `(X,Y)` within the target bitmap and scaled to the specified
+`(Width,Height)` dimensions.  The scaling operation maintains aspect ratios and applies appropriate filtering to
+ensure optimal visual quality.
 
-The scene's page dimensions are temporarily adjusted to match the specified width and height, ensuring that the entire document content is properly scaled and positioned within the target area.  This approach enables flexible rendering at arbitrary resolutions without affecting the original scene graph.
+The scene's page dimensions are temporarily adjusted to match the specified width and height, ensuring that the
+entire document content is properly scaled and positioned within the target area.  This approach enables flexible
+rendering at arbitrary resolutions without affecting the original scene graph.
 
-<b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may require significant processing time.  Consider using appropriate dimensions that balance quality requirements with performance constraints.
+<b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may
+require significant processing time.  Consider using appropriate dimensions that balance quality requirements with
+performance constraints.
 
 -INPUT-
 obj(Bitmap) Bitmap: The target bitmap object to receive the rendered content.
@@ -414,19 +442,12 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                }
 
                if (!error) {
-                  DMF dim;
-                  Self->Viewport->getDimensions(dim);
-                  if (dmf::hasAnyX(dim) and (!Self->Viewport->getX(x)))
-                     set_dimension(tag, "x", x, dmf::hasScaledX(dim));
+                  Unit unit(0, FD_PURE); // Request original client setting
 
-                  if (dmf::hasAnyY(dim) and (!Self->Viewport->getY(y)))
-                     set_dimension(tag, "y", y, dmf::hasScaledY(dim));
-
-                  if (dmf::hasAnyWidth(dim) and (!Self->Viewport->getWidth(width)))
-                     set_dimension(tag, "width", width, dmf::hasScaledWidth(dim));
-
-                  if (dmf::hasAnyHeight(dim) and (!Self->Viewport->getHeight(height)))
-                     set_dimension(tag, "height", height, dmf::hasScaledHeight(dim));
+                  if ((!error) and (!Self->Viewport->getX(unit))) set_dimension(tag, "x", unit);
+                  if ((!error) and (!Self->Viewport->getY(unit))) set_dimension(tag, "y", unit);
+                  if ((!error) and (!Self->Viewport->getWidth(unit))) set_dimension(tag, "width", unit);
+                  if ((!error) and (!Self->Viewport->getHeight(unit))) set_dimension(tag, "height", unit);
                }
 
                if (!error) {
@@ -529,7 +550,9 @@ static ERR SET_FrameCallback(extSVG *Self, FUNCTION *Value)
 -FIELD-
 FrameRate: Controls the maximum frame rate for SVG animation playback.
 
-This field establishes the upper limit for animation frame processing, measured in frames per second.  The frame rate directly impacts animation smoothness and system resource consumption, requiring careful balance between visual quality and performance efficiency.
+This field establishes the upper limit for animation frame processing, measured in frames per second.  The frame rate
+directly impacts animation smoothness and system resource consumption, requiring careful balance between visual
+quality and performance efficiency.
 
 <b>Recommended ranges:</b>
 <list type="bullet">
@@ -538,11 +561,15 @@ This field establishes the upper limit for animation frame processing, measured 
 <li><b>Low-power devices:</b> 20-30 FPS conserves battery while maintaining acceptable quality</li>
 </list>
 
-<b>Performance considerations:</b> Higher frame rates increase CPU usage proportionately.  A frame rate of 100 FPS consumes approximately twice the processing power of 50 FPS, with corresponding impact on power consumption and thermal characteristics.
+<b>Performance considerations:</b> Higher frame rates increase CPU usage proportionately.  A frame rate of 100 FPS
+consumes approximately twice the processing power of 50 FPS, with corresponding impact on power consumption and
+thermal characteristics.
 
-<b>Valid range:</b> 20-1000 FPS, though values above 120 FPS rarely provide perceptible improvements on standard displays.
+<b>Valid range:</b> 20-1000 FPS, though values above 120 FPS rarely provide perceptible improvements on standard
+displays.
 
-The frame rate only affects animated SVG documents containing SMIL features.  Static documents are unaffected by this setting.
+The frame rate only affects animated SVG documents containing SMIL features.  Static documents are unaffected by
+this setting.
 
 *********************************************************************************************************************/
 
@@ -560,15 +587,21 @@ static ERR SET_FrameRate(extSVG *Self, int Value)
 -FIELD-
 Path: File system path to the source SVG document.
 
-This field specifies the location of the SVG file to be loaded and processed during object initialisation.  The path supports both absolute and relative file references, with relative paths resolved according to the current working directory context.
+This field specifies the location of the SVG file to be loaded and processed during object initialisation.  The path
+supports both absolute and relative file references, with relative paths resolved according to the current working
+directory context.
 
-The loading process occurs automatically during initialisation when a valid path is specified.  The referenced file must contain well-formed SVG content that conforms to W3C SVG standards for successful parsing.
+The loading process occurs automatically during initialisation when a valid path is specified.  The referenced file
+must contain well-formed SVG content that conforms to W3C SVG standards for successful parsing.
 
-<b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with automatic decompression handling for compressed formats.
+<b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with
+automatic decompression handling for compressed formats.
 
-<b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.
+<b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms,
+supporting virtual file systems, archives, and network-accessible resources where configured.
 
-When both #Path and #Statement are specified, the Path field takes precedence and the Statement content is ignored during initialisation.
+When both #Path and #Statement are specified, the Path field takes precedence and the Statement content is ignored
+during initialisation.
 
 *********************************************************************************************************************/
 

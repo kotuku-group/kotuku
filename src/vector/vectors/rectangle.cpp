@@ -373,7 +373,7 @@ XOffset: The right-side of the rectangle, expressed as a fixed or scaled offset 
 
 *********************************************************************************************************************/
 
-static ERR VECTORRECTANGLE_GET_XOffset(extVectorRectangle *Self, Unit *Value)
+static ERR VECTORRECTANGLE_GET_XOffset(extVectorRectangle *Self, Unit &Value)
 {
    double value = 0;
 
@@ -384,9 +384,8 @@ static ERR VECTORRECTANGLE_GET_XOffset(extVectorRectangle *Self, Unit *Value)
    }
    else value = 0;
 
-   if ((Value->scaled()) and (get_parent_width(Self) != 0)) value = value / get_parent_width(Self);
-
-   Value->set(value);
+   if ((Value.scaled()) and (get_parent_width(Self) != 0)) Value = Unit(value / get_parent_width(Self), FD_SCALED);
+   else Value = Unit(value);
 
    return ERR::Okay;
 }
@@ -452,7 +451,7 @@ YOffset: The bottom of the rectangle, expressed as a fixed or scaled offset valu
 
 *********************************************************************************************************************/
 
-static ERR VECTORRECTANGLE_GET_YOffset(extVectorRectangle *Self, Unit *Value)
+static ERR VECTORRECTANGLE_GET_YOffset(extVectorRectangle *Self, Unit &Value)
 {
    double value = 0;
 
@@ -463,8 +462,8 @@ static ERR VECTORRECTANGLE_GET_YOffset(extVectorRectangle *Self, Unit *Value)
    }
    else value = 0;
 
-   if ((Value->scaled()) and (get_parent_height(Self) != 0)) Value->set(value / get_parent_height(Self));
-   else Value->set(value);
+   if ((Value.scaled()) and (get_parent_height(Self) != 0)) Value = Unit(value / get_parent_height(Self), FD_SCALED);
+   else Value = Unit(value);
    return ERR::Okay;
 }
 
