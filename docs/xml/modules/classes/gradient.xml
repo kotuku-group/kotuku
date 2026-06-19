@@ -60,7 +60,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="GEZ">GEZ</type>
       <description>
-<p>Easing modifies the interpolation position between each adjacent pair of <fl>Stops</fl>.  The default <code>GEZ::LINEAR</code> mode leaves the gradient unchanged.  This field has no effect on gradients sourced from <fl>ColourMap</fl> because colourmaps already supply a complete colour table rather than editable stop segments.</p>
+<p>Easing modifies the interpolation position between each adjacent pair of <fl>Stops</fl>.  For gradients sourced from <fl>ColourMap</fl>, it remaps the lookup position through the selected easing function before <fl>Gamma</fl> and <fl>Resolution</fl> are applied.  The default <code>GEZ::LINEAR</code> mode leaves the gradient unchanged.</p>
 <types lookup="GEZ"/>
       </description>
     </field>

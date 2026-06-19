@@ -952,7 +952,7 @@ class extVectorRectangle : public extVector {
 class GradientColours {
    public:
       GradientColours(const std::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
-      GradientColours(const std::array<FRGB, 256> &, double, double = 1.0);
+      GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
       double resolution;
       double gamma;
@@ -988,6 +988,21 @@ class GradientColours {
             case GEZ::LINEAR:
             default:
                return Value;
+         }
+      }
+
+      void apply_easing(GEZ Easing) {
+         if (Easing IS GEZ::LINEAR) return;
+
+         GRADIENT_TABLE src = table;
+
+         for (int i=0; i < std::ssize(table); i++) {
+            const double source = ease(Easing, double(i) / 255.0) * 255.0;
+            const int index = std::clamp(int(source), 0, 255);
+            const double blend = source - double(index);
+
+            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
+            else table[i] = src[255];
          }
       }
 
