@@ -19,12 +19,6 @@ is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_CX(extGradientRadial *Self, Unit &Value)
-{
-   Value = Self->CX;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTRADIAL_SET_CX(extGradientRadial *Self, Unit &Value)
 {
    Self->CX = Value;
@@ -41,12 +35,6 @@ is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_CY(extGradientRadial *Self, Unit &Value)
-{
-   Value = Self->CY;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTRADIAL_SET_CY(extGradientRadial *Self, Unit &Value)
 {
    Self->CY = Value;
@@ -61,12 +49,6 @@ ContainFocal: Confines the focal point to the base radius.
 When enabled, the focal point is constrained so that it remains within the base radial gradient circle.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTRADIAL_GET_ContainFocal(extGradientRadial *Self, int &Value)
-{
-   Value = Self->ContainFocal;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTRADIAL_SET_ContainFocal(extGradientRadial *Self, int Value)
 {
@@ -83,12 +65,6 @@ If a radial gradient has a defined focal point by setting #FX and #FY, the Focal
 the focal area.  The default of zero ensures that the focal area matches that defined by #Radius.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTRADIAL_GET_FocalRadius(extGradientRadial *Self, Unit &Value)
-{
-   Value = Self->FocalRadius;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTRADIAL_SET_FocalRadius(extGradientRadial *Self, Unit &Value)
 {
@@ -109,12 +85,6 @@ will match the centre of the gradient.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_FX(extGradientRadial *Self, Unit &Value)
-{
-   Value = Self->FX;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTRADIAL_SET_FX(extGradientRadial *Self, Unit &Value)
 {
    Self->FX = Value;
@@ -130,12 +100,6 @@ The `(FX, FY)` coordinates define the focal point for radial gradients.  If left
 will match the centre of the gradient.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTRADIAL_GET_FY(extGradientRadial *Self, Unit &Value)
-{
-   Value = Self->FY;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTRADIAL_SET_FY(extGradientRadial *Self, Unit &Value)
 {
@@ -154,12 +118,6 @@ The radius of the gradient can be defined as a fixed unit or scaled relative to 
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_Radius(extGradientRadial *Self, Unit &Value)
-{
-   Value = Self->Radius;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTRADIAL_SET_Radius(extGradientRadial *Self, Unit &Value)
 {
    if (Value >= 0) {
@@ -175,13 +133,13 @@ static ERR GRADIENTRADIAL_SET_Radius(extGradientRadial *Self, Unit &Value)
 #include "gradient_radial_def.cpp"
 
 static const FieldArray clGradientRadialFields[] = {
-   { "CX",           FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CX, GRADIENTRADIAL_SET_CX },
-   { "CY",           FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_CY, GRADIENTRADIAL_SET_CY },
-   { "FX",           FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FX, GRADIENTRADIAL_SET_FX },
-   { "FY",           FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FY, GRADIENTRADIAL_SET_FY },
-   { "Radius",       FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_Radius, GRADIENTRADIAL_SET_Radius },
-   { "FocalRadius",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_FocalRadius, GRADIENTRADIAL_SET_FocalRadius },
-   { "ContainFocal", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTRADIAL_GET_ContainFocal, GRADIENTRADIAL_SET_ContainFocal },
+   { "CX",           FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_CX },
+   { "CY",           FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_CY },
+   { "FX",           FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_FX },
+   { "FY",           FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_FY },
+   { "Radius",       FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_Radius },
+   { "FocalRadius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_FocalRadius },
+   { "ContainFocal", FDF_INT|FDF_RW, nullptr, GRADIENTRADIAL_SET_ContainFocal },
    END_FIELD
 };
 

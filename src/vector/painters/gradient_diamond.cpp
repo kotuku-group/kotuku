@@ -18,12 +18,6 @@ the centre point is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDIAMOND_GET_CX(extGradientDiamond *Self, Unit *Value)
-{
-   *Value = Self->CX;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTDIAMOND_SET_CX(extGradientDiamond *Self, Unit &Value)
 {
    Self->CX = Value;
@@ -39,12 +33,6 @@ The `(CX, CY)` coordinates define the centre point from which the diamond gradie
 the centre point is set to `50%`.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTDIAMOND_GET_CY(extGradientDiamond *Self, Unit *Value)
-{
-   *Value = Self->CY;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTDIAMOND_SET_CY(extGradientDiamond *Self, Unit &Value)
 {
@@ -63,12 +51,6 @@ radius of 50% applies if this field is not set.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTDIAMOND_GET_Radius(extGradientDiamond *Self, Unit *Value)
-{
-   *Value = Self->Radius;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTDIAMOND_SET_Radius(extGradientDiamond *Self, Unit &Value)
 {
    if (Value >= 0) {
@@ -84,9 +66,9 @@ static ERR GRADIENTDIAMOND_SET_Radius(extGradientDiamond *Self, Unit &Value)
 #include "gradient_diamond_def.cpp"
 
 static const FieldArray clGradientDiamondFields[] = {
-   { "CX",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CX, GRADIENTDIAMOND_SET_CX },
-   { "CY",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_CY, GRADIENTDIAMOND_SET_CY },
-   { "Radius",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDIAMOND_GET_Radius, GRADIENTDIAMOND_SET_Radius },
+   { "CX",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_CX },
+   { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_CY },
+   { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_Radius },
    END_FIELD
 };
 

@@ -51,12 +51,6 @@ target shape is fully rendered.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_GET_InnerRadius(extGradientDistal *Self, Unit *Value)
-{
-   *Value = Self->InnerRadius;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTDISTAL_SET_InnerRadius(extGradientDistal *Self, Unit &Value)
 {
    if (Value >= 0) {
@@ -76,12 +70,6 @@ The Radius value controls how much exterior padding is added around the target p
 signed distance colour ramp remains visible.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTDISTAL_GET_Radius(extGradientDistal *Self, Unit *Value)
-{
-   *Value = Self->Radius;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTDISTAL_SET_Radius(extGradientDistal *Self, Unit &Value)
 {
@@ -104,12 +92,6 @@ Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_GET_Floor(extGradientDistal *Self, Unit *Value)
-{
-   *Value = Self->Floor;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
 {
    if (Value < 0) return ERR::OutOfRange;
@@ -128,12 +110,6 @@ Multiplier &lt; 10`.
 
 -END-
 *********************************************************************************************************************/
-
-static ERR GRADIENTDISTAL_GET_Multiplier(extGradientDistal *Self, Unit *Value)
-{
-   *Value = Self->Multiplier;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, Unit &Value)
 {
@@ -168,23 +144,11 @@ interior half of the gradient is drawn.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_GET_InnerFall(extGradientDistal *Self, GFALL *Value)
-{
-   *Value = Self->InnerFall;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTDISTAL_SET_InnerFall(extGradientDistal *Self, GFALL Value)
 {
    Self->InnerFall = Value;
    Self->SDFHash = 0; // The curve is baked into the cached SDF alpha buffer, so force a rebuild
    if (Self->initialised()) Self->modified();
-   return ERR::Okay;
-}
-
-static ERR GRADIENTDISTAL_GET_OuterFall(extGradientDistal *Self, GFALL *Value)
-{
-   *Value = Self->OuterFall;
    return ERR::Okay;
 }
 
@@ -201,12 +165,12 @@ static ERR GRADIENTDISTAL_SET_OuterFall(extGradientDistal *Self, GFALL Value)
 #include "gradient_distal_def.cpp"
 
 static const FieldArray clGradientDistalFields[] = {
-   { "Floor",       FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Floor, GRADIENTDISTAL_SET_Floor },
-   { "Multiplier",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Multiplier, GRADIENTDISTAL_SET_Multiplier },
-   { "Radius",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_Radius, GRADIENTDISTAL_SET_Radius },
-   { "InnerRadius", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerRadius, GRADIENTDISTAL_SET_InnerRadius },
-   { "InnerFall",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_InnerFall, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },
-   { "OuterFall",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTDISTAL_GET_OuterFall, GRADIENTDISTAL_SET_OuterFall, &clGradientDistalGFALL },
+   { "Floor",       FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_Floor },
+   { "Multiplier",  FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_Multiplier },
+   { "Radius",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_Radius },
+   { "InnerRadius", FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerRadius },
+   { "InnerFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },
+   { "OuterFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_OuterFall, &clGradientDistalGFALL },
    END_FIELD
 };
 

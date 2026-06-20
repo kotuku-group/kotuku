@@ -23,12 +23,6 @@ the centre point is set to `50%`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONIC_GET_CX(extGradientConic *Self, Unit *Value)
-{
-   *Value = Self->CX;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTCONIC_SET_CX(extGradientConic *Self, Unit &Value)
 {
    Self->CX = Value;
@@ -44,12 +38,6 @@ The `(CX, CY)` coordinates define the centre point around which the conic gradie
 the centre point is set to `50%`.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTCONIC_GET_CY(extGradientConic *Self, Unit *Value)
-{
-   *Value = Self->CY;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTCONIC_SET_CY(extGradientConic *Self, Unit &Value)
 {
@@ -67,12 +55,6 @@ radius of 50% applies if this field is not set.
 
 -END-
 *********************************************************************************************************************/
-
-static ERR GRADIENTCONIC_GET_Radius(extGradientConic *Self, Unit *Value)
-{
-   *Value = Self->Radius;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTCONIC_SET_Radius(extGradientConic *Self, Unit &Value)
 {
@@ -96,12 +78,6 @@ When @Gradient.SpreadMethod is `PAD`, Span is ignored and the conic gradient ren
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONIC_GET_Span(extGradientConic *Self, double *Value)
-{
-   *Value = Self->Span;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTCONIC_SET_Span(extGradientConic *Self, double Value)
 {
    if ((Value <= 0) or (Value > 1.0)) return ERR::OutOfRange;
@@ -116,10 +92,10 @@ static ERR GRADIENTCONIC_SET_Span(extGradientConic *Self, double Value)
 #include "gradient_conic_def.cpp"
 
 static const FieldArray clGradientConicFields[] = {
-   { "Radius",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_Radius, GRADIENTCONIC_SET_Radius },
-   { "CX",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_CX, GRADIENTCONIC_SET_CX },
-   { "CY",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTCONIC_GET_CY, GRADIENTCONIC_SET_CY },
-   { "Span",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, GRADIENTCONIC_GET_Span, GRADIENTCONIC_SET_Span },
+   { "CX",      FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_CX },
+   { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_CY },
+   { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_Radius },
+   { "Span",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONIC_SET_Span },
    END_FIELD
 };
 

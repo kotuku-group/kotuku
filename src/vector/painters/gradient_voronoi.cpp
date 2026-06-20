@@ -61,12 +61,6 @@ Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_Floor(extGradientVoronoi *Self, Unit *Value)
-{
-   *Value = Self->Floor;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTVORONOI_SET_Floor(extGradientVoronoi *Self, Unit &Value)
 {
    if (Value < 0) return ERR::OutOfRange;
@@ -82,12 +76,6 @@ HeightMax: Maximum seeded feature-point height.
 HeightMax defines the upper bound for per-point heights used by the `WEIGHTED` and `PEAKS` Worley modes.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTVORONOI_GET_HeightMax(extGradientVoronoi *Self, double *Value)
-{
-   *Value = Self->HeightMax;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTVORONOI_SET_HeightMax(extGradientVoronoi *Self, double Value)
 {
@@ -106,12 +94,6 @@ HeightMin and #HeightMax match, every feature point has the same height.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_HeightMin(extGradientVoronoi *Self, double *Value)
-{
-   *Value = Self->HeightMin;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTVORONOI_SET_HeightMin(extGradientVoronoi *Self, double Value)
 {
    Self->HeightMin = Value;
@@ -128,12 +110,6 @@ Jitter ranges from `0` to `1`.  A value of zero uses uniform random placement; v
 jittered grid, with larger values allowing greater movement within each grid cell.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTVORONOI_GET_Jitter(extGradientVoronoi *Self, double *Value)
-{
-   *Value = Self->Jitter;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTVORONOI_SET_Jitter(extGradientVoronoi *Self, double Value)
 {
@@ -153,12 +129,6 @@ Multiplier < 10`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_Multiplier(extGradientVoronoi *Self, Unit *Value)
-{
-   *Value = Self->Multiplier;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTVORONOI_SET_Multiplier(extGradientVoronoi *Self, Unit &Value)
 {
    if ((Value < 0.01) or (Value > 10)) return ERR::OutOfRange;
@@ -175,12 +145,6 @@ PointCount controls how many feature points are generated inside the target path
 `1` to `4096` and the default is `16`.  This field is ignored when explicit #Points are supplied.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTVORONOI_GET_PointCount(extGradientVoronoi *Self, int *Value)
-{
-   *Value = Self->PointCount;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTVORONOI_SET_PointCount(extGradientVoronoi *Self, int Value)
 {
@@ -204,12 +168,6 @@ at the bottom-right.  The Height value is used by the `WEIGHTED` and `PEAKS` Wor
 only modes.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTVORONOI_GET_Points(extGradientVoronoi *Self, std::span<VoronoiPoint> *Value)
-{
-   *Value = std::span<VoronoiPoint>(Self->Points);
-   return ERR::Okay;
-}
 
 static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, std::span<const VoronoiPoint> *Value)
 {
@@ -243,12 +201,6 @@ path fingerprint.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_Seed(extGradientVoronoi *Self, int64_t *Value)
-{
-   *Value = Self->Seed;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTVORONOI_SET_Seed(extGradientVoronoi *Self, int64_t Value)
 {
    Self->Seed = Value;
@@ -265,12 +217,6 @@ Lookup: WLM
 WorleyMetric selects the distance function used when measuring each pixel against the seeded feature points.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTVORONOI_GET_WorleyMetric(extGradientVoronoi *Self, WLM *Value)
-{
-   *Value = Self->WorleyMetric;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTVORONOI_SET_WorleyMetric(extGradientVoronoi *Self, WLM Value)
 {
@@ -291,12 +237,6 @@ WorleyMode selects how distances to feature points are converted into the scalar
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_GET_WorleyMode(extGradientVoronoi *Self, WLF *Value)
-{
-   *Value = Self->WorleyMode;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTVORONOI_SET_WorleyMode(extGradientVoronoi *Self, WLF Value)
 {
    if ((int(Value) < int(WLF::F1)) or (int(Value) > int(WLF::PEAKS))) return ERR::OutOfRange;
@@ -311,17 +251,17 @@ static ERR GRADIENTVORONOI_SET_WorleyMode(extGradientVoronoi *Self, WLF Value)
 #include "gradient_voronoi_def.cpp"
 
 static const FieldArray clGradientVoronoiFields[] = {
-   { "Floor",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Floor, GRADIENTVORONOI_SET_Floor },
-   { "Multiplier",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Multiplier, GRADIENTVORONOI_SET_Multiplier },
-   { "Seed",          FDF_VIRTUAL|FDF_INT64|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Seed, GRADIENTVORONOI_SET_Seed },
-   { "PointCount",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_PointCount, GRADIENTVORONOI_SET_PointCount },
-   { "WorleyMode",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_WorleyMode, GRADIENTVORONOI_SET_WorleyMode, &clGradientVoronoiWLF },
-   { "WorleyMetric",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_WorleyMetric, GRADIENTVORONOI_SET_WorleyMetric, &clGradientVoronoiWLM },
-   { "HeightMin",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_HeightMin, GRADIENTVORONOI_SET_HeightMin },
-   { "HeightMax",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_HeightMax, GRADIENTVORONOI_SET_HeightMax },
-   { "Jitter",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Jitter, GRADIENTVORONOI_SET_Jitter },
-   { "Points",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTVORONOI_GET_Points, GRADIENTVORONOI_SET_Points, "VoronoiPoint" },
-   END_FIELD
+   { "Floor",        FDF_UNIT|FDF_RW, nullptr, GRADIENTVORONOI_SET_Floor },
+   { "Multiplier",   FDF_UNIT|FDF_RW, nullptr, GRADIENTVORONOI_SET_Multiplier },
+   { "Points",       FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENTVORONOI_SET_Points, "VoronoiPoint" },
+   { "HeightMin",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_HeightMin },
+   { "HeightMax",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_HeightMax },
+   { "Jitter",       FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_Jitter },
+   { "Seed",         FDF_INT64|FDF_RW, nullptr, GRADIENTVORONOI_SET_Seed },
+   { "PointCount",   FDF_INT|FDF_RW, nullptr, GRADIENTVORONOI_SET_PointCount },
+   { "WorleyMode",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTVORONOI_SET_WorleyMode, &clGradientVoronoiWLF },
+   { "WorleyMetric", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTVORONOI_SET_WorleyMetric, &clGradientVoronoiWLM },
+    END_FIELD
 };
 
 //********************************************************************************************************************
