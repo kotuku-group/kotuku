@@ -159,10 +159,7 @@ end
 
 function fieldArraySetterElementType(Field:table):str
    local array_type = fieldArrayElementType(Field)
-
-   if array_type is 'STRUCT' then return 'APTR' end
    if array_type:startsWith('const ') then return array_type end
-
    return 'const ' .. array_type
 end
 
@@ -413,7 +410,7 @@ end
 function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
-         output(f'   inline ERR set{FidName}(const {Field.basicType} &Value) noexcept {{')
+         output(f'   inline ERR set{FidName}(const std::span<const {Field.innerType}> Value) noexcept {{')
       else
          output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')
       end
@@ -500,6 +497,10 @@ function outputFieldSetter(Class:table, Field:table)
    local field_name = cName(Field, true)
    if not field_name?? then return end
    if not Field.write then return end
+   if Field.private then
+      verbose(f'Field {Class.name}.{field_name} is private')
+      return
+   end
 
    local fid_name = fieldSetIDName(field_name)
    local field_type = fieldSetType(Field)

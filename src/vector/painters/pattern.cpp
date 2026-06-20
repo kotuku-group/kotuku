@@ -100,7 +100,7 @@ static ERR VECTORPATTERN_NewObject(extVectorPattern *Self)
 /*********************************************************************************************************************
 
 -FIELD-
-ContentUnits: Private. Not yet implemented.
+ContentUnits: Not yet implemented.
 
 In compliance with SVG requirements, the application of ContentUnits is only effective if the Viewport's X, Y, Width
 and Height fields have been defined.  The default setting is `USERSPACE`.

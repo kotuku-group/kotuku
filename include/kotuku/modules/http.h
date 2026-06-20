@@ -518,11 +518,6 @@ class objHTTP : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setAuthCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value);
-   }
-
    inline ERR setContentType(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, 0x00804308, &Value);

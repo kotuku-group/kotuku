@@ -3849,7 +3849,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_stroke_opacity:          Vector->setStrokeOpacity(std::clamp(svtonum<double>(StrValue), 0.0, 1.0)); break;
       case SVF_stroke_miterlimit:       Vector->setMiterLimit(svtonum<double>(StrValue)); break;
       //case SVF_stroke_miterlimit_theta: Vector->setMiterLimitTheta(svtonum<double>(StrValue)); break;
-      case SVF_stroke_inner_miterlimit: Vector->setInnerMiterLimit(svtonum<double>(StrValue)); break;
+      //case SVF_stroke_inner_miterlimit: Vector->setInnerMiterLimit(svtonum<double>(StrValue)); break;
       case SVF_stroke_dashoffset:       UNIT(FID_DashOffset, StrValue).set(Vector); break;
 
       case SVF_mask: {

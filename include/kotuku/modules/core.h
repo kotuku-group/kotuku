@@ -2772,11 +2772,6 @@ class objMetaClass : public Object {
       return field->WriteValue(this, field, 0x08000400, Value);
    }
 
-   inline ERR setName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00914500, &Value);
-   }
-
 };
 
 inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
@@ -3550,7 +3545,7 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setResults(const kt::vector<std::string> &Value) noexcept {
+   inline ERR setResults(const std::span<const std::string> Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00905300, &Value);
    }
@@ -4076,11 +4071,6 @@ class objModule : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setHeader(struct ModHeader * Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, 0x08000510, Value);
-   }
-
    inline ERR setName(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->WriteValue(this, field, 0x00804500, &Value);
@@ -4232,11 +4222,6 @@ class objTime : public Object {
 
    inline ERR setSecond(const int Value) noexcept {
       this->Second = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setTimeZone(const int Value) noexcept {
-      this->TimeZone = Value;
       return ERR::Okay;
    }
 
@@ -4458,11 +4443,6 @@ class objCompression : public Object {
 
    inline ERR setFlags(const CMF Value) noexcept {
       this->Flags = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setSegmentSize(const int Value) noexcept {
-      this->SegmentSize = Value;
       return ERR::Okay;
    }
 

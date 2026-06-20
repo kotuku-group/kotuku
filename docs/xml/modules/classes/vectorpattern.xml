@@ -40,6 +40,17 @@
 
   <fields>
     <field>
+      <name>ContentUnits</name>
+      <comment>Not yet implemented.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="VUNIT">VUNIT</type>
+      <description>
+<p>In compliance with SVG requirements, the application of ContentUnits is only effective if the Viewport's X, Y, Width and Height fields have been defined.  The default setting is <code>USERSPACE</code>.</p>
+<types lookup="VUNIT"/>
+      </description>
+    </field>
+
+    <field>
       <name>Height</name>
       <comment>Height of the pattern tile.</comment>
       <access read="G" write="S">Get/Set</access>

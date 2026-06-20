@@ -26,7 +26,7 @@ class extWaveFunctionFX : public extFilterEffect {
    using create = kt::Create<extWaveFunctionFX>;
 
    std::vector<std::vector<double>> psi;
-   std::vector<GradientStop> Stops;
+   kt::vector<GradientStop> Stops;
    std::string ColourMap;
    std::unique_ptr<GradientColours> Colours;
    objBitmap *Bitmap;

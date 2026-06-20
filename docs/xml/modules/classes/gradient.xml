@@ -131,8 +131,8 @@
     <field>
       <name>Stops</name>
       <comment>Defines the colours to use for the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>GradientStop[]</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;GradientStop&gt;</type>
       <description>
 <p>The colours that will be used for drawing a gradient are defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
       </description>

@@ -15,9 +15,10 @@ Gradient objects are definition objects and should normally be registered with a
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *Value);
-static ERR rebuild_gradient_colours(extGradient *Self);
-static void invalidate_gradient_tables(extGradient *Self);
+static ERR GRADIENT_SET_Stops(extGradient *, std::span<const GradientStop> *);
+
+static ERR rebuild_gradient_colours(extGradient *);
+static void invalidate_gradient_tables(extGradient *);
 
 static ERR init_gradient_linear(void);
 static ERR init_gradient_radial(void);
@@ -135,7 +136,7 @@ static void invalidate_gradient_tables(extGradient *Self)
 // Constructor for the GradientColours class.  This expects to be called whenever the Gradient class updates the
 // Stops array.
 
-GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
+GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
    double Gamma, GEZ Easing)
 {
    resolution = 1.0;
@@ -498,16 +499,10 @@ to define a start and end point for interpolating the gradient colours.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_Stops(extGradient *Self, std::span<GradientStop> *Value)
-{
-   *Value = std::span<GradientStop>(Self->Stops);
-   return ERR::Okay;
-}
-
 static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *Value)
 {
    if ((Value) and (Value->size() >= 2)) {
-      auto stops = std::vector<GradientStop>(Value->begin(), Value->end());
+      auto stops = kt::vector<GradientStop>(Value->begin(), Value->end());
       auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
          stops, Self->ColourSpace, 1.0, Self->Resolution, Self->Gamma, Self->Easing));
       if (not colours) return ERR::AllocMemory;
@@ -568,6 +563,7 @@ extGradient::~extGradient() {
 
 static const FieldArray clGradientFields[] = {
    { "Matrices",     FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENT_SET_Matrices, "VectorMatrix" },
+   { "Stops",        FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENT_SET_Stops, "GradientStop" },
    { "SID",          FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_SID },
    { "ColourMap",    FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_ColourMap },
    { "Resolution",   FDF_DOUBLE|FDF_RW,         nullptr, GRADIENT_SET_Resolution },
@@ -579,7 +575,6 @@ static const FieldArray clGradientFields[] = {
    { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
    { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
-   { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENT_GET_Stops, GRADIENT_SET_Stops, "GradientStop" },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD
 };

@@ -471,7 +471,10 @@ extern int object_newindex(lua_State *Lua)
    auto func = std::lower_bound(read_table->begin(), read_table->end(), hash_key, read_hash);
    if ((func != read_table->end()) and (func->Hash IS keystr->hash)) {
       auto result = func->Call(Lua, *func, def); // On error, result is 0 and CaughtError is defined.
-      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
+      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) {
+         luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(),
+            luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
+      }
       return result;
    }
 

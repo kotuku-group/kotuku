@@ -210,7 +210,7 @@ public:
 private:
    void applyTag(const XTag &) noexcept;
    void applyStateToVector(objVector *) const noexcept;
-   const std::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
+   const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
    ERR  set_property(objVector *, uint32_t, XTag &, const std::string) noexcept;
    ERR  process_tag(XTag &, XTag &, OBJECTPTR, objVector * &) noexcept;
 

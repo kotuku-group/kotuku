@@ -509,6 +509,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
     vector(struct(VectorMatrix)) Matrices
+    vector(struct(GradientStop)) Stops
     string SID
     string ColourMap             # Name of a gradient colour map.
     struct(FRGB) Colour
@@ -519,7 +520,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
     int(GEZ) Easing              # Easing function applied between gradient stops.
     int   NumericID
-    ~array(struct(GradientStop)) Stops
   ]],
   [[
    objGradient() {
@@ -530,7 +530,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
       Resolution   = 1;
    }
 
-   std::vector<GradientStop> Stops;  // An array of gradient stop colours.
    class GradientColours *Colours;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
   ]])

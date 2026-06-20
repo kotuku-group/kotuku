@@ -727,6 +727,13 @@ unpackAlpha(Colour)
     </field>
 
     <field>
+      <name>Handle</name>
+      <comment>Platform-dependent field for referencing video memory.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>APTR</type>
+    </field>
+
+    <field>
       <name>Height</name>
       <comment>The height of the bitmap, in pixels.</comment>
       <access read="R" write="I">Read/Init</access>
