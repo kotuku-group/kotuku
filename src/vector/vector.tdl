@@ -401,9 +401,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
       Tag = 0;
    }
 
-   VectorMatrix() {
-      reset();
-   }
+   VectorMatrix() : Next(nullptr), Vector(nullptr), ScaleX(1), ShearY(0), ShearX(0), ScaleY(1), TranslateX(0), TranslateY(0), Tag(0) {}
 
    VectorMatrix(const VectorMatrix &Other) {
       Next = nullptr;
@@ -490,13 +488,23 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     unit Width                    # Width of the canvas
     unit Height                   # Height of the canvas
     double Opacity                # Level of opacity from 0 - 1.0
+    vector(struct(VectorMatrix)) Matrices
     obj(VectorScene) Scene        # Internal scene
     obj(VectorViewport) Viewport  # Internal viewport
     obj(VectorPattern) Inherit    # Reference to another pattern from which to inherit attributes
     int(VSPREAD) SpreadMethod     # Behaviour to use when pattern bounds do not match the vector path.
     int(VUNIT) Units              # VUNIT constant
     int(VUNIT) ContentUnits       # VUNIT constant
-    ~struct(*VectorMatrix) Matrices
+  ]],
+  [[
+   objVectorPattern() {
+      SpreadMethod = VSPREAD::REPEAT;
+      Units        = VUNIT::BOUNDING_BOX;
+      ContentUnits = VUNIT::USERSPACE;
+      Opacity      = 1.0;
+      X            = Unit(0);
+      Y            = Unit(0);
+   }
   ]])
 
   struct('VoronoiPoint', {
