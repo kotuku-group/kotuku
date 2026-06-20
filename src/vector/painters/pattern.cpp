@@ -30,15 +30,15 @@ static ERR VECTORPATTERN_Draw(extVectorPattern *Self, struct acDraw *Args)
 {
    kt::Log log;
 
-   if (!Self->Scene->PageWidth) return log.warning(ERR::FieldNotSet);
-   if (!Self->Scene->PageHeight) return log.warning(ERR::FieldNotSet);
+   if (not Self->Scene->PageWidth) return log.warning(ERR::FieldNotSet);
+   if (not Self->Scene->PageHeight) return log.warning(ERR::FieldNotSet);
 
    if (Self->Bitmap) {
       if ((Self->Scene->PageWidth != Self->Bitmap->Width) or (Self->Scene->PageHeight != Self->Bitmap->Height)) {
          acResize(Self->Bitmap, Self->Scene->PageWidth, Self->Scene->PageHeight, 32);
       }
    }
-   else if (!(Self->Bitmap = objBitmap::create::local(
+   else if (not (Self->Bitmap = objBitmap::create::local(
       fl::Width(Self->Scene->PageWidth),
       fl::Height(Self->Scene->PageHeight),
       fl::Flags(BMF::ALPHA_CHANNEL),
@@ -84,12 +84,6 @@ static ERR VECTORPATTERN_NewObject(extVectorPattern *Self)
    if (!NewLocalObject(CLASSID::VECTORSCENE, &Self->Scene)) {
       if (!NewObject(CLASSID::VECTORVIEWPORT, &Self->Viewport)) {
          SetOwner(Self->Viewport, Self->Scene);
-         Self->SpreadMethod = VSPREAD::REPEAT;
-         Self->Units        = VUNIT::BOUNDING_BOX;
-         Self->ContentUnits = VUNIT::USERSPACE;
-         Self->Opacity      = 1.0;
-         Self->X            = Unit(0);
-         Self->Y            = Unit(0);
          return ERR::Okay;
       }
       else return ERR::NewObject;
@@ -113,12 +107,6 @@ then the dimension is calculated relative to the bounding box or viewport applyi
 #Units setting.
 
 *********************************************************************************************************************/
-
-static ERR VECTORPATTERN_GET_Height(extVectorPattern *Self, Unit &Value)
-{
-   Value = Self->Height;
-   return ERR::Okay;
-}
 
 static ERR VECTORPATTERN_SET_Height(extVectorPattern *Self, Unit &Value)
 {
@@ -152,56 +140,32 @@ static ERR VECTORPATTERN_SET_Inherit(extVectorPattern *Self, extVectorPattern *V
 
 /*********************************************************************************************************************
 -FIELD-
-Matrices: A linked list of transform matrices that have been applied to the pattern.
+Matrices: Applies one or more transforms to a pattern.
 
-All transforms that have been applied to the pattern can be read from the Matrices field.  Each transform is
-represented by a !VectorMatrix structure, and are linked in the order in which they were applied to the pattern.
-
-Setting this field is always additive unless NULL is passed, in which case all existing matrices are removed.
+A transform can be applied to a pattern via one or more matrices.  These will influence how pattern fills are
+rendered within their vector space.  Each matrix is represented by a !VectorMatrix structure, and the matrices are
+linked in the order in which they should be applied.
 
 !VectorMatrix
 
 *********************************************************************************************************************/
 
-static ERR VECTORVECTORPATTERN_GET_Matrices(extVectorPattern *Self, VectorMatrix **Value)
-{
-   *Value = Self->Matrices;
-   return ERR::Okay;
-}
-
-static ERR VECTORVECTORPATTERN_SET_Matrices(extVectorPattern *Self, VectorMatrix *Value)
+static ERR VECTORPATTERN_SET_Matrices(extVectorPattern *Self, const std::span<const VectorMatrix> *Value)
 {
    if (Value) {
-      auto hook = &Self->Matrices;
-      while (Value) {
-         VectorMatrix *matrix;
-         if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
-            matrix->Vector = nullptr;
-            matrix->Next   = nullptr;
-            matrix->ScaleX = Value->ScaleX;
-            matrix->ScaleY = Value->ScaleY;
-            matrix->ShearX = Value->ShearX;
-            matrix->ShearY = Value->ShearY;
-            matrix->TranslateX = Value->TranslateX;
-            matrix->TranslateY = Value->TranslateY;
-            *hook = matrix;
-            hook = &matrix->Next;
-         }
-         else return ERR::AllocMemory;
+      Self->Matrices.assign(Value->begin(), Value->end());
 
-         Value = Value->Next;
+      VectorMatrix *prev = nullptr;
+      for (auto &matrix : Self->Matrices) {
+         matrix.Vector = nullptr;
+         matrix.Next = nullptr;
+         if (prev) prev->Next = &matrix;
+         prev = &matrix;
       }
    }
-   else {
-      VectorMatrix *next;
-      for (auto node=Self->Matrices; node; node=next) {
-         next = node->Next;
-         FreeResource(node);
-      }
-      Self->Matrices = nullptr;
-   }
+   else Self->Matrices.clear();
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
@@ -256,32 +220,17 @@ A transform can be applied to the pattern by setting this field with an SVG comp
 
 static ERR VECTORPATTERN_SET_Transform(extVectorPattern *Self, const std::string_view &Commands)
 {
-   kt::Log log;
+   if (Commands.empty()) return kt::Log().warning(ERR::InvalidValue);
 
-   if (Commands.empty()) return log.warning(ERR::InvalidValue);
+   if (Self->initialised()) Self->modified();
 
-   Self->modified();
-
-   if (not Self->Matrices) {
-      VectorMatrix *matrix;
-      if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
-         matrix->Vector = nullptr;
-         matrix->Next   = Self->Matrices;
-         matrix->ScaleX = 1.0;
-         matrix->ScaleY = 1.0;
-         matrix->ShearX = 0;
-         matrix->ShearY = 0;
-         matrix->TranslateX = 0;
-         matrix->TranslateY = 0;
-
-         Self->Matrices = matrix;
-         return vec::ParseTransform(Self->Matrices, Commands);
-      }
-      else return ERR::AllocMemory;
+   if (Self->Matrices.empty()) {
+      Self->Matrices.resize(1);
+      return vec::ParseTransform(Self->Matrices.data(), Commands);
    }
    else {
-      vec::ResetMatrix(Self->Matrices);
-      return vec::ParseTransform(Self->Matrices, Commands);
+      vec::ResetMatrix(Self->Matrices.data());
+      return vec::ParseTransform(Self->Matrices.data(), Commands);
    }
 }
 
@@ -309,12 +258,6 @@ the dimension is calculated relative to the bounding box or viewport applying th
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Width(extVectorPattern *Self, Unit &Value)
-{
-   Value = Self->Width;
-   return ERR::Okay;
-}
-
 static ERR VECTORPATTERN_SET_Width(extVectorPattern *Self, Unit &Value)
 {
    Self->Width = Value;
@@ -330,12 +273,6 @@ X: X coordinate for the pattern.
 The (X,Y) field values define the starting coordinate for mapping patterns.
 
 *********************************************************************************************************************/
-
-static ERR VECTORPATTERN_GET_X(extVectorPattern *Self, Unit &Value)
-{
-   Value = Self->X;
-   return ERR::Okay;
-}
 
 static ERR VECTORPATTERN_SET_X(extVectorPattern *Self, Unit &Value)
 {
@@ -354,12 +291,6 @@ The (X,Y) field values define the starting coordinate for mapping patterns.
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATTERN_GET_Y(extVectorPattern *Self, Unit &Value)
-{
-   Value = Self->Y;
-   return ERR::Okay;
-}
-
 static ERR VECTORPATTERN_SET_Y(extVectorPattern *Self, Unit &Value)
 {
    Self->Y = Value;
@@ -370,13 +301,6 @@ static ERR VECTORPATTERN_SET_Y(extVectorPattern *Self, Unit &Value)
 //********************************************************************************************************************
 
 extVectorPattern::~extVectorPattern() {
-   VectorMatrix *next;
-   for (auto node=Matrices; node; node=next) {
-      next = node->Next;
-      FreeResource(node);
-   }
-   Matrices = nullptr;
-
    if (Bitmap) FreeResource(Bitmap);
    if (Scene)  FreeResource(Scene);
 }
@@ -386,10 +310,11 @@ extVectorPattern::~extVectorPattern() {
 #include "pattern_def.cpp"
 
 static const FieldArray clVectorPatternFields[] = {
-   { "X",            FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_X, VECTORPATTERN_SET_X },
-   { "Y",            FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Y, VECTORPATTERN_SET_Y },
-   { "Width",        FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Width, VECTORPATTERN_SET_Width },
-   { "Height",       FDF_UNIT|FDF_RW|FDF_PURE, VECTORPATTERN_GET_Height, VECTORPATTERN_SET_Height },
+   { "X",            FDF_UNIT|FDF_RW, nullptr, VECTORPATTERN_SET_X },
+   { "Y",            FDF_UNIT|FDF_RW, nullptr, VECTORPATTERN_SET_Y },
+   { "Width",        FDF_UNIT|FDF_RW, nullptr, VECTORPATTERN_SET_Width },
+   { "Height",       FDF_UNIT|FDF_RW, nullptr, VECTORPATTERN_SET_Height },
+   { "Matrices",     FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, VECTORPATTERN_SET_Matrices, "VectorMatrix" },
    { "Opacity",      FDF_DOUBLE|FDF_RW, nullptr, VECTORPATTERN_SET_Opacity },
    { "Scene",        FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::VECTORSCENE },
    { "Viewport",     FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
@@ -399,7 +324,6 @@ static const FieldArray clVectorPatternFields[] = {
    { "ContentUnits", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorPatternContentUnits },
    //{ "AspectRatio", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, VECTORPATTERN_GET_AspectRatio, VECTORPATTERN_SET_AspectRatio, &clAspectRatio },
    // Virtual fields
-   { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORVECTORPATTERN_GET_Matrices, VECTORVECTORPATTERN_SET_Matrices, "VectorMatrix" },
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, VECTORPATTERN_SET_Transform },
    END_FIELD
 };

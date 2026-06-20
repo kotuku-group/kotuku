@@ -53,7 +53,7 @@
     <field>
       <name>Height</name>
       <comment>Height of the pattern tile.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled, then the dimension is calculated relative to the bounding box or viewport applying the pattern, dependent on the <fl>Units</fl> setting.</p>
@@ -72,12 +72,11 @@
 
     <field>
       <name>Matrices</name>
-      <comment>A linked list of transform matrices that have been applied to the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>struct VectorMatrix *</type>
+      <comment>Applies one or more transforms to a pattern.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;VectorMatrix&gt;</type>
       <description>
-<p>All transforms that have been applied to the pattern can be read from the Matrices field.  Each transform is represented by a <st>VectorMatrix</st> structure, and are linked in the order in which they were applied to the pattern.</p>
-<p>Setting this field is always additive unless NULL is passed, in which case all existing matrices are removed.</p>
+<p>A transform can be applied to a pattern via one or more matrices.  These will influence how pattern fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
 <struct lookup="VectorMatrix"/>
       </description>
     </field>
@@ -147,7 +146,7 @@
     <field>
       <name>Width</name>
       <comment>Width of the pattern tile.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled, the dimension is calculated relative to the bounding box or viewport applying the pattern, dependent on the <fl>Units</fl> setting.</p>
@@ -157,7 +156,7 @@
     <field>
       <name>X</name>
       <comment>X coordinate for the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the starting coordinate for mapping patterns.</p>
@@ -167,7 +166,7 @@
     <field>
       <name>Y</name>
       <comment>Y coordinate for the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the starting coordinate for mapping patterns.</p>

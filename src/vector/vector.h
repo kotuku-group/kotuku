@@ -1,6 +1,8 @@
 
 #define PRV_VECTOR_MODULE
 #define PRV_GRADIENT
+#define PRV_VECTORPATTERN
+#define PRV_VECTORIMAGE
 
 template<class... Args> void DBG_TRANSFORM(Args...) {
    //log.trace(Args)
@@ -608,7 +610,6 @@ class extVectorPattern : public objVectorPattern, public SceneDef {
    public:
    using create = kt::Create<extVectorPattern>;
 
-   struct VectorMatrix *Matrices;
    objBitmap *Bitmap;
 
    ~extVectorPattern();
@@ -1289,7 +1290,7 @@ inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTrans
          AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
       }
    }
-   else { // Contiguous kt::vector storage (gradients)
+   else { // Contiguous kt::vector storage
       for (auto &t : Vector.Matrices) {
          AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
       }

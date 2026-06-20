@@ -1131,8 +1131,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
 
    agg::trans_affine transform;
 
-   if (Pattern.Matrices) { // Client used the 'patternTransform' SVG attribute
-      auto &m = *Pattern.Matrices;
+   if (not Pattern.Matrices.empty()) { // Client used the 'patternTransform' SVG attribute
+      auto &m = Pattern.Matrices[0];
       transform.load_all(m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX + dx, m.TranslateY + dy);
    }
    else transform.translate(dx, dy);

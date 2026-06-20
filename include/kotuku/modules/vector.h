@@ -628,9 +628,7 @@ struct VectorMatrix {
       Tag = 0;
    }
 
-   VectorMatrix() {
-      reset();
-   }
+   VectorMatrix() : Next(nullptr), Vector(nullptr), ScaleX(1), ShearY(0), ShearX(0), ScaleY(1), TranslateX(0), TranslateY(0), Tag(0) {}
 
    VectorMatrix(const VectorMatrix &Other) {
       Next = nullptr;
@@ -1030,17 +1028,29 @@ class objVectorPattern : public Object {
 
    using create = kt::Create<objVectorPattern>;
 
-   Unit    X;                       // X coordinate for the pattern.
-   Unit    Y;                       // Y coordinate for the pattern.
-   Unit    Width;                   // Width of the pattern tile.
-   Unit    Height;                  // Height of the pattern tile.
-   double  Opacity;                 // The opacity of the pattern.
-   objVectorScene * Scene;          // Refers to the internal VectorScene that will contain the rendered pattern.
-   objVectorViewport * Viewport;    // Refers to the viewport that contains the pattern.
-   objVectorPattern * Inherit;      // Inherit attributes from a VectorPattern referenced here.
-   VSPREAD SpreadMethod;            // The behaviour to use when the pattern bounds do not match the vector path.
-   VUNIT   Units;                   // Defines the coordinate system for fields X, Y, Width and Height.
-   VUNIT   ContentUnits;            // Not yet implemented.
+   Unit    X;                            // X coordinate for the pattern.
+   Unit    Y;                            // Y coordinate for the pattern.
+   Unit    Width;                        // Width of the pattern tile.
+   Unit    Height;                       // Height of the pattern tile.
+   kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a pattern.
+   double  Opacity;                      // The opacity of the pattern.
+   objVectorScene * Scene;               // Refers to the internal VectorScene that will contain the rendered pattern.
+   objVectorViewport * Viewport;         // Refers to the viewport that contains the pattern.
+   objVectorPattern * Inherit;           // Inherit attributes from a VectorPattern referenced here.
+   VSPREAD SpreadMethod;                 // The behaviour to use when the pattern bounds do not match the vector path.
+   VUNIT   Units;                        // Defines the coordinate system for fields X, Y, Width and Height.
+   VUNIT   ContentUnits;                 // Not yet implemented.
+
+#ifdef PRV_VECTORPATTERN
+   objVectorPattern() {
+      SpreadMethod = VSPREAD::REPEAT;
+      Units        = VUNIT::BOUNDING_BOX;
+      ContentUnits = VUNIT::USERSPACE;
+      Opacity      = 1.0;
+      X            = Unit(0);
+      Y            = Unit(0);
+   }
+#endif
 
    // Action stubs
 
@@ -1054,23 +1064,29 @@ class objVectorPattern : public Object {
    // Customised field getting
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 88));
+      return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 104));
+      return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 120));
+      return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 136));
+      return ERR::Okay;
+   }
+
+   inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
+      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + 152);
+      Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
+      return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
@@ -1108,11 +1124,6 @@ class objVectorPattern : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getMatrices(struct VectorMatrix * &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
 
@@ -1134,6 +1145,11 @@ class objVectorPattern : public Object {
    inline ERR setHeight(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
@@ -1159,11 +1175,6 @@ class objVectorPattern : public Object {
    inline ERR setContentUnits(const VUNIT Value) noexcept {
       this->ContentUnits = Value;
       return ERR::Okay;
-   }
-
-   inline ERR setMatrices(struct VectorMatrix * Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x08100318, Value);
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
