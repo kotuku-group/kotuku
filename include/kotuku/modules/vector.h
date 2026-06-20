@@ -1032,8 +1032,8 @@ class objVectorPattern : public Object {
    Unit    Y;                            // Y coordinate for the pattern.
    Unit    Width;                        // Width of the pattern tile.
    Unit    Height;                       // Height of the pattern tile.
-   double  Opacity;                      // The opacity of the pattern.
    kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a pattern.
+   double  Opacity;                      // The opacity of the pattern.
    objVectorScene * Scene;               // Refers to the internal VectorScene that will contain the rendered pattern.
    objVectorViewport * Viewport;         // Refers to the viewport that contains the pattern.
    objVectorPattern * Inherit;           // Inherit attributes from a VectorPattern referenced here.
@@ -1083,14 +1083,14 @@ class objVectorPattern : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getOpacity(double &Value) noexcept {
-      Value = this->Opacity;
-      return ERR::Okay;
-   }
-
    inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
       auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + 152);
       Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      Value = this->Opacity;
       return ERR::Okay;
    }
 
@@ -1147,14 +1147,14 @@ class objVectorPattern : public Object {
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
    inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x00005310, &Value);
+   }
+
+   inline ERR setOpacity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setInherit(objVectorPattern * Value) noexcept {

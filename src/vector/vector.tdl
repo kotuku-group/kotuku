@@ -487,8 +487,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     unit Y                        # Starting vertical coordinate
     unit Width                    # Width of the canvas
     unit Height                   # Height of the canvas
-    double Opacity                # Level of opacity from 0 - 1.0
     vector(struct(VectorMatrix)) Matrices
+    double Opacity                # Level of opacity from 0 - 1.0
     obj(VectorScene) Scene        # Internal scene
     obj(VectorViewport) Viewport  # Internal viewport
     obj(VectorPattern) Inherit    # Reference to another pattern from which to inherit attributes

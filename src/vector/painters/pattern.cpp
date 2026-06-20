@@ -30,15 +30,15 @@ static ERR VECTORPATTERN_Draw(extVectorPattern *Self, struct acDraw *Args)
 {
    kt::Log log;
 
-   if (!Self->Scene->PageWidth) return log.warning(ERR::FieldNotSet);
-   if (!Self->Scene->PageHeight) return log.warning(ERR::FieldNotSet);
+   if (not Self->Scene->PageWidth) return log.warning(ERR::FieldNotSet);
+   if (not Self->Scene->PageHeight) return log.warning(ERR::FieldNotSet);
 
    if (Self->Bitmap) {
       if ((Self->Scene->PageWidth != Self->Bitmap->Width) or (Self->Scene->PageHeight != Self->Bitmap->Height)) {
          acResize(Self->Bitmap, Self->Scene->PageWidth, Self->Scene->PageHeight, 32);
       }
    }
-   else if (!(Self->Bitmap = objBitmap::create::local(
+   else if (not (Self->Bitmap = objBitmap::create::local(
       fl::Width(Self->Scene->PageWidth),
       fl::Height(Self->Scene->PageHeight),
       fl::Flags(BMF::ALPHA_CHANNEL),
