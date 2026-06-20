@@ -402,10 +402,10 @@ linked in the order in which they should be applied.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_SET_Matrices(extGradient *Self, kt::vector<VectorMatrix> *Value)
+static ERR GRADIENT_SET_Matrices(extGradient *Self, const std::span<const VectorMatrix> *Value)
 {
    if (Value) {
-      Self->Matrices = *Value;
+      Self->Matrices.assign(Value->begin(), Value->end());
 
       VectorMatrix *prev = nullptr;
       for (auto &matrix : Self->Matrices) {
