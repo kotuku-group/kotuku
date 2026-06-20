@@ -2562,7 +2562,7 @@ The new pixel value must be defined in the `RGB` parameter.
 Flags: Optional flags.
 
 -FIELD-
-Handle: Private.  Platform-dependent field for referencing video memory.
+Handle: Platform-dependent field for referencing video memory.
 -END-
 
 *********************************************************************************************************************/
@@ -2949,7 +2949,7 @@ static ERR CalculatePixelRoutines(extBitmap *Self)
 
 static const FieldArray clBitmapFields[] = {
    { "Palette",       FDF_POINTER|FDF_RW, nullptr, SET_Palette },
-   { "ColourFormat",  FDF_POINTER|FDF_STRUCT|FDF_R, NULL, NULL, "ColourFormat" },
+   { "ColourFormat",  FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "ColourFormat" },
    { "DrawUCPixel",   FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCPixel },
    { "DrawUCRPixel",  FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCRPixel },
    { "ReadUCPixel",   FDF_POINTER|FDF_R, nullptr, nullptr, &argsReadUCPixel },
@@ -2984,7 +2984,7 @@ static const FieldArray clBitmapFields[] = {
    { "ColourSpace",   FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clBitmapColourSpace },
    // Virtual fields
    { "Clip",          FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GET_Clip, SET_Clip },
-   { "Handle",        FDF_POINTER|FDF_SYSTEM|FDF_RW|FDF_PURE, GET_Handle, SET_Handle },
+   { "Handle",        FDF_POINTER|FDF_RW|FDF_PURE, GET_Handle, SET_Handle },
    END_FIELD
 };
 

@@ -646,7 +646,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
          else {
             // For kt::vector primitives we can just convert to a raw data array.
             std::span<int> values; // The type doesn't matter.
-            if (!(error = obj->get(field->FieldID, values))) {
+            if (!(error = obj->get(field->FieldID, values, false))) {
                std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
                make_any_array(Lua, field->Flags, struct_name, values.size(), values.data());
             }

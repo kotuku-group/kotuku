@@ -49,11 +49,10 @@ static ERR consume_input_events(const InputEvent *, int);
 static void draw_region(extSurface *, extSurface *, extBitmap *);
 static ERR redraw_timer(extSurface *, int64_t, int64_t);
 
-/*********************************************************************************************************************
-** This call is used to refresh the pointer image when at least one layer has been rearranged.  The timer is used to
-** delay the refresh - useful if multiple surfaces are being rearranged when we only need to do the refresh once.
-** The delay also prevents clashes with read/write access to the surface list.
-*/
+//********************************************************************************************************************
+// This call is used to refresh the pointer image when at least one layer has been rearranged.  The timer is used to
+// delay the refresh - useful if multiple surfaces are being rearranged when we only need to do the refresh once.
+// The delay also prevents clashes with read/write access to the surface list.
 
 static ERR refresh_pointer_timer(OBJECTPTR Task, int64_t Elapsed, int64_t CurrentTime)
 {
@@ -113,17 +112,16 @@ static void release_video(objDisplay *Display)
    ReleaseObject(Display);
 }
 
-/*********************************************************************************************************************
-** Used By:  MoveToBack(), move_layer()
-**
-** This is the best way to figure out if a surface object or its children causes it to be volatile.  Use this function
-** if you don't want to do any deep scanning to determine who is volatile or not.
-**
-** Volatile flags are PRECOPY, AFTER_COPY and CURSOR.
-**
-** NOTE: Surfaces marked as COMPOSITE or TRANSPARENT are not considered volatile as they do not require redraws.  It's
-** up to the caller to make a decision as to whether COMPOSITE's are volatile or not.
-*/
+//********************************************************************************************************************
+// Used By:  MoveToBack(), move_layer()
+//
+// This is the best way to figure out if a surface object or its children causes it to be volatile.  Use this function
+// if you don't want to do any deep scanning to determine who is volatile or not.
+//
+// Volatile flags are PRECOPY, AFTER_COPY and CURSOR.
+//
+// NOTE: Surfaces marked as COMPOSITE or TRANSPARENT are not considered volatile as they do not require redraws.  It's
+// up to the caller to make a decision as to whether COMPOSITE's are volatile or not.
 
 static bool check_volatile(const SURFACELIST &List, int Index)
 {

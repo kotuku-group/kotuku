@@ -137,11 +137,15 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->setFields(fl::X(img_x), fl::Y(img_y), fl::Width(img_width), fl::Height(img_height),
          fl::AspectRatio(Self->AspectRatio));
 
-      auto &t = filter->ClientVector->Transform;
-      VectorMatrix matrix = {
-         .Next = nullptr, .Vector = Self->Scene->Viewport,
-         .ScaleX = t.sx, .ShearY = t.shy, .ShearX = t.shx, .ScaleY = t.sy, .TranslateX = t.tx, .TranslateY = t.ty
-      };
+      agg::trans_affine &t = filter->ClientVector->Transform;
+      VectorMatrix matrix;
+      matrix.Vector = Self->Scene->Viewport;
+      matrix.ScaleX = t.sx;
+      matrix.ShearY = t.shy;
+      matrix.ShearX = t.shx;
+      matrix.ScaleY = t.sy;
+      matrix.TranslateX = t.tx;
+      matrix.TranslateY = t.ty;
 
       ((extVectorViewport *)Self->Scene->Viewport)->Matrices = &matrix;
 

@@ -73,14 +73,14 @@ static void warn_unknown_gradient_attribute(kt::Log &Log, const XTag &Tag, const
 //********************************************************************************************************************
 // Note that all offsets are percentages.
 
-const std::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag) noexcept
+const kt::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
 
    log.traceBranch();
 
    double last_stop = 0;
-   std::vector<GradientStop> stops;
+   kt::vector<GradientStop> stops;
    for (auto &scan : Tag.Children) {
       if (svg_tag_hash(scan) IS kt::strhash("stop")) {
          GradientStop stop;
@@ -249,7 +249,10 @@ void svgState::set_gradient_stops(const XTag &Tag, objGradient *Gradient, bool P
 {
    if (ProcessStops) {
       auto stops = process_gradient_stops(Tag);
-      if (stops.size() >= 2) Gradient->setStops(stops);
+      if (stops.size() >= 2) {
+         std::span<GradientStop> span(stops.data(), stops.size());
+         Gradient->setStops(span);
+      }
    }
 }
 

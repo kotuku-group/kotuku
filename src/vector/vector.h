@@ -1,5 +1,6 @@
 
 #define PRV_VECTOR_MODULE
+#define PRV_GRADIENT
 
 template<class... Args> void DBG_TRANSFORM(Args...) {
    //log.trace(Args)
@@ -375,6 +376,7 @@ public:
 };
 
 //********************************************************************************************************************
+// All scene definitions inherit this class
 
 class SceneDef {
    public:
@@ -439,28 +441,6 @@ class extGradient : public objGradient, public SceneDef {
    static constexpr CLASSID CLASS_ID = CLASSID::GRADIENT;
    static constexpr CSTRING CLASS_NAME = "Gradient";
    using create = kt::Create<extGradient>;
-
-   std::vector<GradientStop> Stops;  // An array of gradient stop colours.
-   struct VectorMatrix *Matrices;
-   class GradientColours *Colours;
-   std::string ColourMap;
-   FRGB   Colour;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
-   std::string SID;
-   int   NumericID;
-
-   extGradient() {
-      Matrices     = nullptr;
-      Colours      = nullptr;
-      Gamma        = 1.0;
-      Easing       = GEZ::LINEAR;
-      SpreadMethod = VSPREAD::PAD;
-      Units        = VUNIT::BOUNDING_BOX;
-      Resolution   = 1;
-      Colour       = {};
-      ColourRGB    = {};
-      NumericID    = 0;
-   }
 
    ~extGradient();
 };
@@ -951,7 +931,7 @@ class extVectorRectangle : public extVector {
 
 class GradientColours {
    public:
-      GradientColours(const std::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
+      GradientColours(const kt::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
       GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
       double resolution;
@@ -1303,8 +1283,16 @@ inline static void reset_final_path(objVector *Vector)
 template <class T>
 inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTransform)
 {
-   for (auto t=Vector.Matrices; t; t=t->Next) {
-      AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
+   if constexpr (std::is_pointer_v<std::decay_t<decltype(Vector.Matrices)>>) {
+      // Linked-list storage (objVector, viewports and patterns)
+      for (auto t=Vector.Matrices; t; t=t->Next) {
+         AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
+      }
+   }
+   else { // Contiguous kt::vector storage (gradients)
+      for (auto &t : Vector.Matrices) {
+         AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
+      }
    }
 }
 

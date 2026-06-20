@@ -903,6 +903,11 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getHandle(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->GetValue(this, &Value);
+   }
+
 
    // Customised field setting
 
@@ -1026,7 +1031,7 @@ class objBitmap : public Object {
 
    inline ERR setHandle(APTR Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x08110300, Value);
+      return field->WriteValue(this, field, 0x08100300, Value);
    }
 
 };
@@ -2311,19 +2316,8 @@ class objSurface : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setType(const RT Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->Type = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setModal(const int Value) noexcept {
       auto field = &this->Class->Dictionary[39];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setRootLayer(OBJECTID Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2350,11 +2344,6 @@ class objSurface : public Object {
    inline ERR setOpacity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setRevertFocus(OBJECTID Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setVisible(const int Value) noexcept {

@@ -616,6 +616,33 @@ struct VectorMatrix {
    double TranslateX;             // Matrix value E
    double TranslateY;             // Matrix value F
    int    Tag;                    // An optional tag value defined by the client for matrix identification.
+   void reset() {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = 1.0;
+      ShearY = 0.0;
+      ShearX = 0.0;
+      ScaleY = 1.0;
+      TranslateX = 0.0;
+      TranslateY = 0.0;
+      Tag = 0;
+   }
+
+   VectorMatrix() {
+      reset();
+   }
+
+   VectorMatrix(const VectorMatrix &Other) {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = Other.ScaleX;
+      ShearY = Other.ShearY;
+      ShearX = Other.ShearX;
+      ScaleY = Other.ScaleY;
+      TranslateX = Other.TranslateX;
+      TranslateY = Other.TranslateY;
+      Tag = Other.Tag;
+   }
 };
 
 #define MTAG_ANIMATE_MOTION 0x1da6b394
@@ -854,11 +881,6 @@ class objVectorScene : public Object {
 
    // Customised field setting
 
-   inline ERR setGamma(const double Value) noexcept {
-      this->Gamma = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setHostScene(objVectorScene * Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
       this->HostScene = Value;
@@ -1018,7 +1040,7 @@ class objVectorPattern : public Object {
    objVectorPattern * Inherit;      // Inherit attributes from a VectorPattern referenced here.
    VSPREAD SpreadMethod;            // The behaviour to use when the pattern bounds do not match the vector path.
    VUNIT   Units;                   // Defines the coordinate system for fields X, Y, Width and Height.
-   VUNIT   ContentUnits;            // Private. Not yet implemented.
+   VUNIT   ContentUnits;            // Not yet implemented.
 
    // Action stubs
 
@@ -1078,6 +1100,11 @@ class objVectorPattern : public Object {
 
    inline ERR getUnits(VUNIT &Value) noexcept {
       Value = this->Units;
+      return ERR::Okay;
+   }
+
+   inline ERR getContentUnits(VUNIT &Value) noexcept {
+      Value = this->ContentUnits;
       return ERR::Okay;
    }
 
@@ -1163,18 +1190,64 @@ class objGradient : public Object {
 
    using create = kt::Create<objGradient>;
 
-   double  Resolution;      // Affects the rate of change for colours in the gradient.
-   double  Gamma;           // Applies a gamma curve to the gradient ramp.
-   VSPREAD SpreadMethod;    // Determines the rendering behaviour to use when gradient colours are cycled.
-   VUNIT   Units;           // Defines the coordinate system for gradient coordinates.
-   VCS     ColourSpace;     // Defines the colour space to use when interpolating gradient colours.
-   GEZ     Easing;          // Selects the easing function for interpolation between gradient stops.
+   kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a gradient.
+   kt::vector<GradientStop> Stops;       // Defines the colours to use for the gradient.
+   std::string SID;                      // String identifier for a gradient.
+   std::string ColourMap;                // Assigns a pre-defined colourmap to the gradient.
+   struct FRGB Colour;                   // The default background colour to use when clipping is enabled.
+   double  Resolution;                   // Affects the rate of change for colours in the gradient.
+   double  Gamma;                        // Applies a gamma curve to the gradient ramp.
+   VSPREAD SpreadMethod;                 // Determines the rendering behaviour to use when gradient colours are cycled.
+   VUNIT   Units;                        // Defines the coordinate system for gradient coordinates.
+   VCS     ColourSpace;                  // Defines the colour space to use when interpolating gradient colours.
+   GEZ     Easing;                       // Selects the easing function for interpolation between gradient stops.
+   int     NumericID;                    // Numeric identifier for a vector.
+
+#ifdef PRV_GRADIENT
+   objGradient() {
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+   }
+
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+#endif
 
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting
+
+   inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
+      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + 88);
+      Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
+
+   inline ERR getStops(std::span<GradientStop> &Value) noexcept {
+      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + 112);
+      Value = std::span<GradientStop>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
+
+   inline ERR getSID(std::string_view &Value) noexcept {
+      Value = this->SID;
+      return ERR::Okay;
+   }
+
+   inline ERR getColourMap(std::string_view &Value) noexcept {
+      Value = this->ColourMap;
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(struct FRGB * &Value) noexcept {
+      Value = &this->Colour;
+      return ERR::Okay;
+   }
 
    inline ERR getResolution(double &Value) noexcept {
       Value = this->Resolution;
@@ -1206,41 +1279,38 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getColour(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getMatrices(struct VectorMatrix * &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getStops(std::span<struct GradientStop> &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, std::span<struct GradientStop> &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getColourMap(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getNumeric(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSID(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      Value = this->NumericID;
+      return ERR::Okay;
    }
 
 
    // Customised field setting
+
+   inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, 0x00005310, &Value);
+   }
+
+   inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, 0x00005310, &Value);
+   }
+
+   inline ERR setSID(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setColourMap(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setColour(const struct FRGB & Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
 
    inline ERR setResolution(const double Value) noexcept {
       auto field = &this->Class->Dictionary[3];
@@ -1274,34 +1344,9 @@ class objGradient : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_STRUCT, &Value);
-   }
-
-   inline ERR setMatrices(struct VectorMatrix * Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x08100318, Value);
-   }
-
-   inline ERR setStops(std::span<const struct GradientStop> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00101318, &Value);
-   }
-
-   inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00904208, &Value);
-   }
-
    inline ERR setNumeric(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setSID(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
@@ -1659,26 +1704,6 @@ class objGradientGouraud : public objGradient {
    inline ERR setVertices(std::span<const struct GouraudVertex> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00101318, &Value);
-   }
-
-   inline ERR setColour(std::span<const float> Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, 0x10111308, &Value);
-   }
-
-   inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00914208, &Value);
-   }
-
-   inline ERR setSpreadMethod(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setStops(std::span<APTR> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00111318, &Value);
    }
 
    inline ERR setIndices(std::span<const int> Value) noexcept {
@@ -3901,11 +3926,6 @@ class objVector : public Object {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setInnerMiterLimit(const double Value) noexcept {
-      this->InnerMiterLimit = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setDashOffset(const double Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
@@ -4207,6 +4227,11 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getTextFlags(VTXF &Value) noexcept {
+      auto field = &this->Class->Dictionary[64];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getX(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[70];
       return field->GetValue(this, &Value);
@@ -4458,11 +4483,6 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setLetterSpacing(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[63];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
    inline ERR setRotate(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[58];
       return field->WriteValue(this, field, 0x80101308, &Value);
@@ -4480,16 +4500,6 @@ class objVectorText : public objVector {
 
    inline ERR setTextLength(const double Value) noexcept {
       auto field = &this->Class->Dictionary[80];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setStartOffset(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setSpacing(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[79];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5754,3 +5764,4 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
+

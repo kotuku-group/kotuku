@@ -179,7 +179,7 @@ public:
 
 class anim_transform : public anim_base {
 public:
-   VectorMatrix matrix = { .Vector = nullptr }; // Exclusive transform matrix for animation.
+   VectorMatrix matrix; // Exclusive transform matrix for animation.
    AT type = AT::NIL;
 
    anim_transform(extSVG *pSVG, OBJECTID pTarget) : anim_base(pSVG, pTarget) { }

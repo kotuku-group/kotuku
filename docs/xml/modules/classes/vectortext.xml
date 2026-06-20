@@ -328,6 +328,16 @@
     </field>
 
     <field>
+      <name>TextFlags</name>
+      <comment>Optional flags.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="VTXF">VTXF</type>
+      <description>
+<types lookup="VTXF"/>
+      </description>
+    </field>
+
+    <field>
       <name>TextLength</name>
       <comment>The expected length of the text after all computations have been taken into account.</comment>
       <access read="G" write="S">Get/Set</access>

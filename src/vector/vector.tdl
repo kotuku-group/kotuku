@@ -387,6 +387,35 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     double TranslateX           # Matrix value E
     double TranslateY           # Matrix value F
     int    Tag                  # An optional tag value defined by the client for matrix identification.
+  ]],
+  [[
+   void reset() {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = 1.0;
+      ShearY = 0.0;
+      ShearX = 0.0;
+      ScaleY = 1.0;
+      TranslateX = 0.0;
+      TranslateY = 0.0;
+      Tag = 0;
+   }
+
+   VectorMatrix() {
+      reset();
+   }
+
+   VectorMatrix(const VectorMatrix &Other) {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = Other.ScaleX;
+      ShearY = Other.ShearY;
+      ShearX = Other.ShearX;
+      ScaleY = Other.ScaleY;
+      TranslateX = Other.TranslateX;
+      TranslateY = Other.TranslateY;
+      Tag = Other.Tag;
+   }
   ]])
 
   // Pre-defined tags for VectorMatrix
@@ -479,15 +508,30 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
+    vector(struct(VectorMatrix)) Matrices
+    vector(struct(GradientStop)) Stops
+    string SID
+    string ColourMap             # Name of a gradient colour map.
+    struct(FRGB) Colour
     double Resolution            # Alters the rate of change for gradient colours.
     double Gamma                 # Applies a gamma curve to the gradient ramp.
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
     int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
     int(GEZ) Easing              # Easing function applied between gradient stops.
-    ~struct(FRGB) Colour
-    ~struct(*VectorMatrix) Matrices
-    ~array(struct(GradientStop)) Stops
+    int   NumericID
+  ]],
+  [[
+   objGradient() {
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+   }
+
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
   ]])
 
   klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })

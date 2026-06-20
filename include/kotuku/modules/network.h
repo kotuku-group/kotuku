@@ -937,11 +937,6 @@ class objNetServer : public objNetSocket {
       return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
-   inline ERR setSSLPrivateKey(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x00904508, &Value);
-   }
-
    inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00904508, &Value);

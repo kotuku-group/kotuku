@@ -24,7 +24,7 @@
     <field>
       <name>Colour</name>
       <comment>The default background colour to use when clipping is enabled.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>struct FRGB</type>
       <description>
 <p>The colour value in this field is applicable only when a gradient is in clip-mode by specifying the <code>VSPREAD::CLIP</code> flag in <fl>SpreadMethod</fl>.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.</p>
@@ -34,7 +34,7 @@
     <field>
       <name>ColourMap</name>
       <comment>Assigns a pre-defined colourmap to the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>An alternative to defining colour <fl>Stops</fl> in a gradient is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the gradient with the colours defined in the map.</p>
@@ -76,20 +76,10 @@
     </field>
 
     <field>
-      <name>SID</name>
-      <comment>String identifier for a gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
-      <description>
-<p>The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Matrices</name>
       <comment>Applies one or more transforms to a gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>struct VectorMatrix *</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;VectorMatrix&gt;</type>
       <description>
 <p>A transform can be applied to a gradient via one or more matrices.  These will influence how gradient fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
       </description>
@@ -98,7 +88,7 @@
     <field>
       <name>NumericID</name>
       <comment>Numeric identifier for a vector.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client, then any value in <fl>SID</fl> will be immediately cleared.</p>
@@ -118,6 +108,16 @@
     </field>
 
     <field>
+      <name>SID</name>
+      <comment>String identifier for a gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
+      </description>
+    </field>
+
+    <field>
       <name>SpreadMethod</name>
       <comment>Determines the rendering behaviour to use when gradient colours are cycled.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -131,8 +131,8 @@
     <field>
       <name>Stops</name>
       <comment>Defines the colours to use for the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>GradientStop[]</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;GradientStop&gt;</type>
       <description>
 <p>The colours that will be used for drawing a gradient are defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
       </description>

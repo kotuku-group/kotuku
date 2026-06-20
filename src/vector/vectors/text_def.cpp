@@ -38,3 +38,4 @@ static const struct ActionArray clVectorTextActions[] = {
    { AC::NewPlacement, VECTORTEXT_NewPlacement },
    { AC::NIL, nullptr }
 };
+
