@@ -480,6 +480,15 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VUNIT)   Units         # Defines the coordinate system for `(X, Y)`
     int(VSPREAD) SpreadMethod
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
+  ]],
+  [[
+   objVectorImage() {
+      X            = Unit(0);
+      Y            = Unit(0);
+      Units        = VUNIT::BOUNDING_BOX;
+      SpreadMethod = VSPREAD::CLIP;
+      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
+   }
   ]])
 
   klass('VectorPattern', { src='painters/pattern.cpp', output='painters/pattern_def.cpp', extended=true }, [[

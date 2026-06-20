@@ -44,7 +44,6 @@ static ERR VECTORIMAGE_FreePlacement(extVectorImage *Self) {
 static const struct ActionArray clVectorImageActions[] = {
    { AC::FreePlacement, VECTORIMAGE_FreePlacement },
    { AC::Init, VECTORIMAGE_Init },
-   { AC::NewObject, VECTORIMAGE_NewObject },
    { AC::NewPlacement, VECTORIMAGE_NewPlacement },
    { AC::NIL, nullptr }
 };

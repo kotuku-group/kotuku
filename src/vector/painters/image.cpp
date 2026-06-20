@@ -31,16 +31,6 @@ static ERR VECTORIMAGE_Init(extVectorImage *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORIMAGE_NewObject(extVectorImage *Self)
-{
-   Self->Units        = VUNIT::BOUNDING_BOX;
-   Self->SpreadMethod = VSPREAD::CLIP;
-   Self->AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -FIELD-
 AspectRatio: Flags that affect the aspect ratio of the image within its target vector.
@@ -168,26 +158,7 @@ static ERR VECTORIMAGE_SET_Y(extVectorImage *Self, Unit &Value)
 
 //********************************************************************************************************************
 
-static const ActionArray clVectorImageActions[] = {
-   { AC::Init,      VECTORIMAGE_Init },
-   { AC::NewObject, VECTORIMAGE_NewObject },
-   { AC::NIL, nullptr }
-};
-
-static const FieldDef clVectorImageSpreadMethod[] = {
-   { "Pad",      VSPREAD::PAD },
-   { "Repeat",   VSPREAD::REPEAT },
-   { "ReflectX", VSPREAD::REFLECT_X },
-   { "ReflectY", VSPREAD::REFLECT_Y },
-   { "Clip",     VSPREAD::CLIP },
-   { nullptr, 0 }
-};
-
-static const FieldDef clVectorImageUnits[] = {
-   { "BoundingBox", VUNIT::BOUNDING_BOX }, // Coordinates are relative to the object's bounding box
-   { "UserSpace",   VUNIT::USERSPACE },    // Coordinates are relative to the current viewport
-   { nullptr, 0 }
-};
+#include "image_def.cpp"
 
 static const FieldArray clImageFields[] = {
    { "X",            FDF_UNIT|FDF_RW, nullptr, VECTORIMAGE_SET_X },
@@ -196,7 +167,7 @@ static const FieldArray clImageFields[] = {
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, VECTORIMAGE_SET_Bitmap, CLASSID::BITMAP },
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorImageUnits },
    { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORIMAGE_SET_SpreadMethod, &clVectorImageSpreadMethod },
-   { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, VECTORIMAGE_SET_AspectRatio, &clAspectRatio },
+   { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, VECTORIMAGE_SET_AspectRatio, &clVectorImageAspectRatio },
    END_FIELD
 };
 
