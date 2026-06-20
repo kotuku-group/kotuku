@@ -765,12 +765,6 @@ K1: Input value for the arithmetic operation.
 
 *********************************************************************************************************************/
 
-static ERR COMPOSITEFX_GET_K1(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K1;
-   return ERR::Okay;
-}
-
 static ERR COMPOSITEFX_SET_K1(extCompositeFX *Self, double Value)
 {
    Self->K1 = Value;
@@ -783,12 +777,6 @@ static ERR COMPOSITEFX_SET_K1(extCompositeFX *Self, double Value)
 K2: Input value for the arithmetic operation.
 
 *********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_K2(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K2;
-   return ERR::Okay;
-}
 
 static ERR COMPOSITEFX_SET_K2(extCompositeFX *Self, double Value)
 {
@@ -803,12 +791,6 @@ K3: Input value for the arithmetic operation.
 
 *********************************************************************************************************************/
 
-static ERR COMPOSITEFX_GET_K3(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K3;
-   return ERR::Okay;
-}
-
 static ERR COMPOSITEFX_SET_K3(extCompositeFX *Self, double Value)
 {
    Self->K3 = Value;
@@ -821,12 +803,6 @@ static ERR COMPOSITEFX_SET_K3(extCompositeFX *Self, double Value)
 K4: Input value for the arithmetic operation.
 
 *********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_K4(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K4;
-   return ERR::Okay;
-}
 
 static ERR COMPOSITEFX_SET_K4(extCompositeFX *Self, double Value)
 {
@@ -843,12 +819,6 @@ Lookup: OP
 Setting the Operator will determine the algorithm that is used for compositing.  The default is `OVER`.
 
 *********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_Operator(extCompositeFX *Self, OP *Value)
-{
-   *Value = Self->Operator;
-   return ERR::Okay;
-}
 
 static ERR COMPOSITEFX_SET_Operator(extCompositeFX *Self, OP Value)
 {
@@ -906,11 +876,11 @@ static const FieldDef clCompositeOperator[] = {
 };
 
 static const FieldArray clCompositeFXFields[] = {
-   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, COMPOSITEFX_GET_Operator, COMPOSITEFX_SET_Operator, &clCompositeOperator },
-   { "K1",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K1, COMPOSITEFX_SET_K1 },
-   { "K2",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K2, COMPOSITEFX_SET_K2 },
-   { "K3",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K3, COMPOSITEFX_SET_K3 },
-   { "K4",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K4, COMPOSITEFX_SET_K4 },
+   { "K1",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K1 },
+   { "K2",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K2 },
+   { "K3",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K3 },
+   { "K4",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K4 },
+   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, COMPOSITEFX_SET_Operator, &clCompositeOperator },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, COMPOSITEFX_GET_XMLDef },
    END_FIELD
 };

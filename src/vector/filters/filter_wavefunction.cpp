@@ -25,14 +25,18 @@ class extWaveFunctionFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "WaveFunctionFX";
    using create = kt::Create<extWaveFunctionFX>;
 
-   std::vector<std::vector<double>> psi;
-   kt::vector<GradientStop> Stops;
+   // The exported fields are declared first so that their concrete offsets line up with the field table.
+   // The 8-byte aligned members precede the narrower int fields to avoid padding before a direct-access field.
    std::string ColourMap;
+   double Scale;
+   kt::vector<GradientStop> Stops;
+   ARF  AspectRatio;     // Aspect ratio flags.
+   int N, L, M, Resolution;
+
+   std::vector<std::vector<double>> psi;
    std::unique_ptr<GradientColours> Colours;
    objBitmap *Bitmap;
-   ARF  AspectRatio;     // Aspect ratio flags.
-   double Scale, Max;
-   int N, L, M, Resolution;
+   double Max;
    bool Dirty;
 
    void compute_wavefunction(int);
@@ -162,15 +166,10 @@ Lookup: ARF
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_AspectRatio(extWaveFunctionFX *Self, ARF *Value)
-{
-   *Value = Self->AspectRatio;
-   return ERR::Okay;
-}
-
 static ERR WAVEFUNCTIONFX_SET_AspectRatio(extWaveFunctionFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
+   Self->Dirty = true;
    return ERR::Okay;
 }
 
@@ -190,13 +189,6 @@ We currently support the following established colourmaps from the matplotlib an
 The use of colourmaps and custom stops are mutually exclusive.
 
 *********************************************************************************************************************/
-
-static ERR WAVEFUNCTIONFX_GET_ColourMap(extWaveFunctionFX *Self, std::string_view &Value)
-{
-   if (Self->ColourMap.empty()) Value = std::string_view{};
-   else Value = Self->ColourMap;
-   return ERR::Okay;
-}
 
 static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::string_view &Value)
 {
@@ -220,12 +212,6 @@ This value is clamped by `0 &lt;= L &lt; N`.
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_L(extWaveFunctionFX *Self, int *Value)
-{
-   *Value = Self->L;
-   return ERR::Okay;
-}
-
 static ERR WAVEFUNCTIONFX_SET_L(extWaveFunctionFX *Self, int Value)
 {
    if (Value >= 0) {
@@ -245,12 +231,6 @@ This value is clamped by `0 &lt;= M &lt;= L`.
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_M(extWaveFunctionFX *Self, int *Value)
-{
-   *Value = Self->M;
-   return ERR::Okay;
-}
-
 static ERR WAVEFUNCTIONFX_SET_M(extWaveFunctionFX *Self, int Value)
 {
    Self->M = Value;
@@ -266,12 +246,6 @@ N: Principal quantum number.
 This value is clamped by `N &gt;= 1`.
 
 *********************************************************************************************************************/
-
-static ERR WAVEFUNCTIONFX_GET_N(extWaveFunctionFX *Self, int *Value)
-{
-   *Value = Self->N;
-   return ERR::Okay;
-}
 
 static ERR WAVEFUNCTIONFX_SET_N(extWaveFunctionFX *Self, int Value)
 {
@@ -297,12 +271,6 @@ redrawn it will not be necessary to redraw the wave function if its parameters a
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_Resolution(extWaveFunctionFX *Self, int *Value)
-{
-   *Value = Self->Resolution;
-   return ERR::Okay;
-}
-
 static ERR WAVEFUNCTIONFX_SET_Resolution(extWaveFunctionFX *Self, int Value)
 {
    if (Value >= 0) {
@@ -319,12 +287,6 @@ static ERR WAVEFUNCTIONFX_SET_Resolution(extWaveFunctionFX *Self, int Value)
 Scale: Multiplier that affects the scale of the plot.
 
 *********************************************************************************************************************/
-
-static ERR WAVEFUNCTIONFX_GET_Scale(extWaveFunctionFX *Self, double *Value)
-{
-   *Value = Self->Scale;
-   return ERR::Okay;
-}
 
 static ERR WAVEFUNCTIONFX_SET_Scale(extWaveFunctionFX *Self, double Value)
 {
@@ -347,12 +309,6 @@ required to define a start and end point for interpolating the gradient colours.
 If no stops are defined, the wave function will be drawn in greyscale.
 -END-
 *********************************************************************************************************************/
-
-static ERR WAVEFUNCTIONFX_GET_Stops(extWaveFunctionFX *Self, std::span<GradientStop> &Value)
-{
-   Value = std::span<GradientStop>(Self->Stops.data(), Self->Stops.size());
-   return ERR::Okay;
-}
 
 static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const GradientStop> &Value)
 {
@@ -398,15 +354,15 @@ static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, std::string_view &
 #include "filter_wavefunction_def.c"
 
 static const FieldArray clWaveFunctionFXFields[] = {
-   { "AspectRatio", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,   WAVEFUNCTIONFX_GET_AspectRatio, WAVEFUNCTIONFX_SET_AspectRatio, &clAspectRatio },
-   { "ColourMap",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,        WAVEFUNCTIONFX_GET_ColourMap,   WAVEFUNCTIONFX_SET_ColourMap },
-   { "N",           FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              WAVEFUNCTIONFX_GET_N,           WAVEFUNCTIONFX_SET_N },
-   { "L",           FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              WAVEFUNCTIONFX_GET_L,           WAVEFUNCTIONFX_SET_L },
-   { "M",           FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              WAVEFUNCTIONFX_GET_M,           WAVEFUNCTIONFX_SET_M },
-   { "Resolution",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              WAVEFUNCTIONFX_GET_Resolution,  WAVEFUNCTIONFX_SET_Resolution },
-   { "Scale",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,           WAVEFUNCTIONFX_GET_Scale,       WAVEFUNCTIONFX_SET_Scale },
-   { "Stops",       FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, WAVEFUNCTIONFX_GET_Stops,       WAVEFUNCTIONFX_SET_Stops, "GradientStop" },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,        WAVEFUNCTIONFX_GET_XMLDef },
+   { "ColourMap",   FDF_CPPSTRING|FDF_RW,        nullptr, WAVEFUNCTIONFX_SET_ColourMap },
+   { "Scale",       FDF_DOUBLE|FDF_RW,           nullptr, WAVEFUNCTIONFX_SET_Scale },
+   { "Stops",       FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_Stops, "GradientStop" },
+   { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW,   nullptr, WAVEFUNCTIONFX_SET_AspectRatio, &clAspectRatio },
+   { "N",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_N },
+   { "L",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_L },
+   { "M",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_M },
+   { "Resolution",  FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_Resolution },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, WAVEFUNCTIONFX_GET_XMLDef },
    END_FIELD
 };
 

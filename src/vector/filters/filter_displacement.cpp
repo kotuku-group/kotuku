@@ -173,12 +173,6 @@ When the value of this field is 0, this operation has no effect on the source im
 
 *********************************************************************************************************************/
 
-static ERR DISPLACEMENTFX_GET_Scale(extDisplacementFX *Self, double *Value)
-{
-   *Value = Self->Scale;
-   return ERR::Okay;
-}
-
 static ERR DISPLACEMENTFX_SET_Scale(extDisplacementFX *Self, double Value)
 {
    Self->Scale = Value;
@@ -193,12 +187,6 @@ Lookup: CMP
 
 *********************************************************************************************************************/
 
-static ERR DISPLACEMENTFX_GET_XChannel(extDisplacementFX *Self, CMP *Value)
-{
-   *Value = Self->XChannel;
-   return ERR::Okay;
-}
-
 static ERR DISPLACEMENTFX_SET_XChannel(extDisplacementFX *Self, CMP Value)
 {
    Self->XChannel = Value;
@@ -212,12 +200,6 @@ YChannel: Y axis channel selection.
 Lookup: CMP
 
 *********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_GET_YChannel(extDisplacementFX *Self, CMP *Value)
-{
-   *Value = Self->YChannel;
-   return ERR::Okay;
-}
 
 static ERR DISPLACEMENTFX_SET_YChannel(extDisplacementFX *Self, CMP Value)
 {
@@ -260,9 +242,9 @@ static const FieldDef clChannel[] = {
 };
 
 static const FieldArray clDisplacementFXFields[] = {
-   { "Scale",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_Scale, DISPLACEMENTFX_SET_Scale },
-   { "XChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_XChannel, DISPLACEMENTFX_SET_XChannel, &clChannel },
-   { "YChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_YChannel, DISPLACEMENTFX_SET_YChannel, &clChannel },
+   { "Scale",     FDF_DOUBLE|FDF_RW, nullptr, DISPLACEMENTFX_SET_Scale },
+   { "XChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_XChannel, &clChannel },
+   { "YChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_YChannel, &clChannel },
    { "XMLDef",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, DISPLACEMENTFX_GET_XMLDef },
    END_FIELD
 };

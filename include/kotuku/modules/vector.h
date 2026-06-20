@@ -1395,23 +1395,23 @@ class objGradientLinear : public objGradient {
    // Customised field getting
 
    inline ERR getX1(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getY1(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
    inline ERR getX2(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
    inline ERR getY2(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 328));
+      return ERR::Okay;
    }
 
 
@@ -1457,38 +1457,38 @@ class objGradientRadial : public objGradient {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
    inline ERR getFX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
    inline ERR getFY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 328));
+      return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 344));
+      return ERR::Okay;
    }
 
    inline ERR getFocalRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 360));
+      return ERR::Okay;
    }
 
    inline ERR getContainFocal(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 376));
+      return ERR::Okay;
    }
 
 
@@ -1548,36 +1548,28 @@ class objGradientConic : public objGradient {
 
    // Customised field getting
 
-   inline ERR getRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
+   }
+
+   inline ERR getRadius(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
    inline ERR getSpan(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
+      Value = *((double *)(((int8_t *)this) + 328));
+      return ERR::Okay;
    }
 
 
    // Customised field setting
-
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
 
    inline ERR setCX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[20];
@@ -1586,6 +1578,11 @@ class objGradientConic : public objGradient {
 
    inline ERR setCY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -1614,18 +1611,18 @@ class objGradientDiamond : public objGradient {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
 
@@ -1666,13 +1663,13 @@ class objGradientContour : public objGradient {
    // Customised field getting
 
    inline ERR getFloor(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getMultiplier(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
 
@@ -1752,33 +1749,33 @@ class objGradientDistal : public objGradient {
    // Customised field getting
 
    inline ERR getFloor(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getMultiplier(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
    inline ERR getInnerRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 328));
+      return ERR::Okay;
    }
 
    inline ERR getInnerFall(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 344));
+      return ERR::Okay;
    }
 
    inline ERR getOuterFall(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 348));
+      return ERR::Okay;
    }
 
 
@@ -1833,63 +1830,63 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field getting
 
-   inline ERR getPoints(std::span<struct VoronoiPoint> &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      auto get_field = (ERR (*)(APTR, std::span<struct VoronoiPoint> &))field->GetValue;
-      return get_field(this, Value);
+   inline ERR getPoints(std::span<struct VoronoiPoint *> &Value) noexcept {
+      auto ktv = (struct VoronoiPoint * *)(((int8_t *)this) + 312);
+      Value = std::span<nil>(ktv->data(), ktv->size());
+      return ERR::Okay;
    }
 
    inline ERR getWorleyMode(WLF &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((WLF *)(((int8_t *)this) + 372));
+      return ERR::Okay;
    }
 
    inline ERR getWorleyMetric(WLM &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->GetValue(this, &Value);
+      Value = *((WLM *)(((int8_t *)this) + 376));
+      return ERR::Okay;
    }
 
    inline ERR getFloor(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getMultiplier(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSeed(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getPointCount(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
    inline ERR getHeightMin(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 336));
+      return ERR::Okay;
    }
 
    inline ERR getHeightMax(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 344));
+      return ERR::Okay;
    }
 
    inline ERR getJitter(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 352));
+      return ERR::Okay;
+   }
+
+   inline ERR getSeed(int64_t &Value) noexcept {
+      Value = *((int64_t *)(((int8_t *)this) + 360));
+      return ERR::Okay;
+   }
+
+   inline ERR getPointCount(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 368));
+      return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setPoints(std::span<const struct VoronoiPoint> Value) noexcept {
+   inline ERR setPoints(const std::span<const nil> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, 0x00101318, &Value);
+      return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setWorleyMode(const WLF Value) noexcept {
@@ -1912,16 +1909,6 @@ class objGradientVoronoi : public objGradient {
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setSeed(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      return field->WriteValue(this, field, FD_INT64, &Value);
-   }
-
-   inline ERR setPointCount(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
    inline ERR setHeightMin(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
@@ -1935,6 +1922,16 @@ class objGradientVoronoi : public objGradient {
    inline ERR setJitter(const double Value) noexcept {
       auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setSeed(const int64_t Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_INT64, &Value);
+   }
+
+   inline ERR setPointCount(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -2114,13 +2111,13 @@ class objImageFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getResampleMethod(VSM &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((VSM *)(((int8_t *)this) + 220));
+      return ERR::Okay;
    }
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((ARF *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getBitmap(OBJECTPTR &Value) noexcept {
@@ -2194,8 +2191,8 @@ class objSourceFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((ARF *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getSource(OBJECTPTR &Value) noexcept {
@@ -2260,13 +2257,13 @@ class objBlurFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getSX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getSY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -2321,8 +2318,8 @@ class objColourFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getMode(CM &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((CM *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getValues(std::span<double> &Value) noexcept {
@@ -2383,28 +2380,28 @@ class objCompositeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(OP &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((OP *)(((int8_t *)this) + 248));
+      return ERR::Okay;
    }
 
    inline ERR getK1(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getK2(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getK3(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 232));
+      return ERR::Okay;
    }
 
    inline ERR getK4(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 240));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -2474,28 +2471,28 @@ class objConvolveFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getEdgeMode(EM &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      return field->GetValue(this, &Value);
+      Value = *((EM *)(((int8_t *)this) + 232));
+      return ERR::Okay;
    }
 
    inline ERR getBias(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getDivisor(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getMatrixRows(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 236));
+      return ERR::Okay;
    }
 
    inline ERR getMatrixColumns(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 240));
+      return ERR::Okay;
    }
 
    inline ERR getMatrix(std::span<double> &Value) noexcept {
@@ -2505,28 +2502,28 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR getPreserveAlpha(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 244));
+      return ERR::Okay;
    }
 
    inline ERR getTargetX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 248));
+      return ERR::Okay;
    }
 
    inline ERR getTargetY(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 252));
+      return ERR::Okay;
    }
 
    inline ERR getUnitX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 256));
+      return ERR::Okay;
    }
 
    inline ERR getUnitY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 264));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -2626,18 +2623,18 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXChannel(CMP &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((CMP *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getYChannel(CMP &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((CMP *)(((int8_t *)this) + 228));
+      return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -2697,13 +2694,13 @@ class objFloodFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((struct FRGB *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 232));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -2779,38 +2776,38 @@ class objLightingFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((struct FRGB *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getType(LT &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((LT *)(((int8_t *)this) + 272));
+      return ERR::Okay;
    }
 
    inline ERR getConstant(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 232));
+      return ERR::Okay;
    }
 
    inline ERR getExponent(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 240));
+      return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 248));
+      return ERR::Okay;
    }
 
    inline ERR getUnitX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 256));
+      return ERR::Okay;
    }
 
    inline ERR getUnitY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 264));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -2942,18 +2939,18 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(MOP &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((MOP *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getRadiusX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getRadiusY(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 220));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -3013,13 +3010,13 @@ class objOffsetFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXOffset(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getYOffset(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 220));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -3158,33 +3155,33 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getType(TB &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
+      Value = *((TB *)(((int8_t *)this) + 244));
+      return ERR::Okay;
    }
 
    inline ERR getFX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 216));
+      return ERR::Okay;
    }
 
    inline ERR getFY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getOctaves(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 232));
+      return ERR::Okay;
    }
 
    inline ERR getSeed(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 236));
+      return ERR::Okay;
    }
 
    inline ERR getStitch(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->GetValue(this, &Value);
+      Value = *((int *)(((int8_t *)this) + 240));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -3258,46 +3255,45 @@ class objWaveFunctionFX : public objFilterEffect {
 
    // Customised field getting
 
-   inline ERR getStops(std::span<struct GradientStop> &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      auto get_field = (ERR (*)(APTR, std::span<struct GradientStop> &))field->GetValue;
-      return get_field(this, Value);
+   inline ERR getStops(std::span<struct GradientStop *> &Value) noexcept {
+      auto ktv = (struct GradientStop * *)(((int8_t *)this) + 256);
+      Value = std::span<nil>(ktv->data(), ktv->size());
+      return ERR::Okay;
    }
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
+      Value = *((ARF *)(((int8_t *)this) + 280));
+      return ERR::Okay;
    }
 
    inline ERR getColourMap(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getN(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getL(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getM(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getResolution(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((std::string *)(((int8_t *)this) + {offset}));
+      return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->GetValue(this, &Value);
+      Value = *((double *)(((int8_t *)this) + 248));
+      return ERR::Okay;
+   }
+
+   inline ERR getN(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 284));
+      return ERR::Okay;
+   }
+
+   inline ERR getL(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 288));
+      return ERR::Okay;
+   }
+
+   inline ERR getM(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 292));
+      return ERR::Okay;
+   }
+
+   inline ERR getResolution(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 296));
+      return ERR::Okay;
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -3317,9 +3313,9 @@ class objWaveFunctionFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setStops(std::span<const struct GradientStop> Value) noexcept {
+   inline ERR setStops(const std::span<const nil> Value) noexcept {
       auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, 0x00101318, &Value);
+      return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
@@ -3329,7 +3325,12 @@ class objWaveFunctionFX : public objFilterEffect {
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00904308, &Value);
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setScale(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setN(const int Value) noexcept {
@@ -3350,11 +3351,6 @@ class objWaveFunctionFX : public objFilterEffect {
    inline ERR setResolution(const int Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

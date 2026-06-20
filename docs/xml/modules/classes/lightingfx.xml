@@ -126,7 +126,7 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Colour</name>
       <comment>Defines the colour of the light source.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>struct FRGB</type>
       <description>
 <p>Set the Colour field to define the colour of the light source.</p>
@@ -138,7 +138,7 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Constant</name>
       <comment>Specifies the ks/kd value in Phong lighting model.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.</p>
@@ -148,7 +148,7 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Exponent</name>
       <comment>Exponent for specular lighting, larger is more "shiny".  Ranges from 1.0 to 128.0.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field defines the exponent value for specular lighting, within a range of 1.0 to 128.0.  The larger the value, shinier the end result.</p>
@@ -158,14 +158,14 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Scale</name>
       <comment>The maximum height of the input surface (bump map) when the alpha input is 1.0.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>Type</name>
       <comment>Defines the type of surface light scattering, which can be specular or diffuse.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="LT">LT</type>
       <description>
 <types lookup="LT"/>
@@ -175,7 +175,7 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>UnitX</name>
       <comment>The intended distance in current filter units for dx in the surface normal calculation formulas.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits) for dx in the surface normal calculation formulas.</p>
@@ -186,7 +186,7 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>UnitY</name>
       <comment>The intended distance in current filter units for dy in the surface normal calculation formulas.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits) for dy in the surface normal calculation formulas.</p>

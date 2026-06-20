@@ -23,7 +23,7 @@
     <field>
       <name>X1</name>
       <comment>Initial X coordinate for the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(X1, Y1)</code> field values define the starting coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
@@ -33,7 +33,7 @@
     <field>
       <name>X2</name>
       <comment>Final X coordinate for the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(X2, Y2)</code> field values define the end coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
@@ -43,7 +43,7 @@
     <field>
       <name>Y1</name>
       <comment>Initial Y coordinate for the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(X1, Y1)</code> field values define the starting coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>
@@ -53,7 +53,7 @@
     <field>
       <name>Y2</name>
       <comment>Final Y coordinate for the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(X2, Y2)</code> field values define the end coordinate for mapping linear gradients.  Coordinate values can be expressed as units that are scaled to the target space.</p>

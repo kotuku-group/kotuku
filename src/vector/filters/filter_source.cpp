@@ -26,11 +26,11 @@ class extSourceFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "SourceFX";
    using create = kt::Create<extSourceFX>;
 
+   ARF  AspectRatio;      // Aspect ratio flags.
    objBitmap *Bitmap;     // Rendered image cache.
    objVector *Source;     // The vector branch to render as source graphic.
    objVectorScene *Scene; // Internal scene for rendering.
    uint8_t *BitmapData;
-   ARF  AspectRatio;      // Aspect ratio flags.
    int  DataSize;
    bool Render;           // Must be true if the bitmap cache needs to be rendered.
 
@@ -218,12 +218,6 @@ Lookup: ARF
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_GET_AspectRatio(extSourceFX *Self, ARF *Value)
-{
-   *Value = Self->AspectRatio;
-   return ERR::Okay;
-}
-
 static ERR SOURCEFX_SET_AspectRatio(extSourceFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
@@ -317,7 +311,7 @@ static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string_view &Value)
 #include "filter_source_def.c"
 
 static const FieldArray clSourceFXFields[] = {
-   { "AspectRatio", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, SOURCEFX_GET_AspectRatio, SOURCEFX_SET_AspectRatio, &clAspectRatio },
+   { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SOURCEFX_SET_AspectRatio, &clAspectRatio },
    { "SourceName",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
    { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, SOURCEFX_GET_Source, SOURCEFX_SET_Source, CLASSID::VECTOR },
    { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, SOURCEFX_GET_XMLDef },

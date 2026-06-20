@@ -36,7 +36,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
     <field>
       <name>Floor</name>
       <comment>Colour ramp floor for distal gradients.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The Floor value is used as the floor for distal gradient colour values.  It has a valid range of <code>0 &lt;= Floor &lt; Multiplier</code>; the constraint against <fl>Multiplier</fl> is enforced at initialisation.</p>
@@ -46,7 +46,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
     <field>
       <name>InnerFall</name>
       <comment>Selects the alpha fall-off curve for the interior fade.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>InnerFall controls the shape of the interior alpha fade that runs from the path outline inward to <code>InnerRadius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  The fade is only visible when <code>InnerRadius</code> is non-zero; with a zero InnerRadius the interior remains fully opaque and the curve has no effect.</p>
@@ -57,7 +57,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
     <field>
       <name>InnerRadius</name>
       <comment>The size of the inner radius for distal gradients.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The InnerRadius defines the extent of the interior fade-out for distal gradients.  If zero, the interior of the target shape is fully rendered.</p>
@@ -67,7 +67,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
     <field>
       <name>Multiplier</name>
       <comment>Colour ramp multiplier for distal gradients.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The Multiplier value acts as a multiplier for distal gradient colour values.  It has a valid range of <code>.01 &lt; Multiplier &lt; 10</code>.</p>
@@ -77,7 +77,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
     <field>
       <name>OuterFall</name>
       <comment>Selects the alpha fall-off curve for the exterior fade.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>OuterFall controls the shape of the exterior alpha fade that runs from the path outline outward to the padding edge defined by <code>Radius</code>.  The default is <code>GFALL::SMOOTHSTEP</code>.  Faster curves such as <code>GFALL::QUADRATIC</code> and <code>GFALL::CUBIC</code> produce a tighter halo, while <code>GFALL::SMOOTHSTEP</code> holds the inner half bright for a wider glow.</p>
@@ -88,7 +88,7 @@ from zero before fading again, repeating until the parent area is filled.</li>
     <field>
       <name>Radius</name>
       <comment>Exterior margin around the target path.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The Radius value controls how much exterior padding is added around the target path so that the exterior half of the signed distance colour ramp remains visible.</p>

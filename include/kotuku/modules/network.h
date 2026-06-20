@@ -877,45 +877,53 @@ class objNetServer : public objNetSocket {
 
    // Customised field getting
 
-   inline ERR getTotalClients(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getBacklog(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getClientLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSocketLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->GetValue(this, &Value);
+   inline ERR getClients(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 328));
+      return ERR::Okay;
    }
 
    inline ERR getSSLCertificate(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      Value = *((std::string *)(((int8_t *)this) + {offset}));
+      return ERR::Okay;
    }
 
    inline ERR getSSLKeyPassword(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      Value = *((std::string *)(((int8_t *)this) + {offset}));
+      return ERR::Okay;
    }
 
-   inline ERR getClients(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->GetValue(this, &Value);
+   inline ERR getBacklog(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 432));
+      return ERR::Okay;
+   }
+
+   inline ERR getClientLimit(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 436));
+      return ERR::Okay;
+   }
+
+   inline ERR getSocketLimit(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 440));
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalClients(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 444));
+      return ERR::Okay;
    }
 
 
    // Customised field setting
+
+   inline ERR setSSLCertificate(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, 0x00804500, &Value);
+   }
+
+   inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, 0x00804500, &Value);
+   }
 
    inline ERR setBacklog(const int Value) noexcept {
       auto field = &this->Class->Dictionary[23];
@@ -930,16 +938,6 @@ class objNetServer : public objNetSocket {
    inline ERR setSocketLimit(const int Value) noexcept {
       auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setSSLCertificate(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, 0x00904508, &Value);
-   }
-
-   inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
 };

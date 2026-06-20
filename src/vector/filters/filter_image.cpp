@@ -30,10 +30,10 @@ class extImageFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ImageFX";
    using create = kt::Create<extImageFX>;
 
-   objBitmap *Bitmap;    // Bitmap containing source image data.
-   objImage *Image;      // Origin image if loading a source file.
    ARF  AspectRatio;     // Aspect ratio flags.
    VSM ResampleMethod;   // Resample method.
+   objBitmap *Bitmap;    // Bitmap containing source image data.
+   objImage *Image;      // Origin image if loading a source file.
 };
 
 /*********************************************************************************************************************
@@ -103,12 +103,6 @@ Lookup: ARF
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_AspectRatio(extImageFX *Self, ARF *Value)
-{
-   *Value = Self->AspectRatio;
-   return ERR::Okay;
-}
-
 static ERR IMAGEFX_SET_AspectRatio(extImageFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
@@ -168,12 +162,6 @@ ResampleMethod: The resample algorithm to use for transforming the source image.
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_ResampleMethod(extImageFX *Self, VSM *Value)
-{
-   *Value = Self->ResampleMethod;
-   return ERR::Okay;
-}
-
 static ERR IMAGEFX_SET_ResampleMethod(extImageFX *Self, VSM Value)
 {
    Self->ResampleMethod = Value;
@@ -210,8 +198,8 @@ static const FieldArray clImageFXFields[] = {
    { "Bitmap",         FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, IMAGEFX_GET_Bitmap, nullptr, CLASSID::BITMAP },
    { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
    { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
-   { "AspectRatio",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_AspectRatio, IMAGEFX_SET_AspectRatio, &clAspectRatio },
-   { "ResampleMethod", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, IMAGEFX_GET_ResampleMethod, IMAGEFX_SET_ResampleMethod, &clImageFXVSM },
+   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_AspectRatio, &clAspectRatio },
+   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_ResampleMethod, &clImageFXVSM },
    END_FIELD
 };
 

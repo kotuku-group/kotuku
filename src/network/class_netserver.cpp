@@ -192,12 +192,6 @@ NetServer will either self-sign or use a localhost certificate, if available.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_SSLCertificate(extNetServer *Self, std::string_view &Value)
-{
-   Value = Self->SSLCertificate;
-   return ERR::Okay;
-}
-
 static ERR NETSERVER_SET_SSLCertificate(extNetServer *Self, const std::string_view &Value)
 {
    Self->SSLCertificate.clear();
@@ -229,12 +223,6 @@ will either self-sign or use a localhost private key, if available.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_SSLPrivateKey(extNetServer *Self, std::string_view &Value)
-{
-   Value = Self->SSLPrivateKey;
-   return ERR::Okay;
-}
-
 static ERR NETSERVER_SET_SSLPrivateKey(extNetServer *Self, const std::string_view &Value)
 {
    Self->SSLPrivateKey.clear();
@@ -264,12 +252,6 @@ not encrypted, this field can be left empty.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_SSLKeyPassword(extNetServer *Self, std::string_view &Value)
-{
-   Value = Self->SSLKeyPassword;
-   return ERR::Okay;
-}
-
 static ERR NETSERVER_SET_SSLKeyPassword(extNetServer *Self, const std::string_view &Value)
 {
    Self->SSLKeyPassword.assign(Value);
@@ -283,12 +265,6 @@ Clients: Lists all NetClient records connected to the NetServer.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_Clients(extNetServer *Self, objNetClient **Value)
-{
-   *Value = Self->Clients;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -298,12 +274,6 @@ NetServer maintains a count of the total number of currently connected TCP clien
 number of connections from this field.
 
 *********************************************************************************************************************/
-
-static ERR NETSERVER_GET_TotalClients(extNetServer *Self, int *Value)
-{
-   *Value = Self->TotalClients;
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 
@@ -316,12 +286,6 @@ adjusts the maximum number of connections on the queue, which otherwise defaults
 If the backlog is exceeded, subsequent connections to the socket should expect a connection refused error.
 
 *********************************************************************************************************************/
-
-static ERR NETSERVER_GET_Backlog(extNetServer *Self, int *Value)
-{
-   *Value = Self->Backlog;
-   return ERR::Okay;
-}
 
 static ERR NETSERVER_SET_Backlog(extNetServer *Self, int Value)
 {
@@ -340,12 +304,6 @@ For socket limits per client, see the #SocketLimit field.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_ClientLimit(extNetServer *Self, int *Value)
-{
-   *Value = Self->ClientLimit;
-   return ERR::Okay;
-}
-
 static ERR NETSERVER_SET_ClientLimit(extNetServer *Self, int Value)
 {
    if (Value < 0) return ERR::OutOfRange;
@@ -361,12 +319,6 @@ SocketLimit: The maximum number of sockets that can be connected from a single c
 The SocketLimit value limits how many simultaneous ClientSocket connections may be opened by one NetClient record.
 
 *********************************************************************************************************************/
-
-static ERR NETSERVER_GET_SocketLimit(extNetServer *Self, int *Value)
-{
-   *Value = Self->SocketLimit;
-   return ERR::Okay;
-}
 
 static ERR NETSERVER_SET_SocketLimit(extNetServer *Self, int Value)
 {
@@ -617,14 +569,14 @@ static void free_client(extNetServer *Server, objNetClient *Client)
 #include "netserver_def.c"
 
 static const FieldArray clNetServerFields[] = {
-   { "TotalClients",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,     NETSERVER_GET_TotalClients },
-   { "Backlog",        FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,    NETSERVER_GET_Backlog, NETSERVER_SET_Backlog },
-   { "ClientLimit",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,    NETSERVER_GET_ClientLimit, NETSERVER_SET_ClientLimit },
-   { "SocketLimit",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,    NETSERVER_GET_SocketLimit, NETSERVER_SET_SocketLimit },
-   { "SSLCertificate", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, NETSERVER_GET_SSLCertificate, NETSERVER_SET_SSLCertificate },
-   { "SSLPrivateKey",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, NETSERVER_GET_SSLPrivateKey, NETSERVER_SET_SSLPrivateKey },
-   { "SSLKeyPassword", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, NETSERVER_GET_SSLKeyPassword, NETSERVER_SET_SSLKeyPassword },
-   { "Clients",        FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE,  NETSERVER_GET_Clients, nullptr, CLASSID::NETCLIENT },
+   { "Clients",        FDF_OBJECT|FDF_R,     nullptr, nullptr, CLASSID::NETCLIENT },
+   { "SSLCertificate", FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLCertificate },
+   { "SSLPrivateKey",  FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLPrivateKey },
+   { "SSLKeyPassword", FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLKeyPassword },
+   { "Backlog",        FDF_INT|FDF_RI,       nullptr, NETSERVER_SET_Backlog },
+   { "ClientLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_ClientLimit },
+   { "SocketLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_SocketLimit },
+   { "TotalClients",   FDF_INT|FDF_R,        nullptr },
    END_FIELD
 };
 

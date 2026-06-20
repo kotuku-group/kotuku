@@ -551,12 +551,6 @@ If either value is 0 or less, the effect is disabled on that axis.
 
 *********************************************************************************************************************/
 
-static ERR BLURFX_GET_SX(extBlurFX *Self, double *Value)
-{
-   *Value = Self->SX;
-   return ERR::Okay;
-}
-
 static ERR BLURFX_SET_SX(extBlurFX *Self, double Value)
 {
    Self->SX = Value;
@@ -573,12 +567,6 @@ The (SX,SY) field values define the standard deviation of the gaussian blur alon
 If either value is 0 or less, the effect is disabled on that axis.
 
 *********************************************************************************************************************/
-
-static ERR BLURFX_GET_SY(extBlurFX *Self, double *Value)
-{
-   *Value = Self->SY;
-   return ERR::Okay;
-}
 
 static ERR BLURFX_SET_SY(extBlurFX *Self, double Value)
 {
@@ -611,8 +599,8 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string_view &Value)
 #include "filter_blur_def.c"
 
 static const FieldArray clBlurFXFields[] = {
-   { "SX",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, BLURFX_GET_SX, BLURFX_SET_SX },
-   { "SY",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, BLURFX_GET_SY, BLURFX_SET_SY },
+   { "SX",     FDF_DOUBLE|FDF_RW, nullptr, BLURFX_SET_SX },
+   { "SY",     FDF_DOUBLE|FDF_RW, nullptr, BLURFX_SET_SY },
    { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, BLURFX_GET_XMLDef },
    END_FIELD
 };

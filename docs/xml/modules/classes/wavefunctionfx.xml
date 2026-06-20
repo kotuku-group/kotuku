@@ -44,7 +44,7 @@
     <field>
       <name>AspectRatio</name>
       <comment>SVG compliant aspect ratio settings.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="ARF">ARF</type>
       <description>
 <types lookup="ARF"/>
@@ -54,7 +54,7 @@
     <field>
       <name>ColourMap</name>
       <comment>Assigns a pre-defined colourmap to the wave function.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>An alternative to defining colour <fl>Stops</fl> in a wave function is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the wave function's gradient with the colours defined in the map.</p>
@@ -66,7 +66,7 @@
     <field>
       <name>L</name>
       <comment>Azimuthal quantum number.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>This value is clamped by <code>0 &lt;= L &lt; N</code>.</p>
@@ -76,7 +76,7 @@
     <field>
       <name>M</name>
       <comment>Magnetic quantum number.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>This value is clamped by <code>0 &lt;= M &lt;= L</code>.</p>
@@ -86,7 +86,7 @@
     <field>
       <name>N</name>
       <comment>Principal quantum number.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>This value is clamped by <code>N &gt;= 1</code>.</p>
@@ -96,7 +96,7 @@
     <field>
       <name>Resolution</name>
       <comment>The pixel resolution of the internally rendered wave function.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>By default the resolution of the wave function will match the smallest dimension of the filter target region, which gives the best looking result at the cost of performance.</p>
@@ -107,14 +107,14 @@
     <field>
       <name>Scale</name>
       <comment>Multiplier that affects the scale of the plot.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>Stops</name>
       <comment>Defines the colours to use for the wave function.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>GradientStop[]</type>
       <description>
 <p>The colours that will be used for drawing a wave function can be defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>

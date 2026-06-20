@@ -19,12 +19,6 @@ expressed as units that are scaled to the target space.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_X1(extGradientLinear *Self, Unit &Value)
-{
-   Value = Self->X1;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTLINEAR_SET_X1(extGradientLinear *Self, Unit &Value)
 {
    Self->X1 = Value;
@@ -42,12 +36,6 @@ expressed as units that are scaled to the target space.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_X2(extGradientLinear *Self, Unit &Value)
-{
-   Value = Self->X2;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTLINEAR_SET_X2(extGradientLinear *Self, Unit &Value)
 {
    Self->X2 = Value;
@@ -64,12 +52,6 @@ The `(X1, Y1)` field values define the starting coordinate for mapping linear gr
 expressed as units that are scaled to the target space.
 
 *********************************************************************************************************************/
-
-static ERR GRADIENTLINEAR_GET_Y1(extGradientLinear *Self, Unit &Value)
-{
-   Value = Self->Y1;
-   return ERR::Okay;
-}
 
 static ERR GRADIENTLINEAR_SET_Y1(extGradientLinear *Self, Unit &Value)
 {
@@ -89,12 +71,6 @@ expressed as units that are scaled to the target space.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_Y2(extGradientLinear *Self, Unit &Value)
-{
-   Value = Self->Y2;
-   return ERR::Okay;
-}
-
 static ERR GRADIENTLINEAR_SET_Y2(extGradientLinear *Self, Unit &Value)
 {
    Self->Y2 = Value;
@@ -108,10 +84,10 @@ static ERR GRADIENTLINEAR_SET_Y2(extGradientLinear *Self, Unit &Value)
 #include "gradient_linear_def.cpp"
 
 static const FieldArray clGradientLinearFields[] = {
-   { "X1", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTLINEAR_GET_X1, GRADIENTLINEAR_SET_X1 },
-   { "Y1", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTLINEAR_GET_Y1, GRADIENTLINEAR_SET_Y1 },
-   { "X2", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTLINEAR_GET_X2, GRADIENTLINEAR_SET_X2 },
-   { "Y2", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, GRADIENTLINEAR_GET_Y2, GRADIENTLINEAR_SET_Y2 },
+   { "X1", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_X1 },
+   { "Y1", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_Y1 },
+   { "X2", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_X2 },
+   { "Y2", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_Y2 },
    END_FIELD
 };
 

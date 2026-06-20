@@ -472,14 +472,14 @@ class extGradientRadial : public extGradient {
    using create = kt::Create<extGradientRadial>;
 
    Unit CX, CY, FX, FY, Radius, FocalRadius;
-   bool ContainFocal;
+   int ContainFocal;
 
    extGradientRadial() {
-      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
-      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
-      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CX = Unit(0.5, FD_SCALED);
+      CY = Unit(0.5, FD_SCALED);
+      Radius = Unit(0.5, FD_SCALED);
       FocalRadius = Unit(0);
-      ContainFocal = 0;
+      ContainFocal = false;
    }
 };
 
@@ -493,9 +493,9 @@ class extGradientConic : public extGradient {
    double Span;
 
    extGradientConic() {
-      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
-      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
-      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CX = Unit(0.5, FD_SCALED);
+      CY = Unit(0.5, FD_SCALED);
+      Radius = Unit(0.5, FD_SCALED);
       Span = 1.0;
    }
 };
@@ -509,9 +509,9 @@ class extGradientDiamond : public extGradient {
    Unit CX, CY, Radius;
 
    extGradientDiamond() {
-      CX = Unit(0.5, FD_DOUBLE|FD_SCALED);
-      CY = Unit(0.5, FD_DOUBLE|FD_SCALED);
-      Radius = Unit(0.5, FD_DOUBLE|FD_SCALED);
+      CX = Unit(0.5, FD_SCALED);
+      CY = Unit(0.5, FD_SCALED);
+      Radius = Unit(0.5, FD_SCALED);
    }
 };
 
@@ -521,14 +521,13 @@ class extGradientContour : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientContour";
    using create = kt::Create<extGradientContour>;
 
+   Unit Floor = Unit(0);
+   Unit Multiplier = Unit(1);
+
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
-   Unit Floor, Multiplier;
 
-   extGradientContour() {
-      Floor = Unit(0);
-      Multiplier = Unit(1.0);
-   }
+   extGradientContour() { }
 
    ~extGradientContour() {
       if (ContourCache) delete ContourCache;
@@ -551,22 +550,20 @@ class extGradientDistal : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientDistal";
    using create = kt::Create<extGradientDistal>;
 
+   Unit Floor = Unit(0);
+   Unit Multiplier = Unit(1);
+   Unit Radius = Unit(0);
+   Unit InnerRadius = Unit(0);
+   GFALL InnerFall = GFALL::SMOOTHSTEP; // Alpha fall-off curve for the interior fade
+   GFALL OuterFall = GFALL::SMOOTHSTEP; // Alpha fall-off curve for the exterior fade
+
    agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
    uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
    double SDFResolution = -1; // Resolution baked into SDFCache; a mismatch forces a rebuild
    double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
    int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
-   Unit Floor, Multiplier, Radius, InnerRadius;
-   GFALL InnerFall, OuterFall; // Alpha fall-off curves for the interior and exterior fades
 
-   extGradientDistal() {
-      Floor = Unit(0);
-      Multiplier = Unit(1.0);
-      Radius = Unit(0);
-      InnerRadius = Unit(0);
-      InnerFall = GFALL::SMOOTHSTEP;
-      OuterFall = GFALL::SMOOTHSTEP;
-   }
+   extGradientDistal() { }
 
    ~extGradientDistal() {
       if (SDFCache) delete SDFCache;
@@ -579,22 +576,21 @@ class extGradientVoronoi : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
    using create = kt::Create<extGradientVoronoi>;
 
+   Unit Floor = Unit(0);
+   Unit Multiplier = Unit(1);
    kt::vector<VoronoiPoint> Points; // Optional list of Voronoi feature points provided by the client
-   agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
-   uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
-   Unit Floor, Multiplier;
+   double HeightMin = 1.0;
+   double HeightMax = 1.0;
+   double Jitter = 0.0;
    int64_t Seed = 0;
    int PointCount = 16;
    WLF WorleyMode = WLF::F1;
    WLM WorleyMetric = WLM::EUCLIDEAN;
-   double HeightMin = 1.0;
-   double HeightMax = 1.0;
-   double Jitter = 0.0;
 
-   extGradientVoronoi() {
-      Floor = Unit(0);
-      Multiplier = Unit(1.0);
-   }
+   agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
+   uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
+
+   extGradientVoronoi() { }
 
    ~extGradientVoronoi() {
       if (WorleyCache) delete WorleyCache;

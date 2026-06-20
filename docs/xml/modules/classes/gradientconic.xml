@@ -24,7 +24,7 @@
     <field>
       <name>CX</name>
       <comment>The horizontal centre point of the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(CX, CY)</code> coordinates define the centre point around which the conic gradient rotates.  By default, the centre point is set to <code>50%</code>.</p>
@@ -34,7 +34,7 @@
     <field>
       <name>CY</name>
       <comment>The vertical centre point of the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(CX, CY)</code> coordinates define the centre point around which the conic gradient rotates.  By default, the centre point is set to <code>50%</code>.</p>
@@ -44,7 +44,7 @@
     <field>
       <name>Radius</name>
       <comment>The radius of the gradient.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The radius of the conic gradient can be defined as a fixed unit or scaled relative to its container.  A default radius of 50% applies if this field is not set.</p>
@@ -54,7 +54,7 @@
     <field>
       <name>Span</name>
       <comment>Defines the angular size of one conic gradient cycle.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The span is normalised so that <code>1.0</code> equals 360 degrees.  Values smaller than <code>1.0</code> define a partial angular cycle for <class name="Gradient" field="SpreadMethod">Gradient.SpreadMethod</class> modes that can repeat, reflect or clip the gradient.  The default value is <code>1.0</code>.</p>
