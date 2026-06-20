@@ -128,30 +128,34 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
          Def.type = f'kt::vector<{Def.innerType}>'
       else
          if Type has FD_BYTE then
-            Def.type = 'int8_t []'
+            Def.type = 'int8_t'
             Def.doc_type = 'INT8 []'
          elseif Type has FD_WORD then
-            Def.type = 'int16_t []'
+            Def.type = 'int16_t'
             Def.doc_type = 'INT16 []'
          elseif Type has FD_INT then
-            Def.type = 'int []'
+            Def.type = 'int'
             Def.doc_type = 'INT []'
          elseif Type has FD_FLOAT then
-            Def.type = 'float []'
+            Def.type = 'float'
             Def.doc_type = 'FLOAT []'
          elseif Type has FD_DOUBLE then
-            Def.type = 'double []'
+            Def.type = 'double'
             Def.doc_type = 'DOUBLE []'
          elseif Type has FD_STRING then
-            Def.type = 'STRING []'
+            Def.type = 'STRING'
+            Def.doc_type = 'STRING []'
          elseif Type has FD_POINTER then
-            Def.type = 'APTR []'
+            Def.type = 'APTR'
+            Def.doc_type = 'APTR []'
          elseif Type has FD_STRUCT then
-            Def.type = fieldStructType(Option) .. ' []'
+            Def.type = fieldStructType(Option) .. ''
          elseif Type has FD_OBJECT then
-            Def.type = 'OBJECTPTR []'
+            Def.type = 'OBJECTPTR'
+            Def.doc_type = 'OBJECTPTR []'
          elseif Type has FD_UNIT then
-            Def.type = 'Unit []'
+            Def.type = 'Unit'
+            Def.doc_type = 'Unit []'
          else
             Def.type = 'UNKNOWN_ARRAY_TYPE'
          end
@@ -188,6 +192,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       elseif Type has FD_STRUCT then
          if Option?? then
             -- We need the developer to declare a virtual reference in order to name the struct, e.g. `~struct(TheName)`
+            -- because Tiri can't read strings from Field.arg
             result = 'REQUIRES_VIRTUAL_REF'
          else
             result = 'APTR'
@@ -350,6 +355,7 @@ global function cType(Value:table, Origin:str):table
 
          if const?? then
             Value.type = 'const ' .. Value.type
+            Value.isConst = true
          end
 
          return Value
@@ -616,6 +622,9 @@ global function cType(Value:table, Origin:str):table
          Value.isArray = true
          Value.type    = array_type
          Value         = cType(Value, Origin) -- Inner type will amend the value definition
+         local inner_type = Value.struct ?? 'struct ' .. Value.struct :> Value.type
+         if Value.isConst then inner_type = 'const ' .. inner_type end
+
          if Value.docType and not Value.isFunction and not Value.isMethod then
             Value.docType ..= '[]'
             if Value.docType:startsWith('struct ') then
@@ -625,6 +634,7 @@ global function cType(Value:table, Origin:str):table
             Value.docType = Value.type
          end
          Value.type  ..= ' *'
+         Value.innerType = inner_type
          Value.fullType = {
             fd       = 'FD_ARRAY|' .. Value.fullType.fd,
             t_type   = 'array'

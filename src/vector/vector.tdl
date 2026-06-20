@@ -562,13 +562,13 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
 
   klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true }, [[
-    ~array(struct(GouraudVertex)) Vertices
+    ~vector(struct(GouraudVertex)) Vertices
   ]])
 
   klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
 
   klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
-    ~array(struct(VoronoiPoint)) Points # Optional list of Voronoi feature points provided by the client
+    ~vector(struct(VoronoiPoint)) Points # Optional list of Voronoi feature points provided by the client
     ~int(WLF) WorleyMode
     ~int(WLM) WorleyMetric
   ]])
@@ -665,7 +665,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
-    ~array(struct(GradientStop)) Stops
+    ~vector(struct(GradientStop)) Stops
     ~int(ARF) AspectRatio
   ]])
 

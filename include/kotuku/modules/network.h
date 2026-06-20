@@ -495,9 +495,9 @@ class objNetLookup : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getAddresses(std::span<struct IPAddress> &Value) noexcept {
+   inline ERR getAddresses(std::span<IPAddress> &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, std::span<struct IPAddress> &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<IPAddress> &))field->GetValue;
       return get_field(this, Value);
    }
 
@@ -883,12 +883,12 @@ class objNetServer : public objNetSocket {
    }
 
    inline ERR getSSLCertificate(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + {offset}));
+      Value = *((std::string *)(((int8_t *)this) + 336));
       return ERR::Okay;
    }
 
    inline ERR getSSLKeyPassword(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + {offset}));
+      Value = *((std::string *)(((int8_t *)this) + 400));
       return ERR::Okay;
    }
 

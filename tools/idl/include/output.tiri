@@ -145,7 +145,7 @@ end
 -- Return the element type for generated array getters.
 
 function fieldArrayElementType(Field:table):str
-   local field_type = Field.type
+   local field_type = Field.innerType ?? Field.type
 
    if field_type:endsWith('[]') then return field_type:sub(0, -3):trim() end
    if field_type:endsWith('*') then return field_type:sub(0, -2):trim() end
@@ -177,6 +177,7 @@ function fieldGetType(Field:table):str
       return fieldArrayElementType(Field)
    elseif Field.flags has FD_STRING then
       if Field.flags has FD_ALLOC then return 'std::string' end
+      -- Always prefer std::string_view to avoid taking copies of std::string values
       return 'std::string_view'
    else
       return field_type
@@ -257,7 +258,7 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
       outputResult('field->GetValue(this, &Value);')
       return
    elseif Field.flags has FD_ARRAY then
-      output(Indent .. f'auto get_field = (ERR (*)(APTR, std::span<{FieldType}> &))field->GetValue;')
+      output(Indent .. f'auto get_field = (ERR (*)(APTR, std::span<{Field.innerType ?? Field.type}> &))field->GetValue;')
       outputResult('get_field(this, Value);')
       return
    elseif Field.flags has FD_STRING then
@@ -318,12 +319,14 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
          end
       elseif Field.flags has FD_STRING then
          if Field.flags has FD_ALLOC then
-            output(Indent .. 'Value.assign(*((std::string *)(((int8_t *)this) + {offset})));')
+            output(Indent .. f'Value.assign(*((std::string *)(((int8_t *)this) + {offset})));')
          else
-            output(Indent .. 'Value = *((std::string *)(((int8_t *)this) + {offset}));')
+            output(Indent .. f'Value = *((std::string *)(((int8_t *)this) + {offset}));')
          end
       elseif Field.flags has FD_FUNCTION then
          output(Indent .. f'Value = ((FUNCTION *)(((int8_t *)this) + {offset}));')
+      elseif Field.flags has FD_STRUCT then
+         output(Indent .. f'Value = (({FieldType} *)(((int8_t *)this) + {offset}));')
       else
          output(Indent .. f'Value = *(({FieldType} *)(((int8_t *)this) + {offset}));')
       end
@@ -410,6 +413,7 @@ end
 function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
    if Field.flags has FD_ARRAY then
       if Field.flags has FD_CPP then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
+         assert(Field.innerType, f'Missing innerType for virtual kt::vector {FidName}')
          output(f'   inline ERR set{FidName}(const std::span<const {Field.innerType}> Value) noexcept {{')
       else
          output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')

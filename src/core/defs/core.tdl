@@ -1327,7 +1327,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
 
   klass("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
     double ClassVersion    # Version of the class
-    cstruct(*FieldArray) Fields  # Original field array supplied by the module
+    array(cstruct(FieldArray)) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
     string ClassName       # Name of the class
     string FileExtension   # File extension(s) supported by this class
@@ -1387,7 +1387,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     large     Position  # The current read/write byte position in a file.
     string    Path      # The file path.
     int(FL)   Flags     # File flags and options.
-    ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
+    array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
     ~struct(DateTime) Date
     ~struct(DateTime) Created
     ~int(PERMIT) Permissions

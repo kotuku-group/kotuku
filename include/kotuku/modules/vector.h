@@ -748,7 +748,7 @@ class objVectorTransition : public Object {
 
    // Customised field setting
 
-   inline ERR setStops(std::span<const struct Transition> Value) noexcept {
+   inline ERR setStops(std::span<const Transition> Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x00001218, &Value);
    }
@@ -1704,9 +1704,9 @@ class objGradientGouraud : public objGradient {
 
    // Customised field getting
 
-   inline ERR getVertices(std::span<struct GouraudVertex> &Value) noexcept {
+   inline ERR getVertices(std::span<GouraudVertex> &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      auto get_field = (ERR (*)(APTR, std::span<struct GouraudVertex> &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<GouraudVertex> &))field->GetValue;
       return get_field(this, Value);
    }
 
@@ -1719,7 +1719,7 @@ class objGradientGouraud : public objGradient {
 
    // Customised field setting
 
-   inline ERR setVertices(std::span<const struct GouraudVertex> Value) noexcept {
+   inline ERR setVertices(std::span<const GouraudVertex> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
@@ -1830,9 +1830,9 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field getting
 
-   inline ERR getPoints(std::span<struct VoronoiPoint *> &Value) noexcept {
-      auto ktv = (struct VoronoiPoint * *)(((int8_t *)this) + 312);
-      Value = std::span<nil>(ktv->data(), ktv->size());
+   inline ERR getPoints(std::span<VoronoiPoint> &Value) noexcept {
+      auto ktv = (kt::vector<VoronoiPoint> *)(((int8_t *)this) + 312);
+      Value = std::span<VoronoiPoint>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
@@ -1884,7 +1884,7 @@ class objGradientVoronoi : public objGradient {
 
    // Customised field setting
 
-   inline ERR setPoints(const std::span<const nil> Value) noexcept {
+   inline ERR setPoints(const std::span<const VoronoiPoint> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
@@ -2694,7 +2694,7 @@ class objFloodFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      Value = *((struct FRGB *)(((int8_t *)this) + 216));
+      Value = ((struct FRGB *)(((int8_t *)this) + 216));
       return ERR::Okay;
    }
 
@@ -2776,7 +2776,7 @@ class objLightingFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      Value = *((struct FRGB *)(((int8_t *)this) + 216));
+      Value = ((struct FRGB *)(((int8_t *)this) + 216));
       return ERR::Okay;
    }
 
@@ -2886,9 +2886,9 @@ class objMergeFX : public objFilterEffect {
 
    // Customised field getting
 
-   inline ERR getSourceList(std::span<struct MergeSource> &Value) noexcept {
+   inline ERR getSourceList(std::span<MergeSource> &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, std::span<struct MergeSource> &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<MergeSource> &))field->GetValue;
       return get_field(this, Value);
    }
 
@@ -2909,7 +2909,7 @@ class objMergeFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setSourceList(std::span<const struct MergeSource> Value) noexcept {
+   inline ERR setSourceList(std::span<const MergeSource> Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
@@ -3255,9 +3255,9 @@ class objWaveFunctionFX : public objFilterEffect {
 
    // Customised field getting
 
-   inline ERR getStops(std::span<struct GradientStop *> &Value) noexcept {
-      auto ktv = (struct GradientStop * *)(((int8_t *)this) + 256);
-      Value = std::span<nil>(ktv->data(), ktv->size());
+   inline ERR getStops(std::span<GradientStop> &Value) noexcept {
+      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + 256);
+      Value = std::span<GradientStop>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
@@ -3267,7 +3267,7 @@ class objWaveFunctionFX : public objFilterEffect {
    }
 
    inline ERR getColourMap(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + {offset}));
+      Value = *((std::string *)(((int8_t *)this) + 216));
       return ERR::Okay;
    }
 
@@ -3313,7 +3313,7 @@ class objWaveFunctionFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setStops(const std::span<const nil> Value) noexcept {
+   inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
       auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
@@ -4141,9 +4141,9 @@ class objVectorPath : public objVector {
 
    // Customised field getting
 
-   inline ERR getCommands(std::span<struct PathCommand> &Value) noexcept {
+   inline ERR getCommands(std::span<PathCommand> &Value) noexcept {
       auto field = &this->Class->Dictionary[46];
-      auto get_field = (ERR (*)(APTR, std::span<struct PathCommand> &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<PathCommand> &))field->GetValue;
       return get_field(this, Value);
    }
 
@@ -4179,7 +4179,7 @@ class objVectorPath : public objVector {
 
    // Customised field setting
 
-   inline ERR setCommands(std::span<const struct PathCommand> Value) noexcept {
+   inline ERR setCommands(std::span<const PathCommand> Value) noexcept {
       auto field = &this->Class->Dictionary[46];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
@@ -4882,9 +4882,9 @@ class objVectorPolygon : public objVector {
 
    // Customised field getting
 
-   inline ERR getPointsArray(std::span<struct VectorPoint> &Value) noexcept {
+   inline ERR getPointsArray(std::span<VectorPoint> &Value) noexcept {
       auto field = &this->Class->Dictionary[50];
-      auto get_field = (ERR (*)(APTR, std::span<struct VectorPoint> &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<VectorPoint> &))field->GetValue;
       return get_field(this, Value);
    }
 
@@ -4921,7 +4921,7 @@ class objVectorPolygon : public objVector {
 
    // Customised field setting
 
-   inline ERR setPointsArray(std::span<const struct VectorPoint> Value) noexcept {
+   inline ERR setPointsArray(std::span<const VectorPoint> Value) noexcept {
       auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
