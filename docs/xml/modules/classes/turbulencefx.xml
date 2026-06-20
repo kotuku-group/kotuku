@@ -41,7 +41,7 @@
     <field>
       <name>FX</name>
       <comment>The base frequency for noise on the X axis.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>A negative value for base frequency is an error.  The default value is zero.</p>
@@ -51,7 +51,7 @@
     <field>
       <name>FY</name>
       <comment>The base frequency for noise on the Y axis.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>A negative value for base frequency is an error.  The default value is zero.</p>
@@ -61,7 +61,7 @@
     <field>
       <name>Octaves</name>
       <comment>The numOctaves parameter for the noise function.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Defaults to <code>1</code> if not specified.</p>
@@ -71,7 +71,7 @@
     <field>
       <name>Seed</name>
       <comment>The starting number for the pseudo random number generator.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>If the value is undefined, the effect is as if a value of <code>0</code> were specified.  When the seed number is handed over to the algorithm it must first be truncated, i.e. rounded to the closest integer value towards zero.</p>
@@ -81,7 +81,7 @@
     <field>
       <name>Stitch</name>
       <comment>If <code>TRUE</code>, stitching will be enabled at the tile's edges.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>By default, the turbulence algorithm will sometimes show discontinuities at the tile borders.  If Stitch is set to <code>TRUE</code> then the algorithm will automatically adjust base frequency values such that the node's width and height (i.e., the width and height of the current subregion) contains an integral number of the Perlin tile width and height for the first octave.</p>
@@ -92,7 +92,7 @@
     <field>
       <name>Type</name>
       <comment>Can be set to 'noise' or 'turbulence'.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="TB">TB</type>
       <description>
 <types lookup="TB"/>

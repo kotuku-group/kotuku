@@ -42,7 +42,7 @@
     <field>
       <name>Operator</name>
       <comment>Set to either <code>ERODE</code> or <code>DILATE</code>.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="MOP">MOP</type>
       <description>
 <types lookup="MOP"/>
@@ -52,14 +52,14 @@
     <field>
       <name>RadiusX</name>
       <comment>X radius value.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
     </field>
 
     <field>
       <name>RadiusY</name>
       <comment>Y radius value.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
     </field>
 

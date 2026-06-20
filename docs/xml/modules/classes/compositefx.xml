@@ -39,35 +39,35 @@
     <field>
       <name>K1</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>K2</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>K3</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>K4</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>Operator</name>
       <comment>The compositing algorithm to use for rendering.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="OP">OP</type>
       <description>
 <p>Setting the Operator will determine the algorithm that is used for compositing.  The default is <code>OVER</code>.</p>

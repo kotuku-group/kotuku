@@ -158,7 +158,6 @@ class extNetServer : public extNetSocket {
    static constexpr CSTRING CLASS_NAME = "NetServer";
    using create = kt::Create<extNetServer>;
 
-   objNetClient *LastClient;   // For linked-list management.
    objNetClient *Clients;      // Lists all clients connected to the NetServer.
    std::string SSLCertificate; // SSL certificate file to use for SSL listeners.
    std::string SSLPrivateKey;  // Private key file to use for SSL listeners.
@@ -167,6 +166,8 @@ class extNetServer : public extNetSocket {
    int    ClientLimit;         // The maximum number of client IP addresses that can be connected to the NetServer.
    int    SocketLimit;         // Limits the number of connected sockets per client IP address.
    int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
+
+   objNetClient *LastClient;   // For linked-list management.
 
    #ifndef DISABLE_SSL
       #ifndef _WIN32

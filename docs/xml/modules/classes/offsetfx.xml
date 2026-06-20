@@ -47,7 +47,7 @@
     <field>
       <name>XOffset</name>
       <comment>The delta X coordinate for the input graphic.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.</p>
@@ -57,7 +57,7 @@
     <field>
       <name>YOffset</name>
       <comment>The delta Y coordinate for the input graphic.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.</p>
