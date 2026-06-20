@@ -85,7 +85,7 @@
       <name>Points</name>
       <comment>User-defined Voronoi feature points.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>VoronoiPoint[]</type>
+      <type>kt::vector&lt;VoronoiPoint&gt;</type>
       <description>
 <p>The Points field accepts a vector of <st>VoronoiPoint</st> structures that define the feature-point coordinates used by the Voronoi field.  When at least one point is supplied, the procedural <fl>Seed</fl>, <fl>PointCount</fl>, <fl>HeightMin</fl>, <fl>HeightMax</fl> and <fl>Jitter</fl> fields are ignored and the field is generated from the supplied points instead.</p>
 <p>Point coordinates are normalised to the target path bounds, with <code>(0, 0)</code> at the top-left of the bounds and <code>(1, 1)</code> at the bottom-right.  The Height value is used by the <code>WEIGHTED</code> and <code>PEAKS</code> Worley modes and ignored by the distance only modes.</p>

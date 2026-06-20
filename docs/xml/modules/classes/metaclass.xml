@@ -146,7 +146,7 @@
       <name>Fields</name>
       <comment>Points to a <st>FieldArray</st> that describes the class' object structure.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>const struct FieldArray *</type>
+      <type>const struct FieldArray[]</type>
       <description>
 <p>This field points to an array that describes the structure of objects that will be generated for this class.  It is compulsory that base classes define this array.  Sub-classes will inherit the structure of their base, but they may set Fields with additional virtual fields if desired.</p>
 <p>Refer to the Kotuku Wiki on class development for more information.</p>
