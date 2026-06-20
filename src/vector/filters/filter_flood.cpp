@@ -21,8 +21,8 @@ class extFloodFX : public extFilterEffect {
    using create = kt::Create<extFloodFX>;
 
    FRGB   Colour;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
    double Opacity;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
 
    extFloodFX() {
       Opacity = 1.0;
@@ -81,12 +81,6 @@ The colour is complemented by the #Opacity field.
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_Colour(extFloodFX *Self, FRGB * &Value)
-{
-   Value = &Self->Colour;
-   return ERR::Okay;
-}
-
 static ERR FLOODFX_SET_Colour(extFloodFX *Self, FRGB *Value)
 {
    if (Value) {
@@ -106,12 +100,6 @@ static ERR FLOODFX_SET_Colour(extFloodFX *Self, FRGB *Value)
 Opacity: Modifies the opacity of the flood colour.
 
 *********************************************************************************************************************/
-
-static ERR FLOODFX_GET_Opacity(extFloodFX *Self, double *Value)
-{
-   *Value = Self->Opacity;
-   return ERR::Okay;
-}
 
 static ERR FLOODFX_SET_Opacity(extFloodFX *Self, double Value)
 {
@@ -150,8 +138,8 @@ static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string_view &Value)
 #include "filter_flood_def.c"
 
 static const FieldArray clFloodFXFields[] = {
-   { "Colour",  FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     FLOODFX_GET_Colour, FLOODFX_SET_Colour, "FRGB" },
-   { "Opacity", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,    FLOODFX_GET_Opacity, FLOODFX_SET_Opacity },
+   { "Colour",  FDF_STRUCT|FDF_RW, nullptr, FLOODFX_SET_Colour, "FRGB" },
+   { "Opacity", FDF_DOUBLE|FDF_RW, nullptr, FLOODFX_SET_Opacity },
    { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, FLOODFX_GET_XMLDef },
    END_FIELD
 };

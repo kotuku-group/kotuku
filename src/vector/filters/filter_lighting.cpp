@@ -140,14 +140,17 @@ class extLightingFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "LightingFX";
    using create = kt::Create<extLightingFX>;
 
+   // The exported fields are declared first so that their concrete offsets line up with the field table.
+   // The 8-byte aligned members precede the narrower Type field to avoid padding before a direct-access field.
    FRGB   Colour;           // Colour of the light source.
-   FRGB   LinearColour;     // Colour of the light source in linear sRGB space.
+   double Constant;         // The ks/kd constant value for the light mode.
    double SpecularExponent; // Exponent value for specular lighting only.
    double MapHeight;        // Maximum height of the surface for bump map calculations.
-   double Constant;         // The ks/kd constant value for the light mode.
    double UnitX, UnitY;     // SVG kernel unit - scale value for X/Y
-   double X, Y, Z;          // Position of light source.
    LT     Type;             // Diffuse or Specular light scattering
+
+   FRGB   LinearColour;     // Colour of the light source in linear sRGB space.
+   double X, Y, Z;          // Position of light source.
    LS     LightSource;      // Light source identifier, recorded for SVG output purposes only.
 
    // DISTANT LIGHT
@@ -809,12 +812,6 @@ The default colour is pure white.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_Colour(extLightingFX *Self, FRGB **Value)
-{
-   *Value = &Self->Colour;
-   return ERR::Okay;
-}
-
 static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, FRGB *Value)
 {
    if (Value) Self->Colour = *Value;
@@ -833,12 +830,6 @@ Constant: Specifies the ks/kd value in Phong lighting model.
 In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.
 
 *********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_Constant(extLightingFX *Self, double *Value)
-{
-   *Value = Self->Constant;
-   return ERR::Okay;
-}
 
 static ERR LIGHTINGFX_SET_Constant(extLightingFX *Self, double Value)
 {
@@ -859,12 +850,6 @@ shinier the end result.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_Exponent(extLightingFX *Self, double *Value)
-{
-   *Value = Self->SpecularExponent;
-   return ERR::Okay;
-}
-
 static ERR LIGHTINGFX_SET_Exponent(extLightingFX *Self, double Value)
 {
    if ((Value >= 1.0) and (Value <= 128.0)) {
@@ -881,12 +866,6 @@ Scale: The maximum height of the input surface (bump map) when the alpha input i
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_Scale(extLightingFX *Self, double *Value)
-{
-   *Value = Self->MapHeight;
-   return ERR::Okay;
-}
-
 static ERR LIGHTINGFX_SET_Scale(extLightingFX *Self, double Value)
 {
    Self->MapHeight = Value;
@@ -900,12 +879,6 @@ Type: Defines the type of surface light scattering, which can be specular or dif
 Lookup: LT
 
 *********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_Type(extLightingFX *Self, LT *Value)
-{
-   *Value = Self->Type;
-   return ERR::Okay;
-}
 
 static ERR LIGHTINGFX_SET_Type(extLightingFX *Self, LT Value)
 {
@@ -928,12 +901,6 @@ that a value be provided for at least one of ResX and #UnitX.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_UnitX(extLightingFX *Self, double *Value)
-{
-   *Value = Self->UnitX;
-   return ERR::Okay;
-}
-
 static ERR LIGHTINGFX_SET_UnitX(extLightingFX *Self, double Value)
 {
    if (Value < 0) return ERR::InvalidValue;
@@ -955,12 +922,6 @@ thus potentially not scalable.  For some level of consistency across display med
 that a value be provided for at least one of ResY and #UnitY.
 
 *********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_UnitY(extLightingFX *Self, double *Value)
-{
-   *Value = Self->UnitY;
-   return ERR::Okay;
-}
 
 static ERR LIGHTINGFX_SET_UnitY(extLightingFX *Self, double Value)
 {
@@ -998,13 +959,13 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string_view &Value)
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
-   { "Colour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Colour, LIGHTINGFX_SET_Colour, "FRGB" },
-   { "Constant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Constant, LIGHTINGFX_SET_Constant },
-   { "Exponent", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Exponent, LIGHTINGFX_SET_Exponent },
-   { "Scale",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Scale, LIGHTINGFX_SET_Scale },
-   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingFXLT },
-   { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
-   { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
+   { "Colour",   FDF_STRUCT|FDF_RW,          nullptr, LIGHTINGFX_SET_Colour, "FRGB" },
+   { "Constant", FDF_DOUBLE|FDF_RW,          nullptr, LIGHTINGFX_SET_Constant },
+   { "Exponent", FDF_DOUBLE|FDF_RW,          nullptr, LIGHTINGFX_SET_Exponent },
+   { "Scale",    FDF_DOUBLE|FDF_RW,          nullptr, LIGHTINGFX_SET_Scale },
+   { "UnitX",    FDF_DOUBLE|FDF_RW,          nullptr, LIGHTINGFX_SET_UnitX },
+   { "UnitY",    FDF_DOUBLE|FDF_RW,          nullptr, LIGHTINGFX_SET_UnitY },
+   { "Type",     FDF_INT|FDF_LOOKUP|FDF_RW,  nullptr, LIGHTINGFX_SET_Type, &clLightingFXLT },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };

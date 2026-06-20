@@ -327,10 +327,10 @@ class extColourFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ColourFX";
    using create = kt::Create<extColourFX>;
 
+   CM Mode;
    double Values[CM_SIZE];
    ColourMatrix *Matrix;
    int TotalValues;
-   CM Mode;
 };
 
 /*********************************************************************************************************************
@@ -570,12 +570,6 @@ Lookup: CM
 
 *********************************************************************************************************************/
 
-static ERR COLOURFX_GET_Mode(extColourFX *Self, CM *Value)
-{
-   *Value = Self->Mode;
-   return ERR::Okay;
-}
-
 static ERR COLOURFX_SET_Mode(extColourFX *Self, CM Value)
 {
    Self->Mode = Value;
@@ -649,7 +643,7 @@ static const FieldDef clMode[] = {
 };
 
 static const FieldArray clColourFXFields[] = {
-   { "Mode",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI|FDF_PURE,  COLOURFX_GET_Mode, COLOURFX_SET_Mode, &clMode },
+   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, COLOURFX_SET_Mode, &clMode },
    { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
    { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  COLOURFX_GET_XMLDef },
    END_FIELD

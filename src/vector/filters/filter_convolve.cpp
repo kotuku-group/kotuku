@@ -68,20 +68,20 @@ class extConvolveFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ConvolveFX";
    using create = kt::Create<extConvolveFX>;
 
-   double UnitX, UnitY;
-   double Divisor;
    double Bias;
-   int    TargetX, TargetY;
-   int    MatrixColumns, MatrixRows;
-   int    MatrixSize;
+   double Divisor;
    EM     EdgeMode;
-   bool   PreserveAlpha, MatrixProvided, DivisorProvided, TargetXProvided, TargetYProvided, UnitXProvided,
-          UnitYProvided;
+   int    MatrixRows, MatrixColumns;
+   int    PreserveAlpha;
+   int    TargetX, TargetY; // If -ve, the target will be computed as the centre of the matrix.
+   double UnitX, UnitY;
+   int    MatrixSize;
+   bool   MatrixProvided, DivisorProvided, TargetXProvided, TargetYProvided, UnitXProvided, UnitYProvided;
    double Matrix[MAX_DIM * MAX_DIM] = {};
 
-   extConvolveFX() : UnitX(1), UnitY(1), Divisor(0), Bias(0),
-      TargetX(-1), TargetY(-1), // If -ve, the target will be computed as the centre of the matrix.
-      MatrixColumns(3), MatrixRows(3), MatrixSize(0), EdgeMode(EM::DUPLICATE), PreserveAlpha(false),
+   extConvolveFX() : Bias(0), Divisor(0), EdgeMode(EM::DUPLICATE),
+      MatrixRows(3), MatrixColumns(3), PreserveAlpha(false),
+      TargetX(-1), TargetY(-1), UnitX(1), UnitY(1), MatrixSize(0),
       MatrixProvided(false), DivisorProvided(false), TargetXProvided(false), TargetYProvided(false),
       UnitXProvided(false), UnitYProvided(false) { }
 
@@ -593,12 +593,6 @@ clamped to 0 or 1.  The default is 0.
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_Bias(extConvolveFX *Self, double *Value)
-{
-   *Value = Self->Bias;
-   return ERR::Okay;
-}
-
 static ERR CONVOLVEFX_SET_Bias(extConvolveFX *Self, double Value)
 {
    Self->Bias = Value;
@@ -616,12 +610,6 @@ on the overall colour intensity of the result.  The default value is the sum of 
 exception that if the sum is zero, then the divisor is set to `1`.
 
 *********************************************************************************************************************/
-
-static ERR CONVOLVEFX_GET_Divisor(extConvolveFX *Self, double *Value)
-{
-   *Value = Self->Divisor;
-   return ERR::Okay;
-}
 
 static ERR CONVOLVEFX_SET_Divisor(extConvolveFX *Self, double Value)
 {
@@ -641,12 +629,6 @@ The EdgeMode determines how to extend the input image with colour values so that
 when the #Matrix is positioned at or near the edge of the input image.
 
 *********************************************************************************************************************/
-
-static ERR CONVOLVEFX_GET_EdgeMode(extConvolveFX *Self, EM *Value)
-{
-   *Value = Self->EdgeMode;
-   return ERR::Okay;
-}
 
 static ERR CONVOLVEFX_SET_EdgeMode(extConvolveFX *Self, EM Value)
 {
@@ -692,12 +674,6 @@ the impact on performance.  The default value is 3.
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_MatrixRows(extConvolveFX *Self, int *Value)
-{
-   *Value = Self->MatrixRows;
-   return ERR::Okay;
-}
-
 static ERR CONVOLVEFX_SET_MatrixRows(extConvolveFX *Self, int Value)
 {
    kt::Log log;
@@ -718,12 +694,6 @@ the impact on performance.  The default value is `3`.
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_MatrixColumns(extConvolveFX *Self, int *Value)
-{
-   *Value = Self->MatrixColumns;
-   return ERR::Okay;
-}
-
 static ERR CONVOLVEFX_SET_MatrixColumns(extConvolveFX *Self, int Value)
 {
    kt::Log log;
@@ -739,12 +709,6 @@ static ERR CONVOLVEFX_SET_MatrixColumns(extConvolveFX *Self, int Value)
 PreserveAlpha: If TRUE, the alpha channel is protected from the effects of the convolve algorithm.
 
 *********************************************************************************************************************/
-
-static ERR CONVOLVEFX_GET_PreserveAlpha(extConvolveFX *Self, int *Value)
-{
-   *Value = Self->PreserveAlpha;
-   return ERR::Okay;
-}
 
 static ERR CONVOLVEFX_SET_PreserveAlpha(extConvolveFX *Self, int Value)
 {
@@ -763,12 +727,6 @@ default, the convolution matrix is centered in X over each pixel of the input im
 `TargetX = floor(MatrixColumns / 2)`.
 
 *********************************************************************************************************************/
-
-static ERR CONVOLVEFX_GET_TargetX(extConvolveFX *Self, int *Value)
-{
-   *Value = Self->TargetX;
-   return ERR::Okay;
-}
 
 static ERR CONVOLVEFX_SET_TargetX(extConvolveFX *Self, int Value)
 {
@@ -793,12 +751,6 @@ default, the convolution matrix is centered in Y over each pixel of the input im
 `TargetY = floor(MatrixRows / 2)`.
 
 *********************************************************************************************************************/
-
-static ERR CONVOLVEFX_GET_TargetY(extConvolveFX *Self, int *Value)
-{
-   *Value = Self->TargetY;
-   return ERR::Okay;
-}
 
 static ERR CONVOLVEFX_SET_TargetY(extConvolveFX *Self, int Value)
 {
@@ -829,12 +781,6 @@ aligns with the pixel grid of the kernel.
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_UnitX(extConvolveFX *Self, double *Value)
-{
-   *Value = Self->UnitX;
-   return ERR::Okay;
-}
-
 static ERR CONVOLVEFX_SET_UnitX(extConvolveFX *Self, double Value)
 {
    if (Value <= 0.0) return ERR::InvalidValue;
@@ -860,12 +806,6 @@ The most consistent results and the fastest performance will be achieved if the 
 aligns with the pixel grid of the kernel.
 
 *********************************************************************************************************************/
-
-static ERR CONVOLVEFX_GET_UnitY(extConvolveFX *Self, double *Value)
-{
-   *Value = Self->UnitY;
-   return ERR::Okay;
-}
 
 static ERR CONVOLVEFX_SET_UnitY(extConvolveFX *Self, double Value)
 {
@@ -964,17 +904,17 @@ static const FieldDef clEdgeMode[] = {
 };
 
 static const FieldArray clConvolveFXFields[] = {
-   { "Bias",          FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,           CONVOLVEFX_GET_Bias, CONVOLVEFX_SET_Bias },
-   { "Divisor",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,           CONVOLVEFX_GET_Divisor, CONVOLVEFX_SET_Divisor },
-   { "EdgeMode",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI|FDF_PURE,   CONVOLVEFX_GET_EdgeMode, CONVOLVEFX_SET_EdgeMode, &clEdgeMode },
-   { "MatrixRows",    FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,              CONVOLVEFX_GET_MatrixRows, CONVOLVEFX_SET_MatrixRows },
-   { "MatrixColumns", FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,              CONVOLVEFX_GET_MatrixColumns, CONVOLVEFX_SET_MatrixColumns },
+   { "Bias",          FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_Bias },
+   { "Divisor",       FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_Divisor },
+   { "EdgeMode",      FDF_INT|FDF_LOOKUP|FDF_RI,   nullptr, CONVOLVEFX_SET_EdgeMode, &clEdgeMode },
+   { "MatrixRows",    FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_MatrixRows },
+   { "MatrixColumns", FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_MatrixColumns },
    { "Matrix",        FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, CONVOLVEFX_GET_Matrix, CONVOLVEFX_SET_Matrix },
-   { "PreserveAlpha", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,              CONVOLVEFX_GET_PreserveAlpha, CONVOLVEFX_SET_PreserveAlpha },
-   { "TargetX",       FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,              CONVOLVEFX_GET_TargetX, CONVOLVEFX_SET_TargetX },
-   { "TargetY",       FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,              CONVOLVEFX_GET_TargetY, CONVOLVEFX_SET_TargetY },
-   { "UnitX",         FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,           CONVOLVEFX_GET_UnitX, CONVOLVEFX_SET_UnitX },
-   { "UnitY",         FDF_VIRTUAL|FDF_DOUBLE|FDF_RI|FDF_PURE,           CONVOLVEFX_GET_UnitY, CONVOLVEFX_SET_UnitY },
+   { "PreserveAlpha", FDF_INT|FDF_RW,              nullptr, CONVOLVEFX_SET_PreserveAlpha },
+   { "TargetX",       FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_TargetX },
+   { "TargetY",       FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_TargetY },
+   { "UnitX",         FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_UnitX },
+   { "UnitY",         FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_UnitY },
    { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  CONVOLVEFX_GET_XMLDef },
    END_FIELD
 };
