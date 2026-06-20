@@ -495,9 +495,9 @@ class objNetLookup : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getAddresses(std::span<IPAddress> &Value) noexcept {
+   inline ERR getAddresses(std::span<struct IPAddress> &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, std::span<IPAddress> &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<struct IPAddress> &))field->GetValue;
       return get_field(this, Value);
    }
 

@@ -25,7 +25,7 @@
       <name>Indices</name>
       <comment>Defines triangle connectivity for a Gouraud gradient.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT []</type>
+      <type>kt::vector&lt;int&gt;</type>
       <description>
 <p>The Indices array provides triangle connectivity for a Gouraud gradient's <fl>Vertices</fl>, with three indices per triangle referencing vertices in counter-clockwise order.  Supplying indices allows vertices to be shared between adjacent triangles.</p>
 <p>If left empty, the <fl>Vertices</fl> array is treated as a flat triangle list, where every three consecutive vertices form one triangle.</p>
