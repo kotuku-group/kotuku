@@ -1341,6 +1341,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
     cid BaseClassID        # Base-class ID
     int OpenCount          # Number of objects allocated to this class
     int(CCF) Category      # Assigned category
+    int PublicSize         # Byte-size of the class as seen by the client
     ~array(struct(ActionEntry)) ActionTable
     ~array(struct(MethodEntry)) Methods
   ]],

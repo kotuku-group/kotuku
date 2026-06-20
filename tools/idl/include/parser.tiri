@@ -374,11 +374,11 @@ global function parseClassFields(Class:table, ClientSpec:str)
       -- NB: Some classes don't output any fields (which is permissable)
 
       metaFields = Class.meta.subFields
-      if (not metaFields or #metaFields is 0) and (Class.meta.classID is Class.meta.baseClassID) then
+      if (not metaFields??) and (Class.meta.classID is Class.meta.baseClassID) then
          metaFields = Class.meta.fields
       end
 
-      if metaFields then
+      if metaFields?? then
          for i=0,#metaFields-1 do
             f = metaFields[i]
             def = getMetaFieldDefinition(f)

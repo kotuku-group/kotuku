@@ -2531,6 +2531,7 @@ class objMetaClass : public Object {
    CLASSID BaseClassID;                 // Specifies the base class ID of a class object.
    int     OpenCount;                   // The total number of active objects that are linked back to the MetaClass.
    CCF     Category;                    // The system category that a class belongs to.
+   int     PublicSize;                  // The size of the class in bytes, as seen by the client.
 
 #ifdef PRV_METACLASS
     // Field table cache for Tiri - eliminates per-instance hash tables.

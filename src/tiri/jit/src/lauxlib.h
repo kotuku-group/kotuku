@@ -22,7 +22,7 @@ struct luaL_Reg {
 extern void luaL_openlib(lua_State *, const char *, const luaL_Reg *, int);
 extern void luaL_register(lua_State *, const char *, const luaL_Reg *);
 extern int luaL_typerror(lua_State *, int, const char *);
-extern int luaL_argerror(lua_State *, int, const char *);
+[[noreturn]] extern int luaL_argerror(lua_State *, int, const char *);
 extern const char * luaL_checklstring(lua_State *, int, size_t * = nullptr);
 extern uint32_t luaL_checkstringhash(lua_State *, int);
 extern const char * luaL_optlstring(lua_State *, int, const char *, size_t * = nullptr);

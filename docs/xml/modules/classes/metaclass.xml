@@ -269,6 +269,16 @@
     </field>
 
     <field>
+      <name>PublicSize</name>
+      <comment>The size of the class in bytes, as seen by the client.</comment>
+      <access>-/-</access>
+      <type>INT</type>
+      <description>
+<p>The public size reflects the size of the class before any private variables are taken into account.</p>
+      </description>
+    </field>
+
+    <field>
       <name>RootModule</name>
       <comment>Returns a direct reference to the RootModule object that hosts the class.</comment>
       <access read="G">Get</access>

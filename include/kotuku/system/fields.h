@@ -1019,4 +1019,5 @@
 #define FID_SSLPrivateKey 0x5734bfb2LL
 #define FID_SSLKeyPassword 0x23ce0c86LL
 #define FID_SubClasses 0x8fec1031LL
+#define FID_PublicSize 0xaa74794cLL
 
