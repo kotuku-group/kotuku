@@ -6,6 +6,9 @@ GradientContour: Contour-following colour gradient paint server.
 GradientContour follows the contours of the target vector path.  `Floor` controls the colour ramp floor and
 `Multiplier` controls the ramp scale.
 
+This gradient operates exclusively in `BOUNDING_BOX` space.  If @Gradient.Units is set to `USERSPACE` it will be
+reset to `BOUNDING_BOX` during initialisation.
+
 -END-
 
 *********************************************************************************************************************/
@@ -28,8 +31,8 @@ static ERR GRADIENTCONTOUR_Init(extGradientContour *Self)
 -FIELD-
 Floor: Colour ramp floor for contour gradients.
 
-The Floor value is used as the floor for contour gradient colour values.  It has a valid range of `0 < Floor <
-Multiplier`.
+The Floor value is used as the floor for contour gradient colour values.  It has a valid range of `0 <= Floor <
+Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 

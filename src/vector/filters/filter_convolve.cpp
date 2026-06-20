@@ -13,13 +13,13 @@ is determined by applying the kernel matrix to the corresponding source pixel an
 convolution formula which is applied to each colour value for a given pixel is:
 
 <pre>
-COLOURX,Y = (
+COLOUR(x,y) = (
      SUM I=0 to [MatrixRows-1] {
        SUM J=0 to [MatrixColumns-1] {
-         SOURCE X - TargetX + J, Y - TargetY + I * Matrix * MatrixColumns - J - 1,  MatrixRows - I - 1
+         SOURCE(x - TargetX + J, y - TargetY + I) * Matrix(MatrixColumns - J - 1, MatrixRows - I - 1)
        }
      }
-   ) / Divisor + Bias * ALPHAX,Y
+   ) / Divisor + Bias * ALPHA(x,y)
 </pre>
 
 Note in the above formula that the values in the kernel matrix are applied such that the kernel matrix is rotated

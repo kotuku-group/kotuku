@@ -8,7 +8,7 @@ VectorPattern: Provides support for the filling and stroking of vectors with pat
 The VectorPattern class is used by Vector painting algorithms to fill and stroke vectors with pre-rendered patterns.
 It is the most efficient way of rendering a common set of graphics multiple times.
 
-The VectorPattern must be registered with a @VectorScene via the <method class="VectorScene">AddDef</> method.
+The VectorPattern must be registered with a @VectorScene via the @VectorScene.AddDef() method.
 Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its
 name through the @Vector.Fill and @Vector.Stroke fields.  For instance `url(#dots)`.
 
@@ -198,7 +198,8 @@ managing the vectors that will be rendered.
 -FIELD-
 SpreadMethod: The behaviour to use when the pattern bounds do not match the vector path.
 
-Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is PAD.
+Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is
+`VSPREAD::PAD`.
 
 *********************************************************************************************************************/
 
@@ -239,9 +240,9 @@ static ERR VECTORPATTERN_SET_Transform(extVectorPattern *Self, const std::string
 -FIELD-
 Units:  Defines the coordinate system for fields X, Y, Width and Height.
 
-This field declares the coordinate system that is used for values in the #X and #Y fields.  The default setting is
-`BOUNDING_BOX`, which means the pattern will be drawn to scale in realtime.  The most efficient method is USERSPACE,
-which allows the pattern image to be persistently cached.
+This field declares the coordinate system that is used for values in the #X, #Y, #Width and #Height fields.  The
+default setting is `BOUNDING_BOX`, which means the pattern will be drawn to scale in realtime.  The most efficient
+method is `USERSPACE`, which allows the pattern image to be persistently cached.
 
 -FIELD-
 Viewport: Refers to the viewport that contains the pattern.

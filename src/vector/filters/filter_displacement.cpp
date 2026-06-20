@@ -23,8 +23,8 @@ and #YChannel to `CMP::GREEN`.
 The displacement map defines the inverse of the mapping performed.
 
 The Input image is to remain premultiplied for this filter effect.  The calculations using the pixel values
-from Mix are performed using non-premultiplied color values.  If the image from Mix consists of premultiplied
-color values, those values are automatically converted into non-premultiplied color values before performing this
+from Mix are performed using non-premultiplied colour values.  If the image from Mix consists of premultiplied
+colour values, those values are automatically converted into non-premultiplied colour values before performing this
 operation.
 
 -END-

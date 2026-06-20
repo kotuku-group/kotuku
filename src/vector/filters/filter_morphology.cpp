@@ -19,7 +19,7 @@ corresponding R,G,B,A values in the input image's kernel rectangle.
 Frequently this operation will take place on alpha-only images, such as that produced by the built-in input,
 SourceAlpha.  In that case, the implementation might want to optimize the single channel case.
 
-Because the algorithm operates on premultipied color values, it will always result in color values less than or
+Because the algorithm operates on premultiplied colour values, it will always result in colour values less than or
 equal to the alpha channel.
 
 -END-

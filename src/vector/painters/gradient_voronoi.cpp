@@ -7,6 +7,9 @@ GradientVoronoi scatters deterministic feature points inside the target path bou
 field through the inherited colour ramp.  `Seed` controls repeatability, `PointCount` controls feature density,
 `WorleyMode` selects the field interpretation, and `WorleyMetric` selects the distance metric.
 
+This gradient operates exclusively in `BOUNDING_BOX` space.  If @Gradient.Units is set to `USERSPACE` it will be
+reset to `BOUNDING_BOX` during initialisation.
+
 -END-
 
 *********************************************************************************************************************/
@@ -53,8 +56,8 @@ static ERR GRADIENTVORONOI_Init(extGradientVoronoi *Self)
 -FIELD-
 Floor: Colour ramp floor for Voronoi gradients.
 
-The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of `0 < Floor <
-Multiplier`.
+The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of `0 <= Floor <
+Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
@@ -169,7 +172,7 @@ static ERR GRADIENTVORONOI_SET_Multiplier(extGradientVoronoi *Self, Unit &Value)
 PointCount: Number of seeded Voronoi feature points.
 
 PointCount controls how many feature points are generated inside the target path bounds.  The accepted range is
-`1` to `4096`.
+`1` to `4096` and the default is `16`.  This field is ignored when explicit #Points are supplied.
 
 *********************************************************************************************************************/
 

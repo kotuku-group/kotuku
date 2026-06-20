@@ -67,7 +67,7 @@ static ERR FILTEREFFECT_MoveToBack(extFilterEffect *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-MoveToBack: Move an effect to the front of the VectorFilter's list order.
+MoveToFront: Move an effect to the front of the VectorFilter's list order.
 -END-
 *********************************************************************************************************************/
 
@@ -154,7 +154,7 @@ static ERR FILTEREFFECT_SET_Height(extFilterEffect *Self, Unit &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Mix: Reference to another effect to be used a mixer with Input.
+Mix: Reference to another effect to be used as a mixer with Input.
 
 If another effect should be used as a mixed source input, it must be referenced here.  The #MixType will be
 automatically set to `REFERENCE` as a result.
