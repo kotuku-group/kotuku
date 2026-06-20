@@ -1478,7 +1478,7 @@ extern lua_CFunction lua_atpanic(lua_State *L, lua_CFunction panicf)
 }
 
 // Forwarders for the public API (C calling convention and no LJ_NORET).
-extern int lua_error(lua_State *L)
+[[noreturn]] extern int lua_error(lua_State *L)
 {
    err_clear_pending_exception(L);
    if (L->top > L->base and tvisstr(L->top - 1)) {
@@ -1490,7 +1490,7 @@ extern int lua_error(lua_State *L)
    return 0;  //  unreachable
 }
 
-extern int luaL_argerror(lua_State *L, int narg, CSTRING msg)
+[[noreturn]] extern int luaL_argerror(lua_State *L, int narg, CSTRING msg)
 {
    L->CaughtError = ERR::Args;
    err_argmsg(L, narg, msg);

@@ -15,13 +15,13 @@
     <description>
 <p>Convolve applies a matrix convolution filter effect to an input source.  A convolution combines pixels in the input image with neighbouring pixels to produce a resulting image.  A wide variety of imaging operations can be achieved through convolutions, including blurring, edge detection, sharpening, embossing and beveling.</p>
 <p>A matrix convolution is based on an <code>n-by-m</code> matrix (the convolution kernel) which describes how a given pixel value in the input image is combined with its neighbouring pixel values to produce a resulting pixel value. Each result pixel is determined by applying the kernel matrix to the corresponding source pixel and its neighbouring pixels.  The basic convolution formula which is applied to each colour value for a given pixel is:</p>
-<pre>COLOURX,Y = (
+<pre>COLOUR(x,y) = (
      SUM I=0 to [MatrixRows-1] {
        SUM J=0 to [MatrixColumns-1] {
-         SOURCE X - TargetX + J, Y - TargetY + I * Matrix * MatrixColumns - J - 1,  MatrixRows - I - 1
+         SOURCE(x - TargetX + J, y - TargetY + I) * Matrix(MatrixColumns - J - 1, MatrixRows - I - 1)
        }
      }
-   ) / Divisor + Bias * ALPHAX,Y
+   ) / Divisor + Bias * ALPHA(x,y)
 </pre>
 <p>Note in the above formula that the values in the kernel matrix are applied such that the kernel matrix is rotated 180 degrees relative to the source and destination images in order to match convolution theory as described in many computer graphics textbooks.</p>
 <p>Because they operate on pixels, matrix convolutions are inherently resolution-dependent.  To make resolution-independent results, an explicit value should be provided for either the <code>ResX</code> and <code>ResY</code> attributes on the parent <class name="VectorFilter">VectorFilter</class> and/or <fl>UnitX</fl> and <fl>UnitY</fl>.</p></description>

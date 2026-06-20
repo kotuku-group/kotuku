@@ -21,6 +21,9 @@ Setting #OuterFall to `GFALL::OPAQUE` holds the exterior alpha at full strength 
 `REPEAT` or `REFLECT` the full colour ramp is painted solidly out to the parent edge with no fade between tiles.  Under
 `PAD` the alpha still cuts to transparent at the padding edge as usual.
 
+This gradient operates exclusively in `BOUNDING_BOX` space.  If @Gradient.Units is set to `USERSPACE` it will be
+reset to `BOUNDING_BOX` during initialisation.
+
 -END-
 
 *********************************************************************************************************************/
@@ -96,7 +99,8 @@ static ERR GRADIENTDISTAL_SET_Radius(extGradientDistal *Self, Unit &Value)
 -FIELD-
 Floor: Colour ramp floor for distal gradients.
 
-The Floor value is used as the floor for distal gradient colour values.
+The Floor value is used as the floor for distal gradient colour values.  It has a valid range of `0 &lt;= Floor &lt;
+Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
@@ -119,7 +123,8 @@ static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
 -FIELD-
 Multiplier: Colour ramp multiplier for distal gradients.
 
-The Multiplier value acts as a multiplier for distal gradient colour values.
+The Multiplier value acts as a multiplier for distal gradient colour values.  It has a valid range of `.01 &lt;
+Multiplier &lt; 10`.
 
 -END-
 *********************************************************************************************************************/

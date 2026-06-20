@@ -1839,6 +1839,16 @@ class objGradientVoronoi : public objGradient {
       return get_field(this, Value);
    }
 
+   inline ERR getWorleyMode(WLF &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getWorleyMetric(WLM &Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getFloor(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->GetValue(this, &Value);
@@ -1856,16 +1866,6 @@ class objGradientVoronoi : public objGradient {
 
    inline ERR getPointCount(int &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getWorleyMode(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getWorleyMetric(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
       return field->GetValue(this, &Value);
    }
 
@@ -1892,6 +1892,16 @@ class objGradientVoronoi : public objGradient {
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
+   inline ERR setWorleyMode(const WLF Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setWorleyMetric(const WLM Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setFloor(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_UNIT, &Value);
@@ -1909,16 +1919,6 @@ class objGradientVoronoi : public objGradient {
 
    inline ERR setPointCount(const int Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setWorleyMode(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setWorleyMetric(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1954,7 +1954,7 @@ class objFilterEffect : public Object {
    objFilterEffect * Prev;    // Previous filter in the chain.
    objBitmap * Target;        // Target bitmap for rendering the effect.
    objFilterEffect * Input;   // Reference to another effect to be used as an input source.
-   objFilterEffect * Mix;     // Reference to another effect to be used a mixer with Input.
+   objFilterEffect * Mix;     // Reference to another effect to be used as a mixer with Input.
    Unit X;                    // Primitive X coordinate for the effect.
    Unit Y;                    // Primitive Y coordinate for the effect.
    Unit Width;                // Primitive width of the effect area.

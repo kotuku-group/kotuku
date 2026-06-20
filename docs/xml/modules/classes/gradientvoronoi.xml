@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientVoronoi scatters deterministic feature points inside the target path bounds and maps the selected Worley field through the inherited colour ramp.  <code>Seed</code> controls repeatability, <code>PointCount</code> controls feature density, <code>WorleyMode</code> selects the field interpretation, and <code>WorleyMetric</code> selects the distance metric.</p></description>
+<p>GradientVoronoi scatters deterministic feature points inside the target path bounds and maps the selected Worley field through the inherited colour ramp.  <code>Seed</code> controls repeatability, <code>PointCount</code> controls feature density, <code>WorleyMode</code> selects the field interpretation, and <code>WorleyMetric</code> selects the distance metric.</p>
+<p>This gradient operates exclusively in <code>BOUNDING_BOX</code> space.  If <class name="Gradient" field="Units">Gradient.Units</class> is set to <code>USERSPACE</code> it will be reset to <code>BOUNDING_BOX</code> during initialisation.</p></description>
     <source>
       <file path="painters/">gradient_voronoi.cpp</file>
     </source>
@@ -26,7 +27,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
-<p>The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of <code>0 &lt; Floor &lt; Multiplier</code>.</p>
+<p>The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of <code>0 &lt;= Floor &lt; Multiplier</code>; the constraint against <fl>Multiplier</fl> is enforced at initialisation.</p>
       </description>
     </field>
 
@@ -76,7 +77,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>PointCount controls how many feature points are generated inside the target path bounds.  The accepted range is <code>1</code> to <code>4096</code>.</p>
+<p>PointCount controls how many feature points are generated inside the target path bounds.  The accepted range is <code>1</code> to <code>4096</code> and the default is <code>16</code>.  This field is ignored when explicit <fl>Points</fl> are supplied.</p>
       </description>
     </field>
 
@@ -105,7 +106,7 @@
       <name>WorleyMetric</name>
       <comment>Distance metric for the Voronoi field.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="WLM">INT</type>
+      <type lookup="WLM">WLM</type>
       <description>
 <p>WorleyMetric selects the distance function used when measuring each pixel against the seeded feature points.</p>
 <types lookup="WLM"/>
@@ -116,7 +117,7 @@
       <name>WorleyMode</name>
       <comment>Field mode for the Voronoi gradient.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="WLF">INT</type>
+      <type lookup="WLF">WLF</type>
       <description>
 <p>WorleyMode selects how distances to feature points are converted into the scalar field that feeds the colour ramp.</p>
 <types lookup="WLF"/>

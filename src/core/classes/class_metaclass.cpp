@@ -87,6 +87,7 @@ static constexpr uint16_t glMetaClassIDOffset = meta_align_offset(glMetaFlagsOff
 static constexpr uint16_t glMetaBaseClassIDOffset = meta_align_offset(glMetaClassIDOffset + sizeof(CLASSID), alignof(CLASSID));
 static constexpr uint16_t glMetaOpenCountOffset = meta_align_offset(glMetaBaseClassIDOffset + sizeof(CLASSID), alignof(int));
 static constexpr uint16_t glMetaCategoryOffset = meta_align_offset(glMetaOpenCountOffset + sizeof(int), alignof(CCF));
+static constexpr uint16_t glMetaPublicSizeOffset = meta_align_offset(glMetaCategoryOffset + sizeof(int), alignof(int));
 
 static ERR GET_ClassName(extMetaClass *Self, std::string_view &Value)
 {
@@ -127,18 +128,19 @@ static const std::vector<Field> glMetaFieldsPreset = {
    { 0, nullptr, nullptr, writeval_default, "BaseClassID",     FID_BaseClassID,     glMetaBaseClassIDOffset,      12, FDF_INT|FDF_UNSIGNED|FDF_RI },
    { 0, nullptr, nullptr, writeval_default, "OpenCount",       FID_OpenCount,       glMetaOpenCountOffset,        13, FDF_INT|FDF_R },
    { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  FID_Category, glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "PublicSize",      FID_PublicSize,      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
    // Virtual fields
-   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", FID_Methods, sizeof(Object), 15, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           FID_Actions,         sizeof(Object), 16, FDF_POINTER|FDF_I },
-   { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       FID_ActionTable,     sizeof(Object), 17, FDF_ARRAY|FDF_POINTER|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          FID_Location,        sizeof(Object), 18, FDF_CPPSTRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 19, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI },
-   { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 20, FDF_CPPSTRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           FID_Objects,         sizeof(Object), 21, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
-   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", FID_SubClasses, sizeof(Object), 22, FDF_ARRAY|FD_OBJECT|FDF_R },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
-   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule, sizeof(Object), 24, FDF_OBJECT|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                FID_ID,              sizeof(Object), 25, FDF_INT|FDF_SYSTEM|FDF_R },
+   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", FID_Methods, sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           FID_Actions,         sizeof(Object), 17, FDF_POINTER|FDF_I },
+   { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       FID_ActionTable,     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          FID_Location,        sizeof(Object), 19, FDF_CPPSTRING|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI },
+   { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           FID_Objects,         sizeof(Object), 22, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
+   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", FID_SubClasses, sizeof(Object), 23, FDF_ARRAY|FD_OBJECT|FDF_R },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 24, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
+   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule, sizeof(Object), 25, FDF_OBJECT|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                FID_ID,              sizeof(Object), 26, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
 };
 
@@ -812,6 +814,11 @@ example `modules:display`. For reasons of platform portability, the file extensi
 end of the file name.
 
 -FIELD-
+PublicSize: The size of the class in bytes, as seen by the client.
+
+The public size reflects the size of the class before any private variables are taken into account.
+
+-FIELD-
 RootModule: Returns a direct reference to the RootModule object that hosts the class.
 
 *********************************************************************************************************************/
@@ -880,7 +887,7 @@ static void field_setup(extMetaClass *Class)
 
       if (Class->SubFields) {
          std::vector<Field> subFields;
-         uint16_t offset = 0;
+         uint16_t offset = Class->Base->Size; // Offset starts from sizeof(extClassName)
          for (unsigned i=0; Class->SubFields[i].Name; i++) {
             bool found = false;
             auto hash = fieldhash(Class->SubFields[i].Name);

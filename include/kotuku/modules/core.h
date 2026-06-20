@@ -2531,6 +2531,7 @@ class objMetaClass : public Object {
    CLASSID BaseClassID;                 // Specifies the base class ID of a class object.
    int     OpenCount;                   // The total number of active objects that are linked back to the MetaClass.
    CCF     Category;                    // The system category that a class belongs to.
+   int     PublicSize;                  // The size of the class in bytes, as seen by the client.
 
 #ifdef PRV_METACLASS
     // Field table cache for Tiri - eliminates per-instance hash tables.
@@ -2644,7 +2645,7 @@ class objMetaClass : public Object {
    }
 
    inline ERR getLocation(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -2653,7 +2654,7 @@ class objMetaClass : public Object {
    }
 
    inline ERR getModule(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -2662,7 +2663,7 @@ class objMetaClass : public Object {
    }
 
    inline ERR getObjects(std::span<int> &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
       auto error = get_field(this, Value);

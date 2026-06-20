@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorPattern class is used by Vector painting algorithms to fill and stroke vectors with pre-rendered patterns. It is the most efficient way of rendering a common set of graphics multiple times.</p>
-<p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <method class="VectorScene">AddDef</method> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>
+<p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>
 <p>A special use case is made for patterns that are applied as a fill operation in <class name="VectorViewport">VectorViewport</class> objects.  In this case the renderer will dynamically render the pattern as a background within the viewport.  This ensures that the pattern is rendered at maximum fidelity whenever it is used, and not affected by bitmap clipping restrictions.  It should be noted that this means the image caching feature will be disabled.</p>
 <p>It is strongly recommended that the VectorPattern is owned by the <class name="VectorScene">VectorScene</class> that is handling the definition.  This will ensure that the VectorPattern is deallocated when the scene is destroyed.</p></description>
     <source>
@@ -107,7 +107,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="VSPREAD">VSPREAD</type>
       <description>
-<p>Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is PAD.</p>
+<p>Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is <code>VSPREAD::PAD</code>.</p>
 <types lookup="VSPREAD"/>
       </description>
     </field>
@@ -128,7 +128,7 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="VUNIT">VUNIT</type>
       <description>
-<p>This field declares the coordinate system that is used for values in the <fl>X</fl> and <fl>Y</fl> fields.  The default setting is <code>BOUNDING_BOX</code>, which means the pattern will be drawn to scale in realtime.  The most efficient method is USERSPACE, which allows the pattern image to be persistently cached.</p>
+<p>This field declares the coordinate system that is used for values in the <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl> and <fl>Height</fl> fields.  The default setting is <code>BOUNDING_BOX</code>, which means the pattern will be drawn to scale in realtime.  The most efficient method is <code>USERSPACE</code>, which allows the pattern image to be persistently cached.</p>
 <types lookup="VUNIT"/>
       </description>
     </field>

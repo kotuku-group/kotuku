@@ -23,14 +23,14 @@
   <actions>
     <action>
       <name>MoveToBack</name>
-      <comment>Move an effect to the front of the VectorFilter's list order.</comment>
+      <comment>Move an effect to the back of the VectorFilter's list order.</comment>
       <prototype>ERR acMoveToBack(*Object)</prototype>
       <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToFront</name>
-      <comment>Move an object to the front of its current location.</comment>
+      <comment>Move an effect to the front of the VectorFilter's list order.</comment>
       <prototype>ERR acMoveToFront(*Object)</prototype>
       <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
     </action>
@@ -61,7 +61,7 @@
 
     <field>
       <name>Mix</name>
-      <comment>Reference to another effect to be used a mixer with Input.</comment>
+      <comment>Reference to another effect to be used as a mixer with Input.</comment>
       <access read="R" write="S">Read/Set</access>
       <type class="FilterEffect">*FilterEffect</type>
       <description>

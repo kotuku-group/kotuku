@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientContour follows the contours of the target vector path.  <code>Floor</code> controls the colour ramp floor and <code>Multiplier</code> controls the ramp scale.</p></description>
+<p>GradientContour follows the contours of the target vector path.  <code>Floor</code> controls the colour ramp floor and <code>Multiplier</code> controls the ramp scale.</p>
+<p>This gradient operates exclusively in <code>BOUNDING_BOX</code> space.  If <class name="Gradient" field="Units">Gradient.Units</class> is set to <code>USERSPACE</code> it will be reset to <code>BOUNDING_BOX</code> during initialisation.</p></description>
     <source>
       <file path="painters/">gradient_contour.cpp</file>
     </source>
@@ -26,7 +27,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
-<p>The Floor value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt; Floor &lt; Multiplier</code>.</p>
+<p>The Floor value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt;= Floor &lt; Multiplier</code>; the constraint against <fl>Multiplier</fl> is enforced at initialisation.</p>
       </description>
     </field>
 

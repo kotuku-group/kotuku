@@ -18,7 +18,7 @@
 </pre>
 <p>where <code>P(x,y)</code> is the Input image, and <code>P'(x,y)</code> is the Target.  <code>XC(x,y)</code> and <code>YC(x,y)</code> are the component values of the channel designated by the <fl>XChannel</fl> and <fl>YChannel</fl>.  For example, to use the red component of Mix to control displacement in <code>X</code> and the green component to control displacement in <code>Y</code>, set <fl>XChannel</fl> to <code>CMP::RED</code> and <fl>YChannel</fl> to <code>CMP::GREEN</code>.</p>
 <p>The displacement map defines the inverse of the mapping performed.</p>
-<p>The Input image is to remain premultiplied for this filter effect.  The calculations using the pixel values from Mix are performed using non-premultiplied color values.  If the image from Mix consists of premultiplied color values, those values are automatically converted into non-premultiplied color values before performing this operation.</p></description>
+<p>The Input image is to remain premultiplied for this filter effect.  The calculations using the pixel values from Mix are performed using non-premultiplied colour values.  If the image from Mix consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values before performing this operation.</p></description>
     <source>
       <file path="filters/">filter_displacement.cpp</file>
     </source>
