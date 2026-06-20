@@ -197,7 +197,7 @@ constexpr int LUA_GCISRUNNING = 9;
 
 extern int (lua_gc) (lua_State *L, int what, int data = 0);
 
-extern int   (lua_error) (lua_State *L);
+[[noreturn]] extern int   (lua_error) (lua_State *L);
 extern int   (lua_next) (lua_State *L, int idx);
 extern void  (lua_concat) (lua_State *L, int n);
 extern lua_Alloc (lua_getallocf) (lua_State *L, void **ud);
