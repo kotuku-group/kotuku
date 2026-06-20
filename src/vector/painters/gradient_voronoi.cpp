@@ -56,7 +56,7 @@ static ERR GRADIENTVORONOI_Init(extGradientVoronoi *Self)
 -FIELD-
 Floor: Colour ramp floor for Voronoi gradients.
 
-The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of `0 <= Floor <
+The Floor value is used as the floor for Voronoi gradient colour values.  It has a valid range of `0 &lt;= Floor &lt;
 Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/

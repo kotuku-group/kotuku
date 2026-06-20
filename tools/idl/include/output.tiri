@@ -35,16 +35,6 @@ function outputVisibleFields(Class:table, Private:str, Custom:str)
 
    local max_len = 3 + Class.longestFieldType + 1 + 2
 
-   if Class.meta.classID != Class.meta.baseClassID then
-      -- Compute any necessary padding to accommodate private fields in the base class.
-      if Class.meta.publicSize then
-         base_padding = Class.meta.size - Class.meta.publicSize
-         output(f'   uint8_t _padding[{base_padding};')
-      elseif Class.fields then
-         print(f'Class {Class.name} needs to declare a PublicSize in order to support directly accessible fields.')
-      end
-   end
-
    for f in values(Class.fields) do
       if f.virtual then continue end
 

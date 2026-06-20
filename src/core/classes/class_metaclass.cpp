@@ -887,7 +887,7 @@ static void field_setup(extMetaClass *Class)
 
       if (Class->SubFields) {
          std::vector<Field> subFields;
-         uint16_t offset = Class->Size; // Offset starts from sizeof(extClassName)
+         uint16_t offset = Class->Base->Size; // Offset starts from sizeof(extClassName)
          for (unsigned i=0; Class->SubFields[i].Name; i++) {
             bool found = false;
             auto hash = fieldhash(Class->SubFields[i].Name);

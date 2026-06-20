@@ -99,7 +99,7 @@ static ERR GRADIENTDISTAL_SET_Radius(extGradientDistal *Self, Unit &Value)
 -FIELD-
 Floor: Colour ramp floor for distal gradients.
 
-The Floor value is used as the floor for distal gradient colour values.  It has a valid range of `0 <= Floor <
+The Floor value is used as the floor for distal gradient colour values.  It has a valid range of `0 &lt;= Floor &lt;
 Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
@@ -123,8 +123,8 @@ static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
 -FIELD-
 Multiplier: Colour ramp multiplier for distal gradients.
 
-The Multiplier value acts as a multiplier for distal gradient colour values.  It has a valid range of `.01 <
-Multiplier < 10`.
+The Multiplier value acts as a multiplier for distal gradient colour values.  It has a valid range of `.01 &lt;
+Multiplier &lt; 10`.
 
 -END-
 *********************************************************************************************************************/

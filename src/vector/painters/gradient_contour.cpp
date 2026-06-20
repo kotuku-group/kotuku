@@ -31,7 +31,7 @@ static ERR GRADIENTCONTOUR_Init(extGradientContour *Self)
 -FIELD-
 Floor: Colour ramp floor for contour gradients.
 
-The Floor value is used as the floor for contour gradient colour values.  It has a valid range of `0 <= Floor <
+The Floor value is used as the floor for contour gradient colour values.  It has a valid range of `0 &lt;= Floor &lt;
 Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/

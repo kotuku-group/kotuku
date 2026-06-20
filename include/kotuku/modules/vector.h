@@ -1954,7 +1954,7 @@ class objFilterEffect : public Object {
    objFilterEffect * Prev;    // Previous filter in the chain.
    objBitmap * Target;        // Target bitmap for rendering the effect.
    objFilterEffect * Input;   // Reference to another effect to be used as an input source.
-   objFilterEffect * Mix;     // Reference to another effect to be used a mixer with Input.
+   objFilterEffect * Mix;     // Reference to another effect to be used as a mixer with Input.
    Unit X;                    // Primitive X coordinate for the effect.
    Unit Y;                    // Primitive Y coordinate for the effect.
    Unit Width;                // Primitive width of the effect area.
