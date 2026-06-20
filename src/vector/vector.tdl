@@ -472,7 +472,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    int(VSM) SampleMethod         # Method to use for resampling images and patterns.
   ]])
 
-  klass('VectorImage', { src='painters/image.cpp', extended=true }, [[
+  klass('VectorImage', { src='painters/image.cpp', extended=true, output='painters/image_def.cpp' }, [[
     unit X                     # Starting horizontal coordinate
     unit Y                     # Starting vertical coordinate
     obj(Image)   Image
