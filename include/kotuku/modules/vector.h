@@ -936,6 +936,16 @@ class objVectorImage : public Object {
    VSPREAD SpreadMethod;    // Defines image tiling behaviour, if desired.
    ARF     AspectRatio;     // Flags that affect the aspect ratio of the image within its target vector.
 
+#ifdef PRV_VECTORIMAGE
+   objVectorImage() {
+      X            = Unit(0);
+      Y            = Unit(0);
+      Units        = VUNIT::BOUNDING_BOX;
+      SpreadMethod = VSPREAD::CLIP;
+      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
+   }
+#endif
+
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
