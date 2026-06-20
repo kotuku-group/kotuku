@@ -260,7 +260,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    if (deflateInit2(&Self->Zip, level, Z_DEFLATED, -MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY) IS Z_OK) {
       deflateend = true;
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
    }
    else return ERR::InvalidData;
@@ -322,7 +322,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
       // Compress the symbolic link to the zip file, rather than the data
       Self->Zip.next_in   = (Bytef *)symlink.data();
       Self->Zip.avail_in  = symlink.size();
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
       if (deflate(&Self->Zip, Z_NO_FLUSH) != Z_OK) {
          log.warning("Failure during data compression.");
@@ -331,19 +331,19 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
       entry.CRC = GenCRC32(entry.CRC, (APTR)symlink.data(), symlink.size());
    }
    else {
-      struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER };
+      struct acRead read = { .Buffer = Self->Input.data(), .Length = SIZE_COMPRESSION_BUFFER };
       while ((!Action(AC::Read, *file, &read)) and (read.Result > 0)) {
-         Self->Zip.next_in  = Self->Input;
+         Self->Zip.next_in  = Self->Input.data();
          Self->Zip.avail_in = read.Result;
 
          while (Self->Zip.avail_in) {
             if (!Self->Zip.avail_out) {
                // Write out the compression buffer because it is at capacity
-               struct acWrite write = { .Buffer = Self->Output, .Length = SIZE_COMPRESSION_BUFFER };
+               struct acWrite write = { .Buffer = Self->Output.data(), .Length = SIZE_COMPRESSION_BUFFER };
                Action(AC::Write, Self->FileIO, &write);
 
                // Reset the compression buffer
-               Self->Zip.next_out  = Self->Output;
+               Self->Zip.next_out  = Self->Output.data();
                Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
 
                fb.CompressedSize = Self->Zip.total_out;
@@ -357,7 +357,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
             }
          }
 
-         entry.CRC = GenCRC32(entry.CRC, Self->Input, read.Result);
+         entry.CRC = GenCRC32(entry.CRC, Self->Input.data(), read.Result);
       }
    }
 
@@ -431,10 +431,10 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
 
    double writepos = File->Offset;
 
-   struct acRead read = { Self->Input, SIZE_COMPRESSION_BUFFER };
+   struct acRead read = { Self->Input.data(), SIZE_COMPRESSION_BUFFER };
    while ((!Action(AC::Read, Self->FileIO, &read)) and (read.Result > 0)) {
       if (acSeekStart(Self->FileIO, writepos) != ERR::Okay) return log.warning(ERR::Seek);
-      struct acWrite write = { Self->Input, read.Result };
+      struct acWrite write = { Self->Input.data(), read.Result };
       if (Action(AC::Write, Self->FileIO, &write) != ERR::Okay) return log.warning(ERR::Write);
       writepos += write.Result;
 

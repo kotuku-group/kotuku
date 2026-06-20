@@ -100,7 +100,6 @@ static const struct ActionArray clBitmapActions[] = {
    { AC::FreePlacement, BITMAP_FreePlacement },
    { AC::Init, BITMAP_Init },
    { AC::Lock, BITMAP_Lock },
-   { AC::NewObject, BITMAP_NewObject },
    { AC::NewPlacement, BITMAP_NewPlacement },
    { AC::Query, BITMAP_Query },
    { AC::Read, BITMAP_Read },

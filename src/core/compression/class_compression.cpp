@@ -183,7 +183,6 @@ static const int HEAD_LENGTH         = 30;  // END
 class extCompression : public objCompression {
    public:
    OBJECTPTR   FileIO;           // File input/output
-   STRING *    FileList;         // List of all files held in the compression object
    std::string Path;             // Location of the compressed data
    uint8_t     Header[32];       // The first 32 bytes of data from the compressed file (for derived classes only)
    std::string Password;         // Password for the compressed object
@@ -195,15 +194,21 @@ class extCompression : public objCompression {
    z_stream InflateStream;
    z_stream DeflateStream;
    std::list<ZipFile> Files;    // List of files in the archive (must be in order of the archive's entries)
-   uint8_t  *Output;
-   uint8_t  *Input;
-   uint8_t  *OutputBuffer;        // Output buffer for compressed data
-   int   OutputSize;           // Size of OutputBuffer
+   std::vector<uint8_t> Output; // Internal scratch buffer for de/compressed output
+   std::vector<uint8_t> Input;  // Internal scratch buffer for source input
+   std::vector<uint8_t> OutputBuffer; // Reusable buffer for de/compressed stream data
    int   TotalFiles;
    int   FileIndex;
    int16_t   CompressionCount;  // Counter of times that compression has occurred
    bool   Deflating;
    bool   Inflating;
+
+   extCompression() : Output(SIZE_COMPRESSION_BUFFER), Input(SIZE_COMPRESSION_BUFFER) {
+      CompressionLevel = 60; // 60% compression by default
+      Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
+      MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k
+      WindowBits       = MAX_WBITS; // If negative then you get raw compression when dealing with buffers and stream data, i.e. no header information
+   }
 };
 
 static ERR compress_folder(extCompression *, std::string, std::string);
@@ -349,12 +354,12 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
    if (Entry.CompressedSize <= 0) return ERR::Okay;
 
    if (Entry.DeflateMethod IS 0) {
-      struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER-1 };
+      struct acRead read = { .Buffer = Self->Input.data(), .Length = SIZE_COMPRESSION_BUFFER-1 };
       ERR error = Action(AC::Read, Self->FileIO, &read);
       if (!error) {
          Self->Input[read.Result] = 0;
          DeleteFile(DestPath, nullptr);
-         error = CreateLink(DestPath, (CSTRING)Self->Input);
+         error = CreateLink(DestPath, (CSTRING)Self->Input.data());
          if (error IS ERR::NoSupport) error = ERR::Okay;
       }
 
@@ -367,7 +372,7 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
       });
 
       struct acRead read;
-      read.Buffer = Self->Input;
+      read.Buffer = Self->Input.data();
       if (Entry.CompressedSize < SIZE_COMPRESSION_BUFFER) read.Length = Entry.CompressedSize;
       else read.Length = SIZE_COMPRESSION_BUFFER;
 
@@ -376,9 +381,9 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
       if ((error = Action(AC::Read, Self->FileIO, &read)) != ERR::Okay) return error;
       if (read.Result <= 0) return ERR::Read;
 
-      Self->Zip.next_in   = Self->Input;
+      Self->Zip.next_in   = Self->Input.data();
       Self->Zip.avail_in  = read.Result;
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER-1;
 
       err = inflate(&Self->Zip, Z_SYNC_FLUSH);
@@ -390,7 +395,7 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
 
       Self->Output[Entry.OriginalSize] = 0; // !!! We should terminate according to the amount of data decompressed
       DeleteFile(DestPath, nullptr);
-      error = CreateLink(DestPath, (CSTRING)Self->Output);
+      error = CreateLink(DestPath, (CSTRING)Self->Output.data());
       if (error IS ERR::NoSupport) error = ERR::Okay;
       return error;
    }
@@ -418,13 +423,13 @@ static ERR decompress_zip_entry_to_object(extCompression *Self, const ZipFile &E
       int input_len = Entry.CompressedSize;
 
       struct acRead read = {
-         .Buffer = Self->Input,
+         .Buffer = Self->Input.data(),
          .Length = (input_len < SIZE_COMPRESSION_BUFFER) ? input_len : SIZE_COMPRESSION_BUFFER
       };
 
       ERR error;
       while (((error = Action(AC::Read, Self->FileIO, &read)) IS ERR::Okay) and (read.Result > 0)) {
-         struct acWrite write = { .Buffer = Self->Input, .Length = read.Result };
+         struct acWrite write = { .Buffer = Self->Input.data(), .Length = read.Result };
          if (Action(AC::Write, Target, &write) != ERR::Okay) return log.warning(ERR::Write);
 
          input_len -= read.Result;
@@ -445,7 +450,7 @@ static ERR decompress_zip_entry_to_object(extCompression *Self, const ZipFile &E
       });
 
       struct acRead read = {
-         .Buffer = Self->Input,
+         .Buffer = Self->Input.data(),
          .Length = (Entry.CompressedSize < SIZE_COMPRESSION_BUFFER) ? (int)Entry.CompressedSize :
             SIZE_COMPRESSION_BUFFER
       };
@@ -455,9 +460,9 @@ static ERR decompress_zip_entry_to_object(extCompression *Self, const ZipFile &E
       if (read.Result <= 0) return ERR::Read;
       int input_len = Entry.CompressedSize - read.Result;
 
-      Self->Zip.next_in   = Self->Input;
+      Self->Zip.next_in   = Self->Input.data();
       Self->Zip.avail_in  = read.Result;
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
 
       auto err = Z_OK;
@@ -470,7 +475,7 @@ static ERR decompress_zip_entry_to_object(extCompression *Self, const ZipFile &E
          }
 
          struct acWrite write = {
-            .Buffer = Self->Output,
+            .Buffer = Self->Output.data(),
             .Length = (int)(SIZE_COMPRESSION_BUFFER - Self->Zip.avail_out)
          };
          if (Action(AC::Write, Target, &write) != ERR::Okay) return log.warning(ERR::Write);
@@ -480,7 +485,7 @@ static ERR decompress_zip_entry_to_object(extCompression *Self, const ZipFile &E
          Feedback.Progress = Self->Zip.total_out;
          send_feedback(Self, &Feedback);
 
-         Self->Zip.next_out  = Self->Output;
+         Self->Zip.next_out  = Self->Output.data();
          Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
 
          if ((Self->Zip.avail_in <= 0) and (input_len > 0)) {
@@ -491,7 +496,7 @@ static ERR decompress_zip_entry_to_object(extCompression *Self, const ZipFile &E
             if (read.Result <= 0) return ERR::Read;
             input_len -= read.Result;
 
-            Self->Zip.next_in  = Self->Input;
+            Self->Zip.next_in  = Self->Input.data();
             Self->Zip.avail_in = read.Result;
          }
       }
@@ -863,16 +868,10 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
          return ERR::BufferOverflow;
       }
    }
-   else if ((output = Self->OutputBuffer)) {
-      outputsize = Self->OutputSize;
-   }
    else {
-      Self->OutputSize = 32 * 1024;
-      if (AllocMemory(Self->OutputSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) {
-         return ERR::AllocMemory;
-      }
-      output = Self->OutputBuffer;
-      outputsize = Self->OutputSize;
+      if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(32 * 1024);
+      output = Self->OutputBuffer.data();
+      outputsize = Self->OutputBuffer.size();
    }
 
    log.trace("Compressing Input: %p, Len: %d to buffer of size %d bytes.", Args->Input, Args->Length, outputsize);
@@ -970,8 +969,9 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
       outputsize = Args->OutputSize;
       if (outputsize < Self->MinOutputSize) return log.warning(ERR::BufferOverflow);
    }
-   else if ((output = Self->OutputBuffer)) {
-      outputsize = Self->OutputSize;
+   else if (!Self->OutputBuffer.empty()) {
+      output = Self->OutputBuffer.data();
+      outputsize = Self->OutputBuffer.size();
    }
    else return log.warning(ERR::FieldNotSet);
 
@@ -1010,10 +1010,9 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
 
    // Free the output buffer if it is quite large
 
-   if ((Self->OutputBuffer) and (Self->OutputSize > 64 * 1024)) {
-      FreeResource(Self->OutputBuffer);
-      Self->OutputBuffer = nullptr;
-      Self->OutputSize = 0;
+   if (Self->OutputBuffer.size() > 64 * 1024) {
+      Self->OutputBuffer.clear();
+      Self->OutputBuffer.shrink_to_fit();
    }
 
    deflateEnd(&Self->DeflateStream);
@@ -1117,16 +1116,10 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
       outputsize = Args->OutputSize;
       if (outputsize < Self->MinOutputSize) return log.warning(ERR::BufferOverflow);
    }
-   else if ((output = Self->OutputBuffer)) {
-      outputsize = Self->OutputSize;
-   }
    else {
-      Self->OutputSize = 32 * 1024;
-      if (AllocMemory(Self->OutputSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) {
-         return ERR::AllocMemory;
-      }
-      output = Self->OutputBuffer;
-      outputsize = Self->OutputSize;
+      if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(32 * 1024);
+      output = Self->OutputBuffer.data();
+      outputsize = Self->OutputBuffer.size();
    }
 
    Self->InflateStream.next_in  = (Bytef *)Args->Input;
@@ -1666,9 +1659,9 @@ static ERR COMPRESSION_Flush(extCompression *Self)
 
       int length, zerror;
       if ((length = SIZE_COMPRESSION_BUFFER - Self->Zip.avail_out) > 0) {
-         struct acWrite write = { Self->Output, length };
+         struct acWrite write = { Self->Output.data(), length };
          if (Action(AC::Write, Self->FileIO, &write) != ERR::Okay) return ERR::Write;
-         Self->Zip.next_out  = Self->Output;
+         Self->Zip.next_out  = Self->Output.data();
          Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
       }
 
@@ -1710,9 +1703,6 @@ static ERR COMPRESSION_Free(extCompression *Self)
 
    if (Self->Inflating)    { inflateEnd(&Self->InflateStream); Self->Inflating = false; }
    if (Self->Deflating)    { deflateEnd(&Self->DeflateStream); Self->Deflating = false; }
-   if (Self->OutputBuffer) { FreeResource(Self->OutputBuffer); Self->OutputBuffer = nullptr; }
-   if (Self->Input)        { FreeResource(Self->Input); Self->Input = nullptr; }
-   if (Self->Output)       { FreeResource(Self->Output); Self->Output = nullptr; }
    if (Self->FileIO)       { FreeResource(Self->FileIO); Self->FileIO = nullptr; }
 
    return ERR::Okay;
@@ -1815,23 +1805,6 @@ static ERR COMPRESSION_Init(extCompression *Self)
          return log.warning(ERR::File);
       }
    }
-}
-
-//********************************************************************************************************************
-
-static ERR COMPRESSION_NewObject(extCompression *Self)
-{
-   if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output)) {
-      if (!AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input)) {
-         Self->CompressionLevel = 60; // 60% compression by default
-         Self->Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
-         Self->MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k
-         Self->WindowBits = MAX_WBITS; // If negative then you get raw compression when dealing with buffers and stream data, i.e. no header information
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::AllocMemory;
 }
 
 /*********************************************************************************************************************

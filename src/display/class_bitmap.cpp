@@ -1483,79 +1483,6 @@ static ERR BITMAP_Lock(extBitmap *Self)
 #endif
 }
 
-//********************************************************************************************************************
-
-static ERR BITMAP_NewObject(extBitmap *Self)
-{
-   constexpr int CBANK = 5;
-   RGB8 *RGB;
-   int i, j;
-
-   Self->Palette      = &Self->prvPaletteArray;
-   Self->ColourFormat = &Self->prvColourFormat;
-   Self->ColourSpace  = CS::SRGB;
-   Self->BlendMode    = BLM::AUTO;
-   Self->Opacity      = 255;
-
-   // Generate the standard colour palette
-
-   Self->Palette = &Self->prvPaletteArray;
-   Self->Palette->AmtColours = 256;
-
-   RGB = Self->Palette->Col;
-   RGB++; // Skip the black pixel at the start
-
-   for (i=0; i < 6; i++) {
-      for (j=0; j < CBANK; j++) {
-         RGB[(i*CBANK) + j].Red   = (i * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 0;
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-      }
-   }
-
-   for (i=6; i < 12; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Red   = ((i-6) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 51;
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-      }
-   }
-
-   for (i=12; i < 18; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-12) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 102;
-      }
-   }
-
-   for (i=18; i < 24; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-18) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 153;
-      }
-   }
-
-   for (i=24; i < 30; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-24) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 204;
-      }
-   }
-
-   for (i=30; i < 36; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-30) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 255;
-      }
-   }
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -2927,6 +2854,77 @@ static ERR CalculatePixelRoutines(extBitmap *Self)
    }
 
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extBitmap::extBitmap()
+{
+   constexpr int CBANK = 5;
+   RGB8 *RGB;
+   int i, j;
+
+   Palette      = &prvPaletteArray;
+   ColourFormat = &prvColourFormat;
+   ColourSpace  = CS::SRGB;
+   BlendMode    = BLM::AUTO;
+   Opacity      = 255;
+
+   // Generate the standard colour palette
+
+   Palette = &prvPaletteArray;
+   Palette->AmtColours = 256;
+
+   RGB = Palette->Col;
+   RGB++; // Skip the black pixel at the start
+
+   for (i=0; i < 6; i++) {
+      for (j=0; j < CBANK; j++) {
+         RGB[(i*CBANK) + j].Red   = (i * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 0;
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+      }
+   }
+
+   for (i=6; i < 12; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Red   = ((i-6) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 51;
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+      }
+   }
+
+   for (i=12; i < 18; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-12) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 102;
+      }
+   }
+
+   for (i=18; i < 24; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-18) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 153;
+      }
+   }
+
+   for (i=24; i < 30; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-24) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 204;
+      }
+   }
+
+   for (i=30; i < 36; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-30) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 255;
+      }
+   }
 }
 
 //********************************************************************************************************************

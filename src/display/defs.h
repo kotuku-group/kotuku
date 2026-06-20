@@ -659,4 +659,6 @@ class extBitmap : public objBitmap {
       int prvGLPixel;
       int prvGLFormat;
    #endif
+
+   extBitmap();
 };

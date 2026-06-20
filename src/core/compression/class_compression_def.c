@@ -97,7 +97,6 @@ static const struct ActionArray clCompressionActions[] = {
    { AC::Free, COMPRESSION_Free },
    { AC::FreePlacement, COMPRESSION_FreePlacement },
    { AC::Init, COMPRESSION_Init },
-   { AC::NewObject, COMPRESSION_NewObject },
    { AC::NewPlacement, COMPRESSION_NewPlacement },
    { AC::NIL, nullptr }
 };
