@@ -792,7 +792,10 @@ class extVectorScene : public objVectorScene {
    bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
 
-   extVectorScene() : ShareVersion(1), SubtreeDirty(true) { }
+   extVectorScene() : ShareVersion(1), SubtreeDirty(true) {
+      Gamma = 1;
+      SampleMethod = VSM::AUTO;
+   }
 
    // Returns the rasteriser gamma table for the scene's current Gamma value; one shared LUT serves
    // every rasteriser in the scene.  Returns nullptr for identity gamma, which restores the

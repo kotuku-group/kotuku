@@ -1553,6 +1553,8 @@ class objController : public Object {
    double RightStickY;    // Right analog stick value for Y axis, between -1.0 and 1.0.
    CON    Buttons;        // Button values expressed as bit-fields.
    int    Port;           // The port number assigned to the controller.
+   public:
+   objController() : Port(-1) { }
 
    // Action stubs
 

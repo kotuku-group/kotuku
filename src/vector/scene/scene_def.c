@@ -53,7 +53,6 @@ static const struct ActionArray clVectorSceneActions[] = {
    { AC::Free, VECTORSCENE_Free },
    { AC::FreePlacement, VECTORSCENE_FreePlacement },
    { AC::Init, VECTORSCENE_Init },
-   { AC::NewObject, VECTORSCENE_NewObject },
    { AC::NewPlacement, VECTORSCENE_NewPlacement },
    { AC::Redimension, VECTORSCENE_Redimension },
    { AC::Reset, VECTORSCENE_Reset },

@@ -538,16 +538,6 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORSCENE_NewObject(extVectorScene *Self)
-{
-   Self->SampleMethod = VSM::AUTO;
-
-   // Please refer to the Reset action for setting variable defaults
-   return VECTORSCENE_Reset(Self);
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redimension: Redefines the size of the page.

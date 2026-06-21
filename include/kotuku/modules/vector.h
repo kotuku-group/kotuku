@@ -671,6 +671,8 @@ class objVectorColour : public Object {
    double Green;  // The green component value.
    double Blue;   // The blue component value.
    double Alpha;  // The alpha component value.
+   public:
+   objVectorColour() : Alpha(1.0) {}
 
    // Action stubs
 
