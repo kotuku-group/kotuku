@@ -95,6 +95,12 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
          else if (!node->BasePath.empty()) {
             auto t = node->Transform * Transform;
 
+            // Flatten any curved geometry (e.g. ellipses) to the resolution of the final composed transform.
+            // Without this the path is flattened at scale 1.0 and any subsequent upscale (such as a bounding-box
+            // clip) produces visibly faceted curves.
+
+            node->BasePath.approximation_scale(t.scale());
+
             if (node->ClipRule IS VFR::NON_ZERO) Raster.filling_rule(agg::fill_non_zero);
             else if (node->ClipRule IS VFR::EVEN_ODD) Raster.filling_rule(agg::fill_even_odd);
 

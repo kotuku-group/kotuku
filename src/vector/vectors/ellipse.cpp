@@ -54,40 +54,29 @@ static void generate_ellipse(extVectorEllipse *Vector, agg::path_storage &Path)
       }
    }
 
-#if 0
-   // Create an ellipse using bezier arcs.  Unfortunately the precision of the existing arc code
-   // is not good enough to make this viable at the current time.
-   // Top -> right -> bottom -> left -> top
+   if (Vector->eVertices >= 3) {
+      // The client has explicitly requested a polygonal approximation with a fixed number of vertices.
 
-   Path.move_to(cx, cy-ry);
-   Path.arc_to(rx, ry, 0 /* angle */, 0 /* large */, 1 /* sweep */, cx+rx, cy);
-   Path.arc_to(rx, ry, 0, 0, 1, cx, cy+ry);
-   Path.arc_to(rx, ry, 0, 0, 1, cx-rx, cy);
-   Path.arc_to(rx, ry, 0, 0, 1, cx, cy-ry);
-   Path.close_polygon();
-#else
-   uint32_t vertices;
-   if (Vector->eVertices >= 3) vertices = Vector->eVertices;
+      uint32_t vertices = Vector->eVertices;
+      for (uint32_t v=0; v < vertices; v++) {
+         double angle = double(v) / double(vertices) * 2.0 * agg::pi;
+         double x = cx + cos(angle) * rx;
+         double y = cy + sin(angle) * ry;
+         if (v IS 0) Path.move_to(x, y);
+         else Path.line_to(x, y);
+      }
+      Path.close_polygon();
+   }
    else {
-      // Calculate the number of vertices needed for a smooth result, based on the final scale of the ellipse
-      // when parent views are taken into consideration.
-      auto scale = Vector->Transform.scale();
-      double ra = (fabs(rx * scale) + fabs(ry * scale)) * 0.5;
-      double da = acos(ra / (ra + 0.125 / scale)) * 2.0;
-      vertices = agg::uround(2.0 * agg::pi / da);
-      if (vertices < 3) vertices = 3; // Because you need at least 3 vertices to create a shape.
-   }
+      // Generate the ellipse from a single full-sweep cubic bezier arc.  Supplying the centre and radii
+      // directly avoids the endpoint-solving instability of stitching four separate arc_to() segments and
+      // yields a tangent-continuous result with a maximum radial error of ~0.03% of the radius.  The curve
+      // is flattened to the appropriate resolution by the downstream conv_curve machinery.
 
-   for (uint32_t v=0; v < vertices; v++) {
-      double angle = double(v) / double(vertices) * 2.0 * agg::pi;
-      //if (m_cw) angle = 2.0 * agg::pi - angle;
-      double x = cx + cos(angle) * rx;
-      double y = cy + sin(angle) * ry;
-      if (v == 0) Path.move_to(x, y);
-      else Path.line_to(x, y);
+      agg::bezier_arc arc(cx, cy, rx, ry, 0.0, 2.0 * agg::pi);
+      Path.concat_path(arc);
+      Path.close_polygon();
    }
-   Path.close_polygon();
-#endif
 
    Vector->Bounds = { cx - rx, cy - ry, cx + rx, cy + ry };
 
