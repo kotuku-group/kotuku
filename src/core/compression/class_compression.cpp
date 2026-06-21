@@ -55,6 +55,8 @@ This code is based on the work of Jean-loup Gailly and Mark Adler.
 #include <kotuku/main.h>
 #include <sstream>
 
+#include "zstream.h"
+
 //********************************************************************************************************************
 // Central folder structure for each archived file.  This appears at the end of the zip file.
 
@@ -191,8 +193,8 @@ class extCompression : public objCompression {
 
    // Zip only fields
    z_stream Zip;
-   z_stream InflateStream;
-   z_stream DeflateStream;
+   ZStream  Inflate;            // Streaming decompression state (DecompressStream* methods)
+   ZStream  Deflate;            // Streaming compression state (CompressStream* methods)
    std::list<ZipFile> Files;    // List of files in the archive (must be in order of the archive's entries)
    std::vector<uint8_t> Output; // Internal scratch buffer for de/compressed output
    std::vector<uint8_t> Input;  // Internal scratch buffer for source input
@@ -200,8 +202,6 @@ class extCompression : public objCompression {
    int   TotalFiles;
    int   FileIndex;
    int16_t   CompressionCount;  // Counter of times that compression has occurred
-   bool   Deflating;
-   bool   Inflating;
 
    extCompression() : Output(SIZE_COMPRESSION_BUFFER), Input(SIZE_COMPRESSION_BUFFER) {
       CompressionLevel = 60; // 60% compression by default
@@ -753,21 +753,13 @@ static ERR COMPRESSION_CompressStreamStart(extCompression *Self)
 {
    kt::Log log;
 
-   if (Self->Deflating) {
-      deflateEnd(&Self->DeflateStream);
-      Self->Deflating = false;
-   }
-
    int level = Self->CompressionLevel / 10;
    if (level < 0) level = 0;
    else if (level > 9) level = 9;
 
-   clearmem(&Self->DeflateStream, sizeof(Self->DeflateStream));
-
    Self->TotalOutput = 0;
-   if (auto err = deflateInit2(&Self->DeflateStream, level, Z_DEFLATED, Self->WindowBits, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY); err IS Z_OK) {
+   if (Self->Deflate.deflate_init(level, Self->WindowBits) IS Z_OK) {
       log.trace("Compression stream initialised.");
-      Self->Deflating = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::InvalidCompression);
@@ -854,10 +846,10 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
 
    if ((!Args) or (!Args->Input) or (!Args->Callback)) return log.warning(ERR::NullArgs);
 
-   if (!Self->Deflating) return log.warning(ERR::InvalidState);
+   if (!Self->Deflate.active()) return log.warning(ERR::InvalidState);
 
-   Self->DeflateStream.next_in   = (Bytef *)Args->Input;
-   Self->DeflateStream.avail_in  = Args->Length;
+   Self->Deflate->next_in   = (Bytef *)Args->Input;
+   Self->Deflate->avail_in  = Args->Length;
 
    APTR output;
    int err, outputsize;
@@ -880,18 +872,18 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
    // output buffer is not large enough (so keep calling until avail_out > 0).
 
    ERR error;
-   Self->DeflateStream.avail_out = 0;
-   while (Self->DeflateStream.avail_out IS 0) {
-      Self->DeflateStream.next_out  = (Bytef *)output;
-      Self->DeflateStream.avail_out = outputsize;
-      if ((err = deflate(&Self->DeflateStream, Z_NO_FLUSH))) {
-         deflateEnd(&Self->DeflateStream);
+   Self->Deflate->avail_out = 0;
+   while (Self->Deflate->avail_out IS 0) {
+      Self->Deflate->next_out  = (Bytef *)output;
+      Self->Deflate->avail_out = outputsize;
+      if ((err = deflate(Self->Deflate.get(), Z_NO_FLUSH))) {
+         Self->Deflate.reset();
          error = ERR::BufferOverflow;
          break;
       }
       else error = ERR::Okay;
 
-      auto len = outputsize - Self->DeflateStream.avail_out; // Get number of compressed bytes that were output
+      auto len = outputsize - Self->Deflate->avail_out; // Get number of compressed bytes that were output
 
       if (len > 0) {
          Self->TotalOutput += len;
@@ -960,7 +952,7 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
    kt::Log log;
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
-   if (!Self->Deflating) return ERR::Okay;
+   if (!Self->Deflate.active()) return ERR::Okay;
 
    APTR output;
    int outputsize;
@@ -977,32 +969,32 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
 
    log.trace("Output Size: %d", outputsize);
 
-   Self->DeflateStream.next_in   = 0;
-   Self->DeflateStream.avail_in  = 0;
-   Self->DeflateStream.avail_out = 0;
+   Self->Deflate->next_in   = 0;
+   Self->Deflate->avail_in  = 0;
+   Self->Deflate->avail_out = 0;
 
    ERR error;
    int err = Z_OK;
-   while ((Self->DeflateStream.avail_out IS 0) and (err IS Z_OK)) {
-      Self->DeflateStream.next_out  = (Bytef *)output;
-      Self->DeflateStream.avail_out = outputsize;
-      if ((err = deflate(&Self->DeflateStream, Z_FINISH)) and (err != Z_STREAM_END)) {
+   while ((Self->Deflate->avail_out IS 0) and (err IS Z_OK)) {
+      Self->Deflate->next_out  = (Bytef *)output;
+      Self->Deflate->avail_out = outputsize;
+      if ((err = deflate(Self->Deflate.get(), Z_FINISH)) and (err != Z_STREAM_END)) {
          error = log.warning(ERR::BufferOverflow);
          break;
       }
 
-      Self->TotalOutput += outputsize - Self->DeflateStream.avail_out;
+      Self->TotalOutput += outputsize - Self->Deflate->avail_out;
 
       if (Args->Callback->isC()) {
          kt::SwitchContext context(Args->Callback->Context);
          auto routine = (ERR (*)(extCompression *, APTR, int, APTR Meta))Args->Callback->Routine;
-         error = routine(Self, output, outputsize - Self->DeflateStream.avail_out, Args->Callback->Meta);
+         error = routine(Self, output, outputsize - Self->Deflate->avail_out, Args->Callback->Meta);
       }
       else if (Args->Callback->isScript()) {
          if (sc::Call(*Args->Callback, std::to_array<ScriptArg>({
             { "Compression",  Self,   FD_OBJECTPTR },
             { "Output",       output, FD_BUFFER },
-            { "OutputLength", int64_t(outputsize - Self->DeflateStream.avail_out), FD_INT64|FD_BUFSIZE }
+            { "OutputLength", int64_t(outputsize - Self->Deflate->avail_out), FD_INT64|FD_BUFSIZE }
          }), error) != ERR::Okay) error = ERR::Function;
       }
       else error = ERR::Okay;
@@ -1015,9 +1007,7 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
       Self->OutputBuffer.shrink_to_fit();
    }
 
-   deflateEnd(&Self->DeflateStream);
-   clearmem(&Self->DeflateStream, sizeof(Self->DeflateStream));
-   Self->Deflating = false;
+   Self->Deflate.reset();
    return error;
 }
 
@@ -1048,15 +1038,10 @@ static ERR COMPRESSION_DecompressStreamStart(extCompression *Self)
 {
    kt::Log log;
 
-   if (Self->Inflating) { inflateEnd(&Self->InflateStream); Self->Inflating = false; }
-
-   clearmem(&Self->InflateStream, sizeof(Self->InflateStream));
-
    Self->TotalOutput = 0;
 
-   if (auto err = inflateInit2(&Self->InflateStream, Self->WindowBits); err IS Z_OK) {
+   if (Self->Inflate.inflate_init(Self->WindowBits) IS Z_OK) {
       log.trace("Decompression stream initialised.");
-      Self->Inflating = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::InvalidCompression);
@@ -1107,7 +1092,7 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
    kt::Log log;
 
    if ((!Args) or (!Args->Input) or (!Args->Callback)) return log.warning(ERR::NullArgs);
-   if (!Self->Inflating) return ERR::Okay; // Decompression is complete
+   if (!Self->Inflate.active()) return ERR::Okay; // Decompression is complete
 
    APTR output;
    int outputsize;
@@ -1122,20 +1107,20 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
       outputsize = Self->OutputBuffer.size();
    }
 
-   Self->InflateStream.next_in  = (Bytef *)Args->Input;
-   Self->InflateStream.avail_in = Args->Length;
+   Self->Inflate->next_in  = (Bytef *)Args->Input;
+   Self->Inflate->avail_in = Args->Length;
 
    // Keep looping until Z_STREAM_END or an error is returned
 
    ERR error = ERR::Okay;
    int result = Z_OK;
-   while ((result IS Z_OK) and (Self->InflateStream.avail_in > 0)) {
-      Self->InflateStream.next_out  = (Bytef *)output;
-      Self->InflateStream.avail_out = outputsize;
-      result = inflate(&Self->InflateStream, Z_SYNC_FLUSH);
+   while ((result IS Z_OK) and (Self->Inflate->avail_in > 0)) {
+      Self->Inflate->next_out  = (Bytef *)output;
+      Self->Inflate->avail_out = outputsize;
+      result = inflate(Self->Inflate.get(), Z_SYNC_FLUSH);
 
       if ((result) and (result != Z_STREAM_END)) {
-         error = convert_zip_error(&Self->InflateStream, result);
+         error = convert_zip_error(Self->Inflate.get(), result);
          break;
       }
 
@@ -1143,7 +1128,7 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
 
       // Write out the decompressed data
 
-      int len = outputsize - Self->InflateStream.avail_out;
+      int len = outputsize - Self->Inflate->avail_out;
       if (len > 0) {
          if (Args->Callback->isC()) {
             kt::SwitchContext context(Args->Callback->Context);
@@ -1166,9 +1151,8 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
       if (error != ERR::Okay) break;
 
       if (result IS Z_STREAM_END) { // Decompression is complete, auto-perform DecompressStreamEnd()
-         inflateEnd(&Self->InflateStream);
-         Self->Inflating = false;
-         Self->TotalOutput = Self->InflateStream.total_out;
+         Self->TotalOutput = Self->Inflate->total_out;
+         Self->Inflate.reset();
          break;
       }
    }
@@ -1199,13 +1183,12 @@ mutates-object, callback-inlines
 
 static ERR COMPRESSION_DecompressStreamEnd(extCompression *Self, struct cmp::DecompressStreamEnd *Args)
 {
-   if (!Self->Inflating) return ERR::Okay; // If not inflating, not a problem
+   if (!Self->Inflate.active()) return ERR::Okay; // If not inflating, not a problem
 
    if ((!Args) or (!Args->Callback)) return ERR::NullArgs;
 
-   Self->TotalOutput = Self->InflateStream.total_out;
-   inflateEnd(&Self->InflateStream);
-   Self->Inflating = false;
+   Self->TotalOutput = Self->Inflate->total_out;
+   Self->Inflate.reset();
    return ERR::Okay;
 }
 
@@ -1701,8 +1684,6 @@ static ERR COMPRESSION_Free(extCompression *Self)
       Self->Feedback.clear();
    }
 
-   if (Self->Inflating)    { inflateEnd(&Self->InflateStream); Self->Inflating = false; }
-   if (Self->Deflating)    { deflateEnd(&Self->DeflateStream); Self->Deflating = false; }
    if (Self->FileIO)       { FreeResource(Self->FileIO); Self->FileIO = nullptr; }
 
    return ERR::Okay;

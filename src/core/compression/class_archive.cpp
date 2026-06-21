@@ -36,14 +36,13 @@ constexpr int LEN_ARCHIVE = 8; // "archive:" length
 
 struct prvFileArchive {
    ZipFile  Info;
-   z_stream Stream;
+   ZStream  Inflate;      // Streaming decompression state for the active archive entry
    extFile  *FileStream;
    extCompression *Archive;
    uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  *ReadPtr;      // Current position within OutputBuffer
    int      InputLength;
-   bool     Inflating;
    bool     InvalidState; // Set to true if the archive is corrupt.
 };
 
@@ -65,9 +64,9 @@ static void reset_state(extFile *Self)
 {
    auto prv = (prvFileArchive *)Self->DerivedPtr;
 
-   if (prv->Inflating) { inflateEnd(&prv->Stream); prv->Inflating = false; }
+   prv->Inflate.reset();
 
-   prv->Stream.avail_in = 0;
+   prv->Inflate->avail_in = 0;
    prv->ReadPtr = nullptr;
    Self->Position = 0;
 }
@@ -96,8 +95,7 @@ static ERR seek_to_item(extFile *Self)
          Self->Size = item.CompressedSize;
          return ERR::Okay;
       }
-      else if ((item.DeflateMethod IS 8) and (!inflateInit2(&prv->Stream, -MAX_WBITS))) {
-         prv->Inflating = true;
+      else if ((item.DeflateMethod IS 8) and (!prv->Inflate.inflate_init(-MAX_WBITS))) {
          Self->Size = item.OriginalSize;
          return ERR::Okay;
       }
@@ -182,7 +180,6 @@ static ERR ARCHIVE_Free(extFile *Self)
 
    if (prv) {
       if (prv->FileStream) { FreeResource(prv->FileStream); prv->FileStream = nullptr; }
-      if (prv->Inflating)  { inflateEnd(&prv->Stream); prv->Inflating = false; }
       prv->~prvFileArchive();
    }
 
@@ -313,7 +310,7 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
       //log.trace("Decompressing %d bytes to %d, buffer size %d", zf.CompressedSize, zf.OriginalSize, Args->Length);
 
-      if ((prv->Inflating) and (!prv->Stream.avail_in)) { // Initial setup
+      if ((prv->Inflate.active()) and (!prv->Inflate->avail_in)) { // Initial setup
          struct acRead read = {
             .Buffer = prv->InputBuffer,
             .Length = (zf.CompressedSize < SIZE_COMPRESSION_BUFFER) ? (int)zf.CompressedSize : SIZE_COMPRESSION_BUFFER
@@ -322,18 +319,18 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
          if (Action(AC::Read, prv->FileStream, &read) != ERR::Okay) return ERR::Read;
          if (read.Result <= 0) return ERR::Read;
 
-         prv->ReadPtr          = prv->OutputBuffer;
-         prv->InputLength      = zf.CompressedSize - read.Result;
-         prv->Stream.next_in   = prv->InputBuffer;
-         prv->Stream.avail_in  = read.Result;
-         prv->Stream.next_out  = prv->OutputBuffer;
-         prv->Stream.avail_out = SIZE_COMPRESSION_BUFFER;
+         prv->ReadPtr            = prv->OutputBuffer;
+         prv->InputLength        = zf.CompressedSize - read.Result;
+         prv->Inflate->next_in   = prv->InputBuffer;
+         prv->Inflate->avail_in  = read.Result;
+         prv->Inflate->next_out  = prv->OutputBuffer;
+         prv->Inflate->avail_out = SIZE_COMPRESSION_BUFFER;
       }
 
       while (true) {
          // Output any buffered data to the client first
-         if (prv->ReadPtr < (uint8_t *)prv->Stream.next_out) {
-            int len = (int)(prv->Stream.next_out - (Bytef *)prv->ReadPtr);
+         if (prv->ReadPtr < (uint8_t *)prv->Inflate->next_out) {
+            int len = (int)(prv->Inflate->next_out - (Bytef *)prv->ReadPtr);
             if (len > Args->Length) len = Args->Length;
             copymem(prv->ReadPtr, (char *)Args->Buffer + Args->Result, len);
             prv->ReadPtr   += len;
@@ -343,27 +340,27 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
          // Stop if necessary
 
-         if (prv->Stream.total_out IS zf.OriginalSize) break; // All data decompressed
+         if (prv->Inflate->total_out IS zf.OriginalSize) break; // All data decompressed
          if (Args->Result >= Args->Length) return ERR::Okay;
-         if (!prv->Inflating) return ERR::Okay;
+         if (!prv->Inflate.active()) return ERR::Okay;
 
          // Reset the output buffer and decompress more data
 
-         prv->Stream.next_out  = prv->OutputBuffer;
-         prv->Stream.avail_out = SIZE_COMPRESSION_BUFFER;
+         prv->Inflate->next_out  = prv->OutputBuffer;
+         prv->Inflate->avail_out = SIZE_COMPRESSION_BUFFER;
 
-         int result = inflate(&prv->Stream, (prv->Stream.avail_in) ? Z_SYNC_FLUSH : Z_FINISH);
+         int result = inflate(prv->Inflate.get(), (prv->Inflate->avail_in) ? Z_SYNC_FLUSH : Z_FINISH);
 
          prv->ReadPtr = prv->OutputBuffer;
 
          if ((result) and (result != Z_STREAM_END)) {
             prv->InvalidState = true;
-            return convert_zip_error(&prv->Stream, result);
+            return convert_zip_error(prv->Inflate.get(), result);
          }
 
          // Read more data from the source if necessary
 
-         if ((prv->Stream.avail_in <= 0) and (prv->InputLength > 0) and (result != Z_STREAM_END)) {
+         if ((prv->Inflate->avail_in <= 0) and (prv->InputLength > 0) and (result != Z_STREAM_END)) {
             struct acRead read = { .Buffer = prv->InputBuffer };
 
             if (prv->InputLength < SIZE_COMPRESSION_BUFFER) read.Length = prv->InputLength;
@@ -373,15 +370,12 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
             if (read.Result <= 0) return ERR::Read;
 
             prv->InputLength -= read.Result;
-            prv->Stream.next_in  = prv->InputBuffer;
-            prv->Stream.avail_in = read.Result;
+            prv->Inflate->next_in  = prv->InputBuffer;
+            prv->Inflate->avail_in = read.Result;
          }
       }
 
-      if (prv->Inflating) {
-         inflateEnd(&prv->Stream);
-         prv->Inflating = false;
-      }
+      prv->Inflate.reset();
 
       return ERR::Okay;
    }
