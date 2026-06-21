@@ -22,6 +22,8 @@ local glGamma = 1.0
 local glActiveGradient
 local MIN_RADIUS <const> = 2
 local MAX_RADIUS <const> = 400
+local MIN_GAMMA <const> = 0.1
+local MAX_GAMMA <const> = 5
 
 -- Corner colours for the Gouraud quad, mutated interactively then rebuilt into the mesh.  Each entry is
 -- { r, g, b }.  Order: top-left, top-right, bottom-left, bottom-right.
@@ -415,6 +417,23 @@ function buildScene()
          activate = function(Widget:table, Value:num)
             glRadius = Value
             radiusChanged(Value)
+            gradientVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   slGamma = gui.slider({
+      target = viewport,
+      label  = 'Gamma:',
+      value  = glGamma,
+      min    = MIN_GAMMA,
+      max    = MAX_GAMMA,
+      x      = slRadius.viewport.x + slRadius.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget:table, Value:num)
+            glGamma = Value
+            glActiveGradient.gamma = glGamma
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }
