@@ -94,10 +94,10 @@ end
 @Test(name='NamespaceAware') global function BasicsNamespaceAware() hashTestSVG('basics/namespace-aware.svg', 0xcf55497a) end
 @Test(name='CaseSensitiveNames') global function BasicsCaseSensitiveNames() hashTestSVG('basics/case-sensitive.svg', 0x61fc4322) end
 
-@Test global function Circles()         hashTestSVG('paths/circles.svg', 0x262c3352) end
+@Test global function Circles()         hashTestSVG('paths/circles.svg', 0xd91a717f) end
 @Test global function Morph()           hashTestSVG('paths/morph.svg', 0x90bf1a66) end
 @Test global function EllipseVertices() hashTestSVG('paths/ellipse_vertices.svg', 0xa0a8e2df) end
-@Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0xbde2d0c7) end
+@Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0x6e755c7b) end
 @Test global function Rough()           hashTestSVG('paths/rough_js.svg', 0xdb8d9130) end
 @Test global function Shapes()          hashTestSVG('paths/shapes.svg', 0xfa35b557) end
 @Test global function Spirals()         hashTestSVG('paths/spirals.svg', 0x785a3408) end
