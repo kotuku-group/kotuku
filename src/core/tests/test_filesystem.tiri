@@ -130,7 +130,7 @@ end
    fl = obj.new('file', { src=glRawPath, flags=FL_READ|FL_WRITE } )
    buf = string.alloc(fl.size)
    err, result = fl.acRead(buf, fl.size)
-   assert(err is ERR_Okay, 'Failed to read file ' .. fl.location)
+   assert(err is ERR_Okay, 'Failed to read file ' .. fl.path)
 
    fl.acSeek(POS_START, 0)
    fl.acWrite(buf:reverse())

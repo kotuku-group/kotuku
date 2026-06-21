@@ -739,7 +739,7 @@ static ERR GET_Viewport(extSVG *Self, OBJECTPTR *Value)
 static const FieldArray clSVGFields[] = {
    { "Target",    FDF_OBJECT|FDF_RI, nullptr, SET_Target },
    { "Path",      FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
-   { "Src",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Src",       FDF_SYNONYM },
    { "Title",     FDF_CPPSTRING|FDF_RW },
    { "Statement", FDF_CPPSTRING|FDF_RW },
    { "Colour",    FDF_CPPSTRING|FDF_RW },

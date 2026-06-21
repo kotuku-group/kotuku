@@ -711,10 +711,10 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 static const FieldArray clScriptFields[] = {
    { "Procedure",    FDF_CPPSTRING|FDF_RW },
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
-   { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
    { "ErrorMessage", FDF_CPPSTRING|FDF_RW },
    { "Statement",    FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
-   { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, nullptr, SET_String }, // Deprecated
+   { "String",       FDF_SYNONYM }, // Deprecated
    { "WorkingPath",  FDF_CPPSTRING|FDF_RW, GET_WorkingPath },
    { "Target",       FDF_OBJECTID|FDF_RW },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },

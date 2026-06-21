@@ -2444,6 +2444,7 @@ static const FieldArray clFields[] = {
    { "LaunchPath",      FDF_CPPSTRING|FDF_RW },
    { "Name",            FDF_CPPSTRING|FDF_RW },
    { "Location",        FDF_CPPSTRING|FDF_RW, nullptr, SET_Location },
+   { "Src",             FDF_SYNONYM },
    { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "ProcessPath",     FDF_CPPSTRING|FDF_R },
    { "TimeOut",         FDF_DOUBLE|FDF_RW },
@@ -2461,8 +2462,6 @@ static const FieldArray clFields[] = {
    { "InputCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN
    { "OutputCallback",  FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_OutputCallback,  SET_OutputCallback }, // STDOUT
    { "Priority",        FDF_VIRTUAL|FDF_INT|FDF_RW,                  GET_Priority, SET_Priority },
-   // Synonyms
-   { "Src",             FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Location, SET_Location },
    END_FIELD
 };
 

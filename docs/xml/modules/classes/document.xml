@@ -454,8 +454,8 @@
     <field>
       <name>ClientScript</name>
       <comment>Allows an external script object to be used by a document file.</comment>
-      <access write="S">Set</access>
-      <type>OBJECTPTR</type>
+      <access write="I">Init</access>
+      <type class="Script">*Script</type>
       <description>
 <p>Set ClientScript with a <class name="Script">Script</class> object to allow document content to 'breach the firewall' and access functionality outside of its namespace.  This feature is primarily intended for applications that need to interact with their own embedded documents.</p>
 <p>If a document defines a default script in its content, it will have priority over the one referenced here.</p>
@@ -577,7 +577,7 @@
       <name>PageWidth</name>
       <comment>Measures the page width of the document, in pixels.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type>UNIT</type>
       <description>
 <p>The page width indicates the width of the longest document line, including left and right page margins.  Although the PageWidth can be pre-defined by the client, a document can override this value at any time when it is parsed.  If imposing fixed page dimensions is desired, consider setting the <code>Width</code> and <code>Height</code> values of the <fl>View</fl> viewport object instead.</p>
       </description>
@@ -586,7 +586,7 @@
     <field>
       <name>Path</name>
       <comment>Identifies the location of a document file to load.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>To load a document file into a document object, set the Path field.  Valid string formats for setting the path are:</p>

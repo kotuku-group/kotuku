@@ -155,7 +155,8 @@ void doc_menu::refresh()
    // Resize the menu to match the new content.  If the height of the menu is excessive (relative to the height
    // of the display), we reduce it and utilise a scrollbar to see all menu items.
 
-   int doc_width, doc_height;
+   Unit doc_width;
+   int doc_height;
    m_doc->getPageWidth(doc_width);
    m_doc->getPageHeight(doc_height);
 

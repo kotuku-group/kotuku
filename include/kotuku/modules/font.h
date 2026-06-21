@@ -280,7 +280,7 @@ class objFont : public Object {
    }
 
    inline ERR getWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[34];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();

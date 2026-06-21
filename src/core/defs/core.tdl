@@ -1654,6 +1654,8 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
 
   klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
     output="../compression/class_compression_def.c", extended=true }, [[
+    string Path             # Location of the compressed data
+    string Password
     large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
     oid Output              # Reference to output object for user messages
     int CompressionLevel    # Compression level (percentage - 0% none, 100% high)

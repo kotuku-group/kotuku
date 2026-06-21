@@ -289,18 +289,17 @@ static ERR VECTORELLIPSE_SET_Width(extVectorEllipse *Self, Unit &Value)
 #include "ellipse_def.cpp"
 
 static const FieldArray clEllipseFields[] = {
-   { "CX",       FDF_UNIT|FDF_RW,             nullptr, VECTORELLIPSE_SET_CX },
-   { "CY",       FDF_UNIT|FDF_RW,             nullptr, VECTORELLIPSE_SET_CY },
-   { "RadiusX",  FDF_UNIT|FDF_RW,             nullptr, VECTORELLIPSE_SET_RadiusX },
-   { "RX",       FDF_SYNONYM|FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
-   { "RadiusY",  FDF_UNIT|FDF_RW,             nullptr, VECTORELLIPSE_SET_RadiusY },
-   { "RY",       FDF_SYNONYM|FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
-   { "Vertices", FDF_INT|FDF_RW,              nullptr, VECTORELLIPSE_SET_Vertices },
+   { "CX",       FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CX },
+   { "CY",       FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CY },
+   { "RadiusX",  FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
+   { "RX",       FDF_SYNONYM },
+   { "RadiusY",  FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
+   { "RY",       FDF_SYNONYM },
+   { "Vertices", FDF_INT|FDF_RW,  nullptr, VECTORELLIPSE_SET_Vertices },
    { "Width",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Width,   VECTORELLIPSE_SET_Width },
    { "Height",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Height,  VECTORELLIPSE_SET_Height },
    { "Radius",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
-   // Synonyms
-   { "R",        FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
+   { "R",        FDF_SYNONYM },
    END_FIELD
 };
 

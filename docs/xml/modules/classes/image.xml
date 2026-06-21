@@ -130,7 +130,7 @@
     <field>
       <name>Author</name>
       <comment>The name of the person or company that created the image.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
     </field>
 
@@ -148,7 +148,7 @@
     <field>
       <name>Copyright</name>
       <comment>Copyright details of an image.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Copyright details related to an image may be specified here.  The copyright should be short and to the point, for example <code>Copyright J. Bloggs (c) 1992.</code></p>
@@ -158,7 +158,7 @@
     <field>
       <name>Description</name>
       <comment>Long description for an image.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>A long description for an image may be entered in this field.  There is no strict limit on the length of the description.</p>
@@ -168,7 +168,7 @@
     <field>
       <name>Disclaimer</name>
       <comment>The disclaimer associated with an image.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>If it is necessary to associate a disclaimer with an image, the legal text may be entered in this field.</p>
@@ -232,7 +232,7 @@
     <field>
       <name>Path</name>
       <comment>The location of source image data.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
     </field>
 
@@ -250,14 +250,14 @@
     <field>
       <name>Software</name>
       <comment>The name of the application that was used to draw the image.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
     </field>
 
     <field>
       <name>Title</name>
       <comment>The title of the image.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
     </field>
 

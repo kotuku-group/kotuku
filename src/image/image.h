@@ -1,7 +1,6 @@
 
 class extImage : public objImage {
    public:
-   std::string prvPath;
    std::string prvAuthor;
    std::string prvCopyright;
    std::string prvTitle;

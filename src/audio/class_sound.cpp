@@ -1683,7 +1683,7 @@ extSound::~extSound() {
 
 static const FieldArray clFields[] = {
    { "Path",           FDF_CPPSTRING|FDF_RI, nullptr, nullptr },
-   { "Src",            FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, nullptr, nullptr },
+   { "Src",            FDF_SYNONYM },
    { "Volume",         FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Volume },
    { "Pan",            FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Pan },
    { "Position",       FDF_INT64|FDF_RW, nullptr, SOUND_SET_Position },

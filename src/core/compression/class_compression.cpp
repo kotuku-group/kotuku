@@ -185,9 +185,7 @@ static const int HEAD_LENGTH         = 30;  // END
 class extCompression : public objCompression {
    public:
    OBJECTPTR   FileIO;           // File input/output
-   std::string Path;             // Location of the compressed data
    uint8_t     Header[32];       // The first 32 bytes of data from the compressed file (for derived classes only)
-   std::string Password;         // Password for the compressed object
    FUNCTION    Feedback;         // Set a function here to get de/compression feedack
    uint32_t    ArchiveHash;      // Archive reference, used for the 'archive:' volume
 
@@ -1975,6 +1973,9 @@ static const FieldDef clPermissionFlags[] = {
 #include "class_compression_def.c"
 
 static const FieldArray clFields[] = {
+   { "Path",             FDF_CPPSTRING|FDF_RW },
+   { "Src",              FDF_SYNONYM },
+   { "Password",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Password },
    { "TotalOutput",      FDF_INT64|FDF_R },
    { "Output",           FDF_OBJECTID|FDF_RI },
    { "CompressionLevel", FDF_INT|FDF_RW, nullptr, SET_CompressionLevel },
@@ -1985,12 +1986,9 @@ static const FieldArray clFields[] = {
    { "WindowBits",       FDF_INT|FDF_RW, nullptr, SET_WindowBits },
    // Virtual fields
    { "ArchiveName",      FDF_CPPSTRING|FDF_W,    nullptr, SET_ArchiveName },
-   { "Path",             FDF_CPPSTRING|FDF_RW,   GET_Path, SET_Path },
    { "Feedback",         FDF_FUNCTION|FDF_RW,    GET_Feedback, SET_Feedback },
    { "Header",           FDF_POINTER|FDF_R,      GET_Header },
-   { "Password",         FDF_CPPSTRING|FDF_RW,   GET_Password, SET_Password },
    { "Size",             FDF_INT64|FDF_R,        GET_Size },
-   { "Src",              FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
    { "UncompressedSize", FDF_INT64|FDF_R,        GET_UncompressedSize },
    END_FIELD
 };

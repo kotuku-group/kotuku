@@ -423,7 +423,7 @@ static ERR IMAGE_Init(extImage *Self)
 {
    kt::Log log;
 
-   if ((Self->prvPath.empty()) or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
+   if ((Self->Path.empty()) or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
       // If no path has been specified, assume that the image is being created from scratch (e.g. to save an
       // image to disk).  The programmer is required to specify the dimensions and colours of the Bitmap so that we can
       // initialise it.
@@ -466,10 +466,10 @@ static ERR IMAGE_Init(extImage *Self)
 
       // Test the given path to see if it matches our supported file format.
 
-      if (!ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath)) {
+      if (!ResolvePath(Self->Path, RSF::APPROXIMATE, &Self->Path)) {
          int result;
 
-         if (!ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result)) {
+         if (!ReadFileToBuffer(Self->Path, Self->prvHeader, sizeof(Self->prvHeader)-1, &result)) {
             Self->prvHeader[result] = 0;
 
             auto buffer = (uint8_t *)Self->prvHeader;
@@ -483,12 +483,12 @@ static ERR IMAGE_Init(extImage *Self)
             else return ERR::NoSupport;
          }
          else {
-            log.warning("Failed to read '%s'", Self->prvPath.c_str());
+            log.warning("Failed to read '%s'", Self->Path.c_str());
             return ERR::File;
          }
       }
       else {
-         log.warning("Failed to find '%s'", Self->prvPath.c_str());
+         log.warning("Failed to find '%s'", Self->Path.c_str());
          return ERR::FileNotFound;
       }
    }
@@ -1068,25 +1068,6 @@ Disclaimer: The disclaimer associated with an image.
 
 If it is necessary to associate a disclaimer with an image, the legal text may be entered in this field.
 
-*********************************************************************************************************************/
-
-static ERR GET_Disclaimer(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvDisclaimer.empty()) {
-      Value = Self->prvDisclaimer;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Disclaimer(extImage *Self, std::string_view &Value)
-{
-   Self->prvDisclaimer.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 DisplayHeight: The preferred height to use when displaying the image.
 
@@ -1133,25 +1114,6 @@ static ERR GET_Header(extImage *Self, APTR *Value)
 -FIELD-
 Path: The location of source image data.
 
-*********************************************************************************************************************/
-
-static ERR GET_Path(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvPath.empty()) {
-      Value = Self->prvPath;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Path(extImage *Self, std::string_view &Value)
-{
-   Self->prvPath.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Mask: Refers to a Bitmap that imposes a mask on the image.
 
@@ -1174,45 +1136,10 @@ In all cases, the impact of selecting a high level of quality will increase the 
 -FIELD-
 Software: The name of the application that was used to draw the image.
 
-*********************************************************************************************************************/
-
-static ERR GET_Software(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvSoftware.empty()) {
-      Value = Self->prvSoftware;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Software(extImage *Self, std::string_view &Value)
-{
-   Self->prvSoftware.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Title: The title of the image.
 -END-
 *********************************************************************************************************************/
-
-static ERR GET_Title(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvTitle.empty()) {
-      Value = Self->prvTitle;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Title(extImage *Self, std::string_view &Value)
-{
-   Self->prvTitle.assign(Value);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
 
 static void read_row_callback(png_structp read_ptr, png_uint_32 row, int pass)
 {
@@ -1506,6 +1433,8 @@ exit:
 #include "image_def.c"
 
 static const FieldArray clFields[] = {
+   { "Path",          FDF_CPPSTRING|FDF_RI },
+   { "Src",           FDF_SYNONYM },
    { "Bitmap",        FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Mask",          FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Flags",         FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clImageFlags },
@@ -1513,17 +1442,14 @@ static const FieldArray clFields[] = {
    { "DisplayWidth",  FDF_INT|FDF_RW },
    { "Quality",       FDF_INT|FDF_RW },
    { "FrameRate",     FDF_SYSTEM|FDF_INT|FDF_R },
-   // Virtual fields
-   { "Author",        FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Author, SET_Author },
-   { "Copyright",     FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Copyright, SET_Copyright },
-   { "Description",   FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Description, SET_Description },
-   { "Disclaimer",    FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Disclaimer, SET_Disclaimer },
-   { "Header",        FDF_POINTER|FDF_RI|FDF_PURE, GET_Header },
-   { "Path",          FDF_CPPSTRING|FDF_RI|FDF_PURE,  GET_Path, SET_Path },
-   { "Location",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
-   { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
-   { "Software",      FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Software, SET_Software },
-   { "Title",         FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Title, SET_Title },
+   // Extended fields
+   { "Author",        FDF_CPPSTRING|FDF_RW },
+   { "Copyright",     FDF_CPPSTRING|FDF_RW },
+   { "Title",         FDF_CPPSTRING|FDF_RW },
+   { "Software",      FDF_CPPSTRING|FDF_RW },
+   { "Description",   FDF_CPPSTRING|FDF_RW },
+   { "Disclaimer",    FDF_CPPSTRING|FDF_RW },
+   { "Header",        FDF_VIRTUAL|FDF_POINTER|FDF_RI|FDF_PURE, GET_Header },
    END_FIELD
 };
 

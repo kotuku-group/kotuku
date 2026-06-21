@@ -106,25 +106,6 @@ Path: Set if the compressed data originates from, or is to be saved to a file so
 
 To load or create a new file archive, set the Path field to the path of that file.
 
-*********************************************************************************************************************/
-
-static ERR GET_Path(extCompression *Self, std::string_view &Value)
-{
-   if (not Self->Path.empty()) {
-      Value = Self->Path;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Path(extCompression *Self, std::string_view &Value)
-{
-   Self->Path = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 MinOutputSize: Indicates the minimum output buffer size that will be needed during de/compression.
 
@@ -151,12 +132,6 @@ of an existing archive, create a new compression object with the desired passwor
 across to it.
 
 *********************************************************************************************************************/
-
-static ERR GET_Password(extCompression *Self, std::string_view &Value)
-{
-   Value = Self->Password;
-   return ERR::Okay;
-}
 
 static ERR SET_Password(extCompression *Self, std::string_view &Value)
 {

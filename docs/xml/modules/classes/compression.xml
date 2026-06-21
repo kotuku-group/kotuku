@@ -495,7 +495,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <field>
       <name>Password</name>
       <comment>Required if an archive needs an encryption password for access.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>Set the Password field if an archive will use a password for the encryption of its contents.  The string must be null-terminated and not more than 128 bytes in length.</p>
@@ -506,7 +506,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <field>
       <name>Path</name>
       <comment>Set if the compressed data originates from, or is to be saved to a file source.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>To load or create a new file archive, set the Path field to the path of that file.</p>

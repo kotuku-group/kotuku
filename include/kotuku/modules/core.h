@@ -4273,14 +4273,16 @@ class objCompression : public Object {
 
    using create = kt::Create<objCompression>;
 
-   int64_t  TotalOutput;   // The total number of bytes that have been output during the compression or decompression of streamed data.
-   OBJECTID OutputID;      // Resulting messages will be sent to the object referred to in this field.
+   std::string Path;        // Set if the compressed data originates from, or is to be saved to a file source.
+   std::string Password;    // Required if an archive needs an encryption password for access.
+   int64_t  TotalOutput;    // The total number of bytes that have been output during the compression or decompression of streamed data.
+   OBJECTID OutputID;       // Resulting messages will be sent to the object referred to in this field.
    int      CompressionLevel; // The compression level to use when compressing data.
-   CMF      Flags;         // Optional flags.
-   int      SegmentSize;   // Private. Splits the compressed file if it surpasses a set byte limit.
-   PERMIT   Permissions;   // Default permissions for decompressed files are defined here.
-   int      MinOutputSize; // Indicates the minimum output buffer size that will be needed during de/compression.
-   int      WindowBits;    // Special option for certain compression formats.
+   CMF      Flags;          // Optional flags.
+   int      SegmentSize;    // Private. Splits the compressed file if it surpasses a set byte limit.
+   PERMIT   Permissions;    // Default permissions for decompressed files are defined here.
+   int      MinOutputSize;  // Indicates the minimum output buffer size that will be needed during de/compression.
+   int      WindowBits;     // Special option for certain compression formats.
 
    // Action stubs
 
@@ -4349,6 +4351,16 @@ class objCompression : public Object {
 
    // Customised field getting
 
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getPassword(std::string_view &Value) noexcept {
+      Value = this->Password;
+      return ERR::Okay;
+   }
+
    inline ERR getTotalOutput(int64_t &Value) noexcept {
       Value = this->TotalOutput;
       return ERR::Okay;
@@ -4384,28 +4396,10 @@ class objCompression : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
    inline ERR getFeedback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPassword(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
@@ -4429,6 +4423,16 @@ class objCompression : public Object {
 
 
    // Customised field setting
+
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      this->Path = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setPassword(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
 
    inline ERR setOutput(OBJECTID Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
@@ -4461,19 +4465,9 @@ class objCompression : public Object {
       return field->WriteValue(this, field, 0x00804200, &Value);
    }
 
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
    inline ERR setFeedback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
-   }
-
-   inline ERR setPassword(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
 };

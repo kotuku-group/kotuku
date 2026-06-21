@@ -2731,7 +2731,7 @@ extFile::~extFile() {
 static const FieldArray FileFields[] = {
    { "Position",     FDF_INT64|FDF_RW, nullptr, SET_Position },
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
-   { "Src",          FDF_CPPSTRING|FDF_SYNONYM|FDF_RI, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    // Virtual fields
@@ -2747,7 +2747,6 @@ static const FieldArray FileFields[] = {
    { "User",         FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_User, SET_User },
    { "Group",        FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_Group, SET_Group },
    // Synonyms
-   { "Location",  FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path }, // Deprecated
    { "TimeStamp", FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_INT64|FDF_R,   GET_Timestamp }, // Deprecated
    END_FIELD
 };
