@@ -44,14 +44,16 @@ class objSVG : public Object {
 
    using create = kt::Create<objSVG>;
 
-   OBJECTPTR Target;         // Destination container for the generated SVG scene graph elements.
-   std::string Path;         // File system path to the source SVG document.
-   std::string Title;        // The title of the SVG document.
-   std::string Statement;    // String containing complete SVG document markup.
-   std::string Colour;       // Defines the default fill to use for currentColor references.
-   int       Frame;          // Constrains rendering to a specific frame number for frame-based display systems.
-   SVF       Flags;          // Configuration flags that modify SVG processing behaviour.
-   int       FrameRate;      // Controls the maximum frame rate for SVG animation playback.
+   OBJECTPTR Target;                // Destination container for the generated SVG scene graph elements.
+   std::string Path;                // File system path to the source SVG document.
+   std::string Title;               // The title of the SVG document.
+   std::string Statement;           // String containing complete SVG document markup.
+   std::string Colour;              // Defines the default fill to use for currentColor references.
+   objVectorViewport * Viewport;    // Reference to the primary VectorViewport containing the SVG document content.
+   objVectorScene * Scene;          // Reference to the VectorScene object containing the SVG scene graph.
+   int       Frame;                 // Constrains rendering to a specific frame number for frame-based display systems.
+   SVF       Flags;                 // Configuration flags that modify SVG processing behaviour.
+   int       FrameRate;             // Controls the maximum frame rate for SVG animation playback.
 
    // Action stubs
 
@@ -106,6 +108,16 @@ class objSVG : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getScene(objVectorScene * &Value) noexcept {
+      Value = this->Scene;
+      return ERR::Okay;
+   }
+
    inline ERR getFrame(int &Value) noexcept {
       Value = this->Frame;
       return ERR::Okay;
@@ -125,19 +137,6 @@ class objSVG : public Object {
       auto field = &this->Class->Dictionary[7];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
-   }
-
-   inline ERR getScene(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewport(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
    }
 
 

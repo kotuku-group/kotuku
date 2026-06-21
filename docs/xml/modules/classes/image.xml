@@ -210,8 +210,8 @@
     <field>
       <name>Header</name>
       <comment>Contains the first 32 bytes of data in an image's file header.</comment>
-      <access read="G" write="I">Get/Init</access>
-      <type>APTR</type>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT8 []</type>
       <description>
 <p>The Header field is a pointer to a 32 byte buffer that contains the first 32 bytes of information read from an image file on initialisation.  This special field is considered to be helpful only to developers writing add on components for the image class.</p>
 <p>The buffer that is referred to by the Header field is not populated until the Init action is called on the image object.</p>

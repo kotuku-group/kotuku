@@ -149,38 +149,39 @@ class objImage : public Object {
    }
 
    inline ERR getAuthor(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 160));
+      Value = *((std::string *)(((int8_t *)this) + 152));
       return ERR::Okay;
    }
 
    inline ERR getCopyright(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 192));
+      Value = *((std::string *)(((int8_t *)this) + 184));
       return ERR::Okay;
    }
 
    inline ERR getTitle(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 224));
+      Value = *((std::string *)(((int8_t *)this) + 216));
       return ERR::Okay;
    }
 
    inline ERR getSoftware(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 256));
+      Value = *((std::string *)(((int8_t *)this) + 248));
       return ERR::Okay;
    }
 
    inline ERR getDescription(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 288));
+      Value = *((std::string *)(((int8_t *)this) + 280));
       return ERR::Okay;
    }
 
    inline ERR getDisclaimer(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 320));
+      Value = *((std::string *)(((int8_t *)this) + 312));
       return ERR::Okay;
    }
 
-   inline ERR getHeader(APTR &Value) noexcept {
+   inline ERR getHeader(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->GetValue(this, &Value);
+      auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
+      return get_field(this, Value);
    }
 
 
@@ -242,10 +243,9 @@ class objImage : public Object {
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
-   inline ERR setHeader(APTR Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
+   inline ERR setHeader(std::span<const int8_t> Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x08100508, Value);
+      return field->WriteValue(this, field, 0x01101508, &Value);
    }
 
 };

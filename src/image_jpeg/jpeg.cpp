@@ -307,7 +307,7 @@ static void decompress_jpeg(extImage *Self, objBitmap *Bitmap, struct jpeg_decom
 static ERR JPEG_Init(extImage *Self)
 {
    kt::Log log;
-   uint8_t *buffer;
+   std::span<int8_t> buffer;
    std::string_view path;
 
    Self->getPath(path);
@@ -327,9 +327,9 @@ static ERR JPEG_Init(extImage *Self)
       }
       else return log.warning(ERR::FieldNotSet);
    }
-   else if (!Self->get(FID_Header, buffer)) {
-      if ((buffer[0] IS 0xff) and (buffer[1] IS 0xd8) and (buffer[2] IS 0xff) and
-          ((buffer[3] IS 0xe0) or (buffer[3] IS 0xe1) or (buffer[3] IS 0xfe))) {
+   else if (!Self->getHeader(buffer)) {
+      if ((uint8_t(buffer[0]) IS 0xff) and (uint8_t(buffer[1]) IS 0xd8) and (uint8_t(buffer[2]) IS 0xff) and
+          ((uint8_t(buffer[3]) IS 0xe0) or (uint8_t(buffer[3]) IS 0xe1) or (uint8_t(buffer[3]) IS 0xfe))) {
          log.msg("The file is a JPEG image.");
          if ((Self->Flags & PCF::LAZY) IS PCF::NIL) acActivate(Self);
          return ERR::Okay;

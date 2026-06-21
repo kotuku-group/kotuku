@@ -1104,13 +1104,13 @@ The buffer that is referred to by the Header field is not populated until the In
 
 *********************************************************************************************************************/
 
-static ERR GET_Header(extImage *Self, std::span<const uint8_t> &Array)
+static ERR GET_Header(extImage *Self, std::span<const int8_t> &Array)
 {
-   Array = std::span<const uint8_t>((const uint8_t *)Self->prvHeader, sizeof(Self->prvHeader));
+   Array = std::span<const int8_t>(Self->prvHeader, sizeof(Self->prvHeader));
    return ERR::Okay;
 }
 
-static ERR SET_Header(extImage *Self, const std::span<const uint8_t> &Array)
+static ERR SET_Header(extImage *Self, const std::span<const int8_t> &Array)
 {
    auto size = std::min(Array.size(), sizeof(Self->prvHeader));
    if (size) copymem(Array.data(), Self->prvHeader, size);
