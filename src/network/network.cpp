@@ -543,7 +543,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, glNetworkModule);
+   glNetworkModule = (OBJECTPTR)((objModule *)argModule)->Root;
 
    glPlatform = create_platform();
    if (!glPlatform) return ERR::NoSupport;

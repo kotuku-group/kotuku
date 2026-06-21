@@ -137,7 +137,7 @@ Path: Path to an image file supported by the @Image class.
 
 static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
 {
-   if (Self->Image) return Self->Image->get(FID_Path, Value);
+   if (Self->Image) return Self->Image->getPath(Value);
    else Value = std::string_view{};
    return ERR::Okay;
 }

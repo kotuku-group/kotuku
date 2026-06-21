@@ -315,7 +315,7 @@ static ERR MP3_Init(objSound *Self)
    kt::Log log;
 
    std::string_view location;
-   Self->get(FID_Path, location);
+   Self->getPath(location);
 
    if (location.empty() or ((Self->Flags & SDF::NEW) != SDF::NIL)) {
       // If no location has been specified, assume that the sound is being
@@ -607,7 +607,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
 
             if (!prv->StreamSize) {
                int64_t size;
-               prv->File->get(FID_Size, size);
+               prv->File->getSize(size);
                prv->StreamSize = size - prv->SeekOffset;
             }
 
@@ -627,7 +627,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
       }
 
       int active;
-      if (!Self->get(FID_Active, active)) {
+      if (!Self->getActive(active)) {
          if (active) {
             log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
             Self->deactivate();

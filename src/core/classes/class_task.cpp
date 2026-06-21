@@ -1817,12 +1817,12 @@ This field provides direct access to the actions of a task, and is intended for 
 returned from ~CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
 Kotuku's object oriented design.
 
-The Actions field points to a lookup table of !ActionEntry items.  Hooking into an action involves writing its `AC`
-index in the table with a pointer to the action routine.  For example:
+The Actions field points to a lookup table of !ActionEntry items.  To create an action hook, set its `AC`
+table index with a pointer to the action routine.  For example:
 
 <pre>
-if (not AccessObject(CurrentTask(), 5000, &task)) {
-   task->get(FID_Actions, actions);
+if (!AccessObject(CurrentTask(), 5000, &task)) {
+   task->getActions(actions);
    actions[AC::Seek] = PROGRAM_Seek;
    ReleaseObject(task);
 }

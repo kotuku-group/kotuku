@@ -422,7 +422,7 @@ static ERR GET_WorkingPath(extDocument *Self, std::string_view &Value)
    if (path) { // Extract absolute path
       Self->WorkingPath.assign(Self->Path, 0, last_sep);
    }
-   else if (CurrentTask()->get(FID_Path, task_path); not task_path.empty()) {
+   else if (CurrentTask()->getPath(task_path); not task_path.empty()) {
       // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
       std::string buf(task_path);

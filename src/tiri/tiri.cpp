@@ -204,7 +204,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    glTiriContext = CurrentContext();
    glPrintMsg = GetResource(RES::LOG_LEVEL) >= 4;
 
-   argModule->get(FID_Root, modTiri);
+   modTiri = (OBJECTPTR)((objModule *)argModule)->Root;
 
    ActionList(&glActions, nullptr); // Get the global action table from the Core
 

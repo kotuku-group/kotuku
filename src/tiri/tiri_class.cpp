@@ -1044,7 +1044,7 @@ static ERR run_script(objScript *Self)
             if (str) array[i] = std::string_view(str, size);
             else Self->Error = error = ERR::LimitedSuccess;
          }
-         Self->set(FID_Results, array);
+         Self->setResults(array);
          lua_pop(prv->Lua, results);  // pop returned values
       }
 

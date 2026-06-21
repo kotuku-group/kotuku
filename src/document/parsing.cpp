@@ -1283,7 +1283,7 @@ void parser::tag_body(const tag_view &Tag)
          case HASH_clip_path: {
             OBJECTPTR clip;
             if (!Self->Scene->findDef(Tag.Attribs[i].Value, &clip)) {
-               Self->Page->set(FID_Mask, clip);
+               Self->Page->setMask(clip);
             }
             break;
          }
