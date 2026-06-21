@@ -68,6 +68,7 @@ private:
    unsigned  m_num_dashes;
    unsigned  m_curr_dash;
    unsigned  m_closed;
+   bool      m_seam_overlap;
    status_e  m_status;
    unsigned  m_src_vertex;
 };

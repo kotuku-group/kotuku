@@ -1227,7 +1227,9 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       }
 
       field.Offset = Offset;
-      Offset = uint16_t(Offset + field_size);
+
+      // Offset only advances for non-synonyms
+      if (!(field.Flags & FD_SYNONYM)) Offset = uint16_t(Offset + field_size);
    }
 
    optimise_write_field(field);
