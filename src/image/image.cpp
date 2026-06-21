@@ -1104,9 +1104,16 @@ The buffer that is referred to by the Header field is not populated until the In
 
 *********************************************************************************************************************/
 
-static ERR GET_Header(extImage *Self, APTR *Value)
+static ERR GET_Header(extImage *Self, std::span<const uint8_t> &Array)
 {
-   *Value = Self->prvHeader;
+   Array = std::span<const uint8_t>((const uint8_t *)Self->prvHeader, sizeof(Self->prvHeader));
+   return ERR::Okay;
+}
+
+static ERR SET_Header(extImage *Self, const std::span<const uint8_t> &Array)
+{
+   auto size = std::min(Array.size(), sizeof(Self->prvHeader));
+   if (size) copymem(Array.data(), Self->prvHeader, size);
    return ERR::Okay;
 }
 
@@ -1441,7 +1448,6 @@ static const FieldArray clFields[] = {
    { "DisplayHeight", FDF_INT|FDF_RW },
    { "DisplayWidth",  FDF_INT|FDF_RW },
    { "Quality",       FDF_INT|FDF_RW },
-   { "FrameRate",     FDF_SYSTEM|FDF_INT|FDF_R },
    // Extended fields
    { "Author",        FDF_CPPSTRING|FDF_RW },
    { "Copyright",     FDF_CPPSTRING|FDF_RW },
@@ -1449,7 +1455,8 @@ static const FieldArray clFields[] = {
    { "Software",      FDF_CPPSTRING|FDF_RW },
    { "Description",   FDF_CPPSTRING|FDF_RW },
    { "Disclaimer",    FDF_CPPSTRING|FDF_RW },
-   { "Header",        FDF_VIRTUAL|FDF_POINTER|FDF_RI|FDF_PURE, GET_Header },
+   { "FrameRate",     FDF_SYSTEM|FDF_INT|FDF_R },
+   { "Header",        FDF_VIRTUAL|FDF_ARRAY|FDF_BYTE|FDF_RI|FDF_PURE, GET_Header, SET_Header },
    END_FIELD
 };
 

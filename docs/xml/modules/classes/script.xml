@@ -195,7 +195,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>CacheFile</name>
       <comment>Compilable script languages can be compiled to a cache file.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Scripts that support compilation of the source code can be compiled to a target file when the script is initialised. This file is then used as a cache, so that if the cache file exists on the next initialisation then the cache file is used instead of the original source code.</p>
@@ -277,7 +277,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Results</name>
       <comment>Stores multiple string results for languages that support this feature.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>If a scripting language supports the return of multiple results, this field may reflect those result values after the execution of any procedure.</p>

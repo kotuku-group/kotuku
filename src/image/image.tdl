@@ -20,7 +20,6 @@ module({ name="Image", copyright="Paul Manias © 2001-2026", version=1.0, timest
     int DisplayHeight   # Preferred display height
     int DisplayWidth    # Preferred display width
     int Quality         # Quality rating when saving image (0% low, 100% high)
-    int FrameRate       # Refresh & redraw the image X times per second.  Used by images that have an animation refresh rate
   ]],
   nil,
   [[

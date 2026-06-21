@@ -1316,7 +1316,6 @@ class extDocument : public objDocument {
    objSVG *SVG;                // Allocated by the <svg> tag
    objVectorRectangle *Bkgd;   // Background fill object
    const XTag *PageTag;        // Refers to a specific page that is being processed for the layout
-   objScript *ClientScript;    // Allows the developer to define a custom default script.
    objScript *DefaultScript;
    doc_edit  *ActiveEditDef; // As for ActiveEditCell, but refers to the active editing definition
    objVectorScene *Scene;    // A document specific scene is required to keep our resources away from the host

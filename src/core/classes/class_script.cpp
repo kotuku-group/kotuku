@@ -392,22 +392,6 @@ file is used instead of the original source code.
 If the cache file exists, a determination on whether the source code has been edited is usually made by comparing
 date stamps on the original and cache files.
 
-*********************************************************************************************************************/
-
-static ERR GET_CacheFile(objScript *Self, std::string_view &Value)
-{
-   Value = Self->CacheFile;
-   return Self->CacheFile.empty() ? ERR::FieldNotSet : ERR::Okay;
-}
-
-static ERR SET_CacheFile(objScript *Self, std::string_view &Value)
-{
-   Self->CacheFile.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 CurrentLine: Indicates the current line being executed when in debug mode.
 
@@ -575,23 +559,6 @@ execution of any procedure.
 
 For maximum compatibility in type conversion, the results are stored as an array of strings.
 
-*********************************************************************************************************************/
-
-static ERR GET_Results(objScript *Self, std::span<const std::string> &Value)
-{
-   Value = std::span<const std::string>(Self->Results.data(), Self->Results.size());
-   return ERR::Okay;
-}
-
-static ERR SET_Results(objScript *Self, const std::span<const std::string> &Value)
-{
-   if (Value.data()) Self->Results.assign(Value.data(), Value.data() + Value.size());
-   else Self->Results.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Statement: Scripts can be executed from any string passed into this field.
 
@@ -710,22 +677,22 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 
 static const FieldArray clScriptFields[] = {
    { "Procedure",    FDF_CPPSTRING|FDF_RW },
+   { "CacheFile",    FDF_CPPSTRING|FDF_RW },
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
    { "Src",          FDF_SYNONYM },
    { "ErrorMessage", FDF_CPPSTRING|FDF_RW },
    { "Statement",    FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
    { "String",       FDF_SYNONYM }, // Deprecated
    { "WorkingPath",  FDF_CPPSTRING|FDF_RW, GET_WorkingPath },
+   { "Results",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
    { "Target",       FDF_OBJECTID|FDF_RW },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
    { "Error",        FDF_INT|FDF_R },
    { "CurrentLine",  FDF_INT|FDF_R },
    { "LineOffset",   FDF_INT|FDF_RW },
    // Virtual Fields
-   { "CacheFile",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_CacheFile, SET_CacheFile },
-   { "Results",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Results, SET_Results },
-   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables },
+   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                GET_TotalArgs },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE, GET_Variables },
    END_FIELD
 };
 

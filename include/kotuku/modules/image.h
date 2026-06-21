@@ -45,7 +45,6 @@ class objImage : public Object {
    int DisplayHeight;   // The preferred height to use when displaying the image.
    int DisplayWidth;    // The preferred width to use when displaying the image.
    int Quality;         // Defines the quality level to use when saving the image.
-   int FrameRate;       // Refresh & redraw the image X times per second.  Used by images that have an animation refresh rate
    public:
    objImage() {
       Quality = 80;

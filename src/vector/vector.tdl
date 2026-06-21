@@ -324,14 +324,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "LOST_FOCUS: The vector has lost the user focus.")
 
   struct('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
-   double Offset     # An offset in the range of 0 - 1.0
-   struct(FRGB) RGB  # A floating point RGB value.
+    double Offset     # An offset in the range of 0 - 1.0
+    struct(FRGB) RGB  # A floating point RGB value.
   ]])
 
   struct('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
-   double X             # The X coordinate of the vertex.
-   double Y             # The Y coordinate of the vertex.
-   struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
+    double X             # The X coordinate of the vertex.
+    double Y             # The Y coordinate of the vertex.
+    struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
   ]])
 
   struct('Transition', { comment='For VectorTransition definitions' }, [[
@@ -443,7 +443,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    double Blue
    double Alpha
   ]],
-  "",
+  nil,
   [[
    objVectorColour() : Alpha(1.0) {}
   ]])
@@ -748,7 +748,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   })
 
   klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true }, [[
-  ~array(struct(PathCommand)) Commands
+    ~array(struct(PathCommand)) Commands
   ]])
 
   // VectorText method ID's start high enough to give a cushion from inherited Vector methods.
@@ -758,8 +758,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   })
 
   klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF' }, extended=true }, [[
-   ~int(ALIGN) Align
-   ~int(VTXF) TextFlags
+    ~int(ALIGN) Align
+    ~int(VTXF) TextFlags
   ]])
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })

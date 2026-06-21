@@ -7,6 +7,7 @@ class extImage : public objImage {
    std::string prvSoftware;
    std::string prvDescription;
    std::string prvDisclaimer;
+   int FrameRate;
    int8_t  prvHeader[256];
    objFile *prvFile;
    uint8_t Cached:1;
