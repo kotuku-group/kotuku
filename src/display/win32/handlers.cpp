@@ -51,7 +51,7 @@ void MsgKeyRelease(int Flags, int Value) { MsgKeyRelease(KQ(Flags), KEY(Value));
 void MsgMovement(OBJECTID SurfaceID, double AbsX, double AbsY, int WinX, int WinY, bool NonClient)
 {
    if (auto pointer = gfx::AccessPointer(); pointer) {
-      pointer->set(FID_Surface, SurfaceID);  // Alter the surface of the pointer so that it refers to the correct root window
+      pointer->setSurface(SurfaceID);  // Alter the surface of the pointer so that it refers to the correct root window
 
       struct dcDeviceInput joy = {
          .Values = { AbsX, AbsY },

@@ -80,7 +80,7 @@ static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bi
    if (!AccessObject(DisplayID, 5000, (OBJECTPTR *)Display)) {
       #ifdef _WIN32
       APTR winhandle;
-      if (!Display[0]->get(FID_WindowHandle, winhandle)) {
+      if (!Display[0]->getWindowHandle(winhandle)) {
          Display[0]->Bitmap->setHandle(winGetDC(winhandle));
       }
       #endif
@@ -97,10 +97,10 @@ static void release_video(objDisplay *Display)
 {
    #ifdef _WIN32
       APTR surface;
-      Display->Bitmap->get(FID_Handle, surface);
+      Display->Bitmap->getHandle(surface);
 
       APTR winhandle;
-      if (!Display->get(FID_WindowHandle, winhandle)) {
+      if (!Display->getWindowHandle(winhandle)) {
          winReleaseDC(winhandle, surface);
       }
 
@@ -1395,7 +1395,7 @@ static ERR SURFACE_Init(extSurface *Self)
          // For hosted environments, record the window handle (NB: this is doubling up the display handle, we should
          // just make the window handle a virtual field so that we don't need a permanent record of it).
 
-         display->get(FID_WindowHandle, Self->DisplayWindow);
+         display->getWindowHandle(Self->DisplayWindow);
 
          #ifdef _WIN32
             winSetSurfaceID(Self->DisplayWindow, Self->UID);

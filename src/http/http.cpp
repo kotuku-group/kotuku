@@ -712,7 +712,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                if (Self->flInput) {
                   Self->Index = 0;
                   if (!Self->Size) {
-                     Self->flInput->get(FID_Size, Self->ContentLength); // Use the file's size as ContentLength
+                     Self->flInput->getSize(Self->ContentLength); // Use the file's size as ContentLength
                       // If the file is empty or size is indeterminate then assume nothing is being posted
                       if (!Self->ContentLength) {
                          Self->Error = ERR::NoData;

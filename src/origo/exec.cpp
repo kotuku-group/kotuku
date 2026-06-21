@@ -164,7 +164,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
             if (glScript->Error != ERR::Okay) {
                if (GetResource(RES::LOG_LEVEL) <= 1) {
-                  if ((!glScript->get(FID_ErrorMessage, msg)) and not msg.empty()) {
+                  if ((!glScript->getErrorMessage(msg)) and not msg.empty()) {
                      printf("%.*s\n", int(msg.size()), msg.data());
                   }
                   else if (glScript->Error IS ERR::Exception) {
@@ -176,7 +176,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
                return glScript->Error;
             }
 
-            if ((!glScript->get(FID_ErrorMessage, msg)) and not msg.empty()) {
+            if ((!glScript->getErrorMessage(msg)) and not msg.empty()) {
                if (GetResource(RES::LOG_LEVEL) <= 1) {
                   printf("Script returned error message: %.*s\n", int(msg.size()), msg.data());
                }

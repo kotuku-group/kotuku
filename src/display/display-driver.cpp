@@ -1046,7 +1046,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    CoreBase = argCoreBase;
    glDisplayContext = CurrentContext();
 
-   argModule->get(FID_Root, glModule);
+   glModule = (OBJECTPTR)((objModule *)argModule)->Root;
 
    if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
 
@@ -1762,7 +1762,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
    // Adjust coordinates by offset values
 
    APTR drawable;
-   dest->get(FID_Handle, drawable);
+   dest->getHandle(drawable);
 
    win32RedrawWindow(Self->WindowHandle, drawable,
       x, y, width, height, xdest, ydest,

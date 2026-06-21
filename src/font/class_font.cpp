@@ -109,7 +109,7 @@ static ERR FONT_Init(extFont *Self)
    if (Self->Path.empty()) {
       std::string path;
       if (auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta); !error) {
-         error = Self->set(FID_Path, path);
+         error = Self->setPath(path);
          if (error != ERR::Okay) return error;
       }
       else {

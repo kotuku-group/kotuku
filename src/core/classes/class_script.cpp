@@ -689,7 +689,7 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
       }
       else {
          std::string_view working_path;
-         if ((CurrentTask()->get(FID_Path, working_path) IS ERR::Okay) and (not working_path.empty())) {
+         if ((!CurrentTask()->getPath(working_path)) and (not working_path.empty())) {
             // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
             std::string buf(working_path);
@@ -721,9 +721,9 @@ static ERR SET_WorkingPath(objScript *Self, std::string_view &Value)
 #include "class_script_def.c"
 
 static const FieldArray clScriptFields[] = {
-   { "Procedure",    FDF_CPPSTRING|FDF_RW|FDF_PURE },
-   { "Path",         FDF_CPPSTRING|FDF_RI|FDF_PURE, nullptr, SET_Path },
-   { "ErrorMessage", FDF_CPPSTRING|FDF_RW|FDF_PURE },
+   { "Procedure",    FDF_CPPSTRING|FDF_RW },
+   { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
+   { "ErrorMessage", FDF_CPPSTRING|FDF_RW },
    { "Target",       FDF_OBJECTID|FDF_RW },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
    { "Error",        FDF_INT|FDF_R },

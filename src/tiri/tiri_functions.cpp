@@ -354,7 +354,7 @@ int fcmd_loadfile(lua_State *Lua)
       }
       else {
          std::string_view wp;
-         if (!Lua->script->get(FID_WorkingPath, wp)) src.insert(0, wp);
+         if (!Lua->script->getWorkingPath(wp)) src.insert(0, wp);
       }
    }
 

@@ -604,8 +604,8 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    if ((Info->Flags & OPF::SCAN_MODULES) IS OPF::NIL) {
 
       if (auto file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) }; file.ok()) {
-         int filesize;
-         file->get(FID_Size, filesize);
+         int64_t filesize;
+         file->getSize(filesize);
 
          int hdr;
          file->read(&hdr, sizeof(hdr));
@@ -634,7 +634,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    }
 #endif
 
-   if (!newargs.empty()) glCurrentTask->set(FID_Parameters, newargs);
+   if (!newargs.empty()) glCurrentTask->setParameters(newargs);
 
    // In Windows, set the PATH environment variable so that DLL's installed under modules:lib can be found.
 

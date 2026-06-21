@@ -360,7 +360,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, modFont);
+   modFont = (OBJECTPTR)((objModule *)argModule)->Root;
 
    auto cleanup = [] {
       if (glFTLibrary) { FT_Done_FreeType(glFTLibrary); glFTLibrary = nullptr; }

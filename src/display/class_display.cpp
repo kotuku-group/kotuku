@@ -821,9 +821,9 @@ static ERR DISPLAY_Init(extDisplay *Self)
             bmp->x11.drawable = Self->XPixmap;
          }
 
-         std::string name;
-         if (!(CurrentTask()->get(FID_Name, name)) and not name.empty()) {
-            XStoreName(XDisplay, Self->XWindowHandle, name.c_str());
+         std::string_view name;
+         if (!(CurrentTask()->getName(name)) and not name.empty()) {
+            XStoreName(XDisplay, Self->XWindowHandle, name.data());
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
@@ -857,7 +857,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       }
       else { // If we are the window manager, set up the root window as our display.
          if (not Self->WindowHandle) Self->XWindowHandle = DefaultRootWindow(XDisplay);
-         bmp->set(FID_Handle, (APTR)Self->XWindowHandle);
+         bmp->setHandle((APTR)Self->XWindowHandle);
          XChangeWindowAttributes(XDisplay, Self->XWindowHandle, CWEventMask|CWCursor, &swa);
 
          #ifdef XRANDR_ENABLED
@@ -909,7 +909,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
 
          std::string_view name;
-         CurrentTask()->get(FID_Name, name);
+         CurrentTask()->getName(name);
          HWND popover = 0;
          if (Self->PopOverID) {
             if (ScopedObjectLock<extDisplay> other_display(Self->PopOverID, 3000); other_display.granted()) {
@@ -2352,8 +2352,8 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
          log.msg("Switching window type.");
 
          bool maximise = true;
-         CSTRING title = nullptr;
-         Self->get(FID_Title, title); // Get the window title before we kill it
+         std::string_view title;
+         Self->getTitle(title); // Get the window title before we kill it
 
          OBJECTID surface_id = winLookupSurfaceID(Self->WindowHandle);
          winSetSurfaceID(Self->WindowHandle, 0); // Nullify the surface ID to prevent WM_DESTROY from being acted upon
@@ -2361,7 +2361,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 
          HWND popover = 0;
          if ((Self->WindowHandle = winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               maximise, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? false : true, title, FALSE, 255, TRUE))) {
+               maximise, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? false : true, title.data(), FALSE, 255, TRUE))) {
 
             Self->Flags = Self->Flags ^ SCR::BORDERLESS;
 
@@ -2431,9 +2431,9 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             return ERR::CreateResource;
          }
 
-         STRING name;
-         if (!(CurrentTask()->get(FID_Name, name)) and (name)) {
-            XStoreName(XDisplay, Self->XWindowHandle, name);
+         std::string_view name;
+         if (!(CurrentTask()->getName(name)) and (not name.empty())) {
+            XStoreName(XDisplay, Self->XWindowHandle, name.data());
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
@@ -2458,7 +2458,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 
          glKeyFlags = KQ::NIL;
 
-         Self->Bitmap->set(FID_Handle, Self->WindowHandle);
+         Self->Bitmap->setHandle(Self->WindowHandle);
          acResize(Self->Bitmap, Self->Width, Self->Height, 0);
 
          if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {

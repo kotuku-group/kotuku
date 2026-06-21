@@ -219,12 +219,6 @@ The horizontal radius of the ellipse is defined here as either a fixed or scaled
 
 *********************************************************************************************************************/
 
-static ERR VECTORELLIPSE_GET_RadiusX(extVectorEllipse *Self, Unit &Value)
-{
-   Value = Self->eRadiusX;
-   return ERR::Okay;
-}
-
 static ERR VECTORELLIPSE_SET_RadiusX(extVectorEllipse *Self, Unit &Value)
 {
    Self->eRadiusX = Value;
@@ -239,12 +233,6 @@ RadiusY: The vertical radius of the ellipse.
 The vertical radius of the ellipse is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORELLIPSE_GET_RadiusY(extVectorEllipse *Self, Unit &Value)
-{
-   Value = Self->eRadiusY;
-   return ERR::Okay;
-}
 
 static ERR VECTORELLIPSE_SET_RadiusY(extVectorEllipse *Self, Unit &Value)
 {
@@ -304,15 +292,15 @@ static const FieldArray clEllipseFields[] = {
    { "CX",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CX },
    { "CY",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CY },
    { "RadiusX",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
+   { "RX",         FDF_SYNONYM|FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
    { "RadiusY",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
+   { "RY",         FDF_SYNONYM|FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
    { "Vertices",   FDF_INT|FDF_RW, nullptr, VECTORELLIPSE_SET_Vertices },
    { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Width,   VECTORELLIPSE_SET_Width },
    { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Height,  VECTORELLIPSE_SET_Height },
    { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
    // Synonyms
-   { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
-   { "RX", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusX, VECTORELLIPSE_SET_RadiusX },
-   { "RY", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusY, VECTORELLIPSE_SET_RadiusY },
+   { "R",          FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
    END_FIELD
 };
 

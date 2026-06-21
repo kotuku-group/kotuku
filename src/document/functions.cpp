@@ -946,9 +946,9 @@ void ui_link::exec(extDocument *Self)
                   if ((Self->Path[end] IS '&') or (Self->Path[end] IS '#') or (Self->Path[end] IS '?')) break;
                }
                auto path = std::string(Self->Path, end) + origin.ref;
-               Self->set(FID_Path, path);
+               Self->setPath(path);
             }
-            else Self->set(FID_Path, origin.ref);
+            else Self->setPath(origin.ref);
 
             if (!Self->Bookmark.empty()) show_bookmark(Self, Self->Bookmark);
          }
@@ -976,7 +976,7 @@ void ui_link::exec(extDocument *Self)
             auto identify_text = std::string(identify_path);
             if (!IdentifyFile(identify_text, CLASSID::NIL, &class_id, &derived_id)) {
                if (class_id IS CLASSID::DOCUMENT) {
-                  Self->set(FID_Path, lk);
+                  Self->setPath(lk);
 
                   if (!Self->Bookmark.empty()) show_bookmark(Self, Self->Bookmark);
                   else log.msg("No bookmark was preset.");

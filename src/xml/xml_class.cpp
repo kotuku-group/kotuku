@@ -205,25 +205,25 @@ static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
 
    objXQuery *xq;
    if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-      xq->set(FID_Statement, Args->Statement);
+      xq->setStatement(Args->Statement);
       if (auto error = xq->init(); !error) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); !error) {
             std::string_view result;
-            if (!xq->get(FID_ResultString, result)) Args->Result->assign(result);
+            if (!xq->getResultString(result)) Args->Result->assign(result);
             else error = ERR::FieldNotSet;
             FreeResource(xq);
             return error;
          }
          else {
             std::string_view sv;
-            if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+            if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             return error;
          }
       }
       else {
          std::string_view sv;
-         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+         if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -269,7 +269,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
 
    objXQuery *xq;
    if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->setStatement(Args->XPath);
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -290,7 +290,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
             }
             else {
                std::string_view str;
-               if (!xq->get(FID_ErrorMsg, str)) Self->ErrorMsg = str;
+               if (!xq->getErrorMsg(str)) Self->ErrorMsg = str;
             }
             FreeResource(xq);
             return error;
@@ -298,7 +298,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
       }
       else {
          std::string_view sv;
-         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+         if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -362,7 +362,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
 
    objXQuery *xq;
    if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-      xq->set(FID_Statement, Args->Expression);
+      xq->setStatement(Args->Expression);
 
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
@@ -389,7 +389,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
          }
          else {
             std::string_view sv;
-            if ((!xq->get(FID_ErrorMsg, sv)) and (not sv.empty())) Self->ErrorMsg.assign(sv);
+            if ((!xq->getErrorMsg(sv)) and (not sv.empty())) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             if ((Args->Callback) and (error IS ERR::Search)) return ERR::Okay;
             else return error;
@@ -397,7 +397,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
       }
       else {
          std::string_view sv;
-         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+         if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -945,7 +945,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
 
    objXQuery *xq;
    if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->setStatement(Args->XPath);
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -964,7 +964,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
             }
             else {
                std::string_view sv;
-               if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+               if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
             }
             FreeResource(xq);
             return error;
@@ -972,7 +972,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
       }
       else {
          std::string_view sv;
-         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+         if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -1238,7 +1238,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
 
    objXQuery *xq;
    if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->setStatement(Args->XPath);
       if (auto error = xq->init(); !error) {
          while (limit > 0) {
             matching_tag_opt opt;
@@ -1272,7 +1272,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
       }
       else {
          std::string_view sv;
-         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+         if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          return error;
       }
@@ -1584,7 +1584,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
 
    objXQuery *xq;
    if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-      xq->set(FID_Statement, std::string_view(Args->Key));
+      xq->setStatement(std::string_view(Args->Key));
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -1624,7 +1624,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
             }
             else {
                std::string_view sv;
-               if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+               if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
             }
             log.warning("Failed to find '%.*s'", int(Args->Key.size()), Args->Key.data());
@@ -1633,7 +1633,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
       }
       else {
          std::string_view sv;
-         if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+         if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
          FreeResource(xq);
          log.msg("Failed to compile '%.*s'", int(Args->Key.size()), Args->Key.data());
          return error;
@@ -1730,13 +1730,13 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
    else {
       objXQuery *xq;
       if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
-         xq->set(FID_Statement, Args->XPath);
+         xq->setStatement(Args->XPath);
          if (auto error = xq->init(); !error) {
             matching_tag_opt opt;
             auto callback = C_FUNCTION(save_matching_tag, &opt.tag_id);
             if (error = xq->search((objXML *)Self, callback, 0, XEF::NIL); error != ERR::Terminate) {
                std::string_view sv;
-               if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+               if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
                FreeResource(xq);
                return log.warning(ERR::Search);
             }
@@ -1747,7 +1747,7 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
          }
          else {
             std::string_view sv;
-            if (!xq->get(FID_ErrorMsg, sv)) Self->ErrorMsg.assign(sv);
+            if (!xq->getErrorMsg(sv)) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
             return log.warning(error);
          }

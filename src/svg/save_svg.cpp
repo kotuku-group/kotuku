@@ -125,10 +125,10 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             if (def->classID() IS CLASSID::GRADIENTLINEAR) {
                auto linear = (objGradientLinear *)gradient;
                Unit val;
-               if ((!error) and (!linear->get(FID_X1, val))) set_dimension(tag, "x1", val);
-               if ((!error) and (!linear->get(FID_Y1, val))) set_dimension(tag, "y1", val);
-               if ((!error) and (!linear->get(FID_X2, val))) set_dimension(tag, "x2", val);
-               if ((!error) and (!linear->get(FID_Y2, val))) set_dimension(tag, "y2", val);
+               if ((!error) and (!linear->getX1(val))) set_dimension(tag, "x1", val);
+               if ((!error) and (!linear->getY1(val))) set_dimension(tag, "y1", val);
+               if ((!error) and (!linear->getX2(val))) set_dimension(tag, "x2", val);
+               if ((!error) and (!linear->getY2(val))) set_dimension(tag, "y2", val);
             }
             else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
                auto contour = (objGradientContour *)gradient;
