@@ -288,7 +288,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Statement</name>
       <comment>Scripts can be executed from any string passed into this field.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>Scripts may be compiled into a script object by setting the Statement field with a complete script string.  This is often convenient for embedding a small script into another script file without having to make external file references. It is also commonly used for executing scripts that have been embedded into program binaries.</p>
@@ -318,7 +318,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>WorkingPath</name>
       <comment>Defines the script's working path (folder).</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="W">Get/Write</access>
       <type>STRING</type>
       <description>
 <p>The working path for a script is defined here.  By default this is defined as the location from which the script was loaded, without the file name.  If this cannot be determined then the working path for the parent process is used (this is usually set to the location of the program).</p>

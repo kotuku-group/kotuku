@@ -340,7 +340,7 @@ static ERR TIRI_Activate(objScript *Self)
 {
    kt::Log log;
 
-   if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
    log.trace("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
       Self->Procedure.empty() ? "." : Self->Procedure.c_str(), (long long)Self->ProcedureID);
@@ -506,7 +506,7 @@ static ERR TIRI_Init(objScript *Self)
       }
    }
 
-   if ((Self->defined(NF::RECLASSED)) and (Self->String.empty())) {
+   if ((Self->defined(NF::RECLASSED)) and (Self->Statement.empty())) {
       log.trace("No support for reclassed Script with no String field value.");
       return ERR::NoSupport;
    }
@@ -515,7 +515,7 @@ static ERR TIRI_Init(objScript *Self)
    bool compile = false;
    bool loaded = false;
    objFile *src_file = nullptr;
-   if ((Self->String.empty()) and (not Self->Path.empty())) {
+   if ((Self->Statement.empty()) and (not Self->Path.empty())) {
       int64_t src_ts = 0, src_size = 0;
 
       if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
@@ -544,7 +544,7 @@ static ERR TIRI_Init(objScript *Self)
             if ((cache_ts IS src_ts) or (error != ERR::Okay)) {
                log.msg("Using cache '%s'", Self->CacheFile.c_str());
                int len = 0;
-               error = read_file_to_string(Self->CacheFile, cache_size, Self->String, &len);
+               error = read_file_to_string(Self->CacheFile, cache_size, Self->Statement, &len);
                if (!error) loaded = len > 0;
             }
          }
@@ -552,17 +552,17 @@ static ERR TIRI_Init(objScript *Self)
 
       if ((!error) and (not loaded)) {
          int len = 0;
-         error = read_file_to_string(Self->Path, src_size, Self->String, &len);
+         error = read_file_to_string(Self->Path, src_size, Self->Statement, &len);
          if (!error) {
             // Unicode BOM handler - in case the file starts with a BOM header.
-            auto content = check_bom(Self->String);
-            if (content.data() != Self->String.data()) Self->String.assign(content);
+            auto content = check_bom(Self->Statement);
+            if (content.data() != Self->Statement.data()) Self->Statement.assign(content);
 
             if (not Self->CacheFile.empty()) compile = true; // Saving a compilation of the source is desired
          }
          else {
             log.trace("Failed to read %" PRId64 " bytes from '%s'", (int64_t)src_size, Self->Path.c_str());
-            Self->String.clear();
+            Self->Statement.clear();
             if (error != ERR::OutOfRange) error = ERR::ReadFileToBuffer;
          }
       }
@@ -652,7 +652,7 @@ static ERR TIRI_Query(objScript *Self)
 {
    kt::Log log;
 
-   if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
    auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
@@ -707,7 +707,7 @@ static ERR TIRI_Query(objScript *Self)
       auto chunk_name = make_chunk_name(Self);
 
       int result;
-      std::string_view source(Self->String);
+      std::string_view source(Self->Statement);
       if (source.starts_with(LUA_COMPILED)) { // The source is compiled
          log.trace("Loading pre-compiled Lua script.");
          if (auto payload_error = compiled_payload(source, source); payload_error != ERR::Okay) {
@@ -784,7 +784,7 @@ static ERR TIRI_SaveToObject(objScript *Self, struct acSaveToObject *Args)
 
    if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
-   if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
    log.branch("Compiling the statement...");
 
@@ -793,7 +793,7 @@ static ERR TIRI_SaveToObject(objScript *Self, struct acSaveToObject *Args)
 
    auto chunk_name = make_chunk_name(Self);
 
-   if (not lua_load(prv->Lua, std::string_view(Self->String), chunk_name.c_str())) {
+   if (not lua_load(prv->Lua, std::string_view(Self->Statement), chunk_name.c_str())) {
       ERR error = save_binary(Self, Args->Dest);
       return error;
    }

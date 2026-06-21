@@ -739,6 +739,7 @@ static ERR GET_Viewport(extSVG *Self, OBJECTPTR *Value)
 static const FieldArray clSVGFields[] = {
    { "Target",    FDF_OBJECT|FDF_RI, nullptr, SET_Target },
    { "Path",      FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Src",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "Title",     FDF_CPPSTRING|FDF_RW },
    { "Statement", FDF_CPPSTRING|FDF_RW },
    { "Colour",    FDF_CPPSTRING|FDF_RW },
@@ -747,7 +748,6 @@ static const FieldArray clSVGFields[] = {
    { "FrameRate", FDF_INT|FDF_RW, nullptr, SET_FrameRate },
    // Virtual Fields
    { "FrameCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FrameCallback, SET_FrameCallback },
-   { "Src",           FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Path, SET_Path },
    { "Scene",         FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, GET_Scene, nullptr },
    { "Viewport",      FDF_VIRTUAL|FDF_OBJECT|FDF_R, GET_Viewport, nullptr },
    END_FIELD

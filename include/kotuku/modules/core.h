@@ -3374,6 +3374,8 @@ class objScript : public Object {
    std::string Path;            // The location of a script file to be loaded.
    std::string Procedure;       // Specifies a procedure name to be executed.
    std::string ErrorMessage;    // A human readable error string may be declared here following a script execution failure.
+   std::string Statement;       // Scripts can be executed from any string passed into this field.
+   std::string WorkingPath;     // Defines the script's working path (folder).
    OBJECTID TargetID;           // Reference to the default container that new script objects will be initialised to.
    SCF      Flags;              // Optional flags.
    ERR      Error;              // If a script fails during execution, an error code may be readable here.
@@ -3385,8 +3387,6 @@ class objScript : public Object {
    KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string String;
-   std::string WorkingPath;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
@@ -3455,6 +3455,20 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getStatement(std::string_view &Value) noexcept {
+      Value = this->Statement;
+      return ERR::Okay;
+   }
+
+   inline ERR getWorkingPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getTarget(OBJECTID &Value) noexcept {
       Value = this->TargetID;
       return ERR::Okay;
@@ -3492,21 +3506,6 @@ class objScript : public Object {
       return get_field(this, Value);
    }
 
-   inline ERR getWorkingPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getStatement(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getTotalArgs(int &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
       return field->GetValue(this, &Value);
@@ -3517,7 +3516,7 @@ class objScript : public Object {
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value);
+      return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
    inline ERR setProcedure(const std::string_view &Value) noexcept {
@@ -3527,6 +3526,16 @@ class objScript : public Object {
 
    inline ERR setErrorMessage(const std::string_view &Value) noexcept {
       this->ErrorMessage = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setStatement(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setWorkingPath(const std::string_view &Value) noexcept {
+      this->WorkingPath = Value;
       return ERR::Okay;
    }
 
@@ -3553,16 +3562,6 @@ class objScript : public Object {
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00904300, &Value);
-   }
-
-   inline ERR setWorkingPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
-   inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, 0x00904300, &Value);
    }
 

@@ -1477,23 +1477,6 @@ Path: Location of the audio sample data.
 This field must refer to a file that contains the audio data that will be loaded.  If creating a new sample
 with the `SDF::NEW` flag, it is not necessary to define a file source.
 
-*********************************************************************************************************************/
-
-static ERR SOUND_GET_Path(extSound *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   if (not Self->Path.empty()) return ERR::Okay;
-   return ERR::FieldNotSet;
-}
-
-static ERR SOUND_SET_Path(extSound *Self, const std::string_view &Value)
-{
-   Self->Path.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Playback: The playback frequency of the sound sample can be defined here.
 
@@ -1699,6 +1682,8 @@ extSound::~extSound() {
 #include "class_sound_def.c"
 
 static const FieldArray clFields[] = {
+   { "Path",           FDF_CPPSTRING|FDF_RI, nullptr, nullptr },
+   { "Src",            FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, nullptr, nullptr },
    { "Volume",         FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Volume },
    { "Pan",            FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Pan },
    { "Position",       FDF_INT64|FDF_RW, nullptr, SOUND_SET_Position },
@@ -1722,8 +1707,6 @@ static const FieldArray clFields[] = {
    { "Duration", FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
    { "Header",   FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
    { "OnStop",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
-   { "Path",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE,     SOUND_GET_Path, SOUND_SET_Path },
-   { "Src",      FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, SOUND_GET_Path, SOUND_SET_Path },
    { "Note",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };

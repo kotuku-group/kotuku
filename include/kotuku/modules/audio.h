@@ -378,6 +378,7 @@ class objSound : public Object {
 
    using create = kt::Create<objSound>;
 
+   std::string Path;    // Location of the audio sample data.
    double   Volume;     // The volume to use when playing the sound sample.
    double   Pan;        // Determines the horizontal position of a sound when played through stereo speakers.
    int64_t  Position;   // The current playback position.
@@ -444,6 +445,11 @@ class objSound : public Object {
    }
 
    // Customised field getting
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
 
    inline ERR getVolume(double &Value) noexcept {
       Value = this->Volume;
@@ -555,12 +561,6 @@ class objSound : public Object {
       return get_field(this, Value);
    }
 
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getNote(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[26];
       SetObjectContext(this, field, AC::NIL);
@@ -572,6 +572,12 @@ class objSound : public Object {
 
 
    // Customised field setting
+
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->Path = Value;
+      return ERR::Okay;
+   }
 
    inline ERR setVolume(const double Value) noexcept {
       auto field = &this->Class->Dictionary[24];
@@ -658,11 +664,6 @@ class objSound : public Object {
    inline ERR setOnStop(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
    inline ERR setNote(const std::string_view &Value) noexcept {

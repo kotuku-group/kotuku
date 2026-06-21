@@ -1489,6 +1489,8 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     string Path         # Location of the script
     string Procedure    # Specifies a procedure name to be executed
     string ErrorMessage # Human readable error string defined on failure
+    string Statement
+    string WorkingPath
     oid Target          # The object that script objects must be initialised to, e.g. for obj.new()
     int(SCF) Flags      # Optional flags
     error Error         # If an error occurred, this field will indicate the error number
@@ -1501,8 +1503,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
    KEYVALUE Vars;                 // Global parameters
    kt::vector<std::string> Results;
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string String;
-   std::string WorkingPath;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs

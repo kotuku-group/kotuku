@@ -325,7 +325,7 @@ processing.sleep()  -- Wait for completion
     <field>
       <name>Path</name>
       <comment>Location of the audio sample data.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>This field must refer to a file that contains the audio data that will be loaded.  If creating a new sample with the <code>SDF::NEW</code> flag, it is not necessary to define a file source.</p>
