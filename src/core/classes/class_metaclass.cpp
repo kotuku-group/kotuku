@@ -39,7 +39,7 @@ static ERR OBJECT_SetName(OBJECTPTR, const std::string_view &);
 static void field_setup(extMetaClass *);
 static void sort_class_fields(extMetaClass *, std::vector<Field> &);
 
-static void add_field(extMetaClass *, std::vector<Field> &, const FieldArray &, uint16_t &);
+static void add_field(extMetaClass *, std::vector<Field> &, const FieldArray &, uint16_t &, uint16_t &);
 static void register_fields(std::vector<Field> &);
 static Field * lookup_id_byclass(extMetaClass *, uint32_t, extMetaClass **);
 
@@ -888,6 +888,7 @@ static void field_setup(extMetaClass *Class)
       if (Class->SubFields) {
          std::vector<Field> subFields;
          uint16_t offset = Class->Base->Size; // Offset starts from sizeof(extClassName)
+         uint16_t last_offset = offset;
          for (unsigned i=0; Class->SubFields[i].Name; i++) {
             bool found = false;
             auto hash = fieldhash(Class->SubFields[i].Name);
@@ -905,13 +906,14 @@ static void field_setup(extMetaClass *Class)
                   }
 
                   optimise_write_field(Class->FieldLookup[j]);
+                  last_offset = Class->FieldLookup[j].Offset;
 
                   found = true;
                   break;
                }
             }
 
-            if (!found) add_field(Class, subFields, Class->SubFields[i], offset);
+            if (!found) add_field(Class, subFields, Class->SubFields[i], offset, last_offset);
          }
 
          if (glLogLevel >= 2) register_fields(subFields);
@@ -926,8 +928,9 @@ static void field_setup(extMetaClass *Class)
       bool owner_field  = true;
       auto class_fields = Class->Fields;
       uint16_t offset   = sizeof(Object);
+      uint16_t last_offset = offset;
       for (unsigned i=0; class_fields[i].Name; i++) {
-         add_field(Class, Class->FieldLookup, class_fields[i], offset);
+         add_field(Class, Class->FieldLookup, class_fields[i], offset, last_offset);
 
          if (Class->FieldLookup[i].FieldID IS FID_Name) name_field = false;
          else if (Class->FieldLookup[i].FieldID IS FID_Owner) owner_field = false;
@@ -1073,7 +1076,7 @@ static uint16_t align_field_offset(uint16_t Offset, size_t Alignment)
 
 //********************************************************************************************************************
 
-static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const FieldArray &Source, uint16_t &Offset)
+static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const FieldArray &Source, uint16_t &Offset, uint16_t &LastOffset)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1218,6 +1221,12 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName.c_str(), field.Name, field.FieldID);
 
    if (field_size) {
+      if (field.Flags & FD_SYNONYM) {
+         field.Offset = LastOffset;
+         optimise_write_field(field);
+         return;
+      }
+
       const auto aligned_offset = align_field_offset(Offset, field_alignment);
       if (aligned_offset != Offset) {
          if (direct_field_access(field)) {
@@ -1227,9 +1236,9 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       }
 
       field.Offset = Offset;
+      LastOffset = field.Offset;
 
-      // Offset only advances for non-synonyms
-      if (!(field.Flags & FD_SYNONYM)) Offset = uint16_t(Offset + field_size);
+      Offset = uint16_t(Offset + field_size);
    }
 
    optimise_write_field(field);
