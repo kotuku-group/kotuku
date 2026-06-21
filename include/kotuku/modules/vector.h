@@ -5284,6 +5284,31 @@ class objVectorEllipse : public objVector {
 
    // Customised field getting
 
+   inline ERR getCX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
+   }
+
+   inline ERR getCY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
+   }
+
+   inline ERR getRadiusX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
+   }
+
+   inline ERR getRadiusY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getVertices(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1184));
+      return ERR::Okay;
+   }
+
    inline ERR getWidth(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[51];
       return field->GetValue(this, &Value);
@@ -5294,48 +5319,13 @@ class objVectorEllipse : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getRadius(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[56];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getRadiusX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getRadiusY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getVertices(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
-
-   inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
 
    inline ERR setCX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[52];
@@ -5344,11 +5334,6 @@ class objVectorEllipse : public objVector {
 
    inline ERR setCY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -5365,6 +5350,21 @@ class objVectorEllipse : public objVector {
    inline ERR setVertices(const int Value) noexcept {
       auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
 };

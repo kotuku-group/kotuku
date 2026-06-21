@@ -9,9 +9,6 @@ VectorRectangle extends the @Vector class with the ability to generate rectangul
 
 *********************************************************************************************************************/
 
-static constexpr DMF RECTANGLE_RADIUS_FLAGS = DMF::FIXED_RADIUS_X|DMF::FIXED_RADIUS_Y|
-   DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y;
-
 inline double rect_fixed_width(extVectorRectangle *Vector, const Unit &Value) {
    return Value.scaled() ? double(Value) * get_parent_width(Vector) : double(Value);
 }

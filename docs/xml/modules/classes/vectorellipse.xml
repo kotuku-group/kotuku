@@ -51,7 +51,7 @@
     <field>
       <name>CX</name>
       <comment>The horizontal center of the ellipse.  Expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The horizontal center of the ellipse is defined here as either a fixed or scaled value.</p>
@@ -61,7 +61,7 @@
     <field>
       <name>CY</name>
       <comment>The vertical center of the ellipse.  Expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The vertical center of the ellipse is defined here as either a fixed or scaled value.</p>
@@ -91,7 +91,7 @@
     <field>
       <name>RadiusX</name>
       <comment>The horizontal radius of the ellipse.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The horizontal radius of the ellipse is defined here as either a fixed or scaled value.</p>
@@ -101,7 +101,7 @@
     <field>
       <name>RadiusY</name>
       <comment>The vertical radius of the ellipse.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The vertical radius of the ellipse is defined here as either a fixed or scaled value.</p>
@@ -111,7 +111,7 @@
     <field>
       <name>Vertices</name>
       <comment>Limits the total number of vertices generated for the ellipse.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Setting a value in Vertices will limit the total number of vertices that are generated for the ellipse.  This feature is useful for generating common convex geometrical shapes such as triangles, polygons, hexagons and so forth; because their vertices will always touch the sides of an elliptical area.</p>

@@ -166,12 +166,6 @@ The horizontal center of the ellipse is defined here as either a fixed or scaled
 
 *********************************************************************************************************************/
 
-static ERR VECTORELLIPSE_GET_CX(extVectorEllipse *Self, Unit &Value)
-{
-   Value = Self->eCX;
-   return ERR::Okay;
-}
-
 static ERR VECTORELLIPSE_SET_CX(extVectorEllipse *Self, Unit &Value)
 {
    Self->eCX = Value;
@@ -186,12 +180,6 @@ CY: The vertical center of the ellipse.  Expressed as a fixed or scaled coordina
 The vertical center of the ellipse is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORELLIPSE_GET_CY(extVectorEllipse *Self, Unit &Value)
-{
-   Value = Self->eCY;
-   return ERR::Okay;
-}
 
 static ERR VECTORELLIPSE_SET_CY(extVectorEllipse *Self, Unit &Value)
 {
@@ -288,12 +276,6 @@ Please note that this feature is not part of the SVG standard.
 
 *********************************************************************************************************************/
 
-static ERR VECTORELLIPSE_GET_Vertices(extVectorEllipse *Self, int &Value)
-{
-   Value = Self->eVertices;
-   return ERR::Okay;
-}
-
 static ERR VECTORELLIPSE_SET_Vertices(extVectorEllipse *Self, int Value)
 {
    if (((Value >= 3) and (Value < 4096)) or (not Value)) {
@@ -330,14 +312,14 @@ static ERR VECTORELLIPSE_SET_Width(extVectorEllipse *Self, Unit &Value)
 #include "ellipse_def.cpp"
 
 static const FieldArray clEllipseFields[] = {
+   { "CX",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CX },
+   { "CY",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CY },
+   { "RadiusX",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
+   { "RadiusY",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
+   { "Vertices",   FDF_INT|FDF_RW, nullptr, VECTORELLIPSE_SET_Vertices },
    { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Width,   VECTORELLIPSE_SET_Width },
    { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Height,  VECTORELLIPSE_SET_Height },
-   { "CX",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_CX, VECTORELLIPSE_SET_CX },
-   { "CY",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_CY, VECTORELLIPSE_SET_CY },
    { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
-   { "RadiusX",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusX, VECTORELLIPSE_SET_RadiusX },
-   { "RadiusY",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusY, VECTORELLIPSE_SET_RadiusY },
-   { "Vertices",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Vertices, VECTORELLIPSE_SET_Vertices },
    // Synonyms
    { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
    { "RX", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusX, VECTORELLIPSE_SET_RadiusX },
