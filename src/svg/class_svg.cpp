@@ -563,12 +563,6 @@ during initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extSVG *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(extSVG *Self, const std::string_view &Value)
 {
    Self->Folder.clear();

@@ -2149,12 +2149,6 @@ only the quoted portion of the string will be used as the source path.
 
 *********************************************************************************************************************/
 
-static ERR GET_Location(extTask *Self, std::string_view &Value)
-{
-   Value = Self->Location;
-   return ERR::Okay;
-}
-
 static ERR SET_Location(extTask *Self, const std::string_view &Value)
 {
    if (not Value.empty()) {

@@ -987,25 +987,6 @@ static ERR IMAGE_Write(extImage *Self, struct acWrite *Args)
 -FIELD-
 Author: The name of the person or company that created the image.
 
-*********************************************************************************************************************/
-
-static ERR GET_Author(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvAuthor.empty()) {
-      Value = Self->prvAuthor;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Author(extImage *Self, std::string_view &Value)
-{
-   Self->prvAuthor.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Bitmap: Represents image data.
 
@@ -1021,48 +1002,12 @@ Copyright: Copyright details of an image.
 Copyright details related to an image may be specified here.  The copyright should be short and to the point, for
 example `Copyright J. Bloggs (c) 1992.`
 
-*********************************************************************************************************************/
-
-static ERR GET_Copyright(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvCopyright.empty()) {
-      Value = Self->prvCopyright;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Copyright(extImage *Self, std::string_view &Value)
-{
-   Self->prvCopyright.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Description: Long description for an image.
 
 A long description for an image may be entered in this field.  There is no strict limit on the length of the
 description.
 
-*********************************************************************************************************************/
-
-static ERR GET_Description(extImage *Self, std::string_view &Value)
-{
-   if (not Self->prvDescription.empty()) {
-      Value = Self->prvDescription;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Description(extImage *Self, std::string_view &Value)
-{
-   Self->prvDescription.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Disclaimer: The disclaimer associated with an image.
 

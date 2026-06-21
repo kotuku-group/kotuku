@@ -1890,12 +1890,6 @@ establish the base path for relative references in XQuery statements (e.g. for i
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extXML *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(extXML *Self, const std::string_view &Value)
 {
    if (Self->Source) SET_Source(Self, nullptr);
