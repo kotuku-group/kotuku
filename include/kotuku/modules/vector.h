@@ -5408,8 +5408,8 @@ class objVectorViewport : public objVector {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
-      return field->GetValue(this, &Value);
+      Value = *((ARF *)(((int8_t *)this) + 1160));
+      return ERR::Okay;
    }
 
    inline ERR getOverflow(VOF &Value) noexcept {
@@ -5418,13 +5418,38 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getOverflowX(VOF &Value) noexcept {
-      auto field = &this->Class->Dictionary[64];
-      return field->GetValue(this, &Value);
+      Value = *((VOF *)(((int8_t *)this) + 1164));
+      return ERR::Okay;
    }
 
    inline ERR getOverflowY(VOF &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
+      Value = *((VOF *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getBuffer(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewX(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1128));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewY(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewWidth(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1144));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewHeight(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
    }
 
    inline ERR getAbsX(int &Value) noexcept {
@@ -5441,11 +5466,6 @@ class objVectorViewport : public objVector {
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
-   }
-
-   inline ERR getBuffer(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->GetValue(this, &Value);
    }
 
    inline ERR getBuffered(int &Value) noexcept {
@@ -5507,26 +5527,6 @@ class objVectorViewport : public objVector {
       return error;
    }
 
-   inline ERR getViewX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
 
@@ -5548,6 +5548,26 @@ class objVectorViewport : public objVector {
    inline ERR setOverflowY(const VOF Value) noexcept {
       auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setViewX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setViewY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[60];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setViewWidth(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setViewHeight(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setBuffered(const int Value) noexcept {
@@ -5588,26 +5608,6 @@ class objVectorViewport : public objVector {
    inline ERR setHeight(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[62];
       return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setViewX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setViewY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setViewWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setViewHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

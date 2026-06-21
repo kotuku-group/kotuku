@@ -107,7 +107,7 @@
     <field>
       <name>AspectRatio</name>
       <comment>Flags that affect the aspect ratio of vectors within the viewport.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="ARF">ARF</type>
       <description>
 <p>Defining an aspect ratio allows finer control over the position and scale of the viewport's content within its target area.</p>
@@ -118,7 +118,7 @@
     <field>
       <name>Buffer</name>
       <comment>Returns the bitmap buffer that the viewport is using.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>OBJECTPTR</type>
     </field>
 
@@ -174,7 +174,7 @@
     <field>
       <name>OverflowX</name>
       <comment>Clipping options for the viewport's boundary on the x axis.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VOF">VOF</type>
       <description>
 <p>Choose an overflow option to enforce or disable clipping of the viewport's content.  The default state is <code>VISIBLE</code>. If the viewport's <fl>AspectRatio</fl> is set to <code>SLICE</code> then it will have priority over the overflow setting.</p>
@@ -186,7 +186,7 @@
     <field>
       <name>OverflowY</name>
       <comment>Clipping options for the viewport's boundary on the y axis.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VOF">VOF</type>
       <description>
 <p>Choose an overflow option to enforce or disable clipping of the viewport's content.  The default state is <code>VISIBLE</code>. If the viewport's <fl>AspectRatio</fl> is set to <code>SLICE</code> then it will have priority over the overflow setting.</p>
@@ -198,7 +198,7 @@
     <field>
       <name>ViewHeight</name>
       <comment>The height of the viewport's source area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The area defined by (<fl>ViewX</fl>,<fl>ViewY</fl>) and (<fl>ViewWidth</fl>,<fl>ViewHeight</fl>) declare the source area covered by the viewport.  The rendered graphics in the source area will be repositioned and scaled to the area defined by <code>(X,Y)</code> and <code>(Width,Height)</code>.</p>
@@ -208,7 +208,7 @@
     <field>
       <name>ViewWidth</name>
       <comment>The width of the viewport's source area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The area defined by (<fl>ViewX</fl>,<fl>ViewY</fl>) and (<fl>ViewWidth</fl>,<fl>ViewHeight</fl>) declare the source area covered by the viewport.  The rendered graphics in the source area will be repositioned and scaled to the area defined by (<fl>X</fl>,<fl>Y</fl>) and (<fl>Width</fl>,<fl>Height</fl>).</p>
@@ -218,7 +218,7 @@
     <field>
       <name>ViewX</name>
       <comment>The horizontal position of the viewport's source area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The area defined by (<fl>ViewX</fl>,<fl>ViewY</fl>) and (<fl>ViewWidth</fl>,<fl>ViewHeight</fl>) declare the source area covered by the viewport.  The rendered graphics in the source area will be repositioned and scaled to the area defined by (<fl>X</fl>,<fl>Y</fl>) and (<fl>Width</fl>,<fl>Height</fl>).</p>
@@ -228,7 +228,7 @@
     <field>
       <name>ViewY</name>
       <comment>The vertical position of the viewport's source area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The area defined by (<fl>ViewX</fl>,<fl>ViewY</fl>) and (<fl>ViewWidth</fl>,<fl>ViewHeight</fl>) declare the source area covered by the viewport.  The rendered graphics in the source area will be repositioned and scaled to the area defined by (<fl>X</fl>,<fl>Y</fl>) and (<fl>Width</fl>,<fl>Height</fl>).</p>
