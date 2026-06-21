@@ -32,7 +32,7 @@ class extVectorWave : public extVector {
    double wDegree = 0;
    double wThickness = 0;
    WVC wClose = WVC::NIL;
-   uint8_t wStyle = 0;
+   int wStyle = 0;
 
    extVectorWave() {
       GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
@@ -233,12 +233,6 @@ default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Amplitude(extVectorWave *Self, double *Value)
-{
-   *Value = Self->wAmplitude;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Amplitude(extVectorWave *Self, double Value)
 {
    if (Value > 0.0) {
@@ -258,12 +252,6 @@ filled.
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Close(extVectorWave *Self, WVC &Value)
-{
-   Value = Self->wClose;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Close(extVectorWave *Self, WVC Value)
 {
    Self->wClose = Value;
@@ -280,12 +268,6 @@ gives the wave an appearance of being funnelled into a cone-like shape.  If the 
 end points for the decay will be reversed.
 
 *********************************************************************************************************************/
-
-static ERR VECTORWAVE_GET_Decay(extVectorWave *Self, double *Value)
-{
-   *Value = Self->wDecay;
-   return ERR::Okay;
-}
 
 static ERR VECTORWAVE_SET_Decay(extVectorWave *Self, double Value)
 {
@@ -305,12 +287,6 @@ will give the wave an appearance of moving from right to left.
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Degree(extVectorWave *Self, double &Value)
-{
-   Value = Self->wDegree;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Degree(extVectorWave *Self, double Value)
 {
    Self->wDegree = Value;
@@ -326,12 +302,6 @@ The frequency determines the distance between each individual wave that is gener
 value for the frequency is 1.0.  Shortening the frequency to a value closer to 0 will bring the waves closer together.
 
 *********************************************************************************************************************/
-
-static ERR VECTORWAVE_GET_Frequency(extVectorWave *Self, double &Value)
-{
-   Value = Self->wFrequency;
-   return ERR::Okay;
-}
 
 static ERR VECTORWAVE_SET_Frequency(extVectorWave *Self, double Value)
 {
@@ -351,12 +321,6 @@ The height of the area containing the wave is defined here as a fixed or scaled 
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Height(extVectorWave *Self, Unit &Value)
-{
-   Value = Self->wHeight;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Height(extVectorWave *Self, Unit &Value)
 {
    Self->wHeight = Value;
@@ -374,12 +338,6 @@ By default, waves are generated in the style of a sine wave.  Alternative styles
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Style(extVectorWave *Self, int &Value)
-{
-   Value = Self->wStyle;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Style(extVectorWave *Self, int Value)
 {
    Self->wStyle = Value;
@@ -394,12 +352,6 @@ Specifying a thickness value will create a wave that forms a filled shape, rathe
 The thickness (height) of the wave is determined by the provided value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORWAVE_GET_Thickness(extVectorWave *Self, double &Value)
-{
-   Value = Self->wThickness;
-   return ERR::Okay;
-}
 
 static ERR VECTORWAVE_SET_Thickness(extVectorWave *Self, double Value)
 {
@@ -416,12 +368,6 @@ The width of the area containing the wave is defined here as a fixed or scaled v
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Width(extVectorWave *Self, Unit &Value)
-{
-   Value = Self->wWidth;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Width(extVectorWave *Self, Unit &Value)
 {
    Self->wWidth = Value;
@@ -436,12 +382,6 @@ X: The x coordinate of the wave.  Can be expressed as a fixed or scaled coordina
 The x coordinate of the wave is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORWAVE_GET_X(extVectorWave *Self, Unit &Value)
-{
-   Value = Self->wX;
-   return ERR::Okay;
-}
 
 static ERR VECTORWAVE_SET_X(extVectorWave *Self, Unit &Value)
 {
@@ -458,12 +398,6 @@ The y coordinate of the wave is defined here as either a fixed or scaled value.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_GET_Y(extVectorWave *Self, Unit &Value)
-{
-   Value = Self->wY;
-   return ERR::Okay;
-}
-
 static ERR VECTORWAVE_SET_Y(extVectorWave *Self, Unit &Value)
 {
    Self->wY = Value;
@@ -476,17 +410,17 @@ static ERR VECTORWAVE_SET_Y(extVectorWave *Self, Unit &Value)
 #include "wave_def.cpp"
 
 static const FieldArray clVectorWaveFields[] = {
-   { "Amplitude",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Amplitude, VECTORWAVE_SET_Amplitude },
-   { "Close",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORWAVE_GET_Close, VECTORWAVE_SET_Close, &clVectorWaveWVC },
-   { "Decay",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Decay, VECTORWAVE_SET_Decay },
-   { "Degree",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Degree, VECTORWAVE_SET_Degree },
-   { "Frequency",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Frequency, VECTORWAVE_SET_Frequency },
-   { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORWAVE_GET_Height, VECTORWAVE_SET_Height },
-   { "Style",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORWAVE_GET_Style, VECTORWAVE_SET_Style, &clVectorWaveWVS },
-   { "Thickness",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORWAVE_GET_Thickness, VECTORWAVE_SET_Thickness },
-   { "X",          FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORWAVE_GET_X, VECTORWAVE_SET_X },
-   { "Y",          FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORWAVE_GET_Y, VECTORWAVE_SET_Y },
-   { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORWAVE_GET_Width, VECTORWAVE_SET_Width },
+   { "X",          FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_X },
+   { "Y",          FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Y },
+   { "Width",      FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Width },
+   { "Height",     FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Height },
+   { "Amplitude",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Amplitude },
+   { "Frequency",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Frequency },
+   { "Decay",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Decay },
+   { "Degree",     FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Degree },
+   { "Thickness",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Thickness },
+   { "Close",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Close, &clVectorWaveWVC },
+   { "Style",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Style, &clVectorWaveWVS },
    END_FIELD
 };
 

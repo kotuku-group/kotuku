@@ -925,6 +925,8 @@ class extVectorRectangle : public extVector {
    Unit rX, rY, rWidth, rHeight, rXOffset, rYOffset;
    std::array<coord, 4> rRound = {};
    bool   rFullControl = false; // Full control of rounding values enabled
+
+   extVectorRectangle();
 };
 
 //********************************************************************************************************************

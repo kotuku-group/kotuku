@@ -65,7 +65,7 @@
     <field>
       <name>Amplitude</name>
       <comment>Adjusts the generated wave amplitude.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The Amplitude is expressed as a multiplier that adjusts the wave amplitude (i.e. height).  A value of 1.0 is the default.</p>
@@ -75,7 +75,7 @@
     <field>
       <name>Close</name>
       <comment>Closes the generated wave path at either the top or bottom.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Setting the Close field to <code>TOP</code> or <code>BOTTOM</code> will close the generated wave's path so that it is suitable for being filled.</p>
@@ -85,7 +85,7 @@
     <field>
       <name>Decay</name>
       <comment>Declares a rate of decay to apply to the wave amplitude.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The amplitude of a sine wave can be decayed between its start and end points by setting the Decay field.  Using a decay gives the wave an appearance of being funnelled into a cone-like shape.  If the value is negative, the start and end points for the decay will be reversed.</p>
@@ -95,7 +95,7 @@
     <field>
       <name>Degree</name>
       <comment>Declares the initial angle (in degrees) to use when generating the wave.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The degree value defines the initial angle that is used when computing the sine wave.  The default is zero.</p>
@@ -106,7 +106,7 @@
     <field>
       <name>Frequency</name>
       <comment>Defines the wave frequency (the distance between each wave).</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The frequency determines the distance between each individual wave that is generated.  The default value for the frequency is 1.0.  Shortening the frequency to a value closer to 0 will bring the waves closer together.</p>
@@ -116,7 +116,7 @@
     <field>
       <name>Height</name>
       <comment>The height of the area containing the wave.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The height of the area containing the wave is defined here as a fixed or scaled value.</p>
@@ -126,7 +126,7 @@
     <field>
       <name>Style</name>
       <comment>Selects an alternative wave style.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>NOT IMPLEMENTED</p>
@@ -137,7 +137,7 @@
     <field>
       <name>Thickness</name>
       <comment>Expands the height of the wave to the specified value to produce a closed path.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (height) of the wave is determined by the provided value.</p>
@@ -147,7 +147,7 @@
     <field>
       <name>Width</name>
       <comment>The width of the area containing the wave.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The width of the area containing the wave is defined here as a fixed or scaled value.</p>
@@ -157,7 +157,7 @@
     <field>
       <name>X</name>
       <comment>The x coordinate of the wave.  Can be expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The x coordinate of the wave is defined here as either a fixed or scaled value.</p>
@@ -167,7 +167,7 @@
     <field>
       <name>Y</name>
       <comment>The y coordinate of the wave.  Can be expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The y coordinate of the wave is defined here as either a fixed or scaled value.</p>

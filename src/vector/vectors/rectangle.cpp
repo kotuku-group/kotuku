@@ -214,14 +214,6 @@ static ERR VECTORRECTANGLE_MoveToPoint(extVectorRectangle *Self, struct acMoveTo
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORRECTANGLE_NewObject(extVectorRectangle *Self)
-{
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_rectangle;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Resize: Changes the rectangle dimensions.
@@ -472,6 +464,12 @@ static ERR VECTORRECTANGLE_SET_YOffset(extVectorRectangle *Self, Unit &Value)
    Self->rYOffset = Value;
    reset_path(Self);
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extVectorRectangle::extVectorRectangle() {
+   GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_rectangle;
 }
 
 //********************************************************************************************************************

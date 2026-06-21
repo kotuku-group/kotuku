@@ -97,12 +97,6 @@ The horizontal center of the spiral is defined here as either a fixed or scaled 
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORSPIRAL_GET_CX(extVectorSpiral *Self, Unit &Value)
-{
-   Value = Self->CX;
-   return ERR::Okay;
-}
-
 static ERR VECTORSPIRAL_SET_CX(extVectorSpiral *Self, Unit &Value)
 {
    Self->CX = Value;
@@ -117,12 +111,6 @@ CY: The vertical center of the spiral.  Expressed as a fixed or scaled coordinat
 The vertical center of the spiral is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSPIRAL_GET_CY(extVectorSpiral *Self, Unit &Value)
-{
-   Value = Self->CY;
-   return ERR::Okay;
-}
 
 static ERR VECTORSPIRAL_SET_CY(extVectorSpiral *Self, Unit &Value)
 {
@@ -141,12 +129,6 @@ generator.  It can be used as an alternative to, or conjunction with the #Radius
 If the LoopLimit is not set, the #Radius will take precedence.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSPIRAL_GET_LoopLimit(extVectorSpiral *Self, double &Value)
-{
-   Value = Self->LoopLimit;
-   return ERR::Okay;
-}
 
 static ERR VECTORSPIRAL_SET_LoopLimit(extVectorSpiral *Self, double Value)
 {
@@ -168,12 +150,6 @@ between each loop.  The space is declared in pixel units.
 If Spacing is undeclared, the spiral expands at an incremental rate of `Step * 0.1`.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSPIRAL_GET_Spacing(extVectorSpiral *Self, double &Value)
-{
-   Value = Self->Spacing;
-   return ERR::Okay;
-}
 
 static ERR VECTORSPIRAL_SET_Spacing(extVectorSpiral *Self, double Value)
 {
@@ -214,12 +190,6 @@ The generation of a spiral's path can be offset by specifying a positive value i
 Offset is set to zero.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSPIRAL_GET_Offset(extVectorSpiral *Self, double &Value)
-{
-   Value = Self->Offset;
-   return ERR::Okay;
-}
 
 static ERR VECTORSPIRAL_SET_Offset(extVectorSpiral *Self, double Value)
 {
@@ -289,12 +259,6 @@ is `1.0`.  Using larger values will create a spiral with jagged corners due to t
 
 *********************************************************************************************************************/
 
-static ERR VECTORSPIRAL_GET_Step(extVectorSpiral *Self, double &Value)
-{
-   Value = Self->Step;
-   return ERR::Okay;
-}
-
 static ERR VECTORSPIRAL_SET_Step(extVectorSpiral *Self, double Value)
 {
    if (Value != 0.0) {
@@ -333,17 +297,16 @@ static ERR VECTORSPIRAL_SET_Width(extVectorSpiral *Self, Unit &Value)
 #include "spiral_def.cpp"
 
 static const FieldArray clVectorSpiralFields[] = {
+   { "Spacing",    FDF_DOUBLE|FDF_RW, nullptr, VECTORSPIRAL_SET_Spacing },
+   { "Offset",     FDF_DOUBLE|FDF_RW, nullptr, VECTORSPIRAL_SET_Offset },
+   { "Step",       FDF_DOUBLE|FDF_RW, nullptr, VECTORSPIRAL_SET_Step },
+   { "LoopLimit",  FDF_DOUBLE|FDF_RW, nullptr, VECTORSPIRAL_SET_LoopLimit },
+   { "Radius",     FDF_UNIT|FDF_RW, nullptr, VECTORSPIRAL_SET_Radius },
+   { "CX",         FDF_UNIT|FDF_RW, nullptr, VECTORSPIRAL_SET_CX },
+   { "CY",         FDF_UNIT|FDF_RW, nullptr, VECTORSPIRAL_SET_CY },
    { "PathLength", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_PathLength, VECTORSPIRAL_SET_PathLength },
    { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Width,   VECTORSPIRAL_SET_Width },
    { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Height,  VECTORSPIRAL_SET_Height },
-   { "CX",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_CX, VECTORSPIRAL_SET_CX },
-   { "CY",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_CY, VECTORSPIRAL_SET_CY },
-   { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Radius,  VECTORSPIRAL_SET_Radius },
-   { "Offset",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Offset, VECTORSPIRAL_SET_Offset },
-   { "Step",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Step, VECTORSPIRAL_SET_Step },
-   { "Spacing",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Spacing, VECTORSPIRAL_SET_Spacing },
-   { "LoopLimit",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_LoopLimit, VECTORSPIRAL_SET_LoopLimit },
-   // Synonyms
    { "R",          FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Radius,  VECTORSPIRAL_SET_Radius },
    END_FIELD
 };
