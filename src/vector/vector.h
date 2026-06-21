@@ -792,7 +792,10 @@ class extVectorScene : public objVectorScene {
    bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
 
-   extVectorScene() : ShareVersion(1), SubtreeDirty(true) { }
+   extVectorScene() : ShareVersion(1), SubtreeDirty(true) {
+      Gamma = 1;
+      SampleMethod = VSM::AUTO;
+   }
 
    // Returns the rasteriser gamma table for the scene's current Gamma value; one shared LUT serves
    // every rasteriser in the scene.  Returns nullptr for identity gamma, which restores the
@@ -821,8 +824,13 @@ class extVectorViewport : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorViewport";
    using create = kt::Create<extVectorViewport>;
 
-   FUNCTION vpDragCallback;
+   // Exported fields with concrete (direct-access) offsets must remain contiguous at the front in field-array order.
+   objBitmap *vpBuffer;
    double vpViewX, vpViewY, vpViewWidth, vpViewHeight;     // Viewbox values determine the area of the SVG content that is being sourced.  These values are always fixed pixel units.
+   ARF   vpAspectRatio;
+   VOF   vpOverflowX, vpOverflowY;
+
+   FUNCTION vpDragCallback;
    Unit vpTargetX, vpTargetY;
    Unit vpTargetWidth, vpTargetHeight;
    Unit vpTargetXO, vpTargetYO; // Target dimensions
@@ -830,15 +838,12 @@ class extVectorViewport : public extVector {
    double vpFixedWidth, vpFixedHeight; // Fixed pixel position values, relative to parent viewport
    TClipRectangle<double> vpBounds; // Bounding box coordinates relative to (0,0), used for clipping
    double vpAlignX, vpAlignY;
-   objBitmap *vpBuffer;
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
    uint64_t vpSeenShareVersion; // Scene ShareVersion that was current when vpBuffer was last rendered.
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
-   ARF   vpAspectRatio;
-   VOF   vpOverflowX, vpOverflowY;
    uint8_t vpClipConfiguring:1;
    uint8_t vpDragging:1;
    uint8_t vpBuffered:1; // True if the client requested that the viewport is buffered.
@@ -922,6 +927,8 @@ class extVectorRectangle : public extVector {
    Unit rX, rY, rWidth, rHeight, rXOffset, rYOffset;
    std::array<coord, 4> rRound = {};
    bool   rFullControl = false; // Full control of rounding values enabled
+
+   extVectorRectangle();
 };
 
 //********************************************************************************************************************

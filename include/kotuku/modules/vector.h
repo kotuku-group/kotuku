@@ -671,6 +671,8 @@ class objVectorColour : public Object {
    double Green;  // The green component value.
    double Blue;   // The blue component value.
    double Alpha;  // The alpha component value.
+   public:
+   objVectorColour() : Alpha(1.0) {}
 
    // Action stubs
 
@@ -3378,8 +3380,8 @@ class objVectorClip : public Object {
    // Customised field getting
 
    inline ERR getViewport(objVectorViewport * &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->GetValue(this, &Value);
+      Value = this->Viewport;
+      return ERR::Okay;
    }
 
    inline ERR getSID(std::string_view &Value) noexcept {
@@ -3388,13 +3390,13 @@ class objVectorClip : public Object {
    }
 
    inline ERR getUnits(VUNIT &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->GetValue(this, &Value);
+      Value = this->Units;
+      return ERR::Okay;
    }
 
    inline ERR getFlags(VCLF &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->GetValue(this, &Value);
+      Value = this->Flags;
+      return ERR::Okay;
    }
 
 
@@ -4608,103 +4610,63 @@ class objVectorWave : public objVector {
 
    // Customised field getting
 
-   inline ERR getAmplitude(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getClose(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getDecay(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getDegree(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getFrequency(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getStyle(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getThickness(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getAmplitude(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1184));
+      return ERR::Okay;
+   }
+
+   inline ERR getFrequency(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1192));
+      return ERR::Okay;
+   }
+
+   inline ERR getDecay(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1200));
+      return ERR::Okay;
+   }
+
+   inline ERR getDegree(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1208));
+      return ERR::Okay;
+   }
+
+   inline ERR getThickness(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1216));
+      return ERR::Okay;
+   }
+
+   inline ERR getClose(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1224));
+      return ERR::Okay;
+   }
+
+   inline ERR getStyle(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1228));
+      return ERR::Okay;
    }
 
 
    // Customised field setting
-
-   inline ERR setAmplitude(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setClose(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setDecay(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setDegree(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setFrequency(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setStyle(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setThickness(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
 
    inline ERR setX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[53];
@@ -4719,6 +4681,46 @@ class objVectorWave : public objVector {
    inline ERR setWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setAmplitude(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setFrequency(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setDecay(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setDegree(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setThickness(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setClose(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setStyle(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -4980,6 +4982,66 @@ class objVectorShape : public objVector {
 
    // Customised field getting
 
+   inline ERR getM(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
+   }
+
+   inline ERR getN1(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1128));
+      return ERR::Okay;
+   }
+
+   inline ERR getN2(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
+   }
+
+   inline ERR getN3(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1144));
+      return ERR::Okay;
+   }
+
+   inline ERR getA(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
+   }
+
+   inline ERR getB(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1160));
+      return ERR::Okay;
+   }
+
+   inline ERR getPhi(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getVertices(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1176));
+      return ERR::Okay;
+   }
+
+   inline ERR getSpiral(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1180));
+      return ERR::Okay;
+   }
+
+   inline ERR getRepeat(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1184));
+      return ERR::Okay;
+   }
+
+   inline ERR getClose(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1188));
+      return ERR::Okay;
+   }
+
+   inline ERR getMod(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1192));
+      return ERR::Okay;
+   }
+
    inline ERR getCX(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[56];
       return field->GetValue(this, &Value);
@@ -4995,103 +5057,8 @@ class objVectorShape : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getClose(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getPhi(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getA(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getB(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getM(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getN1(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getN2(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getN3(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getVertices(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getMod(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSpiral(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getRepeat(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
-
-   inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[61];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setClose(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setPhi(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setA(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setB(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
 
    inline ERR setM(const double Value) noexcept {
       auto field = &this->Class->Dictionary[53];
@@ -5113,13 +5080,23 @@ class objVectorShape : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setVertices(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
-      return field->WriteValue(this, field, FD_INT, &Value);
+   inline ERR setA(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[57];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setMod(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+   inline ERR setB(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[60];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setPhi(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setVertices(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[59];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -5131,6 +5108,31 @@ class objVectorShape : public objVector {
    inline ERR setRepeat(const int Value) noexcept {
       auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setClose(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMod(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setCX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[61];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
 };
@@ -5152,6 +5154,41 @@ class objVectorSpiral : public objVector {
 
    // Customised field getting
 
+   inline ERR getSpacing(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
+   }
+
+   inline ERR getOffset(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1128));
+      return ERR::Okay;
+   }
+
+   inline ERR getStep(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
+   }
+
+   inline ERR getLoopLimit(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1144));
+      return ERR::Okay;
+   }
+
+   inline ERR getRadius(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
+   }
+
+   inline ERR getCX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getCY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1184));
+      return ERR::Okay;
+   }
+
    inline ERR getPathLength(int &Value) noexcept {
       auto field = &this->Class->Dictionary[46];
       return field->GetValue(this, &Value);
@@ -5167,43 +5204,43 @@ class objVectorSpiral : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getOffset(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getStep(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getSpacing(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getLoopLimit(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
+
+   inline ERR setSpacing(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setOffset(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setStep(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setLoopLimit(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
 
    inline ERR setPathLength(const int Value) noexcept {
       auto field = &this->Class->Dictionary[46];
@@ -5218,41 +5255,6 @@ class objVectorSpiral : public objVector {
    inline ERR setHeight(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setOffset(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setStep(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setSpacing(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setLoopLimit(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };
@@ -5282,6 +5284,31 @@ class objVectorEllipse : public objVector {
 
    // Customised field getting
 
+   inline ERR getCX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
+   }
+
+   inline ERR getCY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
+   }
+
+   inline ERR getRadiusX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
+   }
+
+   inline ERR getRadiusY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getVertices(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1184));
+      return ERR::Okay;
+   }
+
    inline ERR getWidth(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[51];
       return field->GetValue(this, &Value);
@@ -5292,48 +5319,13 @@ class objVectorEllipse : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getRadius(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[56];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getRadiusX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getRadiusY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getVertices(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
-
-   inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
 
    inline ERR setCX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[52];
@@ -5342,11 +5334,6 @@ class objVectorEllipse : public objVector {
 
    inline ERR setCY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -5363,6 +5350,21 @@ class objVectorEllipse : public objVector {
    inline ERR setVertices(const int Value) noexcept {
       auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
 };
@@ -5406,8 +5408,8 @@ class objVectorViewport : public objVector {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
-      return field->GetValue(this, &Value);
+      Value = *((ARF *)(((int8_t *)this) + 1160));
+      return ERR::Okay;
    }
 
    inline ERR getOverflow(VOF &Value) noexcept {
@@ -5416,13 +5418,38 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getOverflowX(VOF &Value) noexcept {
-      auto field = &this->Class->Dictionary[64];
-      return field->GetValue(this, &Value);
+      Value = *((VOF *)(((int8_t *)this) + 1164));
+      return ERR::Okay;
    }
 
    inline ERR getOverflowY(VOF &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
+      Value = *((VOF *)(((int8_t *)this) + 1168));
+      return ERR::Okay;
+   }
+
+   inline ERR getBuffer(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 1120));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewX(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1128));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewY(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1136));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewWidth(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1144));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewHeight(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1152));
+      return ERR::Okay;
    }
 
    inline ERR getAbsX(int &Value) noexcept {
@@ -5439,11 +5466,6 @@ class objVectorViewport : public objVector {
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
-   }
-
-   inline ERR getBuffer(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
-      return field->GetValue(this, &Value);
    }
 
    inline ERR getBuffered(int &Value) noexcept {
@@ -5505,26 +5527,6 @@ class objVectorViewport : public objVector {
       return error;
    }
 
-   inline ERR getViewX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getViewHeight(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
 
@@ -5546,6 +5548,26 @@ class objVectorViewport : public objVector {
    inline ERR setOverflowY(const VOF Value) noexcept {
       auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setViewX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setViewY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[60];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setViewWidth(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setViewHeight(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setBuffered(const int Value) noexcept {
@@ -5586,26 +5608,6 @@ class objVectorViewport : public objVector {
    inline ERR setHeight(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[62];
       return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setViewX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setViewY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setViewWidth(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setViewHeight(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

@@ -23,7 +23,7 @@
     <field>
       <name>CX</name>
       <comment>The horizontal center of the spiral.  Expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The horizontal center of the spiral is defined here as either a fixed or scaled value.</p>
@@ -33,7 +33,7 @@
     <field>
       <name>CY</name>
       <comment>The vertical center of the spiral.  Expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The vertical center of the spiral is defined here as either a fixed or scaled value.</p>
@@ -53,7 +53,7 @@
     <field>
       <name>LoopLimit</name>
       <comment>Used to limit the number of loops produced by the spiral path generator.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The LoopLimit can be used to impose a limit on the total number of loops that are performed by the spiral path generator.  It can be used as an alternative to, or conjunction with the <fl>Radius</fl> value to limit the final spiral size.</p>
@@ -64,7 +64,7 @@
     <field>
       <name>Offset</name>
       <comment>Offset the starting coordinate of the spiral by this value.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The generation of a spiral's path can be offset by specifying a positive value in the Offset field.  By default the Offset is set to zero.</p>
@@ -84,7 +84,7 @@
     <field>
       <name>Radius</name>
       <comment>The radius of the spiral.  Expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The radius of the spiral is defined here as either a fixed or scaled value.  If zero, preference is given to <fl>LoopLimit</fl>.</p>
@@ -94,7 +94,7 @@
     <field>
       <name>Spacing</name>
       <comment>Declares the amount of empty space between each loop of the spiral.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>Spacing tightly controls the computation of the spiral path, ensuring that a specific amount of empty space is left between each loop.  The space is declared in pixel units.</p>
@@ -105,7 +105,7 @@
     <field>
       <name>Step</name>
       <comment>Determines the distance between each vertex in the spiral's path.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The Step value affects the distance between each vertex in the spiral path during its generation.  The default value is <code>1.0</code>.  Using larger values will create a spiral with jagged corners due to the reduction in vertices.</p>

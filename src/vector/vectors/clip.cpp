@@ -90,12 +90,6 @@ Lookup: VCLF
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_GET_Flags(extVectorClip *Self, VCLF *Value)
-{
-   *Value = Self->Flags;
-   return ERR::Okay;
-}
-
 static ERR VECTORCLIP_SET_Flags(extVectorClip *Self, VCLF Value)
 {
    if (Self->Flags != Value) {
@@ -122,12 +116,6 @@ viewport.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_GET_Units(extVectorClip *Self, VUNIT *Value)
-{
-   *Value = Self->Units;
-   return ERR::Okay;
-}
-
 static ERR VECTORCLIP_SET_Units(extVectorClip *Self, VUNIT Value)
 {
    if (Self->Units != Value) {
@@ -147,21 +135,15 @@ declared here.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_GET_Viewport(extVectorClip *Self, objVectorViewport **Value)
-{
-   *Value = Self->Viewport;
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 #include "clip_def.cpp"
 
 static const FieldArray clClipFields[] = {
-   { "Viewport", FDF_OBJECT|FDF_R|FDF_PURE, VECTORCLIP_GET_Viewport },
-   { "SID",      FDF_CPPSTRING|FDF_RW|FDF_PURE },
-   { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORCLIP_GET_Units, VECTORCLIP_SET_Units, &clVectorClipUnits },
-   { "Flags",    FDF_INTFLAGS|FDF_RW|FDF_PURE, VECTORCLIP_GET_Flags, VECTORCLIP_SET_Flags, &clVectorClipFlags },
+   { "Viewport", FDF_OBJECT|FDF_R, nullptr },
+   { "SID",      FDF_CPPSTRING|FDF_RW },
+   { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORCLIP_SET_Units, &clVectorClipUnits },
+   { "Flags",    FDF_INTFLAGS|FDF_RW, nullptr, VECTORCLIP_SET_Flags, &clVectorClipFlags },
    END_FIELD
 };
 

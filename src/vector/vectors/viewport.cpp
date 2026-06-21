@@ -295,12 +295,6 @@ area.
 
 *********************************************************************************************************************/
 
-static ERR VIEW_GET_AspectRatio(extVectorViewport *Self, ARF &Value)
-{
-   Value = Self->vpAspectRatio;
-   return ERR::Okay;
-}
-
 static ERR VIEW_SET_AspectRatio(extVectorViewport *Self, ARF Value)
 {
    Self->vpAspectRatio = Value;
@@ -312,12 +306,6 @@ static ERR VIEW_SET_AspectRatio(extVectorViewport *Self, ARF Value)
 Buffer: Returns the bitmap buffer that the viewport is using.
 
 *********************************************************************************************************************/
-
-static ERR VIEW_GET_Buffer(extVectorViewport* Self, objBitmap * &Value)
-{
-   Value = Self->vpBuffer;
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 -FIELD-
@@ -476,12 +464,6 @@ This option controls the x axis only.
 
 *********************************************************************************************************************/
 
-static ERR VIEW_GET_OverflowX(extVectorViewport *Self, VOF &Value)
-{
-   Value = Self->vpOverflowX;
-   return ERR::Okay;
-}
-
 static ERR VIEW_SET_OverflowX(extVectorViewport *Self, VOF Value)
 {
    Self->vpOverflowX = Value;
@@ -501,12 +483,6 @@ This option controls the y axis only.
 
 *********************************************************************************************************************/
 
-static ERR VIEW_GET_OverflowY(extVectorViewport *Self, VOF &Value)
-{
-   Value = Self->vpOverflowY;
-   return ERR::Okay;
-}
-
 static ERR VIEW_SET_OverflowY(extVectorViewport *Self, VOF Value)
 {
    Self->vpOverflowY = Value;
@@ -523,12 +499,6 @@ rendered graphics in the source area will be repositioned and scaled to the area
 `(Width,Height)`.
 
 *********************************************************************************************************************/
-
-static ERR VIEW_GET_ViewHeight(extVectorViewport *Self, double &Value)
-{
-   Value = Self->vpViewHeight;
-   return ERR::Okay;
-}
 
 static ERR VIEW_SET_ViewHeight(extVectorViewport *Self, double Value)
 {
@@ -550,12 +520,6 @@ rendered graphics in the source area will be repositioned and scaled to the area
 
 *********************************************************************************************************************/
 
-static ERR VIEW_GET_ViewX(extVectorViewport *Self, double &Value)
-{
-   Value = Self->vpViewX;
-   return ERR::Okay;
-}
-
 static ERR VIEW_SET_ViewX(extVectorViewport *Self, double Value)
 {
    Self->vpViewX = Value;
@@ -572,12 +536,6 @@ rendered graphics in the source area will be repositioned and scaled to the area
 (#Width,#Height).
 
 *********************************************************************************************************************/
-
-static ERR VIEW_GET_ViewWidth(extVectorViewport *Self, double &Value)
-{
-   Value = Self->vpViewWidth;
-   return ERR::Okay;
-}
 
 static ERR VIEW_SET_ViewWidth(extVectorViewport *Self, double Value)
 {
@@ -598,12 +556,6 @@ rendered graphics in the source area will be repositioned and scaled to the area
 (#Width,#Height).
 
 *********************************************************************************************************************/
-
-static ERR VIEW_GET_ViewY(extVectorViewport *Self, double &Value)
-{
-   Value = Self->vpViewY;
-   return ERR::Okay;
-}
 
 static ERR VIEW_SET_ViewY(extVectorViewport *Self, double Value)
 {
@@ -829,25 +781,27 @@ static ERR VIEW_SET_YOffset(extVectorViewport *Self, Unit &Value)
 #include "viewport_def.cpp"
 
 static const FieldArray clViewFields[] = {
+   // Concrete (direct-access) fields first, in the same order as their members in extVectorViewport.
+   { "Buffer",       FDF_OBJECT|FDF_R, nullptr },
+   { "ViewX",        FDF_DOUBLE|FDF_RW, nullptr, VIEW_SET_ViewX },
+   { "ViewY",        FDF_DOUBLE|FDF_RW, nullptr, VIEW_SET_ViewY },
+   { "ViewWidth",    FDF_DOUBLE|FDF_RW, nullptr, VIEW_SET_ViewWidth },
+   { "ViewHeight",   FDF_DOUBLE|FDF_RW, nullptr, VIEW_SET_ViewHeight },
+   { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, VIEW_SET_AspectRatio, &clAspectRatio },
+   { "OverflowX",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VIEW_SET_OverflowX, &clVectorViewportVOF },
+   { "OverflowY",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VIEW_SET_OverflowY, &clVectorViewportVOF },
+   // Virtual fields (computed, composite or bitfield-backed).
    { "AbsX",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsX },
    { "AbsY",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsY },
-   { "AspectRatio",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, VIEW_GET_AspectRatio, VIEW_SET_AspectRatio, &clAspectRatio },
-   { "Buffer",       FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, VIEW_GET_Buffer },
    { "Buffered",     FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE, VIEW_GET_Buffered, VIEW_SET_Buffered },
    { "DragCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DragCallback, VIEW_SET_DragCallback },
    { "Overflow",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_Overflow, VIEW_SET_Overflow, &clVectorViewportVOF },
-   { "OverflowX",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_OverflowX, VIEW_SET_OverflowX, &clVectorViewportVOF },
-   { "OverflowY",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_OverflowY, VIEW_SET_OverflowY, &clVectorViewportVOF },
    { "X",            FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_X,       VIEW_SET_X },
    { "Y",            FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_Y,       VIEW_SET_Y },
    { "XOffset",      FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_XOffset, VIEW_SET_XOffset },
    { "YOffset",      FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_YOffset, VIEW_SET_YOffset },
    { "Width",        FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_Width,   VIEW_SET_Width },
    { "Height",       FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_Height,  VIEW_SET_Height },
-   { "ViewX",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewX,      VIEW_SET_ViewX },
-   { "ViewY",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewY,      VIEW_SET_ViewY },
-   { "ViewWidth",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewWidth,  VIEW_SET_ViewWidth },
-   { "ViewHeight",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VIEW_GET_ViewHeight, VIEW_SET_ViewHeight },
    END_FIELD
 };
 

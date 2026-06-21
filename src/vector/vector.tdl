@@ -442,6 +442,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    double Green
    double Blue
    double Alpha
+  ]],
+  "",
+  [[
+   objVectorColour() : Alpha(1.0) {}
   ]])
 
   klass('VectorTransition', {

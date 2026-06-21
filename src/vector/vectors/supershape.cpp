@@ -23,14 +23,16 @@ class extVectorShape : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorShape";
    using create = kt::Create<extVectorShape>;
 
-   Unit Radius;
-   Unit CX, CY;
+   // Concrete (direct-access) fields first, in the same order as the field array.
    double M, N1, N2, N3, A, B, Phi;
    int Vertices;
    int Spiral;
    int Repeat;
-   bool Close;
-   uint8_t Mod;
+   int Close;
+   int Mod;
+
+   Unit Radius; // Radius/CX/CY remain virtual (their getters apply a defined() guard)
+   Unit CX, CY;
 
    extVectorShape() {
       Radius = 100;
@@ -187,12 +189,6 @@ This field sets the Superformula's 'A' parameter value.
 
 *********************************************************************************************************************/
 
-static ERR VECTORSHAPE_GET_A(extVectorShape *Self, double *Value)
-{
-   *Value = Self->A;
-   return ERR::Okay;
-}
-
 static ERR VECTORSHAPE_SET_A(extVectorShape *Self, double Value)
 {
    Self->A = Value;
@@ -207,12 +203,6 @@ B: A parameter for the Superformula.
 This field sets the Superformula's 'B' parameter value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSHAPE_GET_B(extVectorShape *Self, double *Value)
-{
-   *Value = Self->B;
-   return ERR::Okay;
-}
 
 static ERR VECTORSHAPE_SET_B(extVectorShape *Self, double Value)
 {
@@ -271,12 +261,6 @@ If TRUE, the shape path will be closed between the beginning and end points.
 
 *********************************************************************************************************************/
 
-static ERR VECTORSHAPE_GET_Close(extVectorShape *Self, int *Value)
-{
-   *Value = Self->Close;
-   return ERR::Okay;
-}
-
 static ERR VECTORSHAPE_SET_Close(extVectorShape *Self, int Value)
 {
    Self->Close = Value;
@@ -291,12 +275,6 @@ M: A parameter for the Superformula.
 This field sets the Superformula's 'M' parameter value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSHAPE_GET_M(extVectorShape *Self, double *Value)
-{
-   *Value = Self->M;
-   return ERR::Okay;
-}
 
 static ERR VECTORSHAPE_SET_M(extVectorShape *Self, double Value)
 {
@@ -327,12 +305,6 @@ generated 'r' value.  Possible values and their effects are:
 
 *********************************************************************************************************************/
 
-static ERR VECTORSHAPE_GET_Mod(extVectorShape *Self, int *Value)
-{
-   *Value = Self->Mod;
-   return ERR::Okay;
-}
-
 static ERR VECTORSHAPE_SET_Mod(extVectorShape *Self, int Value)
 {
    Self->Mod = Value;
@@ -347,12 +319,6 @@ N1: A parameter for the super shape algorithm.
 This field sets the Superformula's 'N1' parameter value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSHAPE_GET_N1(extVectorShape *Self, double *Value)
-{
-   *Value = Self->N1;
-   return ERR::Okay;
-}
 
 static ERR VECTORSHAPE_SET_N1(extVectorShape *Self, double Value)
 {
@@ -369,12 +335,6 @@ This field sets the Superformula's 'N2' parameter value.
 
 *********************************************************************************************************************/
 
-static ERR VECTORSHAPE_GET_N2(extVectorShape *Self, double *Value)
-{
-   *Value = Self->N2;
-   return ERR::Okay;
-}
-
 static ERR VECTORSHAPE_SET_N2(extVectorShape *Self, double Value)
 {
    Self->N2 = Value;
@@ -389,12 +349,6 @@ N3: A parameter for the super shape algorithm.
 This field sets the Superformula's 'N3' parameter value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSHAPE_GET_N3(extVectorShape *Self, double *Value)
-{
-   *Value = Self->N3;
-   return ERR::Okay;
-}
 
 static ERR VECTORSHAPE_SET_N3(extVectorShape *Self, double Value)
 {
@@ -413,12 +367,6 @@ itself then the Phi value should be increased until it does.  The minimum (and d
 that the Phi value is increased in increments of 2 until the desired effect is achieved.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSHAPE_GET_Phi(extVectorShape *Self, double *Value)
-{
-   *Value = Self->Phi;
-   return ERR::Okay;
-}
 
 static ERR VECTORSHAPE_SET_Phi(extVectorShape *Self, double Value)
 {
@@ -462,12 +410,6 @@ The Repeat value cannot be set in conjunction with #Spiral.
 
 *********************************************************************************************************************/
 
-static ERR VECTORSHAPE_GET_Repeat(extVectorShape *Self, int *Value)
-{
-   *Value = Self->Repeat;
-   return ERR::Okay;
-}
-
 static ERR VECTORSHAPE_SET_Repeat(extVectorShape *Self, int Value)
 {
    if ((Value >= 0) and (Value < 512)) {
@@ -486,12 +428,6 @@ Setting the Spiral field to a value greater than one will cause the path generat
 specified.  For instance, a value of 5 will generate five spirals.
 
 *********************************************************************************************************************/
-
-static ERR VECTORSHAPE_GET_Spiral(extVectorShape *Self, int *Value)
-{
-   *Value = Self->Spiral;
-   return ERR::Okay;
-}
 
 static ERR VECTORSHAPE_SET_Spiral(extVectorShape *Self, int Value)
 {
@@ -513,12 +449,6 @@ their vertices will always touch the sides of an elliptical area.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORSHAPE_GET_Vertices(extVectorShape *Self, int &Value)
-{
-   Value = Self->Vertices;
-   return ERR::Okay;
-}
-
 static ERR VECTORSHAPE_SET_Vertices(extVectorShape *Self, int Value)
 {
    if ((Value >= 3) and (Value < 16384)) {
@@ -534,22 +464,21 @@ static ERR VECTORSHAPE_SET_Vertices(extVectorShape *Self, int Value)
 #include "supershape_def.cpp"
 
 static const FieldArray clVectorShapeFields[] = {
+   { "M",        FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_M },
+   { "N1",       FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_N1 },
+   { "N2",       FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_N2 },
+   { "N3",       FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_N3 },
+   { "A",        FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_A },
+   { "B",        FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_B },
+   { "Phi",      FDF_DOUBLE|FDF_RW, nullptr, VECTORSHAPE_SET_Phi },
+   { "Vertices", FDF_INT|FDF_RW, nullptr, VECTORSHAPE_SET_Vertices },
+   { "Spiral",   FDF_INT|FDF_RW, nullptr, VECTORSHAPE_SET_Spiral },
+   { "Repeat",   FDF_INT|FDF_RW, nullptr, VECTORSHAPE_SET_Repeat },
+   { "Close",    FDF_INT|FDF_RW, nullptr, VECTORSHAPE_SET_Close },
+   { "Mod",      FDF_INT|FDF_RW, nullptr, VECTORSHAPE_SET_Mod },
    { "CX",       FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_CX, VECTORSHAPE_SET_CX },
    { "CY",       FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_CY, VECTORSHAPE_SET_CY },
    { "Radius",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Radius,  VECTORSHAPE_SET_Radius },
-   { "Close",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Close, VECTORSHAPE_SET_Close },
-   { "Phi",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Phi,  VECTORSHAPE_SET_Phi },
-   { "A",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_A,  VECTORSHAPE_SET_A },
-   { "B",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_B,  VECTORSHAPE_SET_B },
-   { "M",        FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_M,  VECTORSHAPE_SET_M },
-   { "N1",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_N1, VECTORSHAPE_SET_N1 },
-   { "N2",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_N2, VECTORSHAPE_SET_N2 },
-   { "N3",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, VECTORSHAPE_GET_N3, VECTORSHAPE_SET_N3 },
-   { "Vertices", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Vertices, VECTORSHAPE_SET_Vertices },
-   { "Mod",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Mod, VECTORSHAPE_SET_Mod },
-   { "Spiral",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Spiral, VECTORSHAPE_SET_Spiral },
-   { "Repeat",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Repeat, VECTORSHAPE_SET_Repeat },
-   // Synonyms
    { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSHAPE_GET_Radius,  VECTORSHAPE_SET_Radius },
    END_FIELD
 };

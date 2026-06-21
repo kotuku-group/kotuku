@@ -54,40 +54,29 @@ static void generate_ellipse(extVectorEllipse *Vector, agg::path_storage &Path)
       }
    }
 
-#if 0
-   // Create an ellipse using bezier arcs.  Unfortunately the precision of the existing arc code
-   // is not good enough to make this viable at the current time.
-   // Top -> right -> bottom -> left -> top
+   if (Vector->eVertices >= 3) {
+      // The client has explicitly requested a polygonal approximation with a fixed number of vertices.
 
-   Path.move_to(cx, cy-ry);
-   Path.arc_to(rx, ry, 0 /* angle */, 0 /* large */, 1 /* sweep */, cx+rx, cy);
-   Path.arc_to(rx, ry, 0, 0, 1, cx, cy+ry);
-   Path.arc_to(rx, ry, 0, 0, 1, cx-rx, cy);
-   Path.arc_to(rx, ry, 0, 0, 1, cx, cy-ry);
-   Path.close_polygon();
-#else
-   uint32_t vertices;
-   if (Vector->eVertices >= 3) vertices = Vector->eVertices;
+      uint32_t vertices = Vector->eVertices;
+      for (uint32_t v=0; v < vertices; v++) {
+         double angle = double(v) / double(vertices) * 2.0 * agg::pi;
+         double x = cx + cos(angle) * rx;
+         double y = cy + sin(angle) * ry;
+         if (v IS 0) Path.move_to(x, y);
+         else Path.line_to(x, y);
+      }
+      Path.close_polygon();
+   }
    else {
-      // Calculate the number of vertices needed for a smooth result, based on the final scale of the ellipse
-      // when parent views are taken into consideration.
-      auto scale = Vector->Transform.scale();
-      double ra = (fabs(rx * scale) + fabs(ry * scale)) * 0.5;
-      double da = acos(ra / (ra + 0.125 / scale)) * 2.0;
-      vertices = agg::uround(2.0 * agg::pi / da);
-      if (vertices < 3) vertices = 3; // Because you need at least 3 vertices to create a shape.
-   }
+      // Generate the ellipse from a single full-sweep cubic bezier arc.  Supplying the centre and radii
+      // directly avoids the endpoint-solving instability of stitching four separate arc_to() segments and
+      // yields a tangent-continuous result with a maximum radial error of ~0.03% of the radius.  The curve
+      // is flattened to the appropriate resolution by the downstream conv_curve machinery.
 
-   for (uint32_t v=0; v < vertices; v++) {
-      double angle = double(v) / double(vertices) * 2.0 * agg::pi;
-      //if (m_cw) angle = 2.0 * agg::pi - angle;
-      double x = cx + cos(angle) * rx;
-      double y = cy + sin(angle) * ry;
-      if (v == 0) Path.move_to(x, y);
-      else Path.line_to(x, y);
+      agg::bezier_arc arc(cx, cy, rx, ry, 0.0, 2.0 * agg::pi);
+      Path.concat_path(arc);
+      Path.close_polygon();
    }
-   Path.close_polygon();
-#endif
 
    Vector->Bounds = { cx - rx, cy - ry, cx + rx, cy + ry };
 
@@ -166,12 +155,6 @@ The horizontal center of the ellipse is defined here as either a fixed or scaled
 
 *********************************************************************************************************************/
 
-static ERR VECTORELLIPSE_GET_CX(extVectorEllipse *Self, Unit &Value)
-{
-   Value = Self->eCX;
-   return ERR::Okay;
-}
-
 static ERR VECTORELLIPSE_SET_CX(extVectorEllipse *Self, Unit &Value)
 {
    Self->eCX = Value;
@@ -186,12 +169,6 @@ CY: The vertical center of the ellipse.  Expressed as a fixed or scaled coordina
 The vertical center of the ellipse is defined here as either a fixed or scaled value.
 
 *********************************************************************************************************************/
-
-static ERR VECTORELLIPSE_GET_CY(extVectorEllipse *Self, Unit &Value)
-{
-   Value = Self->eCY;
-   return ERR::Okay;
-}
 
 static ERR VECTORELLIPSE_SET_CY(extVectorEllipse *Self, Unit &Value)
 {
@@ -288,12 +265,6 @@ Please note that this feature is not part of the SVG standard.
 
 *********************************************************************************************************************/
 
-static ERR VECTORELLIPSE_GET_Vertices(extVectorEllipse *Self, int &Value)
-{
-   Value = Self->eVertices;
-   return ERR::Okay;
-}
-
 static ERR VECTORELLIPSE_SET_Vertices(extVectorEllipse *Self, int Value)
 {
    if (((Value >= 3) and (Value < 4096)) or (not Value)) {
@@ -330,14 +301,14 @@ static ERR VECTORELLIPSE_SET_Width(extVectorEllipse *Self, Unit &Value)
 #include "ellipse_def.cpp"
 
 static const FieldArray clEllipseFields[] = {
+   { "CX",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CX },
+   { "CY",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CY },
+   { "RadiusX",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
+   { "RadiusY",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
+   { "Vertices",   FDF_INT|FDF_RW, nullptr, VECTORELLIPSE_SET_Vertices },
    { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Width,   VECTORELLIPSE_SET_Width },
    { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Height,  VECTORELLIPSE_SET_Height },
-   { "CX",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_CX, VECTORELLIPSE_SET_CX },
-   { "CY",         FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_CY, VECTORELLIPSE_SET_CY },
    { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
-   { "RadiusX",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusX, VECTORELLIPSE_SET_RadiusX },
-   { "RadiusY",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusY, VECTORELLIPSE_SET_RadiusY },
-   { "Vertices",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Vertices, VECTORELLIPSE_SET_Vertices },
    // Synonyms
    { "R",  FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
    { "RX", FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_RadiusX, VECTORELLIPSE_SET_RadiusX },

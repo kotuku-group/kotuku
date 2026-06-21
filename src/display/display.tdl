@@ -547,6 +547,10 @@ module({
     double RightStickY  # Right analog stick value for Y axis, between -1.0 and 1.0
     int(CON) Buttons    # The state of available controller buttons.
     int    Port         # The port number assigned to the controller.
+  ]],
+  [[]],
+  [[
+   objController() : Port(-1) { }
   ]])
 
   klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC', 'PF' }, extended=true }, [[

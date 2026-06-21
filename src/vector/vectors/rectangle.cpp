@@ -9,9 +9,6 @@ VectorRectangle extends the @Vector class with the ability to generate rectangul
 
 *********************************************************************************************************************/
 
-static constexpr DMF RECTANGLE_RADIUS_FLAGS = DMF::FIXED_RADIUS_X|DMF::FIXED_RADIUS_Y|
-   DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y;
-
 inline double rect_fixed_width(extVectorRectangle *Vector, const Unit &Value) {
    return Value.scaled() ? double(Value) * get_parent_width(Vector) : double(Value);
 }
@@ -211,14 +208,6 @@ static ERR VECTORRECTANGLE_MoveToPoint(extVectorRectangle *Self, struct acMoveTo
       if ((Args->Flags & MTF::Y) != MTF::NIL) Self->rY = Unit(Args->Y);
    }
    reset_path(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR VECTORRECTANGLE_NewObject(extVectorRectangle *Self)
-{
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_rectangle;
    return ERR::Okay;
 }
 
@@ -472,6 +461,12 @@ static ERR VECTORRECTANGLE_SET_YOffset(extVectorRectangle *Self, Unit &Value)
    Self->rYOffset = Value;
    reset_path(Self);
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extVectorRectangle::extVectorRectangle() {
+   GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_rectangle;
 }
 
 //********************************************************************************************************************

@@ -14,7 +14,6 @@ static const struct ActionArray clVectorRectangleActions[] = {
    { AC::FreePlacement, VECTORRECTANGLE_FreePlacement },
    { AC::Move, VECTORRECTANGLE_Move },
    { AC::MoveToPoint, VECTORRECTANGLE_MoveToPoint },
-   { AC::NewObject, VECTORRECTANGLE_NewObject },
    { AC::NewPlacement, VECTORRECTANGLE_NewPlacement },
    { AC::Resize, VECTORRECTANGLE_Resize },
    { AC::NIL, nullptr }

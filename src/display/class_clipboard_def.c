@@ -38,7 +38,6 @@ static const struct ActionArray clClipboardActions[] = {
    { AC::Free, CLIPBOARD_Free },
    { AC::FreePlacement, CLIPBOARD_FreePlacement },
    { AC::Init, CLIPBOARD_Init },
-   { AC::NewObject, CLIPBOARD_NewObject },
    { AC::NewPlacement, CLIPBOARD_NewPlacement },
    { AC::NIL, nullptr }
 };
