@@ -38,17 +38,17 @@ void apply_transition(extVectorTransition *Self, double Index, agg::trans_affine
    if (Index <= Self->Stops[0].Offset) {
       Transform.multiply(*Self->Stops[0].AGGTransform);
    }
-   else if (Index >= Self->Stops[Self->TotalStops-1].Offset) {
-      Transform.multiply(*Self->Stops[Self->TotalStops-1].AGGTransform);
+   else if (Index >= Self->Stops[Self->Stops.size()-1].Offset) {
+      Transform.multiply(*Self->Stops[Self->Stops.size()-1].AGGTransform);
    }
    else {
       // Interpolate between transforms.
 
       int left, right;
-      for (left=Self->TotalStops-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
-      for (right=left+1; (right < Self->TotalStops) and (Self->Stops[right].Offset < Index); right++);
+      for (left=Self->Stops.size()-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
+      for (right=left+1; (right < Self->Stops.size()) and (Self->Stops[right].Offset < Index); right++);
 
-      if ((left < right) and (right < Self->TotalStops)) {
+      if ((left < right) and (right < Self->Stops.size())) {
          agg::trans_affine interp;
 
          // Normalise the index
@@ -63,11 +63,11 @@ void apply_transition(extVectorTransition *Self, double Index, agg::trans_affine
 
          Transform.multiply(interp);
 
-         //log.trace("Index: %.2f, Scale: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, scale, left, right, Self->TotalStops);
+         //log.trace("Index: %.2f, Scale: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, scale, left, right, Self->Stops.size());
       }
       else {
          kt::Log log(__FUNCTION__);
-         log.warning("Invalid transition.  Index: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, left, right, Self->TotalStops);
+         log.warning("Invalid transition.  Index: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, left, right, int(Self->Stops.size()));
       }
    }
 }
@@ -80,17 +80,17 @@ void apply_transition_xy(extVectorTransition *Self, double Index, double *X, dou
    if (Index <= Self->Stops[0].Offset) {
       Self->Stops[0].AGGTransform->transform(X, Y);
    }
-   else if (Index >= Self->Stops[Self->TotalStops-1].Offset) {
-      Self->Stops[Self->TotalStops-1].AGGTransform->transform(X, Y);
+   else if (Index >= Self->Stops[Self->Stops.size()-1].Offset) {
+      Self->Stops[Self->Stops.size()-1].AGGTransform->transform(X, Y);
    }
    else {
       // Interpolate between transforms.
 
       int left, right;
-      for (left=Self->TotalStops-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
-      for (right=left+1; (right < Self->TotalStops) and (Self->Stops[right].Offset < Index); right++);
+      for (left=Self->Stops.size()-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
+      for (right=left+1; (right < Self->Stops.size()) and (Self->Stops[right].Offset < Index); right++);
 
-      if ((left < right) and (right < Self->TotalStops)) {
+      if ((left < right) and (right < Self->Stops.size())) {
          agg::trans_affine interp;
 
          // Normalise the index
@@ -110,12 +110,12 @@ void apply_transition_xy(extVectorTransition *Self, double Index, double *X, dou
 
 //********************************************************************************************************************
 
-static ERR set_stop_transform(TransitionStop *Stop, CSTRING Commands)
+static ERR set_stop_transform(TransitionStop *Stop, std::string_view Commands)
 {
    kt::Log log;
 
-   if (!Commands) Commands = ""; // Empty transforms are permitted - it will result in an identity matrix being created.
-   log.traceBranch("%s", Commands);
+   // Empty transforms are permitted - it will result in an identity matrix being created.
+   log.traceBranch("%.*s", int(Commands.size()), Commands.data());
 
    vec::ParseTransform(&Stop->Matrix, Commands);
 
@@ -144,7 +144,7 @@ static ERR TRANSITION_FreePlacement(extVectorTransition *Self) {
 static ERR TRANSITION_Init(extVectorTransition *Self)
 {
    kt::Log log;
-   if (Self->TotalStops < 2) return log.warning(ERR::FieldNotSet);
+   if (Self->Stops.size() < 2) return log.warning(ERR::FieldNotSet);
    return ERR::Okay;
 }
 
@@ -190,23 +190,12 @@ static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Trans
       }
 
       Self->Stops = std::move(stops);
-      Self->TotalStops = int(Self->Stops.size());
       Self->Dirty = true;
       Self->modified();
       return ERR::Okay;
    }
    else return log.warning(ERR::DataSize);
 }
-
-/*********************************************************************************************************************
-
--FIELD-
-TotalStops: Total number of stops defined in the Stops array.
-
-This read-only field indicates the total number of stops that have been defined in the #Stops array.
--END-
-
-*********************************************************************************************************************/
 
 static const ActionArray clTransitionActions[] = {
    { AC::FreePlacement, TRANSITION_FreePlacement },
@@ -216,9 +205,7 @@ static const ActionArray clTransitionActions[] = {
 };
 
 static const FieldArray clTransitionFields[] = {
-   { "TotalStops",   FDF_INT|FDF_R },
-   // Virtual fields
-   { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_W, nullptr, (APTR)TRANSITION_SET_Stops, "Transition" },
+   { "Stops", FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_W, nullptr, TRANSITION_SET_Stops, "Transition" },
    END_FIELD
 };
 

@@ -567,8 +567,8 @@ struct GouraudVertex {
 };
 
 struct Transition {
-   double  Offset;       // An offset from 0.0 to 1.0 at which to apply the transform.
-   CSTRING Transform;    // A transform string, as per SVG guidelines.
+   double Offset;            // An offset from 0.0 to 1.0 at which to apply the transform.
+   std::string Transform;    // A transform string, as per SVG guidelines.
 };
 
 struct VectorPoint {
@@ -743,17 +743,12 @@ class objVectorTransition : public Object {
 
    // Customised field getting
 
-   inline ERR getTotalStops(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 88));
-      return ERR::Okay;
-   }
-
 
    // Customised field setting
 
-   inline ERR setStops(std::span<const struct Transition> Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00001218, &Value);
+   inline ERR setStops(const std::span<const Transition> Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00005218, &Value);
    }
 
 };

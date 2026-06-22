@@ -431,8 +431,6 @@ struct TransitionStop { // Passed to the Stops field.
 
 class extVectorTransition : public objVectorTransition, public SceneDef {
    public:
-   int TotalStops = 0; // Total number of stops registered.
-
    std::vector<TransitionStop> Stops;
    bool Dirty:1 = true;
 };
