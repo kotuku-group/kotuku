@@ -2176,13 +2176,6 @@ null-terminated-result
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extFile *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   if (not Self->Path.empty()) return ERR::Okay;
-   else return ERR::FieldNotSet;
-}
-
 static ERR SET_Path(extFile *Self, std::string_view &Value)
 {
    kt::Log log;

@@ -793,16 +793,6 @@ Surface: May refer to a @Surface object for enabling automatic rendering.
 Setting the Surface field will enable automatic rendering to a display @Surface.  The use of features such as input
 event handling and user focus management will also require an associated surface as a pre-requisite.
 
-*********************************************************************************************************************/
-
-static ERR SET_Surface(extVectorScene *Self, OBJECTID Value)
-{
-   Self->SurfaceID = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Viewport: References the first object in the scene, which must be a @VectorViewport object.
 
@@ -1013,10 +1003,10 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
 static const FieldArray clSceneFields[] = {
    { "RenderTime",   FDF_INT64|FDF_R|FDF_PURE, GET_RenderTime },
    { "Gamma",        FDF_DOUBLE|FDF_RW },
-   { "HostScene",    FDF_OBJECT|FDF_RI,    nullptr, nullptr, CLASSID::VECTORSCENE },
-   { "Viewport",     FDF_OBJECT|FD_R,      nullptr, nullptr, CLASSID::VECTORVIEWPORT },
-   { "Bitmap",       FDF_OBJECT|FDF_RW,    nullptr, SET_Bitmap, CLASSID::BITMAP },
-   { "Surface",      FDF_OBJECTID|FDF_RI,  nullptr, SET_Surface, CLASSID::SURFACE },
+   { "HostScene",    FDF_OBJECT|FDF_RI,   nullptr, nullptr, CLASSID::VECTORSCENE },
+   { "Viewport",     FDF_OBJECT|FD_R,     nullptr, nullptr, CLASSID::VECTORVIEWPORT },
+   { "Bitmap",       FDF_OBJECT|FDF_RW,   nullptr, SET_Bitmap, CLASSID::BITMAP },
+   { "Surface",      FDF_OBJECTID|FDF_RI, nullptr, nullptr, CLASSID::SURFACE },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clVectorSceneFlags },
    { "PageWidth",    FDF_INT|FDF_RW,      nullptr, SET_PageWidth },
    { "PageHeight",   FDF_INT|FDF_RW,      nullptr, SET_PageHeight },

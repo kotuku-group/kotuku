@@ -894,8 +894,9 @@ class objVectorScene : public Object {
    }
 
    inline ERR setSurface(OBJECTID Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, FD_INT, &Value);
+      if (this->initialised()) return ERR::ImmutableField;
+      this->SurfaceID = Value;
+      return ERR::Okay;
    }
 
    inline ERR setFlags(const VPF Value) noexcept {

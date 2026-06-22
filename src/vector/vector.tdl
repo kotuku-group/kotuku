@@ -627,15 +627,15 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
 
-  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true }, [[
+  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true, references={ 'CM' } }, [[
     ~int(CM) Mode
   ]])
 
-  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true }, [[
+  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true, references={ 'OP'  } }, [[
     ~int(OP) Operator
   ]])
 
-  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true }, [[
+  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true, references={ 'EM' } }, [[
     ~int(EM) EdgeMode
   ]])
 

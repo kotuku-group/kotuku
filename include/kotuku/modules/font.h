@@ -319,8 +319,8 @@ class objFont : public Object {
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, 0x00804300, &Value);
+      this->Path = Value;
+      return ERR::Okay;
    }
 
    inline ERR setStyle(const std::string_view &Value) noexcept {

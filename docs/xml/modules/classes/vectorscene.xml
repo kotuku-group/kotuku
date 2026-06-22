@@ -247,7 +247,7 @@
     <field>
       <name>Surface</name>
       <comment>May refer to a <class name="Surface">Surface</class> object for enabling automatic rendering.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>Setting the Surface field will enable automatic rendering to a display <class name="Surface">Surface</class>.  The use of features such as input event handling and user focus management will also require an associated surface as a pre-requisite.</p>

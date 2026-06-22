@@ -422,25 +422,6 @@ database.
 
 This feature is ideal for use when distributing custom fonts with an application.
 
-*********************************************************************************************************************/
-
-static ERR SET_Path(extFont *Self, const std::string_view &Value)
-{
-   if (!Self->initialised()) {
-      Self->Path.assign(Value);
-      return ERR::Okay;
-   }
-   else return ERR::Failed;
-}
-
-static ERR GET_Location(extFont *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 MaxHeight: The maximum possible pixel height per character.
 
@@ -981,7 +962,7 @@ static const FieldArray clFontFields[] = {
    { "GlyphSpacing", FDF_DOUBLE|FDF_RW },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
    { "String",       FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
-   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Path",         FDF_CPPSTRING|FDF_RW },
    { "Style",        FDF_CPPSTRING|FDF_RI, nullptr, SET_Style },
    { "Face",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Face },
    { "Outline",      FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },

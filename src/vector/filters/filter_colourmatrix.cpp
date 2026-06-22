@@ -45,14 +45,15 @@ sRGB on output, otherwise the transformation is performed directly on the sRGB v
 *********************************************************************************************************************/
 
 #include <array>
+#include <iterator>
 
-#define CM_SIZE 20
+constexpr int CM_SIZE = 20;
 
-static const double LUMA_R = 0.2125; // These values are as documented in W3C SVG
-static const double LUMA_G = 0.7154;
-static const double LUMA_B = 0.0721;
+constexpr double LUMA_R = 0.2125; // These values are as documented in W3C SVG
+constexpr double LUMA_G = 0.7154;
+constexpr double LUMA_B = 0.0721;
 
-static const double ONETHIRD = 1.0 / 3.0;
+constexpr double ONETHIRD = 1.0 / 3.0;
 
 typedef std::array<double, CM_SIZE> MATRIX;
 
@@ -328,9 +329,23 @@ class extColourFX : public extFilterEffect {
    using create = kt::Create<extColourFX>;
 
    CM Mode;
-   double Values[CM_SIZE];
+   std::array<double,CM_SIZE> Values;
    ColourMatrix *Matrix;
    int TotalValues;
+
+   extColourFX() {
+      // Configure identity matrix
+      Values[0]   = 1;
+      Values[6]   = 1;
+      Values[12]  = 1;
+      Values[18]  = 1;
+      Mode        = CM::NONE;
+      TotalValues = CM_SIZE;
+   }
+
+   ~extColourFX() {
+      if (Matrix) delete Matrix;
+   }
 };
 
 /*********************************************************************************************************************
@@ -472,14 +487,6 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR COLOURFX_Free(extColourFX *Self)
-{
-   if (Self->Matrix) { delete Self->Matrix; Self->Matrix = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR COLOURFX_Init(extColourFX *Self)
 {
    kt::Log log;
@@ -546,22 +553,6 @@ static ERR COLOURFX_Init(extColourFX *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR COLOURFX_NewObject(extColourFX *Self)
-{
-   clearmem(Self->Values, sizeof(Self->Values));
-   // Configure identity matrix
-   Self->Values[0] = 1;
-   Self->Values[6] = 1;
-   Self->Values[12] = 1;
-   Self->Values[18] = 1;
-   Self->Matrix = nullptr;
-   Self->Mode = CM::NONE;
-   Self->TotalValues = CM_SIZE;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -590,15 +581,17 @@ When values are not defined, they default to 0.
 
 static ERR COLOURFX_GET_Values(extColourFX *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->Values, Self->TotalValues);
+   Array = std::span<double>(Self->Values.data(), Self->TotalValues);
    return ERR::Okay;
 }
 
 static ERR COLOURFX_SET_Values(extColourFX *Self, std::span<const double> &Array)
 {
-   if (Array.size() > std::ssize(Self->Values)) return ERR::BufferOverflow;
-   if (Array.data()) copymem(Array.data(), Self->Values, Array.size() * sizeof(double));
-   clearmem(Self->Values + Array.size(), (std::ssize(Self->Values) - Array.size()) * sizeof(double));
+   const auto max_values = std::size(Self->Values);
+
+   if (Array.size() > max_values) return ERR::BufferOverflow;
+   if (Array.data()) copymem(Array.data(), Self->Values.data(), Array.size() * sizeof(double));
+   clearmem(Self->Values.data() + Array.size(), (max_values - Array.size()) * sizeof(double));
    Self->TotalValues = Array.size();
    return ERR::Okay;
 }
@@ -629,21 +622,8 @@ static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string_view &Value)
 
 #include "filter_colourmatrix_def.c"
 
-static const FieldDef clMode[] = {
-   { "None",           CM::NONE },
-   { "Saturate",       CM::SATURATE },
-   { "HueRotate",      CM::HUE_ROTATE },
-   { "LuminanceAlpha", CM::LUMINANCE_ALPHA },
-   { "Contrast",       CM::CONTRAST },
-   { "Brightness",     CM::BRIGHTNESS },
-   { "Hue",            CM::HUE },
-   { "Desaturate",     CM::DESATURATE },
-   { "Colourise",      CM::COLOURISE },
-   { nullptr, 0 }
-};
-
 static const FieldArray clColourFXFields[] = {
-   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, COLOURFX_SET_Mode, &clMode },
+   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, COLOURFX_SET_Mode, &clColourFXCM },
    { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
    { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  COLOURFX_GET_XMLDef },
    END_FIELD

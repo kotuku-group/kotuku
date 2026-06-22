@@ -437,12 +437,6 @@ valid existing object).
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(objScript *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(objScript *Self, std::string_view &Value)
 {
    if (not Self->Path.empty()) {

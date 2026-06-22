@@ -286,7 +286,7 @@ external leading or descent.</li>
     <field>
       <name>Path</name>
       <comment>The path to a font file.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Defines the exact font file to load before initialisation.  This bypasses normal face-name resolution through the font database.</p>

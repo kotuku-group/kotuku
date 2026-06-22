@@ -176,7 +176,7 @@ static ERR GRADIENTVORONOI_SET_Points(extGradientVoronoi *Self, std::span<const 
       if (Value->size() > 4096) return ERR::OutOfRange;
 
       Self->Points.reserve(Value->size());
-      for (int i=0; i < Value->size(); i++) {
+      for (unsigned i=0; i < Value->size(); i++) {
          const VoronoiPoint &point = Value[0][i];
          if ((not std::isfinite(point.X)) or (not std::isfinite(point.Y)) or (not std::isfinite(point.Height))) {
             return ERR::InvalidValue;
