@@ -593,7 +593,7 @@ module({
     { id=10, name='ScheduleRedraw' }
   })
 
-  klass('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, extended=true, src={
+  klass('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'SWIN', 'InputEvent' }, extended=true, src={
       'class_surface/class_surface.cpp',
       'class_surface/surface_dimensions.cpp',
       'class_surface/surface_drawing.cpp',
@@ -623,7 +623,6 @@ module({
     int(RT) Type          # Internal surface type flags
     int Modal             # Set to 1 to enable modal mode
     ~int(SWIN) WindowType
-    ~int(MOVE) Movement
   ]],
   nil,
   [[

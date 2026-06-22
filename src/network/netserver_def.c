@@ -49,3 +49,4 @@ static const struct ActionArray clNetServerActions[] = {
    { AC::Write, NETSERVER_Write },
    { AC::NIL, nullptr }
 };
+

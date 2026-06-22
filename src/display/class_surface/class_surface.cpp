@@ -2557,21 +2557,6 @@ static ERR consume_input_events(const InputEvent *Events, int Handle)
 
 //********************************************************************************************************************
 
-static const FieldDef MovementFlags[] = {
-   { "Vertical",   MOVE_VERTICAL },
-   { "Horizontal", MOVE_HORIZONTAL },
-   { nullptr, 0 }
-};
-
-static const FieldDef clWindowType[] = { // This table is copied from pointer_class.c
-   { "Default",  SWIN::HOST },
-   { "Host",     SWIN::HOST },
-   { "Taskbar",  SWIN::TASKBAR },
-   { "IconTray", SWIN::ICON_TRAY },
-   { "None",     SWIN::NONE },
-   { nullptr, 0 }
-};
-
 #include "surface_def.c"
 
 static const FieldArray clSurfaceFields[] = {
@@ -2602,7 +2587,6 @@ static const FieldArray clSurfaceFields[] = {
    { "AbsY",          FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW, GET_AbsY, SET_AbsY },
    { "BitsPerPixel",  FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RI, GET_BitsPerPixel, SET_BitsPerPixel },
    { "Bottom",        FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_Bottom },
-   { "Movement",      FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, GET_Movement, SET_Movement, &MovementFlags },
    { "Opacity",       FDF_VIRTUAL|FDF_DOUBLE|FDF_PURE|FDF_RW, GET_Opacity, SET_Opacity },
    { "RevertFocus",   FDF_SYSTEM|FDF_VIRTUAL|FDF_OBJECTID|FDF_W, nullptr, SET_RevertFocus },
    { "Right",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_Right },
@@ -2612,7 +2596,7 @@ static const FieldArray clSurfaceFields[] = {
    { "VisibleWidth",  FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleWidth },
    { "VisibleX",      FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleX },
    { "VisibleY",      FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleY },
-   { "WindowType",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW, GET_WindowType, SET_WindowType, &clWindowType },
+   { "WindowType",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW, GET_WindowType, SET_WindowType, &clSurfaceSWIN },
    { "WindowHandle",  FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW, GET_WindowHandle, SET_WindowHandle },
    // Unit fields
    { "XOffset",       FDF_VIRTUAL|FDF_UNIT|FDF_INT|FDF_SCALED|FDF_PURE|FDF_RW, GET_XOffset, SET_XOffset },

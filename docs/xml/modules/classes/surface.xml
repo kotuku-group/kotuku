@@ -647,18 +647,6 @@ the surface area first).</li>
     </field>
 
     <field>
-      <name>Movement</name>
-      <comment>Limits the movement of a surface object to vertical or horizontal shifts.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="MOVE">MOVE</type>
-      <description>
-<p>Set <code>Movement</code> to limit movement performed by <action>Move</action> to horizontal movement, vertical movement, both axes or neither axis.  By default, surfaces can move horizontally and vertically.</p>
-<p>This field affects <action>Move</action> only.  Direct writes to coordinate fields bypass the movement restriction.</p>
-<types lookup="MOVE"/>
-      </description>
-    </field>
-
-    <field>
       <name>Opacity</name>
       <comment>Defines the translucency applied when drawing a surface.</comment>
       <access read="G" write="S">Get/Set</access>

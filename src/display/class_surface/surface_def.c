@@ -204,6 +204,14 @@ static const struct FieldDef clSurfaceJET[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clSurfaceSWIN[] = {
+   { "Host", 0x00000000 },
+   { "Taskbar", 0x00000001 },
+   { "IconTray", 0x00000002 },
+   { "None", 0x00000003 },
+   { nullptr, 0 }
+};
+
 FDEF maInheritedFocus[] = { { "FocusID", FD_OBJECTID }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maExposeToDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maInvalidateRegion[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
