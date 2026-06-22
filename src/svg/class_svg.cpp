@@ -129,35 +129,6 @@ static ERR SVG_DataFeed(extSVG *Self, struct acDataFeed *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR SVG_Free(extSVG *Self)
-{
-   if (Self->AnimationTimer) {
-      UpdateTimer(Self->AnimationTimer, 0);
-      if (Self->Scene) UnsubscribeAction(Self->Scene, AC::Free);
-      Self->AnimationTimer = 0;
-   }
-
-   if (Self->FrameCallback.isScript()) {
-      UnsubscribeAction(Self->FrameCallback.Context, AC::Free);
-      Self->FrameCallback.clear();
-   }
-
-   if ((Self->Target) and (Self->Target IS Self->Scene) and (Self->Scene->Owner IS Self)) {
-      FreeResource(Self->Target);
-      Self->Target = nullptr;
-   }
-
-   if (Self->XML) { FreeResource(Self->XML); Self->XML = nullptr; }
-
-   if (!Self->Resources.empty()) {
-      for (auto id : Self->Resources) FreeResource(id);
-   }
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Init: Initialises the SVG object and processes source content.
@@ -197,19 +168,6 @@ static ERR SVG_Init(extSVG *Self)
    if (not Self->Path.empty()) return parse_svg(Self, Self->Path.c_str(), nullptr);
    else if (not Self->Statement.empty()) return parse_svg(Self, nullptr, Self->Statement.c_str());
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR SVG_NewObject(extSVG *Self)
-{
-   #ifdef __ANDROID__
-      Self->FrameRate = 30; // Choose a lower frame rate for Android devices, so as to minimise power consumption.
-   #else
-      Self->FrameRate = 60;
-   #endif
-   Self->Colour = "rgb(0,0,0)"; // Default colour, used for 'currentColor' references
    return ERR::Okay;
 }
 
@@ -605,12 +563,6 @@ during initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extSVG *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(extSVG *Self, const std::string_view &Value)
 {
    Self->Folder.clear();
@@ -628,16 +580,6 @@ This read-only field provides direct access to the @VectorScene object that mana
 The scene reference remains valid throughout the SVG object's lifetime and enables direct manipulation of scene-wide properties including page dimensions, rendering settings, and global definitions.  This field simplifies access to the scene graph for applications requiring programmatic control over the complete document structure.
 
 <b>Scene relationship:</b> When a #Target is specified, the Scene field references the @VectorScene that owns the target object.  For automatically generated scenes, this field references the internally created scene object.
-
-*********************************************************************************************************************/
-
-static ERR GET_Scene(extSVG *Self, objVectorScene **Value)
-{
-   *Value = Self->Scene;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Statement: String containing complete SVG document markup.
@@ -714,15 +656,6 @@ content.
 
 *********************************************************************************************************************/
 
-static ERR GET_Viewport(extSVG *Self, OBJECTPTR *Value)
-{
-   if (!Self->initialised()) return ERR::NotInitialised;
-   *Value = Self->Viewport;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 #include "anim_metrics.cpp"
 #include "anim_timing.cpp"
 #include "anim_parsing.cpp"
@@ -734,22 +667,42 @@ static ERR GET_Viewport(extSVG *Self, OBJECTPTR *Value)
 
 //********************************************************************************************************************
 
+extSVG::~extSVG()
+{
+   if (AnimationTimer) {
+      UpdateTimer(AnimationTimer, 0);
+      if (Scene) UnsubscribeAction(Scene, AC::Free);
+   }
+
+   if (FrameCallback.isScript()) UnsubscribeAction(FrameCallback.Context, AC::Free);
+
+   if ((Target) and (Target IS Scene) and (Scene->Owner IS this)) FreeResource(Target);
+
+   if (XML) FreeResource(XML);
+
+   if (!Resources.empty()) {
+      for (auto id : Resources) FreeResource(id);
+   }
+}
+
+//********************************************************************************************************************
+
 #include "class_svg_def.c"
 
 static const FieldArray clSVGFields[] = {
    { "Target",    FDF_OBJECT|FDF_RI, nullptr, SET_Target },
    { "Path",      FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Src",       FDF_SYNONYM },
    { "Title",     FDF_CPPSTRING|FDF_RW },
    { "Statement", FDF_CPPSTRING|FDF_RW },
    { "Colour",    FDF_CPPSTRING|FDF_RW },
+   { "Viewport",  FDF_OBJECT|FDF_R },
+   { "Scene",     FDF_OBJECT|FDF_R },
    { "Frame",     FDF_INT|FDF_RW, nullptr, nullptr },
    { "Flags",     FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clSVGFlags },
    { "FrameRate", FDF_INT|FDF_RW, nullptr, SET_FrameRate },
    // Virtual Fields
    { "FrameCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FrameCallback, SET_FrameCallback },
-   { "Src",           FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Path, SET_Path },
-   { "Scene",         FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, GET_Scene, nullptr },
-   { "Viewport",      FDF_VIRTUAL|FDF_OBJECT|FDF_R, GET_Viewport, nullptr },
    END_FIELD
 };
 

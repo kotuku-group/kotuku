@@ -195,7 +195,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>CacheFile</name>
       <comment>Compilable script languages can be compiled to a cache file.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Scripts that support compilation of the source code can be compiled to a target file when the script is initialised. This file is then used as a cache, so that if the cache file exists on the next initialisation then the cache file is used instead of the original source code.</p>
@@ -277,7 +277,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Results</name>
       <comment>Stores multiple string results for languages that support this feature.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>If a scripting language supports the return of multiple results, this field may reflect those result values after the execution of any procedure.</p>
@@ -288,7 +288,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Statement</name>
       <comment>Scripts can be executed from any string passed into this field.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>Scripts may be compiled into a script object by setting the Statement field with a complete script string.  This is often convenient for embedding a small script into another script file without having to make external file references. It is also commonly used for executing scripts that have been embedded into program binaries.</p>
@@ -318,7 +318,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>WorkingPath</name>
       <comment>Defines the script's working path (folder).</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="W">Get/Write</access>
       <type>STRING</type>
       <description>
 <p>The working path for a script is defined here.  By default this is defined as the location from which the script was loaded, without the file name.  If this cannot be determined then the working path for the parent process is used (this is usually set to the location of the program).</p>

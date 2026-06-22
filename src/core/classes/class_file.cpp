@@ -2176,13 +2176,6 @@ null-terminated-result
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extFile *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   if (not Self->Path.empty()) return ERR::Okay;
-   else return ERR::FieldNotSet;
-}
-
 static ERR SET_Path(extFile *Self, std::string_view &Value)
 {
    kt::Log log;
@@ -2731,6 +2724,7 @@ extFile::~extFile() {
 static const FieldArray FileFields[] = {
    { "Position",     FDF_INT64|FDF_RW, nullptr, SET_Position },
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    // Virtual fields
@@ -2746,8 +2740,6 @@ static const FieldArray FileFields[] = {
    { "User",         FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_User, SET_User },
    { "Group",        FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_Group, SET_Group },
    // Synonyms
-   { "Src",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RI|FDF_PURE, GET_Path, SET_Path },
-   { "Location",  FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path }, // Deprecated
    { "TimeStamp", FDF_VIRTUAL|FDF_SYSTEM|FDF_SYNONYM|FDF_INT64|FDF_R,   GET_Timestamp }, // Deprecated
    END_FIELD
 };

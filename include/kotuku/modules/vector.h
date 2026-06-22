@@ -468,6 +468,7 @@ enum class VPF : uint32_t {
    RENDER_TIME = 0x00000002,
    RESIZE = 0x00000004,
    OUTLINE_VIEWPORTS = 0x00000008,
+   STABLE_RENDER = 0x00000010,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VPF)
@@ -893,8 +894,9 @@ class objVectorScene : public Object {
    }
 
    inline ERR setSurface(OBJECTID Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, FD_INT, &Value);
+      if (this->initialised()) return ERR::ImmutableField;
+      this->SurfaceID = Value;
+      return ERR::Okay;
    }
 
    inline ERR setFlags(const VPF Value) noexcept {
@@ -2546,11 +2548,13 @@ class objConvolveFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setEdgeMode(const EM Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBias(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }

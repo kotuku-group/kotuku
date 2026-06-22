@@ -54,18 +54,33 @@ static void generate_ellipse(extVectorEllipse *Vector, agg::path_storage &Path)
       }
    }
 
-   if (Vector->eVertices >= 3) {
-      // The client has explicitly requested a polygonal approximation with a fixed number of vertices.
-
-      uint32_t vertices = Vector->eVertices;
-      for (uint32_t v=0; v < vertices; v++) {
-         double angle = double(v) / double(vertices) * 2.0 * agg::pi;
+   auto generate_polygon = [&Path, cx, cy, rx, ry](uint32_t Vertices) {
+      for (uint32_t v=0; v < Vertices; v++) {
+         double angle = double(v) / double(Vertices) * 2.0 * agg::pi;
          double x = cx + cos(angle) * rx;
          double y = cy + sin(angle) * ry;
          if (v IS 0) Path.move_to(x, y);
          else Path.line_to(x, y);
       }
       Path.close_polygon();
+   };
+
+   if (Vector->eVertices >= 3) {
+      // The client has explicitly requested a polygonal approximation with a fixed number of vertices.
+
+      generate_polygon(uint32_t(Vector->eVertices));
+   }
+   else if (((((extVectorScene *)Vector->Scene)->Flags & VPF::STABLE_RENDER) != VPF::NIL)) {
+      // The Bezier arc path is visually smoother, but tiny platform-specific libm differences alter hash-sensitive
+      // renders.  Stable rendering preserves the legacy adaptive polygon path for deterministic regression tests.
+
+      auto scale = Vector->Transform.scale();
+      double ra = (fabs(rx * scale) + fabs(ry * scale)) * 0.5;
+      double da = acos(ra / (ra + 0.125 / scale)) * 2.0;
+      uint32_t vertices = agg::uround(2.0 * agg::pi / da);
+      if (vertices < 3) vertices = 3;
+
+      generate_polygon(vertices);
    }
    else {
       // Generate the ellipse from a single full-sweep cubic bezier arc.  Supplying the centre and radii
@@ -289,18 +304,17 @@ static ERR VECTORELLIPSE_SET_Width(extVectorEllipse *Self, Unit &Value)
 #include "ellipse_def.cpp"
 
 static const FieldArray clEllipseFields[] = {
-   { "CX",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CX },
-   { "CY",         FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CY },
-   { "RadiusX",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
-   { "RX",         FDF_SYNONYM|FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
-   { "RadiusY",    FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
-   { "RY",         FDF_SYNONYM|FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
-   { "Vertices",   FDF_INT|FDF_RW, nullptr, VECTORELLIPSE_SET_Vertices },
-   { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Width,   VECTORELLIPSE_SET_Width },
-   { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Height,  VECTORELLIPSE_SET_Height },
-   { "Radius",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
-   // Synonyms
-   { "R",          FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
+   { "CX",       FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CX },
+   { "CY",       FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_CY },
+   { "RadiusX",  FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusX },
+   { "RX",       FDF_SYNONYM },
+   { "RadiusY",  FDF_UNIT|FDF_RW, nullptr, VECTORELLIPSE_SET_RadiusY },
+   { "RY",       FDF_SYNONYM },
+   { "Vertices", FDF_INT|FDF_RW,  nullptr, VECTORELLIPSE_SET_Vertices },
+   { "Width",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Width,   VECTORELLIPSE_SET_Width },
+   { "Height",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Height,  VECTORELLIPSE_SET_Height },
+   { "Radius",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORELLIPSE_GET_Radius,  VECTORELLIPSE_SET_Radius },
+   { "R",        FDF_SYNONYM },
    END_FIELD
 };
 

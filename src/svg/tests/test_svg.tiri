@@ -6,6 +6,8 @@
 -- corresponding image file, if it is acceptable then update the old checksum from the test output in order to pass
 -- future tests.
 
+   include 'vector'
+
 local glSVGFolder
 
 @BeforeAll function setup(State:table)
@@ -16,10 +18,11 @@ glWhite = struct.new('RGB8', { red = 255, green = 255, blue = 255, alpha = 255 }
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function renderSVGToBitmap(Path:str)
-   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+function renderSVGToBitmap(Path:str, Stable:bool)
+   -- Some tests require Stable to be true when the hashes differ due to compiler/platform differences
+   scene = obj.new('VectorScene', { name='TestSceneRender', pageWidth=1024, pageHeight=768, flags=Stable ? VPF_STABLE_RENDER :> nil })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   svg = obj.new('svg', { target=vp, path=Path })
+   svg = obj.new('svg', { target=scene, path=Path })
    bmp = obj.new('bitmap', { width=scene.pageWidth, height=scene.pageHeight, bitsPerPixel=32, bkgd=glWhite })
    bmp.acClear()
    scene.bitmap = bmp
@@ -44,12 +47,12 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function hashTestSVG(Path, ExpectedHash)
+function hashTestSVG(Path:str, ExpectedHash:num, Stable:bool)
    if ExpectedHash is -1 then return end
-   bmp = renderSVGToBitmap(glSVGFolder .. Path)
+   bmp = renderSVGToBitmap(glSVGFolder .. Path, Stable)
    hash = mSys.GenCRC32(0, bmp.data, bmp.size)
    if ExpectedHash != hash then
-      saveBitmap(bmp, Path)
+      saveBitmap(bmp, Path, Stable)
       if ExpectedHash then
          error('Computed hash for "' .. Path .. '" is ' .. string.format('0x%.8x', hash) .. ', expected ' .. string.format('0x%.8x', ExpectedHash))
       else
@@ -70,10 +73,10 @@ end
 @Test global function Basics07() hashTestSVG('basics/w3-render-groups-01-b.svg', -1) end
 @Test global function Basics08() hashTestSVG('basics/w3-render-groups-03-t.svg', 0x09cdfd80) end
 @Test global function Basics09() hashTestSVG('basics/w3-shapes-circle-01-t.svg', 0x478a2d1f) end
-@Test global function Basics10() hashTestSVG('basics/w3-shapes-circle-02-t.svg', 0xd8fc8967) end
-@Test global function Basics11() hashTestSVG('basics/w3-shapes-ellipse-01-t.svg', 0x8e712fa1) end
-@Test global function Basics12() hashTestSVG('basics/w3-shapes-ellipse-02-t.svg', 0xecf6ed36) end
-@Test global function Basics13() hashTestSVG('basics/w3-shapes-ellipse-03-f.svg', 0x2b5a29ab) end
+@Test global function Basics10() hashTestSVG('basics/w3-shapes-circle-02-t.svg', 0xb73539f6, true) end
+@Test global function Basics11() hashTestSVG('basics/w3-shapes-ellipse-01-t.svg', 0xfa5c8bee, true) end
+@Test global function Basics12() hashTestSVG('basics/w3-shapes-ellipse-02-t.svg', 0x15216d92, true) end
+@Test global function Basics13() hashTestSVG('basics/w3-shapes-ellipse-03-f.svg', 0x8cf69ae3, true) end
 @Test global function Basics14() hashTestSVG('basics/w3-shapes-grammar-01-f.svg', 0x3946894a) end
 @Test global function Basics15() hashTestSVG('basics/w3-shapes-intro-01-t.svg', 0xf04b4c3f) end
 @Test global function Basics16() hashTestSVG('basics/w3-shapes-intro-02-f.svg', 0x60cef0fe) end
@@ -150,7 +153,7 @@ end
 @Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xcd6e4c82) end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xc45a0cf6) end
-@Test global function ContourGradient() hashTestSVG('gradients/contour-gradient.svg', 0x6f942c5c) end
+@Test global function ContourGradient() hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a, true) end
 @Test global function W3Gradients01() hashTestSVG('gradients/w3-pservers-grad-01-b.svg', 0xd6ab0e01) end
 @Test global function W3Gradients02() hashTestSVG('gradients/w3-pservers-grad-02-b.svg', 0xe8e84124) end
 @Test global function W3Gradients04() hashTestSVG('gradients/w3-pservers-grad-04-b.svg', 0x11d0611e) end
@@ -245,7 +248,7 @@ end
 @Test global function W3Offset()           hashTestSVG('filters/w3-offset.svg', 0x129ec562) end
 @Test global function W3Lighting1()        hashTestSVG('filters/w3-filters-light-01-f.svg', 0x36f34b64) end
 @Test global function W3Lighting2()        hashTestSVG('filters/w3-filters-light-02-f.svg', -1) end
-@Test global function W3Lighting3()        hashTestSVG('filters/w3-filters-light-03-f.svg', 0x95a0402b) end
+@Test global function W3Lighting3()        hashTestSVG('filters/w3-filters-light-03-f.svg', 0xecb23055, true) end
 @Test global function W3Lighting4()        hashTestSVG('filters/w3-filters-light-04-f.svg', 0xdbcd90f4) end
 @Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0x7e48e567) end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0xe288d392) end

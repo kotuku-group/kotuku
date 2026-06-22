@@ -236,12 +236,6 @@ The radius of the spiral is defined here as either a fixed or scaled value.  If 
 
 *********************************************************************************************************************/
 
-static ERR VECTORSPIRAL_GET_Radius(extVectorSpiral *Self, Unit &Value)
-{
-   Value = Self->Radius;
-   return ERR::Okay;
-}
-
 static ERR VECTORSPIRAL_SET_Radius(extVectorSpiral *Self, Unit &Value)
 {
    if (Value < 0) return ERR::InvalidDimension;
@@ -302,12 +296,12 @@ static const FieldArray clVectorSpiralFields[] = {
    { "Step",       FDF_DOUBLE|FDF_RW, nullptr, VECTORSPIRAL_SET_Step },
    { "LoopLimit",  FDF_DOUBLE|FDF_RW, nullptr, VECTORSPIRAL_SET_LoopLimit },
    { "Radius",     FDF_UNIT|FDF_RW, nullptr, VECTORSPIRAL_SET_Radius },
+   { "R",          FDF_SYNONYM },
    { "CX",         FDF_UNIT|FDF_RW, nullptr, VECTORSPIRAL_SET_CX },
    { "CY",         FDF_UNIT|FDF_RW, nullptr, VECTORSPIRAL_SET_CY },
    { "PathLength", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_PathLength, VECTORSPIRAL_SET_PathLength },
    { "Width",      FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Width,   VECTORSPIRAL_SET_Width },
    { "Height",     FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Height,  VECTORSPIRAL_SET_Height },
-   { "R",          FDF_SYNONYM|FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTORSPIRAL_GET_Radius,  VECTORSPIRAL_SET_Radius },
    END_FIELD
 };
 

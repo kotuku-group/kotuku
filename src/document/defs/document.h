@@ -1301,7 +1301,6 @@ class extDocument : public objDocument {
    stream_char SelectStart, SelectEnd;  // Selection start & end (stream index)
    stream_char CursorIndex;    // Position of the cursor if text is selected, or edit mode is active.  It reflects the position at which entered text will be inserted.
    stream_char SelectIndex;    // The end of the selected text area, if text is selected.
-   std::string Path;           // Optional file to load on Init()
    std::string PageName;       // Page name to load from the Path
    std::string Bookmark;       // Bookmark name processed from the Path
    std::string RuntimeUID;     // Refresh-local generated ID used by document-side XQuery helpers.
@@ -1317,7 +1316,6 @@ class extDocument : public objDocument {
    objSVG *SVG;                // Allocated by the <svg> tag
    objVectorRectangle *Bkgd;   // Background fill object
    const XTag *PageTag;        // Refers to a specific page that is being processed for the layout
-   objScript *ClientScript;    // Allows the developer to define a custom default script.
    objScript *DefaultScript;
    doc_edit  *ActiveEditDef; // As for ActiveEditCell, but refers to the active editing definition
    objVectorScene *Scene;    // A document specific scene is required to keep our resources away from the host

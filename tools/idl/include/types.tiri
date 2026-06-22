@@ -226,6 +226,9 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
    elseif Type has FD_STRUCT then
       Def.type     = fieldStructType(Option)
       Def.doc_type = Def.type
+   elseif Type is FD_SYNONYM then
+      Def.type = 'void'
+      Def.doc_type = 'Synonym'
    else
       print(string.format('Failed to identify field type $%.8x for field "%s"', Type, CustomName))
       Def.type = 'void'

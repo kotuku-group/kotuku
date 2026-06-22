@@ -106,9 +106,7 @@ class extSVG : public objSVG {
    double SVGVersion;
    double AnimEpoch;  // Epoch time for the animations.
    objXML *XML;
-   objVectorScene *Scene;
    std::string Folder;
-   class objVectorViewport *Viewport; // First viewport (the <svg> tag) to be created on parsing the SVG document.
    std::list<std::variant<anim_transform, anim_motion, anim_value>> Animations; // NB: Pointer stability is a container requirement
    ankerl::unordered_dense::map<OBJECTID, svgAnimState> Animatrix; // For animated transforms, a vector may have one matrix only.
    std::vector<std::unique_ptr<svgLink>> Links;
@@ -119,6 +117,17 @@ class extSVG : public objSVG {
    TIMER AnimationTimer;
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
    bool  PreserveWS; // Preserve white-space
+
+   extSVG() {
+      #ifdef __ANDROID__
+         FrameRate = 30; // Choose a lower frame rate for Android devices, so as to minimise power consumption.
+      #else
+         FrameRate = 60;
+      #endif
+      Colour = "rgb(0,0,0)"; // Default colour, used for 'currentColor' references
+   }
+
+   ~extSVG();
 };
 
 struct svgState {

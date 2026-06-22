@@ -352,7 +352,7 @@ function MultiPartLocal()
    srcfile = obj.new('file', { src=filepath, flags='READ' } )
 
    http.size = headfile.size + tailfile.size + srcfile.size
-   http.inputfile = headfile.location .. '|' .. srcfile.location .. '|' .. tailfile.location
+   http.inputfile = headfile.path .. '|' .. srcfile.path .. '|' .. tailfile.path
    proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
    check http.acActivate()
 

@@ -256,8 +256,8 @@ static bool read_pe_resource_entry(const std::vector<uint8_t> &Data, size_t Base
       uint32_t name;
       uint32_t offset;
       if (entry + 8 > Data.size()) return false;
-      read_u32_le(Data.data(), Data.size(), entry, &name);
-      read_u32_le(Data.data(), Data.size(), entry + 4, &offset);
+      if (not read_u32_le(Data.data(), Data.size(), entry, &name)) return false;
+      if (not read_u32_le(Data.data(), Data.size(), entry + 4, &offset)) return false;
       if (((name & 0x80000000) IS 0) and (uint16_t(name) IS ID) and ((offset & 0x80000000) != 0)) {
          *ChildOffset = offset & 0x7fffffff;
          return true;
@@ -287,7 +287,7 @@ static void collect_pe_resource_data(const std::vector<uint8_t> &Data, const PeS
    for (uint32_t index = 0; index < count; index++, entry += 8) {
       uint32_t offset;
       if (entry + 8 > Data.size()) return;
-      read_u32_le(Data.data(), Data.size(), entry + 4, &offset);
+      if (not read_u32_le(Data.data(), Data.size(), entry + 4, &offset)) return;
       if ((offset & 0x80000000) != 0) {
          collect_pe_resource_data(Data, ResourceSection, BaseOffset, offset & 0x7fffffff, Resources, Depth + 1);
       }
@@ -297,8 +297,8 @@ static void collect_pe_resource_data(const std::vector<uint8_t> &Data, const PeS
          uint32_t data_size;
          size_t data_offset;
          if (data_entry + 16 > Data.size()) continue;
-         read_u32_le(Data.data(), Data.size(), data_entry, &data_rva);
-         read_u32_le(Data.data(), Data.size(), data_entry + 4, &data_size);
+         if (not read_u32_le(Data.data(), Data.size(), data_entry, &data_rva)) continue;
+         if (not read_u32_le(Data.data(), Data.size(), data_entry + 4, &data_size)) continue;
          if ((data_size > 0) and pe_rva_to_offset(Data, ResourceSection, data_rva, data_size, &data_offset) and
             (data_offset + data_size <= Data.size())) {
             Resources.emplace_back(data_offset, data_size);
@@ -362,8 +362,8 @@ static ERR load_pe_version_metadata(const std::string &Path, TaskVersionMetadata
 
    uint32_t resource_rva;
    uint32_t resource_size;
-   read_u32_le(pe_data.data(), pe_data.size(), data_directory_offset + 16, &resource_rva);
-   read_u32_le(pe_data.data(), pe_data.size(), data_directory_offset + 20, &resource_size);
+   if (not read_u32_le(pe_data.data(), pe_data.size(), data_directory_offset + 16, &resource_rva)) return ERR::Query;
+   if (not read_u32_le(pe_data.data(), pe_data.size(), data_directory_offset + 20, &resource_size)) return ERR::Query;
    if ((resource_rva IS 0) or (resource_size IS 0)) return ERR::Query;
 
    auto section_offset = optional_offset + optional_size;
@@ -374,10 +374,10 @@ static ERR load_pe_version_metadata(const std::string &Path, TaskVersionMetadata
    for (uint16_t i = 0; i < section_count; i++) {
       auto offset = section_offset + (size_t(i) * 40);
       PeSection section;
-      read_u32_le(pe_data.data(), pe_data.size(), offset + 8, &section.VirtualSize);
-      read_u32_le(pe_data.data(), pe_data.size(), offset + 12, &section.VirtualAddress);
-      read_u32_le(pe_data.data(), pe_data.size(), offset + 16, &section.RawSize);
-      read_u32_le(pe_data.data(), pe_data.size(), offset + 20, &section.RawOffset);
+      if (not read_u32_le(pe_data.data(), pe_data.size(), offset + 8, &section.VirtualSize)) return ERR::Query;
+      if (not read_u32_le(pe_data.data(), pe_data.size(), offset + 12, &section.VirtualAddress)) return ERR::Query;
+      if (not read_u32_le(pe_data.data(), pe_data.size(), offset + 16, &section.RawSize)) return ERR::Query;
+      if (not read_u32_le(pe_data.data(), pe_data.size(), offset + 20, &section.RawOffset)) return ERR::Query;
       sections.push_back(section);
    }
 

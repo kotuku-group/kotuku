@@ -5,6 +5,7 @@ static const struct FieldDef clVectorSceneFlags[] = {
    { "RenderTime", 0x00000002 },
    { "Resize", 0x00000004 },
    { "OutlineViewports", 0x00000008 },
+   { "StableRender", 0x00000010 },
    { nullptr, 0 }
 };
 

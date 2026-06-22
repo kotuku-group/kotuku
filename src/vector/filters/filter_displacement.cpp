@@ -49,8 +49,8 @@ class extDisplacementFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "DisplacementFX";
    using create = kt::Create<extDisplacementFX>;
 
-   double Scale;
-   CMP XChannel, YChannel;
+   double Scale = 0; // SVG default requires this is 0, which makes the displacment algorithm ineffective.
+   CMP XChannel = CMP::ALPHA, YChannel = CMP::ALPHA;
 };
 
 static double SQRT2DIV2 = sqrt(2.0) / 2.0;
@@ -129,7 +129,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    //log.warning("W/H: %dx%d; MW/H: %dx%d; IW/H: %dx%d; CW/H: %.2fx%.2f, BBox: %d", width, height, mix_width, mix_height, in_width, in_height, c_width, c_height, Self->Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX);
    //log.warning("X Channel: %d, Y Channel: %d; Scale: %.2f / %.2f -> %.2f,%.2f; WH: %dx%d", Self->XChannel, Self->YChannel, Self->Scale, scale_against, sx, sy, width, height);
 
-   static const double HALF8BIT = 255.0 * 0.5;
+   constexpr double HALF8BIT = 255.0 * 0.5;
    for (int y=0; y < draw_height; y++) {
       auto m = mix;
       auto d = (uint32_t *)dest;
@@ -153,16 +153,6 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR DISPLACEMENTFX_NewObject(extDisplacementFX *Self)
-{
-   Self->Scale = 0; // SVG default requires this is 0, which makes the displacment algorithm ineffective.
-   Self->XChannel = CMP::ALPHA;
-   Self->YChannel = CMP::ALPHA;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -171,43 +161,13 @@ Scale: Displacement scale factor.
 The amount is expressed in the coordinate system established by @VectorFilter.PrimitiveUnits on the parent @VectorFilter.
 When the value of this field is 0, this operation has no effect on the source image.
 
-*********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_SET_Scale(extDisplacementFX *Self, double Value)
-{
-   Self->Scale = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 XChannel: X axis channel selection.
 Lookup: CMP
 
-*********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_SET_XChannel(extDisplacementFX *Self, CMP Value)
-{
-   Self->XChannel = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 YChannel: Y axis channel selection.
 Lookup: CMP
-
-*********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_SET_YChannel(extDisplacementFX *Self, CMP Value)
-{
-   Self->YChannel = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
@@ -233,18 +193,10 @@ static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string_view &
 
 #include "filter_displacement_def.c"
 
-static const FieldDef clChannel[] = {
-   { "Red",   CMP::RED },
-   { "Green", CMP::GREEN },
-   { "Blue",  CMP::BLUE },
-   { "Alpha", CMP::ALPHA },
-   { nullptr, 0 }
-};
-
 static const FieldArray clDisplacementFXFields[] = {
-   { "Scale",     FDF_DOUBLE|FDF_RW, nullptr, DISPLACEMENTFX_SET_Scale },
-   { "XChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_XChannel, &clChannel },
-   { "YChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_YChannel, &clChannel },
+   { "Scale",     FDF_DOUBLE|FDF_RW },
+   { "XChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
+   { "YChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
    { "XMLDef",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, DISPLACEMENTFX_GET_XMLDef },
    END_FIELD
 };

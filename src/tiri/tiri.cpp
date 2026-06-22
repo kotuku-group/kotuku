@@ -650,8 +650,8 @@ void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int El
 
 void get_line(objScript *Self, int Line, STRING Buffer, int Size)
 {
-   if (not Self->String.empty()) {
-      auto str = std::string_view(Self->String);
+   if (not Self->Statement.empty()) {
+      auto str = std::string_view(Self->Statement);
       int i;
       for (i=0; i < Line; i++) {
          str = next_line(str);

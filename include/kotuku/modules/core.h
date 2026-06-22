@@ -3371,23 +3371,23 @@ class objScript : public Object {
 
    using create = kt::Create<objScript>;
 
-   std::string Path;            // The location of a script file to be loaded.
-   std::string Procedure;       // Specifies a procedure name to be executed.
-   std::string ErrorMessage;    // A human readable error string may be declared here following a script execution failure.
-   OBJECTID TargetID;           // Reference to the default container that new script objects will be initialised to.
-   SCF      Flags;              // Optional flags.
-   ERR      Error;              // If a script fails during execution, an error code may be readable here.
-   int      CurrentLine;        // Indicates the current line being executed when in debug mode.
-   int      LineOffset;         // For debugging purposes, this value is added to any message referencing a line number.
+   std::string Procedure;              // Specifies a procedure name to be executed.
+   std::string CacheFile;              // Compilable script languages can be compiled to a cache file.
+   std::string Path;                   // The location of a script file to be loaded.
+   std::string ErrorMessage;           // A human readable error string may be declared here following a script execution failure.
+   std::string Statement;              // Scripts can be executed from any string passed into this field.
+   std::string WorkingPath;            // Defines the script's working path (folder).
+   kt::vector<std::string> Results;    // Stores multiple string results for languages that support this feature.
+   OBJECTID TargetID;                  // Reference to the default container that new script objects will be initialised to.
+   SCF      Flags;                     // Optional flags.
+   ERR      Error;                     // If a script fails during execution, an error code may be readable here.
+   int      CurrentLine;               // Indicates the current line being executed when in debug mode.
+   int      LineOffset;                // For debugging purposes, this value is added to any message referencing a line number.
 
 #ifdef PRV_SCRIPT
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars;                 // Global parameters
-   kt::vector<std::string> Results;
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string String;
-   std::string WorkingPath;
-   std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
    OBJECTID ScriptOwnerID;
@@ -3440,18 +3440,43 @@ class objScript : public Object {
 
    // Customised field getting
 
-   inline ERR getPath(std::string_view &Value) noexcept {
-      Value = this->Path;
-      return ERR::Okay;
-   }
-
    inline ERR getProcedure(std::string_view &Value) noexcept {
       Value = this->Procedure;
       return ERR::Okay;
    }
 
+   inline ERR getCacheFile(std::string_view &Value) noexcept {
+      Value = this->CacheFile;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
    inline ERR getErrorMessage(std::string_view &Value) noexcept {
       Value = this->ErrorMessage;
+      return ERR::Okay;
+   }
+
+   inline ERR getStatement(std::string_view &Value) noexcept {
+      Value = this->Statement;
+      return ERR::Okay;
+   }
+
+   inline ERR getWorkingPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getResults(std::span<std::string> &Value) noexcept {
+      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 280);
+      Value = std::span<std::string>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
@@ -3480,33 +3505,6 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getResults(std::span<std::string> &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getCacheFile(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getWorkingPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getStatement(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getTotalArgs(int &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
       return field->GetValue(this, &Value);
@@ -3515,18 +3513,38 @@ class objScript : public Object {
 
    // Customised field setting
 
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904500, &Value);
-   }
-
    inline ERR setProcedure(const std::string_view &Value) noexcept {
       this->Procedure = Value;
       return ERR::Okay;
    }
 
+   inline ERR setCacheFile(const std::string_view &Value) noexcept {
+      this->CacheFile = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x00804500, &Value);
+   }
+
    inline ERR setErrorMessage(const std::string_view &Value) noexcept {
       this->ErrorMessage = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setStatement(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setWorkingPath(const std::string_view &Value) noexcept {
+      this->WorkingPath = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setResults(const kt::vector<std::string> &Value) noexcept {
+      this->Results = Value;
       return ERR::Okay;
    }
 
@@ -3544,26 +3562,6 @@ class objScript : public Object {
    inline ERR setLineOffset(const int Value) noexcept {
       this->LineOffset = Value;
       return ERR::Okay;
-   }
-
-   inline ERR setResults(const std::span<const std::string> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00905300, &Value);
-   }
-
-   inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00904300, &Value);
-   }
-
-   inline ERR setWorkingPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
-   inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
 };
@@ -4274,14 +4272,16 @@ class objCompression : public Object {
 
    using create = kt::Create<objCompression>;
 
-   int64_t  TotalOutput;   // The total number of bytes that have been output during the compression or decompression of streamed data.
-   OBJECTID OutputID;      // Resulting messages will be sent to the object referred to in this field.
+   std::string Path;        // Set if the compressed data originates from, or is to be saved to a file source.
+   std::string Password;    // Required if an archive needs an encryption password for access.
+   int64_t  TotalOutput;    // The total number of bytes that have been output during the compression or decompression of streamed data.
+   OBJECTID OutputID;       // Resulting messages will be sent to the object referred to in this field.
    int      CompressionLevel; // The compression level to use when compressing data.
-   CMF      Flags;         // Optional flags.
-   int      SegmentSize;   // Private. Splits the compressed file if it surpasses a set byte limit.
-   PERMIT   Permissions;   // Default permissions for decompressed files are defined here.
-   int      MinOutputSize; // Indicates the minimum output buffer size that will be needed during de/compression.
-   int      WindowBits;    // Special option for certain compression formats.
+   CMF      Flags;          // Optional flags.
+   int      SegmentSize;    // Private. Splits the compressed file if it surpasses a set byte limit.
+   PERMIT   Permissions;    // Default permissions for decompressed files are defined here.
+   int      MinOutputSize;  // Indicates the minimum output buffer size that will be needed during de/compression.
+   int      WindowBits;     // Special option for certain compression formats.
 
    // Action stubs
 
@@ -4350,6 +4350,16 @@ class objCompression : public Object {
 
    // Customised field getting
 
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getPassword(std::string_view &Value) noexcept {
+      Value = this->Password;
+      return ERR::Okay;
+   }
+
    inline ERR getTotalOutput(int64_t &Value) noexcept {
       Value = this->TotalOutput;
       return ERR::Okay;
@@ -4385,28 +4395,10 @@ class objCompression : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
    inline ERR getFeedback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPassword(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
@@ -4430,6 +4422,16 @@ class objCompression : public Object {
 
 
    // Customised field setting
+
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      this->Path = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setPassword(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
 
    inline ERR setOutput(OBJECTID Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
@@ -4462,19 +4464,9 @@ class objCompression : public Object {
       return field->WriteValue(this, field, 0x00804200, &Value);
    }
 
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
    inline ERR setFeedback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
-   }
-
-   inline ERR setPassword(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
 };

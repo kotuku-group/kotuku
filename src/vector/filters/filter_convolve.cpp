@@ -591,16 +591,6 @@ each component.  One application of Bias is when it is desirable to have .5 grey
 filter.  The Bias value shifts the range of the filter.  This allows representation of values that would otherwise be
 clamped to 0 or 1.  The default is 0.
 
-*********************************************************************************************************************/
-
-static ERR CONVOLVEFX_SET_Bias(extConvolveFX *Self, double Value)
-{
-   Self->Bias = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Divisor: Defines the divisor value in the convolution algorithm.
 
@@ -627,16 +617,6 @@ EdgeMode: Defines the behaviour of the convolve algorithm around the edges of th
 
 The EdgeMode determines how to extend the input image with colour values so that the matrix operations can be applied
 when the #Matrix is positioned at or near the edge of the input image.
-
-*********************************************************************************************************************/
-
-static ERR CONVOLVEFX_SET_EdgeMode(extConvolveFX *Self, EM Value)
-{
-   Self->EdgeMode = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Matrix: A list of numbers that make up the kernel matrix for the convolution.
@@ -676,9 +656,7 @@ the impact on performance.  The default value is 3.
 
 static ERR CONVOLVEFX_SET_MatrixRows(extConvolveFX *Self, int Value)
 {
-   kt::Log log;
-   if (Value <= 0) return log.warning(ERR::InvalidValue);
-
+   if (Value <= 0) return ERR::InvalidValue;
    Self->MatrixRows = Value;
    return ERR::Okay;
 }
@@ -696,9 +674,7 @@ the impact on performance.  The default value is `3`.
 
 static ERR CONVOLVEFX_SET_MatrixColumns(extConvolveFX *Self, int Value)
 {
-   kt::Log log;
-   if (Value <= 0) return log.warning(ERR::InvalidValue);
-
+   if (Value <= 0) return ERR::InvalidValue;
    Self->MatrixColumns = Value;
    return ERR::Okay;
 }
@@ -707,16 +683,6 @@ static ERR CONVOLVEFX_SET_MatrixColumns(extConvolveFX *Self, int Value)
 
 -FIELD-
 PreserveAlpha: If TRUE, the alpha channel is protected from the effects of the convolve algorithm.
-
-*********************************************************************************************************************/
-
-static ERR CONVOLVEFX_SET_PreserveAlpha(extConvolveFX *Self, int Value)
-{
-   Self->PreserveAlpha = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 TargetX: The X position of the matrix in relation to the input image.
@@ -731,8 +697,7 @@ default, the convolution matrix is centered in X over each pixel of the input im
 static ERR CONVOLVEFX_SET_TargetX(extConvolveFX *Self, int Value)
 {
    if (Self->initialised()) {
-      kt::Log log;
-      if ((Value < 0) or (Value >= Self->MatrixColumns)) return log.warning(ERR::OutOfRange);
+      if ((Value < 0) or (Value >= Self->MatrixColumns)) return kt::Log().warning(ERR::OutOfRange);
    }
 
    Self->TargetX = Value;
@@ -755,8 +720,7 @@ default, the convolution matrix is centered in Y over each pixel of the input im
 static ERR CONVOLVEFX_SET_TargetY(extConvolveFX *Self, int Value)
 {
    if (Self->initialised()) {
-      kt::Log log;
-      if ((Value < 0) or (Value >= Self->MatrixRows)) return log.warning(ERR::OutOfRange);
+      if ((Value < 0) or (Value >= Self->MatrixRows)) return kt::Log().warning(ERR::OutOfRange);
    }
 
    Self->TargetY = Value;
@@ -896,25 +860,18 @@ static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, std::string_view &Value)
 
 #include "filter_convolve_def.c"
 
-static const FieldDef clEdgeMode[] = {
-   { "Duplicate", EM::DUPLICATE },
-   { "Wrap",      EM::WRAP },
-   { "None",      EM::NONE },
-   { nullptr, 0 }
-};
-
 static const FieldArray clConvolveFXFields[] = {
-   { "Bias",          FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_Bias },
-   { "Divisor",       FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_Divisor },
-   { "EdgeMode",      FDF_INT|FDF_LOOKUP|FDF_RI,   nullptr, CONVOLVEFX_SET_EdgeMode, &clEdgeMode },
-   { "MatrixRows",    FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_MatrixRows },
-   { "MatrixColumns", FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_MatrixColumns },
+   { "Bias",          FDF_DOUBLE|FDF_RI },
+   { "Divisor",       FDF_DOUBLE|FDF_RI,         nullptr, CONVOLVEFX_SET_Divisor },
+   { "EdgeMode",      FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clConvolveFXEM },
+   { "MatrixRows",    FDF_INT|FDF_RI,            nullptr, CONVOLVEFX_SET_MatrixRows },
+   { "MatrixColumns", FDF_INT|FDF_RI,            nullptr, CONVOLVEFX_SET_MatrixColumns },
    { "Matrix",        FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, CONVOLVEFX_GET_Matrix, CONVOLVEFX_SET_Matrix },
-   { "PreserveAlpha", FDF_INT|FDF_RW,              nullptr, CONVOLVEFX_SET_PreserveAlpha },
-   { "TargetX",       FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_TargetX },
-   { "TargetY",       FDF_INT|FDF_RI,              nullptr, CONVOLVEFX_SET_TargetY },
-   { "UnitX",         FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_UnitX },
-   { "UnitY",         FDF_DOUBLE|FDF_RI,           nullptr, CONVOLVEFX_SET_UnitY },
+   { "PreserveAlpha", FDF_INT|FDF_RW },
+   { "TargetX",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetX },
+   { "TargetY",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetY },
+   { "UnitX",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitX },
+   { "UnitY",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitY },
    { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  CONVOLVEFX_GET_XMLDef },
    END_FIELD
 };

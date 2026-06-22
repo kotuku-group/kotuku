@@ -63,7 +63,7 @@ static ERR GRADIENTGOURAUD_SET_Indices(extGradientGouraud *Self, std::span<const
    else if ((elements % 3) != 0) return kt::Log().warning(ERR::InvalidValue);
    else {
       const auto total_vertices = Self->Gouraud->Vertices.size();
-      for (int i=0; i < elements; i++) {
+      for (unsigned i=0; i < elements; i++) {
          if (Array[i] < 0) {
             kt::Log().warning("Gouraud index %d at position %d is negative.", Array[i], i);
             return ERR::OutOfRange;

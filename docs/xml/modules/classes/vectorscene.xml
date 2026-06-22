@@ -247,7 +247,7 @@
     <field>
       <name>Surface</name>
       <comment>May refer to a <class name="Surface">Surface</class> object for enabling automatic rendering.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>Setting the Surface field will enable automatic rendering to a display <class name="Surface">Surface</class>.  The use of features such as input event handling and user focus management will also require an associated surface as a pre-requisite.</p>
@@ -272,6 +272,7 @@
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
+      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
     </constants>
 
     <constants lookup="VSM">

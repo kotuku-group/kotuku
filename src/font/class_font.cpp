@@ -422,25 +422,6 @@ database.
 
 This feature is ideal for use when distributing custom fonts with an application.
 
-*********************************************************************************************************************/
-
-static ERR SET_Path(extFont *Self, const std::string_view &Value)
-{
-   if (!Self->initialised()) {
-      Self->Path.assign(Value);
-      return ERR::Okay;
-   }
-   else return ERR::Failed;
-}
-
-static ERR GET_Location(extFont *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 MaxHeight: The maximum possible pixel height per character.
 
@@ -981,7 +962,7 @@ static const FieldArray clFontFields[] = {
    { "GlyphSpacing", FDF_DOUBLE|FDF_RW },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
    { "String",       FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
-   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Path",         FDF_CPPSTRING|FDF_RW },
    { "Style",        FDF_CPPSTRING|FDF_RI, nullptr, SET_Style },
    { "Face",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Face },
    { "Outline",      FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },
@@ -1008,7 +989,6 @@ static const FieldArray clFontFields[] = {
    { "Bold",         FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Bold, SET_Bold },
    { "Italic",       FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Italic, SET_Italic },
    { "LineCount",    FDF_VIRTUAL|FDF_INT|FDF_R, GET_LineCount },
-   { "Location",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW|FDF_PURE, GET_Location, SET_Path },
    { "Opacity",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GET_Opacity, SET_Opacity },
    { "Width",        FDF_VIRTUAL|FDF_INT|FDF_R, GET_Width },
    { "YOffset",      FDF_VIRTUAL|FDF_INT|FDF_R, GET_YOffset },

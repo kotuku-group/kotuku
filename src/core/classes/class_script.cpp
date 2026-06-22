@@ -392,22 +392,6 @@ file is used instead of the original source code.
 If the cache file exists, a determination on whether the source code has been edited is usually made by comparing
 date stamps on the original and cache files.
 
-*********************************************************************************************************************/
-
-static ERR GET_CacheFile(objScript *Self, std::string_view &Value)
-{
-   Value = Self->CacheFile;
-   return Self->CacheFile.empty() ? ERR::FieldNotSet : ERR::Okay;
-}
-
-static ERR SET_CacheFile(objScript *Self, std::string_view &Value)
-{
-   Self->CacheFile.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 CurrentLine: Indicates the current line being executed when in debug mode.
 
@@ -453,12 +437,6 @@ valid existing object).
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(objScript *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(objScript *Self, std::string_view &Value)
 {
    if (not Self->Path.empty()) {
@@ -468,7 +446,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
    }
    else {
       Self->Path.clear();
-      Self->String.clear();
+      Self->Statement.clear();
       Self->WorkingPath.clear();
 
       int i;
@@ -477,7 +455,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
          if (len IS std::string_view::npos) len = Value.size();
 
          if (Value.substr(0, len).starts_with("STRING:")) {
-            Self->String.assign(check_bom(Value.substr(7)));
+            Self->Statement.assign(check_bom(Value.substr(7)));
             return ERR::Okay;
          }
 
@@ -575,23 +553,6 @@ execution of any procedure.
 
 For maximum compatibility in type conversion, the results are stored as an array of strings.
 
-*********************************************************************************************************************/
-
-static ERR GET_Results(objScript *Self, std::span<const std::string> &Value)
-{
-   Value = std::span<const std::string>(Self->Results.data(), Self->Results.size());
-   return ERR::Okay;
-}
-
-static ERR SET_Results(objScript *Self, const std::span<const std::string> &Value)
-{
-   if (Value.data()) Self->Results.assign(Value.data(), Value.data() + Value.size());
-   else Self->Results.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Statement: Scripts can be executed from any string passed into this field.
 
@@ -601,16 +562,10 @@ It is also commonly used for executing scripts that have been embedded into prog
 
 *********************************************************************************************************************/
 
-static ERR GET_String(objScript *Self, std::string_view &Value)
-{
-   Value = Self->String;
-   return ERR::Okay;
-}
-
 static ERR SET_String(objScript *Self, std::string_view &Value)
 {
    Self->Path.clear(); // Path removed when a statement string is being set
-   Self->String.assign(check_bom(Value));
+   Self->Statement.assign(check_bom(Value));
    return ERR::Okay;
 }
 
@@ -630,9 +585,9 @@ in the value of this field.
 -END-
 *********************************************************************************************************************/
 
-static ERR GET_TotalArgs(objScript *Self, int *Value)
+static ERR GET_TotalArgs(objScript *Self, int &Value)
 {
-   *Value = Self->Vars.size();
+   Value = Self->Vars.size();
    return ERR::Okay;
 }
 
@@ -710,34 +665,28 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
    return Self->WorkingPath.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_WorkingPath(objScript *Self, std::string_view &Value)
-{
-   Self->WorkingPath.assign(Value);
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 #include "class_script_def.c"
 
 static const FieldArray clScriptFields[] = {
    { "Procedure",    FDF_CPPSTRING|FDF_RW },
+   { "CacheFile",    FDF_CPPSTRING|FDF_RW },
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
    { "ErrorMessage", FDF_CPPSTRING|FDF_RW },
+   { "Statement",    FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
+   { "String",       FDF_SYNONYM }, // Deprecated
+   { "WorkingPath",  FDF_CPPSTRING|FDF_RW, GET_WorkingPath },
+   { "Results",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
    { "Target",       FDF_OBJECTID|FDF_RW },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
    { "Error",        FDF_INT|FDF_R },
    { "CurrentLine",  FDF_INT|FDF_R },
    { "LineOffset",   FDF_INT|FDF_RW },
    // Virtual Fields
-   { "CacheFile",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_CacheFile, SET_CacheFile },
-   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,                      GET_WorkingPath, SET_WorkingPath },
-   { "Results",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Results, SET_Results },
-   { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI|FDF_PURE, GET_Path, SET_Path },
-   { "Statement",    FDF_CPPSTRING|FDF_RW|FDF_PURE,             GET_String, SET_String },
-   { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_String, SET_String },
-   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                    GET_TotalArgs },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE,     GET_Variables },
+   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                GET_TotalArgs },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE, GET_Variables },
    END_FIELD
 };
 

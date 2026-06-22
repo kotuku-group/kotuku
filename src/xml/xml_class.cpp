@@ -1890,12 +1890,6 @@ establish the base path for relative references in XQuery statements (e.g. for i
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extXML *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
 static ERR SET_Path(extXML *Self, const std::string_view &Value)
 {
    if (Self->Source) SET_Source(Self, nullptr);
@@ -2306,18 +2300,18 @@ static ERR XML_ValidateDocument(extXML *Self, void *Args)
 #include "xml_class_def.c"
 
 static const FieldArray clFields[] = {
-   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
-   { "DocType",      FDF_CPPSTRING|FDF_RW },
-   { "PublicID",     FDF_CPPSTRING|FDF_RW },
-   { "SystemID",     FDF_CPPSTRING|FDF_RW },
-   { "ErrorMsg",     FDF_CPPSTRING|FDF_R },
-   { "Source",       FDF_OBJECT|FDF_RI },
-   { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clXMLFlags },
-   { "Modified",     FDF_INT|FDF_R },
-   { "ParseError",   FDF_INT|FD_PRIVATE|FDF_R },
-   { "LineNo",       FDF_INT|FD_PRIVATE|FDF_R },
+   { "Path",       FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Src",        FDF_SYNONYM },
+   { "DocType",    FDF_CPPSTRING|FDF_RW },
+   { "PublicID",   FDF_CPPSTRING|FDF_RW },
+   { "SystemID",   FDF_CPPSTRING|FDF_RW },
+   { "ErrorMsg",   FDF_CPPSTRING|FDF_R },
+   { "Source",     FDF_OBJECT|FDF_RI },
+   { "Flags",      FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clXMLFlags },
+   { "Modified",   FDF_INT|FDF_R },
+   { "ParseError", FDF_INT|FD_PRIVATE|FDF_R },
+   { "LineNo",     FDF_INT|FD_PRIVATE|FDF_R },
    // Virtual fields
-   { "Src",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW|FDF_PURE, GET_Path, SET_Path },
    { "Statement",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_RW, GET_Statement, SET_Statement },
    { "Tags",       FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Tags, nullptr, "XTag" },
    END_FIELD

@@ -269,8 +269,8 @@
     <field>
       <name>Scene</name>
       <comment>Reference to the <class name="VectorScene">VectorScene</class> object containing the SVG scene graph.</comment>
-      <access read="G">Get</access>
-      <type>OBJECTPTR</type>
+      <access read="R">Read</access>
+      <type class="VectorScene">*VectorScene</type>
       <description>
 <p>This read-only field provides direct access to the <class name="VectorScene">VectorScene</class> object that manages the complete SVG scene graph structure.  The scene object serves as the root container for all generated vector elements and provides essential rendering coordination.</p>
 <p>The scene reference remains valid throughout the SVG object's lifetime and enables direct manipulation of scene-wide properties including page dimensions, rendering settings, and global definitions.  This field simplifies access to the scene graph for applications requiring programmatic control over the complete document structure.</p>
@@ -321,8 +321,8 @@
     <field>
       <name>Viewport</name>
       <comment>Reference to the primary <class name="VectorViewport">VectorViewport</class> containing the SVG document content.</comment>
-      <access read="G">Get</access>
-      <type>OBJECTPTR</type>
+      <access read="R">Read</access>
+      <type class="VectorViewport">*VectorViewport</type>
       <description>
 <p>This read-only field provides direct access to the main <class name="VectorViewport">VectorViewport</class> object that contains the root-level SVG content.</p>
       </description>

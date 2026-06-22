@@ -19,6 +19,8 @@ module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestam
     string Title       # Automatically defined if the title element is used in the SVG source document.
     string Statement   # A string containing SVG data.
     string Colour      # Defines the default fill to use for `currentColor` references.
+    obj(VectorViewport) Viewport # First viewport (the svg tag) to be created on parsing the SVG document.
+    obj(VectorScene) Scene
     int Frame          # Draw the SVG only when this frame number is a match to the target surface frame number.
     int(SVF) Flags     # Optional flags.
     int FrameRate      # Maximum frame rate to use for animation.
