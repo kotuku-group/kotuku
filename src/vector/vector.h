@@ -648,7 +648,8 @@ class extFilterEffect : public objFilterEffect {
    using create = kt::Create<extFilterEffect>;
 
    extVectorFilter *Filter; // Direct reference to the parent filter
-   uint16_t UsageCount;        // Total number of other effects utilising this effect to build a pipeline
+   uint16_t UsageCount;     // Total number of other effects utilising this effect to build a pipeline
+   uint16_t Padding;        // Padding for the alignment of derived classes
 
    extFilterEffect() {
       SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
