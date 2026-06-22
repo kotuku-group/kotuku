@@ -235,7 +235,7 @@ end
 @Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0x47ded148) end
 @Test; @Disabled global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x3e4d8a13) end
 @Test; @Disabled global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0xda23deb4) end
-@Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x0c1b324a) end
+@Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x5b759ef6) end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0x060263af) end
 @Test global function W3Transfer2()        hashTestSVG('filters/w3-filters-color-02-b.svg', 0x49928379) end
 @Test global function W3Filters()          hashTestSVG('filters/w3-filters.svg', 0x2f6ef991) end

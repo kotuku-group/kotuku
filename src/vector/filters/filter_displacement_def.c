@@ -9,6 +9,23 @@ static const struct FieldDef clDisplacementFXCMP[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clDisplacementFXVSM[] = {
+   { "Auto", 0x00000000 },
+   { "Neighbour", 0x00000001 },
+   { "Bilinear", 0x00000002 },
+   { "Bicubic", 0x00000003 },
+   { "Spline16", 0x00000004 },
+   { "Kaiser", 0x00000005 },
+   { "Quadric", 0x00000006 },
+   { "Gaussian", 0x00000007 },
+   { "Bessel", 0x00000008 },
+   { "Mitchell", 0x00000009 },
+   { "Sinc", 0x0000000a },
+   { "Lanczos", 0x0000000b },
+   { "Blackman", 0x0000000c },
+   { nullptr, 0 }
+};
+
 static ERR DISPLACEMENTFX_NewPlacement(extDisplacementFX *Self) {
    new (Self) extDisplacementFX;
    return ERR::Okay;

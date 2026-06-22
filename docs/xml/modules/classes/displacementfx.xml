@@ -42,6 +42,17 @@
 
   <fields>
     <field>
+      <name>ResampleMethod</name>
+      <comment>The resample algorithm to use for transforming the source image.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="VSM">VSM</type>
+      <description>
+<types lookup="VSM"/>
+<p>Currently <code>NEIGHBOUR</code> and <code>BILINEAR</code> are supported. Other resample methods fall back to bilinear filtering.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Scale</name>
       <comment>Displacement scale factor.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -87,6 +98,22 @@
       <const name="BLUE">The blue colour channel.</const>
       <const name="GREEN">The green colour channel.</const>
       <const name="RED">The red colour channel.</const>
+    </constants>
+
+    <constants lookup="VSM">
+      <const name="AUTO">The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</const>
+      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
+      <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
+      <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
+      <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
+      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
+      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
+      <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
+      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
+      <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
+      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
+      <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
+      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
     </constants>
 
   </types>
