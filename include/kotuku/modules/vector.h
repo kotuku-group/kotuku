@@ -1997,23 +1997,23 @@ class objFilterEffect : public Object {
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 128));
+      return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 144));
+      return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 160));
+      return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 176));
+      return ERR::Okay;
    }
 
    inline ERR getSourceType(VSF &Value) noexcept {
@@ -2055,23 +2055,23 @@ class objFilterEffect : public Object {
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      this->X = Value;
+      return ERR::Okay;
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      this->Y = Value;
+      return ERR::Okay;
    }
 
    inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      this->Width = Value;
+      return ERR::Okay;
    }
 
    inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      this->Height = Value;
+      return ERR::Okay;
    }
 
    inline ERR setSourceType(const VSF Value) noexcept {
@@ -2125,8 +2125,8 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR getBitmap(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->GetValue(this, &Value);
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 224));
+      return ERR::Okay;
    }
 
    inline ERR getPath(std::string_view &Value) noexcept {
@@ -2350,6 +2350,7 @@ class objColourFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setMode(const CM Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -3455,23 +3456,23 @@ class objVectorFilter : public Object {
    // Customised field getting
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 88));
+      return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 104));
+      return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 120));
+      return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->GetValue(this, &Value);
+      Value = *((Unit *)(((int8_t *)this) + 136));
+      return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
@@ -3532,13 +3533,13 @@ class objVectorFilter : public Object {
    // Customised field setting
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      this->X = Value;
+      return ERR::Okay;
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      this->Y = Value;
+      return ERR::Okay;
    }
 
    inline ERR setWidth(const Unit Value) noexcept {

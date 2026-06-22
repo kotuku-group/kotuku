@@ -110,14 +110,12 @@ void apply_transition_xy(extVectorTransition *Self, double Index, double *X, dou
 
 //********************************************************************************************************************
 
-static ERR set_stop_transform(extVectorTransition *Self, TransitionStop *Stop, CSTRING Commands)
+static ERR set_stop_transform(TransitionStop *Stop, CSTRING Commands)
 {
    kt::Log log;
 
-   log.traceBranch("%s", Commands);
-
-   Self->Dirty = true;
    if (!Commands) Commands = ""; // Empty transforms are permitted - it will result in an identity matrix being created.
+   log.traceBranch("%s", Commands);
 
    vec::ParseTransform(&Stop->Matrix, Commands);
 
@@ -127,7 +125,8 @@ static ERR set_stop_transform(extVectorTransition *Self, TransitionStop *Stop, C
       return ERR::Okay;
    }
    else {
-      Stop->AGGTransform = new (std::nothrow) agg::trans_affine(m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX, m.TranslateY);
+      Stop->AGGTransform.reset(new (std::nothrow) agg::trans_affine(
+         m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX, m.TranslateY));
       if (Stop->AGGTransform) return ERR::Okay;
       else return log.warning(ERR::AllocMemory);
    }
@@ -135,13 +134,8 @@ static ERR set_stop_transform(extVectorTransition *Self, TransitionStop *Stop, C
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_Free(extVectorTransition *Self)
-{
-   for (auto i=0; i < Self->TotalStops; i++) {
-      delete Self->Stops[i].AGGTransform;
-   }
-   Self->TotalStops = 0;
-
+static ERR TRANSITION_FreePlacement(extVectorTransition *Self) {
+   Self->~extVectorTransition();
    return ERR::Okay;
 }
 
@@ -156,9 +150,8 @@ static ERR TRANSITION_Init(extVectorTransition *Self)
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_NewObject(extVectorTransition *Self)
-{
-   Self->Dirty = true;
+static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
+   new (Self) extVectorTransition;
    return ERR::Okay;
 }
 
@@ -178,20 +171,28 @@ a transform string.  The Transition structure consists of the following fields:
 static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Transition> &Value)
 {
    kt::Log log;
-   const int elements = Value.size();
-   if ((elements >= 2) and (elements < MAX_TRANSITION_STOPS)) {
-      Self->TotalStops = elements;
+   const int elements = int(Value.size());
+   if (elements >= 2) {
+      std::vector<TransitionStop> stops;
+      stops.reserve(elements);
+
       double last_offset = 0;
       for (auto i=0; i < elements; i++) {
          if (Value[i].Offset < last_offset) return log.warning(ERR::InvalidValue); // Offsets must be in incrementing order.
          if ((Value[i].Offset < 0.0) or (Value[i].Offset > 1.0)) return log.warning(ERR::OutOfRange);
 
-         Self->Stops[i].Offset = Value[i].Offset;
-         set_stop_transform(Self, &Self->Stops[i], Value[i].Transform);
+         TransitionStop stop;
+         stop.Offset = Value[i].Offset;
+         if (const auto error = set_stop_transform(&stop, Value[i].Transform); error != ERR::Okay) return error;
 
+         stops.emplace_back(std::move(stop));
          last_offset = Value[i].Offset;
-         Self->modified();
       }
+
+      Self->Stops = std::move(stops);
+      Self->TotalStops = int(Self->Stops.size());
+      Self->Dirty = true;
+      Self->modified();
       return ERR::Okay;
    }
    else return log.warning(ERR::DataSize);
@@ -208,9 +209,9 @@ This read-only field indicates the total number of stops that have been defined 
 *********************************************************************************************************************/
 
 static const ActionArray clTransitionActions[] = {
-   { AC::Free,      TRANSITION_Free },
-   { AC::Init,      TRANSITION_Init },
-   { AC::NewObject, TRANSITION_NewObject },
+   { AC::FreePlacement, TRANSITION_FreePlacement },
+   { AC::Init,          TRANSITION_Init },
+   { AC::NewPlacement,  TRANSITION_NewPlacement },
    { AC::NIL, nullptr }
 };
 

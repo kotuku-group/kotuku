@@ -137,22 +137,6 @@ Height: Primitive height of the effect area.
 
 The `(Width, Height)` field values define the dimensions of the effect within the target clipping area.
 
-*********************************************************************************************************************/
-
-static ERR FILTEREFFECT_GET_Height(extFilterEffect *Self, Unit &Value)
-{
-   Value = Self->Height;
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_Height(extFilterEffect *Self, Unit &Value)
-{
-   Self->Height = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Mix: Reference to another effect to be used as a mixer with Input.
 
@@ -207,42 +191,10 @@ Width: Primitive width of the effect area.
 
 The (Width,Height) field values define the dimensions of the effect within the target clipping area.
 
-*********************************************************************************************************************/
-
-static ERR FILTEREFFECT_GET_Width(extFilterEffect *Self, Unit &Value)
-{
-   Value = Self->Width;
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_Width(extFilterEffect *Self, Unit &Value)
-{
-   Self->Width = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 X: Primitive X coordinate for the effect.
 
 The (X,Y) field values define the offset of the effect within the target clipping area.
-
-*********************************************************************************************************************/
-
-static ERR FILTEREFFECT_GET_X(extFilterEffect *Self, Unit &Value)
-{
-   Value = Self->X;
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_X(extFilterEffect *Self, Unit &Value)
-{
-   Self->X = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Y: Primitive Y coordinate for the effect.
@@ -252,20 +204,6 @@ The (X,Y) field values define the offset of the effect within the target clippin
 
 *********************************************************************************************************************/
 
-static ERR FILTEREFFECT_GET_Y(extFilterEffect *Self, Unit &Value)
-{
-   Value = Self->Y;
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_Y(extFilterEffect *Self, Unit &Value)
-{
-   Self->Y = Value;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 #include "filter_effect_def.c"
 
 static const FieldArray clFilterEffectFields[] = {
@@ -274,10 +212,10 @@ static const FieldArray clFilterEffectFields[] = {
    { "Target",     FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
    { "Input",      FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Input, CLASSID::FILTEREFFECT },
    { "Mix",        FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Mix, CLASSID::FILTEREFFECT },
-   { "X",          FDF_UNIT|FDF_RW|FDF_PURE, FILTEREFFECT_GET_X, FILTEREFFECT_SET_X },
-   { "Y",          FDF_UNIT|FDF_RW|FDF_PURE, FILTEREFFECT_GET_Y, FILTEREFFECT_SET_Y },
-   { "Width",      FDF_UNIT|FDF_RW|FDF_PURE, FILTEREFFECT_GET_Width, FILTEREFFECT_SET_Width },
-   { "Height",     FDF_UNIT|FDF_RW|FDF_PURE, FILTEREFFECT_GET_Height, FILTEREFFECT_SET_Height },
+   { "X",          FDF_UNIT|FDF_RW },
+   { "Y",          FDF_UNIT|FDF_RW },
+   { "Width",      FDF_UNIT|FDF_RW },
+   { "Height",     FDF_UNIT|FDF_RW },
    { "SourceType", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectSourceType },
    { "MixType",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectMixType },
    END_FIELD

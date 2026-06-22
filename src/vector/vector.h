@@ -10,6 +10,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 
 #include <array>
 #include <memory>
+#include <vector>
 #include <unordered_set>
 #include <sstream>
 #include <set>
@@ -422,20 +423,18 @@ struct ClipMaskCache {
 
 //********************************************************************************************************************
 
-constexpr int MAX_TRANSITION_STOPS = 10;
-
 struct TransitionStop { // Passed to the Stops field.
-   double Offset;
-   struct VectorMatrix Matrix;
-   agg::trans_affine *AGGTransform;
+   double Offset = 0;
+   struct VectorMatrix Matrix = {};
+   std::unique_ptr<agg::trans_affine> AGGTransform;
 };
 
 class extVectorTransition : public objVectorTransition, public SceneDef {
    public:
-   int TotalStops; // Total number of stops registered.
+   int TotalStops = 0; // Total number of stops registered.
 
-   TransitionStop Stops[MAX_TRANSITION_STOPS];
-   bool Dirty:1;
+   std::vector<TransitionStop> Stops;
+   bool Dirty:1 = true;
 };
 
 class extGradient : public objGradient, public SceneDef {

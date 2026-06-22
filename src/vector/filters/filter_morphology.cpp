@@ -44,8 +44,8 @@ class extMorphologyFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "MorphologyFX";
    using create = kt::Create<extMorphologyFX>;
 
-   int RadiusX, RadiusY;
-   MOP Operator;
+   int RadiusX = 0, RadiusY = 0;
+   MOP Operator = MOP::ERODE;
 };
 
 //********************************************************************************************************************
@@ -216,27 +216,11 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR MORPHOLOGYFX_NewObject(extMorphologyFX *Self)
-{
-   Self->Operator = MOP::ERODE;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
 Operator: Set to either `ERODE` or `DILATE`.
 Lookup: MOP
-
-*********************************************************************************************************************/
-
-static ERR MORPHOLOGYFX_SET_Operator(extMorphologyFX *Self, MOP Value)
-{
-   Self->Operator = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 RadiusX: X radius value.
@@ -302,7 +286,7 @@ static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string_view &Valu
 static const FieldArray clMorphologyFXFields[] = {
    { "RadiusX",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
    { "RadiusY",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
-   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
+   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clMorphologyFXMOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, MORPHOLOGYFX_GET_XMLDef },
    END_FIELD
 };

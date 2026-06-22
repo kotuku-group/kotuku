@@ -41,15 +41,15 @@ class extTurbulenceFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "TurbulenceFX";
    using create = kt::Create<extTurbulenceFX>;
 
-   double FX, FY;
-   int    Octaves;
-   int    Seed;
-   int    Stitch;
-   TB     Type;
-   objBitmap *Bitmap;
+   double FX = 0, FY = 0;
+   int    Octaves = 1;
+   int    Seed = 0;
+   int    Stitch = false;
+   TB     Type = TB::TURBULENCE;
+   objBitmap *Bitmap = nullptr;
    double Gradient[GSIZE][LSIZE][GSUBSIZE];
    int    Lattice[LSIZE];
-   bool   Dirty;
+   bool   Dirty = true;
 
    double noise2(uint8_t Channel, double VX, double VY, bool StitchNoise = false, int StitchWidth = 0, int StitchHeight = 0, int WrapX = 0, int WrapY = 0) {
       int bx0, bx1, by0, by1, b00, b10, b01, b11;
@@ -161,14 +161,7 @@ class extTurbulenceFX : public extFilterEffect {
    }
 
    extTurbulenceFX() {
-      Octaves    = 1;
-      Stitch     = false;
-      Seed       = 0;
-      Type       = TB::TURBULENCE;
-      FX         = 0;
-      FY         = 0;
       SourceType = VSF::NONE;
-      Dirty      = true;
    }
 };
 

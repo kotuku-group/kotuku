@@ -17,7 +17,7 @@ class extCompositeFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "CompositeFX";
    using create = kt::Create<extCompositeFX>;
 
-   double K1, K2, K3, K4; // For the arithmetic operator
+   double K1 = 0, K2 = 0, K3 = 0, K4 = 0; // For the arithmetic operator
    OP Operator = OP::OVER; // OP constant
 
    template <class CompositeOp>

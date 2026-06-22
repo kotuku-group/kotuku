@@ -29,11 +29,9 @@ static ERR IMAGEFX_FreePlacement(extImageFX *Self) {
 
 static const struct ActionArray clImageFXActions[] = {
    { AC::Draw, IMAGEFX_Draw },
-   { AC::Free, IMAGEFX_Free },
    { AC::FreePlacement, IMAGEFX_FreePlacement },
    { AC::Init, IMAGEFX_Init },
    { AC::NewChild, IMAGEFX_NewChild },
-   { AC::NewObject, IMAGEFX_NewObject },
    { AC::NewPlacement, IMAGEFX_NewPlacement },
    { AC::NIL, nullptr }
 };

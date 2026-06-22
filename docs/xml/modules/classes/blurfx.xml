@@ -40,7 +40,7 @@
     <field>
       <name>SX</name>
       <comment>The standard deviation of the blur on the x axis.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
 <p>The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.</p>
@@ -51,7 +51,7 @@
     <field>
       <name>SY</name>
       <comment>The standard deviation of the blur on the x axis.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
 <p>The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.</p>
