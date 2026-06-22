@@ -114,6 +114,7 @@
 using namespace kt;
 class extBitmap;
 
+extern SWIN glpWindowType;
 #define UpdateSurfaceRecord(a) update_surface_copy(a)
 
 struct SurfaceRecord {
@@ -300,7 +301,7 @@ class extPointer : public objPointer {
    OBJECTID CursorReleaseID;
    OBJECTID DragSurface;        // Draggable surface anchored to the pointer position
    OBJECTID DragParent;         // Parent of the draggable surface
-   int     CursorRelease;
+   int      CursorRelease;
    PTC      BufferCursor;
    CRF      BufferFlags;
    OBJECTID BufferOwner;
@@ -326,11 +327,11 @@ class extSurface : public objSurface {
    SurfaceCallback *Callback;
    APTR      Data;
    double   Opacity;
-   int     XOffset, YOffset;     // Fixed horizontal and vertical offset
-   double  XOffsetPercent;       // Scaled horizontal offset
-   double  YOffsetPercent;       // Scaled vertical offset
-   double  WidthPercent, HeightPercent; // Scaled width and height
-   double  XPercent, YPercent;   // Scaled coordinate
+   int      XOffset, YOffset;     // Fixed horizontal and vertical offset
+   double   XOffsetPercent;       // Scaled horizontal offset
+   double   YOffsetPercent;       // Scaled vertical offset
+   double   WidthPercent, HeightPercent; // Scaled width and height
+   double   XPercent, YPercent;   // Scaled coordinate
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
    OBJECTID PrevModalID;          // Previous surface to have been modal
    OBJECTID BitmapOwnerID;        // The surface object that owns the root bitmap
@@ -351,6 +352,11 @@ class extSurface : public objSurface {
    int8_t   BytesPerPixel;        // Bitmap bytes per pixel
    uint8_t  CallbackCount;
    uint8_t  CallbackSize;         // Current size of the callback array.
+
+   extSurface() {
+      Opacity    = 1.0;
+      WindowType = glpWindowType;
+   }
 };
 
 class extDisplay : public objDisplay {
@@ -442,7 +448,6 @@ extern double glpRefreshRate, glpGammaRed, glpGammaGreen, glpGammaBlue;
 extern int glpDisplayWidth, glpDisplayHeight, glpDisplayX, glpDisplayY;
 extern int glpDisplayDepth; // If zero, the display depth will be based on the hosted desktop's bit depth.
 extern int glpMaximise, glpFullScreen;
-extern SWIN glpWindowType;
 extern char glpDPMS[20];
 extern uint8_t *glDemultiply;
 extern std::array<uint8_t, 256 * 256> glAlphaLookup;

@@ -253,7 +253,6 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::MoveToBack, SURFACE_MoveToBack },
    { AC::MoveToFront, SURFACE_MoveToFront },
    { AC::MoveToPoint, SURFACE_MoveToPoint },
-   { AC::NewObject, SURFACE_NewObject },
    { AC::NewOwner, SURFACE_NewOwner },
    { AC::NewPlacement, SURFACE_NewPlacement },
    { AC::Redimension, SURFACE_Redimension },

@@ -1659,7 +1659,27 @@ class objPointer : public Object {
 
    // Action stubs
 
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+      return Action(AC::DataFeed, this, &args);
+   }
+   inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
+   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
+      struct acSaveToObject args = { Dest, { ClassID } };
+      return Action(AC::SaveToObject, this, &args);
+   }
+   inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
 
    // Customised field getting
 
@@ -1910,10 +1930,6 @@ class objSurface : public Object {
    struct RGB8 Colour;  // Defines the background colour used when clearing the surface.
    RT       Type;       // Internal surface type flags
    int      Modal;      // Sets the surface as modal (prevents user interaction with other surfaces).
-
-#ifdef PRV_SURFACE
-
-#endif
    public:
    inline bool visible() const { return (Flags & RNF::VISIBLE) != RNF::NIL; }
    inline bool invisible() const { return (Flags & RNF::VISIBLE) IS RNF::NIL; }
@@ -2125,6 +2141,19 @@ class objSurface : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getWindowType(SWIN &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getMovement(MOVE &Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getAbsX(int &Value) noexcept {
       auto field = &this->Class->Dictionary[35];
       return field->GetValue(this, &Value);
@@ -2143,14 +2172,6 @@ class objSurface : public Object {
    inline ERR getBottom(int &Value) noexcept {
       auto field = &this->Class->Dictionary[38];
       return field->GetValue(this, &Value);
-   }
-
-   inline ERR getMovement(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
@@ -2203,11 +2224,6 @@ class objSurface : public Object {
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
-   }
-
-   inline ERR getWindowType(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->GetValue(this, &Value);
    }
 
    inline ERR getWindowHandle(APTR &Value) noexcept {
@@ -2323,6 +2339,16 @@ class objSurface : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setWindowType(const SWIN Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMovement(const MOVE Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setAbsX(const int Value) noexcept {
       auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_INT, &Value);
@@ -2338,11 +2364,6 @@ class objSurface : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setMovement(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
    inline ERR setOpacity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
@@ -2350,11 +2371,6 @@ class objSurface : public Object {
 
    inline ERR setVisible(const int Value) noexcept {
       auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setWindowType(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

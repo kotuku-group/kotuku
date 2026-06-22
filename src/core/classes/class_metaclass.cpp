@@ -334,8 +334,8 @@ ERR CLASS_Init(extMetaClass *Self)
 
          Self->Flags |= base->Flags;
 
-         // In tightly controlled configurations, a derived class can define a structure that is larger than the base
-         // class.  Vector filter effects are one example.
+         // A derived class can opt to define a structure that is larger than the base class; this allows additional
+         // fields to be available to the client, or just used for private variable storage.
 
          if (!Self->Size) Self->Size = base->Size;
          Self->Base = base;

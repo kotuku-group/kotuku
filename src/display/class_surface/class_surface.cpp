@@ -1900,16 +1900,6 @@ static ERR SURFACE_NewOwner(extSurface *Self, struct acNewOwner *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR SURFACE_NewObject(extSurface *Self)
-{
-   Self->Opacity     = 1.0;
-   Self->RootID      = Self->UID;
-   Self->WindowType  = glpWindowType;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-

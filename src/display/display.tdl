@@ -548,12 +548,12 @@ module({
     int(CON) Buttons    # The state of available controller buttons.
     int    Port         # The port number assigned to the controller.
   ]],
-  [[]],
+  nil,
   [[
    objController() : Port(-1) { }
   ]])
 
-  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC', 'PF' }, extended=true }, [[
+  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC' }, extended=true }, [[
     double Speed           # Speed multiplier (%)
     double Acceleration    # Acceleration level - keep between 0.0 and 3.0
     double DoubleClick     # Double click speed
@@ -622,9 +622,10 @@ module({
     struct(RGB8) Colour   # Background colour specification
     int(RT) Type          # Internal surface type flags
     int Modal             # Set to 1 to enable modal mode
+    ~int(SWIN) WindowType
+    ~int(MOVE) Movement
   ]],
-  [[
-  ]],
+  nil,
   [[
    inline bool visible() const { return (Flags & RNF::VISIBLE) != RNF::NIL; }
    inline bool invisible() const { return (Flags & RNF::VISIBLE) IS RNF::NIL; }

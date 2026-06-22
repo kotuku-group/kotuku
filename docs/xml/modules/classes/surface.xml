@@ -650,7 +650,7 @@ the surface area first).</li>
       <name>Movement</name>
       <comment>Limits the movement of a surface object to vertical or horizontal shifts.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="MOVE">INT</type>
+      <type lookup="MOVE">MOVE</type>
       <description>
 <p>Set <code>Movement</code> to limit movement performed by <action>Move</action> to horizontal movement, vertical movement, both axes or neither axis.  By default, surfaces can move horizontally and vertically.</p>
 <p>This field affects <action>Move</action> only.  Direct writes to coordinate fields bypass the movement restriction.</p>
@@ -808,7 +808,7 @@ the surface area first).</li>
       <name>WindowType</name>
       <comment>Defines how a top-level surface is represented by a hosted desktop.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="SWIN">INT</type>
+      <type lookup="SWIN">SWIN</type>
       <description>
 <p>This field affects hosted desktops such as Windows and X11.  It only applies to top-level surfaces that have no parent. Child surfaces ignore this field, and surfaces created inside the desktop area treat the desktop as their parent.</p>
 <p>Custom surfaces remain responsible for their own window controls, such as title bars and resize borders.</p>
