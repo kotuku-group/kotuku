@@ -10,6 +10,7 @@
 #cmakedefine _LP64 1
 #cmakedefine CMAKE_RC_COMPILER_INIT
 #cmakedefine REVERSE_BYTEORDER
+#cmakedefine KOTUKU_CXX_REUSES_BASE_TAIL_PADDING 1
 
 #ifdef KOTUKU_STATIC
 // Note: Dependencies also exist in src/core/static_modules.cpp

@@ -243,6 +243,33 @@ int main() {
 	PRINTF64_PRID
    FAIL_REGEX "warning")
 
+check_cxx_source_compiles ("
+#include <cstddef>
+#include <cstdint>
+
+struct Base {
+   void *Pointer;
+   uint16_t Count;
+   ~Base() {}
+};
+
+struct Derived : public Base {
+   int Value;
+};
+
+static_assert(offsetof(Derived, Value) < sizeof(Base));
+
+int main() {
+   return 0;
+}"
+   KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+
+if (KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+   message (STATUS "C++ compiler reuses base-class tail padding for derived fields.")
+else ()
+   message (STATUS "C++ compiler keeps derived fields after the full base-class size.")
+endif ()
+
 find_program (XXD_CMD "xxd")
 find_program (OD_CMD "od")
 find_program (ORIGO_CMD "origo" NO_DEFAULT_PATH PATHS "${ORIGO_CMD_PATH}")
