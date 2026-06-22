@@ -43,7 +43,6 @@ static int processing_new(lua_State *Lua)
          }
 
          luaL_error(Lua, Error, std::move(Message));
-         return 0;
       };
 
       if (not (fp->Signals = new (std::nothrow) std::list<ObjectSignal>)) {
@@ -133,7 +132,7 @@ static int processing_halt(lua_State *Lua)
 {
    double seconds;
    if (lua_type(Lua, 1) IS LUA_TNUMBER) seconds = lua_tonumber(Lua, 1);
-   else return luaL_argerror(Lua, 1, "Seconds must be a number.");
+   else luaL_argerror(Lua, 1, "Seconds must be a number.");
 
    if (seconds < 0) luaL_error(Lua, ERR::Args, "Seconds must be a positive number.");
 

@@ -1478,7 +1478,7 @@ extern lua_CFunction lua_atpanic(lua_State *L, lua_CFunction panicf)
 }
 
 // Forwarders for the public API (C calling convention and no LJ_NORET).
-[[noreturn]] extern int lua_error(lua_State *L)
+[[noreturn]] extern void lua_error(lua_State *L)
 {
    err_clear_pending_exception(L);
    if (L->top > L->base and tvisstr(L->top - 1)) {
@@ -1487,20 +1487,17 @@ extern lua_CFunction lua_atpanic(lua_State *L, lua_CFunction panicf)
       // can fall back to parsing luaL_where() prefixes from preformatted C API error strings.
    }
    lj_err_run(L);
-   return 0;  //  unreachable
 }
 
-[[noreturn]] extern int luaL_argerror(lua_State *L, int narg, CSTRING msg)
+[[noreturn]] extern void luaL_argerror(lua_State *L, int narg, CSTRING msg)
 {
    L->CaughtError = ERR::Args;
    err_argmsg(L, narg, msg);
-   return 0;  //  unreachable
 }
 
-extern int luaL_typerror(lua_State *L, int narg, CSTRING xname)
+[[noreturn]] extern void luaL_typerror(lua_State *L, int narg, CSTRING xname)
 {
    lj_err_argtype(L, narg, xname);
-   return 0;  //  unreachable
 }
 
 extern void luaL_where(lua_State *L, int level)
