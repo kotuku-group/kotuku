@@ -123,7 +123,7 @@ static ERR SVG_DataFeed(extSVG *Self, struct acDataFeed *Args)
    if (!Args) return ERR::NullArgs;
 
    if (Args->Datatype IS DATA::XML) {
-      return parse_svg(Self, 0, (CSTRING)Args->Buffer);
+      return parse_svg(Self, std::string_view{}, std::string_view((const char *)Args->Buffer, Args->Size));
    }
 
    return ERR::Okay;
@@ -165,8 +165,8 @@ static ERR SVG_Init(extSVG *Self)
       else return ERR::NewObject;
    }
 
-   if (not Self->Path.empty()) return parse_svg(Self, Self->Path.c_str(), nullptr);
-   else if (not Self->Statement.empty()) return parse_svg(Self, nullptr, Self->Statement.c_str());
+   if (not Self->Path.empty()) return parse_svg(Self, Self->Path, std::string_view{});
+   else if (not Self->Statement.empty()) return parse_svg(Self, std::string_view{}, Self->Statement);
 
    return ERR::Okay;
 }

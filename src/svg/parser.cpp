@@ -1567,7 +1567,7 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
          }
       }
 
-      if (auto fl = folder(Self)) {
+      if (auto fl = folder(Self); not fl.empty()) {
          std::string comp_path = std::string(fl) + path;
          fx->setPath(comp_path);
       }
@@ -2008,7 +2008,9 @@ static std::string resolve_image_href(extSVG *Self, XTag &Tag, const std::string
    }
 
    std::string base;
-   if (auto doc_folder = folder(Self)) base = xml::uri::normalise_uri_separators(doc_folder);
+   if (auto doc_folder = folder(Self); not doc_folder.empty()) {
+      base = xml::uri::normalise_uri_separators(std::string(doc_folder));
+   }
 
    // xml:base values are themselves relative to the active base URI at the point where they are declared.
    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
@@ -2026,7 +2028,7 @@ static std::string resolve_image_href(extSVG *Self, XTag &Tag, const std::string
 
 //********************************************************************************************************************
 
-static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, double Width = 0, double Height = 0)
+static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width = Unit(), Unit Height = Unit())
 {
    kt::Log log(__FUNCTION__);
 
@@ -2077,16 +2079,17 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, double Wid
    else log.branch("%s", Path.c_str());
 
    if (!error) {
+      // Note: A Width/Height of 0 will use the image's actual width/height.
       if (!(*Image = objImage::create::global(
          fl::Owner(Self->Scene->UID),
          fl::Path(Path),
          fl::BitsPerPixel(32),
-         fl::DisplayWidth(Width), fl::DisplayHeight(Height),
+         fl::DisplayWidth(Width.defined() ? int(Width) : 0), fl::DisplayHeight(Height.defined() ? int(Height) : 0),
          fl::Flags(PCF::FORCE_ALPHA_32)))) error = ERR::CreateObject;
    }
 
    if (file) {
-      Action(fl::Delete::id, file, nullptr);
+      file->del({});
       FreeResource(file);
    }
 
@@ -2175,7 +2178,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
    std::string src, filter, transform, id;
    ARF ratio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG default if the client leaves preserveAspectRatio undefined
-   Unit x, y, width(0), height(0);
+   Unit x, y, width, height;
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;

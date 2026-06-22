@@ -72,8 +72,8 @@ static HSV rgb_to_hsl(FRGB Colour)
 static FRGB hsl_to_rgb(HSV Colour)
 {
    auto hueToRgb = [](float p, float q, float t) -> float {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
+      if (t < 0) t++;
+      if (t > 1) t--;
       if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
       if (t < 1.0/2.0) return q;
       if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
@@ -217,26 +217,26 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
 
 //********************************************************************************************************************
 
-static CSTRING folder(extSVG *Self)
+static std::string_view folder(extSVG *Self)
 {
-   if (not Self->Folder.empty()) return Self->Folder.c_str();
-   if (Self->Path.empty()) return nullptr;
+   if (not Self->Folder.empty()) return Self->Folder;
+   if (Self->Path.empty()) return std::string_view{};
 
    // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
 
    if (!ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder)) {
       if (auto last = Self->Folder.find_last_of("/\\"); last != std::string::npos) {
          Self->Folder.resize(last + 1);
-         return Self->Folder.c_str();
+         return Self->Folder;
       }
       else Self->Folder.clear();
    }
-   return nullptr;
+   return std::string_view{};
 }
 
 //********************************************************************************************************************
 
-static void parse_transform(objVector *Vector, const std::string Value, int Tag)
+static void parse_transform(objVector *Vector, std::string_view Value, int Tag)
 {
    if ((Vector->Class->BaseClassID IS CLASSID::VECTOR) and (not Value.empty())) {
       VectorMatrix *matrix;
@@ -460,13 +460,14 @@ static void parse_ids(extSVG *Self, XTag &Tag)
 //********************************************************************************************************************
 // Parse SVG from a file or string buffer.
 
-static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
+static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffer)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Path) and (not Buffer)) return ERR::NullArgs;
+   if ((Path.empty()) and (Buffer.empty())) return ERR::NullArgs;
 
-   log.branch("Path: %s [Log-level reduced]", Path ? Path : "<xml-statement>");
+   if (not Path.empty()) log.branch("Path: %.*s [Log-level reduced]", int(Path.size()), Path.data());
+   else log.branch("Path: <xml-statement> [Log-level reduced]");
 
 #ifndef DEBUG
    AdjustLogLevel(1);
@@ -483,7 +484,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
       objTask *task = CurrentTask();
       std::string working_path;
 
-      if (Path) {
+      if (not Path.empty()) {
          if (wildcmp("*.svgz", Path)) {
             if (auto file = objFile::create::global(fl::Owner(xml->UID), fl::Path(Path), fl::Flags(FL::READ))) {
                if (auto stream = objCompressedStream::create::global(fl::Owner(file->UID), fl::Input(file))) {
@@ -509,16 +510,11 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
          // Set a new working path based on the path
 
-         auto last = std::string::npos;
-         for (int i=0; Path[i]; i++) {
-            if ((Path[i] IS '/') or (Path[i] IS '\\') or (Path[i] IS ':')) last = i+1;
-         }
-         if (last != std::string::npos) {
-            auto folder = std::string(Path, last);
-            task->setPath(folder);
+         if (auto last = Path.find_last_of("/\\:"); last != std::string::npos) {
+            task->setPath(Path.substr(0, last + 1));
          }
       }
-      else if (Buffer) xml->setStatement(Buffer);
+      else if (not Buffer.empty()) xml->setStatement(Buffer);
 
       if (!InitObject(xml)) {
          Self->SVGVersion = 1.0;
