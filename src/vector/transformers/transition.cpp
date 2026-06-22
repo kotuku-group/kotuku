@@ -45,8 +45,8 @@ void apply_transition(extVectorTransition *Self, double Index, agg::trans_affine
       // Interpolate between transforms.
 
       int left, right;
-      for (left=Self->Stops.size()-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
-      for (right=left+1; (right < Self->Stops.size()) and (Self->Stops[right].Offset < Index); right++);
+      for (left=std::ssize(Self->Stops)-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
+      for (right=left+1; (right < std::ssize(Self->Stops)) and (Self->Stops[right].Offset < Index); right++);
 
       if ((left < right) and (right < Self->Stops.size())) {
          agg::trans_affine interp;
@@ -88,9 +88,9 @@ void apply_transition_xy(extVectorTransition *Self, double Index, double *X, dou
 
       int left, right;
       for (left=Self->Stops.size()-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
-      for (right=left+1; (right < Self->Stops.size()) and (Self->Stops[right].Offset < Index); right++);
+      for (right=left+1; (right < std::ssize(Self->Stops)) and (Self->Stops[right].Offset < Index); right++);
 
-      if ((left < right) and (right < Self->Stops.size())) {
+      if ((left < right) and (right < std::ssize(Self->Stops))) {
          agg::trans_affine interp;
 
          // Normalise the index

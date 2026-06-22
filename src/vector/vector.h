@@ -649,7 +649,10 @@ class extFilterEffect : public objFilterEffect {
 
    extVectorFilter *Filter; // Direct reference to the parent filter
    uint16_t UsageCount;     // Total number of other effects utilising this effect to build a pipeline
-   uint16_t Padding;        // Padding for the alignment of derived classes
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(uint16_t)];
+#endif
 
    extFilterEffect() {
       SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
