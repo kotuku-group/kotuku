@@ -716,8 +716,9 @@ void optimise_write_field(Field &Field)
          if (Field.Flags & FD_STRING) log.warning("C-style string pointers are deprecated; field: %s.", Field.Name);
          Field.WriteValue = writeval_ptr;
       }
+      else if (Field.Flags & FD_UNIT)  Field.WriteValue = writeval_unit;
       else if (Field.Flags & FD_STRUCT) Field.WriteValue = writeval_struct;
-      else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
+      else log.warning("Invalid field flags for %s.%s: $%.8x.", ((objMetaClass *)(tlContext.back().obj))->ClassName.c_str(), Field.Name, Field.Flags);
    }
    else {
       if (Field.Flags & FD_UNIT)          Field.WriteValue = setval_unit;
@@ -734,6 +735,6 @@ void optimise_write_field(Field &Field)
       }
       else if (Field.Flags & FD_INT64)    Field.WriteValue = setval_large;
       else if (Field.Flags & FD_STRUCT)   Field.WriteValue = setval_struct;
-      else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
+      else log.warning("Invalid field flags for %s.%s: $%.8x.", ((objMetaClass *)(tlContext.back().obj))->ClassName.c_str(), Field.Name, Field.Flags);
    }
 }
