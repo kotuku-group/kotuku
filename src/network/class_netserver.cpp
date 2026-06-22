@@ -126,43 +126,13 @@ static ERR NETSERVER_DisconnectSocket(extNetServer *Self, struct ns::DisconnectS
 
 //********************************************************************************************************************
 
-static ERR NETSERVER_Free(extNetServer *Self)
-{
-   #ifndef DISABLE_SSL
-      #ifndef _WIN32
-         if (Self->ServerSSLContext) {
-            SSL_CTX_free(Self->ServerSSLContext);
-            Self->ServerSSLContext = nullptr;
-         }
-      #endif
-   #endif
-
-   while (Self->Clients) free_client(Self, Self->Clients);
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR NETSERVER_Init(extNetServer *Self)
 {
-   ERR error;
-
-   if ((error = setup_server_socket(Self)) != ERR::Okay) {
+   if (auto error = setup_server_socket(Self); error != ERR::Okay) {
       free_socket(Self);
       return error;
    }
    else return error;
-}
-
-//********************************************************************************************************************
-
-static ERR NETSERVER_NewObject(extNetServer *Self)
-{
-   Self->ClientLimit    = 1024;
-   Self->SocketLimit    = 256;
-   Self->Backlog        = 10;
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -566,6 +536,22 @@ static void free_client(extNetServer *Server, objNetClient *Client)
 
 //********************************************************************************************************************
 
+extNetServer::~extNetServer()
+{
+   #ifndef DISABLE_SSL
+      #ifndef _WIN32
+         if (ServerSSLContext) {
+            SSL_CTX_free(ServerSSLContext);
+            ServerSSLContext = nullptr;
+         }
+      #endif
+   #endif
+
+   while (Clients) free_client(this, Clients);
+}
+
+//********************************************************************************************************************
+
 #include "netserver_def.c"
 
 static const FieldArray clNetServerFields[] = {
@@ -576,7 +562,7 @@ static const FieldArray clNetServerFields[] = {
    { "Backlog",        FDF_INT|FDF_RI,       nullptr, NETSERVER_SET_Backlog },
    { "ClientLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_ClientLimit },
    { "SocketLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_SocketLimit },
-   { "TotalClients",   FDF_INT|FDF_R,        nullptr },
+   { "TotalClients",   FDF_INT|FDF_R },
    END_FIELD
 };
 

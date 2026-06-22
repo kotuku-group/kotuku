@@ -162,9 +162,9 @@ class extNetServer : public extNetSocket {
    std::string SSLCertificate; // SSL certificate file to use for SSL listeners.
    std::string SSLPrivateKey;  // Private key file to use for SSL listeners.
    std::string SSLKeyPassword; // SSL private key password.
-   int    Backlog;             // The maximum number of connections that can be queued against the socket.
-   int    ClientLimit;         // The maximum number of client IP addresses that can be connected to the NetServer.
-   int    SocketLimit;         // Limits the number of connected sockets per client IP address.
+   int    Backlog = 10;        // The maximum number of connections that can be queued against the socket.
+   int    ClientLimit = 1024;  // The maximum number of client IP addresses that can be connected to the NetServer.
+   int    SocketLimit = 256;   // Limits the number of connected sockets per client IP address.
    int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
 
    objNetClient *LastClient;   // For linked-list management.
@@ -174,6 +174,8 @@ class extNetServer : public extNetSocket {
          SSL_CTX *ServerSSLContext = nullptr;
       #endif
    #endif
+
+   ~extNetServer();
 };
 
 class extNetLookup : public objNetLookup {
