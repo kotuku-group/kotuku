@@ -2624,13 +2624,18 @@ class objDisplacementFX : public objFilterEffect {
 
    // Customised field getting
 
+   inline ERR getResampleMethod(VSM &Value) noexcept {
+      Value = *((VSM *)(((int8_t *)this) + 224));
+      return ERR::Okay;
+   }
+
    inline ERR getXChannel(CMP &Value) noexcept {
-      Value = *((CMP *)(((int8_t *)this) + 224));
+      Value = *((CMP *)(((int8_t *)this) + 228));
       return ERR::Okay;
    }
 
    inline ERR getYChannel(CMP &Value) noexcept {
-      Value = *((CMP *)(((int8_t *)this) + 228));
+      Value = *((CMP *)(((int8_t *)this) + 232));
       return ERR::Okay;
    }
 
@@ -2640,7 +2645,7 @@ class objDisplacementFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2656,18 +2661,23 @@ class objDisplacementFX : public objFilterEffect {
 
    // Customised field setting
 
+   inline ERR setResampleMethod(const VSM Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setXChannel(const CMP Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setYChannel(const CMP Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
