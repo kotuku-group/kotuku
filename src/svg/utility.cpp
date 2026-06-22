@@ -139,23 +139,35 @@ static void parse_result(extSVG *Self, objFilterEffect *Effect, std::string Valu
 
 //********************************************************************************************************************
 
-static void parse_input(extSVG *Self, OBJECTPTR Effect, const std::string Input, FIELD SourceField, FIELD RefField)
+static void parse_input_source(extSVG *Self, objFilterEffect *Effect, const std::string Input)
 {
    switch (strhash(Input)) {
-      case SVF_SourceGraphic:   Effect->set(SourceField, int(VSF::GRAPHIC)); break;
-      case SVF_SourceAlpha:     Effect->set(SourceField, int(VSF::ALPHA)); break;
-      case SVF_BackgroundImage: Effect->set(SourceField, int(VSF::BKGD)); break;
-      case SVF_BackgroundAlpha: Effect->set(SourceField, int(VSF::BKGD_ALPHA)); break;
-      case SVF_FillPaint:       Effect->set(SourceField, int(VSF::FILL)); break;
-      case SVF_StrokePaint:     Effect->set(SourceField, int(VSF::STROKE)); break;
+      case SVF_SourceGraphic:   Effect->setSourceType(VSF::GRAPHIC); break;
+      case SVF_SourceAlpha:     Effect->setSourceType(VSF::ALPHA); break;
+      case SVF_BackgroundImage: Effect->setSourceType(VSF::BKGD); break;
+      case SVF_BackgroundAlpha: Effect->setSourceType(VSF::BKGD_ALPHA); break;
+      case SVF_FillPaint:       Effect->setSourceType(VSF::FILL); break;
+      case SVF_StrokePaint:     Effect->setSourceType(VSF::STROKE); break;
       default:  {
-         if (Self->Effects.contains(Input)) {
-            Effect->set(RefField, Self->Effects[Input]);
-         }
-         else {
-            kt::Log log;
-            log.warning("Unrecognised input '%s'", Input.c_str());
-         }
+         if (Self->Effects.contains(Input)) Effect->setInput(Self->Effects[Input]);
+         else kt::Log().warning("Unrecognised input '%s'", Input.c_str());
+         break;
+      }
+   }
+}
+
+static void parse_input_mix(extSVG *Self, objFilterEffect *Effect, const std::string Input)
+{
+   switch (strhash(Input)) {
+      case SVF_SourceGraphic:   Effect->setMixType(VSF::GRAPHIC); break;
+      case SVF_SourceAlpha:     Effect->setMixType(VSF::ALPHA); break;
+      case SVF_BackgroundImage: Effect->setMixType(VSF::BKGD); break;
+      case SVF_BackgroundAlpha: Effect->setMixType(VSF::BKGD_ALPHA); break;
+      case SVF_FillPaint:       Effect->setMixType(VSF::FILL); break;
+      case SVF_StrokePaint:     Effect->setMixType(VSF::STROKE); break;
+      default:  {
+         if (Self->Effects.contains(Input)) Effect->setMix(Self->Effects[Input]);
+         else kt::Log().warning("Unrecognised input '%s'", Input.c_str());
          break;
       }
    }
