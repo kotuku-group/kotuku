@@ -131,54 +131,6 @@ class extSVG : public objSVG {
 };
 
 struct svgState {
-   enum class DU : uint8_t {
-      NIL = 0,
-      PIXEL,  // px
-      SCALED, // %: Scale to fill empty space
-   };
-
-   // Field Unit.  Makes it user to define field values that could be fixed or scaled.
-
-   struct FUNIT {
-      svgState *state;
-      FIELD field_id;
-      double value;
-      DU type;
-
-      constexpr FUNIT() noexcept : state(nullptr), field_id(0), value(0), type(DU::NIL) { }
-
-      // With field
-      explicit FUNIT(svgState *pState, FIELD pField, double pValue, DU pType = DU::NIL) noexcept : state(pState), field_id(pField), value(pValue), type(pType) { }
-
-      FUNIT(svgState *pState, FIELD pField, const std::string &pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept :
-         FUNIT(pState, pValue, pType, pMin) { field_id = pField; }
-
-      FUNIT(svgState *pState, FIELD pField, std::string_view pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept :
-         FUNIT(pState, pValue, pType, pMin) { field_id = pField; }
-
-      // Without field
-      explicit FUNIT(svgState *pState, double pValue, DU pType = DU::PIXEL) noexcept : state(pState), value(pValue), type(pType) { }
-
-      FUNIT(svgState *pState, std::string pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept :
-         FUNIT(pState, std::string_view(pValue), pType, pMin) { }
-
-      FUNIT(svgState *pState, std::string_view pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept;
-
-      constexpr bool empty() const noexcept { return (type == DU::NIL) || (!value); }
-      constexpr void clear() noexcept { value = 0; type = DU::PIXEL; }
-
-      operator double() const noexcept { return value; }
-      operator DU() const noexcept { return type; }
-
-      inline bool valid_size() const noexcept { // Return true if this is a valid width/height
-         return (value >= 0.001);
-      }
-
-      inline ERR set(OBJECTPTR Object) const noexcept {
-         return Object->set(field_id, Unit(value, (type == DU::SCALED) ? (FD_DOUBLE|FD_SCALED) : FD_DOUBLE));
-      }
-   };
-
    std::string m_color;       // currentColor value, initialised to SVG.Colour
    std::string m_stop_color;
    std::string m_fill;        // Defaults to rgb(0,0,0)
@@ -202,10 +154,7 @@ private:
    class extSVG *Self;
    objVectorScene *Scene;
 
-   inline FUNIT UNIT(FIELD pField, double pValue, DU pType = DU::NIL) { return FUNIT(this, pField, pValue, pType); };
-   inline FUNIT UNIT(FIELD pField, const std::string &pValue, DU pType = DU::NIL) { return FUNIT(this, pField, pValue, pType); };
-   inline FUNIT UNIT(double pValue, DU pType = DU::PIXEL) { return FUNIT(this, pValue, pType); }
-   inline FUNIT UNIT(const std::string &pValue, DU pType = DU::PIXEL) { return FUNIT(this, pValue, pType); }
+   inline Unit SVGUnit(std::string_view Value) const { return Unit(Value, m_font_size_px, glDisplayDPI); }
 
 public:
    svgState(class extSVG *pSVG) : m_color(pSVG->Colour), m_fill("rgb(0,0,0)"), m_font_size("12pt"), m_font_family("Noto Sans"), m_font_size_px(16), m_stroke_width(0),
@@ -735,7 +684,6 @@ static bool svg_tag_is(const XTag &Tag, uint32_t Hash) noexcept
 
 //********************************************************************************************************************
 
-#include "funit.cpp"
 #include "utility.cpp"
 #include "save_svg.cpp"
 

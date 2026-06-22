@@ -1910,10 +1910,6 @@ class objSurface : public Object {
    struct RGB8 Colour;  // Defines the background colour used when clearing the surface.
    RT       Type;       // Internal surface type flags
    int      Modal;      // Sets the surface as modal (prevents user interaction with other surfaces).
-
-#ifdef PRV_SURFACE
-
-#endif
    public:
    inline bool visible() const { return (Flags & RNF::VISIBLE) != RNF::NIL; }
    inline bool invisible() const { return (Flags & RNF::VISIBLE) IS RNF::NIL; }
@@ -2056,7 +2052,7 @@ class objSurface : public Object {
    }
 
    inline ERR getX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
@@ -2076,7 +2072,7 @@ class objSurface : public Object {
    }
 
    inline ERR getWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[31];
       SetObjectContext(this, field, AC::NIL);
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
@@ -2086,7 +2082,7 @@ class objSurface : public Object {
    }
 
    inline ERR getHeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
+      auto field = &this->Class->Dictionary[39];
       SetObjectContext(this, field, AC::NIL);
       Unit var(0, FD_DOUBLE);
       auto error = field->GetValue(this, &var);
@@ -2125,8 +2121,13 @@ class objSurface : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getWindowType(SWIN &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getAbsX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[34];
       return field->GetValue(this, &Value);
    }
 
@@ -2136,25 +2137,17 @@ class objSurface : public Object {
    }
 
    inline ERR getBitsPerPixel(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[32];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getBottom(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
+      auto field = &this->Class->Dictionary[37];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getMovement(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
    inline ERR getOpacity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[27];
       return field->GetValue(this, &Value);
    }
 
@@ -2164,12 +2157,12 @@ class objSurface : public Object {
    }
 
    inline ERR getUserFocus(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[43];
+      auto field = &this->Class->Dictionary[42];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getVisible(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[33];
       return field->GetValue(this, &Value);
    }
 
@@ -2182,7 +2175,7 @@ class objSurface : public Object {
    }
 
    inline ERR getVisibleWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[26];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -2198,20 +2191,15 @@ class objSurface : public Object {
    }
 
    inline ERR getVisibleY(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[37];
+      auto field = &this->Class->Dictionary[36];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getWindowType(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getWindowHandle(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[35];
       return field->GetValue(this, &Value);
    }
 
@@ -2240,7 +2228,7 @@ class objSurface : public Object {
    }
 
    inline ERR setParent(OBJECTID Value) noexcept {
-      auto field = &this->Class->Dictionary[44];
+      auto field = &this->Class->Dictionary[43];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2250,7 +2238,7 @@ class objSurface : public Object {
    }
 
    inline ERR setMinWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2265,7 +2253,7 @@ class objSurface : public Object {
    }
 
    inline ERR setMaxHeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[41];
+      auto field = &this->Class->Dictionary[40];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2275,7 +2263,7 @@ class objSurface : public Object {
    }
 
    inline ERR setX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[25];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var);
    }
@@ -2287,13 +2275,13 @@ class objSurface : public Object {
    }
 
    inline ERR setWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[31];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var);
    }
 
    inline ERR setHeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
+      auto field = &this->Class->Dictionary[39];
       Unit var(Value);
       return field->WriteValue(this, field, FD_UNIT, &var);
    }
@@ -2309,7 +2297,7 @@ class objSurface : public Object {
    }
 
    inline ERR setCursor(const PTC Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
+      auto field = &this->Class->Dictionary[41];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2319,12 +2307,17 @@ class objSurface : public Object {
    }
 
    inline ERR setModal(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[38];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setWindowType(const SWIN Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAbsX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2334,32 +2327,22 @@ class objSurface : public Object {
    }
 
    inline ERR setBitsPerPixel(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setMovement(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setVisible(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setWindowType(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWindowHandle(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, 0x08100308, Value);
    }
 

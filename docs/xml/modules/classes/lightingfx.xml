@@ -158,14 +158,14 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Scale</name>
       <comment>The maximum height of the input surface (bump map) when the alpha input is 1.0.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>Type</name>
       <comment>Defines the type of surface light scattering, which can be specular or diffuse.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type lookup="LT">LT</type>
       <description>
 <types lookup="LT"/>
