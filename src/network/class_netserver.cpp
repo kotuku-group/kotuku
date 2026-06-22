@@ -220,32 +220,15 @@ SSLKeyPassword: SSL private key password.
 If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is
 not encrypted, this field can be left empty.
 
-*********************************************************************************************************************/
-
-static ERR NETSERVER_SET_SSLKeyPassword(extNetServer *Self, const std::string_view &Value)
-{
-   Self->SSLKeyPassword.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Clients: Lists all NetClient records connected to the NetServer.
-
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
 
 -FIELD-
 TotalClients: Indicates the total number of clients currently connected to the NetServer.
 
 NetServer maintains a count of the total number of currently connected TCP client sockets.  You can read the total
 number of connections from this field.
-
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
 
 -FIELD-
 Backlog: The maximum number of connections that can be queued against the socket.
@@ -558,7 +541,7 @@ static const FieldArray clNetServerFields[] = {
    { "Clients",        FDF_OBJECT|FDF_R,     nullptr, nullptr, CLASSID::NETCLIENT },
    { "SSLCertificate", FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLCertificate },
    { "SSLPrivateKey",  FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLPrivateKey },
-   { "SSLKeyPassword", FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLKeyPassword },
+   { "SSLKeyPassword", FDF_CPPSTRING|FDF_RI },
    { "Backlog",        FDF_INT|FDF_RI,       nullptr, NETSERVER_SET_Backlog },
    { "ClientLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_ClientLimit },
    { "SocketLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_SocketLimit },

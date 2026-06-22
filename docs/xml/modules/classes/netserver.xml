@@ -150,7 +150,7 @@
     <field>
       <name>SSLKeyPassword</name>
       <comment>SSL private key password.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is not encrypted, this field can be left empty.</p>

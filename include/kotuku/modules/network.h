@@ -921,6 +921,7 @@ class objNetServer : public objNetSocket {
    }
 
    inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }

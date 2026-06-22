@@ -203,7 +203,7 @@ private:
    void process_attrib(XTag &, objVector *) noexcept;
    void process_inherit_refs(XTag &) noexcept;
    void process_shape_children(XTag &, OBJECTPTR) noexcept;
-   ERR  set_paint_server(objVector *, FIELD, const std::string);
+   void resolve_paint_server(const std::string &) noexcept;
    bool current_colour(objVector *, FRGB &) noexcept;
 
    void parse_contourgradient(const XTag &, objGradientContour *, std::string &) noexcept;
