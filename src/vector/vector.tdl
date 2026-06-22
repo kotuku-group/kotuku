@@ -639,7 +639,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~int(EM) EdgeMode
   ]])
 
-  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true }, [[
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP' } }, [[
     ~int(CMP) XChannel
     ~int(CMP) YChannel
   ]])

@@ -2548,11 +2548,13 @@ class objConvolveFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setEdgeMode(const EM Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBias(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }

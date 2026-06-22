@@ -1,9 +1,22 @@
 -- Universal utility functions
 
+   include 'xml'
+
+   import './types'
+
 rx_root_extract   = <{ regex.new('^<ROOT>(.*)</ROOT>$', regex.DOT_ALL) }>
 rx_angle_brackets = <{ regex.new('[<>]') }>
 rx_first_char     = <{ regex.new('^(.)(.+)$') }>
 rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Print a message to stdout if verbose mode is enabled
+
+global function verbose(String:str)
+   if glFeedback is 'verbose' then
+      print(String)
+   end
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Save text output via a temporary file, replacing the target only when the content hash has changed.
@@ -46,15 +59,6 @@ global function saveIfModified(Path:str, Content:str, Description:str):bool
    end
 
    return true
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Print a message to stdout if verbose mode is enabled
-
-global function verbose(String:str)
-   if glFeedback is 'verbose' then
-      print(String)
-   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

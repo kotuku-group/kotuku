@@ -143,7 +143,7 @@ static ERR IMAGE_Activate(extImage *Self)
 
    if (!Self->prvFile) {
       std::string_view path;
-      if (Self->getPath(path) != ERR::Okay) return log.warning(ERR::GetField);
+      if ((Self->getPath(path) != ERR::Okay) or path.empty()) return log.warning(ERR::FieldNotSet);
 
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
       file_opened = true;
