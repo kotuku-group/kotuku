@@ -1831,10 +1831,13 @@ struct SystemState {
 struct Unit {
    double   Value;  // The unit value.
    uint32_t Type;   // Additional type information
+   static constexpr double DefaultDPI = 96.0;
+   static constexpr double DefaultFontSize = 16.0;
    // Note that the type holds optional FD metadata; the use of FD_DOUBLE is unnecessary
    constexpr Unit(double pValue, int pType = 0) : Value(pValue), Type(pType) { }
    constexpr Unit() : Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { }
-   explicit Unit(std::string_view String) { read(String); }
+   explicit Unit(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) :
+      Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { read(String, FontSize, DPI); }
 
    constexpr operator double() const { return Value; }
    double operator*() const { return Value; };
@@ -1844,16 +1847,23 @@ struct Unit {
    constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
-   inline void read(std::string_view String) {
+   inline void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
+      Type = 0;
       const auto start = String.find_first_not_of(" \n\r\t");
       if (start != std::string::npos) String.remove_prefix(start);
       if (String.starts_with('+')) String.remove_prefix(1);
       auto [ end, error ] = std::from_chars(String.data(), String.data() + String.size(), Value);
-      if (error != std::errc()) { Value = 0; return; }
+      if (error != std::errc()) { Value = std::numeric_limits<double>::quiet_NaN(); return; }
 
       String = String.substr(end - String.data());
       if (String.starts_with("%")) { Value *= 0.01; Type = FD_SCALED; }
-      else Type = 0;
+      else if (String.starts_with("em")) Value *= FontSize;
+      else if (String.starts_with("ex")) Value *= FontSize * 0.5;
+      else if (String.starts_with("in")) Value *= DPI;
+      else if (String.starts_with("cm")) Value *= (1.0 / 2.54) * DPI;
+      else if (String.starts_with("mm")) Value *= (1.0 / 25.4) * DPI;
+      else if (String.starts_with("pt")) Value *= (4.0 / 3.0);
+      else if (String.starts_with("pc")) Value *= (4.0 / 3.0) * 12.0;
    }
 };
 

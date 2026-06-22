@@ -65,13 +65,6 @@ static const struct FieldDef clPointerPTC[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clPointerPF[] = {
-   { "Unused", 0x00000001 },
-   { "Visible", 0x00000002 },
-   { "Anchor", 0x00000004 },
-   { nullptr, 0 }
-};
-
 static ERR POINTER_NewPlacement(extPointer *Self) {
    new (Self) extPointer;
    return ERR::Okay;
