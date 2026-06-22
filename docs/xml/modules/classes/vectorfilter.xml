@@ -71,7 +71,7 @@
     <field>
       <name>Height</name>
       <comment>The height of the filter area.  Can be expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The height of the filter area is expressed here as a fixed or scaled coordinate.  The <fl>Width</fl> and Height effectively restrain the working space for the effect processing, making them an important consideration for efficiency.</p>
@@ -145,7 +145,7 @@
     <field>
       <name>Width</name>
       <comment>The width of the filter area.  Can be expressed as a fixed or scaled coordinate.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The width of the filter area is expressed here as a fixed or scaled coordinate.  The Width and <fl>Height</fl> effectively restrain the working space for the effect processing, making them an important consideration for efficiency.</p>
@@ -157,7 +157,7 @@
     <field>
       <name>X</name>
       <comment>X coordinate for the filter.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
 <p>The meaning of the (X, <fl>Y</fl>) field values depend on the value for <fl>Units</fl>.  In userspace mode, the filter position will be relative to the client vector's parent viewport.  In bounding-box mode, the filter position is relative to the vector's position.  It is important to note that coordinates are measured before any transforms are applied.</p>
@@ -168,7 +168,7 @@
     <field>
       <name>Y</name>
       <comment>Y coordinate for the filter.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
 <p>The meaning of the (<fl>X</fl>, Y) field values depend on the value for <fl>Units</fl>.  In userspace mode, the filter position will be relative to the client vector's parent viewport.  In bounding-box mode, the filter position is relative to the vector's position.  It is important to note that coordinates are measured before any transforms are applied.</p>

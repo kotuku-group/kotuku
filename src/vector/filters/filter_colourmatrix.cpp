@@ -328,9 +328,9 @@ class extColourFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ColourFX";
    using create = kt::Create<extColourFX>;
 
-   CM Mode;
-   std::array<double,CM_SIZE> Values;
-   ColourMatrix *Matrix;
+   CM Mode = CM::NONE;
+   std::array<double,CM_SIZE> Values = {};
+   ColourMatrix *Matrix = nullptr;
    int TotalValues;
 
    extColourFX() {
@@ -339,7 +339,6 @@ class extColourFX : public extFilterEffect {
       Values[6]   = 1;
       Values[12]  = 1;
       Values[18]  = 1;
-      Mode        = CM::NONE;
       TotalValues = CM_SIZE;
    }
 
@@ -559,16 +558,6 @@ static ERR COLOURFX_Init(extColourFX *Self)
 Mode: Defines the algorithm that will process the input source.
 Lookup: CM
 
-*********************************************************************************************************************/
-
-static ERR COLOURFX_SET_Mode(extColourFX *Self, CM Value)
-{
-   Self->Mode = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Values: A list of input values for the algorithm defined by #Mode.
 
@@ -623,7 +612,7 @@ static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string_view &Value)
 #include "filter_colourmatrix_def.c"
 
 static const FieldArray clColourFXFields[] = {
-   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, COLOURFX_SET_Mode, &clColourFXCM },
+   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, nullptr, &clColourFXCM },
    { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
    { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  COLOURFX_GET_XMLDef },
    END_FIELD

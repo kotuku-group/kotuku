@@ -38,17 +38,17 @@ void apply_transition(extVectorTransition *Self, double Index, agg::trans_affine
    if (Index <= Self->Stops[0].Offset) {
       Transform.multiply(*Self->Stops[0].AGGTransform);
    }
-   else if (Index >= Self->Stops[Self->TotalStops-1].Offset) {
-      Transform.multiply(*Self->Stops[Self->TotalStops-1].AGGTransform);
+   else if (Index >= Self->Stops[Self->Stops.size()-1].Offset) {
+      Transform.multiply(*Self->Stops[Self->Stops.size()-1].AGGTransform);
    }
    else {
       // Interpolate between transforms.
 
       int left, right;
-      for (left=Self->TotalStops-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
-      for (right=left+1; (right < Self->TotalStops) and (Self->Stops[right].Offset < Index); right++);
+      for (left=std::ssize(Self->Stops)-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
+      for (right=left+1; (right < std::ssize(Self->Stops)) and (Self->Stops[right].Offset < Index); right++);
 
-      if ((left < right) and (right < Self->TotalStops)) {
+      if ((left < right) and (right < Self->Stops.size())) {
          agg::trans_affine interp;
 
          // Normalise the index
@@ -63,11 +63,11 @@ void apply_transition(extVectorTransition *Self, double Index, agg::trans_affine
 
          Transform.multiply(interp);
 
-         //log.trace("Index: %.2f, Scale: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, scale, left, right, Self->TotalStops);
+         //log.trace("Index: %.2f, Scale: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, scale, left, right, Self->Stops.size());
       }
       else {
          kt::Log log(__FUNCTION__);
-         log.warning("Invalid transition.  Index: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, left, right, Self->TotalStops);
+         log.warning("Invalid transition.  Index: %.2f, Left: %d, Right: %d, TotalStops: %d", Index, left, right, int(Self->Stops.size()));
       }
    }
 }
@@ -80,17 +80,17 @@ void apply_transition_xy(extVectorTransition *Self, double Index, double *X, dou
    if (Index <= Self->Stops[0].Offset) {
       Self->Stops[0].AGGTransform->transform(X, Y);
    }
-   else if (Index >= Self->Stops[Self->TotalStops-1].Offset) {
-      Self->Stops[Self->TotalStops-1].AGGTransform->transform(X, Y);
+   else if (Index >= Self->Stops[Self->Stops.size()-1].Offset) {
+      Self->Stops[Self->Stops.size()-1].AGGTransform->transform(X, Y);
    }
    else {
       // Interpolate between transforms.
 
       int left, right;
-      for (left=Self->TotalStops-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
-      for (right=left+1; (right < Self->TotalStops) and (Self->Stops[right].Offset < Index); right++);
+      for (left=Self->Stops.size()-1; (left > 0) and (Index < Self->Stops[left].Offset); left--);
+      for (right=left+1; (right < std::ssize(Self->Stops)) and (Self->Stops[right].Offset < Index); right++);
 
-      if ((left < right) and (right < Self->TotalStops)) {
+      if ((left < right) and (right < std::ssize(Self->Stops))) {
          agg::trans_affine interp;
 
          // Normalise the index
@@ -110,14 +110,12 @@ void apply_transition_xy(extVectorTransition *Self, double Index, double *X, dou
 
 //********************************************************************************************************************
 
-static ERR set_stop_transform(extVectorTransition *Self, TransitionStop *Stop, CSTRING Commands)
+static ERR set_stop_transform(TransitionStop *Stop, std::string_view Commands)
 {
    kt::Log log;
 
-   log.traceBranch("%s", Commands);
-
-   Self->Dirty = true;
-   if (!Commands) Commands = ""; // Empty transforms are permitted - it will result in an identity matrix being created.
+   // Empty transforms are permitted - it will result in an identity matrix being created.
+   log.traceBranch("%.*s", int(Commands.size()), Commands.data());
 
    vec::ParseTransform(&Stop->Matrix, Commands);
 
@@ -127,7 +125,8 @@ static ERR set_stop_transform(extVectorTransition *Self, TransitionStop *Stop, C
       return ERR::Okay;
    }
    else {
-      Stop->AGGTransform = new (std::nothrow) agg::trans_affine(m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX, m.TranslateY);
+      Stop->AGGTransform.reset(new (std::nothrow) agg::trans_affine(
+         m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX, m.TranslateY));
       if (Stop->AGGTransform) return ERR::Okay;
       else return log.warning(ERR::AllocMemory);
    }
@@ -135,13 +134,8 @@ static ERR set_stop_transform(extVectorTransition *Self, TransitionStop *Stop, C
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_Free(extVectorTransition *Self)
-{
-   for (auto i=0; i < Self->TotalStops; i++) {
-      delete Self->Stops[i].AGGTransform;
-   }
-   Self->TotalStops = 0;
-
+static ERR TRANSITION_FreePlacement(extVectorTransition *Self) {
+   Self->~extVectorTransition();
    return ERR::Okay;
 }
 
@@ -150,15 +144,14 @@ static ERR TRANSITION_Free(extVectorTransition *Self)
 static ERR TRANSITION_Init(extVectorTransition *Self)
 {
    kt::Log log;
-   if (Self->TotalStops < 2) return log.warning(ERR::FieldNotSet);
+   if (Self->Stops.size() < 2) return log.warning(ERR::FieldNotSet);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_NewObject(extVectorTransition *Self)
-{
-   Self->Dirty = true;
+static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
+   new (Self) extVectorTransition;
    return ERR::Okay;
 }
 
@@ -178,46 +171,41 @@ a transform string.  The Transition structure consists of the following fields:
 static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Transition> &Value)
 {
    kt::Log log;
-   const int elements = Value.size();
-   if ((elements >= 2) and (elements < MAX_TRANSITION_STOPS)) {
-      Self->TotalStops = elements;
+   const int elements = int(Value.size());
+   if (elements >= 2) {
+      std::vector<TransitionStop> stops;
+      stops.reserve(elements);
+
       double last_offset = 0;
       for (auto i=0; i < elements; i++) {
          if (Value[i].Offset < last_offset) return log.warning(ERR::InvalidValue); // Offsets must be in incrementing order.
          if ((Value[i].Offset < 0.0) or (Value[i].Offset > 1.0)) return log.warning(ERR::OutOfRange);
 
-         Self->Stops[i].Offset = Value[i].Offset;
-         set_stop_transform(Self, &Self->Stops[i], Value[i].Transform);
+         TransitionStop stop;
+         stop.Offset = Value[i].Offset;
+         if (const auto error = set_stop_transform(&stop, Value[i].Transform); error != ERR::Okay) return error;
 
+         stops.emplace_back(std::move(stop));
          last_offset = Value[i].Offset;
-         Self->modified();
       }
+
+      Self->Stops = std::move(stops);
+      Self->Dirty = true;
+      Self->modified();
       return ERR::Okay;
    }
    else return log.warning(ERR::DataSize);
 }
 
-/*********************************************************************************************************************
-
--FIELD-
-TotalStops: Total number of stops defined in the Stops array.
-
-This read-only field indicates the total number of stops that have been defined in the #Stops array.
--END-
-
-*********************************************************************************************************************/
-
 static const ActionArray clTransitionActions[] = {
-   { AC::Free,      TRANSITION_Free },
-   { AC::Init,      TRANSITION_Init },
-   { AC::NewObject, TRANSITION_NewObject },
+   { AC::FreePlacement, TRANSITION_FreePlacement },
+   { AC::Init,          TRANSITION_Init },
+   { AC::NewPlacement,  TRANSITION_NewPlacement },
    { AC::NIL, nullptr }
 };
 
 static const FieldArray clTransitionFields[] = {
-   { "TotalStops",   FDF_INT|FDF_R },
-   // Virtual fields
-   { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_W, nullptr, (APTR)TRANSITION_SET_Stops, "Transition" },
+   { "Stops", FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_W, nullptr, TRANSITION_SET_Stops, "Transition" },
    END_FIELD
 };
 

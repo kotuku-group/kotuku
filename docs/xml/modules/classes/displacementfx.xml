@@ -44,7 +44,7 @@
     <field>
       <name>Scale</name>
       <comment>Displacement scale factor.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
 <p>The amount is expressed in the coordinate system established by <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> on the parent <class name="VectorFilter">VectorFilter</class>. When the value of this field is 0, this operation has no effect on the source image.</p>
@@ -54,7 +54,7 @@
     <field>
       <name>XChannel</name>
       <comment>X axis channel selection.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type lookup="CMP">CMP</type>
       <description>
 <types lookup="CMP"/>
@@ -72,7 +72,7 @@
     <field>
       <name>YChannel</name>
       <comment>Y axis channel selection.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type lookup="CMP">CMP</type>
       <description>
 <types lookup="CMP"/>

@@ -28,26 +28,20 @@ class extWaveFunctionFX : public extFilterEffect {
    // The exported fields are declared first so that their concrete offsets line up with the field table.
    // The 8-byte aligned members precede the narrower int fields to avoid padding before a direct-access field.
    std::string ColourMap;
-   double Scale;
+   double Scale = 1.0;
    kt::vector<GradientStop> Stops;
-   ARF  AspectRatio;     // Aspect ratio flags.
-   int N, L, M, Resolution;
+   ARF  AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // Aspect ratio flags.
+   int N = 1, L = 0, M = 1, Resolution = 0;
 
    std::vector<std::vector<double>> psi;
    std::unique_ptr<GradientColours> Colours;
-   objBitmap *Bitmap;
-   double Max;
-   bool Dirty;
+   objBitmap *Bitmap = nullptr;
+   double Max = 0;
+   bool Dirty = true;
 
    void compute_wavefunction(int);
 
    extWaveFunctionFX() {
-      AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
-      N = 1;
-      L = 0;
-      M = 1;
-      Scale = 1.0;
-      Dirty = true;
       SourceType = VSF::NONE;
    }
 

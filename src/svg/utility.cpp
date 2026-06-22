@@ -175,7 +175,6 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
       if (svg_tag_hash(scan) IS kt::strhash("stop")) {
          Transition stop;
          stop.Offset = 0;
-         stop.Transform = nullptr;
          for (unsigned a=1; a < scan.Attribs.size(); a++) {
             auto &name = scan.Attribs[a].Name;
             auto &value = scan.Attribs[a].Value;

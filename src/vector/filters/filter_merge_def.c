@@ -12,7 +12,6 @@ static ERR MERGEFX_FreePlacement(extMergeFX *Self) {
 
 static const struct ActionArray clMergeFXActions[] = {
    { AC::Draw, MERGEFX_Draw },
-   { AC::Free, MERGEFX_Free },
    { AC::FreePlacement, MERGEFX_FreePlacement },
    { AC::NewPlacement, MERGEFX_NewPlacement },
    { AC::NIL, nullptr }

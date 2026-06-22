@@ -336,8 +336,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   struct('Transition', { comment='For VectorTransition definitions' }, [[
-    double Offset   # An offset from 0.0 to 1.0 at which to apply the transform.
-    cstr Transform  # A transform string, as per SVG guidelines.
+    double Offset     # An offset from 0.0 to 1.0 at which to apply the transform.
+    string Transform  # A transform string, as per SVG guidelines.
   ]])
 
   struct("VectorPoint", { comment="Structure for the VectorPolygon PointsArray field." }, [[
@@ -454,7 +454,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     references={ 'Transition' }, extended=true,
     comment="Transitions are used to gradually apply transforms over distance."
   }, [[
-    ~array(struct(Transition)) Stops
+    ~vector(struct(Transition)) Stops
   ]])
 
   methods('vectorscene', 'Sc', {

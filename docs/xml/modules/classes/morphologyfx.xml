@@ -42,7 +42,7 @@
     <field>
       <name>Operator</name>
       <comment>Set to either <code>ERODE</code> or <code>DILATE</code>.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type lookup="MOP">MOP</type>
       <description>
 <types lookup="MOP"/>

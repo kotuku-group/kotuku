@@ -50,13 +50,6 @@ static void release_merge_sources(std::vector<MergeSource> &List)
    List.clear();
 }
 
-//********************************************************************************************************************
-
-static void clear_merge_sources(std::vector<MergeSource> &List)
-{
-   List.clear();
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -82,12 +75,6 @@ static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
 }
 
 //********************************************************************************************************************
-
-static ERR MERGEFX_Free(extMergeFX *Self)
-{
-   clear_merge_sources(Self->List);
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 

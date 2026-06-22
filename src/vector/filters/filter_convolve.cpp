@@ -68,22 +68,17 @@ class extConvolveFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ConvolveFX";
    using create = kt::Create<extConvolveFX>;
 
-   double Bias;
-   double Divisor;
-   EM     EdgeMode;
-   int    MatrixRows, MatrixColumns;
-   int    PreserveAlpha;
-   int    TargetX, TargetY; // If -ve, the target will be computed as the centre of the matrix.
-   double UnitX, UnitY;
-   int    MatrixSize;
-   bool   MatrixProvided, DivisorProvided, TargetXProvided, TargetYProvided, UnitXProvided, UnitYProvided;
+   double Bias = 0;
+   double Divisor = 0;
+   EM     EdgeMode = EM::DUPLICATE;
+   int    MatrixRows = 3, MatrixColumns = 3;
+   int    PreserveAlpha = false;
+   int    TargetX = -1, TargetY = -1; // If -ve, the target will be computed as the centre of the matrix.
+   double UnitX = 1, UnitY = 1;
+   int    MatrixSize = 0;
+   bool   MatrixProvided = false, DivisorProvided = false, TargetXProvided = false, TargetYProvided = false;
+   bool   UnitXProvided = false, UnitYProvided = false;
    double Matrix[MAX_DIM * MAX_DIM] = {};
-
-   extConvolveFX() : Bias(0), Divisor(0), EdgeMode(EM::DUPLICATE),
-      MatrixRows(3), MatrixColumns(3), PreserveAlpha(false),
-      TargetX(-1), TargetY(-1), UnitX(1), UnitY(1), MatrixSize(0),
-      MatrixProvided(false), DivisorProvided(false), TargetXProvided(false), TargetYProvided(false),
-      UnitXProvided(false), UnitYProvided(false) { }
 
    inline uint8_t * getPixel(objBitmap *Bitmap, int X, int Y) const {
       if ((X >= Bitmap->Clip.Left) and (X < Bitmap->Clip.Right) and

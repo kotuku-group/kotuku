@@ -26,18 +26,16 @@ class extSourceFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "SourceFX";
    using create = kt::Create<extSourceFX>;
 
-   ARF  AspectRatio;      // Aspect ratio flags.
-   objBitmap *Bitmap;     // Rendered image cache.
-   objVector *Source;     // The vector branch to render as source graphic.
-   objVectorScene *Scene; // Internal scene for rendering.
-   uint8_t *BitmapData;
-   int  DataSize;
-   bool Render;           // Must be true if the bitmap cache needs to be rendered.
+   ARF  AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // Aspect ratio flags.
+   objBitmap *Bitmap = nullptr;     // Rendered image cache.
+   objVector *Source = nullptr;     // The vector branch to render as source graphic.
+   objVectorScene *Scene = nullptr; // Internal scene for rendering.
+   uint8_t *BitmapData = nullptr;
+   int  DataSize = 0;
+   bool Render = true;              // Must be true if the bitmap cache needs to be rendered.
 
    extSourceFX() {
-      AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
-      SourceType  = VSF::NONE;
-      Render      = true;
+      SourceType = VSF::NONE;
    }
 
    ~extSourceFX() {

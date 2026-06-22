@@ -1140,7 +1140,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 
     <struct name="Transition" comment="For VectorTransition definitions">
       <field name="Offset" type="DOUBLE">An offset from 0.0 to 1.0 at which to apply the transform.</field>
-      <field name="Transform" type="CSTRING">A transform string, as per SVG guidelines.</field>
+      <field name="Transform" type="STRING">A transform string, as per SVG guidelines.</field>
     </struct>
 
     <struct name="VectorMatrix" comment="Vector transformation matrix.">

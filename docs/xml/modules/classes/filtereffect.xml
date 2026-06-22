@@ -41,7 +41,7 @@
     <field>
       <name>Height</name>
       <comment>Primitive height of the effect area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(Width, Height)</code> field values define the dimensions of the effect within the target clipping area.</p>
@@ -116,7 +116,7 @@
     <field>
       <name>Width</name>
       <comment>Primitive width of the effect area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the effect within the target clipping area.</p>
@@ -126,7 +126,7 @@
     <field>
       <name>X</name>
       <comment>Primitive X coordinate for the effect.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the offset of the effect within the target clipping area.</p>
@@ -136,7 +136,7 @@
     <field>
       <name>Y</name>
       <comment>Primitive Y coordinate for the effect.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the offset of the effect within the target clipping area.</p>

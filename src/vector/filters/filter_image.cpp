@@ -30,10 +30,18 @@ class extImageFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ImageFX";
    using create = kt::Create<extImageFX>;
 
-   ARF  AspectRatio;     // Aspect ratio flags.
-   VSM ResampleMethod;   // Resample method.
+   ARF AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // Aspect ratio flags.
+   VSM ResampleMethod = VSM::BILINEAR; // Resample method.
    objBitmap *Bitmap;    // Bitmap containing source image data.
    objImage *Image;      // Origin image if loading a source file.
+
+   extImageFX() {
+      SourceType = VSF::PREVIOUS;
+   }
+
+   ~extImageFX() {
+      if (Image) FreeResource(Image);
+   }
 };
 
 /*********************************************************************************************************************
@@ -50,20 +58,9 @@ static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR IMAGEFX_Free(extImageFX *Self)
-{
-   if (Self->Image) { FreeResource(Self->Image); Self->Image = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR IMAGEFX_Init(extImageFX *Self)
 {
-   kt::Log log;
-
-   if (!Self->Bitmap) return log.warning(ERR::UndefinedField);
-
+   if (!Self->Bitmap) return kt::Log().warning(ERR::UndefinedField);
    return ERR::Okay;
 }
 
@@ -85,31 +82,12 @@ static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR IMAGEFX_NewObject(extImageFX *Self)
-{
-   Self->AspectRatio    = ARF::X_MID|ARF::Y_MID|ARF::MEET;
-   Self->ResampleMethod = VSM::BILINEAR;
-   Self->SourceType     = VSF::PREVIOUS;
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 
 -FIELD-
 AspectRatio: SVG compliant aspect ratio settings.
 Lookup: ARF
-
-*********************************************************************************************************************/
-
-static ERR IMAGEFX_SET_AspectRatio(extImageFX *Self, ARF Value)
-{
-   Self->AspectRatio = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Bitmap: The @Bitmap being used as the image source.
@@ -119,16 +97,6 @@ Bitmap is to be used, the correct way to do this as to assign it to the ImageFX 
 
 If an image has been processed by setting the #Path, the Bitmap will refer to the content that has been
 processed.
-
-*********************************************************************************************************************/
-
-static ERR IMAGEFX_GET_Bitmap(extImageFX *Self, objBitmap **Value)
-{
-   *Value = Self->Bitmap;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Path: Path to an image file supported by the @Image class.
@@ -160,16 +128,6 @@ ResampleMethod: The resample algorithm to use for transforming the source image.
 
 !VSM
 
-*********************************************************************************************************************/
-
-static ERR IMAGEFX_SET_ResampleMethod(extImageFX *Self, VSM Value)
-{
-   Self->ResampleMethod = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the filter.
 -END-
@@ -195,11 +153,11 @@ static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string_view &Value)
 #include "filter_image_def.c"
 
 static const FieldArray clImageFXFields[] = {
-   { "Bitmap",         FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, IMAGEFX_GET_Bitmap, nullptr, CLASSID::BITMAP },
+   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clAspectRatio },
+   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageFXVSM },
+   { "Bitmap",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
    { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
-   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_AspectRatio, &clAspectRatio },
-   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_ResampleMethod, &clImageFXVSM },
    END_FIELD
 };
 

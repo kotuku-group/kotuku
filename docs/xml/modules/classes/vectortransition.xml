@@ -38,20 +38,10 @@
       <name>Stops</name>
       <comment>Defines the transforms that will be used at specific stop points.</comment>
       <access write="S">Set</access>
-      <type>Transition[]</type>
+      <type>kt::vector&lt;Transition&gt;</type>
       <description>
 <p>A valid transition object must consist of at least two stop points in order to transition from one transform to another. This is achieved by setting the Stops field with an array of Transition structures that define each stop point with a transform string.  The Transition structure consists of the following fields:</p>
 <struct lookup="Transition"/>
-      </description>
-    </field>
-
-    <field>
-      <name>TotalStops</name>
-      <comment>Total number of stops defined in the Stops array.</comment>
-      <access read="R">Read</access>
-      <type>INT</type>
-      <description>
-<p>This read-only field indicates the total number of stops that have been defined in the <fl>Stops</fl> array.</p>
       </description>
     </field>
 
@@ -59,7 +49,7 @@
   <structs>
     <struct name="Transition" comment="For VectorTransition definitions">
       <field name="Offset" type="DOUBLE">An offset from 0.0 to 1.0 at which to apply the transform.</field>
-      <field name="Transform" type="CSTRING">A transform string, as per SVG guidelines.</field>
+      <field name="Transform" type="STRING">A transform string, as per SVG guidelines.</field>
     </struct>
 
   </structs>

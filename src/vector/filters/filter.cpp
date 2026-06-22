@@ -754,12 +754,6 @@ filter algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Height(extVectorFilter *Self, Unit &Value)
-{
-   Value = Self->Height;
-   return ERR::Okay;
-}
-
 static ERR VECTORFILTER_SET_Height(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
@@ -846,12 +840,6 @@ filter algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Width(extVectorFilter *Self, Unit &Value)
-{
-   Value = Self->Width;
-   return ERR::Okay;
-}
-
 static ERR VECTORFILTER_SET_Width(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
@@ -872,21 +860,6 @@ vector's position.  It is important to note that coordinates are measured before
 The default values for X and #Y is `10%`, as per the SVG standard.  This provides a buffer space for the filter
 algorithms to work with, and is usually a sufficient default.
 
-*********************************************************************************************************************/
-
-static ERR VECTORFILTER_GET_X(extVectorFilter *Self, Unit &Value)
-{
-   Value = Self->X;
-   return ERR::Okay;
-}
-
-static ERR VECTORFILTER_SET_X(extVectorFilter *Self, Unit &Value)
-{
-   Self->X = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Y: Y coordinate for the filter.
 
@@ -900,27 +873,13 @@ algorithms to work with, and is usually a sufficient default.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Y(extVectorFilter *Self, Unit &Value)
-{
-   Value = Self->Y;
-   return ERR::Okay;
-}
-
-static ERR VECTORFILTER_SET_Y(extVectorFilter *Self, Unit &Value)
-{
-   Self->Y = Value;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 #include "filter_def.c"
 
 static const FieldArray clFilterFields[] = {
-   { "X",              FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_X, VECTORFILTER_SET_X },
-   { "Y",              FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_Y, VECTORFILTER_SET_Y },
-   { "Width",          FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_Width, VECTORFILTER_SET_Width },
-   { "Height",         FDF_UNIT|FDF_RW|FDF_PURE, VECTORFILTER_GET_Height, VECTORFILTER_SET_Height },
+   { "X",              FDF_UNIT|FDF_RW },
+   { "Y",              FDF_UNIT|FDF_RW },
+   { "Width",          FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Width },
+   { "Height",         FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Height },
    { "Opacity",        FDF_DOUBLE|FDF_RW, nullptr, VECTORFILTER_SET_Opacity },
    { "Inherit",        FDF_OBJECT|FDF_RW, nullptr, VECTORFILTER_SET_Inherit },
    { "ResX",           FDF_INT|FDF_RI },

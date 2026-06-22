@@ -21,11 +21,10 @@ class extFloodFX : public extFilterEffect {
    using create = kt::Create<extFloodFX>;
 
    FRGB   Colour;
-   double Opacity;
+   double Opacity = 1.0;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
 
    extFloodFX() {
-      Opacity = 1.0;
       SourceType = VSF::NONE;
    }
 };
