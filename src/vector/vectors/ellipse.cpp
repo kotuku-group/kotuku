@@ -54,18 +54,33 @@ static void generate_ellipse(extVectorEllipse *Vector, agg::path_storage &Path)
       }
    }
 
-   if (Vector->eVertices >= 3) {
-      // The client has explicitly requested a polygonal approximation with a fixed number of vertices.
-
-      uint32_t vertices = Vector->eVertices;
-      for (uint32_t v=0; v < vertices; v++) {
-         double angle = double(v) / double(vertices) * 2.0 * agg::pi;
+   auto generate_polygon = [&Path, cx, cy, rx, ry](uint32_t Vertices) {
+      for (uint32_t v=0; v < Vertices; v++) {
+         double angle = double(v) / double(Vertices) * 2.0 * agg::pi;
          double x = cx + cos(angle) * rx;
          double y = cy + sin(angle) * ry;
          if (v IS 0) Path.move_to(x, y);
          else Path.line_to(x, y);
       }
       Path.close_polygon();
+   };
+
+   if (Vector->eVertices >= 3) {
+      // The client has explicitly requested a polygonal approximation with a fixed number of vertices.
+
+      generate_polygon(uint32_t(Vector->eVertices));
+   }
+   else if (((((extVectorScene *)Vector->Scene)->Flags & VPF::STABLE_RENDER) != VPF::NIL)) {
+      // The Bezier arc path is visually smoother, but tiny platform-specific libm differences alter hash-sensitive
+      // renders.  Stable rendering preserves the legacy adaptive polygon path for deterministic regression tests.
+
+      auto scale = Vector->Transform.scale();
+      double ra = (fabs(rx * scale) + fabs(ry * scale)) * 0.5;
+      double da = acos(ra / (ra + 0.125 / scale)) * 2.0;
+      uint32_t vertices = agg::uround(2.0 * agg::pi / da);
+      if (vertices < 3) vertices = 3;
+
+      generate_polygon(vertices);
    }
    else {
       // Generate the ellipse from a single full-sweep cubic bezier arc.  Supplying the centre and radii

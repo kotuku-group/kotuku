@@ -267,7 +267,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "BITMAP_SIZED: Automatically adjust the @VectorScene.PageWidth and @VectorScene.PageHeight to match the target @Bitmap.Width and @Bitmap.Height.",
     "RENDER_TIME: Compute the drawing frame-rate for the `RenderTime` field.",
     "RESIZE: The vector will be stretched to fit the @VectorScene.PageWidth and @VectorScene.PageHeight values, if defined by the client.",
-    "OUTLINE_VIEWPORTS: Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.")
+    "OUTLINE_VIEWPORTS: Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.",
+    "STABLE_RENDER: Use rendering algorithms that are stable across all platforms.")
 
   enums("TB", { type="int", start=0, "Function identifier for TurbulenceFX." },
     "TURBULENCE: Use the standard turbulence function.",

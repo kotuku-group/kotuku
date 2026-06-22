@@ -995,6 +995,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
+      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
     </constants>
 
     <constants lookup="VSF" comment="Filter source types - these are used internally">

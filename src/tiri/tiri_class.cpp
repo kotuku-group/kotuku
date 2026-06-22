@@ -1008,7 +1008,7 @@ static ERR run_script(objScript *Self)
          #ifndef NDEBUG
             std::span<std::string> list;
             if (!GET_Procedures(Self, list)) {
-               for (int i=0; i < list.size(); i++) log.trace("%s", list[i].c_str());
+               for (unsigned i=0; i < list.size(); i++) log.trace("%s", list[i].c_str());
             }
          #endif
 
