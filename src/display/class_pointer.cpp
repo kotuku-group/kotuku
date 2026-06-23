@@ -48,8 +48,8 @@ static int glDefaultSpeed = 160;
 static double glDefaultAcceleration = 0.8;
 static TIMER glRepeatTimer = 0;
 
-static ERR repeat_timer(extPointer *, int64_t, int64_t);
 static void set_pointer_defaults(extPointer *);
+static ERR repeat_timer(extPointer *, int64_t, int64_t);
 static int examine_chain(extPointer *, int, SURFACELIST &, int);
 static bool get_over_object(extPointer *);
 static void process_ptr_button(extPointer *, struct dcDeviceInput *);
@@ -673,8 +673,6 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
 
 static ERR POINTER_NewObject(extPointer *Self)
 {
-   Self->CursorID = PTC::DEFAULT;
-   Self->ClickSlop = 2;
    set_pointer_defaults(Self);
    return ERR::Okay;
 }
@@ -1236,35 +1234,6 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
 
 //********************************************************************************************************************
 
-FieldDef CursorLookup[] = {
-   { "None",            0 },
-   { "Default",         PTC::DEFAULT },             // Values start from 1 and go up
-   { "SizeBottomLeft",  PTC::SIZE_BOTTOM_LEFT },
-   { "SizeBottomRight", PTC::SIZE_BOTTOM_RIGHT },
-   { "SizeTopLeft",     PTC::SIZE_TOP_LEFT },
-   { "SizeTopRight",    PTC::SIZE_TOP_RIGHT },
-   { "SizeLeft",        PTC::SIZE_LEFT },
-   { "SizeRight",       PTC::SIZE_RIGHT },
-   { "SizeTop",         PTC::SIZE_TOP },
-   { "SizeBottom",      PTC::SIZE_BOTTOM },
-   { "Crosshair",       PTC::CROSSHAIR },
-   { "Sleep",           PTC::SLEEP },
-   { "Sizing",          PTC::SIZING },
-   { "SplitVertical",   PTC::SPLIT_VERTICAL },
-   { "SplitHorizontal", PTC::SPLIT_HORIZONTAL },
-   { "Magnifier",       PTC::MAGNIFIER },
-   { "Hand",            PTC::HAND },
-   { "HandLeft",        PTC::HAND_LEFT },
-   { "HandRight",       PTC::HAND_RIGHT },
-   { "Text",            PTC::TEXT },
-   { "Paintbrush",      PTC::PAINTBRUSH },
-   { "Stop",            PTC::STOP },
-   { "Invisible",       PTC::INVISIBLE },
-   { "Custom",          PTC::CUSTOM },
-   { "Dragable",        PTC::DRAGGABLE },
-   { nullptr, 0 }
-};
-
 #include "class_pointer_def.c"
 
 static const FunctionField mthSetCursor[]     = { { "Surface", FD_INT }, { "Flags", FD_INT }, { "Cursor", FD_INT }, { "Name", FD_STRING }, { "Owner", FD_INT }, { "PreviousCursor", FD_INT|FD_RESULT }, { nullptr, 0 } };
@@ -1296,7 +1265,7 @@ static const FieldArray clPointerFields[] = {
    { "Input",        FDF_OBJECTID|FDF_RW },
    { "Surface",      FDF_OBJECTID|FDF_RW, nullptr, nullptr, CLASSID::SURFACE },
    { "Anchor",       FDF_OBJECTID|FDF_R, nullptr, nullptr, CLASSID::SURFACE },
-   { "CursorID",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &CursorLookup },
+   { "CursorID",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clPointerPTC },
    { "CursorOwner",  FDF_OBJECTID|FDF_RW },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clPointerFlags },
    { "Restrict",     FDF_OBJECTID|FDF_R, nullptr, nullptr, CLASSID::SURFACE },
@@ -1312,6 +1281,16 @@ static const FieldArray clPointerFields[] = {
    { "ButtonOrder",  FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_ButtonOrder, SET_ButtonOrder },
    END_FIELD
 };
+
+//********************************************************************************************************************
+
+PTC get_cursor_id(std::string_view Name)
+{
+   for (int i=0; clPointerPTC[i].Name; i++) {
+      if (iequals(clPointerPTC[i].Name, Name)) return PTC(clPointerPTC[i].Value);
+   }
+   return PTC::NIL;
+}
 
 //********************************************************************************************************************
 
