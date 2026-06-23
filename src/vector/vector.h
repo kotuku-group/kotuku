@@ -676,8 +676,18 @@ class extFilterEffect : public objFilterEffect {
 
 class extPainter : public VectorPainter {
 public:
-   GRADIENT_TABLE *GradientTable;
-   double GradientAlpha;
+   std::unique_ptr<GRADIENT_TABLE> GradientTable;
+   double GradientAlpha = 0;
+
+   void reset_cache() {
+      GradientTable.reset();
+      GradientAlpha = 0;
+   }
+
+   void reset() {
+      VectorPainter::reset();
+      reset_cache();
+   }
 };
 
 class extVector : public objVector {
@@ -703,20 +713,20 @@ class extVector : public objVector {
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
 
    void   (*GeneratePath)(extVector *, agg::path_storage &);
-   agg::rasterizer_scanline_aa<>     *StrokeRaster;
-   agg::rasterizer_scanline_aa<>     *FillRaster;
-   std::vector<FeedbackSubscription> *FeedbackSubscriptions;
-   std::vector<InputSubscription>    *InputSubscriptions;
-   std::vector<KeyboardSubscription> *KeyboardSubscriptions;
+   std::unique_ptr<agg::rasterizer_scanline_aa<>> StrokeRaster;
+   std::unique_ptr<agg::rasterizer_scanline_aa<>> FillRaster;
+   std::unique_ptr<std::vector<FeedbackSubscription>> FeedbackSubscriptions;
+   std::unique_ptr<std::vector<InputSubscription>> InputSubscriptions;
+   std::unique_ptr<std::vector<KeyboardSubscription>> KeyboardSubscriptions;
    extVectorFilter     *Filter;
    extVectorViewport   *ParentView;
    extVectorClip       *ClipMask;
    extVectorTransition *Transition;
    extVector           *Morph;
    extVector           *AppendPath;
-   DashedStroke        *DashArray;
+   std::unique_ptr<DashedStroke> DashArray;
    ClipMaskCache ClipCache;
-   filter_bitmap *IsolatedBuffer;
+   std::unique_ptr<filter_bitmap> IsolatedBuffer;
    JTYPE InputMask;
    int   PathLength;
    RC    Dirty;
@@ -744,11 +754,12 @@ class extVector : public objVector {
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;
       Dirty         = RC::DIRTY;
-      IsolatedBuffer = nullptr;
       TabOrder      = 255;
       ColourSpace   = VCS::INHERIT;
       ValidState    = true;
    }
+
+   ~extVector();
 
    // Methods
 

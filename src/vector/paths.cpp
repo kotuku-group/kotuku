@@ -313,7 +313,7 @@ void gen_vector_path(extVector *Vector)
 
       if ((Vector->Fill[0].Colour.Alpha > 0) or (Vector->Fill[0].Gradient) or (Vector->Fill[0].Image) or (Vector->Fill[0].Pattern)) {
          if (!Vector->FillRaster) {
-            Vector->FillRaster = new (std::nothrow) agg::rasterizer_scanline_aa<>;
+            Vector->FillRaster.reset(new (std::nothrow) agg::rasterizer_scanline_aa<>);
             if (!Vector->FillRaster) return;
          }
          else Vector->FillRaster->reset();
@@ -323,8 +323,7 @@ void gen_vector_path(extVector *Vector)
          Vector->FillRaster->add_path(fill_path);
       }
       else if (Vector->FillRaster) {
-         delete Vector->FillRaster;
-         Vector->FillRaster = nullptr;
+         Vector->FillRaster.reset();
       }
 
       if (Vector->Stroked) {
@@ -332,7 +331,7 @@ void gen_vector_path(extVector *Vector)
          // is not required if the vector scale is <= 1.0 (the angle_tolerance controls this).
 
          if (!Vector->StrokeRaster) {
-            Vector->StrokeRaster = new (std::nothrow) agg::rasterizer_scanline_aa<>;
+            Vector->StrokeRaster.reset(new (std::nothrow) agg::rasterizer_scanline_aa<>);
             if (!Vector->StrokeRaster) return;
          }
          else Vector->StrokeRaster->reset();
@@ -353,8 +352,7 @@ void gen_vector_path(extVector *Vector)
          }
       }
       else if (Vector->StrokeRaster) {
-         delete Vector->StrokeRaster;
-         Vector->StrokeRaster = nullptr;
+         Vector->StrokeRaster.reset();
       }
 
       Vector->Dirty &= ~RC::FINAL_PATH;

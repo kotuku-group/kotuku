@@ -803,10 +803,11 @@ static ERR TEXT_GET_Fill(extVectorText *Self, std::string_view &Value)
 static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
 {
    Self->FillString.clear();
+   Self->Fill[0].reset();
+   Self->Fill[1].reset();
+   Self->FGFill = false;
 
    if (Value.empty()) {
-      Self->Fill[0].reset();
-      Self->FGFill = false;
       return ERR::Okay;
    }
 
