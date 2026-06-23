@@ -122,19 +122,18 @@ static std::array<uint8_t, 20> websocket_sha1(std::string_view Input)
 
 //********************************************************************************************************************
 
-static std::string websocket_base64(std::span<const uint8_t> Input)
+static std::string websocket_base64(std::span<const char> Input)
 {
    std::array<char, 128> output = {};
    kt::BASE64ENCODE state;
 
-   std::string_view input_view((const char *)Input.data(), Input.size());
-   int written = kt::Base64Encode(&state, input_view, output.data(), int(output.size()));
+   int written = kt::Base64Encode(&state, Input, output);
    if (written <= 0) return {};
 
-   int final = kt::Base64Encode(&state, {}, output.data() + written, int(output.size()) - written);
+   int final = kt::Base64Encode(&state, {}, std::span(output).subspan(written));
    if (final <= 0) return {};
 
-   std::string result(output.data(), size_t(written + final));
+   std::string result((const char *)output.data(), size_t(written + final));
    while ((not result.empty()) and ((result.back() IS '\0') or (result.back() IS '\n') or (result.back() IS '\r'))) {
       result.pop_back();
    }
@@ -152,7 +151,7 @@ static std::string websocket_accept_key(std::string_view Key)
    material.append(WEBSOCKET_GUID);
 
    auto digest = websocket_sha1(material);
-   return websocket_base64(digest);
+   return websocket_base64(std::span((const char *)digest.data(), digest.size()));
 }
 
 //********************************************************************************************************************
@@ -181,7 +180,7 @@ static bool websocket_key_is_valid(std::string_view Key)
 {
    if (Key.empty()) return false;
 
-   std::array<uint8_t, 32> decoded = {};
+   std::array<char, 32> decoded = {};
    kt::BASE64DECODE state;
    int64_t written = 0;
 

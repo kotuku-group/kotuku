@@ -818,8 +818,8 @@ static ERR HTTP_Activate(extHTTP *Self)
             kt::BASE64ENCODE state;
 
             cmd << "Authorization: Basic ";
-            auto len = kt::Base64Encode(&state, buffer, output.data(), int(buffer.length() * 2));
-            cmd.write(output.data(), len);
+            auto len = kt::Base64Encode(&state, std::span((const char *)buffer.data(), buffer.size()), output);
+            cmd.write((const char *)output.data(), len);
             cmd << CRLF;
          }
 
