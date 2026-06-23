@@ -147,27 +147,6 @@
       <tags>pure-query, object-owns-result</tags>
     </method>
 
-    <method>
-      <name>SearchByID</name>
-      <comment>Search for a vector by numeric ID.</comment>
-      <prototype>ERR sc::SearchByID(OBJECTPTR Object, INT ID, OBJECTPTR * Result)</prototype>
-      <tiriPrototype>err, Result:obj = SearchByID(ID:num)</tiriPrototype>
-      <input>
-        <param type="INT" name="ID">The ID to search for.</param>
-        <param type="OBJECTPTR *" name="Result">This parameter will be updated with the discovered vector, or <code>NULL</code> if not found.</param>
-      </input>
-      <description>
-<p>This method will search a scene for an object that matches a given <code>ID</code> (vector ID's can be set with the <class name="Vector" field="NumericID">Vector.NumericID</class> or <class name="Vector" field="ID">Vector.ID</class> fields).  If multiple vectors are using the same ID, repeated calls can be made to this method to find them all.  This is achieved by calling this method on the vector that was last returned as a <code>Result</code>.</p>
-<p>Note that searching for string-based ID's is achieved by converting the string to a case-sensitive hash with <code>strhash()</code> and using that as the ID.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Search">A vector with a matching ID was not found.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
-      <tags>pure-query, object-owns-result</tags>
-    </method>
-
   </methods>
 
   <fields>

@@ -1540,28 +1540,6 @@ SID: String identifier for a vector.
 The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other
 circumstances.
 
-*********************************************************************************************************************/
-
-static ERR VECTOR_GET_SID(extVector *Self, std::string_view &Value)
-{
-   Value = Self->SID;
-   return ERR::Okay;
-}
-
-static ERR VECTOR_SET_SID(extVector *Self, const std::string_view &Value)
-{
-   if (Value.empty()) {
-      Self->SID.clear();
-      Self->NumericID = 0;
-   }
-   else {
-      Self->SID = Value;
-      Self->NumericID = strhash(Value);
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 InnerJoin: Adjusts the handling of thickly stroked paths that cross back at the join.
 Lookup: VIJ
@@ -1755,12 +1733,6 @@ MorphFlags: Optional flags that affect morphing.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_MorphFlags(extVector *Self, VMF *Value)
-{
-   *Value = Self->MorphFlags;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_MorphFlags(extVector *Self, VMF Value)
 {
     Self->MorphFlags = Value;
@@ -1823,31 +1795,6 @@ static ERR VECTOR_SET_Next(extVector *Self, extVector *Value)
    }
 
    mark_buffers_for_refresh(Self);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-NumericID: A unique identifier for the vector.
-
-This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the
-#SID field if that has been defined previously.
-
-If NumericID is set by the client, then any value in #SID will be immediately cleared.
-
-*********************************************************************************************************************/
-
-static ERR VECTOR_GET_NumericID(extVector *Self, int *Value)
-{
-   *Value = Self->NumericID;
-   return ERR::Okay;
-}
-
-static ERR VECTOR_SET_NumericID(extVector *Self, int Value)
-{
-   Self->NumericID = Value;
-   Self->SID.clear();
    return ERR::Okay;
 }
 
@@ -2394,20 +2341,19 @@ static const FieldArray clVectorFields[] = {
    { "Stroke",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Stroke },
    { "Fill",         FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Fill },
    { "Filter",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Filter },
+   { "SID",          FDF_CPPSTRING|FDF_RW },
    { "FillRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_FillRule, &clVectorVFR },
    { "ClipRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_ClipRule, &clVectorVFR },
    { "LineJoin",     FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineJoin, &clVectorVLJ },
    { "LineCap",      FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineCap, &clVectorVLC },
    { "InnerJoin",    FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_InnerJoin, &clVectorVIJ },
+   { "MorphFlags",   FDF_INTFLAGS|FDF_RW,       nullptr, VECTOR_SET_MorphFlags, &clVectorVMF },
    // Virtual fields
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
    { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Mask, VECTOR_SET_Mask },
    { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Morph, VECTOR_SET_Morph },
    { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
-   { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE,  VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clVectorVMF },
-   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,       VECTOR_GET_NumericID, VECTOR_SET_NumericID },
-   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, VECTOR_GET_SID, VECTOR_SET_SID },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },

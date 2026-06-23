@@ -459,9 +459,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   methods('vectorscene', 'Sc', {
     { id=1, name='AddDef' },
-    { id=2, name='SearchByID' },
-    { id=3, name='FindDef' },
-    { id=4, name='Debug' }
+    { id=2, name='FindDef' },
+    { id=3, name='Debug' }
   })
 
   klass('VectorScene', { src='scene/scene.cpp', output='scene/scene_def.c', extended=true }, [[

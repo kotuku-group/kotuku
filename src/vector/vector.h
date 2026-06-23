@@ -687,11 +687,13 @@ class extVector : public objVector {
    std::string StrokeString;
    std::string FillString;
    std::string FilterString;
+   std::string SID;
    VFR FillRule;
    VFR ClipRule;
    VLJ LineJoin;
    VLC LineCap;
    VIJ InnerJoin;
+   VMF MorphFlags;
 
    extPainter Fill[2], Stroke;
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
@@ -700,7 +702,6 @@ class extVector : public objVector {
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
 
-   std::string SID;
    void   (*GeneratePath)(extVector *, agg::path_storage &);
    agg::rasterizer_scanline_aa<>     *StrokeRaster;
    agg::rasterizer_scanline_aa<>     *FillRaster;
@@ -717,9 +718,7 @@ class extVector : public objVector {
    ClipMaskCache ClipCache;
    filter_bitmap *IsolatedBuffer;
    JTYPE InputMask;
-   int   NumericID;
    int   PathLength;
-   VMF   MorphFlags;
    RC    Dirty;
    uint16_t  TabOrder;
    uint16_t  Isolated:1;
@@ -740,7 +739,6 @@ class extVector : public objVector {
       LineJoin      = VLJ::MITER; // SVG default is miter
       LineCap       = VLC::BUTT;  // SVG default is butt
       InnerJoin     = VIJ::MITER; // AGG only
-      NumericID     = 0x7fffffff;
       StrokeWidth   = Unit(1); // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
       Visibility    = VIS::VISIBLE;
       FillRule      = VFR::NON_ZERO;
@@ -1671,8 +1669,8 @@ void configure_stroke(extVector &Vector, T &Stroke)
 {
    Stroke.width(Vector.fixed_stroke_width());
 
-   if (Vector.LineJoin != VLJ::INHERIT) Stroke.line_join(Vector.LineJoin); // miter, round, bevel
-   if (Vector.LineCap != VLC::INHERIT) Stroke.line_cap(Vector.LineCap); // butt, square, round
+   if (Vector.LineJoin != VLJ::INHERIT)  Stroke.line_join(Vector.LineJoin); // miter, round, bevel
+   if (Vector.LineCap != VLC::INHERIT)   Stroke.line_cap(Vector.LineCap); // butt, square, round
    if (Vector.InnerJoin != VIJ::INHERIT) Stroke.inner_join(Vector.InnerJoin); // miter, round, bevel, jag
 
    // It has been noted that there may be issues between miter_join, miter_join_revert and line-caps that
