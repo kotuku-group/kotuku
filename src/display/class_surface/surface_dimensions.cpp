@@ -99,9 +99,9 @@ Set `Height` to change the surface height.  Alternatively, call #Resize() to cha
 By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
 the parent surface height.
 
-A read returns the value exactly as it was last defined.  When the height was set as a scaled value, the multiplier is
-returned rather than a resolved pixel count.  Read #VisibleHeight to determine the height of the surface area that is
-actually presented in pixels.
+A plain read returns the height resolved to a fixed pixel count, even when `Height` was defined as a scaled value.
+Request the value with the `FD_SCALED` flag to retrieve it as a multiplier of the parent height instead.  Reading the
+field verbatim (with `FD_PURE`), or before initialisation, returns the value exactly as it was last defined.
 
 Changing `Height` on a visible surface updates the displayed area immediately, including any child surfaces that need
 to be redrawn or resized.
@@ -300,9 +300,9 @@ Set `Width` to change the surface width.  Alternatively, call #Resize() to chang
 By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
 the parent surface width.
 
-A read returns the value exactly as it was last defined.  When the width was set as a scaled value, the multiplier is
-returned rather than a resolved pixel count.  Read #VisibleWidth to determine the width of the surface area that is
-actually presented in pixels.
+A plain read returns the width resolved to a fixed pixel count, even when `Width` was defined as a scaled value.
+Request the value with the `FD_SCALED` flag to retrieve it as a multiplier of the parent width instead.  Reading the
+field verbatim (with `FD_PURE`), or before initialisation, returns the value exactly as it was last defined.
 
 Changing `Width` on a visible surface updates the displayed area immediately, including any child surfaces that need
 to be redrawn or resized.
@@ -378,9 +378,10 @@ Set `X` to change the horizontal position of the surface relative to its parent.
 By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
 the parent surface width.
 
-A read returns the value exactly as it was last defined.  When `X` was set as a scaled value, the multiplier is
-returned rather than a resolved pixel coordinate.  Read #AbsX for the absolute horizontal pixel position within the
-surface hierarchy.
+A plain read returns the horizontal position resolved to a fixed pixel coordinate relative to the parent, even when `X`
+was defined as a scaled value.  Request the value with the `FD_SCALED` flag to retrieve it as a multiplier of the
+parent width instead.  Reading the field verbatim (with `FD_PURE`), or before initialisation, returns the value exactly
+as it was last defined.  Read #AbsX for the absolute horizontal pixel position within the surface hierarchy.
 
 Changing `X` on a visible surface updates its position immediately.  If #XOffset also defines the right-hand edge, the
 surface width is recalculated to preserve that offset.
@@ -453,8 +454,9 @@ When #Width is set, `XOffset` positions the surface from the parent right-hand e
 `X = ParentWidth - Width - XOffset`.
 
 A plain read returns the offset resolved to a fixed pixel distance, even when the offset was defined as a scaled value.
-If no offset has been defined but both #X and #Width are present, the offset is derived from the parent width.  A scaled
-read returns the offset as a multiplier of the surface width.
+If no offset has been defined but both #X and #Width are present, the offset is derived from the parent width.  Request
+the value with the `FD_SCALED` flag to retrieve it as a multiplier of the surface width.  Reading the field verbatim
+(with `FD_PURE`), or before initialisation, returns the value exactly as it was last defined.
 -END-
 
 *********************************************************************************************************************/
@@ -536,9 +538,10 @@ Set `Y` to change the vertical position of the surface relative to its parent.
 By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
 the parent surface height.
 
-A read returns the value exactly as it was last defined.  When `Y` was set as a scaled value, the multiplier is
-returned rather than a resolved pixel coordinate.  Read #AbsY for the absolute vertical pixel position within the
-surface hierarchy.
+A plain read returns the vertical position resolved to a fixed pixel coordinate relative to the parent, even when `Y`
+was defined as a scaled value.  Request the value with the `FD_SCALED` flag to retrieve it as a multiplier of the
+parent height instead.  Reading the field verbatim (with `FD_PURE`), or before initialisation, returns the value
+exactly as it was last defined.  Read #AbsY for the absolute vertical pixel position within the surface hierarchy.
 
 Changing `Y` on a visible surface updates its position immediately.
 
@@ -601,8 +604,9 @@ When #Height is set, `YOffset` positions the surface from the parent bottom edge
 `Y = ParentHeight - Height - YOffset`.
 
 A plain read returns the offset resolved to a fixed pixel distance, even when the offset was defined as a scaled value.
-If no offset has been defined but both #Y and #Height are present, the offset is derived from the parent height.  A
-scaled read returns the offset as a multiplier of the surface height.
+If no offset has been defined but both #Y and #Height are present, the offset is derived from the parent height.
+Request the value with the `FD_SCALED` flag to retrieve it as a multiplier of the surface height.  Reading the field
+verbatim (with `FD_PURE`), or before initialisation, returns the value exactly as it was last defined.
 -END-
 
 *********************************************************************************************************************/
