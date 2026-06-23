@@ -115,6 +115,8 @@ using namespace kt;
 class extBitmap;
 
 extern SWIN glpWindowType;
+extern PTC get_cursor_id(std::string_view Name);
+
 #define UpdateSurfaceRecord(a) update_surface_copy(a)
 
 struct SurfaceRecord {
@@ -316,6 +318,11 @@ class extPointer : public objPointer {
       int16_t HotX;
       int16_t HotY;
    } Cursors[int(PTC::END)];
+
+   extPointer() {
+      CursorID = PTC::DEFAULT;
+      ClickSlop = 2;
+   }
 };
 
 class extSurface : public objSurface {
@@ -452,7 +459,6 @@ extern objCompression *glCompress;
 extern struct CoreBase *CoreBase;
 extern ColourFormat glColourFormat;
 extern bool glHeadless;
-extern FieldDef CursorLookup[];
 extern TIMER glRefreshPointerTimer;
 extern extBitmap *glComposite;
 extern double glpRefreshRate, glpGammaRed, glpGammaGreen, glpGammaBlue;

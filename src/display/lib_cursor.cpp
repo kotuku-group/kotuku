@@ -436,19 +436,12 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
    }
 
    if (not Name.empty()) log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %.*s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, int(Name.size()), Name.data());
-   else log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, CursorLookup[int(CursorID)].Name);
+   else log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %d", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, int(CursorID));
 
    // Extract the cursor ID from the cursor name if no ID was given
 
    if (CursorID IS PTC::NIL) {
-      if (not Name.empty()) {
-         for (int i=0; CursorLookup[i].Name; i++) {
-            if (iequals(CursorLookup[i].Name, Name)) {
-               CursorID = PTC(CursorLookup[i].Value);
-               break;
-            }
-         }
-      }
+      if (not Name.empty()) CursorID = get_cursor_id(Name);
       else CursorID = pointer->CursorID;
    }
 
