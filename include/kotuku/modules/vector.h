@@ -3741,13 +3741,13 @@ class objVector : public Object {
    }
 
    inline ERR getStrokeOpacity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
-      return field->GetValue(this, &Value);
+      Value = this->StrokeOpacity;
+      return ERR::Okay;
    }
 
    inline ERR getFillOpacity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
-      return field->GetValue(this, &Value);
+      Value = this->FillOpacity;
+      return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
@@ -3806,13 +3806,13 @@ class objVector : public Object {
    }
 
    inline ERR getFillRule(VFR &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->GetValue(this, &Value);
+      Value = *((VFR *)(((int8_t *)this) + 304));
+      return ERR::Okay;
    }
 
    inline ERR getClipRule(VFR &Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
-      return field->GetValue(this, &Value);
+      Value = *((VFR *)(((int8_t *)this) + 308));
+      return ERR::Okay;
    }
 
    inline ERR getMorphFlags(VMF &Value) noexcept {
@@ -3821,18 +3821,33 @@ class objVector : public Object {
    }
 
    inline ERR getLineJoin(VLJ &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
-      return field->GetValue(this, &Value);
+      Value = *((VLJ *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
    inline ERR getLineCap(VLC &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
+      Value = *((VLC *)(((int8_t *)this) + 316));
+      return ERR::Okay;
    }
 
    inline ERR getInnerJoin(VIJ &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->GetValue(this, &Value);
+      Value = *((VIJ *)(((int8_t *)this) + 320));
+      return ERR::Okay;
+   }
+
+   inline ERR getStroke(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + 208));
+      return ERR::Okay;
+   }
+
+   inline ERR getFill(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + 240));
+      return ERR::Okay;
+   }
+
+   inline ERR getFilter(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + 272));
+      return ERR::Okay;
    }
 
    inline ERR getDashArray(std::span<double> &Value) noexcept {
@@ -3889,12 +3904,6 @@ class objVector : public Object {
       return error;
    }
 
-   inline ERR getStroke(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getStrokeWidth(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->GetValue(this, &Value);
@@ -3903,18 +3912,6 @@ class objVector : public Object {
    inline ERR getTransition(OBJECTPTR &Value) noexcept {
       auto field = &this->Class->Dictionary[39];
       return field->GetValue(this, &Value);
-   }
-
-   inline ERR getFill(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getFilter(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
    }
 
    inline ERR getTabOrder(int &Value) noexcept {
@@ -4026,6 +4023,21 @@ class objVector : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setStroke(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setFill(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setFilter(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
    inline ERR setDashArray(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, 0x80101308, &Value);
@@ -4061,11 +4073,6 @@ class objVector : public Object {
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   inline ERR setStroke(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, 0x00904308, &Value);
-   }
-
    inline ERR setStrokeWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_UNIT, &Value);
@@ -4074,16 +4081,6 @@ class objVector : public Object {
    inline ERR setTransition(OBJECTPTR Value) noexcept {
       auto field = &this->Class->Dictionary[39];
       return field->WriteValue(this, field, 0x08100309, Value);
-   }
-
-   inline ERR setFill(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, 0x00904308, &Value);
-   }
-
-   inline ERR setFilter(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
    inline ERR setTabOrder(const int Value) noexcept {

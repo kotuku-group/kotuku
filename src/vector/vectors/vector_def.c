@@ -61,6 +61,52 @@ static const struct FieldDef clVectorColourSpace[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clVectorVIJ[] = {
+   { "Bevel", 0x00000001 },
+   { "Miter", 0x00000002 },
+   { "Jag", 0x00000003 },
+   { "Round", 0x00000004 },
+   { "Inherit", 0x00000005 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVLC[] = {
+   { "Butt", 0x00000001 },
+   { "Square", 0x00000002 },
+   { "Round", 0x00000003 },
+   { "Inherit", 0x00000004 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVLJ[] = {
+   { "Miter", 0x00000000 },
+   { "MiterSmart", 0x00000001 },
+   { "Round", 0x00000002 },
+   { "Bevel", 0x00000003 },
+   { "MiterRound", 0x00000004 },
+   { "Inherit", 0x00000005 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVFR[] = {
+   { "NonZero", 0x00000001 },
+   { "EvenOdd", 0x00000002 },
+   { "Inherit", 0x00000003 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVMF[] = {
+   { "Stretch", 0x00000001 },
+   { "AutoSpacing", 0x00000002 },
+   { "XMin", 0x00000004 },
+   { "XMid", 0x00000008 },
+   { "XMax", 0x00000010 },
+   { "YMin", 0x00000020 },
+   { "YMid", 0x00000040 },
+   { "YMax", 0x00000080 },
+   { nullptr, 0 }
+};
+
 FDEF maPush[] = { { "Position", FD_INT }, { 0, 0 } };
 FDEF maTrace[] = { { "Callback", FD_FUNCTIONPTR }, { "Scale", FD_DOUBLE }, { "Transform", FD_INT }, { 0, 0 } };
 FDEF maGetBoundary[] = { { "Flags", FD_INT }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { "Width", FD_RESULT|FD_DOUBLE }, { "Height", FD_RESULT|FD_DOUBLE }, { 0, 0 } };

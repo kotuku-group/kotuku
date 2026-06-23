@@ -89,7 +89,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "BLUE: The blue colour channel.",
     "ALPHA: The alpha channel.")
 
-  enums("VLJ", { type="int", start=0, comment="Options for the look of line joins." }, // Match to agg::line_join_e
+  enums("VLJ", { type="int", start=0, comment="Options for the look of line joins." },
     "MITER: The default.  A sharp corner is used to join path segments.  The corner is formed by extending the outer edges of the stroke at the tangents of the path segments until they intersect. If the ‘stroke-miterlimit’ is exceeded, the line join falls back to BEVEL.",
     "MITER_SMART: An alternative form of MITER that extends beyond the intersection point, similarly to the miter-clip SVG rules.",
     "ROUND: The join is rounded.",
@@ -97,13 +97,13 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "MITER_ROUND: Default to `MITER`, but switch to `ROUND` if the miter limit is exceeded.",
     "INHERIT: Inherit the join option from the parent.")
 
-  enums("VLC", { type="int", start=1, comment="Line-cap options." }, // Match to agg::line_cap_e
+  enums("VLC", { type="int", start=1, comment="Line-cap options." },
     "BUTT: The default.  The line is sharply squared off at its exact end point.",
     "SQUARE: Similar to butt, the line is sharply squared off but will extend past the end point by `StrokeWidth / 2`.",
     "ROUND: The line cap is a half-circle and the line's end-point forms the center point.",
     "INHERIT: The cap type is inherited from the parent (defaults to butt if unspecified).")
 
-  enums("VIJ", { type="int", start=1, comment="Inner join options for angled lines." },  // Match to agg::inner_join_e
+  enums("VIJ", { type="int", start=1, comment="Inner join options for angled lines." },
     "BEVEL: Blunts the edge of the join.",
     "MITER: Forms a sharp point at the join.  Typically not the best looking option.",
     "JAG: A special non-SVG option.",
@@ -710,7 +710,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=10, name='FreeMatrix' }
   })
 
-  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true }, [[
+  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true, references={ 'VIJ', 'VLC', 'VLJ', 'VFR', 'VMF' } }, [[
     obj(Vector) Child       # The first child vector, or `NULL`.
     obj(VectorScene) Scene  # Short-cut to the top-level @VectorScene.
     obj(Vector) Next        # The next vector in the branch, or `NULL`.

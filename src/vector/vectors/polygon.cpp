@@ -56,7 +56,7 @@ static void generate_polygon(extVectorPolygon *Vector, agg::path_storage &Path)
          // A ham-fisted way of controlling whether or not the line is stroked is to make a micro-adjustment
          // to the coordinate so that they remain unequal.
 
-         if ((Vector->LineCap != agg::line_cap_e::butt_cap) and (p IS last)) p.x += 1.0e-10;
+         if ((Vector->LineCap != VLC::BUTT) and (p IS last)) p.x += 1.0e-10;
 
          Path.line_to(p.x, p.y);
          last = p;

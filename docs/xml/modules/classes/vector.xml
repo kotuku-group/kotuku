@@ -333,7 +333,7 @@
     <field>
       <name>ClipRule</name>
       <comment>Determines the algorithm to use when clipping the shape.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VFR">VFR</type>
       <description>
 <p>The ClipRule attribute only applies to vector shapes when they are contained within a <class name="VectorClip">VectorClip</class> object.  In terms of outcome, the ClipRule works similarly to <fl>FillRule</fl>.</p>
@@ -397,7 +397,7 @@
     <field>
       <name>Fill</name>
       <comment>Defines the fill painter using SVG's IRI format.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>The painter used for filling a vector path can be defined through this field using SVG compatible formatting.  The string is parsed through the <function module="Vector">ReadPainter</function> function.  Please refer to it for further details on valid formatting.</p>
@@ -419,7 +419,7 @@
     <field>
       <name>FillOpacity</name>
       <comment>The opacity to use when filling the vector.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The FillOpacity value is used by the painting algorithm when it is rendering a filled vector.  It is multiplied with the <fl>Opacity</fl> to determine a final opacity value for the render.</p>
@@ -429,7 +429,7 @@
     <field>
       <name>FillRule</name>
       <comment>Determines the algorithm to use when filling the shape.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VFR">VFR</type>
       <description>
 <p>The FillRule field indicates the algorithm which is to be used to determine what parts of the canvas are included when filling the shape. For a simple, non-intersecting path, it is intuitively clear what region lies &quot;inside&quot;; however, for a more complex path, such as a path that intersects itself or where one sub-path encloses another, the interpretation of &quot;inside&quot; is not so obvious.</p>
@@ -440,7 +440,7 @@
     <field>
       <name>Filter</name>
       <comment>Assign a post-effects filter to a vector.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>This field assigns a graphics filter to the rendering pipeline of the vector.  The filter must initially be created using the <class name="VectorFilter">VectorFilter</class> class and added to a VectorScene using <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class>.  The filter can then be referenced by ID in the Filter field of any vector object.  Please refer to the <class name="VectorFilter">VectorFilter</class> class for further details on filter configuration.</p>
@@ -461,7 +461,7 @@
     <field>
       <name>InnerJoin</name>
       <comment>Adjusts the handling of thickly stroked paths that cross back at the join.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VIJ">VIJ</type>
       <description>
 <p>The InnerJoin value is used to make very technical adjustments to the way that paths are stroked when they form corners.  Visually, the impact of this setting is only noticeable when a path forms an awkward corner that crosses over itself - usually due to the placement of bezier control points.</p>
@@ -473,7 +473,7 @@
     <field>
       <name>LineCap</name>
       <comment>The shape to be used at the start and end of a stroked path.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VLC">VLC</type>
       <description>
 <p>LineCap is the equivalent of SVG's stroke-linecap attribute.  It defines the shape to be used at the start and end of a stroked path.</p>
@@ -484,7 +484,7 @@
     <field>
       <name>LineJoin</name>
       <comment>The shape to be used at path corners that are stroked.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VLJ">VLJ</type>
       <description>
 <p>LineJoin is the equivalent of SVG's stroke-linejoin attribute.  It defines the shape to be used at path corners that are being stroked.</p>
@@ -680,7 +680,7 @@ Z: Close Path
     <field>
       <name>Stroke</name>
       <comment>Defines the stroke of a path using SVG's IRI format.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>The stroker used for rendering a vector path can be defined through this field.  The string is parsed through the <function>ReadPainter</function> function in the Vector module.  Please refer to it for further details on valid formatting.</p>
@@ -701,7 +701,7 @@ Z: Close Path
     <field>
       <name>StrokeOpacity</name>
       <comment>Defines the opacity of the path stroke.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The StrokeOpacity value expresses the opacity of a path stroke as a value between 0 and 1.0.  A value of zero would render the stroke invisible and the maximum value of one would render it opaque.</p>

@@ -1172,12 +1172,6 @@ terms of outcome, the ClipRule works similarly to #FillRule.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_ClipRule(extVector *Self, VFR *Value)
-{
-   *Value = Self->ClipRule;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_ClipRule(extVector *Self, VFR Value)
 {
    Self->ClipRule = Value;
@@ -1365,12 +1359,6 @@ feature is intended for programmed use-cases and is not SVG compliant.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Fill(extVector *Self, std::string_view &Value)
-{
-   Value = Self->FillString;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
 {
    // Note that if an internal routine sets DisableFillColour then the colour will be stored but effectively does nothing.
@@ -1465,12 +1453,6 @@ the #Opacity to determine a final opacity value for the render.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_FillOpacity(extVector *Self, double *Value)
-{
-   *Value = Self->FillOpacity;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_FillOpacity(extVector *Self, double Value)
 {
    kt::Log log;
@@ -1498,12 +1480,6 @@ for further details on filter configuration.
 The Filter value can be in the format `ID` or `url(#SID)` according to client preference.
 
 *********************************************************************************************************************/
-
-static ERR VECTOR_GET_Filter(extVector *Self, std::string_view &Value)
-{
-   Value = Self->FilterString;
-   return ERR::Okay;
-}
 
 static ERR VECTOR_SET_Filter(extVector *Self, const std::string_view &Value)
 {
@@ -1547,12 +1523,6 @@ however, for a more complex path, such as a path that intersects itself or where
 interpretation of "inside" is not so obvious.
 
 *********************************************************************************************************************/
-
-static ERR VECTOR_GET_FillRule(extVector *Self, VFR *Value)
-{
-   *Value = Self->FillRule;
-   return ERR::Okay;
-}
 
 static ERR VECTOR_SET_FillRule(extVector *Self, VFR Value)
 {
@@ -1609,27 +1579,9 @@ path.
 
 // See the AGG bezier_div demo to get a better understanding of what is affected by this field value.
 
-static ERR VECTOR_GET_InnerJoin(extVector *Self, VIJ *Value)
-{
-   if (Self->InnerJoin IS agg::inner_miter)      *Value = VIJ::MITER;
-   else if (Self->InnerJoin IS agg::inner_round) *Value = VIJ::ROUND;
-   else if (Self->InnerJoin IS agg::inner_bevel) *Value = VIJ::BEVEL;
-   else if (Self->InnerJoin IS agg::inner_jag)   *Value = VIJ::JAG;
-   else if (Self->InnerJoin IS agg::inner_inherit) *Value = VIJ::INHERIT;
-   else *Value = VIJ::NIL;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_InnerJoin(extVector *Self, VIJ Value)
 {
-   switch(Value) {
-      case VIJ::MITER: Self->InnerJoin = agg::inner_miter; break;
-      case VIJ::ROUND: Self->InnerJoin = agg::inner_round; break;
-      case VIJ::BEVEL: Self->InnerJoin = agg::inner_bevel; break;
-      case VIJ::JAG:   Self->InnerJoin = agg::inner_jag; break;
-      case VIJ::INHERIT: Self->InnerJoin = agg::inner_inherit; break;
-      default: return ERR::InvalidValue;
-   }
+   Self->InnerJoin = Value;
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
@@ -1648,25 +1600,9 @@ of a stroked path.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_LineCap(extVector *Self, VLC *Value)
-{
-   if (Self->LineCap IS agg::butt_cap)         *Value = VLC::BUTT;
-   else if (Self->LineCap IS agg::square_cap)  *Value = VLC::SQUARE;
-   else if (Self->LineCap IS agg::round_cap)   *Value = VLC::ROUND;
-   else if (Self->LineCap IS agg::inherit_cap) *Value = VLC::INHERIT;
-   else *Value = VLC::NIL;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_LineCap(extVector *Self, VLC Value)
 {
-   switch(Value) {
-      case VLC::BUTT:    Self->LineCap = agg::butt_cap; break;
-      case VLC::SQUARE:  Self->LineCap = agg::square_cap; break;
-      case VLC::ROUND:   Self->LineCap = agg::round_cap; break;
-      case VLC::INHERIT: Self->LineCap = agg::inherit_cap; break;
-      default: return ERR::InvalidValue;
-   }
+   Self->LineCap = Value;
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
@@ -1681,30 +1617,9 @@ that are being stroked.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_LineJoin(extVector *Self, VLJ *Value)
-{
-   if (Self->LineJoin IS agg::miter_join_revert) *Value = VLJ::MITER;
-   else if (Self->LineJoin IS agg::round_join)   *Value = VLJ::ROUND;
-   else if (Self->LineJoin IS agg::bevel_join)   *Value = VLJ::BEVEL;
-   else if (Self->LineJoin IS agg::inherit_join) *Value = VLJ::INHERIT;
-   else if (Self->LineJoin IS agg::miter_join)   *Value = VLJ::MITER_SMART;
-   else if (Self->LineJoin IS agg::miter_join_round)  *Value = VLJ::MITER_ROUND;
-   else *Value = VLJ::NIL;
-
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_LineJoin(extVector *Self, VLJ Value)
 {
-   switch (Value) {
-      case VLJ::MITER:        Self->LineJoin = agg::miter_join_revert; break;
-      case VLJ::ROUND:        Self->LineJoin = agg::round_join; break;
-      case VLJ::BEVEL:        Self->LineJoin = agg::bevel_join; break;
-      case VLJ::MITER_SMART:  Self->LineJoin = agg::miter_join; break;
-      case VLJ::MITER_ROUND:  Self->LineJoin = agg::miter_join_round; break;
-      case VLJ::INHERIT:      Self->LineJoin = agg::inherit_join; break;
-      default: return ERR::InvalidValue;
-   }
+   Self->LineJoin = Value;
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
@@ -2207,12 +2122,6 @@ the ~ReadPainter() function in the Vector module.  Please refer to it for furthe
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Stroke(extVector *Self, std::string_view &Value)
-{
-   Value = Self->StrokeString;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
 {
    Self->StrokeString.clear();
@@ -2277,12 +2186,6 @@ rendering.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_StrokeOpacity(extVector *Self, double *Value)
-{
-   *Value = Self->StrokeOpacity;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_StrokeOpacity(extVector *Self, double Value)
 {
    if ((Value >= 0) and (Value <= 1.0)) {
@@ -2306,13 +2209,16 @@ The size of the stroke is also affected by scaling factors imposed by transforms
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_StrokeWidth(extVector *Self, Unit *Value)
+static ERR VECTOR_GET_StrokeWidth(extVector *Self, Unit &Value)
 {
-   if (Value->scaled()) {
-      if (Self->ScaledStrokeWidth) Value->set(Self->StrokeWidth * 100.0);
-      else Value->set(0);
+   if (Value.scaled()) {
+      if (Self->StrokeWidth.scaled()) Value = Self->StrokeWidth;
+      else {
+         const auto diagonal = get_parent_diagonal(Self) * INV_SQRT2;
+         Value = Unit((diagonal > 0.0) ? double(Self->StrokeWidth) / diagonal : 0.0, FD_SCALED);
+      }
    }
-   else Value->set(Self->fixed_stroke_width());
+   else Value = Unit(Self->fixed_stroke_width());
 
    return ERR::Okay;
 }
@@ -2321,7 +2227,6 @@ static ERR VECTOR_SET_StrokeWidth(extVector *Self, Unit &Value)
 {
    if ((Value >= 0.0) and (Value <= 2000.0)) {
       Self->StrokeWidth = Value;
-      Self->ScaledStrokeWidth = Value.scaled();
       Self->Stroked = Self->is_stroked();
       mark_dirty(Self, RC::FINAL_PATH); // Not really a path change, but needed for some dependent code like clip-masks.
       return ERR::Okay;
@@ -2456,59 +2361,13 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
 
 double extVector::fixed_stroke_width()
 {
-   if (this->ScaledStrokeWidth) {
+   if (this->StrokeWidth.scaled()) {
       return get_parent_diagonal(this) * INV_SQRT2 * this->StrokeWidth;
    }
    else return this->StrokeWidth;
 }
 
 //********************************************************************************************************************
-
-static const FieldDef clMorphFlags[] = {
-   { "Stretch",     VMF::STRETCH },
-   { "AutoSpacing", VMF::AUTO_SPACING },
-   { "XMin",        VMF::X_MIN },
-   { "XMid",        VMF::X_MID },
-   { "XMax",        VMF::X_MAX },
-   { "YMin",        VMF::Y_MIN },
-   { "YMid",        VMF::Y_MID },
-   { "YMax",        VMF::Y_MAX },
-   { nullptr, 0 }
-};
-
-static const FieldDef clLineJoin[] = {
-   { "Miter",      VLJ::MITER },
-   { "Round",      VLJ::ROUND },
-   { "Bevel",      VLJ::BEVEL },
-   { "MiterSmart", VLJ::MITER_SMART },
-   { "MiterRound", VLJ::MITER_ROUND },
-   { "Inherit",    VLJ::INHERIT },
-   { nullptr, 0 }
-};
-
-static const FieldDef clLineCap[] = {
-   { "Butt",    VLC::BUTT },
-   { "Square",  VLC::SQUARE },
-   { "Round",   VLC::ROUND },
-   { "Inherit", VLC::INHERIT },
-   { nullptr, 0 }
-};
-
-static const FieldDef clInnerJoin[] = {
-   { "Miter",   VIJ::MITER },
-   { "Round",   VIJ::ROUND },
-   { "Bevel",   VIJ::BEVEL },
-   { "Jag",     VIJ::JAG },
-   { "Inherit", VIJ::INHERIT },
-   { nullptr, 0 }
-};
-
-static const FieldDef clFillRule[] = {
-   { "EvenOdd", VFR::EVEN_ODD },
-   { "NonZero", VFR::NON_ZERO },
-   { "Inherit", VFR::INHERIT },
-   { nullptr, 0 }
-};
 
 #include "vector_def.c"
 
@@ -2519,8 +2378,8 @@ static const FieldArray clVectorFields[] = {
    { "Prev",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Prev, CLASSID::VECTOR },
    { "Parent",          FDF_OBJECT|FD_R },
    { "Matrices",        FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "VectorMatrix" },
-   { "StrokeOpacity",   FDF_DOUBLE|FDF_RW|FDF_PURE, VECTOR_GET_StrokeOpacity, VECTOR_SET_StrokeOpacity },
-   { "FillOpacity",     FDF_DOUBLE|FDF_RW|FDF_PURE, VECTOR_GET_FillOpacity, VECTOR_SET_FillOpacity },
+   { "StrokeOpacity",   FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_StrokeOpacity },
+   { "FillOpacity",     FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_FillOpacity },
    { "Opacity",         FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_Opacity },
    { "MiterLimit",      FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_MiterLimit },
    { "InnerMiterLimit", FDF_DOUBLE|FD_RW },
@@ -2531,30 +2390,31 @@ static const FieldArray clVectorFields[] = {
    { "PathQuality",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorPathQuality },
    { "ColourSpace",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorColourSpace },
    { "PathTimestamp",   FDF_INT|FDF_R },
+   // Directly accessible private fields
+   { "Stroke",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Stroke },
+   { "Fill",         FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Fill },
+   { "Filter",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Filter },
+   { "FillRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_FillRule, &clVectorVFR },
+   { "ClipRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_ClipRule, &clVectorVFR },
+   { "LineJoin",     FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineJoin, &clVectorVLJ },
+   { "LineCap",      FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineCap, &clVectorVLC },
+   { "InnerJoin",    FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_InnerJoin, &clVectorVIJ },
    // Virtual fields
-   { "ClipRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW,  VECTOR_GET_ClipRule, VECTOR_SET_ClipRule, &clFillRule },
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
-   { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                    VECTOR_GET_DisplayScale },
-   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Mask, VECTOR_SET_Mask },
-   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Morph, VECTOR_SET_Morph },
-   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
-   { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE,        VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clMorphFlags },
-   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,             VECTOR_GET_NumericID, VECTOR_SET_NumericID },
-   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_SID, VECTOR_SET_SID },
-   { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,                  nullptr, VECTOR_SET_ResizeEvent },
-   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       VECTOR_GET_Sequence },
-   { "Stroke",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Stroke, VECTOR_SET_Stroke },
-   { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,           VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
-   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
-   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Transition, VECTOR_SET_Transition },
-   { "Fill",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Fill, VECTOR_SET_Fill },
-   { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,          VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },
-   { "FillRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  VECTOR_GET_FillRule, VECTOR_SET_FillRule, &clFillRule },
-   { "Filter",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Filter, VECTOR_SET_Filter },
-   { "LineJoin",     FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineJoin, VECTOR_SET_LineJoin, &clLineJoin },
-   { "LineCap",      FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineCap, VECTOR_SET_LineCap, &clLineCap },
-   { "InnerJoin",    FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_InnerJoin, VECTOR_SET_InnerJoin, &clInnerJoin },
-   { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,               VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
+   { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
+   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Mask, VECTOR_SET_Mask },
+   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Morph, VECTOR_SET_Morph },
+   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
+   { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE,  VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clVectorVMF },
+   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,       VECTOR_GET_NumericID, VECTOR_SET_NumericID },
+   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, VECTOR_GET_SID, VECTOR_SET_SID },
+   { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
+   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
+   { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
+   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE,      VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
+   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Transition, VECTOR_SET_Transition },
+   { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,    VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },
+   { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,         VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
    END_FIELD
 };
 
