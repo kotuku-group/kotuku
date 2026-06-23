@@ -127,10 +127,11 @@ static std::string websocket_base64(std::span<const uint8_t> Input)
    std::array<char, 128> output = {};
    kt::BASE64ENCODE state;
 
-   int written = kt::Base64Encode(&state, Input.data(), int(Input.size()), output.data(), int(output.size()));
+   std::string_view input_view((const char *)Input.data(), Input.size());
+   int written = kt::Base64Encode(&state, input_view, output.data(), int(output.size()));
    if (written <= 0) return {};
 
-   int final = kt::Base64Encode(&state, nullptr, 0, output.data() + written, int(output.size()) - written);
+   int final = kt::Base64Encode(&state, {}, output.data() + written, int(output.size()) - written);
    if (final <= 0) return {};
 
    std::string result(output.data(), size_t(written + final));
@@ -184,8 +185,7 @@ static bool websocket_key_is_valid(std::string_view Key)
    kt::BASE64DECODE state;
    int written = 0;
 
-   std::string key_copy(Key);
-   if (kt::Base64Decode(&state, key_copy.c_str(), int(key_copy.size()), decoded.data(), &written) != ERR::Okay) {
+   if (kt::Base64Decode(&state, Key, decoded.data(), &written) != ERR::Okay) {
       return false;
    }
 

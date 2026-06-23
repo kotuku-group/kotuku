@@ -2068,7 +2068,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width
             int size = strlen(val);
             if (!AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&output)) {
                int written;
-               if (!(error = kt::Base64Decode(&state, val, size, output, &written))) {
+               if (!(error = kt::Base64Decode(&state, std::string_view(val, size), output, &written))) {
                   Path = "temp:svg.img";
                   if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
                      int result;

@@ -9,10 +9,10 @@ typedef enum { step_A=0, step_B, step_C } base64_encodestep;
 static const char * encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static const char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
 
-static int base64_decode_block(CSTRING, int, char *, BASE64DECODE *);
-static int base64_encode_block(CSTRING, int, char *, BASE64ENCODE *);
+static int base64_decode_block(std::string_view, char *, BASE64DECODE *);
+static int base64_encode_block(std::string_view, char *, BASE64ENCODE *);
 static int base64_encoded_size(const BASE64ENCODE *, int);
-static bool base64_valid_input(CSTRING, int);
+static bool base64_valid_input(std::string_view);
 
 inline int base64_decode_value(int value_in)
 {
@@ -35,17 +35,16 @@ Base64Encode: Encodes a binary source into a base 64 string.
 This is a state-based function that will encode raw data and output it as base-64 encoded text.  To use, the `State`
 structure must initially be set to zero (automatic if using C++).  Call this function repeatedly with new Input data
 and it will be written to the supplied `Output` pointer.  Once all incoming data has been consumed, call this function
-a final time with an `Input` of `NULL` and InputSize of zero.
+a final time with an empty `Input`.
 
-It is required that the `Output` is sized to at least `(4 / 3) + 1` of `InputSize` when encoding.  For the final output,
-the size must be at least 6 bytes.
+It is required that the `Output` is sized to at least `(Input.size() * 4 / 3) + 1` when encoding.  For the final
+output, the size must be at least 6 bytes.
 
 -INPUT-
 resource(BASE64ENCODE) State: Pointer to an BASE64ENCODE structure, initialised to zero.
-buf(cptr) Input:    The binary data to encode.
-bufsize InputSize:  The amount of data to encode.  Set to zero to finalise the output.
+strview Input:    The binary data to encode.
 buf(str) Output:    Destination buffer for the encoded output.
-bufsize OutputSize: Size of the destination buffer.  Must be at least `(InputSize * 4 / 3) + 1`.
+bufsize OutputSize: Size of the destination buffer.  Must be at least `(Input.size() * 4 / 3) + 1`.
 
 -RESULT-
 int: The total number of bytes output is returned.
@@ -55,14 +54,13 @@ mutates-input
 
 **********************************************************************************************************************/
 
-int Base64Encode(BASE64ENCODE *State, const void *Input, int InputSize, STRING Output, int OutputSize)
+int Base64Encode(BASE64ENCODE *State, std::string_view Input, STRING Output, int OutputSize)
 {
-   if ((!State) or (!Output) or (OutputSize < 1) or (InputSize < 0)) return 0;
+   if ((!State) or (!Output) or (OutputSize < 1)) return 0;
 
-   if (InputSize > 0) {
-      if (!Input) return 0;
-      if (OutputSize < base64_encoded_size(State, InputSize)) return 0;
-      return base64_encode_block((CSTRING)Input, InputSize, Output, State);
+   if (!Input.empty()) {
+      if (OutputSize < base64_encoded_size(State, int(Input.size()))) return 0;
+      return base64_encode_block(Input, Output, State);
    }
    else { // Final output once all input consumed.
       if (OutputSize >= 6) {
@@ -120,10 +118,10 @@ static int base64_encoded_size(const BASE64ENCODE *State, int length_in)
    return total;
 }
 
-static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_out, BASE64ENCODE *State)
+static int base64_encode_block(std::string_view plaintext_in, char *code_out, BASE64ENCODE *State)
 {
-   const char *plainchar = plaintext_in;
-   const char *const plaintextend = plaintext_in + length_in;
+   const char *plainchar = plaintext_in.data();
+   const char *const plaintextend = plaintext_in.data() + plaintext_in.size();
    char *codechar = code_out;
    char fragment;
 
@@ -188,8 +186,7 @@ To use this function effectively, call it repeatedly in a loop until all of the 
 
 -INPUT-
 resource(BASE64DECODE) State: Pointer to a BASE64DECODE structure, initialised to zero.
-cstr Input: A base 64 input string.  The pointer will be updated when the function returns.
-bufsize InputSize: The size of the `Input` string.
+strview Input: A base 64 input string.
 ^buf(ptr) Output:  The output buffer.  The size of the buffer must be greater or equal to the size of Input.
 &int Written: The total number of bytes written to `Output` is returned here.
 
@@ -205,11 +202,11 @@ mutates-input
 
 **********************************************************************************************************************/
 
-ERR Base64Decode(BASE64DECODE *State, CSTRING Input, int InputSize, APTR Output, int *Written)
+ERR Base64Decode(BASE64DECODE *State, std::string_view Input, APTR Output, int *Written)
 {
-   if ((!State) or (!Input) or (!Output) or (!Written)) return ERR::NullArgs;
-   if (InputSize < 4) return ERR::Args;
-   if (!base64_valid_input(Input, InputSize)) return ERR::Args;
+   if ((!State) or (Input.empty()) or (!Output) or (!Written)) return ERR::NullArgs;
+   if (Input.size() < 4) return ERR::Args;
+   if (!base64_valid_input(Input)) return ERR::Args;
 
    if (!State->Initialised) {
       State->Initialised = true;
@@ -217,17 +214,16 @@ ERR Base64Decode(BASE64DECODE *State, CSTRING Input, int InputSize, APTR Output,
       State->PlainChar   = 0;
    }
 
-   *Written = base64_decode_block(Input, InputSize, (char *)Output, State);
+   *Written = base64_decode_block(Input, (char *)Output, State);
    return ERR::Okay;
 }
 
-static bool base64_valid_input(CSTRING Input, int InputSize)
+static bool base64_valid_input(std::string_view Input)
 {
    bool pad_found = false;
    int pad_count  = 0;
 
-   for (int i=0; i < InputSize; i++) {
-      const auto c = Input[i];
+   for (const auto c : Input) {
 
       if (((c >= 'A') and (c <= 'Z')) or ((c >= 'a') and (c <= 'z')) or ((c >= '0') and (c <= '9'))) {
          if (pad_found) return false;
@@ -256,9 +252,10 @@ static bool base64_valid_input(CSTRING Input, int InputSize)
    return true;
 }
 
-static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_out, BASE64DECODE *State)
+static int base64_decode_block(std::string_view code_in, char * plaintext_out, BASE64DECODE *State)
 {
-   const char* codechar = code_in;
+   const char* codechar = code_in.data();
+   const char* const codeend = code_in.data() + code_in.size();
    char* plainchar = plaintext_out;
    char fragment;
 
@@ -268,7 +265,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
       while (1) {
          case step_a:
             do {
-               if (codechar IS code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_a;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -279,7 +276,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_b:
             do {
-               if (codechar IS code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_b;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -291,7 +288,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_c:
             do {
-               if (codechar IS code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_c;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -303,7 +300,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_d:
             do {
-               if (codechar IS code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_d;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;

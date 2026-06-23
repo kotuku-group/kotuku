@@ -818,7 +818,7 @@ static ERR HTTP_Activate(extHTTP *Self)
             kt::BASE64ENCODE state;
 
             cmd << "Authorization: Basic ";
-            auto len = kt::Base64Encode(&state, buffer.c_str(), buffer.size(), output.data(), buffer.length() * 2);
+            auto len = kt::Base64Encode(&state, buffer, output.data(), int(buffer.length() * 2));
             cmd.write(output.data(), len);
             cmd << CRLF;
          }
