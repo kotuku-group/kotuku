@@ -491,86 +491,6 @@ enum class PTC : int {
    END = 25,
 };
 
-enum class DMF : uint32_t {
-   NIL = 0,
-   SCALED_X = 0x00000001,
-   SCALED_Y = 0x00000002,
-   FIXED_X = 0x00000004,
-   FIXED_Y = 0x00000008,
-   SCALED_X_OFFSET = 0x00000010,
-   SCALED_Y_OFFSET = 0x00000020,
-   FIXED_X_OFFSET = 0x00000040,
-   FIXED_Y_OFFSET = 0x00000080,
-   FIXED_HEIGHT = 0x00000100,
-   FIXED_WIDTH = 0x00000200,
-   SCALED_HEIGHT = 0x00000400,
-   SCALED_WIDTH = 0x00000800,
-   FIXED_DEPTH = 0x00001000,
-   SCALED_DEPTH = 0x00002000,
-   FIXED_Z = 0x00004000,
-   SCALED_Z = 0x00008000,
-   SCALED_RADIUS_X = 0x00010000,
-   FIXED_RADIUS_X = 0x00020000,
-   SCALED_CENTER_X = 0x00040000,
-   SCALED_CENTER_Y = 0x00080000,
-   FIXED_CENTER_X = 0x00100000,
-   FIXED_CENTER_Y = 0x00200000,
-   STATUS_CHANGE_H = 0x00400000,
-   STATUS_CHANGE_V = 0x00800000,
-   SCALED_RADIUS_Y = 0x01000000,
-   FIXED_RADIUS_Y = 0x02000000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(DMF)
-
-// Compass directions.
-
-enum class DRL : int {
-   NIL = 0,
-   NORTH = 0,
-   UP = 0,
-   SOUTH = 1,
-   DOWN = 1,
-   EAST = 2,
-   RIGHT = 2,
-   WEST = 3,
-   LEFT = 3,
-   NORTH_EAST = 4,
-   NORTH_WEST = 5,
-   SOUTH_EAST = 6,
-   SOUTH_WEST = 7,
-};
-
-// Generic flags for controlling movement.
-
-enum class MOVE : uint32_t {
-   NIL = 0,
-   DOWN = 0x00000001,
-   UP = 0x00000002,
-   LEFT = 0x00000004,
-   RIGHT = 0x00000008,
-   ALL = 0x0000000f,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(MOVE)
-
-// Edge flags
-
-enum class EDGE : uint32_t {
-   NIL = 0,
-   TOP = 0x00000001,
-   LEFT = 0x00000002,
-   RIGHT = 0x00000004,
-   BOTTOM = 0x00000008,
-   TOP_LEFT = 0x00000010,
-   TOP_RIGHT = 0x00000020,
-   BOTTOM_LEFT = 0x00000040,
-   BOTTOM_RIGHT = 0x00000080,
-   ALL = 0x000000ff,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(EDGE)
-
 // Universal values for alignment of graphics and text
 
 enum class ALIGN : uint32_t {
@@ -586,25 +506,6 @@ enum class ALIGN : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(ALIGN)
-
-// Universal values for alignment of graphic layouts in documents.
-
-enum class LAYOUT : uint32_t {
-   NIL = 0,
-   SQUARE = 0x00000000,
-   TIGHT = 0x00000001,
-   LEFT = 0x00000002,
-   RIGHT = 0x00000004,
-   WIDE = 0x00000006,
-   BACKGROUND = 0x00000008,
-   FOREGROUND = 0x00000010,
-   EMBEDDED = 0x00000020,
-   LOCK = 0x00000040,
-   IGNORE_CURSOR = 0x00000080,
-   TILE = 0x00000100,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(LAYOUT)
 
 // Script flags
 
@@ -1397,62 +1298,6 @@ constexpr RGB8::RGB8(FRGB frgb) noexcept {
    Alpha = uint8_t((frgb.Alpha >= 1.0f) ? 255 : (frgb.Alpha < 0.0f) ? 0 : frgb.Alpha * 255.0);
 }
 
-struct CIEXYZ {
-   float X;        // X is a mix of the three CIE RGB curves chosen to be non-negative
-   float Y;        // Luminance value from 0 to 1.0
-   float Z;        // Z is quasi-equal to blue
-   float Alpha;    // Alpha blending value from 0 to 1.0
-   constexpr CIEXYZ() noexcept = default;
-   constexpr CIEXYZ(float x, float y, float z, float a = 1.0) noexcept
-     : X(x), Y(y), Z(z), Alpha(a) { }
-
-   // Convert sRGB (gamma-encoded, 0-1) to CIE XYZ via linear sRGB.
-
-   inline CIEXYZ(const FRGB &RGB) {
-      auto to_linear = [](const double V) -> double {
-          return (V <= 0.04045) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
-      };
-      const double lr = to_linear(RGB.Red);
-      const double lg = to_linear(RGB.Green);
-      const double lb = to_linear(RGB.Blue);
-      X = (0.4124564 * lr) + (0.3575761 * lg) + (0.1804375 * lb);
-      Y = (0.2126729 * lr) + (0.7151522 * lg) + (0.0721750 * lb);
-      Z = (0.0193339 * lr) + (0.1191920 * lg) + (0.9505041 * lb);
-      Alpha = RGB.Alpha;
-   }
-
-   inline CIEXYZ(const RGB8 &RGB) {
-      auto to_linear = [](const double V) -> double {
-          return (V <= 0.04045) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
-      };
-      const double lr = to_linear(RGB.Red / 255.0);
-      const double lg = to_linear(RGB.Green / 255.0);
-      const double lb = to_linear(RGB.Blue / 255.0);
-      X = (0.4124564 * lr) + (0.3575761 * lg) + (0.1804375 * lb);
-      Y = (0.2126729 * lr) + (0.7151522 * lg) + (0.0721750 * lb);
-      Z = (0.0193339 * lr) + (0.1191920 * lg) + (0.9505041 * lb);
-      Alpha = RGB.Alpha / 255.0;
-   }
-
-   // Convert CIE XYZ to sRGB via the inverse sRGB matrix and gamma encoding
-
-   inline FRGB toFRGB() const {
-      auto linear_to_srgb = [](double V) -> float {
-         if (V >= 0.0) return float((V <= 0.0031308) ? 12.92 * V : 1.055 * pow(V, 1.0 / 2.4) - 0.055);
-         return float(-1.055 * pow(-V, 1.0 / 2.4) + 0.055);
-      };
-      double lr =  (3.2404542 * X) - (1.5371385 * Y) - (0.4985314 * Z);
-      double lg = (-0.9692660 * X) + (1.8760108 * Y) + (0.0415560 * Z);
-      double lb =  (0.0556434 * X) - (0.2040259 * Y) + (1.0572252 * Z);
-      return FRGB(linear_to_srgb(lr), linear_to_srgb(lg), linear_to_srgb(lb), float(Alpha));
-   }
-
-   inline RGB8 toRGB() const {
-      auto frgb = toFRGB();
-      return RGB8(frgb.Red * 255, frgb.Green * 255, frgb.Blue * 255, frgb.Alpha * 255);
-   }
-};
-
 struct RGB16 {
    uint16_t Red;    // Red component value
    uint16_t Green;  // Green component value
@@ -1840,6 +1685,8 @@ struct Unit {
       Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { read(String, FontSize, DPI); }
 
    constexpr operator double() const { return Value; }
+   constexpr int round() const { return int(Value + 0.5); }
+
    double operator*() const { return Value; };
 
    constexpr void set(const double pValue) { Value = pValue; }
@@ -1847,7 +1694,7 @@ struct Unit {
    constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
-   inline void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
+   void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
       Type = 0;
       const auto start = String.find_first_not_of(" \n\r\t");
       if (start != std::string::npos) String.remove_prefix(start);

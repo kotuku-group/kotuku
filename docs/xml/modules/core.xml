@@ -2246,58 +2246,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="WRITE">Device is writeable</const>
     </constants>
 
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
-    </constants>
-
-    <constants lookup="DRL" comment="Compass directions.">
-      <const name="EAST"/>
-      <const name="NORTH"/>
-      <const name="NORTH_EAST"/>
-      <const name="NORTH_WEST"/>
-      <const name="SOUTH"/>
-      <const name="SOUTH_EAST"/>
-      <const name="SOUTH_WEST"/>
-      <const name="WEST"/>
-    </constants>
-
-    <constants lookup="EDGE" comment="Edge flags">
-      <const name="ALL"/>
-      <const name="BOTTOM"/>
-      <const name="BOTTOM_LEFT"/>
-      <const name="BOTTOM_RIGHT"/>
-      <const name="LEFT"/>
-      <const name="RIGHT"/>
-      <const name="TOP"/>
-      <const name="TOP_LEFT"/>
-      <const name="TOP_RIGHT"/>
-    </constants>
-
     <constants lookup="EVG" comment="Event categories.">
       <const name="ANDROID">Android specific events that do not already fit existing categories.</const>
       <const name="APP">Custom event dispatched from an application</const>
@@ -2659,20 +2607,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="SHIFT">Synonym for <code>L_SHIFT | R_SHIFT</code></const>
     </constants>
 
-    <constants lookup="LAYOUT" comment="Universal values for alignment of graphic layouts in documents.">
-      <const name="BACKGROUND">Graphic is placed behind text.  The text will not be wrapped around the object</const>
-      <const name="EMBEDDED">Graphic is embedded in the text stream (treated as a character).  The height of the line can be extended to match the height of the graphic in this mode.</const>
-      <const name="FOREGROUND">Graphic is placed in front of the text.  The text will not be wrapped around the object</const>
-      <const name="IGNORE_CURSOR">The object has a fixed X/Y position, unrelated to the cursor</const>
-      <const name="LEFT">The text boundary is extended to the left edge of the page.</const>
-      <const name="LOCK">Lock the position of the graphic to the top left of the view and not the scrolling position of the page.</const>
-      <const name="RIGHT">The text boundary is extended to the right edge of the page.</const>
-      <const name="SQUARE">The default.  Text will clip around the image's border</const>
-      <const name="TIGHT">Text wraps to the shape of the image (alpha blended/masked images only)</const>
-      <const name="TILE">The graphic will be tiled.  Tiled graphics also meet the <code>BACKGROUND</code> criteria (no wrapping).</const>
-      <const name="WIDE">The text boundary is extended to the left and right edges of the page.</const>
-    </constants>
-
     <constants lookup="LDF" comment="Flags for LoadFile()">
       <const name="CHECK_EXISTS">Limits the routine to checking the file cache for the existence of the file.  If found, the relevant cache entry is returned. The open count is not incremented by this action (it is therefore unnecessary to follow-up with a call to UnloadFile()).  If no up-to-date cache entry is available, <code>ERR::Search</code> is returned.</const>
     </constants>
@@ -2730,14 +2664,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="LINK_LIBRARY">Module refers to a symbolic link library (e.g. libz DLL or SO)</const>
       <const name="STATIC">This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.</const>
       <const name="SYSTEM_PROBE">Indicates that the module is being probed.  Do not use outside of the core library.</const>
-    </constants>
-
-    <constants lookup="MOVE" comment="Generic flags for controlling movement.">
-      <const name="ALL">Synonym for <code>DOWN | UP | LEFT | RIGHT</code></const>
-      <const name="DOWN"/>
-      <const name="LEFT"/>
-      <const name="RIGHT"/>
-      <const name="UP"/>
     </constants>
 
     <constants lookup="MSF" comment="Message flags.">
@@ -3048,13 +2974,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Size" type="INT">Byte-size of the structure for this action.</field>
       <field name="Name" type="CSTRING">Name of the action.</field>
       <field name="Args" type="const struct FunctionField *">List of fields that are passed to this action.</field>
-    </struct>
-
-    <struct name="CIEXYZ" comment="Colour structure for CIE X, Y and Z components.">
-      <field name="X" type="FLOAT">X is a mix of the three CIE RGB curves chosen to be non-negative</field>
-      <field name="Y" type="FLOAT">Luminance value from 0 to 1.0</field>
-      <field name="Z" type="FLOAT">Z is quasi-equal to blue</field>
-      <field name="Alpha" type="FLOAT">Alpha blending value from 0 to 1.0</field>
     </struct>
 
     <struct name="ChildEntry" comment="Structure for ListChildren() function">

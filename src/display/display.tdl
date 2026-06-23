@@ -588,18 +588,23 @@ module({
     { id=5, name='SetOpacity' },
     { id=6, name='AddCallback' },
     { id=7, name='Minimise' },
-    { id=8, name='ResetDimensions' },
-    { id=9, name='RemoveCallback' },
-    { id=10, name='ScheduleRedraw' }
+    { id=8, name='RemoveCallback' },
+    { id=9, name='ScheduleRedraw' }
   })
 
-  klass('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'SWIN', 'InputEvent' }, extended=true, src={
+  klass('Surface', { references={ 'JTYPE', 'JET', 'SWIN', 'InputEvent' }, extended=true, src={
       'class_surface/class_surface.cpp',
       'class_surface/surface_dimensions.cpp',
       'class_surface/surface_drawing.cpp',
       'class_surface/surface_fields.cpp',
       'class_surface/surface_resize.cpp'
     }, output='class_surface/surface_def.c' }, [[
+    unit X                # Horizontal coordinate
+    unit Y                # Vertical coordinate
+    unit Width            # Width
+    unit Height           # Height
+    unit XOffset
+    unit YOffset
     oid Drag              # Drag the object that this field points to
     oid Buffer            # Buffer bitmap (backing store)
     oid Parent            # Graphical container of the Surface object, if any
@@ -610,13 +615,7 @@ module({
     int MaxHeight         # Maximum height setting
     oid Display           # Refers to the Display object that is managing the surface's graphics.
     int(RNF) Flags        # Special flags
-    int X                 # Fixed horizontal coordinate
-    int Y                 # Fixed vertical coordinate
-    int Width             # Fixed width
-    int Height            # Fixed height
     oid Root              # Surface that is acting as a root for many surface children (useful when applying translucency)
-    int(ALIGN) Align      # Alignment flags
-    int(DMF) Dimensions   # Dimension flags
     int(DRAG) DragStatus  # Indicates the draggable state when dragging is enabled.
     int(PTC) Cursor       # The preferred cursor image to use when the pointer is over the surface
     struct(RGB8) Colour   # Background colour specification

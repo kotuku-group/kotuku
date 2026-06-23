@@ -325,13 +325,8 @@ class extSurface : public objSurface {
    int64_t    LastRedimension;      // Timestamp of the last redimension call
    objBitmap *Bitmap;
    SurfaceCallback *Callback;
-   APTR      Data;
+   APTR     Data;
    double   Opacity;
-   int      XOffset, YOffset;     // Fixed horizontal and vertical offset
-   double   XOffsetPercent;       // Scaled horizontal offset
-   double   YOffsetPercent;       // Scaled vertical offset
-   double   WidthPercent, HeightPercent; // Scaled width and height
-   double   XPercent, YPercent;   // Scaled coordinate
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
    OBJECTID PrevModalID;          // Previous surface to have been modal
    OBJECTID BitmapOwnerID;        // The surface object that owns the root bitmap
@@ -342,6 +337,7 @@ class extSurface : public objSurface {
    SWIN     WindowType;           // See SWIN constants
    TIMER    RedrawTimer;          // For ScheduleRedraw()
    SurfaceCallback CallbackCache[3]; // For AddCallback()
+   int16_t FixedWidth, FixedHeight, FixedX, FixedY, FixedXO, FixedYO;
    uint16_t InheritedRoot:1;      // TRUE if the user set the RootLayer manually
    uint16_t ParentDefined:1;      // TRUE if the parent field was set manually
    uint16_t RedrawScheduled:1;
@@ -356,6 +352,21 @@ class extSurface : public objSurface {
    extSurface() {
       Opacity    = 1.0;
       WindowType = glpWindowType;
+   }
+
+   inline void setFixedPosition(int X, int Y) {
+      FixedX = std::clamp(X, -0x8000, 0x7fff);
+      FixedY = std::clamp(Y, -0x8000, 0x7fff);
+   }
+
+   inline void setFixedSize(int Width, int Height) {
+      FixedWidth  = std::clamp(Width, -0x8000, 0x7fff);
+      FixedHeight = std::clamp(Height, -0x8000, 0x7fff);
+   }
+
+   inline void setFixedArea(int X, int Y, int Width, int Height) {
+      setFixedPosition(X, Y);
+      setFixedSize(Width, Height);
    }
 };
 

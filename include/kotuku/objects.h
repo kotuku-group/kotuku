@@ -118,39 +118,6 @@ inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, con
 
 }
 
-namespace dmf { // Helper functions for DMF flags
-[[nodiscard]] inline bool has(DMF Value, DMF Flags) { return (Value & Flags) != DMF::NIL; }
-
-[[nodiscard]] inline bool hasX(DMF Value) { return (Value & DMF::FIXED_X) != DMF::NIL; }
-[[nodiscard]] inline bool hasY(DMF Value) { return (Value & DMF::FIXED_Y) != DMF::NIL; }
-[[nodiscard]] inline bool hasWidth(DMF Value) { return (Value & DMF::FIXED_WIDTH) != DMF::NIL; }
-[[nodiscard]] inline bool hasHeight(DMF Value) { return (Value & DMF::FIXED_HEIGHT) != DMF::NIL; }
-[[nodiscard]] inline bool hasXOffset(DMF Value) { return (Value & DMF::FIXED_X_OFFSET) != DMF::NIL; }
-[[nodiscard]] inline bool hasYOffset(DMF Value) { return (Value & DMF::FIXED_Y_OFFSET) != DMF::NIL; }
-[[nodiscard]] inline bool hasRadiusX(DMF Value) { return (Value & DMF::FIXED_RADIUS_X) != DMF::NIL; }
-[[nodiscard]] inline bool hasRadiusY(DMF Value) { return (Value & DMF::FIXED_RADIUS_Y) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledX(DMF Value) { return (Value & DMF::SCALED_X) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledY(DMF Value) { return (Value & DMF::SCALED_Y) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledWidth(DMF Value) { return (Value & DMF::SCALED_WIDTH) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledHeight(DMF Value) { return (Value & DMF::SCALED_HEIGHT) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledXOffset(DMF Value) { return (Value & DMF::SCALED_X_OFFSET) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledYOffset(DMF Value) { return (Value & DMF::SCALED_Y_OFFSET) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledCenterX(DMF Value) { return (Value & DMF::SCALED_CENTER_X) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledCenterY(DMF Value) { return (Value & DMF::SCALED_CENTER_Y) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledRadiusX(DMF Value) { return (Value & DMF::SCALED_RADIUS_X) != DMF::NIL; }
-[[nodiscard]] inline bool hasScaledRadiusY(DMF Value) { return (Value & DMF::SCALED_RADIUS_Y) != DMF::NIL; }
-
-[[nodiscard]] inline bool hasAnyHorizontalPosition(DMF Value) { return (Value & (DMF::FIXED_X|DMF::SCALED_X|DMF::FIXED_X_OFFSET|DMF::SCALED_X_OFFSET)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyVerticalPosition(DMF Value) { return (Value & (DMF::FIXED_Y|DMF::SCALED_Y|DMF::FIXED_Y_OFFSET|DMF::SCALED_Y_OFFSET)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyScaledRadius(DMF Value) { return (Value & (DMF::SCALED_RADIUS_X|DMF::SCALED_RADIUS_Y)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyX(DMF Value) { return (Value & (DMF::SCALED_X|DMF::FIXED_X)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyY(DMF Value) { return (Value & (DMF::SCALED_Y|DMF::FIXED_Y)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyWidth(DMF Value) { return (Value & (DMF::SCALED_WIDTH|DMF::FIXED_WIDTH)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyHeight(DMF Value) { return (Value & (DMF::SCALED_HEIGHT|DMF::FIXED_HEIGHT)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyXOffset(DMF Value) { return (Value & (DMF::SCALED_X_OFFSET|DMF::FIXED_X_OFFSET)) != DMF::NIL; }
-[[nodiscard]] inline bool hasAnyYOffset(DMF Value) { return (Value & (DMF::SCALED_Y_OFFSET|DMF::FIXED_Y_OFFSET)) != DMF::NIL; }
-}
-
 #define END_FIELD FieldArray(nullptr, 0)
 #define FDEF static const struct FunctionField
 

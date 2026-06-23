@@ -36,17 +36,17 @@ static ERR SURFACE_Redimension(extSurface *Self, struct acRedimension *Args)
 
    Self->LastRedimension = PreciseTime();
 
-   int oldx      = Self->X;
-   int oldy      = Self->Y;
-   int oldwidth  = Self->Width;
-   int oldheight = Self->Height;
+   int oldx      = Self->FixedX;
+   int oldy      = Self->FixedY;
+   int oldwidth  = Self->FixedWidth;
+   int oldheight = Self->FixedHeight;
 
    // Extract the new dimensions from the arguments
 
    int newx = int(Args->X);
    int newy = int(Args->Y);
-   int newwidth  = (!Args->Width) ? Self->Width : int(Args->Width);
-   int newheight = (!Args->Height) ? Self->Height : int(Args->Height);
+   int newwidth  = (not Args->Width) ? Self->FixedWidth : int(Args->Width);
+   int newheight = (not Args->Height) ? Self->FixedHeight : int(Args->Height);
 
    // Ensure that the requested width does not exceed minimum and maximum values
 
@@ -98,10 +98,12 @@ static ERR SURFACE_Resize(extSurface *Self, struct acResize *Args)
 {
    if (!Args) return ERR::NullArgs|ERR::Notified;
 
-   if (((!Args->Width) or (Args->Width IS Self->Width)) and
-       ((!Args->Height) or (Args->Height IS Self->Height))) return ERR::Okay|ERR::Notified;
+   if (((!Args->Width) or (int(Args->Width) IS Self->FixedWidth)) and
+       ((!Args->Height) or (int(Args->Height) IS Self->FixedHeight))) return ERR::Okay|ERR::Notified;
 
-   struct acRedimension redimension = { (double)Self->X, (double)Self->Y, 0, Args->Width, Args->Height, Args->Depth };
+   struct acRedimension redimension = {
+      (double)Self->FixedX, (double)Self->FixedY, 0, Args->Width, Args->Height, Args->Depth
+   };
    return Action(AC::Redimension, Self, &redimension)|ERR::Notified;
 }
 
@@ -151,8 +153,8 @@ static ERR SURFACE_SetDisplay(extSurface *Self, struct gfx::SetDisplay *Args)
 
    int newx = Args->X;
    int newy = Args->Y;
-   int newwidth  = (!Args->Width) ? Self->Width : Args->Width;
-   int newheight = (!Args->Height) ? Self->Height : Args->Height;
+   int newwidth  = (!Args->Width) ? Self->FixedWidth : int(Args->Width);
+   int newheight = (!Args->Height) ? Self->FixedHeight : int(Args->Height);
 
    //if ((newx IS Self->X) and (newy IS Self->Y) and (newwidth IS Self->Width) and (newheight IS Self->Height)) return ERR::Okay;
 
