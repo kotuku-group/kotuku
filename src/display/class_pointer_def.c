@@ -83,6 +83,7 @@ static const struct ActionArray clPointerActions[] = {
    { AC::Init, POINTER_Init },
    { AC::Move, POINTER_Move },
    { AC::MoveToPoint, POINTER_MoveToPoint },
+   { AC::NewObject, POINTER_NewObject },
    { AC::NewPlacement, POINTER_NewPlacement },
    { AC::Refresh, POINTER_Refresh },
    { AC::Reset, POINTER_Reset },

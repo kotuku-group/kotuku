@@ -671,7 +671,7 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
 
 //********************************************************************************************************************
 
-static ERR PTR_NewObject(extPointer *Self)
+static ERR POINTER_NewObject(extPointer *Self)
 {
    Self->CursorID = PTC::DEFAULT;
    Self->ClickSlop = 2;
@@ -1265,25 +1265,6 @@ FieldDef CursorLookup[] = {
    { nullptr, 0 }
 };
 
-static const ActionArray clPointerActions[] = {
-   { AC::DataFeed,     PTR_DataFeed },
-   { AC::Free,         PTR_Free },
-   { AC::Hide,         PTR_Hide },
-   { AC::Init,         PTR_Init },
-   { AC::Move,         PTR_Move },
-   { AC::MoveToPoint,  PTR_MoveToPoint },
-   { AC::NewObject,    PTR_NewObject },
-   { AC::Refresh,      PTR_Refresh },
-   { AC::Reset,        PTR_Reset },
-   { AC::SaveToObject, PTR_SaveToObject },
-   { AC::Show,         PTR_Show },
-   { AC::NIL, nullptr }
-};
-
-static const FieldDef clPointerFlags[] = {
-   { "Visible",  PF::VISIBLE },
-   { nullptr, 0 }
-};
 #include "class_pointer_def.c"
 
 static const FunctionField mthSetCursor[]     = { { "Surface", FD_INT }, { "Flags", FD_INT }, { "Cursor", FD_INT }, { "Name", FD_STRING }, { "Owner", FD_INT }, { "PreviousCursor", FD_INT|FD_RESULT }, { nullptr, 0 } };
