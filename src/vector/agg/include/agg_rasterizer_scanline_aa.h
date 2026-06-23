@@ -32,9 +32,8 @@ namespace agg
       return table;
    }();
 
-   // A pixel cell. There're no constructors defined and it was done
-   // intentionally in order to avoid extra overhead when allocating an
-   // array of cells.
+   // A pixel cell. There're no constructors defined and it was done intentionally in order to avoid extra
+   // overhead when allocating an array of cells.
 
    struct cell_aa {
       int x;

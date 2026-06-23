@@ -539,7 +539,7 @@
     <field>
       <name>MorphFlags</name>
       <comment>Optional flags that affect morphing.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VMF">VMF</type>
       <description>
 <types lookup="VMF"/>
@@ -554,17 +554,6 @@
       <description>
 <p>The Next value refers to the next vector in the branch.  If the value is <code>NULL</code>, the vector is positioned at the end of the branch.</p>
 <p>The Next value can be set to another vector at any time, on the condition that both vectors share the same owner.  If this is not true, change the current owner before setting the Next field.  Changing the Next value will result in updates to the <fl>Parent</fl> and <fl>Prev</fl> fields.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>NumericID</name>
-      <comment>A unique identifier for the vector.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the <fl>SID</fl> field if that has been defined previously.</p>
-<p>If NumericID is set by the client, then any value in <fl>SID</fl> will be immediately cleared.</p>
       </description>
     </field>
 
@@ -636,7 +625,7 @@
     <field>
       <name>SID</name>
       <comment>String identifier for a vector.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other circumstances.</p>
