@@ -82,7 +82,7 @@ void convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, 
    // 'stroke-linecap' set to 'square' or 'round' is stroked, but not stroked when 'stroke-linecap' is set to 'butt'.
 
    auto check_point = [&lp, &Vector](PathCommand &Cmd) {
-      if ((Cmd.AbsX IS lp.x) and (Cmd.AbsY IS lp.y) and Vector and (Vector->LineCap != agg::line_cap_e::butt_cap)) {
+      if ((Cmd.AbsX IS lp.x) and (Cmd.AbsY IS lp.y) and Vector and (Vector->LineCap != VLC::BUTT)) {
          Cmd.AbsX += 1.0e-10;
       }
    };

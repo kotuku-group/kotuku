@@ -13,48 +13,23 @@
 
 #include "agg_math.h"
 #include "agg_vertex_sequence.h"
+#include <kotuku/modules/vector.h>
 
 namespace agg
 {
-    enum line_cap_e
-    {
-        butt_cap = 1,
-        square_cap,
-        round_cap,
-        inherit_cap
-    };
-
-    enum line_join_e
-    {
-        miter_join         = 0,
-        miter_join_revert  = 1,
-        round_join         = 2,
-        bevel_join         = 3,
-        miter_join_round   = 4,
-        inherit_join = 5
-    };
-
-    enum inner_join_e {
-        inner_bevel = 1,
-        inner_miter,
-        inner_jag,
-        inner_round,
-        inner_inherit
-    };
-
     template<class VertexConsumer> class math_stroke {
     public:
         typedef typename VertexConsumer::value_type coord_type;
 
         math_stroke();
 
-        void line_cap(line_cap_e lc)     { m_line_cap = lc; }
-        void line_join(line_join_e lj)   { m_line_join = lj; }
-        void inner_join(inner_join_e ij) { m_inner_join = ij; }
+        void line_cap(VLC lc)   { m_line_cap = lc; }
+        void line_join(VLJ lj)  { m_line_join = lj; }
+        void inner_join(VIJ ij) { m_inner_join = ij; }
 
-        line_cap_e   line_cap()   const { return m_line_cap; }
-        line_join_e  line_join()  const { return m_line_join; }
-        inner_join_e inner_join() const { return m_inner_join; }
+        VLC line_cap()   const { return m_line_cap; }
+        VLJ line_join()  const { return m_line_join; }
+        VIJ inner_join() const { return m_inner_join; }
 
         void width(double w);
         void miter_limit(double ml) { m_miter_limit = ml; }
@@ -78,7 +53,7 @@ namespace agg
         void calc_arc(VertexConsumer& vc, double x, double y, double dx1, double dy1, double dx2, double dy2);
 
         void calc_miter(VertexConsumer& vc, const vertex_dist& v0, const vertex_dist& v1, const vertex_dist& v2,
-           double dx1, double dy1, double dx2, double dy2, line_join_e lj, double mlimit, double dbevel);
+           double dx1, double dy1, double dx2, double dy2, VLJ lj, double mlimit, double dbevel);
 
         double       m_width;
         double       m_width_abs;
@@ -87,9 +62,9 @@ namespace agg
         double       m_miter_limit;
         double       m_inner_miter_limit;
         double       m_approx_scale;
-        line_cap_e   m_line_cap;
-        line_join_e  m_line_join;
-        inner_join_e m_inner_join;
+        VLC m_line_cap;
+        VLJ m_line_join;
+        VIJ m_inner_join;
     };
 
     template<class VC> math_stroke<VC>::math_stroke() :
@@ -100,9 +75,9 @@ namespace agg
         m_miter_limit(4.0),
         m_inner_miter_limit(1.01),
         m_approx_scale(1.0),
-        m_line_cap(butt_cap),
-        m_line_join(miter_join),
-        m_inner_join(inner_miter)
+        m_line_cap(VLC::BUTT),
+        m_line_join(VLJ::MITER_SMART),
+        m_inner_join(VIJ::MITER)
     {
     }
 
@@ -160,7 +135,7 @@ namespace agg
     template<class VC>
     void math_stroke<VC>::calc_miter(VC& vc,
        const vertex_dist& v0, const vertex_dist& v1, const vertex_dist& v2,
-       double dx1, double dy1, double dx2, double dy2, line_join_e lj,
+       double dx1, double dy1, double dx2, double dy2, VLJ LineJoin,
        double mlimit, double dbevel)
     {
         double xi  = v1.x;
@@ -190,7 +165,7 @@ namespace agg
 
             double x2 = v1.x + dx1;
             double y2 = v1.y - dy1;
-            if ((cross_product(v0.x, v0.y, v1.x, v1.y, x2, y2) < 0.0) ==
+            if ((cross_product(v0.x, v0.y, v1.x, v1.y, x2, y2) < 0.0) IS
                 (cross_product(v1.x, v1.y, v2.x, v2.y, x2, y2) < 0.0)) {
                 // This case means that the next segment continues the previous one (straight line)
 
@@ -200,15 +175,15 @@ namespace agg
         }
 
         if (miter_limit_exceeded) {
-            switch(lj) {
-            case miter_join_revert:
+            switch(LineJoin) {
+            case VLJ::MITER:
                 // For the compatibility with SVG, PDF, etc, we use a simple bevel join instead of "smart" bevel
 
                 add_vertex(vc, v1.x + dx1, v1.y - dy1);
                 add_vertex(vc, v1.x + dx2, v1.y - dy2);
                 break;
 
-            case miter_join_round:
+            case VLJ::MITER_ROUND:
                 calc_arc(vc, v1.x, v1.y, dx1, -dy1, dx2, -dy2);
                 break;
 
@@ -246,8 +221,8 @@ namespace agg
         dx1 *= m_width;
         dy1 *= m_width;
 
-        if(m_line_cap != round_cap) {
-            if(m_line_cap == square_cap) {
+        if (m_line_cap != VLC::ROUND) {
+            if (m_line_cap IS VLC::SQUARE) {
                 dx2 = dy1 * m_width_sign;
                 dy2 = dx1 * m_width_sign;
             }
@@ -294,7 +269,7 @@ namespace agg
       vc.remove_all();
 
       double cp = cross_product(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-      if (cp != 0 and (cp > 0) == (m_width > 0)) {
+      if (cp != 0 and ((cp > 0) IS (m_width > 0))) {
          // Inner join
 
          double limit = ((len1 < len2) ? len1 : len2) / m_width_abs;
@@ -306,17 +281,17 @@ namespace agg
                add_vertex(vc, v1.x + dx2, v1.y - dy2);
                break;
 
-            case inner_miter:
-               calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, miter_join_revert, limit, 0);
+            case VIJ::MITER:
+               calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, VLJ::MITER, limit, 0);
                break;
 
-            case inner_jag:
-            case inner_round:
+            case VIJ::JAG:
+            case VIJ::ROUND:
                cp = (dx1-dx2) * (dx1-dx2) + (dy1-dy2) * (dy1-dy2);
                if (cp < len1 * len1 and cp < len2 * len2) {
-                  calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, miter_join_revert, limit, 0);
+                  calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, VLJ::MITER, limit, 0);
                }
-               else if (m_inner_join == inner_jag) {
+               else if (m_inner_join IS VIJ::JAG) {
                   add_vertex(vc, v1.x + dx1, v1.y - dy1);
                   add_vertex(vc, v1.x,       v1.y      );
                   add_vertex(vc, v1.x + dx2, v1.y - dy2);
@@ -338,7 +313,7 @@ namespace agg
             double dy = (dy1 + dy2) / 2;
             double dbevel = sqrt(dx * dx + dy * dy);
 
-            if(m_line_join == round_join or m_line_join == bevel_join) {
+            if((m_line_join IS VLJ::ROUND) or (m_line_join IS VLJ::BEVEL)) {
                 // This is an optimization that reduces the number of points in cases of almost collinear segments. If there's no
                 // visible difference between bevel and miter joins we'd rather use miter join because it adds only one point instead of two.
                 //
@@ -362,20 +337,20 @@ namespace agg
             }
 
             switch(m_line_join) {
-            case miter_join:
-            case miter_join_revert:
-            case miter_join_round:
-                calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, m_line_join, m_miter_limit, dbevel);
-                break;
+                case VLJ::MITER:
+                case VLJ::MITER_SMART:
+                case VLJ::MITER_ROUND:
+                    calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, m_line_join, m_miter_limit, dbevel);
+                    break;
 
-            case round_join:
-                calc_arc(vc, v1.x, v1.y, dx1, -dy1, dx2, -dy2);
-                break;
+                case VLJ::ROUND:
+                    calc_arc(vc, v1.x, v1.y, dx1, -dy1, dx2, -dy2);
+                    break;
 
-            default: // Bevel join
-                add_vertex(vc, v1.x + dx1, v1.y - dy1);
-                add_vertex(vc, v1.x + dx2, v1.y - dy2);
-                break;
+                default: // Bevel join
+                    add_vertex(vc, v1.x + dx1, v1.y - dy1);
+                    add_vertex(vc, v1.x + dx2, v1.y - dy2);
+                    break;
             }
         }
     }

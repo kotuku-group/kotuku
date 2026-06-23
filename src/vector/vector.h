@@ -684,13 +684,22 @@ class extVector : public objVector {
    public:
    using create = kt::Create<extVector>;
 
+   std::string StrokeString;
+   std::string FillString;
+   std::string FilterString;
+   VFR FillRule;
+   VFR ClipRule;
+   VLJ LineJoin;
+   VLC LineCap;
+   VIJ InnerJoin;
+
    extPainter Fill[2], Stroke;
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
    TClipRectangle<double> Bounds; // Must be calculated by GeneratePath() and called from calc_full_boundary()
-   double StrokeWidth;
+   Unit StrokeWidth;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
-   std::string FilterString, StrokeString, FillString;
+
    std::string SID;
    void   (*GeneratePath)(extVector *, agg::path_storage &);
    agg::rasterizer_scanline_aa<>     *StrokeRaster;
@@ -711,34 +720,28 @@ class extVector : public objVector {
    int   NumericID;
    int   PathLength;
    VMF   MorphFlags;
-   VFR   FillRule;
-   VFR   ClipRule;
    RC    Dirty;
    uint16_t  TabOrder;
    uint16_t  Isolated:1;
    uint16_t  DisableFillColour:1;  // Bitmap fonts set this to true in order to disable colour fills
    uint16_t  ButtonLock:1;
-   uint16_t  ScaledStrokeWidth:1;
    uint16_t  DisableHitTesting:1;
    uint16_t  ResizeSubscription:1;
    uint16_t  FGFill:1;
    uint16_t  Stroked:1;
    uint16_t  ValidState:1;         // Can be set to false during path generation if the shape is invalid
    uint16_t  RequiresRedraw:1;
-   agg::line_join_e  LineJoin;
-   agg::line_cap_e   LineCap;
-   agg::inner_join_e InnerJoin;
 
    extVector() {
       StrokeOpacity = 1.0;
       FillOpacity   = 1.0;
       Opacity       = 1.0;              // Overall opacity multiplier
       MiterLimit    = 4;                // SVG default is 4;
-      LineJoin      = agg::miter_join_revert;  // SVG default is miter; the 'revert' version matches SVG rules
-      LineCap       = agg::butt_cap;    // SVG default is butt
-      InnerJoin     = agg::inner_miter; // AGG only
+      LineJoin      = VLJ::MITER; // SVG default is miter
+      LineCap       = VLC::BUTT;  // SVG default is butt
+      InnerJoin     = VIJ::MITER; // AGG only
       NumericID     = 0x7fffffff;
-      StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
+      StrokeWidth   = Unit(1); // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
       Visibility    = VIS::VISIBLE;
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;
@@ -1668,25 +1671,25 @@ void configure_stroke(extVector &Vector, T &Stroke)
 {
    Stroke.width(Vector.fixed_stroke_width());
 
-   if (Vector.LineJoin)  Stroke.line_join(Vector.LineJoin); //miter, round, bevel
-   if (Vector.LineCap)   Stroke.line_cap(Vector.LineCap); // butt, square, round
-   if (Vector.InnerJoin) Stroke.inner_join(Vector.InnerJoin); // miter, round, bevel, jag
+   if (Vector.LineJoin != VLJ::INHERIT) Stroke.line_join(Vector.LineJoin); // miter, round, bevel
+   if (Vector.LineCap != VLC::INHERIT) Stroke.line_cap(Vector.LineCap); // butt, square, round
+   if (Vector.InnerJoin != VIJ::INHERIT) Stroke.inner_join(Vector.InnerJoin); // miter, round, bevel, jag
 
    // It has been noted that there may be issues between miter_join, miter_join_revert and line-caps that
    // need further investigation.  This section experiments with adjusting the line-cap according to the selected
    // line-join.
 
    /*
-   if (Vector.LineJoin) {
+   if (Vector.LineJoin != VLJ::INHERIT) {
       if (Vector.classID() IS CLASSID::VECTORPOLYGON) {
          if (((extVectorPoly &)Vector).Closed) {
             switch(Vector.LineJoin) {
-               case agg::miter_join:        Stroke.line_cap(agg::square_cap); break;
-               case agg::bevel_join:        Stroke.line_cap(agg::square_cap); break;
-               case agg::miter_join_revert: Stroke.line_cap(agg::square_cap); break;
-               case agg::round_join:        Stroke.line_cap(agg::round_cap); break;
-               case agg::miter_join_round:  Stroke.line_cap(agg::round_cap); break;
-               case agg::inherit_join:      break;
+               case VLJ::MITER_SMART: Stroke.line_cap(VLC::SQUARE); break;
+               case VLJ::BEVEL:       Stroke.line_cap(VLC::SQUARE); break;
+               case VLJ::MITER:       Stroke.line_cap(VLC::SQUARE); break;
+               case VLJ::ROUND:       Stroke.line_cap(VLC::ROUND); break;
+               case VLJ::MITER_ROUND: Stroke.line_cap(VLC::ROUND); break;
+               case VLJ::INHERIT:     break;
             }
          }
       }

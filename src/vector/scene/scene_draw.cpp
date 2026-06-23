@@ -189,9 +189,9 @@ public:
 class VectorState {
 public:
    TClipRectangle<double> mClip; // Current clip region as defined by the viewports
-   agg::line_join_e  mLineJoin;
-   agg::line_cap_e   mLineCap;
-   agg::inner_join_e mInnerJoin;
+   VLJ mLineJoin;
+   VLC mLineCap;
+   VIJ mInnerJoin;
    double mOpacity;
    VIS    mVisible;
    VOF    mOverflowX, mOverflowY;
@@ -201,9 +201,9 @@ public:
 
    VectorState() :
       mClip(0, 0, DBL_MAX, DBL_MAX),
-      mLineJoin(agg::miter_join),
-      mLineCap(agg::butt_cap),
-      mInnerJoin(agg::inner_miter),
+      mLineJoin(VLJ::MITER),
+      mLineCap(VLC::BUTT),
+      mInnerJoin(VIJ::MITER),
       mOpacity(1.0),
       mVisible(VIS::VISIBLE),
       mOverflowX(VOF::VISIBLE), mOverflowY(VOF::VISIBLE),
@@ -933,9 +933,9 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       else if (shape->ColourSpace IS VCS::LINEAR_RGB) state.mLinearRGB = true; // Use the parent value unless a specific CS is required by the client
       else if (shape->ColourSpace IS VCS::SRGB) state.mLinearRGB = false;
 
-      if (shape->LineJoin  != agg::inherit_join)  state.mLineJoin  = shape->LineJoin;
-      if (shape->InnerJoin != agg::inner_inherit) state.mInnerJoin = shape->InnerJoin;
-      if (shape->LineCap   != agg::inherit_cap)   state.mLineCap   = shape->LineCap;
+      if (shape->LineJoin  != VLJ::INHERIT) state.mLineJoin  = shape->LineJoin;
+      if (shape->InnerJoin != VIJ::INHERIT) state.mInnerJoin = shape->InnerJoin;
+      if (shape->LineCap   != VLC::INHERIT) state.mLineCap   = shape->LineCap;
       state.mOpacity = shape->Opacity * state.mOpacity;
 
       // Support for isolated vectors.  A vector will be isolated if it has children using a filter that uses BackgroundImage

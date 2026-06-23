@@ -29,8 +29,8 @@ namespace agg
         {
         }
 
-        void line_join(line_join_e lj) { base_type::generator().line_join(lj); }
-        void inner_join(inner_join_e ij) { base_type::generator().inner_join(ij); }
+        void line_join(VLJ LineJoin) { base_type::generator().line_join(LineJoin); }
+        void inner_join(VIJ InnerJoin) { base_type::generator().inner_join(InnerJoin); }
         void width(double w) { base_type::generator().width(w); }
         void miter_limit(double ml) { base_type::generator().miter_limit(ml); }
         void miter_limit_theta(double t) { base_type::generator().miter_limit_theta(t); }
@@ -38,8 +38,8 @@ namespace agg
         void approximation_scale(double as) { base_type::generator().approximation_scale(as); }
         void auto_detect_orientation(bool v) { base_type::generator().auto_detect_orientation(v); }
 
-        line_join_e line_join() const { return base_type::generator().line_join(); }
-        inner_join_e inner_join() const { return base_type::generator().inner_join(); }
+        VLJ line_join() const { return base_type::generator().line_join(); }
+        VIJ inner_join() const { return base_type::generator().inner_join(); }
         double width() const { return base_type::generator().width(); }
         double miter_limit() const { return base_type::generator().miter_limit(); }
         double inner_miter_limit() const { return base_type::generator().inner_miter_limit(); }
