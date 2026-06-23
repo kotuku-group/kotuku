@@ -28,19 +28,19 @@ static ERR GET_ButtonState(extPointer *, int *);
 
 static ERR SET_ButtonOrder(extPointer *, std::string_view &);
 static ERR SET_MaxSpeed(extPointer *, int);
-static ERR PTR_SET_X(extPointer *, double);
-static ERR PTR_SET_Y(extPointer *, double);
+static ERR POINTER_SET_X(extPointer *, double);
+static ERR POINTER_SET_Y(extPointer *, double);
 
 #ifdef _WIN32
-static ERR PTR_SetWinCursor(extPointer *, struct ptrSetWinCursor *);
+static ERR POINTER_SetWinCursor(extPointer *, struct ptrSetWinCursor *);
 static FunctionField mthSetWinCursor[]  = { { "Cursor", FD_INT }, { nullptr, 0 } };
 #endif
 
 #ifdef __xwindows__
 #undef True
 #undef False
-static ERR PTR_GrabX11Pointer(extPointer *, struct ptrGrabX11Pointer *);
-static ERR PTR_UngrabX11Pointer(extPointer *);
+static ERR POINTER_GrabX11Pointer(extPointer *, struct ptrGrabX11Pointer *);
+static ERR POINTER_UngrabX11Pointer(extPointer *);
 static FunctionField mthGrabX11Pointer[] = { { "Surface", FD_INT }, { nullptr, 0 } };
 #endif
 
@@ -80,7 +80,7 @@ inline void add_input(CSTRING Debug, InputEvent &input, JTYPE Flags, OBJECTID Re
 
 //********************************************************************************************************************
 #ifdef _WIN32
-static ERR PTR_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
+static ERR POINTER_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 {
    winSetCursor(GetWinCursor(Args->Cursor));
    Self->CursorID = Args->Cursor;
@@ -92,7 +92,7 @@ static ERR PTR_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 // Private action used to grab the window cursor under X11.  Can only be executed by the task that owns the pointer.
 
 #ifdef __xwindows__
-static ERR PTR_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
+static ERR POINTER_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
 {
    APTR xwin;
    if (ScopedObjectLock<objSurface> surface(Self->SurfaceID, 5000); surface.granted()) {
@@ -104,7 +104,7 @@ static ERR PTR_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
    return ERR::Okay;
 }
 
-static ERR PTR_UngrabX11Pointer(extPointer *Self)
+static ERR POINTER_UngrabX11Pointer(extPointer *Self)
 {
    XUngrabPointer(XDisplay, CurrentTime);
    return ERR::Okay;
@@ -129,7 +129,7 @@ release record so click, drag and repeat handling can return to a consistent sta
 // NOTE: See input_event_loop() if you are looking for the main input event processing loop.  Incoming events are
 // pushed onto the glInputEvents queue and processed in the main thread at a later time.
 
-static ERR PTR_DataFeed(extPointer *Self, struct acDataFeed *Args)
+static ERR POINTER_DataFeed(extPointer *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
@@ -492,7 +492,7 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
 
 //********************************************************************************************************************
 
-static ERR PTR_Free(extPointer *Self)
+static ERR POINTER_Free(extPointer *Self)
 {
    acHide(Self);
 
@@ -514,7 +514,7 @@ Hide: Hides the pointer cursor.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Hide(extPointer *Self)
+static ERR POINTER_Hide(extPointer *Self)
 {
    kt::Log log;
 
@@ -541,7 +541,7 @@ static ERR PTR_Hide(extPointer *Self)
 
 //********************************************************************************************************************
 
-static ERR PTR_Init(extPointer *Self)
+static ERR POINTER_Init(extPointer *Self)
 {
    kt::Log log;
 
@@ -588,7 +588,7 @@ immediately by forwarding the resulting position to #MoveToPoint().
 
 *********************************************************************************************************************/
 
-static ERR PTR_Move(extPointer *Self, struct acMove *Args)
+static ERR POINTER_Move(extPointer *Self, struct acMove *Args)
 {
    kt::Log log;
 
@@ -612,7 +612,7 @@ translated into input events for the affected surface or object.
 
 *********************************************************************************************************************/
 
-static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
+static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
 {
    kt::Log log;
 
@@ -689,7 +689,7 @@ underlying surface.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Refresh(extPointer *Self)
+static ERR POINTER_Refresh(extPointer *Self)
 {
    // Calling OverObject will refresh the cursor image from the underlying surface object.  Incidentally, the point of
    // all this is to satisfy the Surface class' need to have the pointer refreshed if a surface's cursor ID is changed.
@@ -708,7 +708,7 @@ move the pointer or clear the current cursor ownership state.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Reset(extPointer *Self)
+static ERR POINTER_Reset(extPointer *Self)
 {
    Self->Speed        = 150;
    Self->Acceleration = 0.50;
@@ -728,7 +728,7 @@ to the destination object in configuration format.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_SaveToObject(extPointer *Self, struct acSaveToObject *Args)
+static ERR POINTER_SaveToObject(extPointer *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
@@ -754,7 +754,7 @@ Show: Shows the pointer cursor.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Show(extPointer *Self)
+static ERR POINTER_Show(extPointer *Self)
 {
    kt::Log log;
 
@@ -1018,7 +1018,7 @@ X: The horizontal position of the pointer within its display.
 
 *********************************************************************************************************************/
 
-static ERR PTR_SET_X(extPointer *Self, double Value)
+static ERR POINTER_SET_X(extPointer *Self, double Value)
 {
    if (Self->initialised()) acMoveToPoint(Self, Value, 0, 0, MTF::X);
    else Self->X = Value;
@@ -1035,7 +1035,7 @@ Setting #X or #Y on an initialised pointer forwards the change through #MoveToPo
 
 *********************************************************************************************************************/
 
-static ERR PTR_SET_Y(extPointer *Self, double Value)
+static ERR POINTER_SET_Y(extPointer *Self, double Value)
 {
    if (Self->initialised()) acMoveToPoint(Self, 0, Value, 0, MTF::Y);
    else Self->Y = Value;
@@ -1284,6 +1284,7 @@ static const FieldDef clPointerFlags[] = {
    { "Visible",  PF::VISIBLE },
    { nullptr, 0 }
 };
+#include "class_pointer_def.c"
 
 static const FunctionField mthSetCursor[]     = { { "Surface", FD_INT }, { "Flags", FD_INT }, { "Cursor", FD_INT }, { "Name", FD_STRING }, { "Owner", FD_INT }, { "PreviousCursor", FD_INT|FD_RESULT }, { nullptr, 0 } };
 static const FunctionField mthRestoreCursor[] = { { "Cursor", FD_INT }, { "Owner", FD_INT }, { nullptr, 0 } };
@@ -1291,11 +1292,11 @@ static const FunctionField mthRestoreCursor[] = { { "Cursor", FD_INT }, { "Owner
 static const MethodEntry clPointerMethods[] = {
    // Private methods
 #ifdef _WIN32
-   { MT_PtrSetWinCursor,     (APTR)PTR_SetWinCursor,   "SetWinCursor",   mthSetWinCursor,  sizeof(struct ptrSetWinCursor) },
+   { MT_PtrSetWinCursor,     (APTR)POINTER_SetWinCursor,   "SetWinCursor",   mthSetWinCursor,  sizeof(struct ptrSetWinCursor) },
 #endif
 #ifdef __xwindows__
-   { MT_PtrGrabX11Pointer,   (APTR)PTR_GrabX11Pointer,   "GrabX11Pointer",   mthGrabX11Pointer, sizeof(struct ptrGrabX11Pointer) },
-   { MT_PtrUngrabX11Pointer, (APTR)PTR_UngrabX11Pointer, "UngrabX11Pointer", nullptr, 0 },
+   { MT_PtrGrabX11Pointer,   (APTR)POINTER_GrabX11Pointer,   "GrabX11Pointer",   mthGrabX11Pointer, sizeof(struct ptrGrabX11Pointer) },
+   { MT_PtrUngrabX11Pointer, (APTR)POINTER_UngrabX11Pointer, "UngrabX11Pointer", nullptr, 0 },
 #endif
    { AC::NIL, nullptr, nullptr, nullptr, 0 }
 };
@@ -1305,8 +1306,8 @@ static const FieldArray clPointerFields[] = {
    { "Acceleration", FDF_DOUBLE|FDF_RW },
    { "DoubleClick",  FDF_DOUBLE|FDF_RW },
    { "WheelSpeed",   FDF_DOUBLE|FDF_RW },
-   { "X",            FDF_DOUBLE|FDF_RW, nullptr, PTR_SET_X },
-   { "Y",            FDF_DOUBLE|FDF_RW, nullptr, PTR_SET_Y },
+   { "X",            FDF_DOUBLE|FDF_RW, nullptr, POINTER_SET_X },
+   { "Y",            FDF_DOUBLE|FDF_RW, nullptr, POINTER_SET_Y },
    { "OverX",        FDF_DOUBLE|FDF_R },
    { "OverY",        FDF_DOUBLE|FDF_R },
    { "OverZ",        FDF_DOUBLE|FDF_R },

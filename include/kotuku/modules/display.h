@@ -1659,7 +1659,27 @@ class objPointer : public Object {
 
    // Action stubs
 
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+      return Action(AC::DataFeed, this, &args);
+   }
+   inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
+   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
+      struct acSaveToObject args = { Dest, { ClassID } };
+      return Action(AC::SaveToObject, this, &args);
+   }
+   inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
 
    // Customised field getting
 
