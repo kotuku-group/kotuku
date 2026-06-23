@@ -3838,8 +3838,6 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          else if (iequals("inherit", StrValue))  Vector->setVisibility(VIS::INHERIT);
          break;
 
-      case SVF_numeric_id: Vector->setNumeric(svtonum<int>(StrValue)); break;
-
       case SVF_overflow: // visible | hidden | scroll | auto | inherit
          log.trace("overflow is not supported.");
          break;
