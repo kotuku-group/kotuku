@@ -531,12 +531,12 @@ the surface area first).</li>
     <field>
       <name>Height</name>
       <comment>Defines the height of a surface object.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
 <p>Set <code>Height</code> to change the surface height.  Alternatively, call <action>Resize</action> to change <fl>Width</fl> and <code>Height</code> together.</p>
 <p>By default the value is a fixed coordinate unit.  With the <code>FD_SCALED</code> flag, the value is treated as a multiplier of the parent surface height.</p>
-<p>A read returns the value exactly as it was last defined.  When the height was set as a scaled value, the multiplier is returned rather than a resolved pixel count.  Read <fl>VisibleHeight</fl> to determine the height of the surface area that is actually presented in pixels.</p>
+<p>A read returns the value exactly as it was last defined.  When the height was set as a scaled value, the multiplier is returned rather than a resolved pixel count.  Read #VisibleHeight to determine the height of the surface area that is actually presented in pixels.</p>
 <p>Changing <code>Height</code> on a visible surface updates the displayed area immediately, including any child surfaces that need to be redrawn or resized.</p>
 <p>Before initialisation, setting <code>Height</code> to zero or less clears the height dimension so that <fl>Y</fl> and <fl>YOffset</fl> can define the height dynamically.  After initialisation, values of zero or less are invalid.</p>
       </description>
@@ -670,64 +670,14 @@ the surface area first).</li>
     </field>
 
     <field>
-      <name>VisibleHeight</name>
-      <comment>The visible height of the surface area, relative to its parents.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>Read <fl>VisibleX</fl>, <fl>VisibleY</fl>, <fl>VisibleWidth</fl> and <code>VisibleHeight</code> to determine the portion of the surface that is visible within the parent chain.</p>
-<p>The visible area is calculated by clipping the surface area against its parent surfaces.  If a 100-unit-high surface is inside a 50-unit-high parent, at most 50 units can be visible, depending on the surface position.</p>
-<p>If none of the surface area is visible, zero is returned.  The result is never negative.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>VisibleWidth</name>
-      <comment>The visible width of the surface area, relative to its parents.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>Read <fl>VisibleX</fl>, <fl>VisibleY</fl>, <code>VisibleWidth</code> and <fl>VisibleHeight</fl> to determine the portion of the surface that is visible within the parent chain.</p>
-<p>The visible area is calculated by clipping the surface area against its parent surfaces.  If a 100-unit-wide surface is inside a 50-unit-wide parent, at most 50 units can be visible, depending on the surface position.</p>
-<p>If none of the surface area is visible, zero is returned.  The result is never negative.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>VisibleX</name>
-      <comment>The first visible X coordinate of the surface area, relative to its parents.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>Read <code>VisibleX</code>, <fl>VisibleY</fl>, <fl>VisibleWidth</fl> and <fl>VisibleHeight</fl> to determine the portion of the surface that is visible within the parent chain.</p>
-<p>
-<code>VisibleX</code> is the first visible horizontal coordinate inside the surface's own coordinate space.  It is calculated by clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window position, as determined by the <fl>X</fl> field.</p>
-<p>If none of the surface area is visible, zero is returned.  The result is never negative.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>VisibleY</name>
-      <comment>The first visible Y coordinate of the surface area, relative to its parents.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>Read <fl>VisibleX</fl>, <code>VisibleY</code>, <fl>VisibleWidth</fl> and <fl>VisibleHeight</fl> to determine the portion of the surface that is visible within the parent chain.</p>
-<p>
-<code>VisibleY</code> is the first visible vertical coordinate inside the surface's own coordinate space.  It is calculated by clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window position, as determined by the <fl>Y</fl> field.</p>
-<p>If none of the surface area is visible, zero is returned.  The result is never negative.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Width</name>
       <comment>Defines the width of a surface object.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
 <p>Set <code>Width</code> to change the surface width.  Alternatively, call <action>Resize</action> to change <code>Width</code> and <fl>Height</fl> together.</p>
 <p>By default the value is a fixed coordinate unit.  With the <code>FD_SCALED</code> flag, the value is treated as a multiplier of the parent surface width.</p>
-<p>A read returns the value exactly as it was last defined.  When the width was set as a scaled value, the multiplier is returned rather than a resolved pixel count.  Read <fl>VisibleWidth</fl> to determine the width of the surface area that is actually presented in pixels.</p>
+<p>A read returns the value exactly as it was last defined.  When the width was set as a scaled value, the multiplier is returned rather than a resolved pixel count.  Read #VisibleWidth to determine the width of the surface area that is actually presented in pixels.</p>
 <p>Changing <code>Width</code> on a visible surface updates the displayed area immediately, including any child surfaces that need to be redrawn or resized.</p>
 <p>Before initialisation, setting <code>Width</code> to zero or less clears the width dimension so that <fl>X</fl> and <fl>XOffset</fl> can define the width dynamically.  After initialisation, values of zero or less are invalid.</p>
       </description>
@@ -759,7 +709,7 @@ the surface area first).</li>
     <field>
       <name>X</name>
       <comment>Determines the horizontal position of a surface object.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
 <p>Set <code>X</code> to change the horizontal position of the surface relative to its parent.</p>
@@ -786,7 +736,7 @@ the surface area first).</li>
     <field>
       <name>Y</name>
       <comment>Determines the vertical position of a surface object.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
 <p>Set <code>Y</code> to change the vertical position of the surface relative to its parent.</p>

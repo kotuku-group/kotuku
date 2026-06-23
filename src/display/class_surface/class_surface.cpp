@@ -2439,10 +2439,10 @@ static ERR consume_input_events(const InputEvent *Events, int Handle)
 #include "surface_def.c"
 
 static const FieldArray clSurfaceFields[] = {
-   { "X",            FDF_UNIT|FDF_RW, nullptr, SET_XCoord },
-   { "Y",            FDF_UNIT|FDF_RW, nullptr, SET_YCoord },
-   { "Width",        FDF_UNIT|FDF_RW, nullptr, SET_Width },
-   { "Height",       FDF_UNIT|FDF_RW, nullptr, SET_Height },
+   { "X",            FDF_UNIT|FDF_PURE|FDF_RW, GET_X, SET_X },
+   { "Y",            FDF_UNIT|FDF_PURE|FDF_RW, GET_Y, SET_Y },
+   { "Width",        FDF_UNIT|FDF_PURE|FDF_RW, GET_Width, SET_Width },
+   { "Height",       FDF_UNIT|FDF_PURE|FDF_RW, GET_Height, SET_Height },
    { "XOffset",      FDF_UNIT|FDF_PURE|FDF_RW, GET_XOffset, SET_XOffset },
    { "YOffset",      FDF_UNIT|FDF_PURE|FDF_RW, GET_YOffset, SET_YOffset },
    { "Drag",         FDF_OBJECTID|FDF_RW, nullptr, SET_Drag, CLASSID::SURFACE },
@@ -2471,10 +2471,6 @@ static const FieldArray clSurfaceFields[] = {
    { "Right",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_Right },
    { "UserFocus",     FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_UserFocus },
    { "Visible",       FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW, GET_Visible, SET_Visible },
-   { "VisibleHeight", FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleHeight },
-   { "VisibleWidth",  FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleWidth },
-   { "VisibleX",      FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleX },
-   { "VisibleY",      FDF_VIRTUAL|FDF_INT|FDF_R,  GET_VisibleY },
    { "WindowType",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW, GET_WindowType, SET_WindowType, &clSurfaceSWIN },
    { "WindowHandle",  FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW, GET_WindowHandle, SET_WindowHandle },
    END_FIELD

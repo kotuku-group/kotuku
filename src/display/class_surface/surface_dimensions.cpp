@@ -111,6 +111,30 @@ the height dynamically.  After initialisation, values of zero or less are invali
 
 *********************************************************************************************************************/
 
+static ERR GET_Height(extSurface *Self, Unit &Value)
+{
+   if (Value.verbatim() or (not Self->initialised())){
+      Value = Self->Height;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
+   }
+   else if (Value.scaled()) { // Client requested scaled unit
+      if (Self->Height.scaled()) Value = Self->Height;
+      else if (Self->ParentID) {
+         if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
+            Value = Unit(double(Self->FixedHeight) / double(parent->FixedHeight), FD_SCALED);
+         }
+         else return ERR::AccessObject;
+      }
+      else Value = Unit();
+   }
+   else { // Client requested a fixed (resolved pixel) unit
+      Value = Unit(Self->FixedHeight);
+   }
+
+   return ERR::Okay;
+}
+
 static ERR SET_Height(extSurface *Self, Unit &Value)
 {
    if (Value <= 0) {
@@ -269,104 +293,6 @@ static ERR GET_Right(extSurface *Self, int *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-VisibleHeight: The visible height of the surface area, relative to its parents.
-
-Read #VisibleX, #VisibleY, #VisibleWidth and `VisibleHeight` to determine the portion of the surface that is visible
-within the parent chain.
-
-The visible area is calculated by clipping the surface area against its parent surfaces.  If a 100-unit-high surface is
-inside a 50-unit-high parent, at most 50 units can be visible, depending on the surface position.
-
-If none of the surface area is visible, zero is returned.  The result is never negative.
-
-*********************************************************************************************************************/
-
-static ERR GET_VisibleHeight(extSurface *Self, int *Value)
-{
-   if (!Self->ParentID) {
-      *Value = Self->FixedHeight;
-      return ERR::Okay;
-   }
-   else return gfx::GetVisibleArea(Self->UID, nullptr, nullptr, nullptr, nullptr, nullptr, Value);
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-VisibleWidth: The visible width of the surface area, relative to its parents.
-
-Read #VisibleX, #VisibleY, `VisibleWidth` and #VisibleHeight to determine the portion of the surface that is visible
-within the parent chain.
-
-The visible area is calculated by clipping the surface area against its parent surfaces.  If a 100-unit-wide surface is
-inside a 50-unit-wide parent, at most 50 units can be visible, depending on the surface position.
-
-If none of the surface area is visible, zero is returned.  The result is never negative.
-
-*********************************************************************************************************************/
-
-static ERR GET_VisibleWidth(extSurface *Self, int *Value)
-{
-   if (!Self->ParentID) {
-      *Value = Self->FixedWidth;
-      return ERR::Okay;
-   }
-   else return gfx::GetVisibleArea(Self->UID, nullptr, nullptr, nullptr, nullptr, Value, nullptr);
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-VisibleX: The first visible X coordinate of the surface area, relative to its parents.
-
-Read `VisibleX`, #VisibleY, #VisibleWidth and #VisibleHeight to determine the portion of the surface that is visible
-within the parent chain.
-
-`VisibleX` is the first visible horizontal coordinate inside the surface's own coordinate space.  It is calculated by
-clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window
-position, as determined by the #X field.
-
-If none of the surface area is visible, zero is returned.  The result is never negative.
-
-*********************************************************************************************************************/
-
-static ERR GET_VisibleX(extSurface *Self, int *Value)
-{
-   if (!Self->ParentID) {
-      *Value = Self->FixedX; // For hosted surfaces, this will be the Window position
-      return ERR::Okay;
-   }
-   else return gfx::GetVisibleArea(Self->UID, Value, nullptr, nullptr, nullptr, nullptr, nullptr);
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-VisibleY: The first visible Y coordinate of the surface area, relative to its parents.
-
-Read #VisibleX, `VisibleY`, #VisibleWidth and #VisibleHeight to determine the portion of the surface that is visible
-within the parent chain.
-
-`VisibleY` is the first visible vertical coordinate inside the surface's own coordinate space.  It is calculated by
-clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window
-position, as determined by the #Y field.
-
-If none of the surface area is visible, zero is returned.  The result is never negative.
-
-*********************************************************************************************************************/
-
-static ERR GET_VisibleY(extSurface *Self, int *Value)
-{
-   if (!Self->ParentID) {
-      *Value = Self->FixedY; // For hosted surfaces, this will be the Window position
-      return ERR::Okay;
-   }
-   else return gfx::GetVisibleArea(Self->UID, nullptr, Value, nullptr, nullptr, nullptr, nullptr);
-}
-
-/*********************************************************************************************************************
-
--FIELD-
 Width: Defines the width of a surface object.
 
 Set `Width` to change the surface width.  Alternatively, call #Resize() to change `Width` and #Height together.
@@ -385,6 +311,30 @@ Before initialisation, setting `Width` to zero or less clears the width dimensio
 the width dynamically.  After initialisation, values of zero or less are invalid.
 
 *********************************************************************************************************************/
+
+static ERR GET_Width(extSurface *Self, Unit &Value)
+{
+   if (Value.verbatim() or (not Self->initialised())){
+      Value = Self->Width;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
+   }
+   else if (Value.scaled()) { // Client requested scaled unit
+      if (Self->Width.scaled()) Value = Self->Width;
+      else if (Self->ParentID) {
+         if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
+            Value = Unit(double(Self->FixedWidth) / double(parent->FixedWidth), FD_SCALED);
+         }
+         else return ERR::AccessObject;
+      }
+      else Value = Unit();
+   }
+   else { // Client requested a fixed (resolved pixel) unit
+      Value = Unit(Self->FixedWidth);
+   }
+
+   return ERR::Okay;
+}
 
 static ERR SET_Width(extSurface *Self, Unit &Value)
 {
@@ -437,7 +387,31 @@ surface width is recalculated to preserve that offset.
 
 *********************************************************************************************************************/
 
-static ERR SET_XCoord(extSurface *Self, Unit &Value)
+static ERR GET_X(extSurface *Self, Unit &Value)
+{
+   if (Value.verbatim() or (not Self->initialised())){
+      Value = Self->X;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
+   }
+   else if (Value.scaled()) { // Client requested scaled unit
+      if (Self->X.scaled()) Value = Self->X;
+      else if (Self->ParentID) {
+         if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
+            Value = Unit(double(Self->FixedX) / double(parent->FixedWidth), FD_SCALED);
+         }
+         else return ERR::AccessObject;
+      }
+      else Value = Unit();
+   }
+   else { // Client requested a fixed (resolved pixel) unit
+      Value = Unit(Self->FixedX);
+   }
+
+   return ERR::Okay;
+}
+
+static ERR SET_X(extSurface *Self, Unit &Value)
 {
    if (Value.scaled()) {
       Self->X = Value;
@@ -487,25 +461,26 @@ read returns the offset as a multiplier of the surface width.
 
 static ERR GET_XOffset(extSurface *Self, Unit &Value)
 {
-   if (Value.scaled()) {
+   if (Value.verbatim() or (not Self->initialised())) {
+      Value = Self->XOffset;
+      Value.Type |= FD_PURE;
+   }
+   else if (Value.scaled()) {
       Unit fixed_offset;
       if (!GET_XOffset(Self, fixed_offset)) Value = Unit(fixed_offset / Self->FixedWidth, FD_SCALED);
       else Value = Unit(0, FD_SCALED);
-      return ERR::Okay;
    }
-   else {
-      if (Self->XOffset.defined()) {
-         if (Self->XOffset.scaled()) Value = Unit(Self->FixedXO);
-         else Value = Self->XOffset;
-      }
-      else if (Self->Width.defined() and Self->X.defined() and Self->ParentID) {
-         if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
-            Value = Unit(parent->FixedWidth - Self->FixedX - Self->FixedWidth);
-         }
-         else return ERR::AccessObject;
-      }
-      else Value = Unit(0);
+   else if (Self->XOffset.defined()) {
+      if (Self->XOffset.scaled()) Value = Unit(Self->FixedXO);
+      else Value = Self->XOffset;
    }
+   else if (Self->Width.defined() and Self->X.defined() and Self->ParentID) {
+      if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
+         Value = Unit(parent->FixedWidth - Self->FixedX - Self->FixedWidth);
+      }
+      else return ERR::AccessObject;
+   }
+   else Value = Unit(0);
 
    return ERR::Okay;
 }
@@ -569,7 +544,31 @@ Changing `Y` on a visible surface updates its position immediately.
 
 *********************************************************************************************************************/
 
-static ERR SET_YCoord(extSurface *Self, Unit &Value)
+static ERR GET_Y(extSurface *Self, Unit &Value)
+{
+   if (Value.verbatim() or (not Self->initialised())){
+      Value = Self->Y;
+      Value.Type |= FD_PURE;
+      return ERR::Okay;
+   }
+   else if (Value.scaled()) { // Client requested scaled unit
+      if (Self->Y.scaled()) Value = Self->Y;
+      else if (Self->ParentID) {
+         if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
+            Value = Unit(double(Self->FixedY) / double(parent->FixedHeight), FD_SCALED);
+         }
+         else return ERR::AccessObject;
+      }
+      else Value = Unit();
+   }
+   else { // Client requested a fixed (resolved pixel) unit
+      Value = Unit(Self->FixedY);
+   }
+
+   return ERR::Okay;
+}
+
+static ERR SET_Y(extSurface *Self, Unit &Value)
 {
    if (Value.scaled()) {
       Self->Y = Value;
@@ -610,7 +609,11 @@ scaled read returns the offset as a multiplier of the surface height.
 
 static ERR GET_YOffset(extSurface *Self, Unit &Value)
 {
-   if (Value.scaled()) {
+   if (Value.verbatim() or (not Self->initialised())) {
+      Value = Self->YOffset;
+      Value.Type |= FD_PURE;
+   }
+   else if (Value.scaled()) {
       Unit fixed_offset;
       if (!GET_YOffset(Self, fixed_offset)) Value = Unit(fixed_offset / Self->FixedHeight, FD_SCALED);
       else Value = Unit(0);
