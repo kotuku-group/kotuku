@@ -835,6 +835,8 @@ using ModTest    = void (*)(std::string_view, int *, int *);
       Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { read(String, FontSize, DPI); }
 
    constexpr operator double() const { return Value; }
+   constexpr int round() const { return int(Value + 0.5); }
+
    double operator*() const { return Value; };
 
    constexpr void set(const double pValue) { Value = pValue; }
@@ -842,7 +844,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
    constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
    inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
 
-   inline void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
+   void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
       Type = 0;
       const auto start = String.find_first_not_of(" \n\r\t");
       if (start != std::string::npos) String.remove_prefix(start);

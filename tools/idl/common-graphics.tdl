@@ -28,56 +28,6 @@ enums("PTC", { type="int", start=0, comment="Predefined cursor styles" },
   "DRAGGABLE: Used to indicate that a surface or object can be dragged by the user.",
   "END") -- Any new cursor images must be added to the CursorLookup array in pointer_class.c
 
-flags("DMF", { type="int", bits=32 },
-  "SCALED_X: The X field is scaled to this object's parent.",
-  "SCALED_Y: The Y field is scaled to this object's parent.",
-  "FIXED_X: The X field is a fixed coordinate.",
-  "FIXED_Y: The Y field is a fixed coordinate.",
-  "SCALED_X_OFFSET: The XOffset field is scaled to this object's parent.",
-  "SCALED_Y_OFFSET: The YOffset field is scaled to this object's parent.",
-  "FIXED_X_OFFSET: The XOffset field is a fixed coordinate.",
-  "FIXED_Y_OFFSET: The YOffset field is a fixed coordinate.",
-  "FIXED_HEIGHT: The Height field is a fixed size.",
-  "FIXED_WIDTH: The Width field is a fixed suze.",
-  "SCALED_HEIGHT: The Height field is scaled to this object's parent.",
-  "SCALED_WIDTH: The Width field is scaled to this object's parent.",
-  "FIXED_DEPTH: The Depth field is a fixed size.",
-  "SCALED_DEPTH: The Depth field is scaled to this object's parent.",
-  "FIXED_Z: The Z field is a fixed coordinate.",
-  "SCALED_Z: The Z field is a scaled coordinate to this object's parent.",
-  { SCALED_RADIUS_X  = "0x00010000: The RadiusX field is scaled to this object's parent.",
-    FIXED_RADIUS_X   = "0x00020000: The RadiusX field is a fixed size.",
-    SCALED_CENTER_X  = "0x00040000: The CenterX field is scaled to this object's parent.",
-    SCALED_CENTER_Y  = "0x00080000: The CenterY field is scaled to this object's parent.",
-    FIXED_CENTER_X   = "0x00100000: The CenterX field is a fixed size.",
-    FIXED_CENTER_Y   = "0x00200000: The CenterY field is a fixed size.",
-    STATUS_CHANGE_H  = 0x00400000,
-    STATUS_CHANGE_V  = 0x00800000,
-    SCALED_RADIUS_Y  = "0x01000000: The RadiusY field is a scaled size to this object's parent.",
-    FIXED_RADIUS_Y   = "0x02000000: The RadiusY field is a fixed size."
-  }
-)
-
-enums("DRL", { type="int", start=0, comment="Compass directions." },
-  "NORTH|UP",
-  "SOUTH|DOWN",
-  "EAST|RIGHT",
-  "WEST|LEFT",
-  "NORTH_EAST",
-  "NORTH_WEST",
-  "SOUTH_EAST",
-  "SOUTH_WEST")
-
-flags("MOVE", { comment="Generic flags for controlling movement." },
-  "DOWN",
-  "UP",
-  "LEFT",
-  "RIGHT",
-  { ALL = "DOWN|UP|LEFT|RIGHT" })
-
-flags("EDGE", { comment="Edge flags" },
-  "TOP", "LEFT", "RIGHT", "BOTTOM", "TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT", { ALL = 0xff })
-
 flags("ALIGN", { comment="Universal values for alignment of graphics and text" },
   "LEFT: Align to left",
   "RIGHT: Align to right",
@@ -87,19 +37,6 @@ flags("ALIGN", { comment="Universal values for alignment of graphics and text" }
   "BOTTOM: Align to bottom",
   { CENTER = "HORIZONTAL|VERTICAL" },
   { MIDDLE = "HORIZONTAL|VERTICAL" })
-
-flags("LAYOUT", { comment="Universal values for alignment of graphic layouts in documents." },
-  "TIGHT: Text wraps to the shape of the image (alpha blended/masked images only)",
-  "LEFT: The text boundary is extended to the left edge of the page.",
-  "RIGHT: The text boundary is extended to the right edge of the page.",
-  "BACKGROUND: Graphic is placed behind text.  The text will not be wrapped around the object",
-  "FOREGROUND: Graphic is placed in front of the text.  The text will not be wrapped around the object",
-  "EMBEDDED: Graphic is embedded in the text stream (treated as a character).  The height of the line can be extended to match the height of the graphic in this mode.",
-  "LOCK: Lock the position of the graphic to the top left of the view and not the scrolling position of the page.",
-  "IGNORE_CURSOR: The object has a fixed X/Y position, unrelated to the cursor",
-  "TILE: The graphic will be tiled.  Tiled graphics also meet the `BACKGROUND` criteria (no wrapping).",
-  { WIDE = "RIGHT|LEFT: The text boundary is extended to the left and right edges of the page." },
-  { SQUARE = "0: The default.  Text will clip around the image's border" })
 
 struct("HSV", { comment="Colour structure for Hue, Saturation and Value/Light components." }, [[
   double Hue        # Between 0 and 359.999
@@ -163,64 +100,6 @@ constexpr RGB8::RGB8(FRGB frgb) noexcept {
    Blue  = uint8_t((frgb.Blue  >= 1.0f) ? 255 : (frgb.Blue  < 0.0f) ? 0 : frgb.Blue  * 255.0);
    Alpha = uint8_t((frgb.Alpha >= 1.0f) ? 255 : (frgb.Alpha < 0.0f) ? 0 : frgb.Alpha * 255.0);
 }
-]])
-
-struct("CIEXYZ", { comment="Colour structure for CIE X, Y and Z components." }, [[
-  float X      # X is a mix of the three CIE RGB curves chosen to be non-negative
-  float Y      # Luminance value from 0 to 1.0
-  float Z      # Z is quasi-equal to blue
-  float Alpha  # Alpha blending value from 0 to 1.0
-]],
-[[
-   constexpr CIEXYZ() noexcept = default;
-   constexpr CIEXYZ(float x, float y, float z, float a = 1.0) noexcept
-     : X(x), Y(y), Z(z), Alpha(a) { }
-
-   // Convert sRGB (gamma-encoded, 0-1) to CIE XYZ via linear sRGB.
-
-   inline CIEXYZ(const FRGB &RGB) {
-      auto to_linear = [](const double V) -> double {
-          return (V <= 0.04045) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
-      };
-      const double lr = to_linear(RGB.Red);
-      const double lg = to_linear(RGB.Green);
-      const double lb = to_linear(RGB.Blue);
-      X = (0.4124564 * lr) + (0.3575761 * lg) + (0.1804375 * lb);
-      Y = (0.2126729 * lr) + (0.7151522 * lg) + (0.0721750 * lb);
-      Z = (0.0193339 * lr) + (0.1191920 * lg) + (0.9505041 * lb);
-      Alpha = RGB.Alpha;
-   }
-
-   inline CIEXYZ(const RGB8 &RGB) {
-      auto to_linear = [](const double V) -> double {
-          return (V <= 0.04045) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
-      };
-      const double lr = to_linear(RGB.Red / 255.0);
-      const double lg = to_linear(RGB.Green / 255.0);
-      const double lb = to_linear(RGB.Blue / 255.0);
-      X = (0.4124564 * lr) + (0.3575761 * lg) + (0.1804375 * lb);
-      Y = (0.2126729 * lr) + (0.7151522 * lg) + (0.0721750 * lb);
-      Z = (0.0193339 * lr) + (0.1191920 * lg) + (0.9505041 * lb);
-      Alpha = RGB.Alpha / 255.0;
-   }
-
-   // Convert CIE XYZ to sRGB via the inverse sRGB matrix and gamma encoding
-
-   inline FRGB toFRGB() const {
-      auto linear_to_srgb = [](double V) -> float {
-         if (V >= 0.0) return float((V <= 0.0031308) ? 12.92 * V : 1.055 * pow(V, 1.0 / 2.4) - 0.055);
-         return float(-1.055 * pow(-V, 1.0 / 2.4) + 0.055);
-      };
-      double lr =  (3.2404542 * X) - (1.5371385 * Y) - (0.4985314 * Z);
-      double lg = (-0.9692660 * X) + (1.8760108 * Y) + (0.0415560 * Z);
-      double lb =  (0.0556434 * X) - (0.2040259 * Y) + (1.0572252 * Z);
-      return FRGB(linear_to_srgb(lr), linear_to_srgb(lg), linear_to_srgb(lb), float(Alpha));
-   }
-
-   inline RGB8 toRGB() const {
-      auto frgb = toFRGB();
-      return RGB8(frgb.Red * 255, frgb.Green * 255, frgb.Blue * 255, frgb.Alpha * 255);
-   }
 ]])
 
 struct("RGB16", { comment="16-bit RGB colour value." }, [[

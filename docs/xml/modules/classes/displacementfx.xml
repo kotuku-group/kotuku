@@ -47,8 +47,8 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="VSM">VSM</type>
       <description>
+<p>Currently <code>NEIGHBOUR</code> and <code>BILINEAR</code> are supported.  Other resample methods fall back to bilinear filtering.</p>
 <types lookup="VSM"/>
-<p>Currently <code>NEIGHBOUR</code> and <code>BILINEAR</code> are supported. Other resample methods fall back to bilinear filtering.</p>
       </description>
     </field>
 

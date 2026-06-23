@@ -272,7 +272,7 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
 
    // If the Surface object is invisible, return immediately
 
-   if (Self->invisible() or (tlNoDrawing) or (Self->Width < 1) or (Self->Height < 1)) {
+   if (Self->invisible() or (tlNoDrawing) or (Self->FixedWidth < 1) or (Self->FixedHeight < 1)) {
       log.trace("Not drawing (invisible or tlNoDrawing set).");
       return ERR::Okay|ERR::Notified;
    }
@@ -285,16 +285,16 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
    if (!Args) {
       x = 0;
       y = 0;
-      width  = Self->Width;
-      height = Self->Height;
+      width  = Self->FixedWidth;
+      height = Self->FixedHeight;
    }
    else {
       x      = Args->X;
       y      = Args->Y;
       width  = Args->Width;
       height = Args->Height;
-      if (!width) width = Self->Width;
-      if (!height) height = Self->Height;
+      if (!width) width = Self->FixedWidth;
+      if (!height) height = Self->FixedHeight;
    }
 
    // Check if other draw messages are queued for this object - if so, do not do anything until the final message is reached.
@@ -432,7 +432,7 @@ static ERR SURFACE_ExposeToDisplay(extSurface *Self, struct drw::ExposeToDisplay
 
    ERR error;
    if (Args) error = gfx::ExposeSurface(Self->UID, Args->X, Args->Y, Args->Width, Args->Height, Args->Flags);
-   else error = gfx::ExposeSurface(Self->UID, 0, 0, Self->Width, Self->Height, EXF::NIL);
+   else error = gfx::ExposeSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight, EXF::NIL);
 
    return error;
 }
@@ -472,7 +472,7 @@ mutates-object
 
 static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegion *Args)
 {
-   if (Self->invisible() or (tlNoDrawing) or (Self->Width < 1) or (Self->Height < 1)) {
+   if (Self->invisible() or (tlNoDrawing) or (Self->FixedWidth < 1) or (Self->FixedHeight < 1)) {
       return ERR::Okay|ERR::Notified;
    }
 
@@ -526,11 +526,11 @@ static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegi
       }
    }
    else {
-      if (auto error = RedrawSurface(Self->UID, 0, 0, Self->Width, Self->Height, IRF::RELATIVE);
+      if (auto error = RedrawSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight, IRF::RELATIVE);
             error != ERR::Okay) {
          return error|ERR::Notified;
       }
-      if (auto error = gfx::ExposeSurface(Self->UID, 0, 0, Self->Width, Self->Height,
+      if (auto error = gfx::ExposeSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight,
             EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP); error != ERR::Okay) {
          return error|ERR::Notified;
       }
@@ -547,11 +547,10 @@ void move_layer(extSurface *Self, int X, int Y)
 
    // If the coordinates are unchanged, do nothing
 
-   if ((X IS Self->X) and (Y IS Self->Y)) return;
+   if ((X IS Self->FixedX) and (Y IS Self->FixedY)) return;
 
    if (!Self->initialised()) {
-      Self->X = X;
-      Self->Y = Y;
+      Self->setFixedPosition(X, Y);
       return;
    }
 
@@ -562,8 +561,7 @@ void move_layer(extSurface *Self, int X, int Y)
          // Subtract the host window's LeftMargin and TopMargin as MoveToPoint() is based on the coordinates of the window frame.
 
          if (!acMoveToPoint(*display, X - display->LeftMargin, Y - display->TopMargin, 0, MTF::X|MTF::Y)) {
-            Self->X = X;
-            Self->Y = Y;
+            Self->setFixedPosition(X, Y);
             UpdateSurfaceRecord(Self);
          }
       }
@@ -575,8 +573,7 @@ void move_layer(extSurface *Self, int X, int Y)
    // If the window is invisible, set the new coordinates and return immediately.
 
    if (Self->invisible()) {
-      Self->X = X;
-      Self->Y = Y;
+      Self->setFixedPosition(X, Y);
       UpdateSurfaceRecord(Self);
       return;
    }
@@ -586,8 +583,8 @@ void move_layer(extSurface *Self, int X, int Y)
 
    ClipRectangle old(glSurfaces[index].Left, glSurfaces[index].Top, glSurfaces[index].Right, glSurfaces[index].Bottom);
 
-   int destx = old.Left + X - Self->X;
-   int desty = old.Top  + Y - Self->Y;
+   int destx = old.Left + X - Self->FixedX;
+   int desty = old.Top  + Y - Self->FixedY;
 
    int parent_index = find_parent_list(glSurfaces, Self);
    if (parent_index IS -1) return;
@@ -601,8 +598,7 @@ void move_layer(extSurface *Self, int X, int Y)
 
    log.traceBranch("MoveLayer: Using simple expose technique [%s]", (volatilegfx ? "Volatile" : "Not Volatile"));
 
-   Self->X = X;
-   Self->Y = Y;
+   Self->setFixedPosition(X, Y);
 
    update_surface_copy(Self);
 
@@ -615,8 +611,12 @@ void move_layer(extSurface *Self, int X, int Y)
    else if (glSurfaces[index].BitmapID IS glSurfaces[parent_index].BitmapID) redraw = true;
    else redraw = false;
 
-   if (redraw) _redraw_surface(Self->UID, glSurfaces, index, destx, desty, destx+Self->Width, desty+Self->Height, IRF::NIL);
-   _expose_surface(Self->UID, glSurfaces, index, 0, 0, Self->Width, Self->Height, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
+   if (redraw) {
+      _redraw_surface(Self->UID, glSurfaces, index, destx, desty,
+         destx + Self->FixedWidth, desty + Self->FixedHeight, IRF::NIL);
+   }
+   _expose_surface(Self->UID, glSurfaces, index, 0, 0, Self->FixedWidth, Self->FixedHeight,
+      EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
 
    // Expose underlying graphics resulting from the movement
 

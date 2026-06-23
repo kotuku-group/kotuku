@@ -422,10 +422,10 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
       prepare_background(Self, list, Index, DestBitmap, abs, STAGE_PRECOPY);
    }
    else if ((Self->Flags & RNF::COMPOSITE) != RNF::NIL) {
-      gfx::DrawRectangle(DestBitmap, 0, 0, Self->Width, Self->Height, DestBitmap->packPixel(0, 0, 0, 0), BAF::FILL);
+      gfx::DrawRectangle(DestBitmap, 0, 0, Self->FixedWidth, Self->FixedHeight, DestBitmap->packPixel(0, 0, 0, 0), BAF::FILL);
    }
    else if (Self->Colour.Alpha > 0) {
-      gfx::DrawRectangle(DestBitmap, 0, 0, Self->Width, Self->Height, DestBitmap->packPixel(Self->Colour.Red, Self->Colour.Green, Self->Colour.Blue), BAF::FILL);
+      gfx::DrawRectangle(DestBitmap, 0, 0, Self->FixedWidth, Self->FixedHeight, DestBitmap->packPixel(Self->Colour.Red, Self->Colour.Green, Self->Colour.Blue), BAF::FILL);
    }
 
    // Draw graphics to the buffer
@@ -500,7 +500,8 @@ int find_bitmap_owner(const SURFACELIST &List, int Index)
 }
 
 //********************************************************************************************************************
-// This function is responsible for inserting new surface objects into the list of layers for positional/depth management.
+// This function is called on initialisation only, and is responsible for inserting new surface objects into the
+// list of layers for positional/depth management.
 //
 // Surface levels start at 1, which indicates the top-most level.
 
@@ -518,22 +519,22 @@ ERR track_layer(extSurface *Self)
    record.DisplayID     = Self->DisplayID;
    record.PopOverID     = Self->PopOverID;
    record.Flags         = Self->Flags;
-   record.X             = Self->X;
-   record.Y             = Self->Y;
-   record.Opacity       = surface_opacity_to_byte(Self->Opacity);
+   record.X             = Self->FixedX;
+   record.Y             = Self->FixedY;
+   record.Width         = Self->FixedWidth;
+   record.Height        = Self->FixedHeight;
    record.BitsPerPixel  = Self->BitsPerPixel;
    record.BytesPerPixel = Self->BytesPerPixel;
    record.LineWidth     = Self->LineWidth;
    record.Data          = Self->Data;
    record.Cursor        = int8_t(Self->Cursor);
    record.RootID        = Self->RootID;
-   record.Width         = Self->Width;
-   record.Height        = Self->Height;
+   record.Opacity       = surface_opacity_to_byte(Self->Opacity);
 
    // Find the position at which the surface object should be inserted
 
    if (!Self->ParentID) {
-      record.setArea(Self->X, Self->Y, Self->X + Self->Width, Self->Y + Self->Height);
+      record.setArea(Self->FixedX, Self->FixedY, Self->FixedX + Self->FixedWidth, Self->FixedY + Self->FixedHeight);
       record.Level  = 1;
       glSurfaces.push_back(record);
    }
@@ -544,8 +545,8 @@ ERR track_layer(extSurface *Self)
          return ERR::Search;
       }
 
-      record.setArea(glSurfaces[parent].Left + Self->X, glSurfaces[parent].Top + Self->Y,
-         record.X + Self->Width, record.Y + Self->Height);
+      record.setArea(glSurfaces[parent].Left + Self->FixedX, glSurfaces[parent].Top + Self->FixedY,
+         record.X + Self->FixedWidth, record.Y + Self->FixedHeight);
 
       record.Level = glSurfaces[parent].Level + 1;
 
@@ -575,8 +576,7 @@ void untrack_layer(OBJECTID ObjectID)
 
    if (auto i = find_surface_list(ObjectID); i != -1) {
       #ifdef DBG_LAYERS
-         kt::Log log(__FUNCTION__);
-         log.msg("%d, Index: %d/%d", ObjectID, i, int(glSurfaces.size()));
+         kt::Log(__FUNCTION__).msg("%d, Index: %d/%d", ObjectID, i, int(glSurfaces.size()));
          //print_layer_list("untrack_layer", glSurfaces, i);
       #endif
 
@@ -600,8 +600,8 @@ void untrack_layer(OBJECTID ObjectID)
 
 ERR update_surface_copy(extSurface *Self)
 {
-   if (!Self) return ERR::NullArgs;
-   if (!Self->initialised()) return ERR::Okay;
+   if (not Self) return ERR::NullArgs;
+   if (not Self->initialised()) return ERR::Okay;
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
    auto &list = glSurfaces;
@@ -613,8 +613,8 @@ ERR update_surface_copy(extSurface *Self)
    int absx, absy;
    if (Self->ParentID) {
       if ((i = find_parent_list(list, Self)) != -1) {
-         absx = list[i].Left + Self->X;
-         absy = list[i].Top + Self->Y;
+         absx = list[i].Left + Self->FixedX;
+         absy = list[i].Top + Self->FixedY;
          i = find_surface_list(Self);
       }
       else {
@@ -623,8 +623,8 @@ ERR update_surface_copy(extSurface *Self)
       }
    }
    else {
-      absx = Self->X;
-      absy = Self->Y;
+      absx = Self->FixedX;
+      absy = Self->FixedY;
       i = find_surface_list(Self);
    }
 
@@ -634,14 +634,14 @@ ERR update_surface_copy(extSurface *Self)
       list[i].BitmapID      = Self->BufferID;
       list[i].DisplayID     = Self->DisplayID;
       list[i].PopOverID     = Self->PopOverID;
-      list[i].X             = Self->X;
-      list[i].Y             = Self->Y;
+      list[i].X             = Self->FixedX;
+      list[i].Y             = Self->FixedY;
       list[i].Left          = absx;        // Synonym: Left
       list[i].Top           = absy;        // Synonym: Top
-      list[i].Width         = Self->Width;
-      list[i].Height        = Self->Height;
-      list[i].Right         = absx + Self->Width;
-      list[i].Bottom        = absy + Self->Height;
+      list[i].Width         = Self->FixedWidth;
+      list[i].Height        = Self->FixedHeight;
+      list[i].Right         = absx + Self->FixedWidth;
+      list[i].Bottom        = absy + Self->FixedHeight;
       list[i].Flags         = Self->Flags;
       list[i].Opacity       = surface_opacity_to_byte(Self->Opacity);
       list[i].BitsPerPixel  = Self->BitsPerPixel;
@@ -702,25 +702,23 @@ void move_layer_pos(SURFACELIST &List, int Src, int Dest)
 ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int InsideWidth,
    int InsideHeight, int BPP, double RefreshRate, int DeviceFlags)
 {
-   if (!Width)  Width = Self->Width;
-   if (!Height) Height = Self->Height;
+   if (not Width)  Width = Self->FixedWidth;
+   if (not Height) Height = Self->FixedHeight;
 
-   if (!Self->initialised()) {
-      Self->X = X;
-      Self->Y = Y;
-      Self->Width  = Width;
-      Self->Height = Height;
+   if (not Self->initialised()) {
+      Self->setFixedArea(X, Y, Width, Height);
       return ERR::Okay;
    }
 
-   if ((Self->X IS X) and (Self->Y IS Y) and (Self->Width IS Width) and (Self->Height IS Height) and
-       (Self->ParentID)) {
+   if ((Self->FixedX IS X) and (Self->FixedY IS Y) and (Self->FixedWidth IS Width) and
+       (Self->FixedHeight IS Height) and (Self->ParentID)) {
       return ERR::Okay;
    }
 
    kt::Log log;
 
-   log.traceBranch("resize_layer() %dx%d,%dx%d TO %dx%d,%dx%dx%d", Self->X, Self->Y, Self->Width, Self->Height, X, Y, Width, Height, BPP);
+   log.traceBranch("resize_layer() %dx%d,%dx%d TO %dx%d,%dx%dx%d", Self->FixedX, Self->FixedY,
+      Self->FixedWidth, Self->FixedHeight, X, Y, Width, Height, BPP);
 
    if (Self->BitmapOwnerID IS Self->UID) {
       kt::ScopedObjectLock<objBitmap> bitmap(Self->BufferID, 5000);
@@ -737,7 +735,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       else return log.warning(ERR::AccessObject);
    }
 
-   if (!Self->ParentID) {
+   if (not Self->ParentID) {
       if ((Self->MaxWidth > 0) and (Width > Self->MaxWidth)) Width = Self->MaxWidth;
       if ((Self->MaxHeight > 0) and (Height > Self->MaxHeight)) Height = Self->MaxHeight;
       if (InsideWidth < Width) InsideWidth = Width;
@@ -754,18 +752,13 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       else return log.warning(ERR::AccessObject);
    }
 
-   auto oldx = Self->X;
-   auto oldy = Self->Y;
-   auto oldw = Self->Width;
-   auto oldh = Self->Height;
+   auto oldx = Self->FixedX;
+   auto oldy = Self->FixedY;
+   auto oldw = Self->FixedWidth;
+   auto oldh = Self->FixedHeight;
 
-   Self->X = X;
-   Self->Y = Y;
-   Self->Width  = Width;
-   Self->Height = Height;
+   Self->setFixedArea(X, Y, Width, Height);
    UpdateSurfaceRecord(Self);
-
-   if (!Self->initialised()) return ERR::Okay;
 
    // Send a Resize notification to our subscribers.  Basically, this informs our surface children to resize themselves
    // to the new dimensions.  Surface objects are not permitted to redraw themselves when they receive the Redimension
@@ -796,7 +789,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       log.traceBranch("Redrawing the resized surface.");
 
       _redraw_surface(Self->UID, list, index, list[index].Left, list[index].Top, list[index].Right, list[index].Bottom, IRF::NIL);
-      _expose_surface(Self->UID, list, index, 0, 0, Self->Width, Self->Height, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
+      _expose_surface(Self->UID, list, index, 0, 0, Self->FixedWidth, Self->FixedHeight, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
 
       if (Self->ParentID) {
          // Update external regions on all four sides that have been exposed by the resize, for example due to a decrease in area or a coordinate shift.
@@ -1045,8 +1038,7 @@ mutates-object, blocking
 
 *********************************************************************************************************************/
 
-ERR CopySurface(OBJECTID SurfaceID, objBitmap *Bitmap, BDF Flags,
-          int X, int Y, int Width, int Height, int XDest, int YDest)
+ERR CopySurface(OBJECTID SurfaceID, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1184,8 +1176,7 @@ OBJECTID GetModalSurface(void)
 
    // Safety check: Confirm that the object still exists
    if ((glModalID) and (CheckResourceExists(glModalID) != ERR::True)) {
-      kt::Log log(__FUNCTION__);
-      log.msg("Modal surface #%d no longer exists.", glModalID);
+      kt::Log(__FUNCTION__).msg("Modal surface #%d no longer exists.", glModalID);
       glModalID = 0;
    }
 
@@ -1221,8 +1212,6 @@ blocking, pure-query
 
 ERR GetSurfaceCoords(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height)
 {
-   kt::Log log(__FUNCTION__);
-
    if (!SurfaceID) {
       DisplayInfo *display;
       if (!gfx::GetDisplayInfo(0, &display)) {
@@ -1278,12 +1267,10 @@ blocking, pure-query
 
 ERR GetSurfaceFlags(OBJECTID SurfaceID, RNF *Flags)
 {
-   kt::Log log(__FUNCTION__);
-
    if (Flags) *Flags = RNF::NIL;
-   else return log.warning(ERR::NullArgs);
+   else return ERR::NullArgs;
 
-   if (!SurfaceID) return log.warning(ERR::NullArgs);
+   if (!SurfaceID) return ERR::NullArgs;
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
    int i;
@@ -1318,12 +1305,11 @@ api-owns-result, volatile-result, blocking
 
 ERR GetSurfaceInfo(OBJECTID SurfaceID, SURFACEINFO **Info)
 {
-   kt::Log log(__FUNCTION__);
    static thread_local SURFACEINFO info;
 
    // Note that a SurfaceID of zero is fine (returns the root surface).
 
-   if (!Info) return log.warning(ERR::NullArgs);
+   if (!Info) return ERR::NullArgs;
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
 

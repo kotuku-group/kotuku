@@ -932,17 +932,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="VIDEO_BLIT">Video blitting is supported for this display.</const>
     </constants>
 
-    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
-      <const name="BOTTOM">Align to bottom</const>
-      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="HORIZONTAL">Align to horizontal center</const>
-      <const name="LEFT">Align to left</const>
-      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="RIGHT">Align to right</const>
-      <const name="TOP">Align to top</const>
-      <const name="VERTICAL">Align to vertical center</const>
-    </constants>
-
     <constants lookup="BAF" comment="Instructions for basic graphics operations.">
       <const name="BLEND">Enable alpha blending to the destination if the source supports an alpha channel.</const>
       <const name="COPY">Special <function module="Display">CopyArea</function> option that avoids blending when the destination pixel is empty.</const>
@@ -1059,35 +1048,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="IMAGE"/>
       <const name="OBJECT"/>
       <const name="TEXT"/>
-    </constants>
-
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
     </constants>
 
     <constants lookup="DPMS" comment="Possible modes for the Display class' PowerMode field.">

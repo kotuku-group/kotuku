@@ -793,9 +793,7 @@ is 1.0.
 
 static ERR VECTORFILTER_SET_Opacity(extVectorFilter *Self, double Value)
 {
-   if (Value < 0.0) Value = 0;
-   else if (Value > 1.0) Value = 1.0;
-   Self->Opacity = Value;
+   Self->Opacity = std::clamp(Value, 0.0, 1.0);
    return ERR::Okay;
 }
 

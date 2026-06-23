@@ -336,32 +336,6 @@ the surface area first).</li>
     </method>
 
     <method>
-      <name>ResetDimensions</name>
-      <comment>Changes the dimensions of a surface.</comment>
-      <prototype>ERR drw::ResetDimensions(OBJECTPTR Object, DOUBLE X, DOUBLE Y, DOUBLE XOffset, DOUBLE YOffset, DOUBLE Width, DOUBLE Height, DMF Dimensions)</prototype>
-      <tiriPrototype>err = ResetDimensions(X:num, Y:num, XOffset:num, YOffset:num, Width:num, Height:num, Dimensions:num)</tiriPrototype>
-      <input>
-        <param type="DOUBLE" name="X">New X coordinate.</param>
-        <param type="DOUBLE" name="Y">New Y coordinate.</param>
-        <param type="DOUBLE" name="XOffset">New X offset.</param>
-        <param type="DOUBLE" name="YOffset">New Y offset.</param>
-        <param type="DOUBLE" name="Width">New width.</param>
-        <param type="DOUBLE" name="Height">New height.</param>
-        <param type="DMF" name="Dimensions" lookup="DMF">Dimension flags.</param>
-      </input>
-      <description>
-<p>ResetDimensions() replaces the dimensional declaration used by a surface.  Use this when the relationship between fields changes, for example when a width previously derived from <code>X</code> and <code>XOffset</code> must become a fixed width.</p>
-<p>It is not necessary to define a value for every parameter - only the ones that are relevant to the new dimension settings.  For example, if <code>X</code> and <code>Width</code> are set, <code>XOffset</code> is ignored and the <code>Dimensions</code> value must include <code>DMF::FIXED_X</code> and <code>DMF::FIXED_WIDTH</code> or their scaled equivalents.  Refer to the <fl>Dimensions</fl> field for the supported dimension flags.</p>
-<p>After the new dimensions are applied, the union of the old and new areas is redrawn and exposed.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
-      <tags>mutates-object</tags>
-    </method>
-
-    <method>
       <name>ScheduleRedraw</name>
       <comment>Schedules a redraw operation for the next frame.</comment>
       <prototype>ERR drw::ScheduleRedraw(OBJECTPTR Object, INT RefreshRate)</prototype>
@@ -457,18 +431,6 @@ the surface area first).</li>
     </field>
 
     <field>
-      <name>Align</name>
-      <comment>This field allows you to align a surface area within its owner.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type lookup="ALIGN">ALIGN</type>
-      <description>
-<p>Use <code>Align</code> to position a surface within its owner without calculating explicit coordinates.  It is most useful for horizontal or vertical centring; edge alignment is normally clearer when expressed through <fl>X</fl>, <fl>Y</fl>, <fl>XOffset</fl> and <fl>YOffset</fl>.</p>
-<p>Setting <code>Align</code> replaces related coordinate settings.  Valid alignment flags are <code>BOTTOM</code>, <code>CENTER</code>, <code>MIDDLE</code>, <code>LEFT</code>, <code>HORIZONTAL</code>, <code>RIGHT</code>, <code>TOP</code> and <code>VERTICAL</code>.</p>
-<types lookup="ALIGN"/>
-      </description>
-    </field>
-
-    <field>
       <name>BitsPerPixel</name>
       <comment>Defines the pixel depth used by the surface buffer.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -523,18 +485,6 @@ the surface area first).</li>
     </field>
 
     <field>
-      <name>Dimensions</name>
-      <comment>Indicates currently active dimension settings.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type lookup="DMF">DMF</type>
-      <description>
-<p>The <code>Dimensions</code> flags identify which coordinate and size fields currently define the surface layout, and whether those values are fixed or scaled against the parent.</p>
-<p>This field is normally managed automatically when fields such as <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl>, <fl>Height</fl>, <fl>XOffset</fl> and <fl>YOffset</fl> are changed.  If manual configuration is required, avoid conflicting fixed and scaled variants on the same axis.</p>
-<types lookup="DMF"/>
-      </description>
-    </field>
-
-    <field>
       <name>Display</name>
       <comment>Refers to the <class name="Display">Display</class> object that manages the surface's graphics.</comment>
       <access read="R">Read</access>
@@ -581,11 +531,12 @@ the surface area first).</li>
     <field>
       <name>Height</name>
       <comment>Defines the height of a surface object.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
-<p>Use <code>Height</code> to read or change the surface height.  Alternatively, call <action>Resize</action> to change <fl>Width</fl> and <code>Height</code> together.</p>
+<p>Set <code>Height</code> to change the surface height.  Alternatively, call <action>Resize</action> to change <fl>Width</fl> and <code>Height</code> together.</p>
 <p>By default the value is a fixed coordinate unit.  With the <code>FD_SCALED</code> flag, the value is treated as a multiplier of the parent surface height.</p>
+<p>A read returns the value exactly as it was last defined.  When the height was set as a scaled value, the multiplier is returned rather than a resolved pixel count.  Read <fl>VisibleHeight</fl> to determine the height of the surface area that is actually presented in pixels.</p>
 <p>Changing <code>Height</code> on a visible surface updates the displayed area immediately, including any child surfaces that need to be redrawn or resized.</p>
 <p>Before initialisation, setting <code>Height</code> to zero or less clears the height dimension so that <fl>Y</fl> and <fl>YOffset</fl> can define the height dynamically.  After initialisation, values of zero or less are invalid.</p>
       </description>
@@ -771,11 +722,12 @@ the surface area first).</li>
     <field>
       <name>Width</name>
       <comment>Defines the width of a surface object.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
-<p>Use <code>Width</code> to read or change the surface width.  Alternatively, call <action>Resize</action> to change <code>Width</code> and <fl>Height</fl> together.</p>
+<p>Set <code>Width</code> to change the surface width.  Alternatively, call <action>Resize</action> to change <code>Width</code> and <fl>Height</fl> together.</p>
 <p>By default the value is a fixed coordinate unit.  With the <code>FD_SCALED</code> flag, the value is treated as a multiplier of the parent surface width.</p>
+<p>A read returns the value exactly as it was last defined.  When the width was set as a scaled value, the multiplier is returned rather than a resolved pixel count.  Read <fl>VisibleWidth</fl> to determine the width of the surface area that is actually presented in pixels.</p>
 <p>Changing <code>Width</code> on a visible surface updates the displayed area immediately, including any child surfaces that need to be redrawn or resized.</p>
 <p>Before initialisation, setting <code>Width</code> to zero or less clears the width dimension so that <fl>X</fl> and <fl>XOffset</fl> can define the width dynamically.  After initialisation, values of zero or less are invalid.</p>
       </description>
@@ -807,11 +759,12 @@ the surface area first).</li>
     <field>
       <name>X</name>
       <comment>Determines the horizontal position of a surface object.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
-<p>Use <code>X</code> to read or change the horizontal position of the surface relative to its parent.</p>
+<p>Set <code>X</code> to change the horizontal position of the surface relative to its parent.</p>
 <p>By default the value is a fixed coordinate unit.  With the <code>FD_SCALED</code> flag, the value is treated as a multiplier of the parent surface width.</p>
+<p>A read returns the value exactly as it was last defined.  When <code>X</code> was set as a scaled value, the multiplier is returned rather than a resolved pixel coordinate.  Read <fl>AbsX</fl> for the absolute horizontal pixel position within the surface hierarchy.</p>
 <p>Changing <code>X</code> on a visible surface updates its position immediately.  If <fl>XOffset</fl> also defines the right-hand edge, the surface width is recalculated to preserve that offset.</p>
       </description>
     </field>
@@ -820,23 +773,25 @@ the surface area first).</li>
       <name>XOffset</name>
       <comment>Determines the horizontal offset of a surface object.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type>UNIT</type>
       <description>
 <p>
 <code>XOffset</code> defines a distance from the right-hand edge of the parent surface.</p>
 <p>When <fl>X</fl> is set and <fl>Width</fl> is not set, <code>XOffset</code> makes the surface width dynamic.  The width extends from <fl>X</fl> to the parent width minus <code>XOffset</code>.</p>
 <p>When <fl>Width</fl> is set, <code>XOffset</code> positions the surface from the parent right-hand edge: <code>X = ParentWidth - Width - XOffset</code>.</p>
+<p>A plain read returns the offset resolved to a fixed pixel distance, even when the offset was defined as a scaled value. If no offset has been defined but both <fl>X</fl> and <fl>Width</fl> are present, the offset is derived from the parent width.  A scaled read returns the offset as a multiplier of the surface width.</p>
       </description>
     </field>
 
     <field>
       <name>Y</name>
       <comment>Determines the vertical position of a surface object.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
-<p>Use <code>Y</code> to read or change the vertical position of the surface relative to its parent.</p>
+<p>Set <code>Y</code> to change the vertical position of the surface relative to its parent.</p>
 <p>By default the value is a fixed coordinate unit.  With the <code>FD_SCALED</code> flag, the value is treated as a multiplier of the parent surface height.</p>
+<p>A read returns the value exactly as it was last defined.  When <code>Y</code> was set as a scaled value, the multiplier is returned rather than a resolved pixel coordinate.  Read <fl>AbsY</fl> for the absolute vertical pixel position within the surface hierarchy.</p>
 <p>Changing <code>Y</code> on a visible surface updates its position immediately.</p>
       </description>
     </field>
@@ -845,28 +800,18 @@ the surface area first).</li>
       <name>YOffset</name>
       <comment>Determines the vertical offset of a surface object.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type>UNIT</type>
       <description>
 <p>
 <code>YOffset</code> defines a distance from the bottom edge of the parent surface.</p>
 <p>When <fl>Y</fl> is set and <fl>Height</fl> is not set, <code>YOffset</code> makes the surface height dynamic.  The height extends from <fl>Y</fl> to the parent height minus <code>YOffset</code>.</p>
 <p>When <fl>Height</fl> is set, <code>YOffset</code> positions the surface from the parent bottom edge: <code>Y = ParentHeight - Height - YOffset</code>.</p>
+<p>A plain read returns the offset resolved to a fixed pixel distance, even when the offset was defined as a scaled value. If no offset has been defined but both <fl>Y</fl> and <fl>Height</fl> are present, the offset is derived from the parent height.  A scaled read returns the offset as a multiplier of the surface height.</p>
       </description>
     </field>
 
   </fields>
   <types>
-    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
-      <const name="BOTTOM">Align to bottom</const>
-      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="HORIZONTAL">Align to horizontal center</const>
-      <const name="LEFT">Align to left</const>
-      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="RIGHT">Align to right</const>
-      <const name="TOP">Align to top</const>
-      <const name="VERTICAL">Align to vertical center</const>
-    </constants>
-
     <constants lookup="BAF" comment="Instructions for basic graphics operations.">
       <const name="BLEND">Enable alpha blending to the destination if the source supports an alpha channel.</const>
       <const name="COPY">Special <function module="Display">CopyArea</function> option that avoids blending when the destination pixel is empty.</const>
@@ -896,35 +841,6 @@ the surface area first).</li>
       <const name="OFFSET">Adjust X and Y coordinates by the offset values defined in the <class name="Surface" field="XOffset">Surface.XOffset</class> and <class name="Surface" field="YOffset">Surface.YOffset</class> fields.</const>
       <const name="TRANSLUCENT">Perform a translucent copy operation, using the strength value specified in the <class name="Surface" field="Opacity">Surface.Opacity</class> field.</const>
       <const name="TRANSPARENT">Enable transparent copying, whereby colours matching the source's <code>Colour</code> field will be ignored.</const>
-    </constants>
-
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
     </constants>
 
     <constants lookup="DRAG">
