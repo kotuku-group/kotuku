@@ -275,90 +275,6 @@ static ERR VECTOR_Enable(extVector *Self)
   return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTOR_Free(extVector *Self)
-{
-   Self->ClipCache.clear();
-
-   if (Self->ClipMask)   UnsubscribeAction(Self->ClipMask, AC::Free);
-   if (Self->Transition) UnsubscribeAction(Self->Transition, AC::Free);
-   if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
-   if (Self->AppendPath) UnsubscribeAction(Self->AppendPath, AC::Free);
-
-   if (Self->Fill[0].GradientTable) { delete Self->Fill[0].GradientTable; Self->Fill[0].GradientTable = nullptr; }
-   if (Self->Fill[1].GradientTable) { delete Self->Fill[1].GradientTable; Self->Fill[1].GradientTable = nullptr; }
-   if (Self->Stroke.GradientTable)  { delete Self->Stroke.GradientTable; Self->Stroke.GradientTable = nullptr; }
-   if (Self->DashArray)             { delete Self->DashArray; Self->DashArray = nullptr; }
-   if (Self->IsolatedBuffer)        { delete Self->IsolatedBuffer; Self->IsolatedBuffer = nullptr; }
-
-   // Patch the nearest vectors that are linked to this one.
-   if (Self->Next) Self->Next->Prev = Self->Prev;
-   if (Self->Prev) Self->Prev->Next = Self->Next;
-   if ((Self->Parent) and (!Self->Prev)) {
-      if (Self->Parent->classID() IS CLASSID::VECTORSCENE) ((objVectorScene *)Self->Parent)->Viewport = (objVectorViewport *)Self->Next;
-      else ((extVector *)Self->Parent)->Child = Self->Next;
-   }
-
-   if (Self->Child) {
-      // Clear the parent reference for all children of the vector (essential for maintaining pointer integrity).
-      auto &scan = Self->Child;
-      while (scan) {
-         scan->Parent = nullptr;
-         scan = scan->Next;
-      }
-   }
-
-   if ((Self->Scene) and (!Self->Scene->collecting())) {
-      auto scene = (extVectorScene *)Self->Scene;
-      if ((Self->ParentView) and (Self->ResizeSubscription)) {
-         if (scene->ResizeSubscriptions.contains(Self->ParentView)) {
-            scene->ResizeSubscriptions[Self->ParentView].erase(Self);
-         }
-      }
-      scene->InputSubscriptions.erase(Self);
-      scene->KeyboardSubscriptions.erase(Self);
-
-      if (scene->ActiveVector IS Self->UID) {
-         if (scene->Cursor != PTC::DEFAULT) {
-            kt::ScopedObjectLock<objSurface> surface(scene->SurfaceID);
-            if ((surface.granted()) and (surface.obj->Cursor != PTC::DEFAULT)) {
-               surface.obj->setCursor(PTC::DEFAULT);
-            }
-         }
-      }
-   }
-
-   {
-      const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
-      auto pos = std::find(glVectorFocusList.begin(), glVectorFocusList.end(), Self);
-      if (pos != glVectorFocusList.end()) glVectorFocusList.erase(pos, glVectorFocusList.end());
-   }
-
-   {
-      const std::lock_guard<std::mutex> lock(glResizeLock);
-      if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(Self))) {
-         glResizeSubscriptions.erase(Self);
-      }
-   }
-
-   if (Self->Matrices) {
-      VectorMatrix *next;
-      for (auto t=Self->Matrices; t; t=next) {
-         next = t->Next;
-         FreeResource(t);
-      }
-   }
-
-   delete Self->StrokeRaster; Self->StrokeRaster = nullptr;
-   delete Self->FillRaster;   Self->FillRaster   = nullptr;
-   delete Self->InputSubscriptions;    Self->InputSubscriptions    = nullptr;
-   delete Self->KeyboardSubscriptions; Self->KeyboardSubscriptions = nullptr;
-   delete Self->FeedbackSubscriptions; Self->FeedbackSubscriptions = nullptr;
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -574,14 +490,12 @@ static ERR VECTOR_MoveToFront(extVector *Self)
 
 static ERR VECTOR_NewOwner(extVector *Self, struct acNewOwner *Args)
 {
-   kt::Log log;
-
    if (Self->classID() IS CLASSID::NIL) return ERR::Okay;
 
    // Modifying the owner after the root vector has been established is not permitted.
    // The client should instead create a new object under the target and transfer the field values.
 
-   if (Self->initialised()) return log.warning(ERR::AlreadyDefined);
+   if (Self->initialised()) return kt::Log().warning(ERR::AlreadyDefined);
 
    set_parent(Self, Args->NewOwner);
 
@@ -623,7 +537,6 @@ static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
 
    VectorMatrix *transform;
    if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform)) {
-
       transform->Vector = Self;
       transform->ScaleX = 1.0;
       transform->ScaleY = 1.0;
@@ -850,7 +763,7 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
 
    if (Args->Mask != FM::NIL) {
       if (!Self->FeedbackSubscriptions) {
-         Self->FeedbackSubscriptions = new (std::nothrow) std::vector<FeedbackSubscription>;
+         Self->FeedbackSubscriptions.reset(new (std::nothrow) std::vector<FeedbackSubscription>);
          if (!Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
@@ -913,7 +826,7 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       if ((!Self->Scene) or (!Self->Scene->SurfaceID)) return ERR::FieldNotSet;
 
       if (!Self->InputSubscriptions) {
-         Self->InputSubscriptions = new (std::nothrow) std::vector<InputSubscription>;
+         Self->InputSubscriptions.reset(new (std::nothrow) std::vector<InputSubscription>);
          if (!Self->InputSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
@@ -978,7 +891,7 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
    if (!Self->Scene->SurfaceID) return log.warning(ERR::FieldNotSet);
 
    if (!Self->KeyboardSubscriptions) {
-      Self->KeyboardSubscriptions = new (std::nothrow) std::vector<KeyboardSubscription>;
+      Self->KeyboardSubscriptions.reset(new (std::nothrow) std::vector<KeyboardSubscription>);
       if (!Self->KeyboardSubscriptions) return log.warning(ERR::AllocMemory);
    }
 
@@ -1256,7 +1169,7 @@ static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &
 {
    kt::Log log;
 
-   if (Self->DashArray) { delete Self->DashArray; Self->DashArray = nullptr; }
+   Self->DashArray.reset();
 
    if (Array.size() > 0) {
       int total;
@@ -1264,7 +1177,7 @@ static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &
       if (Array.size() & 1) total = Array.size() * 2; // To satisfy requirements, the dash path can be doubled to make an even number.
       else total = Array.size();
 
-      Self->DashArray = new (std::nothrow) DashedStroke(Self->BasePath, total);
+      Self->DashArray.reset(new (std::nothrow) DashedStroke(Self->BasePath, total));
       if (Self->DashArray) {
          for (unsigned i=0; i < Array.size(); i++) Self->DashArray->values[i] = Array[i];
          if (Array.size() & 1) {
@@ -1275,8 +1188,7 @@ static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &
          for (int i=0; i < std::ssize(Self->DashArray->values)-1; i+=2) {
             if ((Self->DashArray->values[i] < 0) or (Self->DashArray->values[i+1] < 0)) { // Negative values can cause an infinite drawing cycle.
                log.warning("Invalid dash array value pair (%f, %f)", Self->DashArray->values[i], Self->DashArray->values[i+1]);
-               delete Self->DashArray;
-               Self->DashArray = nullptr;
+               Self->DashArray.reset();
                return ERR::InvalidValue;
             }
 
@@ -1286,8 +1198,7 @@ static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &
 
          if (total_length <= 0) {
             log.warning("DashArray total length <= 0.");
-            delete Self->DashArray;
-            Self->DashArray = nullptr;
+            Self->DashArray.reset();
             return ERR::InvalidValue;
          }
 
@@ -1364,9 +1275,10 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
    // Note that if an internal routine sets DisableFillColour then the colour will be stored but effectively does nothing.
    Self->FillString.clear();
    Self->FGFill = false;
+   Self->Fill[0].reset();
+   Self->Fill[1].reset();
 
    if (Value.empty()) {
-      Self->Fill[0].reset();
       return ERR::Okay;
    }
 
@@ -1439,7 +1351,6 @@ static ERR VECTOR_SET_FillColour(extVector *Self, struct FRGB *Value)
    }
 
    Self->FillString.clear();
-
    return ERR::Okay;
 }
 
@@ -1455,8 +1366,6 @@ the #Opacity to determine a final opacity value for the render.
 
 static ERR VECTOR_SET_FillOpacity(extVector *Self, double Value)
 {
-   kt::Log log;
-
    if ((Value >= 0) and (Value <= 1.0)) {
       Self->FillOpacity = Value;
 
@@ -1464,7 +1373,7 @@ static ERR VECTOR_SET_FillOpacity(extVector *Self, double Value)
       else mark_buffers_for_refresh(Self);
       return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
+   else return ERR::OutOfRange;
 }
 
 /*********************************************************************************************************************
@@ -1673,14 +1582,12 @@ them for theta less than approximately 29 degrees, and a limit of 10.0 converts 
 
 static ERR VECTOR_SET_MiterLimit(extVector *Self, double Value)
 {
-   kt::Log log;
-
    if (Value >= 1.0) {
       Self->MiterLimit = Value;
       mark_buffers_for_refresh(Self);
       return ERR::Okay;
    }
-   else return log.warning(ERR::InvalidValue);
+   else return ERR::InvalidValue;
 }
 
 /*********************************************************************************************************************
@@ -2072,6 +1979,7 @@ the ~ReadPainter() function in the Vector module.  Please refer to it for furthe
 static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
 {
    Self->StrokeString.clear();
+   Self->Stroke.reset();
 
    if (not Value.empty()) {
       Self->StrokeString = Value;
@@ -2085,7 +1993,6 @@ static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
          if (fallback.Colour.Alpha) Self->Stroke.Colour = fallback.Colour;
       }
    }
-   else Self->Stroke.reset();
 
    Self->Stroked = Self->is_stroked();
    mark_buffers_for_refresh(Self);
@@ -2316,6 +2223,75 @@ double extVector::fixed_stroke_width()
 
 //********************************************************************************************************************
 
+extVector::~extVector() {
+   ClipCache.clear();
+
+   if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
+   if (Transition) UnsubscribeAction(Transition, AC::Free);
+   if (Morph)      UnsubscribeAction(Morph, AC::Free);
+   if (AppendPath) UnsubscribeAction(AppendPath, AC::Free);
+
+   // Patch the nearest vectors that are linked to this one.
+   if (Next) Next->Prev = Prev;
+   if (Prev) Prev->Next = Next;
+   if ((Parent) and (!Prev)) {
+      if (Parent->classID() IS CLASSID::VECTORSCENE) ((objVectorScene *)Parent)->Viewport = (objVectorViewport *)Next;
+      else ((extVector *)Parent)->Child = Next;
+   }
+
+   if (Child) {
+      // Clear the parent reference for all children of the vector (essential for maintaining pointer integrity).
+      auto &scan = Child;
+      while (scan) {
+         scan->Parent = nullptr;
+         scan = scan->Next;
+      }
+   }
+
+   if ((Scene) and (!Scene->collecting())) {
+      auto scene = (extVectorScene *)Scene;
+      if ((ParentView) and (ResizeSubscription)) {
+         if (scene->ResizeSubscriptions.contains(ParentView)) {
+            scene->ResizeSubscriptions[ParentView].erase(this);
+         }
+      }
+      scene->InputSubscriptions.erase(this);
+      scene->KeyboardSubscriptions.erase(this);
+
+      if (scene->ActiveVector IS UID) {
+         if (scene->Cursor != PTC::DEFAULT) {
+            kt::ScopedObjectLock<objSurface> surface(scene->SurfaceID);
+            if ((surface.granted()) and (surface.obj->Cursor != PTC::DEFAULT)) {
+               surface.obj->setCursor(PTC::DEFAULT);
+            }
+         }
+      }
+   }
+
+   {
+      const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+      auto pos = std::find(glVectorFocusList.begin(), glVectorFocusList.end(), this);
+      if (pos != glVectorFocusList.end()) glVectorFocusList.erase(pos, glVectorFocusList.end());
+   }
+
+   {
+      const std::lock_guard<std::mutex> lock(glResizeLock);
+      if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(this))) {
+         glResizeSubscriptions.erase(this);
+      }
+   }
+
+   if (Matrices) {
+      VectorMatrix *next;
+      for (auto t=Matrices; t; t=next) {
+         next = t->Next;
+         FreeResource(t);
+      }
+   }
+}
+
+//********************************************************************************************************************
+
 #include "vector_def.c"
 
 static const FieldArray clVectorFields[] = {
@@ -2363,6 +2339,8 @@ static const FieldArray clVectorFields[] = {
    { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,         VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
    END_FIELD
 };
+
+//********************************************************************************************************************
 
 static ERR init_vector(void)
 {

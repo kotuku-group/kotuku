@@ -47,10 +47,9 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
       return &cols->table;
    }
    else {
-      if ((Painter.GradientTable) and (Opacity IS Painter.GradientAlpha)) return Painter.GradientTable;
+      if ((Painter.GradientTable) and (Opacity IS Painter.GradientAlpha)) return Painter.GradientTable.get();
 
-      delete Painter.GradientTable;
-      Painter.GradientTable = new (std::nothrow) GRADIENT_TABLE();
+      Painter.GradientTable.reset(new (std::nothrow) GRADIENT_TABLE());
       if (not Painter.GradientTable) {
          log.warning("Failed to allocate fill gradient table");
          return nullptr;
@@ -62,7 +61,7 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
             cols->table[i].a * Opacity);
       }
 
-      return Painter.GradientTable;
+      return Painter.GradientTable.get();
    }
 }
 
@@ -84,10 +83,11 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
    }
    else {
       double opacity = Vector.StrokeOpacity * Vector.Opacity;
-      if ((Vector.Stroke.GradientTable) and (opacity IS Vector.Stroke.GradientAlpha)) return Vector.Stroke.GradientTable;
+      if ((Vector.Stroke.GradientTable) and (opacity IS Vector.Stroke.GradientAlpha)) {
+         return Vector.Stroke.GradientTable.get();
+      }
 
-      delete Vector.Stroke.GradientTable;
-      Vector.Stroke.GradientTable = new (std::nothrow) GRADIENT_TABLE();
+      Vector.Stroke.GradientTable.reset(new (std::nothrow) GRADIENT_TABLE());
       if (not Vector.Stroke.GradientTable) {
          log.warning("Failed to allocate stroke gradient table");
          return nullptr;
@@ -99,7 +99,7 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
             cols->table[i].a * opacity);
       }
 
-      return Vector.Stroke.GradientTable;
+      return Vector.Stroke.GradientTable.get();
    }
 }
 
@@ -109,8 +109,7 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
 static void invalidate_gradient_painter_table(extPainter &Painter, extGradient *Target)
 {
    if (Painter.Gradient IS Target) {
-      delete Painter.GradientTable;
-      Painter.GradientTable = nullptr;
+      Painter.GradientTable.reset();
    }
 }
 

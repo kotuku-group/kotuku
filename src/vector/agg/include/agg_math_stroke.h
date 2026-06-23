@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <algorithm>
+
 #include "agg_math.h"
 #include "agg_vertex_sequence.h"
 #include <kotuku/modules/vector.h>
@@ -19,28 +21,28 @@ namespace agg
 {
     template<class VertexConsumer> class math_stroke {
     public:
-        typedef typename VertexConsumer::value_type coord_type;
+        using coord_type = typename VertexConsumer::value_type;
 
-        math_stroke();
+        math_stroke() = default;
 
-        void line_cap(VLC lc)   { m_line_cap = lc; }
-        void line_join(VLJ lj)  { m_line_join = lj; }
-        void inner_join(VIJ ij) { m_inner_join = ij; }
+        void line_cap(VLC LineCap) noexcept { m_line_cap = LineCap; }
+        void line_join(VLJ LineJoin) noexcept { m_line_join = LineJoin; }
+        void inner_join(VIJ InnerJoin) noexcept { m_inner_join = InnerJoin; }
 
-        VLC line_cap()   const { return m_line_cap; }
-        VLJ line_join()  const { return m_line_join; }
-        VIJ inner_join() const { return m_inner_join; }
+        VLC line_cap() const noexcept { return m_line_cap; }
+        VLJ line_join() const noexcept { return m_line_join; }
+        VIJ inner_join() const noexcept { return m_inner_join; }
 
         void width(double w);
-        void miter_limit(double ml) { m_miter_limit = ml; }
+        void miter_limit(double MiterLimit) noexcept { m_miter_limit = MiterLimit; }
         void miter_limit_theta(double t);
-        void inner_miter_limit(double ml) { m_inner_miter_limit = ml; }
-        void approximation_scale(double as) { m_approx_scale = as; }
+        void inner_miter_limit(double MiterLimit) noexcept { m_inner_miter_limit = MiterLimit; }
+        void approximation_scale(double ApproximationScale) noexcept { m_approx_scale = ApproximationScale; }
 
-        double width() const { return m_width * 2.0; }
-        double miter_limit() const { return m_miter_limit; }
-        double inner_miter_limit() const { return m_inner_miter_limit; }
-        double approximation_scale() const { return m_approx_scale; }
+        double width() const noexcept { return m_width * 2.0; }
+        double miter_limit() const noexcept { return m_miter_limit; }
+        double inner_miter_limit() const noexcept { return m_inner_miter_limit; }
+        double approximation_scale() const noexcept { return m_approx_scale; }
 
         void calc_cap(VertexConsumer& vc, const vertex_dist& v0, const vertex_dist& v1, double len);
         void calc_join(VertexConsumer& vc, const vertex_dist& v0, const vertex_dist& v1, const vertex_dist& v2, double len1, double len2);
@@ -55,31 +57,19 @@ namespace agg
         void calc_miter(VertexConsumer& vc, const vertex_dist& v0, const vertex_dist& v1, const vertex_dist& v2,
            double dx1, double dy1, double dx2, double dy2, VLJ lj, double mlimit, double dbevel);
 
-        double       m_width;
-        double       m_width_abs;
-        double       m_width_eps;
-        int          m_width_sign;
-        double       m_miter_limit;
-        double       m_inner_miter_limit;
-        double       m_approx_scale;
-        VLC m_line_cap;
-        VLJ m_line_join;
-        VIJ m_inner_join;
-    };
+        double arc_step() const noexcept { return acos(m_width_abs / (m_width_abs + 0.125 / m_approx_scale)) * 2; }
 
-    template<class VC> math_stroke<VC>::math_stroke() :
-        m_width(0.5),
-        m_width_abs(0.5),
-        m_width_eps(0.5/1024.0),
-        m_width_sign(1),
-        m_miter_limit(4.0),
-        m_inner_miter_limit(1.01),
-        m_approx_scale(1.0),
-        m_line_cap(VLC::BUTT),
-        m_line_join(VLJ::MITER_SMART),
-        m_inner_join(VIJ::MITER)
-    {
-    }
+        double m_width = 0.5;
+        double m_width_abs = 0.5;
+        double m_width_eps = 0.5 / 1024.0;
+        int    m_width_sign = 1;
+        double m_miter_limit = 4.0;
+        double m_inner_miter_limit = 1.01;
+        double m_approx_scale = 1.0;
+        VLC    m_line_cap = VLC::BUTT;
+        VLJ    m_line_join = VLJ::MITER_SMART;
+        VIJ    m_inner_join = VIJ::MITER;
+    };
 
     template<class VC> void math_stroke<VC>::width(double w)
     {
@@ -104,30 +94,27 @@ namespace agg
     void math_stroke<VC>::calc_arc(VC &vc, double x, double y, double dx1, double dy1, double dx2, double dy2) {
         double a1 = atan2(dy1 * m_width_sign, dx1 * m_width_sign);
         double a2 = atan2(dy2 * m_width_sign, dx2 * m_width_sign);
-        int i, n;
-
-        double da = acos(m_width_abs / (m_width_abs + 0.125 / m_approx_scale)) * 2;
+        double da = arc_step();
 
         add_vertex(vc, x + dx1, y + dy1);
+        if ((m_width_sign > 0) and (a1 > a2)) a2 += 2 * pi;
+        else if ((m_width_sign < 0) and (a1 < a2)) a2 -= 2 * pi;
+
+        int n;
         if (m_width_sign > 0) {
-            if (a1 > a2) a2 += 2 * pi;
             n = int((a2 - a1) / da);
             da = (a2 - a1) / (n + 1);
-            a1 += da;
-            for (i = 0; i < n; i++) {
-                add_vertex(vc, x + cos(a1) * m_width, y + sin(a1) * m_width);
-                a1 += da;
-            }
         }
         else {
-            if (a1 < a2) a2 -= 2 * pi;
             n = int((a1 - a2) / da);
             da = (a1 - a2) / (n + 1);
-            a1 -= da;
-            for (i = 0; i < n; i++) {
-                add_vertex(vc, x + cos(a1) * m_width, y + sin(a1) * m_width);
-                a1 -= da;
-            }
+        }
+
+        da *= m_width_sign;
+        a1 += da;
+        for (int i = 0; i < n; i++) {
+            add_vertex(vc, x + cos(a1) * m_width, y + sin(a1) * m_width);
+            a1 += da;
         }
         add_vertex(vc, x + dx2, y + dy2);
     }
@@ -230,9 +217,8 @@ namespace agg
             add_vertex(vc, v0.x + dx1 - dx2, v0.y - dy1 - dy2);
         }
         else {
-            double da = acos(m_width_abs / (m_width_abs + 0.125 / m_approx_scale)) * 2;
+            double da = arc_step();
             double a1;
-            int i;
             int n = int(pi / da);
 
             da = pi / (n + 1);
@@ -240,7 +226,7 @@ namespace agg
             if(m_width_sign > 0) {
                 a1 = atan2(dy1, -dx1);
                 a1 += da;
-                for(i = 0; i < n; i++) {
+                for(int i = 0; i < n; i++) {
                     add_vertex(vc, v0.x + cos(a1) * m_width, v0.y + sin(a1) * m_width);
                     a1 += da;
                 }
@@ -248,7 +234,7 @@ namespace agg
             else {
                 a1 = atan2(-dy1, dx1);
                 a1 -= da;
-                for(i = 0; i < n; i++) {
+                for(int i = 0; i < n; i++) {
                     add_vertex(vc, v0.x + cos(a1) * m_width, v0.y + sin(a1) * m_width);
                     a1 -= da;
                 }
@@ -272,8 +258,7 @@ namespace agg
       if (cp != 0 and ((cp > 0) IS (m_width > 0))) {
          // Inner join
 
-         double limit = ((len1 < len2) ? len1 : len2) / m_width_abs;
-         if (limit < m_inner_miter_limit) limit = m_inner_miter_limit;
+         double limit = std::max(((len1 < len2) ? len1 : len2) / m_width_abs, m_inner_miter_limit);
 
          switch(m_inner_join) {
             default: // inner_bevel

@@ -949,7 +949,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       int save_origin_x = 0;
       int save_origin_y = 0;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
-         if (not shape->IsolatedBuffer) shape->IsolatedBuffer = new (std::nothrow) filter_bitmap;
+         if (not shape->IsolatedBuffer) shape->IsolatedBuffer.reset(new (std::nothrow) filter_bitmap);
          if (shape->IsolatedBuffer) {
             auto &clip_box = mRenderBase.clip_box();
             TClipRectangle<int> isolated_clip(clip_box.x1, clip_box.y1, clip_box.x2 + 1, clip_box.y2 + 1);
