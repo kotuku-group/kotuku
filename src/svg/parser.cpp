@@ -1025,9 +1025,9 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
 
          case SVF_image_rendering: {
-            if ("optimizeSpeed" IS val) fx->setResampleMethod(VSM::BILINEAR);
+            if ("optimizeSpeed" IS val) fx->setResampleMethod(VSM::NEIGHBOUR);
             else if ("optimizeQuality" IS val) fx->setResampleMethod(VSM::LANCZOS);
-            else if ("auto" IS val);
+            else if ("auto" IS val); // Leave as internal default
             else if ("inherit" IS val);
             else log.warning("Unrecognised image-rendering option '%s'", val.c_str());
             break;
