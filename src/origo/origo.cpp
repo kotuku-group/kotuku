@@ -36,7 +36,7 @@ static bool glTime = false;
 static bool glDialog = false;
 static bool glBackstage = false;
 
-static ERR exec_source(std::string, int, const std::string);
+static ERR exec_source(std::string_view, int, const std::string_view);
 
 #ifdef _WIN32
 inline void select_window_icon_resource(const std::string_view Path)
@@ -72,7 +72,7 @@ The following options can be used when executing script files:
 )";
 
 static std::string glDialogScript =
-R"(STRING:import 'gui/filedialog'
+R"(string:import 'gui/filedialog'
 try
  gui.dialog.file({
   filterList = { { name='Script Files', ext='.tiri' } },
@@ -212,7 +212,7 @@ static ERR select_file_dialog(void)
    }
    else glDialogScript.replace(start, 8, "kotuku:");
 
-   return exec_source(glDialogScript.c_str(), glTime, glProcedure);
+   return exec_source(glDialogScript, glTime, glProcedure);
 }
 
 //********************************************************************************************************************
@@ -245,7 +245,7 @@ extern "C" int main(int argc, char **argv)
          result = select_file_dialog();
       }
       else if (not glStatement.empty()) {
-         result = exec_source(std::string("STRING:") + glStatement, glTime, glProcedure);
+         result = exec_source(std::string("string:") + glStatement, glTime, glProcedure);
       }
       else if (not glTargetFile.empty()) {
          std::string_view path;

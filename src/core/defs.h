@@ -1298,6 +1298,13 @@ inline int64_t calc_timestamp(struct DateTime *Date) {
           ((int64_t)Date->Year * 60LL * 60LL * 24LL * 31LL * 12LL));
 }
 
+// Convert a wall-clock timestamp (microseconds since the Unix epoch, e.g. as produced by std::chrono::system_clock
+// or the Time class's SystemTime field) into a broken-down DateTime expressed in the host's local time zone.  Returns
+// ERR::Okay on success, or ERR::SystemCall if the local zone or calendar conversion fails.  NB: This is NOT compatible
+// with PreciseTime(), which returns a monotonic steady_clock value that has no relationship to the calendar.
+
+extern ERR datetime_from_unix_us(int64_t MicroEpoch, struct DateTime &Date);
+
 inline uint16_t reverse_word(uint16_t Value) {
     return (((Value & 0x00FF) << 8) | ((Value & 0xFF00) >> 8));
 }

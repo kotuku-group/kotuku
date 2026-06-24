@@ -424,7 +424,7 @@ static ERR VECTOR_Init(extVector *Self)
 {
    kt::Log log;
 
-   if (Self->classID() IS CLASSID::VECTOR) {
+   if (not Self->isDerived()) {
       log.warning("Vector cannot be instantiated directly (use a derived class).");
       return ERR::UseDerived;
    }

@@ -141,7 +141,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "Operation cannot complete because system is busy with an earlier operation",
  "Attempt to connect to server aborted",
  "Function call missing argument value(s)",
- "An object is not of the required type",
+ "An object is not of the required class type",
  "Execution violation - function must be called from the task that owns the object",
  "Detected a recursive function call",
  "Address pointer is outside of the task's memory map",

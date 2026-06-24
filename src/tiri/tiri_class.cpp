@@ -500,8 +500,9 @@ static ERR TIRI_Init(objScript *Self)
    kt::Log log;
 
    if (not Self->Path.empty()) {
-      if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
-         log.warning("No support for path '%s'", Self->Path.c_str());
+      if (Self->Path.starts_with("string:")); // Assume Tiri for string paths
+      else if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
+         log.warning("Path extension not recognised for '%s'", Self->Path.c_str());
          return ERR::NoSupport;
       }
    }
@@ -520,7 +521,7 @@ static ERR TIRI_Init(objScript *Self)
 
       if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
          error = src_file->getTimestamp(src_ts);
-         if (!error) error = src_file->getSize(src_size);
+         if ((!error) or (error IS ERR::NoSupport)) error = src_file->getSize(src_size);
       }
       else error = ERR::File;
 

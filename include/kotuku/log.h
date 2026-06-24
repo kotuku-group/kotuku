@@ -89,7 +89,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::WARNING, header, Message, arg);
-         va_end(arg);
+         va_end(arg); // Breakpoint here
       }
 
       void error(CSTRING Message, ...) __attribute__((format(printf, 2, 3))) { // NB: Use for messages intended for the user, not the developer
@@ -113,7 +113,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
 
       inline ERR warning(ERR Code) {
          FuncError(header, Code);
-         return Code;
+         return Code; // Breakpoint here
       }
 
       void trace(CSTRING Message, ...) {

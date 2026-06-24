@@ -2,22 +2,22 @@
 //********************************************************************************************************************
 // Executes the target.
 
-ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedure)
+ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_view Procedure)
 {
    kt::Log log(__FUNCTION__);
    ERR error;
 
-   log.msg("Identifying file '%s'", TargetFile.c_str());
+   log.msg("Identifying file '%.*s'", int(TargetFile.size()), TargetFile.data());
 
-   FindClass(CLASSID::TIRI);
+   FindClass(CLASSID::TIRI); // Pre-load the Tiri module
 
    CLASSID class_id, derived_id;
-   if (TargetFile.starts_with("STRING:")) {
+   if (TargetFile.starts_with("string:")) { // Presumes Tiri
       derived_id = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
    else if ((error = IdentifyFile(TargetFile, CLASSID::NIL, &class_id, &derived_id)) != ERR::Okay) {
-      printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", TargetFile.c_str(), GetErrorMsg(error));
+      printf("Failed to identify the type of file for path '%.*s', error: %s.  Assuming Tiri script.\n", int(TargetFile.size()), TargetFile.data(), GetErrorMsg(error));
       derived_id = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
@@ -121,7 +121,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
       if (glArgsIndex) {
          for (unsigned i=glArgsIndex; i < glArgs.size(); i++) {
             auto eq = glArgs[i].find('=');
-            if (eq IS std::string::npos) acSetKey(glScript, glArgs[i].c_str(), "true");
+            if (eq IS std::string::npos) acSetKey(glScript, glArgs[i], "true");
             else {
                auto argname = std::string(glArgs[i], 0, eq);
                eq++;
@@ -129,12 +129,12 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
                   // Array definition, e.g. files={ file1.txt file2.txt }
                   // This will be converted to files(0)=file.txt files(1)=file2.txt
 
-                  if (glArgs[i][eq+1] > 0x20) acSetKey(glScript, argname.c_str(), glArgs[i].c_str() + eq);
+                  if (glArgs[i][eq+1] > 0x20) acSetKey(glScript, argname, glArgs[i].substr(eq));
                   else {
                      unsigned arg_index = 0;
                      for (++i; (i < glArgs.size()) and (glArgs[i][0] != '}'); i++) {
                         auto argindex = argname + '(' + std::to_string(arg_index) + ')';
-                        acSetKey(glScript, argindex.c_str(), glArgs[i].c_str());
+                        acSetKey(glScript, argindex, glArgs[i]);
                         arg_index++;
                      }
 
@@ -142,10 +142,10 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
                      // Note that the last arg in the array will be the "}" that closes it
 
-                     acSetKey(glScript, (argname + ":size").c_str(), std::to_string(arg_index).c_str());
+                     acSetKey(glScript, (argname + ":size"), std::to_string(arg_index));
                   }
                }
-               else acSetKey(glScript, argname.c_str(), glArgs[i].c_str() + eq);
+               else acSetKey(glScript, argname, glArgs[i].substr(eq));
             }
          }
       }
