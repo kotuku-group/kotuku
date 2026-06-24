@@ -23,6 +23,7 @@ class objGradientConic;
 class objGradientDiamond;
 class objGradientContour;
 class objGradientGouraud;
+class objGradientMesh;
 class objGradientDistal;
 class objGradientVoronoi;
 class objFilterEffect;
@@ -564,6 +565,45 @@ struct GouraudVertex {
    double X;              // The X coordinate of the vertex.
    double Y;              // The Y coordinate of the vertex.
    struct FRGB Colour;    // The floating point RGB colour assigned to this vertex.
+};
+
+struct MeshPatchRecord {
+   double TopP0X;              // Top edge starting X coordinate.
+   double TopP0Y;              // Top edge starting Y coordinate.
+   double TopC0X;              // Top edge first control point X coordinate.
+   double TopC0Y;              // Top edge first control point Y coordinate.
+   double TopC1X;              // Top edge second control point X coordinate.
+   double TopC1Y;              // Top edge second control point Y coordinate.
+   double TopP1X;              // Top edge ending X coordinate.
+   double TopP1Y;              // Top edge ending Y coordinate.
+   double RightP0X;            // Right edge starting X coordinate.
+   double RightP0Y;            // Right edge starting Y coordinate.
+   double RightC0X;            // Right edge first control point X coordinate.
+   double RightC0Y;            // Right edge first control point Y coordinate.
+   double RightC1X;            // Right edge second control point X coordinate.
+   double RightC1Y;            // Right edge second control point Y coordinate.
+   double RightP1X;            // Right edge ending X coordinate.
+   double RightP1Y;            // Right edge ending Y coordinate.
+   double BottomP0X;           // Bottom edge starting X coordinate.
+   double BottomP0Y;           // Bottom edge starting Y coordinate.
+   double BottomC0X;           // Bottom edge first control point X coordinate.
+   double BottomC0Y;           // Bottom edge first control point Y coordinate.
+   double BottomC1X;           // Bottom edge second control point X coordinate.
+   double BottomC1Y;           // Bottom edge second control point Y coordinate.
+   double BottomP1X;           // Bottom edge ending X coordinate.
+   double BottomP1Y;           // Bottom edge ending Y coordinate.
+   double LeftP0X;             // Left edge starting X coordinate.
+   double LeftP0Y;             // Left edge starting Y coordinate.
+   double LeftC0X;             // Left edge first control point X coordinate.
+   double LeftC0Y;             // Left edge first control point Y coordinate.
+   double LeftC1X;             // Left edge second control point X coordinate.
+   double LeftC1Y;             // Left edge second control point Y coordinate.
+   double LeftP1X;             // Left edge ending X coordinate.
+   double LeftP1Y;             // Left edge ending Y coordinate.
+   struct FRGB TopLeft;        // Colour assigned to the top-left patch corner.
+   struct FRGB TopRight;       // Colour assigned to the top-right patch corner.
+   struct FRGB BottomRight;    // Colour assigned to the bottom-right patch corner.
+   struct FRGB BottomLeft;     // Colour assigned to the bottom-left patch corner.
 };
 
 struct Transition {
@@ -1719,6 +1759,39 @@ class objGradientGouraud : public objGradient {
    inline ERR setIndices(const std::span<const int> Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x40105308, &Value);
+   }
+
+};
+
+// GradientMesh class definition
+
+#define VER_GRADIENTMESH (1.000000)
+
+class objGradientMesh : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTMESH;
+   static constexpr CSTRING CLASS_NAME = "GradientMesh";
+
+   using create = kt::Create<objGradientMesh>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      auto get_field = (ERR (*)(APTR, std::span<MeshPatchRecord> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+
+   // Customised field setting
+
+   inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
 };
@@ -4600,57 +4673,57 @@ class objVectorWave : public objVector {
    // Customised field getting
 
    inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1120));
+      Value = *((Unit *)(((int8_t *)this) + 960));
       return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1136));
+      Value = *((Unit *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1152));
+      Value = *((Unit *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1168));
+      Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getAmplitude(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1184));
+      Value = *((double *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
    inline ERR getFrequency(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1192));
+      Value = *((double *)(((int8_t *)this) + 1032));
       return ERR::Okay;
    }
 
    inline ERR getDecay(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1200));
+      Value = *((double *)(((int8_t *)this) + 1040));
       return ERR::Okay;
    }
 
    inline ERR getDegree(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1208));
+      Value = *((double *)(((int8_t *)this) + 1048));
       return ERR::Okay;
    }
 
    inline ERR getThickness(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1216));
+      Value = *((double *)(((int8_t *)this) + 1056));
       return ERR::Okay;
    }
 
    inline ERR getClose(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1224));
+      Value = *((int *)(((int8_t *)this) + 1064));
       return ERR::Okay;
    }
 
    inline ERR getStyle(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1228));
+      Value = *((int *)(((int8_t *)this) + 1068));
       return ERR::Okay;
    }
 
@@ -4972,62 +5045,62 @@ class objVectorShape : public objVector {
    // Customised field getting
 
    inline ERR getM(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1120));
+      Value = *((double *)(((int8_t *)this) + 960));
       return ERR::Okay;
    }
 
    inline ERR getN1(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1128));
+      Value = *((double *)(((int8_t *)this) + 968));
       return ERR::Okay;
    }
 
    inline ERR getN2(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1136));
+      Value = *((double *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getN3(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1144));
+      Value = *((double *)(((int8_t *)this) + 984));
       return ERR::Okay;
    }
 
    inline ERR getA(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1152));
+      Value = *((double *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
    inline ERR getB(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1160));
+      Value = *((double *)(((int8_t *)this) + 1000));
       return ERR::Okay;
    }
 
    inline ERR getPhi(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1168));
+      Value = *((double *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1176));
+      Value = *((int *)(((int8_t *)this) + 1016));
       return ERR::Okay;
    }
 
    inline ERR getSpiral(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1180));
+      Value = *((int *)(((int8_t *)this) + 1020));
       return ERR::Okay;
    }
 
    inline ERR getRepeat(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1184));
+      Value = *((int *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
    inline ERR getClose(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1188));
+      Value = *((int *)(((int8_t *)this) + 1028));
       return ERR::Okay;
    }
 
    inline ERR getMod(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1192));
+      Value = *((int *)(((int8_t *)this) + 1032));
       return ERR::Okay;
    }
 
@@ -5144,37 +5217,37 @@ class objVectorSpiral : public objVector {
    // Customised field getting
 
    inline ERR getSpacing(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1120));
+      Value = *((double *)(((int8_t *)this) + 960));
       return ERR::Okay;
    }
 
    inline ERR getOffset(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1128));
+      Value = *((double *)(((int8_t *)this) + 968));
       return ERR::Okay;
    }
 
    inline ERR getStep(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1136));
+      Value = *((double *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getLoopLimit(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1144));
+      Value = *((double *)(((int8_t *)this) + 984));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1152));
+      Value = *((Unit *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1168));
+      Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1184));
+      Value = *((Unit *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
@@ -5274,27 +5347,27 @@ class objVectorEllipse : public objVector {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1120));
+      Value = *((Unit *)(((int8_t *)this) + 960));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1136));
+      Value = *((Unit *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getRadiusX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1152));
+      Value = *((Unit *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
    inline ERR getRadiusY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1168));
+      Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1184));
+      Value = *((int *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
@@ -5397,7 +5470,7 @@ class objVectorViewport : public objVector {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = *((ARF *)(((int8_t *)this) + 1160));
+      Value = *((ARF *)(((int8_t *)this) + 1000));
       return ERR::Okay;
    }
 
@@ -5407,37 +5480,37 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getOverflowX(VOF &Value) noexcept {
-      Value = *((VOF *)(((int8_t *)this) + 1164));
+      Value = *((VOF *)(((int8_t *)this) + 1004));
       return ERR::Okay;
    }
 
    inline ERR getOverflowY(VOF &Value) noexcept {
-      Value = *((VOF *)(((int8_t *)this) + 1168));
+      Value = *((VOF *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getBuffer(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 1120));
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 960));
       return ERR::Okay;
    }
 
    inline ERR getViewX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1128));
+      Value = *((double *)(((int8_t *)this) + 968));
       return ERR::Okay;
    }
 
    inline ERR getViewY(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1136));
+      Value = *((double *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getViewWidth(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1144));
+      Value = *((double *)(((int8_t *)this) + 984));
       return ERR::Okay;
    }
 
    inline ERR getViewHeight(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1152));
+      Value = *((double *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 

@@ -190,6 +190,9 @@ bool svgState::parse_gradient_href(const std::string &Value, objGradient *Gradie
       else if (svg_tag_is(*other, SVF_conicGradient)) {
          parse_conicgradient(*other, (objGradientConic *)Gradient, dummy);
       }
+      else if ((svg_tag_is(*other, SVF_meshgradient)) and (Gradient->classID() IS CLASSID::GRADIENTMESH)) {
+         parse_meshgradient(*other, (objGradientMesh *)Gradient, dummy);
+      }
    }
 
    return true;
@@ -254,6 +257,311 @@ void svgState::set_gradient_stops(const XTag &Tag, objGradient *Gradient, bool P
          Gradient->setStops(span);
       }
    }
+}
+
+//********************************************************************************************************************
+
+struct SVGMeshPoint {
+   double x = 0;
+   double y = 0;
+};
+
+struct SVGMeshPatchEdge {
+   SVGMeshPoint p0, c0, c1, p1;
+};
+
+struct SVGMeshPatch {
+   SVGMeshPatchEdge edge[4];
+   FRGB corner[4];
+};
+
+static SVGMeshPatchEdge reverse_mesh_edge(const SVGMeshPatchEdge &Edge) noexcept
+{
+   return SVGMeshPatchEdge { Edge.p1, Edge.c1, Edge.c0, Edge.p0 };
+}
+
+static bool read_mesh_stop_colour(extSVG *Self, const XTag &Tag, FRGB &Colour) noexcept
+{
+   Colour.Red = 0;
+   Colour.Green = 0;
+   Colour.Blue = 0;
+   Colour.Alpha = 1.0;
+
+   double stop_opacity = 1.0;
+   bool found_colour = false;
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &name = Tag.Attribs[a].Name;
+      auto &value = Tag.Attribs[a].Value;
+      if (value.empty()) continue;
+
+      if (iequals("stop-color", name)) {
+         VectorPainter painter;
+         vec::ReadPainter(Self->Scene, value, &painter, nullptr);
+         Colour = painter.Colour;
+         found_colour = true;
+      }
+      else if (iequals("stop-opacity", name)) stop_opacity = svtonum<double>(value);
+   }
+
+   Colour.Alpha = ((double)Colour.Alpha) * stop_opacity;
+   return found_colour;
+}
+
+static bool read_mesh_stop_path(const XTag &Tag, std::string &Path) noexcept
+{
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      if (iequals("path", Tag.Attribs[a].Name)) {
+         Path = Tag.Attribs[a].Value;
+         return not Path.empty();
+      }
+   }
+   return false;
+}
+
+static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge) noexcept
+{
+   Edge.p0 = Start;
+   const char *scan = Path.c_str();
+   while ((*scan <= 0x20) or (*scan IS ',')) scan++;
+   const char cmd = *scan++;
+
+   std::vector<double> numbers;
+   while (*scan) {
+      while ((*scan <= 0x20) or (*scan IS ',')) scan++;
+      if (!*scan) break;
+
+      char *end = nullptr;
+      const double value = std::strtod(scan, &end);
+      if (end IS scan) return false;
+      numbers.push_back(value);
+      scan = end;
+   }
+
+   switch (cmd) {
+      case 'C':
+         if (numbers.size() < 6) return false;
+         Edge.c0 = SVGMeshPoint { numbers[0], numbers[1] };
+         Edge.c1 = SVGMeshPoint { numbers[2], numbers[3] };
+         Edge.p1 = SVGMeshPoint { numbers[4], numbers[5] };
+         return true;
+
+      case 'c':
+         if (numbers.size() < 6) return false;
+         Edge.c0 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
+         Edge.c1 = SVGMeshPoint { Start.x + numbers[2], Start.y + numbers[3] };
+         Edge.p1 = SVGMeshPoint { Start.x + numbers[4], Start.y + numbers[5] };
+         return true;
+
+      case 'L': {
+         if (numbers.size() < 2) return false;
+         Edge.p1 = SVGMeshPoint { numbers[0], numbers[1] };
+         const double dx = Edge.p1.x - Start.x;
+         const double dy = Edge.p1.y - Start.y;
+         Edge.c0 = SVGMeshPoint { Start.x + (dx / 3.0), Start.y + (dy / 3.0) };
+         Edge.c1 = SVGMeshPoint { Start.x + (dx * 2.0 / 3.0), Start.y + (dy * 2.0 / 3.0) };
+         return true;
+      }
+
+      case 'l': {
+         if (numbers.size() < 2) return false;
+         Edge.p1 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
+         const double dx = Edge.p1.x - Start.x;
+         const double dy = Edge.p1.y - Start.y;
+         Edge.c0 = SVGMeshPoint { Start.x + (dx / 3.0), Start.y + (dy / 3.0) };
+         Edge.c1 = SVGMeshPoint { Start.x + (dx * 2.0 / 3.0), Start.y + (dy * 2.0 / 3.0) };
+         return true;
+      }
+
+      default:
+         return false;
+   }
+}
+
+static MeshPatchRecord mesh_patch_record_from_patch(const SVGMeshPatch &Patch) noexcept
+{
+   MeshPatchRecord record = {};
+
+   record.TopP0X = Patch.edge[0].p0.x;       record.TopP0Y = Patch.edge[0].p0.y;
+   record.TopC0X = Patch.edge[0].c0.x;       record.TopC0Y = Patch.edge[0].c0.y;
+   record.TopC1X = Patch.edge[0].c1.x;       record.TopC1Y = Patch.edge[0].c1.y;
+   record.TopP1X = Patch.edge[0].p1.x;       record.TopP1Y = Patch.edge[0].p1.y;
+   record.RightP0X = Patch.edge[1].p0.x;     record.RightP0Y = Patch.edge[1].p0.y;
+   record.RightC0X = Patch.edge[1].c0.x;     record.RightC0Y = Patch.edge[1].c0.y;
+   record.RightC1X = Patch.edge[1].c1.x;     record.RightC1Y = Patch.edge[1].c1.y;
+   record.RightP1X = Patch.edge[1].p1.x;     record.RightP1Y = Patch.edge[1].p1.y;
+   record.BottomP0X = Patch.edge[2].p0.x;    record.BottomP0Y = Patch.edge[2].p0.y;
+   record.BottomC0X = Patch.edge[2].c0.x;    record.BottomC0Y = Patch.edge[2].c0.y;
+   record.BottomC1X = Patch.edge[2].c1.x;    record.BottomC1Y = Patch.edge[2].c1.y;
+   record.BottomP1X = Patch.edge[2].p1.x;    record.BottomP1Y = Patch.edge[2].p1.y;
+   record.LeftP0X = Patch.edge[3].p0.x;      record.LeftP0Y = Patch.edge[3].p0.y;
+   record.LeftC0X = Patch.edge[3].c0.x;      record.LeftC0Y = Patch.edge[3].c0.y;
+   record.LeftC1X = Patch.edge[3].c1.x;      record.LeftC1Y = Patch.edge[3].c1.y;
+   record.LeftP1X = Patch.edge[3].p1.x;      record.LeftP1Y = Patch.edge[3].p1.y;
+   record.TopLeft = Patch.corner[0];
+   record.TopRight = Patch.corner[1];
+   record.BottomRight = Patch.corner[2];
+   record.BottomLeft = Patch.corner[3];
+
+   return record;
+}
+
+static bool read_mesh_patch_stop(extSVG *Self, const XTag &Stop, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge,
+   FRGB &Colour) noexcept
+{
+   std::string path;
+   if (!read_mesh_stop_path(Stop, path)) return false;
+   if (!parse_mesh_edge_path(path, Start, Edge)) return false;
+   read_mesh_stop_colour(Self, Stop, Colour);
+   return true;
+}
+
+void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, std::string &ID) noexcept
+{
+   kt::Log log(__FUNCTION__);
+
+   bool process_stops = false;
+   parse_gradient_hrefs(Tag, Gradient, process_stops);
+   set_gradient_units(Tag, Gradient);
+
+   double start_x = 0;
+   double start_y = 0;
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      auto attrib = strhash(Tag.Attribs[a].Name);
+      switch(attrib) {
+         case SVF_x: start_x = svtonum<double>(val); break;
+         case SVF_y: start_y = svtonum<double>(val); break;
+         case SVF_type:
+            if ((not iequals("bilinear", val)) and (not iequals("Coons", val))) {
+               log.warning("Mesh gradient type '%s' is not supported; using bilinear Coons patches.", val.c_str());
+            }
+            break;
+
+         default:
+            parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
+            break;
+      }
+   }
+
+   std::vector<MeshPatchRecord> records;
+   std::vector<SVGMeshPatch> previous_row;
+   std::vector<SVGMeshPatch> current_row;
+   int rows = 0;
+
+   for (auto &row_tag : Tag.Children) {
+      if (svg_tag_hash(row_tag) != SVF_meshrow) continue;
+
+      current_row.clear();
+      int col = 0;
+      for (auto &patch_tag : row_tag.Children) {
+         if (svg_tag_hash(patch_tag) != SVF_meshpatch) continue;
+
+         SVGMeshPatch patch = {};
+         std::vector<const XTag *> stops;
+         for (auto &stop_tag : patch_tag.Children) {
+            if (svg_tag_hash(stop_tag) IS kt::strhash("stop")) stops.push_back(&stop_tag);
+         }
+
+         int stop_index = 0;
+         if (rows IS 0) {
+            if (col IS 0) patch.edge[0].p0 = SVGMeshPoint { start_x, start_y };
+            else {
+               auto &prev = current_row[size_t(col - 1)];
+               patch.edge[3] = reverse_mesh_edge(prev.edge[1]);
+               patch.edge[0].p0 = patch.edge[3].p1;
+               patch.corner[0] = prev.corner[1];
+               patch.corner[3] = prev.corner[2];
+            }
+
+            if (stop_index >= int(stops.size())) continue;
+            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[0].p0,
+               patch.edge[0], patch.corner[1])) continue;
+         }
+         else {
+            if (col >= int(previous_row.size())) continue;
+            auto &above = previous_row[size_t(col)];
+            patch.edge[0] = reverse_mesh_edge(above.edge[2]);
+            patch.corner[0] = above.corner[3];
+            patch.corner[1] = above.corner[2];
+         }
+
+         patch.edge[1].p0 = patch.edge[0].p1;
+         if (stop_index >= int(stops.size())) continue;
+         if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[1].p0,
+            patch.edge[1], patch.corner[2])) continue;
+
+         patch.edge[2].p0 = patch.edge[1].p1;
+         if (stop_index >= int(stops.size())) continue;
+         if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[2].p0,
+            patch.edge[2], patch.corner[3])) continue;
+
+         if (col IS 0) {
+            patch.edge[3].p0 = patch.edge[2].p1;
+            if (stop_index >= int(stops.size())) continue;
+            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[3].p0,
+               patch.edge[3], patch.corner[0])) continue;
+            if (rows != 0) {
+               patch.edge[3].p1 = patch.edge[0].p0;
+               patch.corner[0] = previous_row[0].corner[3];
+            }
+         }
+         else {
+            auto &prev = current_row[size_t(col - 1)];
+            if (rows != 0) patch.edge[3] = reverse_mesh_edge(prev.edge[1]);
+            patch.edge[2].p1 = patch.edge[3].p0;
+            patch.corner[3] = prev.corner[2];
+            patch.corner[0] = prev.corner[1];
+         }
+
+         current_row.push_back(patch);
+         records.push_back(mesh_patch_record_from_patch(patch));
+         col++;
+      }
+
+      if (not current_row.empty()) {
+         previous_row = current_row;
+         rows++;
+      }
+   }
+
+   if (not records.empty()) {
+      std::span<MeshPatchRecord> span(records.data(), records.size());
+      Gradient->setPatches(span);
+
+   }
+}
+
+//********************************************************************************************************************
+
+ERR svgState::proc_meshgradient(const XTag &Tag) noexcept
+{
+   objGradientMesh *gradient;
+   std::string id;
+
+   auto state = *this;
+   state.applyTag(Tag);
+
+   if (!NewObject(CLASSID::GRADIENTMESH, &gradient)) {
+      SetOwner(gradient, Self->Scene);
+      gradient->setFields(fl::Name("SVGMeshGrad"), fl::Units(VUNIT::BOUNDING_BOX));
+
+      state.parse_meshgradient(Tag, gradient, id);
+
+      if (!InitObject(gradient)) {
+         if (!id.empty()) {
+            SetName(gradient, id.c_str());
+            track_object(Self, gradient);
+            return Self->Scene->addDef(id.c_str(), gradient);
+         }
+         else return ERR::Okay;
+      }
+      else return ERR::Init;
+   }
+   else return ERR::NewObject;
 }
 
 //********************************************************************************************************************

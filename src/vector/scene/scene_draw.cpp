@@ -723,6 +723,11 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
                State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
                build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
          }
+         else if (gradient->classID() IS CLASSID::GRADIENTMESH) {
+            fill_mesh(State, Vector.Bounds, view_width(), view_height(), *(extGradientMesh *)gradient,
+               State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
+         }
          else if (auto table = get_stroke_gradient_table(Vector)) {
             fill_gradient(State, Vector.Bounds, &Vector.BasePath,
                build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State),
@@ -1338,6 +1343,9 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
          if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
             fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
          }
+         else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
+            fill_mesh(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientMesh &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
          else if (gradient.Colours) {
             fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
                &gradient.Colours->table, mRenderer, mRaster);
@@ -1358,6 +1366,9 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
          extGradient &gradient = (extGradient &)*StrokeStyle;
          if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
             fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
+            fill_mesh(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientMesh &)gradient, 1.0, mRenderer, mRaster, transform);
          }
          else if (gradient.Colours) {
             fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,

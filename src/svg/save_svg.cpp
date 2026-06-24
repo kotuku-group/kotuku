@@ -59,6 +59,63 @@ static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Par
 
 //*********************************************************************************************************************
 
+static void save_mesh_stop(objXML *XML, int Parent, double C0X, double C0Y, double C1X, double C1Y, double P1X,
+   double P1Y, const FRGB &Colour)
+{
+   int stop_index;
+   if (XML->insertXML(Parent, XMI::CHILD_END, "<stop/>", &stop_index) != ERR::Okay) return;
+
+   XTag *stop_tag;
+   if (XML->getTag(stop_index, &stop_tag) != ERR::Okay) return;
+
+   std::stringstream path;
+   path << "C " << C0X << " " << C0Y << " " << C1X << " " << C1Y << " " << P1X << " " << P1Y;
+   xml::NewAttrib(stop_tag, "path", path.str());
+
+   std::stringstream colour;
+   colour << "rgb(" << Colour.Red * 255.0 << "," << Colour.Green * 255.0 << "," << Colour.Blue * 255.0 << ")";
+   xml::NewAttrib(stop_tag, "stop-color", colour.str());
+   if (Colour.Alpha != 1.0) xml::NewAttrib(stop_tag, "stop-opacity", Colour.Alpha);
+}
+
+static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent, const MeshPatchRecord &Patch)
+{
+   int patch_index;
+   if (XML->insertXML(Parent, XMI::CHILD_END, "<meshpatch/>", &patch_index) != ERR::Okay) return;
+
+   if (RowIndex IS 0) {
+      save_mesh_stop(XML, patch_index, Patch.TopC0X, Patch.TopC0Y, Patch.TopC1X, Patch.TopC1Y,
+         Patch.TopP1X, Patch.TopP1Y, Patch.TopRight);
+   }
+
+   save_mesh_stop(XML, patch_index, Patch.RightC0X, Patch.RightC0Y, Patch.RightC1X, Patch.RightC1Y,
+      Patch.RightP1X, Patch.RightP1Y, Patch.BottomRight);
+   save_mesh_stop(XML, patch_index, Patch.BottomC0X, Patch.BottomC0Y, Patch.BottomC1X, Patch.BottomC1Y,
+      Patch.BottomP1X, Patch.BottomP1Y, Patch.BottomLeft);
+
+   if (ColIndex IS 0) {
+      save_mesh_stop(XML, patch_index, Patch.LeftC0X, Patch.LeftC0Y, Patch.LeftC1X, Patch.LeftC1Y,
+         Patch.LeftP1X, Patch.LeftP1Y, Patch.TopLeft);
+   }
+}
+
+static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
+{
+   std::span<MeshPatchRecord> patches;
+   if ((Mesh->getPatches(patches) != ERR::Okay) or patches.empty()) return;
+
+   xml::NewAttrib(Tag, "x", patches[0].TopP0X);
+   xml::NewAttrib(Tag, "y", patches[0].TopP0Y);
+
+   int row_index;
+   if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<meshrow/>", &row_index) != ERR::Okay) return;
+   for (int col=0; col < int(patches.size()); col++) {
+      save_mesh_patch(XML, 0, col, row_index, patches[size_t(col)]);
+   }
+}
+
+//*********************************************************************************************************************
+
 static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int Parent)
 {
    kt::Log log(__FUNCTION__);
@@ -84,6 +141,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                case CLASSID::GRADIENTCONTOUR: gradient_type = "<contourGradient/>"; break;
                case CLASSID::GRADIENTDISTAL:  gradient_type = "<distalGradient/>"; break;
                case CLASSID::GRADIENTLINEAR:  gradient_type = "<linearGradient/>"; break;
+               case CLASSID::GRADIENTMESH:    gradient_type = "<meshgradient/>"; break;
                case CLASSID::GRADIENTGOURAUD:
                   log.warning("GradientGouraud not supported.");
                   continue;
@@ -180,6 +238,9 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                   if ((!error) and (!diamond->getRadius(val))) set_dimension(tag, "r", val);
                }
             }
+            else if (def->classID() IS CLASSID::GRADIENTMESH) {
+               save_mesh_gradient(XML, tag, (objGradientMesh *)gradient);
+            }
 
             std::span<VectorMatrix> transform;
             if ((!error) and (!gradient->getMatrices(transform)) and (not transform.empty())) {
@@ -190,7 +251,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
 
             std::span<GradientStop> stops;
-            if (!gradient->getStops(stops)) {
+            if ((def->classID() != CLASSID::GRADIENTMESH) and (!gradient->getStops(stops))) {
                for (size_t s=0; (s < stops.size()) and (!error); s++) {
                   auto &stop = stops[s];
                   int stop_index;

@@ -21,6 +21,7 @@ void svgState::resolve_paint_server(const std::string &Value) noexcept
                   case SVF_diamondGradient:  proc_diamondgradient(*tagref); break;
                   case SVF_conicGradient:    proc_conicgradient(*tagref); break;
                   case SVF_linearGradient:   proc_lineargradient(*tagref); break;
+                  case SVF_meshgradient:     proc_meshgradient(*tagref); break;
                }
             }
          }
@@ -1892,6 +1893,7 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       case SVF_diamondGradient:  process_inherit_refs(Tag); break;
       case SVF_conicGradient:    process_inherit_refs(Tag); break;
       case SVF_linearGradient:   process_inherit_refs(Tag); break;
+      case SVF_meshgradient:     process_inherit_refs(Tag); break;
       case SVF_symbol:           proc_symbol(Tag); break;
       case SVF_animate:          proc_animate(Tag, ParentTag, Parent); break;
       case SVF_animateColor:     proc_animate_colour(Tag, ParentTag, Parent); break;
@@ -2302,6 +2304,7 @@ ERR svgState::proc_defs(XTag &Tag, OBJECTPTR Parent) noexcept
          case SVF_diamondGradient: state.proc_diamondgradient(child); break;
          case SVF_conicGradient:   state.proc_conicgradient(child); break;
          case SVF_linearGradient:  state.proc_lineargradient(child); break;
+         case SVF_meshgradient:    state.proc_meshgradient(child); break;
          case SVF_pattern:         state.proc_pattern(child); break;
          case SVF_image:           state.proc_def_image(child); break;
          case SVF_filter:          state.proc_filter(child); break;

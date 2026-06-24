@@ -26,6 +26,7 @@ static ERR init_gradient_conic(void);
 static ERR init_gradient_diamond(void);
 static ERR init_gradient_contour(void);
 static ERR init_gradient_gouraud(void);
+static ERR init_gradient_mesh(void);
 static ERR init_gradient_distal(void);
 static ERR init_gradient_voronoi(void);
 
@@ -600,6 +601,7 @@ ERR init_gradient(void) // The gradient is a definition type for creating gradie
    if ((error = init_gradient_diamond()) != ERR::Okay) return error;
    if ((error = init_gradient_contour()) != ERR::Okay) return error;
    if ((error = init_gradient_gouraud()) != ERR::Okay) return error;
+   if ((error = init_gradient_mesh()) != ERR::Okay) return error;
    if ((error = init_gradient_distal()) != ERR::Okay) return error;
    if ((error = init_gradient_voronoi()) != ERR::Okay) return error;
 

@@ -70,7 +70,7 @@ extern OBJECTPTR clVectorScene, clVectorViewport, clVectorGroup, clVectorColour;
 extern OBJECTPTR clVectorEllipse, clVectorRectangle, clVectorPath, clVectorWave;
 extern OBJECTPTR clVectorFilter, clVectorPolygon, clVectorText, clVectorClip;
 extern OBJECTPTR clGradient, clGradientLinear, clGradientRadial, clGradientConic, clGradientDiamond, clGradientContour;
-extern OBJECTPTR clGradientGouraud, clGradientDistal, clGradientVoronoi, clVectorImage, clVectorPattern, clVector;
+extern OBJECTPTR clGradientGouraud, clGradientMesh, clGradientDistal, clGradientVoronoi, clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX;
@@ -343,6 +343,22 @@ struct GouraudMesh {
    std::vector<int> Indices; // 3 indices per triangle (CCW); empty => flat triangle list
 };
 
+struct MeshPatchEdge {
+   agg::point_d p0, c0, c1, p1; // Cubic Bezier edge.
+};
+
+struct MeshPatch {
+   MeshPatchEdge edge[4]; // Top, right, bottom, left.
+   FRGB corner[4]; // Top-left, top-right, bottom-right, bottom-left.
+};
+
+struct MeshGradient {
+   int rows = 0;
+   int cols = 0;
+   std::vector<MeshPatch> patches;
+   bool bicubic = false;
+};
+
 // One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
 
 struct GouraudTriangle {
@@ -539,6 +555,16 @@ class extGradientGouraud : public extGradient {
 
    std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for GradientGouraud.
    GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
+};
+
+class extGradientMesh : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTMESH;
+   static constexpr CSTRING CLASS_NAME = "GradientMesh";
+   using create = kt::Create<extGradientMesh>;
+
+   std::unique_ptr<MeshGradient> Mesh; // Coons patch data for GradientMesh.
+   GouraudCache MeshTriangles; // Cached tessellated/coloured triangle list.
 };
 
 class extGradientDistal : public extGradient {
