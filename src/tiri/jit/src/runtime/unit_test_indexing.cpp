@@ -18,7 +18,7 @@
 
 #include "../../defs.h"
 
-static objTiri *glTestScript = nullptr;
+static extTiri *glTestScript = nullptr;
 
 namespace {
 

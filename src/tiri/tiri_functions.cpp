@@ -88,24 +88,23 @@ static bool get_caller_src_folder(lua_State *Lua, std::string &Folder)
 
 static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 {
-   auto Script = (objTiri *)CurrentContext();
-   auto prv = (prvTiri *)Script->DerivedPtr;
-   if (not prv) return;
+   auto tiri = (extTiri *)CurrentContext();
+   auto lua = tiri->Lua;
 
    kt::Log log(__FUNCTION__);
    log.trace("Received event $%.8x%.8x", (int)((Info->EventID>>32) & 0xffffffff), (int)(Info->EventID & 0xffffffff));
 
-   lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, intptr_t(CallbackMeta));
+   lua_rawgeti(lua, LUA_REGISTRYINDEX, intptr_t(CallbackMeta));
 
-   lua_pushnumber(prv->Lua, Info->EventID);
-   lua_newtable(prv->Lua);
-   if (lua_pcall(prv->Lua, 2, 0, 0)) {
-      process_error(Script, "Event Subscription");
+   lua_pushnumber(lua, Info->EventID);
+   lua_newtable(lua);
+   if (lua_pcall(lua, 2, 0, 0)) {
+      process_error(tiri, "Event Subscription");
    }
 
-   if (lua_gc(prv->Lua, LUA_GCISRUNNING, 0)) {
+   if (lua_gc(lua, LUA_GCISRUNNING, 0)) {
       log.traceBranch("Collecting garbage.");
-      lua_gc(prv->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
+      lua_gc(lua, LUA_GCCOLLECT, 0); // Run the garbage collector
    }
 }
 
@@ -114,16 +113,13 @@ static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 
 int fcmd_unsubscribe_event(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   if (not prv) return 0;
-
    if (auto handle = lua_touserdata(Lua, 1)) {
       kt::Log log("unsubscribe_event");
       if ((Lua->script->Flags & SCF::LOG_ALL) != SCF::NIL) log.msg("Handle: %p", handle);
 
-      auto erased = std::erase_if(prv->EventList, [&](const auto& event) {
+      auto erased = std::erase_if(Lua->script->EventList, [&](const auto& event) {
          if (event.EventHandle IS handle) {
-            luaL_unref(prv->Lua, LUA_REGISTRYINDEX, event.Function);
+            luaL_unref(Lua, LUA_REGISTRYINDEX, event.Function);
             return true;
          }
          return false;
@@ -206,8 +202,8 @@ int fcmd_subscribe_event(lua_State *Lua)
    lua_settop(Lua, 2);
    auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
    if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); !error) {
-      auto prv = (prvTiri *)Lua->script->DerivedPtr;
-      prv->EventList.emplace_back(client_function, event_id, handle);
+      auto Self = Lua->script;
+      Self->EventList.emplace_back(client_function, event_id, handle);
       lua_pushinteger(Lua, int(error)); // 1: Error code
       lua_pushlightuserdata(Lua, handle); // 2: Handle
    }
@@ -514,8 +510,7 @@ int fcmd_exec(lua_State *Lua)
 
 int fcmd_arg(lua_State *Lua)
 {
-   objTiri *Self = Lua->script;
-
+   auto Self = Lua->script;
    int args = lua_gettop(Lua);
 
    auto key = lua_tostring(Lua, 1);

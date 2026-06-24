@@ -1511,6 +1511,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     int CurrentLine     # Current line being executed, or failed line if script execution terminated
     int LineOffset      # An optional offset to use when reporting line numbers
   ]],
+  nil,
   [[
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars;                 // Global parameters
@@ -1518,6 +1519,10 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
    OBJECTID ScriptOwnerID;
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
+#endif
   ]])
 
   c_insert([==[

@@ -19,7 +19,6 @@
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_bc.h"
-#include "lj_frame.h"
 #include "lj_trace.h"
 #include "lj_vm.h"
 #include "lj_strscan.h"

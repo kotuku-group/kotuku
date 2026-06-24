@@ -31,7 +31,7 @@ additional functionality in the future.
 struct ThreadMsg {
    int      Callback; // Client callback reference
    int      ObjRef;   // Registry reference that pins the GCobject from GC collection
-   objTiri *Owner;    // The parent script that owns the registry references
+   extTiri *Owner;    // The parent script that owns the registry references
    double   Key;      // Client-provided key value forwarded to the callback
 };
 
@@ -51,7 +51,8 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
 {
    kt::Log log("thread_callback");
 
-   auto prv = (prvTiri *)Msg->Owner->DerivedPtr;
+   auto tiri = (extTiri *)Msg->Owner;
+   auto lua = tiri->Lua;
 
    if (Msg->Callback != LUA_NOREF) {
       if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
@@ -69,15 +70,15 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
          });
          Msg->Owner->callback(Msg->Callback, args.data(), int(args.size()), nullptr);
       }
-      luaL_unref(prv->Lua, LUA_REGISTRYINDEX, Msg->Callback); // Drop the procedure reference
+      luaL_unref(lua, LUA_REGISTRYINDEX, Msg->Callback); // Drop the procedure reference
    }
 
    // Unpin the GCobject from the registry and release the pin on the underlying object.
 
-   lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Msg->ObjRef);
-   auto gc_script = lua_toobject(prv->Lua, -1);
-   lua_pop(prv->Lua, 1);
-   luaL_unref(prv->Lua, LUA_REGISTRYINDEX, Msg->ObjRef);
+   lua_rawgeti(lua, LUA_REGISTRYINDEX, Msg->ObjRef);
+   auto gc_script = lua_toobject(lua, -1);
+   lua_pop(lua, 1);
+   luaL_unref(lua, LUA_REGISTRYINDEX, Msg->ObjRef);
 
    if (gc_script and gc_script->ptr) gc_script->ptr->unpin(true);
    delete Msg;
@@ -110,8 +111,8 @@ static int async_script(lua_State *Lua)
 
    // Share the parent's pool with the child script so that async.pool accesses the same data.
    {
-      auto parent_prv = (prvTiri *)Lua->script->DerivedPtr;
-      auto child_prv  = (prvTiri *)gc_script->ptr->DerivedPtr;
+      auto parent_prv = Lua->script;
+      auto child_prv  = (extTiri *)gc_script->ptr;
       if (parent_prv and child_prv) {
          if (not parent_prv->Pool) parent_prv->Pool = std::make_shared<SharedPool>();
          child_prv->Pool = parent_prv->Pool;
@@ -508,9 +509,8 @@ static const luaL_Reg asynclib_methods[] = {
 
 static SharedPool * get_pool(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   if (not prv->Pool) prv->Pool = std::make_shared<SharedPool>();
-   return prv->Pool.get();
+   if (not Lua->script->Pool) Lua->script->Pool = std::make_shared<SharedPool>();
+   return Lua->script->Pool.get();
 }
 
 //********************************************************************************************************************
@@ -572,9 +572,7 @@ static int pool_set(lua_State *Lua)
          pv = PoolValue(lua_tonumber(Lua, 3));
          break;
       case LUA_TSTRING: {
-         size_t len;
-         auto s = lua_tolstring(Lua, 3, &len);
-         pv = PoolValue(std::string(s, len));
+         pv = PoolValue(std::string(lua_tostringview(Lua, 3)));
          break;
       }
       case LUA_TBOOLEAN:

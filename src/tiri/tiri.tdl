@@ -37,6 +37,7 @@ function()
 
   klass('Tiri', {
     base = 'Script',
+    extended = true,
     src = { 'tiri_class.cpp' },
     output = 'tiri_class_def.cpp',
     references = { 'JOF' }

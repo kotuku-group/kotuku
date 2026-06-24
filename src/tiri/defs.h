@@ -25,6 +25,8 @@ constexpr int SIZE_READ = 1024;
 
 using namespace kt;
 
+class extTiri; // Internal extended Tiri class (full definition below); derives from objTiri
+
 template <class T> T ALIGN64(T a) { return (((a) + 7) & (~7)); }
 template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
 
@@ -106,7 +108,7 @@ extern ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 extern std::shared_mutex glConstantMutex;
 
 // Thread-safe shared pool for async.pool — see tiri_async.cpp
-// Owned by the main script's prvTiri and shared with child scripts via std::shared_ptr.
+// Owned by the main script's extTiri and shared with child scripts via std::shared_ptr.
 
 enum class PoolTag : uint8_t { Number, String, Boolean, ObjectID };
 
@@ -271,27 +273,6 @@ struct VariableInfo {
 
 //********************************************************************************************************************
 
-struct prvTiri {
-   lua_State *Lua;                        // Lua instance
-   std::vector<actionmonitor> ActionList; // Action subscriptions managed by subscribe()
-   std::vector<eventsub> EventList;       // Event subscriptions managed by subscribeEvent()
-   std::vector<datarequest> Requests;     // For drag and drop requests
-   ankerl::unordered_dense::map<OBJECTID, int> StateMap;
-   kt::vector<std::string> Procedures;
-   std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
-   std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
-   APTR     FocusEventHandle;
-   struct finput *InputList;           // Managed by the input interface
-   DateTime CacheDate;
-   PERMIT   CachePermissions;
-   JOF      JitOptions;
-   int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
-   uint8_t  Recurse;
-   uint8_t  SaveCompiled;
-   uint16_t RequireCounter;
-   std::vector<VariableInfo> CapturedVariables; // Variable declarations captured during parsing (JOF::DIAGNOSE)
-};
-
 // This structure is created & managed through the 'struct' interface
 
 struct fstruct {
@@ -327,7 +308,7 @@ constexpr int FIM_KEYBOARD = 1;
 constexpr int FIM_DEVICE   = 2;
 
 struct finput {
-   objTiri *Script;
+   extTiri *Script;
    struct finput *Next;
    APTR   KeyEvent;
    OBJECTID SurfaceID;
@@ -401,14 +382,14 @@ const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);
 [[maybe_unused]] int code_writer(lua_State *, CPTR, size_t, void *);
 ERR create_tiri(void);
-void get_line(objTiri *, int, STRING, int);
+void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
 void hook_debug(lua_State *, lua_Debug *) __attribute__ ((unused));
-ERR load_include(objTiri *, CSTRING);
+ERR load_include(extTiri *, CSTRING);
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
-[[maybe_unused]] ERR make_struct(objTiri *, std::string_view, CSTRING);
+[[maybe_unused]] ERR make_struct(extTiri *, std::string_view, CSTRING);
 ERR named_struct_to_table(lua_State *, std::string_view, CPTR);
 void construct_struct_cpp_strings(const struct struct_record &, APTR);
 void destroy_struct_cpp_strings(const struct struct_record &, APTR);
@@ -416,12 +397,12 @@ void make_struct_array(lua_State *, std::string_view, int, CPTR, int = 0);
 ERR make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *);
 void make_struct_serial_array(lua_State *, std::string_view, int, CPTR);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
-void process_error(objTiri *, CSTRING);
+void process_error(extTiri *, CSTRING);
 ERR push_object_id(lua_State *, OBJECTID ObjectID);
 extern ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize);
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
-struct fstruct * push_struct(objTiri *, APTR, std::string_view, bool, bool);
+struct fstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool);
 struct fstruct * push_struct_def(lua_State *, APTR, struct struct_record &, bool);
 extern void register_io_class(lua_State *);
 extern void register_input_class(lua_State *);
@@ -503,3 +484,25 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
       else raise_checked_call_error(Lua, Error, Action ? Action : "Action");
    }
 }
+
+class extTiri : public objTiri {
+   public:
+   lua_State *Lua;                        // Lua instance
+   std::vector<actionmonitor> ActionList; // Action subscriptions managed by subscribe()
+   std::vector<eventsub> EventList;       // Event subscriptions managed by subscribeEvent()
+   std::vector<datarequest> Requests;     // For drag and drop requests
+   std::vector<VariableInfo> CapturedVariables; // Variable declarations captured during parsing (JOF::DIAGNOSE)
+   std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
+   kt::vector<std::string> Procedures;
+   ankerl::unordered_dense::map<OBJECTID, int> StateMap;
+   std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
+   APTR     FocusEventHandle;
+   struct finput *InputList;           // Managed by the input interface
+   DateTime CacheDate;
+   PERMIT   CachePermissions;
+   JOF      JitOptions;
+   int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
+   uint8_t  Recurse;
+   uint8_t  SaveCompiled;
+   uint16_t RequireCounter;
+};

@@ -373,8 +373,7 @@ static int processing_gcStats(lua_State *Lua)
 
 static int processing_task(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   GCobject *obj = push_object(prv->Lua, CurrentTask());
+   GCobject *obj = push_object(Lua, CurrentTask());
    obj->set_detached(true);  // External reference
    return 1;
 }

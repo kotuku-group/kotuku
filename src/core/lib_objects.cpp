@@ -279,18 +279,25 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       free_children(Object);
 
       if (Object->defined(NF::TIMER_SUB)) {
+         std::vector<FUNCTION> script_routines;
+
          if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
             for (auto it=glTimers.begin(); it != glTimers.end(); ) {
                if (it->SubscriberID IS Object->UID) {
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
-                  if (it->Routine.isScript()) {
-                     ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
+                  if (it->Routine.isScript() and (it->Routine.Context != Object)) {
+                     script_routines.emplace_back(it->Routine);
                   }
                   it = glTimers.erase(it);
                }
                else it++;
             }
+            lock.unlock();
+         }
+
+         for (auto &routine : script_routines) {
+            ((objScript *)routine.Context)->derefProcedure(routine);
          }
       }
 

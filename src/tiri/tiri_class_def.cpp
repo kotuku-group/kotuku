@@ -21,13 +21,13 @@ static const struct FieldDef clTiriJOF[] = {
    { nullptr, 0 }
 };
 
-static ERR TIRI_NewPlacement(objTiri *Self) {
-   new (Self) objTiri;
+static ERR TIRI_NewPlacement(extTiri *Self) {
+   new (Self) extTiri;
    return ERR::Okay;
 }
 
-static ERR TIRI_FreePlacement(objTiri *Self) {
-   Self->~objTiri();
+static ERR TIRI_FreePlacement(extTiri *Self) {
+   Self->~extTiri();
    return ERR::Okay;
 }
 
@@ -38,7 +38,6 @@ static const struct ActionArray clTiriActions[] = {
    { AC::FreePlacement, TIRI_FreePlacement },
    { AC::Init, TIRI_Init },
    { AC::NewChild, TIRI_NewChild },
-   { AC::NewObject, TIRI_NewObject },
    { AC::NewPlacement, TIRI_NewPlacement },
    { AC::Query, TIRI_Query },
    { AC::SaveToObject, TIRI_SaveToObject },
