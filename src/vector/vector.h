@@ -725,7 +725,7 @@ class extVector : public objVector {
    extVector           *Morph;
    extVector           *AppendPath;
    std::unique_ptr<DashedStroke> DashArray;
-   ClipMaskCache ClipCache;
+   std::unique_ptr<ClipMaskCache> ClipCache;
    std::unique_ptr<filter_bitmap> IsolatedBuffer;
    JTYPE InputMask;
    int   PathLength;
@@ -1163,7 +1163,7 @@ static void mark_buffers_for_refresh(extVector *Vector)
    if (Vector->Scene) ((extVectorScene *)Vector->Scene)->SubtreeDirty = true;
 
    for (auto node=Vector; node; ) {
-      node->ClipCache.clear();
+      node->ClipCache.reset();
 
       if ((!node->Parent) or (node->Parent->Class->BaseClassID != CLASSID::VECTOR)) break;
       node = (extVector *)node->Parent;
