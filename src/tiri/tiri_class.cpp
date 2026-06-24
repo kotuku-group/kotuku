@@ -500,7 +500,7 @@ static ERR TIRI_Init(objScript *Self)
    kt::Log log;
 
    if (not Self->Path.empty()) {
-      if (Self->Path.starts_with("string:")); // Assume Tiri for string paths
+      if (Self->Path.starts_with("string:") or Self->Path.starts_with("STRING:")); // Assume Tiri for string paths
       else if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
          log.warning("Path extension not recognised for '%s'", Self->Path.c_str());
          return ERR::NoSupport;
