@@ -2,6 +2,9 @@
 
 #include <kotuku/main.h>
 
+#include <string_view>
+#include <span>
+
 namespace kt {
 
 struct BASE64DECODE {
@@ -12,15 +15,15 @@ struct BASE64DECODE {
 };
 
 struct BASE64ENCODE {
-   uint8_t Step;        // Internal
-   uint8_t Result;      // Internal
+   uint8_t Step;     // Internal
+   uint8_t Result;   // Internal
    int  StepCount;   // Internal
   BASE64ENCODE() : Step(0), Result(0), StepCount(0) { };
 };
 
 const int CHARS_PER_LINE = 72;
 
-int Base64Encode(BASE64ENCODE *, const void *, int, STRING, int );
-ERR Base64Decode(BASE64DECODE *, CSTRING, int, APTR, int *);
+int64_t Base64Encode(BASE64ENCODE *, std::span<const char>, std::span<char>);
+ERR Base64Decode(BASE64DECODE *, std::string_view, APTR, int64_t *);
 
 };

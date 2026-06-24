@@ -2043,32 +2043,32 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width
 
    *Image = nullptr;
    objFile *file = nullptr;
-   auto val = Path.c_str();
+   std::string_view val(Path);
 
    ERR error = ERR::Okay;
-   if (startswith("icons:", val)) {
+   if (val.starts_with("icons:")) {
       // Kotuku feature: Load an SVG image from the icon database.  Nothing needs to be done here
       // because the fielsystem volume is built-in.
    }
-   else if (startswith("data:", val)) { // Check for embedded content
+   else if (val.starts_with("data:")) { // Check for embedded content
       log.branch("Detected embedded source data");
-      val += 5;
-      if (startswith("image/", val)) { // Has to be an image type
-         val += 6;
-         while ((*val) and (*val != ';')) val++;
-         if (startswith(";base64", val)) { // Is it base 64?
-            val += 7;
-            while ((*val) and (*val != ',')) val++;
-            if (*val IS ',') val++;
+      val.remove_prefix(5);
+      if (val.starts_with("image/")) { // Has to be an image type
+         val.remove_prefix(6);
+         if (auto sep = val.find(';'); sep != std::string_view::npos) val.remove_prefix(sep);
+         else val.remove_prefix(val.size());
+         if (val.starts_with(";base64")) { // Is it base 64?
+            val.remove_prefix(7);
+            if (auto comma = val.find(','); comma != std::string_view::npos) val.remove_prefix(comma + 1);
+            else val.remove_prefix(val.size());
 
             kt::BASE64DECODE state;
             clearmem(&state, sizeof(state));
 
             uint8_t *output;
-            int size = strlen(val);
-            if (!AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&output)) {
-               int written;
-               if (!(error = kt::Base64Decode(&state, val, size, output, &written))) {
+            if (!AllocMemory(val.size(), MEM::DATA|MEM::NO_CLEAR, (APTR *)&output)) {
+               int64_t written;
+               if (!(error = kt::Base64Decode(&state, val, output, &written))) {
                   Path = "temp:svg.img";
                   if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
                      int result;
