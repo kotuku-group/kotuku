@@ -137,8 +137,11 @@ static ERR POINTER_DataFeed(extPointer *Self, struct acDataFeed *Args)
 
    if (Args->Datatype IS DATA::DEVICE_INPUT) {
       if (auto input = (struct dcDeviceInput *)Args->Buffer) {
-         for (int i=0; i < std::ssize(Self->Buttons); i++) {
-            if ((Self->Buttons[i].LastClicked) and (CheckResourceExists(Self->Buttons[i].LastClicked) != ERR::Okay)) Self->Buttons[i].LastClicked = 0;
+         // Remove any stale objects
+         for (int i=0; i < std::ssize(Self->ButtonClicks); i++) {
+            if (Self->ButtonClicks[i].LastClicked) {
+               if (CheckResourceExists(Self->ButtonClicks[i].LastClicked) != ERR::Okay) Self->ButtonClicks[i].LastClicked = 0;
+            }
          }
 
          for (auto i=sizeof(struct dcDeviceInput); i <= (size_t)Args->Size; i+=sizeof(struct dcDeviceInput), input++) {
@@ -191,6 +194,8 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
       return;
    }
 
+   if (bi >= std::ssize(Self->ButtonClicks)) Self->ButtonClicks.resize(bi+1);
+
    if (userinput.Value <= 0) {
       // Button released.  Button releases are always reported relative to the object that received the original button press.
       // The surface immediately below the pointer does not receive any information about the release.
@@ -203,9 +208,9 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
          gfx::RestoreCursor(PTC::DEFAULT, 0);
       }
 
-      if (Self->Buttons[bi].LastClicked) {
+      if ((bi < std::ssize(Self->ButtonClicks)) and (Self->ButtonClicks[bi].LastClicked)) {
          int absx, absy;
-         if (!get_surface_abs(Self->Buttons[bi].LastClicked, &absx, &absy, 0, 0)) {
+         if (!get_surface_abs(Self->ButtonClicks[bi].LastClicked, &absx, &absy, 0, 0)) {
             uiflags |= Self->DragSourceID ? JTYPE::DRAG_ITEM : JTYPE::NIL;
 
             if ((std::abs(Self->X - Self->LastReleaseX) > Self->ClickSlop) or
@@ -213,14 +218,14 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
                uiflags |= JTYPE::DRAGGED;
             }
 
-            if (Self->Buttons[bi].DblClick) {
+            if (Self->ButtonClicks[bi].DblClick) {
                if ((uiflags & JTYPE::DRAGGED) IS JTYPE::NIL) uiflags |= JTYPE::DBL_CLICK;
             }
 
-            add_input("ButtonRelease-LastClicked", userinput, uiflags, Self->Buttons[bi].LastClicked, Self->OverObjectID,
+            add_input("ButtonRelease-LastClicked", userinput, uiflags, Self->ButtonClicks[bi].LastClicked, Self->OverObjectID,
                Self->X, Self->Y, Self->X - absx, Self->Y - absy); // OverX/Y is reported relative to the click-held surface
          }
-         Self->Buttons[bi].LastClicked = 0;
+         Self->ButtonClicks[bi].LastClicked = 0;
       }
 
       Self->LastReleaseX = Self->X;
@@ -258,22 +263,22 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
          // Before performing the click, we first check that there are no objects waiting for click-releases in the
          // designated fields.  If there are, we send them UserClickRelease() actions to retain system integrity.
 
-         if (Self->Buttons[bi].LastClicked) {
-            log.warning("Did not receive a release for button %d on surface #%d.", bi, Self->Buttons[bi].LastClicked);
+         if (Self->ButtonClicks[bi].LastClicked) {
+            log.warning("Did not receive a release for button %d on surface #%d.", bi, Self->ButtonClicks[bi].LastClicked);
 
-            add_input("ButtonPress-ForceRelease", userinput, uiflags, Self->Buttons[bi].LastClicked, Self->OverObjectID,
+            add_input("ButtonPress-ForceRelease", userinput, uiflags, Self->ButtonClicks[bi].LastClicked, Self->OverObjectID,
                Self->X, Self->Y, Self->OverX, Self->OverY);
          }
 
-         if (((double)(userinput.Timestamp - Self->Buttons[bi].LastClickTime)) / 1000000.0 < Self->DoubleClick) {
+         if (((double)(userinput.Timestamp - Self->ButtonClicks[bi].LastClickTime)) / 1000000.0 < Self->DoubleClick) {
             log.trace("Double click detected (under %.2fs)", Self->DoubleClick);
-            Self->Buttons[bi].DblClick = TRUE;
+            Self->ButtonClicks[bi].DblClick = TRUE;
             uiflags |= JTYPE::DBL_CLICK;
          }
-         else Self->Buttons[bi].DblClick = FALSE;
+         else Self->ButtonClicks[bi].DblClick = FALSE;
 
-         Self->Buttons[bi].LastClicked   = Self->OverObjectID;
-         Self->Buttons[bi].LastClickTime = userinput.Timestamp;
+         Self->ButtonClicks[bi].LastClicked   = Self->OverObjectID;
+         Self->ButtonClicks[bi].LastClickTime = userinput.Timestamp;
 
          Self->LastClickX = Self->X;
          Self->LastClickY = Self->Y;
@@ -291,7 +296,7 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
       SubscribeTimer(0.02, C_FUNCTION(repeat_timer), &glRepeatTimer); // Use a timer subscription so that repeat button clicks can be supported (the interval indicates the rate of the repeat)
    }
 
-   if ((Self->DragSourceID) and (!Self->Buttons[bi].LastClicked)) {
+   if ((Self->DragSourceID) and (!Self->ButtonClicks[bi].LastClicked)) {
       // Drag and drop has been released.  Inform the destination surface of the item's release.
 
       if (Self->DragSurface) {
@@ -418,7 +423,7 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
       if (Self->AnchorID) {
          // Do nothing as only the anchor surface receives a message (see earlier)
       }
-      else if (Self->Buttons[0].LastClicked) {
+      else if (Self->ButtonClicks[0].LastClicked) {
          // This routine is used when the user is holding down the left mouse button (indicated by LastClicked).  The X/Y
          // coordinates are worked out in relation to the clicked object by climbing the Surface object hierarchy.
 
@@ -438,12 +443,12 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
          }
 
          int absx, absy;
-         if (!get_surface_abs(Self->Buttons[0].LastClicked, &absx, &absy, 0, 0)) {
+         if (!get_surface_abs(Self->ButtonClicks[0].LastClicked, &absx, &absy, 0, 0)) {
             auto uiflags = Self->DragSourceID ? JTYPE::DRAG_ITEM : JTYPE::NIL;
 
             // Send the movement message to the last clicked object
 
-            add_input("Movement-LastClicked", userinput, uiflags, Self->Buttons[0].LastClicked, Self->OverObjectID,
+            add_input("Movement-LastClicked", userinput, uiflags, Self->ButtonClicks[0].LastClicked, Self->OverObjectID,
                Self->X, Self->Y, Self->X - absx, Self->Y - absy); // OverX/Y reported relative to the click-held surface
 
             get_over_object(Self);
@@ -453,15 +458,15 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
 
             // JTYPE::SECONDARY indicates to the receiver of the input message that it is not the primary recipient.
 
-            if (Self->Buttons[0].LastClicked != Self->OverObjectID) {
+            if (Self->ButtonClicks[0].LastClicked != Self->OverObjectID) {
                add_input("Movement-LastClicked", userinput, uiflags|JTYPE::SECONDARY, Self->OverObjectID, Self->OverObjectID,
                   Self->X, Self->Y, Self->OverX, Self->OverY);
             }
 
          }
          else {
-            log.warning("Failed to get info for surface #%d.", Self->Buttons[0].LastClicked);
-            Self->Buttons[0].LastClicked = 0;
+            log.warning("Failed to get info for surface #%d.", Self->ButtonClicks[0].LastClicked);
+            Self->ButtonClicks[0].LastClicked = 0;
          }
       }
       else {
@@ -885,8 +890,8 @@ static ERR GET_ButtonState(extPointer *Self, int *Value)
 {
    int i;
    int state = 0;
-   for (i=0; i < std::ssize(Self->Buttons); i++) {
-      if (Self->Buttons[i].LastClicked) state |= 1<<i;
+   for (i=0; i < std::ssize(Self->ButtonClicks); i++) {
+      if (Self->ButtonClicks[i].LastClicked) state |= 1<<i;
    }
 
    *Value = state;
@@ -1188,19 +1193,19 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
    // The subscription is automatically removed if no buttons are held down
 
    bool unsub = true;
-   for (int i=0; i < std::ssize(Self->Buttons); i++) {
-      if (Self->Buttons[i].LastClicked) {
+   for (int i=0; i < std::ssize(Self->ButtonClicks); i++) {
+      if (Self->ButtonClicks[i].LastClicked) {
          auto time = PreciseTime();
-         if (Self->Buttons[i].LastClickTime + 300000LL <= time) {
+         if (Self->ButtonClicks[i].LastClickTime + 300000LL <= time) {
             InputEvent input;
             clearmem(&input, sizeof(input));
 
             int surface_x, surface_y;
-            if (Self->Buttons[i].LastClicked IS Self->OverObjectID) {
+            if (Self->ButtonClicks[i].LastClicked IS Self->OverObjectID) {
                input.X = Self->OverX;
                input.Y = Self->OverY;
             }
-            else if (!get_surface_abs(Self->Buttons[i].LastClicked, &surface_x, &surface_y, 0, 0)) {
+            else if (!get_surface_abs(Self->ButtonClicks[i].LastClicked, &surface_x, &surface_y, 0, 0)) {
                input.X = Self->X - surface_x;
                input.Y = Self->Y - surface_y;
             }
@@ -1212,10 +1217,10 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
             input.Type        = JET(int(JET::BUTTON_1) + i);
             input.Mask        = JTYPE::BUTTON|JTYPE::REPEATED;
             input.Flags       = JTYPE::BUTTON|JTYPE::REPEATED;
-            input.Value       = 1.0; // Self->Buttons[i].LastValue
+            input.Value       = 1.0; // Self->ButtonClicks[i].LastValue
             input.Timestamp   = time;
             input.DeviceID    = 0;
-            input.RecipientID = Self->Buttons[i].LastClicked;
+            input.RecipientID = Self->ButtonClicks[i].LastClicked;
             input.OverID      = Self->OverObjectID;
             input.AbsX        = Self->X;
             input.AbsY        = Self->Y;

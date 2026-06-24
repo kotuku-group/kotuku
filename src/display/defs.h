@@ -287,14 +287,16 @@ extern std::vector<SurfaceRecord> glSurfaces;
 //********************************************************************************************************************
 
 class extPointer : public objPointer {
+   struct ButtonClick {
+      int64_t LastClickTime = 0;    // Timestamp of recorded click
+      OBJECTID LastClicked = 0;     // Most recently clicked object for this button
+      uint8_t DblClick:1 = false;   // TRUE if last click was a double-click
+   };
+
    public:
    using create = kt::Create<extPointer>;
 
-   struct {
-      int64_t LastClickTime;      // Timestamp
-      OBJECTID LastClicked;     // Most recently clicked object
-      uint8_t DblClick:1;         // TRUE if last click was a double-click
-   } Buttons[10];
+   std::vector<ButtonClick> ButtonClicks;
    int64_t    ClickTime;
    int64_t    AnchorTime;
    double   LastClickX, LastClickY;
@@ -304,6 +306,7 @@ class extPointer : public objPointer {
    OBJECTID DragSurface;        // Draggable surface anchored to the pointer position
    OBJECTID DragParent;         // Parent of the draggable surface
    int      CursorRelease;
+   // Changes to the cursor can be buffered until the pointer is released
    PTC      BufferCursor;
    CRF      BufferFlags;
    OBJECTID BufferOwner;
@@ -312,16 +315,12 @@ class extPointer : public objPointer {
    char     Device[32];
    std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
    int16_t     ButtonOrderFlags[12]; // Button order represented as JD flags
-   int8_t     PostComposite;        // Enable post-composite drawing (default)
    uint8_t    prvOverCursorID;
-   struct {
-      int16_t HotX;
-      int16_t HotY;
-   } Cursors[int(PTC::END)];
 
    extPointer() {
       CursorID = PTC::DEFAULT;
       ClickSlop = 2;
+      ButtonClicks.resize(3); // 0 = LMB, 1 = RMB, 2 = MMB
    }
 };
 
