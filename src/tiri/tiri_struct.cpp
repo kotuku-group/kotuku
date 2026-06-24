@@ -324,7 +324,7 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
 //********************************************************************************************************************
 // Use this for creating a struct on the Lua stack.
 
-struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty)
+struct fstruct * push_struct(objTiri *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty)
 {
    kt::Log log(__FUNCTION__);
 
@@ -414,7 +414,7 @@ static void make_camel_case(std::string &String)
 //********************************************************************************************************************
 // The TypeName is optional and usually refers to the name of a struct.  The list is sorted by name for fast lookups.
 
-[[nodiscard]] static ERR generate_structdef(objScript *Self, const std::string_view StructName, const std::string Sequence,
+[[nodiscard]] static ERR generate_structdef(objTiri *Self, const std::string_view StructName, const std::string Sequence,
    struct_record &Record, int *StructSize)
 {
    kt::Log log(__FUNCTION__);
@@ -557,7 +557,7 @@ static void make_camel_case(std::string &String)
 //********************************************************************************************************************
 // Parse a struct definition and permanently store it in the glStructs dictionary.
 
-[[nodiscard]] ERR make_struct(objScript *Self, std::string_view StructName, CSTRING Sequence)
+[[nodiscard]] ERR make_struct(objTiri *Self, std::string_view StructName, CSTRING Sequence)
 {
    kt::Log log(__FUNCTION__);
 

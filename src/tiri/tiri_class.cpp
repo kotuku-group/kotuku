@@ -1,3 +1,13 @@
+/*********************************************************************************************************************
+
+-CLASS-
+Tiri: Extends the Script class with support for the Tiri language.
+
+The Tiri class provides functionality for running scripts written in the Tiri programming language.
+
+-END-
+
+*********************************************************************************************************************/
 
 #define PRV_SCRIPT
 #define PRV_TIRI
@@ -25,9 +35,9 @@
 
 #include "defs.h"
 
-static ERR run_script(objScript *);
+static ERR run_script(objTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
-static ERR save_binary(objScript *, OBJECTPTR);
+static ERR save_binary(objTiri *, OBJECTPTR);
 
 [[maybe_unused]] constexpr std::string_view check_bom(std::string_view Value)
 {
@@ -40,7 +50,7 @@ static ERR save_binary(objScript *, OBJECTPTR);
    return Value;
 }
 
-static std::string make_chunk_name(const objScript *Self)
+static std::string make_chunk_name(const objTiri *Self)
 {
    if (Self->Path.empty()) return "=script";
 
@@ -85,12 +95,12 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
    return ERR::Okay;
 }
 
-[[maybe_unused]] static ERR register_interfaces(objScript *);
+[[maybe_unused]] static ERR register_interfaces(objTiri *);
 
 //********************************************************************************************************************
 // Dump the variables of any global table
 
-[[maybe_unused]] static void dump_global_table(objScript *Self, STRING Global)
+[[maybe_unused]] static void dump_global_table(objTiri *Self, STRING Global)
 {
    kt::Log log("print_env");
    lua_State *lua = ((prvTiri *)Self->DerivedPtr)->Lua;
@@ -107,65 +117,20 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
 
 //********************************************************************************************************************
 
-static const FieldDef clJitOptions[] = {
-   { "Diagnose",           JOF::DIAGNOSE },
-   { "DisableJit",         JOF::DISABLE_JIT },
-   { "DumpBytecode",       JOF::DUMP_BYTECODE },
-   { "Profile",            JOF::PROFILE },
-   { "TopTips",            JOF::TOP_TIPS },
-   { "Tips",               JOF::TIPS },
-   { "AllTips",            JOF::ALL_TIPS },
-   { "Trace",              JOF::TRACE },
-   { "TraceTypes",         JOF::TRACE_TYPES },
-   { "TraceTokens",        JOF::TRACE_TOKENS },
-   { "TraceBoundary",      JOF::TRACE_BOUNDARY },
-   { "TraceExpect",        JOF::TRACE_EXPECT },
-   { "TraceCfg",           JOF::TRACE_CFG },
-   { "TraceOperators",     JOF::TRACE_OPERATORS },
-   { "TraceRegisters",     JOF::TRACE_REGISTERS },
-   { "TraceAssignments",   JOF::TRACE_ASSIGNMENTS },
-   { "TraceValueCategory", JOF::TRACE_VALUE_CATEGORY },
-   { nullptr, 0 }
-};
-
-static ERR GET_JitOptions(objScript *, JOF *);
-static ERR SET_JitOptions(objScript *, JOF);
-static ERR GET_Procedures(objScript *, std::span<std::string> &);
-
-static const FieldArray clFields[] = {
-   { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clJitOptions },
-   { "Procedures", FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Procedures },
-   END_FIELD
-};
-
-//********************************************************************************************************************
-
-static ERR TIRI_Activate(objScript *);
-static ERR TIRI_DataFeed(objScript *, struct acDataFeed *);
-static ERR TIRI_Free(objScript *);
-static ERR TIRI_Init(objScript *);
-static ERR TIRI_NewChild(objScript *, struct acNewChild &);
-static ERR TIRI_NewObject(objScript *);
-static ERR TIRI_Query(objScript *);
-static ERR TIRI_SaveToObject(objScript *, struct acSaveToObject *);
-
-static const ActionArray clActions[] = {
-   { AC::Activate,     TIRI_Activate },
-   { AC::DataFeed,     TIRI_DataFeed },
-   { AC::Free,         TIRI_Free },
-   { AC::Init,         TIRI_Init },
-   { AC::NewChild,     TIRI_NewChild },
-   { AC::NewObject,    TIRI_NewObject },
-   { AC::Query,        TIRI_Query },
-   { AC::SaveToObject, TIRI_SaveToObject },
-   { AC::NIL, nullptr }
-};
+static ERR TIRI_Activate(objTiri *);
+static ERR TIRI_DataFeed(objTiri *, struct acDataFeed *);
+static ERR TIRI_Free(objTiri *);
+static ERR TIRI_Init(objTiri *);
+static ERR TIRI_NewChild(objTiri *, struct acNewChild &);
+static ERR TIRI_NewObject(objTiri *);
+static ERR TIRI_Query(objTiri *);
+static ERR TIRI_SaveToObject(objTiri *, struct acSaveToObject *);
 
 //********************************************************************************************************************
 // Only to be used immediately after a failed lua_pcall().  Lua stores a description of the error that occurred on the
 // stack, this will be popped and copied to the ErrorMessage field.
 
-void process_error(objScript *Self, CSTRING Procedure)
+void process_error(objTiri *Self, CSTRING Procedure)
 {
    auto prv = (prvTiri *)Self->DerivedPtr;
 
@@ -266,7 +231,7 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
 
 void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   auto Self = (objScript *)CurrentContext();
+   auto Self = (objTiri *)CurrentContext();
 
    if (Result != ERR::Okay) return;
 
@@ -336,7 +301,7 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_Activate(objScript *Self)
+static ERR TIRI_Activate(objTiri *Self)
 {
    kt::Log log;
 
@@ -399,7 +364,7 @@ static ERR TIRI_Activate(objScript *Self)
 
 //********************************************************************************************************************
 
-static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
+static ERR TIRI_DataFeed(objTiri *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
@@ -479,7 +444,7 @@ static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_Free(objScript *Self)
+static ERR TIRI_Free(objTiri *Self)
 {
    if (auto prv = (prvTiri *)Self->DerivedPtr) {
       if (prv->FocusEventHandle) { UnsubscribeEvent(prv->FocusEventHandle); prv->FocusEventHandle = nullptr; }
@@ -495,7 +460,7 @@ static ERR TIRI_Free(objScript *Self)
 
 //********************************************************************************************************************
 
-static ERR TIRI_Init(objScript *Self)
+static ERR TIRI_Init(objTiri *Self)
 {
    kt::Log log;
 
@@ -610,7 +575,7 @@ static ERR TIRI_Init(objScript *Self)
 // If the script is being executed, retarget the new resource to refer to the current task (because we don't want
 // client resources allocated by the script to be automatically destroyed when the script is terminated by the client).
 
-static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
+static ERR TIRI_NewChild(objTiri *Self, struct acNewChild &Args)
 {
    auto prv = (prvTiri*)Self->DerivedPtr;
    if (not prv) return ERR::Okay;
@@ -626,7 +591,7 @@ static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
 // The client has specifically asked for a Tiri script to be created - this allows us to configure DerivedPtr
 // early.  Otherwise, it is created during Init().
 
-static ERR TIRI_NewObject(objScript *Self)
+static ERR TIRI_NewObject(objTiri *Self)
 {
    if (!AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->DerivedPtr)) {
       auto prv = (prvTiri *)Self->DerivedPtr;
@@ -649,7 +614,7 @@ Introspection of available procedures will be limited until the script is activa
 
 *********************************************************************************************************************/
 
-static ERR TIRI_Query(objScript *Self)
+static ERR TIRI_Query(objTiri *Self)
 {
    kt::Log log;
 
@@ -779,7 +744,7 @@ usage.
 
 *********************************************************************************************************************/
 
-static ERR TIRI_SaveToObject(objScript *Self, struct acSaveToObject *Args)
+static ERR TIRI_SaveToObject(objTiri *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
@@ -818,7 +783,7 @@ This field allows the client to configure debugging options related to the Just-
 
 *********************************************************************************************************************/
 
-static ERR GET_JitOptions(objScript *Self, JOF *Value)
+static ERR GET_JitOptions(objTiri *Self, JOF *Value)
 {
    if (auto prv = (prvTiri *)Self->DerivedPtr) {
       *Value = prv->JitOptions;
@@ -827,7 +792,7 @@ static ERR GET_JitOptions(objScript *Self, JOF *Value)
    else return ERR::InvalidState; // Either requires initialisation or to be created as a Tiri script from NewObject()
 }
 
-static ERR SET_JitOptions(objScript *Self, JOF Value)
+static ERR SET_JitOptions(objTiri *Self, JOF Value)
 {
    if (auto prv = (prvTiri *)Self->DerivedPtr) {
       if (prv->Recurse) {
@@ -851,7 +816,7 @@ It will otherwise return an empty array.
 
 *********************************************************************************************************************/
 
-static ERR GET_Procedures(objScript *Self, std::span<std::string> &Value)
+static ERR GET_Procedures(objTiri *Self, std::span<std::string> &Value)
 {
    if (auto prv = (prvTiri *)Self->DerivedPtr) {
       prv->Procedures.clear();
@@ -874,7 +839,7 @@ static ERR GET_Procedures(objScript *Self, std::span<std::string> &Value)
 //********************************************************************************************************************
 // LuaJIT does support saving multi-platform compiled bytecode and we just need to implement it here.
 
-static ERR save_binary(objScript *Self, OBJECTPTR Target)
+static ERR save_binary(objTiri *Self, OBJECTPTR Target)
 {
    // TODO No support for save_binary() yet.
 
@@ -883,7 +848,7 @@ static ERR save_binary(objScript *Self, OBJECTPTR Target)
 
 //********************************************************************************************************************
 
-static ERR run_script(objScript *Self)
+static ERR run_script(objTiri *Self)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1076,7 +1041,7 @@ static ERR run_script(objScript *Self)
 
 //********************************************************************************************************************
 
-static ERR register_interfaces(objScript *Self)
+static ERR register_interfaces(objTiri *Self)
 {
    kt::Log log;
 
@@ -1135,6 +1100,20 @@ static ERR register_interfaces(objScript *Self)
 
 #include "tiri_class_methods.cpp"
 
+#include "tiri_class_def.cpp"
+
+static ERR GET_JitOptions(objTiri *, JOF *);
+static ERR SET_JitOptions(objTiri *, JOF);
+static ERR GET_Procedures(objTiri *, std::span<std::string> &);
+
+static const FieldArray clFields[] = {
+   { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clTiriJOF },
+   { "Procedures", FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Procedures },
+   END_FIELD
+};
+
+//********************************************************************************************************************
+
 ERR create_tiri(void)
 {
    clTiri = objMetaClass::create::global(
@@ -1145,7 +1124,7 @@ ERR create_tiri(void)
       fl::Category(CCF::DATA),
       fl::FileExtension("tiri|tbc"),
       fl::FileDescription("Tiri"),
-      fl::Actions(clActions),
+      fl::Actions(clTiriActions),
       fl::Methods(clMethods),
       fl::Fields(clFields),
       fl::Path(MOD_PATH));

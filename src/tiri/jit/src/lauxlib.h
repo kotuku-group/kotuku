@@ -50,7 +50,7 @@ constexpr int LUA_REFNIL = -1;
 
 extern int luaL_ref(lua_State *, int t);
 extern void luaL_unref(lua_State *, int t, int ref);
-extern lua_State * luaL_newstate(class objScript *);
+extern lua_State * luaL_newstate(class objTiri *);
 extern const char * luaL_gsub(lua_State *, const char *s, const char *p, const char *r);
 extern const char * luaL_findtable(lua_State *, int idx, const char *fname, int szhint);
 extern void luaL_traceback (lua_State *, lua_State *L1, const char *msg, int level);

@@ -88,7 +88,7 @@ static bool get_caller_src_folder(lua_State *Lua, std::string &Folder)
 
 static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 {
-   auto Script = (objScript *)CurrentContext();
+   auto Script = (objTiri *)CurrentContext();
    auto prv = (prvTiri *)Script->DerivedPtr;
    if (not prv) return;
 
@@ -514,7 +514,7 @@ int fcmd_exec(lua_State *Lua)
 
 int fcmd_arg(lua_State *Lua)
 {
-   objScript *Self = Lua->script;
+   objTiri *Self = Lua->script;
 
    int args = lua_gettop(Lua);
 

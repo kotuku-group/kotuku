@@ -92,7 +92,7 @@ except ex
 end
 processing.sleep()
 if glRunFile then
- obj.new('script', { src = glRunFile }).acActivate()
+ obj.new('tiri', { src = glRunFile }).acActivate()
 end
 )";
 

@@ -29,10 +29,10 @@ additional functionality in the future.
 // Message payload for thread completion callbacks (used by script, action, and method)
 
 struct ThreadMsg {
-   int       Callback;  // Client callback reference
-   int       ObjRef;    // Registry reference that pins the GCobject from GC collection
-   objScript *Owner;    // The parent script that owns the registry references
-   double    Key;       // Client-provided key value forwarded to the callback
+   int      Callback; // Client callback reference
+   int      ObjRef;   // Registry reference that pins the GCobject from GC collection
+   objTiri *Owner;    // The parent script that owns the registry references
+   double   Key;      // Client-provided key value forwarded to the callback
 };
 
 static bool has_results(const FunctionField *Args)
@@ -99,7 +99,9 @@ static int async_script(lua_State *Lua)
    kt::Log log("async.script");
 
    GCobject *gc_script = lua_toobject(Lua, 1);
-   if (gc_script->classptr->ClassID != CLASSID::SCRIPT) luaL_error(Lua, ERR::WrongClass);
+   if (gc_script->classptr->ClassID != CLASSID::TIRI) {
+      luaL_error(Lua, ERR::WrongClass);
+   }
    if (not gc_script->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
    log.branch("Script: %d", gc_script->uid);

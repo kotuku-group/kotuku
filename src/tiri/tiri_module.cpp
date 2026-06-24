@@ -40,7 +40,7 @@ struct CaseInsensitiveCompare {
 
 static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Stores the names of modules that have loaded constants (system wide)
 
-[[nodiscard]] static CSTRING load_include_struct(objScript *, CSTRING, std::string_view);
+[[nodiscard]] static CSTRING load_include_struct(objTiri *, CSTRING, std::string_view);
 [[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
 
 static int module_call(lua_State *);
@@ -240,7 +240,7 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 
 //********************************************************************************************************************
 
-static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Name)
+static ERR process_module_defs(objTiri *Script, objModule *module, CSTRING Name)
 {
    OBJECTPTR root;
    if (auto error = module->get(FID_Root, root); !error) {
@@ -264,7 +264,7 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
 // For the 'include' keyword.  Creates a temporary module object to process the definitions without formally opening
 // an interface.
 
-[[nodiscard]] ERR load_include(objScript *Script, CSTRING Module)
+[[nodiscard]] ERR load_include(objTiri *Script, CSTRING Module)
 {
    ERR error = ERR::Okay;
 
@@ -299,7 +299,7 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
 // Format: s.Name:typeField,...
 // TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
-[[nodiscard]] static CSTRING load_include_struct(objScript *Script, CSTRING Line, std::string_view Source)
+[[nodiscard]] static CSTRING load_include_struct(objTiri *Script, CSTRING Line, std::string_view Source)
 {
    int i;
    for (i=0; (Line[i] >= 0x20) and (Line[i] != ':'); i++);

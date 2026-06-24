@@ -2137,7 +2137,7 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
    }
 
    OBJECTPTR dialog;
-   if (!NewObject(CLASSID::SCRIPT, &dialog)) {
+   if (!NewObject(CLASSID::TIRI, &dialog)) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");

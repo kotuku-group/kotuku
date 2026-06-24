@@ -3,9 +3,9 @@
 //********************************************************************************************************************
 // NB: Parameter definitions are managed in the Script base class.
 
-static ERR TIRI_GetProcedureID(objScript *, struct sc::GetProcedureID *);
-static ERR TIRI_DerefProcedure(objScript *, struct sc::DerefProcedure *);
-static ERR TIRI_DebugLog(objScript *, struct sc::DebugLog *);
+static ERR TIRI_GetProcedureID(objTiri *, struct sc::GetProcedureID *);
+static ERR TIRI_DerefProcedure(objTiri *, struct sc::DerefProcedure *);
+static ERR TIRI_DebugLog(objTiri *, struct sc::DebugLog *);
 
 static const MethodEntry clMethods[] = {
    { sc::GetProcedureID::id, (APTR)TIRI_GetProcedureID, "GetProcedureID", nullptr, 0 },
@@ -416,7 +416,7 @@ The resulting log information is written to the caller-provided `Result` string.
 
 *********************************************************************************************************************/
 
-static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
+static ERR TIRI_DebugLog(objTiri *Self, struct sc::DebugLog *Args)
 {
    kt::Log log;
 
@@ -677,7 +677,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
+static ERR TIRI_DerefProcedure(objTiri *Self, struct sc::DerefProcedure *Args)
 {
    kt::Log log;
 
@@ -706,7 +706,7 @@ static ERR TIRI_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
+static ERR TIRI_GetProcedureID(objTiri *Self, struct sc::GetProcedureID *Args)
 {
    kt::Log log;
 

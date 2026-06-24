@@ -3,7 +3,7 @@
 -- Wait for a single async script to complete.
 
 @Test function WaitSingleScript()
-   script = obj.new('script', { statement=[[ msg('WaitSingleScript: thread running.') ]] })
+   script = obj.new('tiri', { statement=[[ msg('WaitSingleScript: thread running.') ]] })
    async.script(script)
    check async.wait(script, 1.0)
 end
@@ -15,7 +15,7 @@ end
    total = 5
    scripts = array<object>
    for i in {1 into total} do
-      scripts:push(obj.new('script', { statement = "msg('WaitMultipleScripts: thread " .. i .. " running.')" }))
+      scripts:push(obj.new('tiri', { statement = "msg('WaitMultipleScripts: thread " .. i .. " running.')" }))
    end
 
    for script in values(scripts) do
@@ -29,7 +29,7 @@ end
 -- Timeout fires when tasks take too long.
 
 @Test; @Disabled function WaitTimeout()
-   script = obj.new('script', { statement=[[ mSys.WaitTime(0.5) ]] })
+   script = obj.new('tiri', { statement=[[ mSys.WaitTime(0.5) ]] })
    async.script(script)
    err = async.wait(script, 0.1)
    assert(err is ERR_TimeOut, f'Expected TimeOut, got {err}')
@@ -52,7 +52,7 @@ end
 @Test function WaitCallbacksFire()
    callback_fired = false
 
-   script = obj.new('script', { statement=[[ msg('WaitCallbacksFire: running.') ]] })
+   script = obj.new('tiri', { statement=[[ msg('WaitCallbacksFire: running.') ]] })
    async.script(script, function(Object)
       callback_fired = true
    end)
@@ -65,8 +65,8 @@ end
 -- async.wait() raises an exception inside a try block on timeout.
 
 @Test; @Disabled function WaitExceptionOnTimeout()
-   script = obj.new('script', { statement=[[ mSys.WaitTime(10) ]] })
-   script = obj.new('script', { statement=[[ mSys.WaitTime(1) ]] })
+   script = obj.new('tiri', { statement=[[ mSys.WaitTime(10) ]] })
+   script = obj.new('tiri', { statement=[[ mSys.WaitTime(1) ]] })
    async.script(script)
 
    mSys.WaitTime(0.3)

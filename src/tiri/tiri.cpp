@@ -391,7 +391,7 @@ The SetVariable() function provides a method for setting global variables in a T
 script.  If the script is cached, the variable settings will be available on the next activation.
 
 -INPUT-
-obj(Script) Script: Pointer to a Tiri script.
+obj(Tiri) Script: Pointer to a Tiri script.
 strview Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
@@ -409,7 +409,7 @@ mutates-object, copies-input
 
 *********************************************************************************************************************/
 namespace fl {
-ERR SetVariable(objScript *Script, const std::string_view &Name, int Type, ...)
+ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);
    prvTiri *prv;
@@ -648,7 +648,7 @@ void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int El
 
 //********************************************************************************************************************
 
-void get_line(objScript *Self, int Line, STRING Buffer, int Size)
+void get_line(objTiri *Self, int Line, STRING Buffer, int Size)
 {
    if (not Self->Statement.empty()) {
       auto str = std::string_view(Self->Statement);

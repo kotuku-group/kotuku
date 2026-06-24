@@ -55,7 +55,7 @@ static void key_event(evKey *, int, struct finput *);
 {
    kt::Log log(__FUNCTION__);
 
-   auto Self = (objScript *)CurrentContext();
+   auto Self = (objTiri *)CurrentContext();
    auto prv = (prvTiri *)Self->DerivedPtr;
 
    auto list = prv->InputList;
@@ -427,7 +427,7 @@ static void key_event(evKey *, int, struct finput *);
 static void key_event(evKey *Event, int Size, struct finput *Input)
 {
    kt::Log log("input.key_event");
-   objScript *script = Input->Script;
+   objTiri *script = Input->Script;
    if (not script) {
       log.trace("Input->Script undefined.");
       return;
@@ -469,7 +469,7 @@ static void key_event(evKey *Event, int Size, struct finput *Input)
 static void focus_event(evFocus *Event, int Size, lua_State *Lua)
 {
    kt::Log log(__FUNCTION__);
-   objScript *script = Lua->script;
+   objTiri *script = Lua->script;
    if (not script) {
       log.trace("Script undefined.");
       return;

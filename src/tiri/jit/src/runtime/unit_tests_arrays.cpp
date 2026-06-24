@@ -22,7 +22,7 @@
 
 #include "../../defs.h"
 
-static objScript* glArrayTestScript = nullptr;
+static objTiri* glArrayTestScript = nullptr;
 
 // Helper: dostring equivalent - loads and executes a string
 static int dostring(lua_State *L, const char* s)

@@ -79,7 +79,7 @@
       <error code="Okay">Operation successful.</error>
       <error code="InvalidData">There is an error in the provided data</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="WrongClass">An object is not of the required type</error>
+      <error code="WrongClass">An object is not of the required class type</error>
     </result>
   </function>
 
@@ -515,7 +515,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <error code="NotFound">A search routine in this function failed</error>
       <error code="Syntax">Invalid syntax detected</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="InvalidObject">An object is not of the required type</error>
+      <error code="InvalidObject">An object is not of the required class type</error>
     </result>
   </function>
 

@@ -23,7 +23,7 @@ function enforce_hotpath() end
 
    for i=1,100 do
       do
-         script = obj.new('script', { statement=[[ msg('Thread is now in session.') ]] })
+         script = obj.new('tiri', { statement=[[ msg('Thread is now in session.') ]] })
          async.script(script, callback)
       end
 
@@ -36,7 +36,7 @@ function enforce_hotpath() end
    -- Allocate the threaded script once, then run it multiple times.  Note that you can't run the
    -- same object in parallel (you'd have to allocate more and reference the same string).
 
-   script = obj.new('script', { statement=[[ msg('Thread is now in session.') ]] })
+   script = obj.new('tiri', { statement=[[ msg('Thread is now in session.') ]] })
 
    for i=1,100 do -- Run enough times to sufficiently test thread locking and the JIT
       async.script(script, callback)
@@ -50,7 +50,7 @@ end
 -- Verify that the async.script() callback receives an error code and message when the script fails.
 
 @Test(priority=2) function ScriptCallbackError()
-   script = obj.new('script', { statement=[[ error('Deliberate test failure') ]] })
+   script = obj.new('tiri', { statement=[[ error('Deliberate test failure') ]] })
 
    glCallbackError = nil
    glCallbackMsg = nil
@@ -85,7 +85,7 @@ end
 
    scripts = array<object>
    for i=0, total-1 do
-      scripts:push(obj.new('script', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
+      scripts:push(obj.new('tiri', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
    end
 
    for script in values(scripts) do
@@ -112,7 +112,7 @@ end
 
    scripts = array<object> { }
    for i in {1 into 10} do
-      scripts:push(obj.new('script', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
+      scripts:push(obj.new('tiri', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
    end
 
    proc = processing.new({ timeout=5.0, signals = scripts })
@@ -215,7 +215,7 @@ end
    async.pool.clear()
    async.pool.input = 'from main'
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
       val = async.pool.input
       async.pool.output = 'from thread: ' .. val
    ]] })
@@ -261,7 +261,7 @@ end
 
    -- Run a script that attempts an invalid pool write (function value), which should raise an error.
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
       try
          async.pool.bad = function() end
       except
@@ -412,7 +412,7 @@ end
    proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
 
    for i=0, total-1 do
-      script = obj.new('script', { statement = f"for j=0,99 do async.pool.counter = {i} * 100 + j end" })
+      script = obj.new('tiri', { statement = f"for j=0,99 do async.pool.counter = {i} * 100 + j end" })
       async.script(script, function(Object)
          check Object.error
          completed++
@@ -445,7 +445,7 @@ end
       sig_a.acSignal()
    ]]
 
-   local script = obj.new('script', { statement = async_statement })
+   local script = obj.new('tiri', { statement = async_statement })
    script.acQuery()
    script.setKey('A', signal_a.id) -- Make the signal object available via arg()
 
@@ -471,7 +471,7 @@ end
 -- async.pending() returns a positive count while an async action is in-flight or queued.
 
 @Test(priority=22) function PendingCountDuringAsync()
-   script = obj.new('script', { statement=[[ mSys.WaitTime(0.5) ]] })
+   script = obj.new('tiri', { statement=[[ mSys.WaitTime(0.5) ]] })
 
    async.script(script)
 
@@ -500,7 +500,7 @@ end
 -- async.cancel() drains queued actions and the callback receives an error.
 
 @Test(priority=24) function CancelDrainsQueue()
-   script = obj.new('script', { statement=[[ mSys.WaitTime(2.0) ]] })
+   script = obj.new('tiri', { statement=[[ mSys.WaitTime(2.0) ]] })
 
    glCancelCallbackCount = 0
 
@@ -528,8 +528,8 @@ end
 -- async.cancel() accepts an array<object> argument.
 
 @Test(priority=25) function CancelArrayOfObjects()
-   script_a = obj.new('script', { statement=[[ mSys.WaitTime(1.0) ]] })
-   script_b = obj.new('script', { statement=[[ mSys.WaitTime(1.0) ]] })
+   script_a = obj.new('tiri', { statement=[[ mSys.WaitTime(1.0) ]] })
+   script_b = obj.new('tiri', { statement=[[ mSys.WaitTime(1.0) ]] })
 
    start = mSys.PreciseTime()
    elapsed = (a) => (mSys.PreciseTime() - start)/1000000
@@ -566,7 +566,7 @@ end
    async.pool.clear()
    async.pool.completed_cancel_race = 0
 
-   script = obj.new('script', {
+   script = obj.new('tiri', {
       statement=[[ async.pool.completed_cancel_race = async.pool.completed_cancel_race + 1 ]]
    })
 
@@ -623,7 +623,7 @@ end
 -- Verify that async.action() passes user arguments after the fixed Object, Action, Callback and Key parameters.
 
 @Test(priority=29) function ActionArgumentOffset()
-   script = obj.new('script', { statement=[[ ]] })
+   script = obj.new('tiri', { statement=[[ ]] })
 
    async.action(script, 'SetKey', function(ActionID, Object, Error, Key)
       check Error

@@ -337,7 +337,7 @@ extern lua_State* luaL_newstate(void)
 
 #else
 
-extern lua_State* luaL_newstate(class objScript *Script)
+extern lua_State* luaL_newstate(class objTiri *Script)
 {
    lua_State* L;
    L = lua_newstate(LJ_ALLOCF_INTERNAL, nullptr);

@@ -344,7 +344,9 @@ static ERR SCRIPT_Init(objScript *Self)
 
    if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
-   return ERR::NoSupport;
+   // Clients should use IdentifyFile() to determine the type of the script file and then instantiate a derived class.
+   kt::Log().warning("Scripts must be instantiated with a derived class.");
+   return ERR::Init;
 }
 
 //********************************************************************************************************************
