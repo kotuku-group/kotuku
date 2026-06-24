@@ -34,22 +34,22 @@ bool SceneRenderer::ClipBuffer::use_cached_mask(const agg::trans_affine &Transfo
    // shape's path state alone.  Note that a viewport using both vpClip and a ClipMask shares the one cache slot,
    // distinguished by the Clip pointer, so the two masks evict each other on alternate draws.
 
-   auto &cache = m_shape->ClipCache;
+   auto cache = m_shape->ClipCache.get();
 
-   if ((!cache.Valid) or (cache.Clip != m_clip) or (cache.Bitmap.empty())) return false;
-   if (cache.PathTimestamp != m_shape->PathTimestamp) return false;
+   if ((!cache) or (!cache->Valid) or (cache->Clip != m_clip) or (cache->Bitmap.empty())) return false;
+   if (cache->PathTimestamp != m_shape->PathTimestamp) return false;
    if (m_clip) {
-      if (cache.ContentVersion != m_clip->ContentVersion) return false;
-      if (cache.Units != m_clip->Units) return false;
-      if (cache.Flags != m_clip->Flags) return false;
+      if (cache->ContentVersion != m_clip->ContentVersion) return false;
+      if (cache->Units != m_clip->Units) return false;
+      if (cache->Flags != m_clip->Flags) return false;
    }
-   if ((cache.ParentWidth != ParentWidth) or (cache.ParentHeight != ParentHeight)) return false;
-   if (!clip_transform_matches(cache.Transform, Transform)) return false;
+   if ((cache->ParentWidth != ParentWidth) or (cache->ParentHeight != ParentHeight)) return false;
+   if (!clip_transform_matches(cache->Transform, Transform)) return false;
 
-   m_width = cache.Width;
-   m_height = cache.Height;
-   if (m_clip) m_clip->Bounds = cache.Bounds;
-   m_renderer.attach(cache.Bitmap.data(), m_width - 1, m_height - 1, m_width);
+   m_width = cache->Width;
+   m_height = cache->Height;
+   if (m_clip) m_clip->Bounds = cache->Bounds;
+   m_renderer.attach(cache->Bitmap.data(), m_width - 1, m_height - 1, m_width);
    return true;
 }
 
@@ -61,11 +61,13 @@ void SceneRenderer::ClipBuffer::store_cached_mask(const agg::trans_affine &Trans
    if ((m_width <= 0) or (m_height <= 0)) return;
 
    if (uint64_t(m_width) * uint64_t(m_height) > CLIP_MASK_CACHE_LIMIT) {
-      m_shape->ClipCache.clear();
+      m_shape->ClipCache.reset();
       return;
    }
 
-   auto &cache = m_shape->ClipCache;
+   if (!m_shape->ClipCache) m_shape->ClipCache = std::make_unique<ClipMaskCache>();
+
+   auto &cache = *m_shape->ClipCache;
    cache.Bitmap = m_bitmap;
    cache.Bounds = m_clip ? m_clip->Bounds : TClipRectangle<double>();
    cache.Transform = Transform;

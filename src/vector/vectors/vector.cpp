@@ -170,7 +170,7 @@ static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    auto Self = (extVector *)CurrentContext();
    if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) {
       Self->ClipMask = nullptr;
-      Self->ClipCache.clear();
+      Self->ClipCache.reset();
    }
 }
 
@@ -1534,13 +1534,13 @@ static ERR VECTOR_SET_Mask(extVector *Self, extVectorClip *Value)
       if (Self->ClipMask) {
          UnsubscribeAction(Self->ClipMask, AC::Free);
          Self->ClipMask = nullptr;
-         Self->ClipCache.clear();
+         Self->ClipCache.reset();
       }
       return ERR::Okay;
    }
    else if (Value->classID() IS CLASSID::VECTORCLIP) {
       if (Self->ClipMask) UnsubscribeAction(Self->ClipMask, AC::Free);
-      Self->ClipCache.clear();
+      Self->ClipCache.reset();
       if (Value->initialised()) { // Ensure that the mask is initialised.
          SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_clipmask));
          Self->ClipMask = Value;
@@ -2224,7 +2224,7 @@ double extVector::fixed_stroke_width()
 //********************************************************************************************************************
 
 extVector::~extVector() {
-   ClipCache.clear();
+   ClipCache.reset();
 
    if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
    if (Transition) UnsubscribeAction(Transition, AC::Free);
