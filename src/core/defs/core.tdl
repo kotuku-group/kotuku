@@ -96,16 +96,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
     "PIPE: Enable the output pipe to the launched process so that it can read data.")
 
-  hash("AHASH", "0x%s",
-    "ACTIVATE",     "CLEAR",         "FREEWARNING",  "COPYDATA",
-    "DATAFEED",     "DEACTIVATE",    "DRAW",         "FLUSH",       "FOCUS",        "FREE",
-    "GETKEY",       "DRAGDROP",      "HIDE",         "INIT",        "LOCK",         "LOSTFOCUS",    "MOVE",
-    "MOVETOBACK",   "MOVETOFRONT",   "NEWCHILD",     "NEWOWNER",    "NEWOBJECT",    "REDO",         "QUERY",
-    "READ",         "RENAME",        "RESET",        "RESIZE",      "SAVEIMAGE",    "SAVETOOBJECT",
-    "SEEK",         "SETKEY",        "SHOW",         "TIMER",       "UNLOCK",       "NEXT",         "PREV",
-    "WRITE",        "SETFIELD",      "CLIPBOARD",    "REFRESH",     "DISABLE",      "ENABLE",       "REDIMENSION",
-    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO",         "FREEPLACEMENT")
-
   flags("MHF", { comment="Internal options for requesting function tables from modules." },
     "STATIC: Keep the module code in memory",
     "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")

@@ -267,25 +267,24 @@ static int async_method(lua_State *Lua)
    auto gc_obj = lj_lib_checkobject(Lua, 1);
    if (not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
-   std::span<const MethodEntry> table;
-   int i;
+   std::span<MethodEntry> table;
 
-   auto type = lua_type(Lua, 2);
-   CSTRING method = nullptr;
-   AC method_id = AC::NIL;
-
-   if (!gc_obj->classptr->get(FID_Methods, table)) {
+   if (!gc_obj->classptr->getMethods(table)) {
+      auto type = lua_type(Lua, 2);
+      CSTRING method = nullptr;
+      AC method_id = AC::NIL;
       bool found = false;
+      int i = 0;
 
       if (type IS LUA_TSTRING) {
          method = lua_tostring(Lua, 2);
-         for (unsigned i=1; i < table.size(); i++) {
+         for (i=1; i < std::ssize(table); i++) {
             if ((table[i].Name) and (iequals(table[i].Name, method))) { found = true; break; }
          }
       }
       else if (type IS LUA_TNUMBER) {
          method_id = AC(lua_tointeger(Lua, 2));
-         for (unsigned i=1; i < table.size(); i++) {
+         for (i=1; i < std::ssize(table); i++) {
             if (table[i].MethodID IS method_id) { found = true; break; }
          }
       }
@@ -370,10 +369,12 @@ static int async_method(lua_State *Lua)
 
          return 0;
       }
-   }
 
-   if (method) luaL_error(Lua, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
-   else luaL_error(Lua, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
+      if (method) luaL_error(Lua, ERR::Search, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
+      else luaL_error(Lua, ERR::Search, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
+   }
+   else luaL_error(Lua, ERR::NoMethods);
+
    return 0;
 }
 
