@@ -297,10 +297,8 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
-    { UNIQUE = "0x40000000: Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, ~Core.NewObject() will return `ERR::ObjectExists`.  This flag works in conjunction with the `Name` parameter.",
-      NAME   = "0x80000000: Use the Name parameter to name the created object.  This flag is not required if using `UNIQUE`.",
-      PRIVATE = 0
-    }
+    "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
+    { PRIVATE = 0 }
   )
 
   constants("MAX", { }, {
@@ -1231,6 +1229,12 @@ template <pcObject T> inline ERR FreeResource(T *Object) {
    return FreeResource(Object->UID);
 }
 
+template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
+inline ERR FreeResource(T *) {
+   static_assert(pcComplete<T>, "FreeResource() cannot be called with a pointer to an incomplete type.");
+   return ERR::NullArgs;
+}
+
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
@@ -1511,6 +1515,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     int CurrentLine     # Current line being executed, or failed line if script execution terminated
     int LineOffset      # An optional offset to use when reporting line numbers
   ]],
+  nil,
   [[
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars;                 // Global parameters
@@ -1518,6 +1523,10 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
    OBJECTID ScriptOwnerID;
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
+#endif
   ]])
 
   c_insert([==[

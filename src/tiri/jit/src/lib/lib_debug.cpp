@@ -1191,29 +1191,19 @@ LJLIB_CF(debug_validate)
    CSTRING flags = luaL_optstring(L, 2, "");
    bool include_symbols = flags and std::string_view(flags).find("symbols") != std::string_view::npos;
 
-   // Create result table
-   lua_newtable(L);
-
-   // Check that script context is available
-   if (L->script IS nullptr) {
-      settabsb(L, "success", false);
-      lua_newtable(L);
-      lua_setfield(L, -2, "diagnostics");
-      return 1;
-   }
+   lua_newtable(L); // Create result table
 
    // Parse the statement using lua_load with DIAGNOSE mode
    // This requires temporarily enabling JOF::DIAGNOSE
-   auto *prv = (prvTiri *)L->script->DerivedPtr;
-   JOF old_options = prv ? prv->JitOptions : JOF::NIL;
+   JOF old_options = L->script->JitOptions;
    SCF old_flags = L->script->Flags;
-   if (prv) prv->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
+   L->script->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
    if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
    int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), "=validate");
 
-   if (prv) prv->JitOptions = old_options;  // Restore options
+   L->script->JitOptions = old_options;  // Restore options
    L->script->Flags = old_flags;
 
    // Pop the compiled chunk or error message

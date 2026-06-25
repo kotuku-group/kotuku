@@ -13,12 +13,12 @@ ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_vie
 
    CLASSID class_id, derived_id;
    if (TargetFile.starts_with("string:")) { // Presumes Tiri
-      derived_id = CLASSID::SCRIPT;
+      derived_id = CLASSID::TIRI;
       class_id = CLASSID::SCRIPT;
    }
    else if ((error = IdentifyFile(TargetFile, CLASSID::NIL, &class_id, &derived_id)) != ERR::Okay) {
       printf("Failed to identify the type of file for path '%.*s', error: %s.  Assuming Tiri script.\n", int(TargetFile.size()), TargetFile.data(), GetErrorMsg(error));
-      derived_id = CLASSID::SCRIPT;
+      derived_id = CLASSID::TIRI;
       class_id = CLASSID::SCRIPT;
    }
 

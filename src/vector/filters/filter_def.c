@@ -39,7 +39,6 @@ static ERR VECTORFILTER_FreePlacement(extVectorFilter *Self) {
 
 static const struct ActionArray clVectorFilterActions[] = {
    { AC::Clear, VECTORFILTER_Clear },
-   { AC::Free, VECTORFILTER_Free },
    { AC::FreePlacement, VECTORFILTER_FreePlacement },
    { AC::Init, VECTORFILTER_Init },
    { AC::NewChild, VECTORFILTER_NewChild },

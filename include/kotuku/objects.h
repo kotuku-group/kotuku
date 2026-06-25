@@ -199,9 +199,10 @@ struct alignas(8) Object { // Must be 64-bit aligned
    char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
 
    // NB: This constructor is called by NewObject(), no need to call it manually from client code.
+   // Class and UID are set by NewObject() prior to construction
 
-   Object() : Class(nullptr), DerivedPtr(nullptr), CreatorMeta(nullptr), Owner(nullptr), NotifyFlags(0),
-      ActionDepth(0), Queue(0), SleepQueue(0), RefCount(0), UID(0), Flags(0), ThreadID(0), Name("") { }
+   Object() : DerivedPtr(nullptr), CreatorMeta(nullptr), Owner(nullptr), NotifyFlags(0),
+      ActionDepth(0), Queue(0), SleepQueue(0), RefCount(0), Flags(0), ThreadID(0), Name("") { }
 
    [[nodiscard]] inline bool initialised() const { return Flags.load(std::memory_order_relaxed) & uint32_t(NF::INITIALISED); }
    [[nodiscard]] inline bool defined(NF pFlags) const { return Flags.load(std::memory_order_relaxed) & uint32_t(pFlags); }
@@ -210,14 +211,8 @@ struct alignas(8) Object { // Must be 64-bit aligned
    [[nodiscard]] inline CLASSID classID();
    [[nodiscard]] inline CLASSID baseClassID();
    [[nodiscard]] inline NF flags() { return NF(Flags.load(std::memory_order_relaxed)); }
-
-   inline void setFlag(NF pFlag) {
-      Flags.fetch_or(uint32_t(pFlag), std::memory_order_relaxed);
-   }
-
-   inline void clearFlag(NF pFlag) {
-      Flags.fetch_and(~uint32_t(pFlag), std::memory_order_relaxed);
-   }
+   inline void setFlag(NF pFlag) { Flags.fetch_or(uint32_t(pFlag), std::memory_order_relaxed); }
+   inline void clearFlag(NF pFlag) { Flags.fetch_and(~uint32_t(pFlag), std::memory_order_relaxed); }
 
    // Pinning an object provides a strong hint that the object is referenced by a variable, stored in a container, or needed by a thread.
    // Pinned objects will short-circuit ReleaseObject's automatic free-on-unlock feature, making it necessary to manually call freeIfReady()

@@ -193,20 +193,6 @@ static ERR VECTORVIEWPORT_MoveToPoint(extVectorViewport *Self, struct acMoveToPo
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORVIEWPORT_NewObject(extVectorViewport *Self)
-{
-   Self->vpAspectRatio = ARF::MEET|ARF::X_MID|ARF::Y_MID;
-   Self->vpOverflowX   = VOF::VISIBLE;
-   Self->vpOverflowY   = VOF::VISIBLE;
-
-   // NB: vpTargetWidth and vpTargetHeight are not set to a default because we need to know if the client has
-   // intentionally avoided setting the viewport and/or viewbox dimensions (which typically means that the viewport
-   // will expand to fit the parent).
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redimension: Reposition and resize a viewport to a fixed size.
@@ -305,9 +291,6 @@ static ERR VIEW_SET_AspectRatio(extVectorViewport *Self, ARF Value)
 -FIELD-
 Buffer: Returns the bitmap buffer that the viewport is using.
 
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
 -FIELD-
 Buffered: Set to true if the viewport should buffer its content.
 

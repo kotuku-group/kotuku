@@ -25,17 +25,12 @@ This documentation is intended for technical reference and is not suitable as an
 #include <string.h>
 
 #ifdef _MSC_VER
- #include <io.h>
 #else
  #include <unistd.h>
 #endif
 
 #include <forward_list>
 #include <sstream>
-
-#ifdef _WIN32
-#include <time.h>
-#endif
 
 #ifdef __APPLE__
  #include <limits.h>

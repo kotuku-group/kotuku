@@ -6,7 +6,7 @@ function enforce_hotpath() end
 @Test function NonRangeTable()
    -- Verify that the parser isn't confused by .. in a non-range table
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    test_messages = {
       'Binary data: ' .. string.char(0, 1, 2, 3, 255, 254, 253),
       string.rep('Large SSL message ', 500), -- ~9KB message
@@ -22,7 +22,7 @@ end
 @Test function NonRangeTableWithFStringBraces()
    -- Verify range lookahead does not scan through table assignment fields and corrupt f-string token buffering.
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    port = 8080
    request = {
       src = f'http://127.0.0.1:{port}/upload/file',
@@ -39,7 +39,7 @@ end
 @Test function NonRangeTypedArrayWithFStringBraces()
    -- Verify multiline typed array initialisers bypass range lookahead before f-string expansion.
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    port = 8080
    args = array<string> {
       f'url=http://127.0.0.1:{port}/echo',
@@ -59,7 +59,7 @@ end
    -- Verify for-in does not misclassify {a, b .. c} as a range literal.
    -- Guard execution so this validates parser behaviour only.
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    if false then
       for i in {'a', 'b' .. 'c'} do
       end
@@ -73,7 +73,7 @@ end
 @Test function ForInNonRangeBraceWithNestedConcatParses()
    -- Verify lookahead ignores nested '..' and only recognises true {start to stop} forms.
 
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    if false then
       for i in {{1, 2}, ('x' .. 'y')} do
       end
@@ -552,7 +552,7 @@ end
 end
 
 @Test function ForInRangeWithNestedStringCallArgument()
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    function hello(Str)
       return 4
    end
@@ -569,7 +569,7 @@ end
 end
 
 @Test function ForInRangeRejectsBareStringOperandAtParseTime()
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    if false then
       for i in {'fart' to 10} do
       end
@@ -581,7 +581,7 @@ end
 end
 
 @Test function ForInNonRangeBareStringConcatToParses()
-   script = obj.new('script', { statement=[[
+   script = obj.new('tiri', { statement=[[
    to = 'b'
    if false then
       for i in {'a' .. to} do

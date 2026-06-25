@@ -416,6 +416,29 @@ static bool read_mesh_patch_stop(extSVG *Self, const XTag &Stop, const SVGMeshPo
    return true;
 }
 
+static bool read_mesh_patch_origin(const XTag &Tag, SVGMeshPoint &Origin) noexcept
+{
+   bool found_x = false;
+   bool found_y = false;
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &name = Tag.Attribs[a].Name;
+      auto &value = Tag.Attribs[a].Value;
+      if (value.empty()) continue;
+
+      if (iequals("kotuku:x", name)) {
+         Origin.x = svtonum<double>(value);
+         found_x = true;
+      }
+      else if (iequals("kotuku:y", name)) {
+         Origin.y = svtonum<double>(value);
+         found_y = true;
+      }
+   }
+
+   return found_x and found_y;
+}
+
 void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, std::string &ID) noexcept
 {
    kt::Log log(__FUNCTION__);
@@ -464,6 +487,33 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
          std::vector<const XTag *> stops;
          for (auto &stop_tag : patch_tag.Children) {
             if (svg_tag_hash(stop_tag) IS kt::strhash("stop")) stops.push_back(&stop_tag);
+         }
+
+         SVGMeshPoint independent_origin;
+         if (read_mesh_patch_origin(patch_tag, independent_origin)) {
+            if (stops.size() < 4) continue;
+
+            patch.edge[0].p0 = independent_origin;
+            int stop_index = 0;
+            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[0].p0,
+               patch.edge[0], patch.corner[1])) continue;
+
+            patch.edge[1].p0 = patch.edge[0].p1;
+            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[1].p0,
+               patch.edge[1], patch.corner[2])) continue;
+
+            patch.edge[2].p0 = patch.edge[1].p1;
+            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[2].p0,
+               patch.edge[2], patch.corner[3])) continue;
+
+            patch.edge[3].p0 = patch.edge[2].p1;
+            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[3].p0,
+               patch.edge[3], patch.corner[0])) continue;
+
+            current_row.push_back(patch);
+            records.push_back(mesh_patch_record_from_patch(patch));
+            col++;
+            continue;
          }
 
          int stop_index = 0;
