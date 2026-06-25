@@ -646,13 +646,16 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 
 static ERR VECTORFILTER_Init(extVectorFilter *Self)
 {
-   kt::Log log(__FUNCTION__);
+   kt::Log log;
 
    if ((int(Self->Units) <= 0) or (int(Self->Units) >= int(VUNIT::END))) {
       return log.warning(ERR::OutOfRange);
    }
 
-   if (!Self->Scene) return log.warning(ERR::UnsupportedOwner);
+   if (not Self->Scene) {
+      if (Self->Owner->classID() IS CLASSID::VECTORSCENE) Self->Scene = (extVectorScene *)Self->Owner;
+      else return log.warning(ERR::UnsupportedOwner);
+   }
 
    return ERR::Okay;
 }

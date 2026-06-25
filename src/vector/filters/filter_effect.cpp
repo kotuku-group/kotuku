@@ -16,7 +16,10 @@ static ERR FILTEREFFECT_Init(extFilterEffect *Self)
 {
    kt::Log log;
 
-   if (!Self->Filter) return log.warning(ERR::UnsupportedOwner);
+   if (not Self->Filter) {
+      if (Self->Owner->classID() IS CLASSID::VECTORFILTER) Self->Filter = (extVectorFilter *)Self->Owner;
+      else return log.warning(ERR::UnsupportedOwner);
+   }
 
    // If the client didn't specify a source input, figure out what to use.
 

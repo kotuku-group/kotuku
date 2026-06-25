@@ -26,7 +26,8 @@ using namespace kt;
 
 static void drain_action_queue(OBJECTID ObjectID, bool Terminating = false, bool PreserveActive = false);
 static void async_wait_callback(OBJECTID, bool);
-static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object);
+//static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object);
+static ERR set_owner(OBJECTPTR, OBJECTPTR);
 
 // AsyncWait() state — guarded by glmAsyncWait.
 
@@ -155,6 +156,53 @@ static void free_object_block(OBJECTPTR Object)
    if (not Object) return;
    Object->~Object();
    aligned_block_free(Object);
+}
+
+//********************************************************************************************************************
+// For the exclusive use of NewObject()
+
+static ERR set_owner(OBJECTPTR Object, OBJECTPTR Owner)
+{
+   // Send a new child alert to the owner.  If the owner returns an error then we return immediately.
+
+   if (!CheckAction(Owner, AC::NewChild)) {
+      // Contract: The hook is not permitted to free the Object
+      struct acNewChild newchild = { .Object = Object };
+      if (auto error = Action(AC::NewChild, Owner, &newchild); error != ERR::NoSupport) {
+         if (error != ERR::Okay) {
+            // If the owner has passed the object through to another owner, return ERR::Okay, otherwise error.
+            if (error IS ERR::OwnerPassThrough) return ERR::Okay;
+            else return error;
+         }
+      }
+   }
+
+   // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
+
+   std::unique_lock lock(glmResources);
+   std::lock_guard object_lock(glmObjects);
+   auto object_rec   = glObjects.find(Object->UID);
+   auto resource_rec = glResources.find(Object->UID);
+   auto owner_rec    = glResources.find(Owner->UID);
+
+   if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return ERR::SystemCorrupt;
+
+   if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
+      (not owner_rec->second.Manager->AddChild)) {
+      return ERR::SystemCorrupt;
+   }
+
+   auto &resource = resource_rec->second;
+
+   object_rec->second.OwnerID = Owner->UID;
+   resource.OwnerID = Owner->UID;
+   resource.OwnerManagesChildren = false;
+   Object->Owner = Owner;
+
+   owner_rec->second.Manager->AddChild(owner_rec->second, resource);
+   resource.OwnerManagesChildren = true;
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1856,14 +1904,10 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
 
-   OBJECTPTR head = nullptr;
-
    // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
    // glMemory.  Only 8-byte alignment is required for the object header.
 
-   if (APTR start_mem = aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
-      head = (OBJECTPTR)start_mem;
-
+   if (auto head = (OBJECTPTR)aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
       OBJECTID object_id = glResourceID++;
 
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
@@ -1872,6 +1916,34 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       head->UID     = object_id;
       head->Class   = (extMetaClass *)mc;
       head->setFlag(Flags);
+
+      // Determine the object that will be acting as the owner.
+
+      OBJECTPTR track_to = nullptr;
+      bool track_lock = false;
+      if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
+      else if ((Flags & NF::UNTRACKED) != NF::NIL) {
+         if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
+         else {
+            // Untracked objects are owned by the current task.  This ensures that the object
+            // is deallocated correctly when the Core is closed.
+
+            if (glCurrentTask) {
+               track_to = glCurrentTask;
+               track_lock = true;
+            }
+         }
+      }
+      else { // Track the object to the current context
+         auto obj = current_resource();
+         if (obj IS &glDummyObject) { // If dummy object, track to the task
+            if (glCurrentTask) {
+               track_to = glCurrentTask;
+               track_lock = true;
+            }
+         }
+         else track_to = obj;
+      }
 
       {
          std::lock_guard resource_lock(glmResources);
@@ -1891,8 +1963,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
          // Set the header again as placement-new may have cleared it
 
-         head->UID     = object_id;
-         head->Class   = (extMetaClass *)mc;
+         head->UID   = object_id;
+         head->Class = (extMetaClass *)mc;
          head->setFlag(Flags);
       }
       else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
@@ -1902,8 +1974,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
          // Set the header again as placement-new may have cleared it
 
-         head->UID     = object_id;
-         head->Class   = (extMetaClass *)mc;
+         head->UID   = object_id;
+         head->Class = (extMetaClass *)mc;
          head->setFlag(Flags);
       }
 
@@ -1912,49 +1984,35 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          return error;
       }
 
-      // Tracking for our new object is configured here.
-
-      if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
-      else if ((Flags & NF::UNTRACKED) != NF::NIL) {
-         if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
-         else {
-            // Untracked objects are owned by the current task.  This ensures that the object
-            // is deallocated correctly when the Core is closed.
-
-            if (glCurrentTask) {
-               ScopedObjectAccess lock(glCurrentTask);
-               SetOwner(head, glCurrentTask);
+      if (track_to) {
+         if (track_lock) {
+            if (error = track_to->lock(); error != ERR::Okay) {
+               FreeResource(head);
+               return error;
             }
          }
-      }
-      else { // Track the object to the current context
-         auto obj = current_resource();
-         if (obj IS &glDummyObject) { // If dummy object, track to the task
-            if (glCurrentTask) {
-               ScopedObjectAccess lock(glCurrentTask);
-               SetOwner(head, glCurrentTask);
-            }
-         }
-         else SetOwner(head, obj);
+         // NOTE: SetOwner action hooks can potentially call the SetOwner() function and divert ownership to a different object.
+         error = set_owner(head, track_to);
+         if (track_lock) track_to->unlock();
       }
 
-      tlContext.emplace_back(head, nullptr, AC::NIL);
-
-      if (mc->Base) {
-         if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
+      if (!error) {
+         if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewObject)].PerformAction)) {
+            tlContext.emplace_back(head, nullptr, AC::NIL);
             if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
                log.warning(error);
             }
+            tlContext.pop_back();
+         }
+
+         if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
+            tlContext.emplace_back(head, nullptr, AC::NIL);
+            if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
+               log.warning(error);
+            }
+            tlContext.pop_back();
          }
       }
-
-      if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
-         if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
-            log.warning(error);
-         }
-      }
-
-      tlContext.pop_back();
 
       if (!error) {
          ((extMetaClass *)head->Class)->OpenCount++;
@@ -2027,7 +2085,7 @@ static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
 
          if (glCurrentTask) {
             ScopedObjectAccess lock(glCurrentTask);
-            SetOwner(Object, glCurrentTask);
+            set_owner(Object, glCurrentTask);
          }
       }
    }
@@ -2036,10 +2094,10 @@ static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
       if (obj IS &glDummyObject) { // If dummy object, track to the task
          if (glCurrentTask) {
             ScopedObjectAccess lock(glCurrentTask);
-            SetOwner(Object, glCurrentTask);
+            set_owner(Object, glCurrentTask);
          }
       }
-      else SetOwner(Object, obj);
+      else set_owner(Object, obj);
    }
 
    tlContext.emplace_back(Object, nullptr, AC::NIL);
