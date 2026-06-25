@@ -278,13 +278,13 @@ static int async_method(lua_State *Lua)
 
       if (type IS LUA_TSTRING) {
          method = lua_tostring(Lua, 2);
-         for (unsigned i=1; i < table.size(); i++) {
+         for (i=1; i < std::ssize(table); i++) {
             if ((table[i].Name) and (iequals(table[i].Name, method))) { found = true; break; }
          }
       }
       else if (type IS LUA_TNUMBER) {
          method_id = AC(lua_tointeger(Lua, 2));
-         for (unsigned i=1; i < table.size(); i++) {
+         for (i=1; i < std::ssize(table); i++) {
             if (table[i].MethodID IS method_id) { found = true; break; }
          }
       }
