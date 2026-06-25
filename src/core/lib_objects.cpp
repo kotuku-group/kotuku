@@ -1864,7 +1864,7 @@ caller-owns-result, creates-resource, blocking, callback-inlines
 ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 {
    if ((Flags & NF::PLACEMENT) != NF::NIL) {
-      // Support for C++ placement is restricted to non-extended class.  In theory the user can safely do
+      // Support for C++ placement is restricted to non-extended class.  In theory the user can safely declare
       // `objFile file` if the implementation has no `extFile` definition.  Otherwise the final object size would
       // be too small, and the extFile constructor would never be called.
       //
@@ -1888,8 +1888,6 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    *Object = nullptr;
 
-   Flags &= (NF::UNTRACKED|NF::LOCAL|NF::UNIQUE|NF::NAME|NF::SUPPRESS_LOG); // Very important to eliminate any internal flags.
-
    // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
    // end up being tracked to its task rather than its parent object).
 
@@ -1900,8 +1898,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
 
    if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
-      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(),
-         glResourceID.load(std::memory_order_relaxed), int(Flags));
+      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
 
    // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
@@ -1910,12 +1907,12 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    if (auto head = (OBJECTPTR)aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
       OBJECTID object_id = glResourceID++;
 
-      new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      head->UID     = object_id;
-      head->Class   = (extMetaClass *)mc;
-      head->setFlag(Flags);
+      // Preset the Object header - the Object() constructor will skip intiialisation of these fields during new placement.
+
+      head->UID   = object_id;
+      head->Class = (extMetaClass *)mc;
 
       // Determine the object that will be acting as the owner.
 
@@ -1945,6 +1942,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          else track_to = obj;
       }
 
+      // Track the object prior to NewPlacement so that action calls will work correctly.
+
       {
          std::lock_guard resource_lock(glmResources);
          std::lock_guard object_lock(glmObjects);
@@ -1960,29 +1959,20 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          tlContext.emplace_back(head, nullptr, AC::NIL);
          error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
          tlContext.pop_back();
-
-         // Set the header again as placement-new may have cleared it
-
-         head->UID   = object_id;
-         head->Class = (extMetaClass *)mc;
-         head->setFlag(Flags);
       }
       else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
          tlContext.emplace_back(head, nullptr, AC::NIL);
          error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
          tlContext.pop_back();
-
-         // Set the header again as placement-new may have cleared it
-
-         head->UID   = object_id;
-         head->Class = (extMetaClass *)mc;
-         head->setFlag(Flags);
       }
+      else error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
 
       if (error != ERR::Okay) {
          FreeResource(head);
          return error;
       }
+
+      head->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // Keep flags requiring persistence.
 
       if (track_to) {
          if (track_lock) {
@@ -2044,8 +2034,6 @@ static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
    auto mc = (extMetaClass *)FindClass(class_id);
    if (not mc) return log.warning(ERR::MissingClass);
 
-   Flags &= (NF::UNTRACKED|NF::LOCAL|NF::UNIQUE|NF::NAME|NF::SUPPRESS_LOG|NF::PLACEMENT); // Very important to eliminate any internal flags.
-
    // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
    // end up being tracked to its task rather than its parent object).
 
@@ -2065,7 +2053,7 @@ static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
 
    Object->UID     = object_id;
    Object->Class   = (extMetaClass *)mc;
-   Object->setFlag(Flags); // The presence of NF::PLACEMENT will indicate the object was created by placement-new
+   Object->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // NF::PLACEMENT indicates the object was created by placement-new
 
    {
       std::lock_guard resource_lock(glmResources);

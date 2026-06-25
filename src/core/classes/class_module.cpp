@@ -77,7 +77,7 @@ static ERR MODULE_FreePlacement(extModule *);
 static ERR MODULE_NewPlacement(extModule *);
 
 static const ActionArray glModuleActions[] = {
-   { AC::Free, MODULE_FreePlacement },
+   { AC::FreePlacement, MODULE_FreePlacement },
    { AC::Init, MODULE_Init },
    { AC::NewPlacement, MODULE_NewPlacement },
    { AC::NIL, nullptr }
@@ -628,7 +628,7 @@ static objRootModule * check_resident(extModule *Self, const std::string_view Mo
          // NB: The Object constructor clears all values initially.
          glCoreRoot.Class         = glRootModuleClass;
          glCoreRoot.UID           = 1;
-         glCoreRoot.setFlag(NF::INITIALISED|NF::NAME|NF::UNIQUE);
+         glCoreRoot.setFlag(NF::INITIALISED);
          glCoreRoot.Name          = "Core";
          glCoreRoot.OpenCount     = 1;
          glCoreRoot.Table         = &glCoreHeader;
