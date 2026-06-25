@@ -16,8 +16,6 @@ Name: Objects
 #endif
 #endif
 
-#include <stdlib.h>
-#include <cassert>
 #include <chrono>
 #include <thread>
 #include <ranges>
@@ -1853,24 +1851,6 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // NB: Clients are not permitted to allocate Kotuku resources in NewPlacement due to
-      // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
-
-      ERR error = ERR::Okay;
-      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
-         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
-         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
-         error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
-      }
-      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
-         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
-      }
-
-      if (error != ERR::Okay) {
-         free_object_block(head);
-         return error;
-      }
-
       head->UID     = object_id;
       head->Class   = (extMetaClass *)mc;
       head->setFlag(Flags);
@@ -1880,6 +1860,38 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          std::lock_guard object_lock(glmObjects);
          glResources.insert_or_assign(object_id, ResourceRecord(object_id, head, 0, &glResourceObject));
          glObjects.insert_or_assign(object_id, ObjectRecord(head));
+      }
+
+      ERR error = ERR::Okay;
+      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
+         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
+         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
+
+         tlContext.emplace_back(head, nullptr, AC::NIL);
+         error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         tlContext.pop_back();
+
+         // Set the header again as placement-new may have cleared it
+
+         head->UID     = object_id;
+         head->Class   = (extMetaClass *)mc;
+         head->setFlag(Flags);
+      }
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
+         tlContext.emplace_back(head, nullptr, AC::NIL);
+         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         tlContext.pop_back();
+
+         // Set the header again as placement-new may have cleared it
+
+         head->UID     = object_id;
+         head->Class   = (extMetaClass *)mc;
+         head->setFlag(Flags);
+      }
+
+      if (error != ERR::Okay) {
+         FreeResource(head);
+         return error;
       }
 
       // Tracking for our new object is configured here.
@@ -1907,13 +1919,6 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          }
          else SetOwner(head, obj);
       }
-
-      // After the header has been created we can set the context, then call the base class's NewObject() support.  If this
-      // object belongs to a derived class, we will also call its supporting NewObject() action if it has specified one.
-      //
-      // Note: Hooking into NewObject gives derived classes an opportunity to detect that they have been targeted by the client
-      // on creation, as opposed to during initialisation.  This can allow DerivedPtr to be configured early on in the
-      // process, making it possible to set custom fields that would depend on it.
 
       kt::SwitchContext context(head);
 
