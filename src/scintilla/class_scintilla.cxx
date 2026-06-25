@@ -1026,21 +1026,6 @@ static ERR SCINTILLA_NewObject(extScintilla *Self, APTR)
    return ERR::Okay;
 }
 
-//*****************************************************************************
-
-static ERR SCINTILLA_NewOwner(extScintilla *Self, struct acNewOwner *Args)
-{
-   if (!Self->initialised()) {
-      auto obj = Args->NewOwner;
-      while ((obj) and (obj->classID() != CLASSID::SURFACE)) {
-         obj = obj->Owner;
-      }
-      if (obj) Self->SurfaceID = obj->UID;
-   }
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redo: Redo the most recently undone activity.
