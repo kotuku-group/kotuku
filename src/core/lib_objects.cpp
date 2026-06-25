@@ -26,6 +26,7 @@ using namespace kt;
 
 static void drain_action_queue(OBJECTID ObjectID, bool Terminating = false, bool PreserveActive = false);
 static void async_wait_callback(OBJECTID, bool);
+static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object);
 
 // AsyncWait() state — guarded by glmAsyncWait.
 
@@ -162,6 +163,8 @@ static void free_object_block(OBJECTPTR Object)
 ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
+
+   bool is_placement = Object->defined(NF::PLACEMENT);
 
    {
       ScopedObjectAccess objlock(Object);
@@ -319,7 +322,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       }
    } // Object lock
 
-   free_object_block(Object);
+   if (not is_placement) free_object_block(Object);
    return ERR::Okay;
 }
 
@@ -1812,6 +1815,21 @@ caller-owns-result, creates-resource, blocking, callback-inlines
 
 ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 {
+   if ((Flags & NF::PLACEMENT) != NF::NIL) {
+      // Support for C++ placement is restricted to non-extended class.  In theory the user can safely do
+      // `objFile file` if the implementation has no `extFile` definition.  Otherwise the final object size would
+      // be too small, and the extFile constructor would never be called.
+      //
+      // objFile() {
+      //    OBJECTPTR self = this;
+      //    NewObject(CLASS_ID, NF::PLACEMENT, &self);
+      // }
+
+      //if (not Object) return ERR::NullArgs;
+      //if (tlContext.back().obj IS *Object) return ERR::Okay; // Guard against recursive calls (not an error)
+      //return new_placement(ClassID, Flags, *Object);
+   }
+
    kt::Log log(__FUNCTION__);
 
    auto class_id = ClassID;
@@ -1820,7 +1838,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    auto mc = (extMetaClass *)FindClass(class_id);
    if (not mc) return log.warning(ERR::MissingClass);
 
-   if (Object) *Object = nullptr;
+   *Object = nullptr;
 
    Flags &= (NF::UNTRACKED|NF::LOCAL|NF::UNIQUE|NF::NAME|NF::SUPPRESS_LOG); // Very important to eliminate any internal flags.
 
@@ -1920,7 +1938,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          else SetOwner(head, obj);
       }
 
-      kt::SwitchContext context(head);
+      tlContext.emplace_back(head, nullptr, AC::NIL);
 
       if (mc->Base) {
          if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
@@ -1936,6 +1954,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          }
       }
 
+      tlContext.pop_back();
+
       if (!error) {
          ((extMetaClass *)head->Class)->OpenCount++;
          if (mc->Base) mc->Base->OpenCount++;
@@ -1949,6 +1969,108 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    }
    else return ERR::AllocMemory;
 }
+
+//********************************************************************************************************************
+// Object creation hook for the Object class constructor in existing memory.
+//
+// 2026-05-25: This code is valid but will only work for simple classes.
+
+#if 0
+static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
+{
+   kt::Log log("NewPlacement");
+
+   auto class_id = ClassID;
+   if ((class_id IS CLASSID::NIL) or (not Object)) return log.warning(ERR::NullArgs);
+
+   auto mc = (extMetaClass *)FindClass(class_id);
+   if (not mc) return log.warning(ERR::MissingClass);
+
+   Flags &= (NF::UNTRACKED|NF::LOCAL|NF::UNIQUE|NF::NAME|NF::SUPPRESS_LOG|NF::PLACEMENT); // Very important to eliminate any internal flags.
+
+   // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
+   // end up being tracked to its task rather than its parent object).
+
+   if ((Flags & NF::LOCAL) != NF::NIL) Flags &= ~NF::UNTRACKED;
+
+   // Force certain flags on the class' behalf
+
+   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
+
+   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
+      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
+   }
+
+   OBJECTID object_id = glResourceID++;
+
+   new (Object) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
+
+   Object->UID     = object_id;
+   Object->Class   = (extMetaClass *)mc;
+   Object->setFlag(Flags); // The presence of NF::PLACEMENT will indicate the object was created by placement-new
+
+   {
+      std::lock_guard resource_lock(glmResources);
+      std::lock_guard object_lock(glmObjects);
+      glResources.insert_or_assign(object_id, ResourceRecord(object_id, Object, 0, &glResourceObject));
+      glObjects.insert_or_assign(object_id, ObjectRecord(Object));
+   }
+
+   // Tracking for our new object is configured here.
+
+   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
+   else if ((Flags & NF::UNTRACKED) != NF::NIL) {
+      if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
+      else {
+         // Untracked objects are owned by the current task.  This ensures that the object
+         // is deallocated correctly when the Core is closed.
+
+         if (glCurrentTask) {
+            ScopedObjectAccess lock(glCurrentTask);
+            SetOwner(Object, glCurrentTask);
+         }
+      }
+   }
+   else { // Track the object to the current context
+      auto obj = current_resource();
+      if (obj IS &glDummyObject) { // If dummy object, track to the task
+         if (glCurrentTask) {
+            ScopedObjectAccess lock(glCurrentTask);
+            SetOwner(Object, glCurrentTask);
+         }
+      }
+      else SetOwner(Object, obj);
+   }
+
+   tlContext.emplace_back(Object, nullptr, AC::NIL);
+
+   ERR error = ERR::Okay;
+
+   if (mc->Base) {
+      if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
+         if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
+            log.warning(error);
+         }
+      }
+   }
+
+   if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
+      if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
+         log.warning(error);
+      }
+   }
+
+   tlContext.pop_back();
+
+   if (!error) {
+      ((extMetaClass *)Object->Class)->OpenCount++;
+      if (mc->Base) mc->Base->OpenCount++;
+   }
+   else FreeResource(Object); // This won't free the emplacement target, only the resources associated with it
+
+   return error;
+}
+#endif
 
 /*********************************************************************************************************************
 
