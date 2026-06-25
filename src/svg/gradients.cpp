@@ -86,10 +86,7 @@ const kt::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag)
          GradientStop stop;
          double stop_opacity = 1.0;
          stop.Offset = 0;
-         stop.RGB.Red   = 0;
-         stop.RGB.Green = 0;
-         stop.RGB.Blue  = 0;
-         stop.RGB.Alpha = 1.0;
+         stop.RGB = FRGB(0,0,0,1);
 
          for (int a=1; a < std::ssize(scan.Attribs); a++) {
             auto &name  = scan.Attribs[a].Name;
@@ -282,10 +279,7 @@ static SVGMeshPatchEdge reverse_mesh_edge(const SVGMeshPatchEdge &Edge) noexcept
 
 static bool read_mesh_stop_colour(extSVG *Self, const XTag &Tag, FRGB &Colour) noexcept
 {
-   Colour.Red = 0;
-   Colour.Green = 0;
-   Colour.Blue = 0;
-   Colour.Alpha = 1.0;
+   Colour = FRGB(0,0,0,1);
 
    double stop_opacity = 1.0;
    bool found_colour = false;
@@ -322,20 +316,28 @@ static bool read_mesh_stop_path(const XTag &Tag, std::string &Path) noexcept
 static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge) noexcept
 {
    Edge.p0 = Start;
-   const char *scan = Path.c_str();
-   while ((*scan <= 0x20) or (*scan IS ',')) scan++;
-   const char cmd = *scan++;
+   std::string_view scan(Path);
+   auto skip_separators = [](std::string_view &Scan) noexcept {
+      while ((not Scan.empty()) and ((Scan.front() <= 0x20) or (Scan.front() IS ','))) Scan.remove_prefix(1);
+   };
+
+   if (scan.empty()) return false;
+   skip_separators(scan);
+   if (scan.empty()) return false;
+
+   const char cmd = scan.front();
+   scan.remove_prefix(1);
 
    std::vector<double> numbers;
-   while (*scan) {
-      while ((*scan <= 0x20) or (*scan IS ',')) scan++;
-      if (!*scan) break;
+   while (not scan.empty()) {
+      skip_separators(scan);
+      if (scan.empty()) break;
 
       char *end = nullptr;
-      const double value = std::strtod(scan, &end);
-      if (end IS scan) return false;
+      const double value = std::strtod(scan.data(), &end);
+      if (end IS scan.data()) return false;
       numbers.push_back(value);
-      scan = end;
+      scan.remove_prefix(size_t(end - scan.data()));
    }
 
    switch (cmd) {
