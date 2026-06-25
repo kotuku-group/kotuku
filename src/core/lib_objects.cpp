@@ -1909,7 +1909,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // Preset the Object header - the Object() constructor will skip intiialisation of these fields during new placement.
+      // Preset the Object header - the Object() constructor will skip initialisation of these fields during new placement.
 
       head->UID   = object_id;
       head->Class = (extMetaClass *)mc;
@@ -1965,14 +1965,17 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
          tlContext.pop_back();
       }
-      else error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
+      else {
+         new (head) class Object; // Dummy initialiser so that FreeResource() will work
+         error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
+      }
 
       if (error != ERR::Okay) {
          FreeResource(head);
          return error;
       }
 
-      head->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // Keep flags requiring persistence.
+      head->setFlag(Flags & (NF::LOCAL)); // Keep flags requiring persistence.
 
       if (track_to) {
          if (track_lock) {

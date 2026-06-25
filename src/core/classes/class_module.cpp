@@ -41,6 +41,7 @@ It is critical that the module object is permanently retained until the program 
 
 #include "../idl.h"
 
+char glIDL[] = MOD_IDL;
 static objRootModule glCoreRoot;
 struct ModHeader glCoreHeader(nullptr, nullptr, nullptr, nullptr, nullptr, glIDL, nullptr, "core", "Sys");
 
