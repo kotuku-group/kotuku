@@ -298,10 +298,7 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
     "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
-    { UNIQUE = "0x40000000: Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, ~Core.NewObject() will return `ERR::ObjectExists`.  This flag works in conjunction with the `Name` parameter.",
-      NAME   = "0x80000000: Use the Name parameter to name the created object.  This flag is not required if using `UNIQUE`.",
-      PRIVATE = 0
-    }
+    { PRIVATE = 0 }
   )
 
   constants("MAX", { }, {
