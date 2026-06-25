@@ -33,6 +33,7 @@
 <tr><th class="col-md-1">VPF::OUTLINE_VIEWPORTS</th><td>Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</td></tr>
 <tr><th class="col-md-1">VPF::RENDER_TIME</th><td>Compute the drawing frame-rate for the <code>RenderTime</code> field.</td></tr>
 <tr><th class="col-md-1">VPF::RESIZE</th><td>The vector will be stretched to fit the <a href="vectorscene.html#tf-PageWidth">VectorScene⇒PageWidth</a> and <a href="vectorscene.html#tf-PageHeight">VectorScene⇒PageHeight</a> values, if defined by the client.</td></tr>
+<tr><th class="col-md-1">VPF::STABLE_RENDER</th><td>Use rendering algorithms that are stable across all platforms.</td></tr>
 </tbody></table>
       
 </div></div></td></tr>
@@ -72,7 +73,7 @@
 </tbody></table>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Surface" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Surface"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Surface</th><td class="col-md-1"><span class="text-nowrap">OBJECTID</span></td><td>May refer to a <a href="surface.html">Surface</a> object for enabling automatic rendering.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Surface" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Surface" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Surface"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Surface</th><td class="col-md-1"><span class="text-nowrap">OBJECTID</span></td><td>May refer to a <a href="surface.html">Surface</a> object for enabling automatic rendering.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Surface" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Setting the Surface field will enable automatic rendering to a display <a href="surface.html">Surface</a>.  The use of features such as input event handling and user focus management will also require an associated surface as a pre-requisite.</p>
       
 </div></div></td></tr>
@@ -133,20 +134,11 @@
 <tr><th class="col-md-1">Search</th><td>A definition with the given Name was not found.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-SearchByID" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SearchByID</th><td id="tm-SearchByID">Search for a vector by numeric ID.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SearchByID" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR sc::SearchByID(OBJECTPTR Object, INT ID, OBJECTPTR * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The ID to search for.</td></tr>
-<tr><td>Result</td><td>This parameter will be updated with the discovered vector, or <code>NULL</code> if not found.</td></tr>
-</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>This method will search a scene for an object that matches a given <code>ID</code> (vector ID's can be set with the <a href="vector.html#tf-NumericID">Vector⇒NumericID</a> or <a href="vector.html#tf-ID">Vector⇒ID</a> fields).  If multiple vectors are using the same ID, repeated calls can be made to this method to find them all.  This is achieved by calling this method on the vector that was last returned as a <code>Result</code>.</p>
-<p>Note that searching for string-based ID's is achieved by converting the string to a case-sensitive hash with <code>strhash()</code> and using that as the ID.</p>
-      
-<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Search</th><td>A vector with a matching ID was not found.</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-</tbody></table></div></div></td></tr>
 </tbody></table><div class="footer copyright text-right">VectorScene class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="VPF"><h1>VPF Type</h1><p class="lead">Optional flags for the VectorScene object.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VPF::BITMAP_SIZED</th><td>Automatically adjust the <a href="vectorscene.html#tf-PageWidth">VectorScene⇒PageWidth</a> and <a href="vectorscene.html#tf-PageHeight">VectorScene⇒PageHeight</a> to match the target <a href="bitmap.html#tf-Width">Bitmap⇒Width</a> and <a href="bitmap.html#tf-Height">Bitmap⇒Height</a>.</td></tr>
 <tr><th>VPF::OUTLINE_VIEWPORTS</th><td>Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</td></tr>
 <tr><th>VPF::RENDER_TIME</th><td>Compute the drawing frame-rate for the <code>RenderTime</code> field.</td></tr>
 <tr><th>VPF::RESIZE</th><td>The vector will be stretched to fit the <a href="vectorscene.html#tf-PageWidth">VectorScene⇒PageWidth</a> and <a href="vectorscene.html#tf-PageHeight">VectorScene⇒PageHeight</a> values, if defined by the client.</td></tr>
+<tr><th>VPF::STABLE_RENDER</th><td>Use rendering algorithms that are stable across all platforms.</td></tr>
 </tbody></table><div class="footer copyright text-right">VectorScene module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="VSM"><h1>VSM Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VSM::AUTO</th><td>The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</td></tr>
 <tr><th>VSM::BESSEL</th><td>Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</td></tr>
