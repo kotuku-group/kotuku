@@ -513,23 +513,22 @@ static agg::rgba8 mesh_colour_eval(const MeshPatch &Patch, double U, double V, d
    const double w11 = U * V;
    const double w01 = (1.0 - U) * V;
 
-   FRGB colour = {};
-   colour.Red   = (Patch.corner[0].Red * w00) + (Patch.corner[1].Red * w10) +
-      (Patch.corner[2].Red * w11) + (Patch.corner[3].Red * w01);
-   colour.Green = (Patch.corner[0].Green * w00) + (Patch.corner[1].Green * w10) +
-      (Patch.corner[2].Green * w11) + (Patch.corner[3].Green * w01);
-   colour.Blue  = (Patch.corner[0].Blue * w00) + (Patch.corner[1].Blue * w10) +
-      (Patch.corner[2].Blue * w11) + (Patch.corner[3].Blue * w01);
-   colour.Alpha = (Patch.corner[0].Alpha * w00) + (Patch.corner[1].Alpha * w10) +
-      (Patch.corner[2].Alpha * w11) + (Patch.corner[3].Alpha * w01);
-
-   agg::rgba8 out(colour, colour.Alpha * Opacity);
+   FRGB corner[4] = { Patch.corner[0], Patch.corner[1], Patch.corner[2], Patch.corner[3] };
    if (Linear) {
-      out.r = glLinearRGB.convert(out.r);
-      out.g = glLinearRGB.convert(out.g);
-      out.b = glLinearRGB.convert(out.b);
+      for (auto &colour : corner) glLinearRGB.convert(colour);
    }
-   return out;
+
+   FRGB colour = {};
+   colour.Red   = (corner[0].Red * w00) + (corner[1].Red * w10) + (corner[2].Red * w11) +
+      (corner[3].Red * w01);
+   colour.Green = (corner[0].Green * w00) + (corner[1].Green * w10) + (corner[2].Green * w11) +
+      (corner[3].Green * w01);
+   colour.Blue  = (corner[0].Blue * w00) + (corner[1].Blue * w10) + (corner[2].Blue * w11) +
+      (corner[3].Blue * w01);
+   colour.Alpha = (corner[0].Alpha * w00) + (corner[1].Alpha * w10) + (corner[2].Alpha * w11) +
+      (corner[3].Alpha * w01);
+
+   return agg::rgba8(colour, colour.Alpha * Opacity);
 }
 
 struct MeshPreparedVertex {
