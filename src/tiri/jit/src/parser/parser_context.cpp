@@ -51,8 +51,7 @@ ParserResult<Token> ParserContext::match(TokenKind kind)
       return ParserResult<Token>::success(current);
    }
 
-   auto prv = (prvTiri *)this->lua_state->script->DerivedPtr;
-   if ((prv->JitOptions & JOF::TRACE_EXPECT) != JOF::NIL) {
+   if ((this->lua_state->script->JitOptions & JOF::TRACE_EXPECT) != JOF::NIL) {
       std::string expectation = this->format_expected_message(kind);
       ParserDiagnostic diagnostic;
       diagnostic.severity = ParserDiagnosticSeverity::Info;
@@ -221,9 +220,7 @@ ParserError ParserContext::make_error(ParserErrorCode code, const Token &token, 
 
 void ParserContext::trace_token_advance(const Token &previous, const Token &current) const
 {
-   auto prv = (prvTiri *)this->lua_state->script->DerivedPtr;
-
-   if ((prv->JitOptions & JOF::TRACE_TOKENS) != JOF::NIL) {
+   if ((this->lua_state->script->JitOptions & JOF::TRACE_TOKENS) != JOF::NIL) {
       std::string detail = std::string("previous: ") + this->describe_token(previous);
       this->log_trace(ParserChannel::Advance, current, detail);
    }

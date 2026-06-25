@@ -324,15 +324,14 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
 //********************************************************************************************************************
 // Use this for creating a struct on the Lua stack.
 
-struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty)
+struct fstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty)
 {
    kt::Log log(__FUNCTION__);
 
    log.traceBranch("Struct: %s, Address: %p, Deallocate: %d", StructName.data(), Address, Deallocate);
 
-   auto prv = (prvTiri *)Self->DerivedPtr;
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
-      return push_struct_def(prv->Lua, Address, def->second, Deallocate);
+      return push_struct_def(Self->Lua, Address, def->second, Deallocate);
    }
    else if (AllowEmpty) {
       // The AllowEmpty option is useful in situations where a successful API call returns a structure that is strictly
@@ -340,7 +339,7 @@ struct fstruct * push_struct(objScript *Self, APTR Address, std::string_view Str
       // an empty structure declaration.
 
       static struct_record empty("");
-      return push_struct_def(prv->Lua, Address, empty, false);
+      return push_struct_def(Self->Lua, Address, empty, false);
    }
    else {
       if (Deallocate) FreeResource(Address);
@@ -414,7 +413,7 @@ static void make_camel_case(std::string &String)
 //********************************************************************************************************************
 // The TypeName is optional and usually refers to the name of a struct.  The list is sorted by name for fast lookups.
 
-[[nodiscard]] static ERR generate_structdef(objScript *Self, const std::string_view StructName, const std::string Sequence,
+[[nodiscard]] static ERR generate_structdef(extTiri *Self, const std::string_view StructName, const std::string Sequence,
    struct_record &Record, int *StructSize)
 {
    kt::Log log(__FUNCTION__);
@@ -557,7 +556,7 @@ static void make_camel_case(std::string &String)
 //********************************************************************************************************************
 // Parse a struct definition and permanently store it in the glStructs dictionary.
 
-[[nodiscard]] ERR make_struct(objScript *Self, std::string_view StructName, CSTRING Sequence)
+[[nodiscard]] ERR make_struct(extTiri *Self, std::string_view StructName, CSTRING Sequence)
 {
    kt::Log log(__FUNCTION__);
 

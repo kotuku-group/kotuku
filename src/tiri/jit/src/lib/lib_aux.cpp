@@ -303,7 +303,7 @@ extern void luaL_unref(lua_State* L, int t, int ref)
 //********************************************************************************************************************
 // Default allocator and panic function
 
-static int panic(lua_State* L)
+static int panic(lua_State *L)
 {
    CSTRING s = lua_tostring(L, -1);
    fputs("PANIC: unprotected error in call to Lua API (", stderr);
@@ -315,32 +315,30 @@ static int panic(lua_State* L)
 
 #ifdef LUAJIT_USE_SYSMALLOC
 
-static void* mem_alloc(void* ud, void* ptr, size_t osize, size_t nsize)
+static void * mem_alloc(void* ud, void* ptr, size_t osize, size_t nsize)
 {
-   (void)ud;
-   (void)osize;
    if (nsize == 0) {
       free(ptr);
       return nullptr;
    }
-   else {
-      return realloc(ptr, nsize);
-   }
+   else return realloc(ptr, nsize);
 }
 
-extern lua_State* luaL_newstate(void)
+extern lua_State * luaL_newstate(class extTiri *Script)
 {
-   lua_State* L = lua_newstate(mem_alloc, nullptr);
-   if (L) G(L)->panic = panic;
+   lua_State *L = lua_newstate(mem_alloc, nullptr);
+   if (L) {
+      L->script = Script;
+      G(L)->panic = panic;
+   }
    return L;
 }
 
 #else
 
-extern lua_State* luaL_newstate(class objScript *Script)
+extern lua_State * luaL_newstate(class extTiri *Script)
 {
-   lua_State* L;
-   L = lua_newstate(LJ_ALLOCF_INTERNAL, nullptr);
+   lua_State *L = lua_newstate(LJ_ALLOCF_INTERNAL, nullptr);
    L->script = Script;
    if (L) G(L)->panic = panic;
    return L;

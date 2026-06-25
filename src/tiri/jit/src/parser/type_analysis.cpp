@@ -49,8 +49,7 @@
 
 [[nodiscard]] inline bool should_trace_types(lua_State *L)
 {
-   auto prv = (prvTiri *)L->script->DerivedPtr;
-   return (prv->JitOptions & JOF::TRACE_TYPES) != JOF::NIL;
+   return (L->script->JitOptions & JOF::TRACE_TYPES) != JOF::NIL;
 }
 
 //********************************************************************************************************************

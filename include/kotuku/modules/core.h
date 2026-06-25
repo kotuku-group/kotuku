@@ -3240,14 +3240,16 @@ class objScript : public Object {
    ERR      Error;                     // If a script fails during execution, an error code may be readable here.
    int      CurrentLine;               // Indicates the current line being executed when in debug mode.
    int      LineOffset;                // For debugging purposes, this value is added to any message referencing a line number.
-
-#ifdef PRV_SCRIPT
+   public:
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars;                 // Global parameters
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
    OBJECTID ScriptOwnerID;
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
 #endif
 
    // Action stubs

@@ -3,9 +3,9 @@
 //********************************************************************************************************************
 // NB: Parameter definitions are managed in the Script base class.
 
-static ERR TIRI_GetProcedureID(objScript *, struct sc::GetProcedureID *);
-static ERR TIRI_DerefProcedure(objScript *, struct sc::DerefProcedure *);
-static ERR TIRI_DebugLog(objScript *, struct sc::DebugLog *);
+static ERR TIRI_GetProcedureID(extTiri *, struct sc::GetProcedureID *);
+static ERR TIRI_DerefProcedure(extTiri *, struct sc::DerefProcedure *);
+static ERR TIRI_DebugLog(extTiri *, struct sc::DebugLog *);
 
 static const MethodEntry clMethods[] = {
    { sc::GetProcedureID::id, (APTR)TIRI_GetProcedureID, "GetProcedureID", nullptr, 0 },
@@ -95,14 +95,14 @@ static void append_hex_dump(std::span<uint8_t> Data, std::ostringstream &Buf, bo
    }
 }
 
-static void emit_stack_trace(prvTiri *Prv, std::ostringstream &Buf, bool Compact)
+static void emit_stack_trace(extTiri *Tiri, std::ostringstream &Buf, bool Compact)
 {
    if (not Compact) Buf << "-CALL STACK-\n";
 
    if constexpr (LJ_HASPROFILE) {
       size_t dump_len = 0;
       // Format codes: F=function name, l=source:line, p=preserve full path
-      auto dump = luaJIT_profile_dumpstack(Prv->Lua, Compact ? "pF (l)\n" : "l f\n", 50, &dump_len);
+      auto dump = luaJIT_profile_dumpstack(Tiri->Lua, Compact ? "pF (l)\n" : "l f\n", 50, &dump_len);
       if (dump and dump_len) {
          // Skip the first line (level 0) which is the C function mtDebugLog itself
          auto first_newline = (CSTRING)memchr(dump, '\n', dump_len);
@@ -117,8 +117,8 @@ static void emit_stack_trace(prvTiri *Prv, std::ostringstream &Buf, bool Compact
       lua_Debug ar;
       int level = 1; // Start at 1 to skip the C function (mtDebugLog) itself
 
-      while (lua_getstack(Prv->Lua, level, &ar)) {
-         lua_getinfo(Prv->Lua, "nSl", &ar);
+      while (lua_getstack(Tiri->Lua, level, &ar)) {
+         lua_getinfo(Tiri->Lua, "nSl", &ar);
 
          if (Compact) {
             Buf << "[" << level << "] ";
@@ -154,14 +154,14 @@ static void emit_stack_trace(prvTiri *Prv, std::ostringstream &Buf, bool Compact
 
 //********************************************************************************************************************
 
-static void emit_locals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compact)
+static void emit_locals_info(extTiri *Tiri, std::ostringstream &Buf, bool Compact)
 {
    if (not Compact) Buf << "-LOCALS-\n";
 
    // In diagnosis mode, variables will be captured during compilation.
 
-   if (not Prv->CapturedVariables.empty()) {
-      for (const auto& var : Prv->CapturedVariables) {
+   if (not Tiri->CapturedVariables.empty()) {
+      for (const auto& var : Tiri->CapturedVariables) {
          if (not var.is_global) {
             Buf << var.line << ":" << var.column << ":" << (var.scope.empty() ? "_" : var.scope) << ":"
                << var.name << ":" << tiri_type_name(var.type) << "\n";
@@ -171,21 +171,21 @@ static void emit_locals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compact
    }
 
    lua_Debug ar;
-   if (not lua_getstack(Prv->Lua, 1, &ar)) return; // Level 1 = caller's frame
+   if (not lua_getstack(Tiri->Lua, 1, &ar)) return; // Level 1 = caller's frame
 
    int idx = 1;
    CSTRING name;
-   while ((name = lua_getlocal(Prv->Lua, &ar, idx))) {
-      int type = lua_type(Prv->Lua, -1);
+   while ((name = lua_getlocal(Tiri->Lua, &ar, idx))) {
+      int type = lua_type(Tiri->Lua, -1);
       std::string value;
 
       if (not Compact) {
          switch (type) {
-            case LUA_TBOOLEAN: value = (lua_toboolean(Prv->Lua, -1) ? "true" : "false"); break;
-            case LUA_TNUMBER:  value = lua_tostring(Prv->Lua, -1); break;
+            case LUA_TBOOLEAN: value = (lua_toboolean(Tiri->Lua, -1) ? "true" : "false"); break;
+            case LUA_TNUMBER:  value = lua_tostring(Tiri->Lua, -1); break;
             case LUA_TSTRING: {
                size_t len;
-               CSTRING str = lua_tolstring(Prv->Lua, -1, &len);
+               CSTRING str = lua_tolstring(Tiri->Lua, -1, &len);
                std::string_view sv(str, len);
                if (len > 40) value = "\"" + std::string(sv.substr(0, 40)) + "...\"";
                else value = "\"" + std::string(sv) + "\"";
@@ -194,37 +194,37 @@ static void emit_locals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compact
          }
       }
 
-      Buf << ":::" << name << ":" << lua_typename(Prv->Lua, type) << ":" << value << "\n";
-      lua_pop(Prv->Lua, 1);
+      Buf << ":::" << name << ":" << lua_typename(Tiri->Lua, type) << ":" << value << "\n";
+      lua_pop(Tiri->Lua, 1);
       idx++;
    }
 }
 
 //********************************************************************************************************************
 
-static void emit_upvalues_info(prvTiri *Prv, std::ostringstream &Buf, bool Compact)
+static void emit_upvalues_info(extTiri *Tiri, std::ostringstream &Buf, bool Compact)
 {
    lua_Debug ar;
-   if (not lua_getstack(Prv->Lua, 1, &ar)) return; // Level 1 = caller's frame
+   if (not lua_getstack(Tiri->Lua, 1, &ar)) return; // Level 1 = caller's frame
 
-   lua_getinfo(Prv->Lua, "f", &ar);
+   lua_getinfo(Tiri->Lua, "f", &ar);
 
    if (not Compact) Buf <<"-UPVALUES-\n";
 
    int idx = 1;
    CSTRING name;
-   while ((name = lua_getupvalue(Prv->Lua, -1, idx))) {
-      int type = lua_type(Prv->Lua, -1);
+   while ((name = lua_getupvalue(Tiri->Lua, -1, idx))) {
+      int type = lua_type(Tiri->Lua, -1);
 
       Buf << name << " = ";
 
       switch (type) {
          case LUA_TNIL: Buf << "nil"; break;
-         case LUA_TBOOLEAN: Buf << (lua_toboolean(Prv->Lua, -1) ? "true" : "false"); break;
-         case LUA_TNUMBER: Buf << lua_tonumber(Prv->Lua, -1); break;
+         case LUA_TBOOLEAN: Buf << (lua_toboolean(Tiri->Lua, -1) ? "true" : "false"); break;
+         case LUA_TNUMBER: Buf << lua_tonumber(Tiri->Lua, -1); break;
          case LUA_TSTRING: {
             size_t len;
-            CSTRING str = lua_tolstring(Prv->Lua, -1, &len);
+            CSTRING str = lua_tolstring(Tiri->Lua, -1, &len);
             std::string_view sv(str, len);
             if (len > 40) Buf << "\"" << sv.substr(0, 40) << "...\"";
             else Buf << "\"" << sv << "\"";
@@ -232,29 +232,29 @@ static void emit_upvalues_info(prvTiri *Prv, std::ostringstream &Buf, bool Compa
          }
          case LUA_TTABLE: Buf << "{ ... }"; break;
          case LUA_TFUNCTION: Buf << "<function>"; break;
-         default: Buf << "<" << lua_typename(Prv->Lua, type) << ">"; break;
+         default: Buf << "<" << lua_typename(Tiri->Lua, type) << ">"; break;
       }
 
-      if (not Compact) Buf <<" (" << lua_typename(Prv->Lua, type) << ")";
+      if (not Compact) Buf <<" (" << lua_typename(Tiri->Lua, type) << ")";
       Buf << "\n";
-      lua_pop(Prv->Lua, 1);
+      lua_pop(Tiri->Lua, 1);
       idx++;
    }
 
-   lua_pop(Prv->Lua, 1); // Pop the function
+   lua_pop(Tiri->Lua, 1); // Pop the function
    if (not Compact) Buf <<"\n";
 }
 
 //********************************************************************************************************************
 
-static void emit_globals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compact)
+static void emit_globals_info(extTiri *Tiri, std::ostringstream &Buf, bool Compact)
 {
    if (not Compact) Buf << "-GLOBALS-\n";
 
    // In diagnosis mode, variables will be captured during compilation.
 
-   if (not Prv->CapturedVariables.empty()) {
-      for (const auto& var : Prv->CapturedVariables) {
+   if (not Tiri->CapturedVariables.empty()) {
+      for (const auto& var : Tiri->CapturedVariables) {
          if (var.is_global) {
             Buf << var.line << ":" << var.column << ":" << (var.scope.empty() ? "_" : var.scope) << ":"
                << var.name << ":" << tiri_type_name(var.type) << ":" << "\n";
@@ -273,52 +273,52 @@ static void emit_globals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compac
    int storage_table_idx;
    int items_to_pop;
 
-   lua_pushvalue(Prv->Lua, LUA_GLOBALSINDEX); // Push global environment
+   lua_pushvalue(Tiri->Lua, LUA_GLOBALSINDEX); // Push global environment
 
-   if (not lua_getmetatable(Prv->Lua, -1)) {
+   if (not lua_getmetatable(Tiri->Lua, -1)) {
       // No metatable - globals are stored directly in LUA_GLOBALSINDEX
-      storage_table_idx = lua_gettop(Prv->Lua);
+      storage_table_idx = lua_gettop(Tiri->Lua);
       items_to_pop = 1; // global env only
    }
    else {
-      lua_pushstring(Prv->Lua, "__index");
-      lua_rawget(Prv->Lua, -2); // Get __index (could be table or function)
+      lua_pushstring(Tiri->Lua, "__index");
+      lua_rawget(Tiri->Lua, -2); // Get __index (could be table or function)
 
-      if (lua_istable(Prv->Lua, -1)) {
+      if (lua_istable(Tiri->Lua, -1)) {
          // JIT-compatible mode: __index IS the storage table directly
-         storage_table_idx = lua_gettop(Prv->Lua);
+         storage_table_idx = lua_gettop(Tiri->Lua);
          items_to_pop = 3; // storage table, metatable, global env
       }
-      else if (lua_isfunction(Prv->Lua, -1)) {
+      else if (lua_isfunction(Tiri->Lua, -1)) {
          // Legacy mode: __index is a closure with storage table as upvalue
-         auto upvalue_name = lua_getupvalue(Prv->Lua, -1, 1);
-         if (not upvalue_name or not lua_istable(Prv->Lua, -1)) {
-            lua_pop(Prv->Lua, 3);
+         auto upvalue_name = lua_getupvalue(Tiri->Lua, -1, 1);
+         if (not upvalue_name or not lua_istable(Tiri->Lua, -1)) {
+            lua_pop(Tiri->Lua, 3);
             return;
          }
-         storage_table_idx = lua_gettop(Prv->Lua);
+         storage_table_idx = lua_gettop(Tiri->Lua);
          items_to_pop = 4; // storage table, __index closure, metatable, global env
       }
       else {
-         lua_pop(Prv->Lua, 3);
+         lua_pop(Tiri->Lua, 3);
          return;
       }
    }
 
    int count = 0;
-   lua_pushnil(Prv->Lua);
-   while (lua_next(Prv->Lua, storage_table_idx)) {
-      auto key = lua_tostringview(Prv->Lua, -2);
-      auto type = lua_type(Prv->Lua, -1);
+   lua_pushnil(Tiri->Lua);
+   while (lua_next(Tiri->Lua, storage_table_idx)) {
+      auto key = lua_tostringview(Tiri->Lua, -2);
+      auto type = lua_type(Tiri->Lua, -1);
 
       std::string value;
 
       if (not Compact) {
          switch (type) {
-            case LUA_TBOOLEAN: value = lua_toboolean(Prv->Lua, -1) ? "true" : "false"; break;
-            case LUA_TNUMBER:  value = lua_tostring(Prv->Lua, -1); break;
+            case LUA_TBOOLEAN: value = lua_toboolean(Tiri->Lua, -1) ? "true" : "false"; break;
+            case LUA_TNUMBER:  value = lua_tostring(Tiri->Lua, -1); break;
             case LUA_TSTRING: {
-               auto sv = lua_tostringview(Prv->Lua, -1);
+               auto sv = lua_tostringview(Tiri->Lua, -1);
                value.append("\"");
                if (sv.size() > 40) {
                   value.append(sv.substr(0, 40));
@@ -331,25 +331,25 @@ static void emit_globals_info(prvTiri *Prv, std::ostringstream &Buf, bool Compac
          }
       }
 
-      Buf << ":::" << key << ":" << lua_typename(Prv->Lua, type) << ":" << value << "\n";
+      Buf << ":::" << key << ":" << lua_typename(Tiri->Lua, type) << ":" << value << "\n";
       count++;
-      lua_pop(Prv->Lua, 1);
+      lua_pop(Tiri->Lua, 1);
    }
 
    if (count IS 0) Buf << "(none)\n";
-   lua_pop(Prv->Lua, items_to_pop);
+   lua_pop(Tiri->Lua, items_to_pop);
 
    if (not Compact) Buf << "\n";
 }
 
 //********************************************************************************************************************
 
-static void emit_memory_stats(prvTiri *Prv, std::ostringstream &Buf, bool Compact)
+static void emit_memory_stats(extTiri *Tiri, std::ostringstream &Buf, bool Compact)
 {
    if (not Compact) Buf << "-MEMORY-\n";
 
-   const int kb = lua_gc(Prv->Lua, LUA_GCCOUNT, 0);
-   const int bytes = lua_gc(Prv->Lua, LUA_GCCOUNTB, 0);
+   const int kb = lua_gc(Tiri->Lua, LUA_GCCOUNT, 0);
+   const int bytes = lua_gc(Tiri->Lua, LUA_GCCOUNTB, 0);
    const double mb = kb / 1024.0 + bytes / (1024.0 * 1024.0);
 
    Buf << (Compact
@@ -361,13 +361,13 @@ static void emit_memory_stats(prvTiri *Prv, std::ostringstream &Buf, bool Compac
 
 //********************************************************************************************************************
 
-static void emit_state_info(prvTiri *Prv, std::ostringstream &Buf, bool Compact)
+static void emit_state_info(extTiri *Tiri, std::ostringstream &Buf, bool Compact)
 {
    if (not Compact) Buf << "-STATE-\n";
 
-   Buf << std::format("Stack top: {}\n", lua_gettop(Prv->Lua));
+   Buf << std::format("Stack top: {}\n", lua_gettop(Tiri->Lua));
 
-   if (auto hook_mask = lua_gethookmask(Prv->Lua)) {
+   if (auto hook_mask = lua_gethookmask(Tiri->Lua)) {
       std::vector<std::string_view> flags;
       if (hook_mask & LUA_MASKCALL)  flags.emplace_back("CALL");
       if (hook_mask & LUA_MASKRET)   flags.emplace_back("RET");
@@ -416,14 +416,11 @@ The resulting log information is written to the caller-provided `Result` string.
 
 *********************************************************************************************************************/
 
-static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
+static ERR TIRI_DebugLog(extTiri *Self, struct sc::DebugLog *Args)
 {
    kt::Log log;
 
    if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
-
-   auto prv = (prvTiri *)Self->DerivedPtr;
-   if (not prv->Lua) return log.warning(ERR::NotInitialised);
 
    log.branch("Options: %.*s", int(Args->Options.size()), Args->Options.data());
 
@@ -473,29 +470,29 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
    std::ostringstream buf;
 
    if (opts.show_stack) {
-      if (prv->Recurse) emit_stack_trace(prv, buf, opts.compact);
+      if (Self->Recurse) emit_stack_trace(Self, buf, opts.compact);
       else log.warning("Unable to provide stack trace to an external caller.");
    }
 
    if (opts.show_upvalues) {
-      if (prv->Recurse) emit_upvalues_info(prv, buf, opts.compact);
+      if (Self->Recurse) emit_upvalues_info(Self, buf, opts.compact);
       else log.warning("Unable to provide upvalues to an external caller.");
    }
 
-   if (opts.show_locals) emit_locals_info(prv, buf, opts.compact);
+   if (opts.show_locals) emit_locals_info(Self, buf, opts.compact);
 
    // Here we can process options that are meaningful post-execution.
 
    if (opts.show_funcinfo) {
       if (not opts.compact) buf <<"-FUNCTIONS-\n";
 
-      if (prv->Recurse) {
+      if (Self->Recurse) {
          int level = 1;
          bool wrote = false;
          lua_Debug ar;
 
-         while (lua_getstack(prv->Lua, level, &ar)) {
-            if (not lua_getinfo(prv->Lua, "nSl", &ar)) {
+         while (lua_getstack(Self->Lua, level, &ar)) {
+            if (not lua_getinfo(Self->Lua, "nSl", &ar)) {
                level++;
                continue;
             }
@@ -510,8 +507,8 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
             uint32_t object_consts = 0;
             int upvalues = 0;
 
-            if (lua_getinfo(prv->Lua, "f", &ar)) {
-               GCfunc *fn = funcV(prv->Lua->top - 1);
+            if (lua_getinfo(Self->Lua, "f", &ar)) {
+               GCfunc *fn = funcV(Self->Lua->top - 1);
                upvalues = fn->c.nupvalues;
                if (isluafunc(fn)) {
                   is_lua_func = true;
@@ -524,7 +521,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
                   object_consts = pt->sizekgc;
                }
                else is_vararg = true;
-               lua_pop(prv->Lua, 1);
+               lua_pop(Self->Lua, 1);
             }
 
             if (opts.compact) {
@@ -575,29 +572,29 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
       if (not opts.compact) buf << "-BYTECODE-\n";
 
       lua_Debug ar;
-      if (lua_getstack(prv->Lua, 1, &ar)) {
-         if (lua_getinfo(prv->Lua, "f", &ar)) {
-            GCfunc *fn = funcV(prv->Lua->top - 1);
-            if (isluafunc(fn)) trace_proto_bytecode(prv->Lua, funcproto(fn), buf_logger, &buf, not opts.compact);
+      if (lua_getstack(Self->Lua, 1, &ar)) {
+         if (lua_getinfo(Self->Lua, "f", &ar)) {
+            GCfunc *fn = funcV(Self->Lua->top - 1);
+            if (isluafunc(fn)) trace_proto_bytecode(Self->Lua, funcproto(fn), buf_logger, &buf, not opts.compact);
             else buf << "(current frame is a C function; bytecode unavailable)\n";
 
-            lua_pop(prv->Lua, 1);
+            lua_pop(Self->Lua, 1);
          }
          else buf << "(unable to inspect current frame)\n";
       }
       else {
          // No active frame - try to disassemble the main chunk if available
-         if (prv->MainChunkRef) {
-            lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, prv->MainChunkRef);
-            if (lua_isfunction(prv->Lua, -1)) {
-               GCfunc *fn = funcV(prv->Lua->top - 1);
+         if (Self->MainChunkRef) {
+            lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, Self->MainChunkRef);
+            if (lua_isfunction(Self->Lua, -1)) {
+               GCfunc *fn = funcV(Self->Lua->top - 1);
                if (isluafunc(fn)) {
-                  trace_proto_bytecode(prv->Lua, funcproto(fn), buf_logger, &buf, not opts.compact);
+                  trace_proto_bytecode(Self->Lua, funcproto(fn), buf_logger, &buf, not opts.compact);
                }
                else buf << "(main chunk is a C function; bytecode unavailable)\n";
             }
             else buf << "(main chunk reference is not a function)\n";
-            lua_pop(prv->Lua, 1);
+            lua_pop(Self->Lua, 1);
          }
          else buf << "(no main chunk reference stored; bytecode disassembly requires calling DebugLog from within a function)\n";
       }
@@ -605,17 +602,17 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 
    if (opts.show_dump) {
       lua_Debug ar;
-      if (lua_getstack(prv->Lua, 1, &ar)) {
-         lua_getinfo(prv->Lua, "Sln", &ar);
+      if (lua_getstack(Self->Lua, 1, &ar)) {
+         lua_getinfo(Self->Lua, "Sln", &ar);
 
          if (not opts.compact) buf <<"-BINARY-\n";
 
-         if (lua_getinfo(prv->Lua, "f", &ar)) {
-            GCfunc *fn = funcV(prv->Lua->top - 1);
+         if (lua_getinfo(Self->Lua, "f", &ar)) {
+            GCfunc *fn = funcV(Self->Lua->top - 1);
             if (isluafunc(fn)) {
                std::vector<uint8_t> binary;
 
-               if (lua_dump(prv->Lua, append_dump_chunk, &binary) IS 0) {
+               if (lua_dump(Self->Lua, append_dump_chunk, &binary) IS 0) {
                   if (not opts.compact) {
                      CSTRING func_name = ar.name ? ar.name : "<anonymous>";
                      buf << "Function: " << func_name << " (" << ar.short_src << ":" << ar.linedefined
@@ -629,7 +626,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
             }
             else buf << "(current frame is a C function; bytecode unavailable)\n";
 
-            lua_pop(prv->Lua, 1);
+            lua_pop(Self->Lua, 1);
          }
          else buf << "(unable to inspect current frame)\n";
 
@@ -639,14 +636,14 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
          // No active frame - try to dump the main chunk if available
          if (not opts.compact) buf <<"-BYTECODE-\n";
 
-         if (prv->MainChunkRef) {
-            lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, prv->MainChunkRef);
-            if (lua_isfunction(prv->Lua, -1)) {
-               GCfunc *fn = funcV(prv->Lua->top - 1);
+         if (Self->MainChunkRef) {
+            lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, Self->MainChunkRef);
+            if (lua_isfunction(Self->Lua, -1)) {
+               GCfunc *fn = funcV(Self->Lua->top - 1);
                if (isluafunc(fn)) {
                   std::vector<uint8_t> binary;
 
-                  if (lua_dump(prv->Lua, append_dump_chunk, &binary) IS 0) {
+                  if (lua_dump(Self->Lua, append_dump_chunk, &binary) IS 0) {
                      if (not opts.compact) {
                         buf << "Main chunk\n";
                         buf << "Bytes: " << binary.size() << "\n";
@@ -659,7 +656,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
                else buf << "(main chunk is a C function; bytecode unavailable)\n";
             }
             else buf << "(main chunk reference is not a function)\n";
-            lua_pop(prv->Lua, 1);
+            lua_pop(Self->Lua, 1);
          }
          else buf << "(no main chunk reference stored; bytecode dump requires calling DebugLog from within a function)\n";
 
@@ -667,9 +664,9 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
       }
    }
 
-   if (opts.show_globals) emit_globals_info(prv, buf, opts.compact);
-   if (opts.show_memory) emit_memory_stats(prv, buf, opts.compact);
-   if (opts.show_state) emit_state_info(prv, buf, opts.compact);
+   if (opts.show_globals) emit_globals_info(Self, buf, opts.compact);
+   if (opts.show_memory) emit_memory_stats(Self, buf, opts.compact);
+   if (opts.show_state) emit_state_info(Self, buf, opts.compact);
 
    *Args->Result = buf.str();
    return ERR::Okay;
@@ -677,7 +674,7 @@ static ERR TIRI_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
+static ERR TIRI_DerefProcedure(extTiri *Self, struct sc::DerefProcedure *Args)
 {
    kt::Log log;
 
@@ -685,16 +682,15 @@ static ERR TIRI_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 
    if ((Args->Procedure) and (Args->Procedure->isScript())) {
       if (Args->Procedure->Context IS Self) { // Verification of ownership
-         auto prv = (prvTiri *)Self->DerivedPtr;
-         if (not prv) {
-            if (Self->terminating()) return ERR::Okay;
-            else return log.warning(ERR::ObjectCorrupt);
-         }
-
          log.trace("Dereferencing procedure #%" PF64, (long long)Args->Procedure->ProcedureID);
 
          if (Args->Procedure->ProcedureID) {
-            luaL_unref(prv->Lua, LUA_REGISTRYINDEX, Args->Procedure->ProcedureID);
+            if (not Self->Lua) { // Guarded because Deref is used by the Free action manager.
+               Args->Procedure->ProcedureID = 0;
+               return ERR::Okay;
+            }
+
+            luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Args->Procedure->ProcedureID);
             Args->Procedure->ProcedureID = 0;
          }
          return ERR::Okay;
@@ -706,28 +702,25 @@ static ERR TIRI_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
+static ERR TIRI_GetProcedureID(extTiri *Self, struct sc::GetProcedureID *Args)
 {
    kt::Log log;
 
    if ((not Args) or Args->Procedure.empty()) return log.warning(ERR::NullArgs);
 
-   auto prv = (prvTiri *)Self->DerivedPtr;
-   if (not prv) return log.warning(ERR::ObjectCorrupt);
-
-   if ((not prv->Lua) or (not Self->ActivationCount)) {
+   if ((not Self->Lua) or (not Self->ActivationCount)) {
       log.warning("Cannot resolve function '%.*s'.  Script requires activation.", int(Args->Procedure.size()), Args->Procedure.data());
       return ERR::NotFound;
    }
 
-   lua_getglobal(prv->Lua, Args->Procedure);
-   if (not lua_isfunction(prv->Lua, -1)) {
-      lua_pop(prv->Lua, 1);
+   lua_getglobal(Self->Lua, Args->Procedure);
+   if (not lua_isfunction(Self->Lua, -1)) {
+      lua_pop(Self->Lua, 1);
       log.warning("Failed to resolve function name '%.*s' to an ID.", int(Args->Procedure.size()), Args->Procedure.data());
       return ERR::NotFound;
    }
 
-   auto id = luaL_ref(prv->Lua, LUA_REGISTRYINDEX);
+   auto id = luaL_ref(Self->Lua, LUA_REGISTRYINDEX);
    if ((id != LUA_REFNIL) and (id != LUA_NOREF)) {
       Args->ProcedureID = id;
       return ERR::Okay;

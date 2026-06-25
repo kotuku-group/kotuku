@@ -7,6 +7,7 @@
 #include <charconv>
 #include <concepts>
 #include <string_view>
+#include <kotuku/modules/tiri.h>
 
 constexpr int CHUNK_BUFFER_SIZE = 32 * 1024;
 constexpr int MAX_CHUNK_HEADER_SIZE = 128;
@@ -347,7 +348,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                // TODO: Needs a rewrite using the dialog script
                std::string scriptfile((const char *)glAuthScript, glAuthScriptLength);
 
-               objScript::create script = { fl::String(scriptfile) };
+               objTiri::create script = { fl::String(scriptfile) };
                if (script.ok()) {
                   AdjustLogLevel(1);
                   auto error = script->activate();

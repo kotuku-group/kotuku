@@ -681,17 +681,16 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 static int object_state(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    kt::Log log(__FUNCTION__);
-   if (auto it = prv->StateMap.find(def->uid); it != prv->StateMap.end()) {
+   if (auto it = Lua->script->StateMap.find(def->uid); it != Lua->script->StateMap.end()) {
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, it->second);
       return 1;
    }
    else {
       lua_createtable(Lua, 0, 0);
       auto state_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      prv->StateMap[def->uid] = state_ref;
+      Lua->script->StateMap[def->uid] = state_ref;
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, state_ref);
       return 1;
    }
@@ -883,17 +882,16 @@ static int object_subscribe(lua_State *Lua)
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
    if (auto error = SubscribeAction(obj, action_id, &callback); !error) {
-      auto prv = (prvTiri *)Lua->script->DerivedPtr;
-      auto &acsub = prv->ActionList.emplace_back();
+      auto &acsub = Lua->script->ActionList.emplace_back();
 
       if (not lua_isnil(Lua, 3)) {
-         lua_settop(prv->Lua, 3);
-         acsub.Reference = luaL_ref(prv->Lua, LUA_REGISTRYINDEX);
+         lua_settop(Lua->script->Lua, 3);
+         acsub.Reference = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
       else acsub.Reference = 0;
 
-      lua_settop(prv->Lua, 2);
-      acsub.Function = luaL_ref(prv->Lua, LUA_REGISTRYINDEX);
+      lua_settop(Lua, 2);
+      acsub.Function = luaL_ref(Lua, LUA_REGISTRYINDEX);
       acsub.Object   = def;
       acsub.Args     = arglist;
       acsub.ObjectID = def->uid;
@@ -932,8 +930,7 @@ static int object_unsubscribe(lua_State *Lua)
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   std::erase_if(prv->ActionList, [&](auto& item) {
+   std::erase_if(Lua->script->ActionList, [&](auto& item) {
       bool should_remove = (item.ObjectID IS def->uid) and ((action_id IS AC::NIL) or (item.ActionID IS action_id));
       if (should_remove) {
          luaL_unref(Lua, LUA_REGISTRYINDEX, item.Function);

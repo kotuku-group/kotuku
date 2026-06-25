@@ -904,8 +904,7 @@ GCproto * LexState::fs_finish(BCLine Line)
 
    // Capture variable declarations if JOF::DIAGNOSE is enabled.
 
-   auto prv = (prvTiri *)this->L->script->DerivedPtr;
-   if (((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL)) {
+   if (((L->script->JitOptions & JOF::DIAGNOSE) != JOF::NIL)) {
       std::string scope = build_scope_name(this, fs);
 
       // Capture local variables.
@@ -924,7 +923,7 @@ GCproto * LexState::fs_finish(BCLine Line)
             .type   = var->fixed_type,
             .is_global = false
          };
-         prv->CapturedVariables.push_back(std::move(info));
+         L->script->CapturedVariables.push_back(std::move(info));
       }
 
       // Capture explicitly declared globals (only for main chunk, not nested functions).
@@ -937,7 +936,7 @@ GCproto * LexState::fs_finish(BCLine Line)
             info.name   = std::string(strdata(name), name->len);
             info.type   = TiriType::Unknown;  // Type not tracked for globals
             info.is_global = true;
-            prv->CapturedVariables.push_back(std::move(info));
+            L->script->CapturedVariables.push_back(std::move(info));
          }
       }
    }
