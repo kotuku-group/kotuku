@@ -30,3 +30,4 @@ static const struct ActionArray clVectorViewportActions[] = {
    { AC::Resize, VECTORVIEWPORT_Resize },
    { AC::NIL, nullptr }
 };
+

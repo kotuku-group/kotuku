@@ -145,6 +145,10 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
                            fill_gouraud(state, node->Bounds, Render.view_width(), Render.view_height(), *(extGradientGouraud *)gradient,
                               state.mOpacity * node->FillOpacity, rb, Raster, t);
                         }
+                        else if (gradient->classID() IS CLASSID::GRADIENTMESH) {
+                           fill_mesh(state, node->Bounds, Render.view_width(), Render.view_height(), *(extGradientMesh *)gradient,
+                              state.mOpacity * node->FillOpacity, rb, Raster, t);
+                        }
                         else if (auto table = get_fill_gradient_table(node->Fill[0], state.mOpacity * node->FillOpacity)) {
                            fill_gradient(state, node->Bounds, &node->BasePath, t, Render.view_width(), Render.view_height(),
                               *gradient, table, rb, Raster);

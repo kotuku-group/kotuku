@@ -1,0 +1,92 @@
+   include 'display'
+   include 'vector'
+
+   mGfx ?= mod.load('display')
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function lineEdge(Patch, Prefix, X0, Y0, X1, Y1)
+   local dx = X1 - X0
+   local dy = Y1 - Y0
+   Patch[Prefix .. 'P0X'] = X0
+   Patch[Prefix .. 'P0Y'] = Y0
+   Patch[Prefix .. 'C0X'] = X0 + (dx / 3.0)
+   Patch[Prefix .. 'C0Y'] = Y0 + (dy / 3.0)
+   Patch[Prefix .. 'C1X'] = X0 + (dx * 2.0 / 3.0)
+   Patch[Prefix .. 'C1Y'] = Y0 + (dy * 2.0 / 3.0)
+   Patch[Prefix .. 'P1X'] = X1
+   Patch[Prefix .. 'P1Y'] = Y1
+end
+
+function setColour(Patch, Prefix, Red, Green, Blue)
+   Patch[Prefix].red = Red
+   Patch[Prefix].green = Green
+   Patch[Prefix].blue = Blue
+   Patch[Prefix].alpha = 1.0
+end
+
+function squarePatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 100, 0)
+   lineEdge(patch, 'right', 100, 0, 100, 100)
+   lineEdge(patch, 'bottom', 100, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 1.0, 0.0, 0.0)
+   setColour(patch, 'topRight', 0.0, 1.0, 0.0)
+   setColour(patch, 'bottomRight', 1.0, 1.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 1.0)
+   return patch
+end
+
+function newMeshScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local patches = { squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE, patches=patches })
+   check scene.mtAddDef('mesh', gradient)
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#mesh)' })
+   return scene, gradient
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+@Test function PatchesRoundTrip()
+   local scene, gradient = newMeshScene()
+   assert(gradient != nil, 'GradientMesh should be created')
+   assert(#gradient.patches is 1, 'Expected one mesh patch')
+end
+
+@Test function CornerColoursDominate()
+   local scene = newMeshScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local tl = mGfx.ReadRGBPixel(bmp, 4, 4)
+   local tr = mGfx.ReadRGBPixel(bmp, 95, 4)
+   local br = mGfx.ReadRGBPixel(bmp, 95, 95)
+   local bl = mGfx.ReadRGBPixel(bmp, 4, 95)
+
+   assert(tl.red > tl.green and tl.red > tl.blue, 'Top-left sample should be red-dominant')
+   assert(tr.green > tr.red and tr.green > tr.blue, 'Top-right sample should be green-dominant')
+   assert(br.red > br.blue and br.green > br.blue, 'Bottom-right sample should be yellow-dominant')
+   assert(bl.blue > bl.red and bl.blue > bl.green, 'Bottom-left sample should be blue-dominant')
+end
+
+@Test function RampFieldsAreRejected()
+   local scene, gradient = newMeshScene()
+   local rejected = false
+   try
+      gradient.colourMap = 'cmap:magma'
+   except ex
+      rejected = true
+   end
+   assert(rejected, 'GradientMesh should reject inherited ramp fields')
+end

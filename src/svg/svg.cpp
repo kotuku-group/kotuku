@@ -198,6 +198,7 @@ private:
    ERR  proc_diamondgradient(const XTag &) noexcept;
    ERR  proc_distalgradient(const XTag &) noexcept;
    ERR  proc_lineargradient(const XTag &) noexcept;
+   ERR  proc_meshgradient(const XTag &) noexcept;
    ERR  proc_radialgradient(const XTag &) noexcept;
 
    void process_attrib(XTag &, objVector *) noexcept;
@@ -211,6 +212,7 @@ private:
    void parse_diamondgradient(const XTag &, objGradientDiamond *, std::string &) noexcept;
    void parse_distalgradient(const XTag &, objGradientDistal *, std::string &) noexcept;
    void parse_lineargradient(const XTag &, objGradientLinear *, std::string &) noexcept;
+   void parse_meshgradient(const XTag &, objGradientMesh *, std::string &) noexcept;
    void parse_radialgradient(const XTag &, objGradientRadial *, std::string &) noexcept;
    bool parse_gradient_href(const std::string &, objGradient *) noexcept;
    void parse_gradient_hrefs(const XTag &, objGradient *, bool &) noexcept;
@@ -438,6 +440,9 @@ static constexpr auto SVF_maskContentUnits    = strhash("maskContentUnits");
 static constexpr auto SVF_maskUnits           = strhash("maskUnits");
 static constexpr auto SVF_matrix              = strhash("matrix");
 static constexpr auto SVF_max                 = strhash("max");
+static constexpr auto SVF_meshgradient        = strhash("meshgradient");
+static constexpr auto SVF_meshpatch           = strhash("meshpatch");
+static constexpr auto SVF_meshrow             = strhash("meshrow");
 static constexpr auto SVF_method              = strhash("method");
 static constexpr auto SVF_middle              = strhash("middle");
 static constexpr auto SVF_min                 = strhash("min");

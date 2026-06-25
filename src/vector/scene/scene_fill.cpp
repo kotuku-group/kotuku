@@ -3,6 +3,8 @@
 
 static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extGradientGouraud &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
+static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, double, extGradientMesh &, double,
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
 
 //********************************************************************************************************************
 
@@ -54,6 +56,11 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
       auto &gradient = *((extGradient *)Painter.Gradient);
       if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
          fill_gouraud(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientGouraud &)gradient,
+            State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
+            build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
+      }
+      else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
+         fill_mesh(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientMesh &)gradient,
             State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
             build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
       }
@@ -161,6 +168,41 @@ static uint64_t gouraud_mesh_fingerprint(const GouraudMesh &Mesh)
 }
 
 //********************************************************************************************************************
+// FNV-1a fingerprint of a mesh gradient's patch geometry and corner colours.
+
+static uint64_t mesh_gradient_fingerprint(const MeshGradient &Mesh, int Segments)
+{
+   uint64_t hash = 0xcbf29ce484222325ULL;
+   auto mix = [&hash](uint64_t Value) {
+      hash ^= Value;
+      hash *= 0x100000001b3ULL;
+   };
+
+   mix(Mesh.rows);
+   mix(Mesh.cols);
+   mix(Mesh.bicubic ? 1 : 0);
+   mix(Segments);
+   mix(Mesh.patches.size());
+
+   for (auto &patch : Mesh.patches) {
+      for (auto &edge : patch.edge) {
+         mix(std::bit_cast<uint64_t>(edge.p0.x)); mix(std::bit_cast<uint64_t>(edge.p0.y));
+         mix(std::bit_cast<uint64_t>(edge.c0.x)); mix(std::bit_cast<uint64_t>(edge.c0.y));
+         mix(std::bit_cast<uint64_t>(edge.c1.x)); mix(std::bit_cast<uint64_t>(edge.c1.y));
+         mix(std::bit_cast<uint64_t>(edge.p1.x)); mix(std::bit_cast<uint64_t>(edge.p1.y));
+      }
+      for (auto &colour : patch.corner) {
+         mix(std::bit_cast<uint32_t>(colour.Red));
+         mix(std::bit_cast<uint32_t>(colour.Green));
+         mix(std::bit_cast<uint32_t>(colour.Blue));
+         mix(std::bit_cast<uint32_t>(colour.Alpha));
+      }
+   }
+
+   return hash;
+}
+
+//********************************************************************************************************************
 // Guard against stale or malformed indexed meshes.  The field setter validates incoming arrays, but rendering also
 // checks the final mesh so direct C++ edits or legacy data cannot index outside the prepared vertex list.
 
@@ -248,7 +290,7 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
 //   * VCS::LINEAR_RGB -> colours are decoded to linear here, so span_gouraud_rgba_linear interpolates in linear
 //     space and re-encodes each output pixel back to sRGB for storage.
 
-static void rebuild_gouraud_cache(extGradientGouraud &Gradient, const GouraudMesh &Mesh, const agg::trans_affine &Transform,
+static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, const agg::trans_affine &Transform,
    double Opacity, VCS ColourSpace, uint64_t MeshHash)
 {
    const auto &verts = Mesh.Vertices;
@@ -273,9 +315,8 @@ static void rebuild_gouraud_cache(extGradientGouraud &Gradient, const GouraudMes
 
    const size_t tri_count = Mesh.Indices.empty() ? (verts.size() / 3) : (Mesh.Indices.size() / 3);
 
-   auto &cache = Gradient.GouraudTriangles;
-   cache.Triangles.clear();
-   cache.Triangles.reserve(tri_count);
+   Cache.Triangles.clear();
+   Cache.Triangles.reserve(tri_count);
 
    auto fetch = [&](size_t Tri, int Corner) -> const PreparedVertex & {
       const int idx = Mesh.Indices.empty() ? int(Tri * 3 + Corner) : Mesh.Indices[Tri * 3 + Corner];
@@ -296,14 +337,76 @@ static void rebuild_gouraud_cache(extGradientGouraud &Gradient, const GouraudMes
       tri.x[0] = a.x; tri.y[0] = a.y; tri.colour[0] = a.colour;
       tri.x[1] = b.x; tri.y[1] = b.y; tri.colour[1] = b.colour;
       tri.x[2] = c.x; tri.y[2] = c.y; tri.colour[2] = c.colour;
-      cache.Triangles.push_back(tri);
+      Cache.Triangles.push_back(tri);
    }
 
-   cache.Transform   = Transform;
-   cache.MeshHash    = MeshHash;
-   cache.Opacity     = Opacity;
-   cache.ColourSpace = ColourSpace;
-   cache.Valid       = true;
+   Cache.Transform   = Transform;
+   Cache.MeshHash    = MeshHash;
+   Cache.Opacity     = Opacity;
+   Cache.ColourSpace = ColourSpace;
+   Cache.Valid       = true;
+}
+
+static void render_gouraud_triangles(const GouraudCache &Cache, double Resolution, VCS ColourSpace,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rendering_buffer &PathMaskBuffer)
+{
+   typedef agg::span_allocator<agg::rgba8> span_allocator_type;
+   span_allocator_type span_allocator;
+   agg::rasterizer_scanline_aa<> triangle_raster;
+   agg::alpha_mask_gray8 alpha_mask(PathMaskBuffer);
+   agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+
+   // The Resolution field reduces the gradient's colour resolution, mirroring the field gradients.  It maps to a
+   // count of 1/(1-Resolution) distinct colours; for a Gouraud fill that becomes the number of discrete levels each
+   // output channel is snapped to.  The 8-bit output span cannot represent more than 256 channel values, so counts
+   // at or above 256 disable banding and use the plain span path.
+
+   const double resolution = std::clamp(Resolution, 0.0, 1.0);
+   const double level_count = (resolution < 1.0) ? std::round(1.0 / (1.0 - resolution)) : 256.0;
+   const int levels = int(std::clamp(level_count, 2.0, 256.0));
+   const bool quantise = (levels < 256);
+
+   // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
+   // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
+   //
+   // Each triangle is rendered as a separate anti-aliased scanline pass, so the partial edge coverage of adjacent
+   // triangles does not sum to full opacity along a shared edge.  That leaves a faint translucent seam where the
+   // background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a 6-vertex polygon (colours
+   // are still interpolated from the original vertices via miter joins), so feeding the rasteriser that dilated
+   // outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry identical colours on both
+   // sides, the overlap blends invisibly and seals the seam.
+
+   auto render_triangles = [&]<typename SpanGen>() {
+      constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
+      for (auto &tri : Cache.Triangles) {
+         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
+         auto make_span = [&] {
+            if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels); }) {
+               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels);
+            }
+            else {
+               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION);
+            }
+         };
+         auto span_gen = make_span();
+
+         triangle_raster.reset();
+         triangle_raster.add_path(span_gen);
+         agg::render_scanlines_aa(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
+      }
+   };
+
+   if (ColourSpace IS VCS::LINEAR_RGB) {
+      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
+      else render_triangles.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+   }
+   else {
+      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
+      else render_triangles.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
+   }
 }
 
 static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth, double ViewHeight,
@@ -341,66 +444,188 @@ static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bound
    const VCS colour_space = Gradient.ColourSpace;
    const uint64_t mesh_hash = gouraud_mesh_fingerprint(mesh);
    if (!Gradient.GouraudTriangles.matches(mesh_hash, transform, Opacity, colour_space)) {
-      rebuild_gouraud_cache(Gradient, mesh, transform, Opacity, colour_space, mesh_hash);
+      rebuild_gouraud_cache(Gradient.GouraudTriangles, mesh, transform, Opacity, colour_space, mesh_hash);
    }
 
-   typedef agg::span_allocator<agg::rgba8> span_allocator_type;
-   span_allocator_type span_allocator;
-   agg::rasterizer_scanline_aa<> triangle_raster;
-   agg::alpha_mask_gray8 alpha_mask(path_mask_buffer);
-   agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+   render_gouraud_triangles(Gradient.GouraudTriangles, Gradient.Resolution, colour_space, RenderBase, path_mask_buffer);
+}
 
-   // The Resolution field reduces the gradient's colour resolution, mirroring the field gradients.  It maps to a
-   // count of 1/(1-Resolution) distinct colours; for a Gouraud fill that becomes the number of discrete levels each
-   // output channel is snapped to.  The 8-bit output span cannot represent more than 256 channel values, so counts
-   // at or above 256 disable banding and use the plain span path.
+//********************************************************************************************************************
+// Mesh gradient tessellation.  A bilinear Coons patch is evaluated from four boundary cubic Beziers.  Patch colours
+// are interpolated bilinearly in the same (u,v) parameter space, then each grid cell is emitted as two Gouraud
+// triangles for the shared renderer above.
+
+static agg::point_d mesh_point_add(const agg::point_d &A, const agg::point_d &B)
+{
+   return agg::point_d(A.x + B.x, A.y + B.y);
+}
+
+static agg::point_d mesh_point_sub(const agg::point_d &A, const agg::point_d &B)
+{
+   return agg::point_d(A.x - B.x, A.y - B.y);
+}
+
+static agg::point_d mesh_point_mul(const agg::point_d &A, double Scale)
+{
+   return agg::point_d(A.x * Scale, A.y * Scale);
+}
+
+static agg::point_d mesh_edge_eval(const MeshPatchEdge &Edge, double T)
+{
+   const double mt = 1.0 - T;
+   const double b0 = mt * mt * mt;
+   const double b1 = 3.0 * mt * mt * T;
+   const double b2 = 3.0 * mt * T * T;
+   const double b3 = T * T * T;
+
+   return agg::point_d((Edge.p0.x * b0) + (Edge.c0.x * b1) + (Edge.c1.x * b2) + (Edge.p1.x * b3),
+      (Edge.p0.y * b0) + (Edge.c0.y * b1) + (Edge.c1.y * b2) + (Edge.p1.y * b3));
+}
+
+static agg::point_d mesh_coons_eval(const MeshPatch &Patch, double U, double V)
+{
+   const auto top = mesh_edge_eval(Patch.edge[0], U);
+   const auto right = mesh_edge_eval(Patch.edge[1], V);
+   const auto bottom = mesh_edge_eval(Patch.edge[2], 1.0 - U);
+   const auto left = mesh_edge_eval(Patch.edge[3], 1.0 - V);
+
+   const auto p00 = Patch.edge[0].p0;
+   const auto p10 = Patch.edge[0].p1;
+   const auto p11 = Patch.edge[1].p1;
+   const auto p01 = Patch.edge[3].p0;
+
+   auto boundary = mesh_point_add(mesh_point_mul(top, 1.0 - V), mesh_point_mul(bottom, V));
+   boundary = mesh_point_add(boundary, mesh_point_mul(left, 1.0 - U));
+   boundary = mesh_point_add(boundary, mesh_point_mul(right, U));
+
+   auto bilinear = mesh_point_add(mesh_point_mul(p00, (1.0 - U) * (1.0 - V)),
+      mesh_point_mul(p10, U * (1.0 - V)));
+   bilinear = mesh_point_add(bilinear, mesh_point_mul(p11, U * V));
+   bilinear = mesh_point_add(bilinear, mesh_point_mul(p01, (1.0 - U) * V));
+
+   return mesh_point_sub(boundary, bilinear);
+}
+
+static agg::rgba8 mesh_colour_eval(const MeshPatch &Patch, double U, double V, double Opacity, bool Linear)
+{
+   const double w00 = (1.0 - U) * (1.0 - V);
+   const double w10 = U * (1.0 - V);
+   const double w11 = U * V;
+   const double w01 = (1.0 - U) * V;
+
+   FRGB corner[4] = { Patch.corner[0], Patch.corner[1], Patch.corner[2], Patch.corner[3] };
+   if (Linear) {
+      for (auto &colour : corner) glLinearRGB.convert(colour);
+   }
+
+   FRGB colour = {};
+   colour.Red   = (corner[0].Red * w00) + (corner[1].Red * w10) + (corner[2].Red * w11) +
+      (corner[3].Red * w01);
+   colour.Green = (corner[0].Green * w00) + (corner[1].Green * w10) + (corner[2].Green * w11) +
+      (corner[3].Green * w01);
+   colour.Blue  = (corner[0].Blue * w00) + (corner[1].Blue * w10) + (corner[2].Blue * w11) +
+      (corner[3].Blue * w01);
+   colour.Alpha = (corner[0].Alpha * w00) + (corner[1].Alpha * w10) + (corner[2].Alpha * w11) +
+      (corner[3].Alpha * w01);
+
+   return agg::rgba8(colour, colour.Alpha * Opacity);
+}
+
+struct MeshPreparedVertex {
+   double x, y;
+   agg::rgba8 colour;
+};
+
+static void mesh_push_triangle(GouraudCache &Cache, const MeshPreparedVertex &A, const MeshPreparedVertex &B,
+   const MeshPreparedVertex &C)
+{
+   const double area = (B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y);
+   if (std::abs(area) < 1e-6) return;
+
+   GouraudTriangle tri;
+   tri.x[0] = A.x; tri.y[0] = A.y; tri.colour[0] = A.colour;
+   tri.x[1] = B.x; tri.y[1] = B.y; tri.colour[1] = B.colour;
+   tri.x[2] = C.x; tri.y[2] = C.y; tri.colour[2] = C.colour;
+   Cache.Triangles.push_back(tri);
+}
+
+static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, const agg::trans_affine &Transform,
+   double Opacity, VCS ColourSpace, uint64_t MeshHash, int Segments)
+{
+   const bool linear = (ColourSpace IS VCS::LINEAR_RGB);
+   const int stride = Segments + 1;
+   std::vector<MeshPreparedVertex> vertices(size_t(stride) * size_t(stride));
+
+   Cache.Triangles.clear();
+   Cache.Triangles.reserve(Mesh.patches.size() * size_t(Segments) * size_t(Segments) * 2);
+
+   for (auto &patch : Mesh.patches) {
+      for (int y=0; y <= Segments; y++) {
+         const double v = double(y) / double(Segments);
+         for (int x=0; x <= Segments; x++) {
+            const double u = double(x) / double(Segments);
+            auto point = mesh_coons_eval(patch, u, v);
+            Transform.transform(&point.x, &point.y);
+
+            auto &vertex = vertices[size_t(y * stride + x)];
+            vertex.x = point.x;
+            vertex.y = point.y;
+            vertex.colour = mesh_colour_eval(patch, u, v, Opacity, linear);
+         }
+      }
+
+      for (int y=0; y < Segments; y++) {
+         for (int x=0; x < Segments; x++) {
+            const auto &p00 = vertices[size_t(y * stride + x)];
+            const auto &p10 = vertices[size_t(y * stride + x + 1)];
+            const auto &p01 = vertices[size_t((y + 1) * stride + x)];
+            const auto &p11 = vertices[size_t((y + 1) * stride + x + 1)];
+
+            mesh_push_triangle(Cache, p00, p10, p11);
+            mesh_push_triangle(Cache, p00, p11, p01);
+         }
+      }
+   }
+
+   Cache.Transform   = Transform;
+   Cache.MeshHash    = MeshHash;
+   Cache.Opacity     = Opacity;
+   Cache.ColourSpace = ColourSpace;
+   Cache.Valid       = true;
+}
+
+static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth, double ViewHeight,
+   extGradientMesh &Gradient, double Opacity, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
+   agg::rasterizer_scanline_aa<> &Raster, const agg::trans_affine &Transform, SceneRenderer *Render)
+{
+   if ((!Gradient.Mesh) or (Gradient.Mesh->patches.empty())) return;
+
+   std::vector<uint8_t> path_mask;
+   agg::rendering_buffer path_mask_buffer;
+   if (!build_gouraud_path_mask(Raster, RenderBase, Render, path_mask, path_mask_buffer)) return;
+
+   const double c_width  = (Gradient.Units IS VUNIT::USERSPACE) ? ViewWidth  : Bounds.width();
+   const double c_height = (Gradient.Units IS VUNIT::USERSPACE) ? ViewHeight : Bounds.height();
+   const double x_offset = (Gradient.Units IS VUNIT::USERSPACE) ? 0 : Bounds.left;
+   const double y_offset = (Gradient.Units IS VUNIT::USERSPACE) ? 0 : Bounds.top;
+
+   agg::trans_affine transform;
+   if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
+      transform.scale(c_width, c_height);
+      transform.translate(x_offset, y_offset);
+   }
+   apply_transforms(Gradient, transform);
+   transform *= Transform;
 
    const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
-   const double level_count = (resolution < 1.0) ? std::round(1.0 / (1.0 - resolution)) : 256.0;
-   const int levels = int(std::clamp(level_count, 2.0, 256.0));
-   const bool quantise = (levels < 256);
-
-   // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
-   // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
-   //
-   // Each triangle is rendered as a separate anti-aliased scanline pass, so the partial edge coverage of adjacent
-   // triangles does not sum to full opacity along a shared edge.  That leaves a faint translucent seam where the
-   // background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a 6-vertex polygon (colours
-   // are still interpolated from the original vertices via miter joins), so feeding the rasteriser that dilated
-   // outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry identical colours on both
-   // sides, the overlap blends invisibly and seals the seam.
-
-   auto render_triangles = [&]<typename SpanGen>() {
-      constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
-      for (auto &tri : Gradient.GouraudTriangles.Triangles) {
-         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
-         auto make_span = [&] {
-            if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels); }) {
-               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels);
-            }
-            else {
-               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION);
-            }
-         };
-         auto span_gen = make_span();
-
-         triangle_raster.reset();
-         triangle_raster.add_path(span_gen);
-         agg::render_scanlines_aa(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
-      }
-   };
-
-   if (colour_space IS VCS::LINEAR_RGB) {
-      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
-      else render_triangles.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+   const int segments = int(std::clamp(std::round(4.0 + (resolution * 28.0)), 1.0, 64.0));
+   const VCS colour_space = Gradient.ColourSpace;
+   const uint64_t mesh_hash = mesh_gradient_fingerprint(*Gradient.Mesh, segments);
+   if (!Gradient.MeshTriangles.matches(mesh_hash, transform, Opacity, colour_space)) {
+      rebuild_mesh_cache(Gradient.MeshTriangles, *Gradient.Mesh, transform, Opacity, colour_space, mesh_hash, segments);
    }
-   else {
-      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
-      else render_triangles.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
-   }
+
+   render_gouraud_triangles(Gradient.MeshTriangles, Gradient.Resolution, colour_space, RenderBase, path_mask_buffer);
 }
 
 //********************************************************************************************************************

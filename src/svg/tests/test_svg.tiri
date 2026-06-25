@@ -154,6 +154,7 @@ end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xc45a0cf6) end
 @Test global function ContourGradient() hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a, true) end
+@Test global function MeshGradient() hashTestSVG('gradients/meshgradient.svg', 0x647d054f) end
 @Test global function W3Gradients01() hashTestSVG('gradients/w3-pservers-grad-01-b.svg', 0xd6ab0e01) end
 @Test global function W3Gradients02() hashTestSVG('gradients/w3-pservers-grad-02-b.svg', 0xe8e84124) end
 @Test global function W3Gradients04() hashTestSVG('gradients/w3-pservers-grad-04-b.svg', 0x11d0611e) end
