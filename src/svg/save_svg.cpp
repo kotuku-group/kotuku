@@ -78,12 +78,36 @@ static void save_mesh_stop(objXML *XML, int Parent, double C0X, double C0Y, doub
    if (Colour.Alpha != 1.0) xml::NewAttrib(stop_tag, "stop-opacity", Colour.Alpha);
 }
 
-static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent, const MeshPatchRecord &Patch)
+static bool mesh_colour_match(const FRGB &A, const FRGB &B) noexcept
+{
+   return (A.Red IS B.Red) and (A.Green IS B.Green) and (A.Blue IS B.Blue) and (A.Alpha IS B.Alpha);
+}
+
+static bool mesh_patch_shares_previous_left_edge(const MeshPatchRecord &Patch, const MeshPatchRecord &Previous) noexcept
+{
+   return (Patch.TopP0X IS Previous.RightP0X) and (Patch.TopP0Y IS Previous.RightP0Y) and
+      (Patch.BottomP1X IS Previous.RightP1X) and (Patch.BottomP1Y IS Previous.RightP1Y) and
+      (Patch.LeftP0X IS Previous.RightP1X) and (Patch.LeftP0Y IS Previous.RightP1Y) and
+      (Patch.LeftC0X IS Previous.RightC1X) and (Patch.LeftC0Y IS Previous.RightC1Y) and
+      (Patch.LeftC1X IS Previous.RightC0X) and (Patch.LeftC1Y IS Previous.RightC0Y) and
+      (Patch.LeftP1X IS Previous.RightP0X) and (Patch.LeftP1Y IS Previous.RightP0Y) and
+      mesh_colour_match(Patch.TopLeft, Previous.TopRight) and
+      mesh_colour_match(Patch.BottomLeft, Previous.BottomRight);
+}
+
+static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent, const MeshPatchRecord &Patch,
+   bool Independent)
 {
    int patch_index;
    if (XML->insertXML(Parent, XMI::CHILD_END, "<meshpatch/>", &patch_index) != ERR::Okay) return;
 
-   if (RowIndex IS 0) {
+   XTag *patch_tag;
+   if ((Independent) and (XML->getTag(patch_index, &patch_tag) IS ERR::Okay)) {
+      xml::NewAttrib(patch_tag, "kotuku:x", Patch.TopP0X);
+      xml::NewAttrib(patch_tag, "kotuku:y", Patch.TopP0Y);
+   }
+
+   if ((RowIndex IS 0) or (Independent)) {
       save_mesh_stop(XML, patch_index, Patch.TopC0X, Patch.TopC0Y, Patch.TopC1X, Patch.TopC1Y,
          Patch.TopP1X, Patch.TopP1Y, Patch.TopRight);
    }
@@ -93,7 +117,7 @@ static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent,
    save_mesh_stop(XML, patch_index, Patch.BottomC0X, Patch.BottomC0Y, Patch.BottomC1X, Patch.BottomC1Y,
       Patch.BottomP1X, Patch.BottomP1Y, Patch.BottomLeft);
 
-   if (ColIndex IS 0) {
+   if ((ColIndex IS 0) or (Independent)) {
       save_mesh_stop(XML, patch_index, Patch.LeftC0X, Patch.LeftC0Y, Patch.LeftC1X, Patch.LeftC1Y,
          Patch.LeftP1X, Patch.LeftP1Y, Patch.TopLeft);
    }
@@ -110,7 +134,11 @@ static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
    int row_index;
    if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<meshrow/>", &row_index) != ERR::Okay) return;
    for (int col=0; col < int(patches.size()); col++) {
-      save_mesh_patch(XML, 0, col, row_index, patches[size_t(col)]);
+      bool independent = false;
+      if (col > 0) {
+         independent = not mesh_patch_shares_previous_left_edge(patches[size_t(col)], patches[size_t(col - 1)]);
+      }
+      save_mesh_patch(XML, 0, col, row_index, patches[size_t(col)], independent);
    }
 }
 
