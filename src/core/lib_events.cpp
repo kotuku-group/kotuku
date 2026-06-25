@@ -9,8 +9,6 @@ Name: Events
 
 *********************************************************************************************************************/
 
-#include <stdlib.h>
-
 #include "defs.h"
 
 static constexpr std::array<CSTRING, int(EVG::END)> glEventGroups = {
