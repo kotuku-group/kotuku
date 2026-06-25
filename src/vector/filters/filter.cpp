@@ -644,23 +644,11 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTORFILTER_Free(extVectorFilter *Self)
-{
-   acClear(Self);
-
-   if (Self->SourceGraphic) { FreeResource(Self->SourceGraphic); Self->SourceGraphic = nullptr; }
-   if (Self->SourceScene)   { FreeResource(Self->SourceScene);   Self->SourceScene = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTORFILTER_Init(extVectorFilter *Self)
 {
    kt::Log log(__FUNCTION__);
 
    if ((int(Self->Units) <= 0) or (int(Self->Units) >= int(VUNIT::END))) {
-      log.traceWarning("Invalid Units value of %d", Self->Units);
       return log.warning(ERR::OutOfRange);
    }
 

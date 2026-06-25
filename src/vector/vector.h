@@ -641,6 +641,12 @@ class extVectorFilter : public objVectorFilter {
       AspectRatio    = VFA::MEET; // Scale X/Y values independently
       ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
    }
+
+   ~extVectorFilter() {
+      acClear(this);
+      if (SourceGraphic) FreeResource(SourceGraphic); 
+      if (SourceScene)   FreeResource(SourceScene);   
+   }
 };
 
 class extFilterEffect : public objFilterEffect {
