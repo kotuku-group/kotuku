@@ -391,7 +391,7 @@ The SetVariable() function provides a method for setting global variables in a T
 script.  If the script is cached, the variable settings will be available on the next activation.
 
 -INPUT-
-obj(Script) Script: Pointer to a Tiri script.
+obj(Tiri) Script: Pointer to a Tiri script.
 strview Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
@@ -409,32 +409,32 @@ mutates-object, copies-input
 
 *********************************************************************************************************************/
 namespace fl {
-ERR SetVariable(objScript *Script, const std::string_view &Name, int Type, ...)
+ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);
-   prvTiri *prv;
    va_list list;
 
    if ((not Script) or (Script->classID() != CLASSID::TIRI) or Name.empty()) return log.warning(ERR::Args);
 
    log.branch("Script: %d, Name: %.*s, Type: $%.8x", Script->UID, int(Name.size()), Name.data(), Type);
 
-   if (not (prv = (prvTiri *)Script->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
-   if (not prv->Lua) return log.warning(ERR::InvalidState);
+   auto tiri = (extTiri *)Script;
+   auto lua = tiri->Lua;
+   if (not lua) return log.warning(ERR::InvalidState);
 
    va_start(list, Type);
 
-   if (Type & FD_STRING)       lua_pushstring(prv->Lua, va_arg(list, STRING));
-   else if (Type & FD_POINTER) lua_pushlightuserdata(prv->Lua, va_arg(list, APTR));
-   else if (Type & FD_INT)     lua_pushinteger(prv->Lua, va_arg(list, int));
-   else if (Type & FD_INT64)   lua_pushnumber(prv->Lua, va_arg(list, int64_t));
-   else if (Type & FD_DOUBLE)  lua_pushnumber(prv->Lua, va_arg(list, double));
+   if (Type & FD_STRING)       lua_pushstring(lua, va_arg(list, STRING));
+   else if (Type & FD_POINTER) lua_pushlightuserdata(lua, va_arg(list, APTR));
+   else if (Type & FD_INT)     lua_pushinteger(lua, va_arg(list, int));
+   else if (Type & FD_INT64)   lua_pushnumber(lua, va_arg(list, int64_t));
+   else if (Type & FD_DOUBLE)  lua_pushnumber(lua, va_arg(list, double));
    else {
       va_end(list);
       return log.warning(ERR::FieldTypeMismatch);
    }
 
-   lua_setglobal(prv->Lua, Name.data());
+   lua_setglobal(lua, Name.data());
 
    va_end(list);
    return ERR::Okay;
@@ -607,8 +607,6 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
 
 void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input)
 {
-   kt::Log log(__FUNCTION__);
-
    auto s_name = struct_name(StructName);
    if (not glStructs.contains(s_name)) {
       luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
@@ -623,7 +621,7 @@ void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int E
    int def_size = ALIGN64(sdef.Size);
    char aligned = ((sdef.Size & 0x7) != 0) ? 'N': 'Y';
    if (aligned IS 'N') {
-      log.msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c",
+      kt::Log(__FUNCTION__).msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c",
          int(StructName.size()), StructName.data(), Elements, Input, def_size, aligned);
    }
 
@@ -648,7 +646,7 @@ void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int El
 
 //********************************************************************************************************************
 
-void get_line(objScript *Self, int Line, STRING Buffer, int Size)
+void get_line(extTiri *Self, int Line, STRING Buffer, int Size)
 {
    if (not Self->Statement.empty()) {
       auto str = std::string_view(Self->Statement);
@@ -678,15 +676,14 @@ void get_line(objScript *Self, int Line, STRING Buffer, int Size)
 
 int code_writer_id(lua_State *Lua, CPTR Data, size_t Size, void *FileID)
 {
-   kt::Log log("code_writer");
-
    if (Size <= 0) return 0; // Ignore bad size requests
 
    kt::ScopedObjectLock file((MAXINT)FileID);
    if (file.granted()) {
       if (!acWrite(*file, (APTR)Data, Size)) return 0;
    }
-   log.warning("Failed writing %d bytes.", (int)Size);
+
+   kt::Log("code_writer").warning("Failed writing %d bytes.", (int)Size);
    return 1;
 }
 

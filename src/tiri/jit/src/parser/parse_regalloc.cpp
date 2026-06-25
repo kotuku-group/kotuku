@@ -824,8 +824,7 @@ void RegisterAllocator::verify_no_leaks(const char* Context) const
 
 void RegisterAllocator::trace_allocation(BCReg Start, BCReg Count, const char* Context) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->DerivedPtr;
-   if ((prv->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
+   if ((this->func_state->L->script->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
       kt::Log("Parser").msg("Regalloc: reserve R%d..R%d (%d slots) at %s",
          int(Start.raw()), int(Start.raw() + Count.raw() - 1), int(Count.raw()), Context);
    }
@@ -833,8 +832,7 @@ void RegisterAllocator::trace_allocation(BCReg Start, BCReg Count, const char* C
 
 void RegisterAllocator::trace_release(BCReg Start, BCReg Count, const char* Context) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->DerivedPtr;
-   if ((prv->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
+   if ((this->func_state->L->script->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
       kt::Log("Parser").msg("Regalloc: release R%d..R%d (%d slots) at %s",
          int(Start.raw()), int(Start.raw() + Count.raw() - 1), int(Count.raw()), Context);
    }

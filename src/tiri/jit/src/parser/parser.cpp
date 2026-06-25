@@ -119,8 +119,8 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
 {
    kt::Log log("AST-Boundary");
 
-   auto prv = (prvTiri *)Context.lua().script->DerivedPtr;
-   if ((prv->JitOptions & JOF::TRACE_BOUNDARY) IS JOF::NIL) return;
+   auto script = Context.lua().script;
+   if ((script->JitOptions & JOF::TRACE_BOUNDARY) IS JOF::NIL) return;
 
    StatementListView statements = Chunk.view();
    SourceSpan span = Chunk.span;
@@ -225,9 +225,7 @@ static ParserConfig make_parser_config(lua_State &State)
 {
    ParserConfig config;
 
-   auto prv = (prvTiri *)State.script->DerivedPtr;
-
-   if ((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL) {
+   if ((State.script->JitOptions & JOF::DIAGNOSE) != JOF::NIL) {
       // Cancel aborting on error and enable deeper log tracing.
       config.abort_on_error = false;
       config.max_diagnostics = 32;
@@ -245,8 +243,6 @@ extern GCproto * lj_parse(LexState *State)
    FuncScope bl;
    GCproto   *pt;
    lua_State *L = State->L;
-
-   auto prv = (prvTiri *)L->script->DerivedPtr;
 
 #ifdef LUAJIT_DISABLE_DEBUGINFO
    State->chunk_name = lj_str_newlit(L, "=");
@@ -294,13 +290,13 @@ extern GCproto * lj_parse(LexState *State)
    ParserConfig    session_config = make_parser_config(*L);
 
    ParserSession   root_session(root_context, session_config);
-   ParserProfiler  profiler((prv->JitOptions & JOF::PROFILE) != JOF::NIL, &root_context.profiling_result());
+   ParserProfiler  profiler((L->script->JitOptions & JOF::PROFILE) != JOF::NIL, &root_context.profiling_result());
 
    State->next(); // Read-ahead first token.
 
    run_ast_pipeline(root_context, profiler);
 
-   if ((prv->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
+   if ((L->script->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
 
    flush_non_fatal_errors(root_context);
 

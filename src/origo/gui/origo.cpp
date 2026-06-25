@@ -13,6 +13,7 @@ that is distributed with this package.  Please refer to it for further informati
 #include <kotuku/files/file.h>
 #include <kotuku/functions/strtoint.c>
 
+#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/filesystem.h>
 
 CSTRING ProgName = "Origo";
@@ -225,7 +226,7 @@ ERROR prep_environment(int WindowHandle, int Width, int Height)
    if (target.ok()) {
       objPointer::create pointer = { fl::Owner(target->UID), fl::Name("SystemPointer") }
       if (pointer.ok()) {
-         objScript::create script = { fl::Path("templates:defaultvariables.tiri"), fl::Target(target->UID) };
+         objTiri::create script = { fl::Path("templates:defaultvariables.tiri"), fl::Target(target->UID) };
          if (script.ok()) return acActivate(script);
          else return ERR_CreateObject;
       }
@@ -308,8 +309,8 @@ ERROR exec_script(CSTRING ScriptFile, OBJECTID *CoreObjectID, int ShowTime, STRI
       }
    }
    else {
-      printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", ScriptFile, GetErrorMsg(error));
-      derived_id = CLASSID::SCRIPT;
+      printf("Failed to identify the type of file for path '%s', error: %s.  Assuming Tiri script.\n", ScriptFile, GetErrorMsg(error));
+      derived_id = CLASSID::TIRI;
       class_id   = CLASSID::SCRIPT;
    }
 

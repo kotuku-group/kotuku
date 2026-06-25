@@ -25,10 +25,8 @@ static const struct ActionArray clVectorViewportActions[] = {
    { AC::Init, VECTORVIEWPORT_Init },
    { AC::Move, VECTORVIEWPORT_Move },
    { AC::MoveToPoint, VECTORVIEWPORT_MoveToPoint },
-   { AC::NewObject, VECTORVIEWPORT_NewObject },
    { AC::NewPlacement, VECTORVIEWPORT_NewPlacement },
    { AC::Redimension, VECTORVIEWPORT_Redimension },
    { AC::Resize, VECTORVIEWPORT_Resize },
    { AC::NIL, nullptr }
 };
-

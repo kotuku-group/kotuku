@@ -151,6 +151,21 @@
 <p>When retrieving a string that contains return codes, only the first line of text is returned.</p>
       
 </div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-TextFlags" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-TextFlags"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">TextFlags</th><td class="col-md-1"><span class="text-nowrap">VTXF</span></td><td>Optional flags.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-TextFlags" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VTXF::AREA_SELECTED</th><td>Automatically set if a region of text has been selected.</td></tr>
+<tr><th class="col-md-1">VTXF::BLINK</th><td>Enable animated blinking (not supported - exists as SVG dummy option).</td></tr>
+<tr><th class="col-md-1">VTXF::EDIT</th><td>Allow user editing of the text if the nearest viewport has the focus.</td></tr>
+<tr><th class="col-md-1">VTXF::EDITABLE</th><td>Allow user editing of the text if the nearest viewport has the focus.</td></tr>
+<tr><th class="col-md-1">VTXF::LINE_THROUGH</th><td>Enable a strike-through line in the text.</td></tr>
+<tr><th class="col-md-1">VTXF::NO_SYS_KEYS</th><td>Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</td></tr>
+<tr><th class="col-md-1">VTXF::OVERLINE</th><td>Enable overlining of the text.</td></tr>
+<tr><th class="col-md-1">VTXF::OVERWRITE</th><td>Turns on overwrite mode (if off, insert mode is enabled).</td></tr>
+<tr><th class="col-md-1">VTXF::RASTER</th><td>Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</td></tr>
+<tr><th class="col-md-1">VTXF::SECRET</th><td>Hide all characters from the UI by using generic symbols in place of glyphs.</td></tr>
+<tr><th class="col-md-1">VTXF::UNDERLINE</th><td>Enable underlining of the text.</td></tr>
+</tbody></table>
+      
+</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-TextLength" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-TextLength"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">TextLength</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>The expected length of the text after all computations have been taken into account.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-TextLength" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the computed text width does not match this value, then the text will be scaled to match the TextLength.</p>
       

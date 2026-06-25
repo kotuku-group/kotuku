@@ -344,7 +344,9 @@ static ERR SCRIPT_Init(objScript *Self)
 
    if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
-   return ERR::NoSupport;
+   // Clients should use IdentifyFile() to determine the type of the script file and then instantiate a derived class.
+   kt::Log().warning("Scripts must be instantiated with a derived class.");
+   return ERR::Init;
 }
 
 //********************************************************************************************************************
@@ -442,7 +444,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
    if (not Self->Path.empty()) {
       // If the location has already been set, throw the value to SetKey instead.
 
-      if (not Value.empty()) return acSetKey(Self, "Path", std::string(Value).c_str());
+      if (not Value.empty()) return acSetKey(Self, "Path", std::string(Value));
    }
    else {
       Self->Path.clear();
@@ -522,7 +524,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
                      }
 
                      if (iequals("target", arg)) Self->setTarget(strtol(argval.c_str(), nullptr, 0));
-                     else acSetKey(Self, arg, argval.c_str());
+                     else acSetKey(Self, arg, argval);
                   }
                }
             }

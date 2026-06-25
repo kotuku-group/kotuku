@@ -1026,21 +1026,6 @@ static ERR SCINTILLA_NewObject(extScintilla *Self, APTR)
    return ERR::Okay;
 }
 
-//*****************************************************************************
-
-static ERR SCINTILLA_NewOwner(extScintilla *Self, struct acNewOwner *Args)
-{
-   if (!Self->initialised()) {
-      auto obj = Args->NewOwner;
-      while ((obj) and (obj->classID() != CLASSID::SURFACE)) {
-         obj = obj->Owner;
-      }
-      if (obj) Self->SurfaceID = obj->UID;
-   }
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redo: Redo the most recently undone activity.
@@ -2137,7 +2122,7 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
    }
 
    OBJECTPTR dialog;
-   if (!NewObject(CLASSID::SCRIPT, &dialog)) {
+   if (!NewObject(CLASSID::TIRI, &dialog)) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");

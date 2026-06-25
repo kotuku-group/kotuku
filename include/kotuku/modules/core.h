@@ -918,8 +918,7 @@ enum class NF : uint32_t {
    SIGNALLED = 0x00000100,
    PERMIT_TERMINATE = 0x00000200,
    ASYNC_ACTIVE = 0x00000400,
-   UNIQUE = 0x40000000,
-   NAME = 0x80000000,
+   PLACEMENT = 0x00000800,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
@@ -2254,6 +2253,12 @@ template <pcObject T> inline ERR FreeResource(T *Object) {
    return FreeResource(Object->UID);
 }
 
+template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
+inline ERR FreeResource(T *) {
+   static_assert(pcComplete<T>, "FreeResource() cannot be called with a pointer to an incomplete type.");
+   return ERR::NullArgs;
+}
+
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
@@ -3240,14 +3245,16 @@ class objScript : public Object {
    ERR      Error;                     // If a script fails during execution, an error code may be readable here.
    int      CurrentLine;               // Indicates the current line being executed when in debug mode.
    int      LineOffset;                // For debugging purposes, this value is added to any message referencing a line number.
-
-#ifdef PRV_SCRIPT
+   public:
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars;                 // Global parameters
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
    OBJECTID ScriptOwnerID;
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
 #endif
 
    // Action stubs

@@ -449,7 +449,7 @@ end
 function pasteFromClipboard(Folder:str)
    assert(io.isFolder(Folder), 'Invalid folder target of ' .. Folder)
 
-   paste_script = obj.new('script', { statement = [[
+   paste_script = obj.new('tiri', { statement = [[
    import 'io/filemgr'
    file.ui.paste(arg('dest'))
 ]] })
@@ -1199,7 +1199,7 @@ gui.fileview = function(Options)
                   statement ..= f'mSys.DeleteFile("{fl}")\n'
                end
 
-               async.script(obj.new('script', { statement=statement }),
+               async.script(obj.new('tiri', { statement=statement }),
                   function()
                      if not self.watch then self.refresh() end
                   end)

@@ -16,8 +16,6 @@ Name: Objects
 #endif
 #endif
 
-#include <stdlib.h>
-#include <cassert>
 #include <chrono>
 #include <thread>
 #include <ranges>
@@ -28,6 +26,8 @@ using namespace kt;
 
 static void drain_action_queue(OBJECTID ObjectID, bool Terminating = false, bool PreserveActive = false);
 static void async_wait_callback(OBJECTID, bool);
+//static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object);
+static ERR set_owner(OBJECTPTR, OBJECTPTR);
 
 // AsyncWait() state — guarded by glmAsyncWait.
 
@@ -159,11 +159,60 @@ static void free_object_block(OBJECTPTR Object)
 }
 
 //********************************************************************************************************************
+// For the exclusive use of NewObject()
+
+static ERR set_owner(OBJECTPTR Object, OBJECTPTR Owner)
+{
+   // Send a new child alert to the owner.  If the owner returns an error then we return immediately.
+
+   if (!CheckAction(Owner, AC::NewChild)) {
+      // Contract: The hook is not permitted to free the Object
+      struct acNewChild newchild = { .Object = Object };
+      if (auto error = Action(AC::NewChild, Owner, &newchild); error != ERR::NoSupport) {
+         if (error != ERR::Okay) {
+            // If the owner has passed the object through to another owner, return ERR::Okay, otherwise error.
+            if (error IS ERR::OwnerPassThrough) return ERR::Okay;
+            else return error;
+         }
+      }
+   }
+
+   // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
+
+   std::unique_lock lock(glmResources);
+   std::lock_guard object_lock(glmObjects);
+   auto object_rec   = glObjects.find(Object->UID);
+   auto resource_rec = glResources.find(Object->UID);
+   auto owner_rec    = glResources.find(Owner->UID);
+
+   if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return ERR::SystemCorrupt;
+
+   if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
+      (not owner_rec->second.Manager->AddChild)) {
+      return ERR::SystemCorrupt;
+   }
+
+   auto &resource = resource_rec->second;
+
+   object_rec->second.OwnerID = Owner->UID;
+   resource.OwnerID = Owner->UID;
+   resource.OwnerManagesChildren = false;
+   Object->Owner = Owner;
+
+   owner_rec->second.Manager->AddChild(owner_rec->second, resource);
+   resource.OwnerManagesChildren = true;
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // Object termination hook for FreeResource()
 
 ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
+
+   bool is_placement = Object->defined(NF::PLACEMENT);
 
    {
       ScopedObjectAccess objlock(Object);
@@ -279,18 +328,25 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       free_children(Object);
 
       if (Object->defined(NF::TIMER_SUB)) {
+         std::vector<FUNCTION> script_routines;
+
          if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
             for (auto it=glTimers.begin(); it != glTimers.end(); ) {
                if (it->SubscriberID IS Object->UID) {
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
-                  if (it->Routine.isScript()) {
-                     ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
+                  if (it->Routine.isScript() and (it->Routine.Context != Object)) {
+                     script_routines.emplace_back(it->Routine);
                   }
                   it = glTimers.erase(it);
                }
                else it++;
             }
+            lock.unlock();
+         }
+
+         for (auto &routine : script_routines) {
+            ((objScript *)routine.Context)->derefProcedure(routine);
          }
       }
 
@@ -314,7 +370,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       }
    } // Object lock
 
-   free_object_block(Object);
+   if (not is_placement) free_object_block(Object);
    return ERR::Okay;
 }
 
@@ -1807,6 +1863,21 @@ caller-owns-result, creates-resource, blocking, callback-inlines
 
 ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 {
+   if ((Flags & NF::PLACEMENT) != NF::NIL) {
+      // Support for C++ placement is restricted to non-extended class.  In theory the user can safely declare
+      // `objFile file` if the implementation has no `extFile` definition.  Otherwise the final object size would
+      // be too small, and the extFile constructor would never be called.
+      //
+      // objFile() {
+      //    OBJECTPTR self = this;
+      //    NewObject(CLASS_ID, NF::PLACEMENT, &self);
+      // }
+
+      //if (not Object) return ERR::NullArgs;
+      //if (tlContext.back().obj IS *Object) return ERR::Okay; // Guard against recursive calls (not an error)
+      //return new_placement(ClassID, Flags, *Object);
+   }
+
    kt::Log log(__FUNCTION__);
 
    auto class_id = ClassID;
@@ -1815,9 +1886,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    auto mc = (extMetaClass *)FindClass(class_id);
    if (not mc) return log.warning(ERR::MissingClass);
 
-   if (Object) *Object = nullptr;
-
-   Flags &= (NF::UNTRACKED|NF::LOCAL|NF::UNIQUE|NF::NAME|NF::SUPPRESS_LOG); // Very important to eliminate any internal flags.
+   *Object = nullptr;
 
    // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
    // end up being tracked to its task rather than its parent object).
@@ -1829,54 +1898,26 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
 
    if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
-      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(),
-         glResourceID.load(std::memory_order_relaxed), int(Flags));
+      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
-
-   OBJECTPTR head = nullptr;
 
    // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
    // glMemory.  Only 8-byte alignment is required for the object header.
 
-   if (APTR start_mem = aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
-      head = (OBJECTPTR)start_mem;
-
+   if (auto head = (OBJECTPTR)aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
       OBJECTID object_id = glResourceID++;
 
-      new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // NB: Clients are not permitted to allocate Kotuku resources in NewPlacement due to
-      // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
+      // Preset the Object header - the Object() constructor will skip intiialisation of these fields during new placement.
 
-      ERR error = ERR::Okay;
-      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
-         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
-         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
-         error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
-      }
-      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
-         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
-      }
+      head->UID   = object_id;
+      head->Class = (extMetaClass *)mc;
 
-      if (error != ERR::Okay) {
-         free_object_block(head);
-         return error;
-      }
+      // Determine the object that will be acting as the owner.
 
-      head->UID     = object_id;
-      head->Class   = (extMetaClass *)mc;
-      head->setFlag(Flags);
-
-      {
-         std::lock_guard resource_lock(glmResources);
-         std::lock_guard object_lock(glmObjects);
-         glResources.insert_or_assign(object_id, ResourceRecord(object_id, head, 0, &glResourceObject));
-         glObjects.insert_or_assign(object_id, ObjectRecord(head));
-      }
-
-      // Tracking for our new object is configured here.
-
+      OBJECTPTR track_to = nullptr;
+      bool track_lock = false;
       if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
       else if ((Flags & NF::UNTRACKED) != NF::NIL) {
          if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
@@ -1885,8 +1926,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
             // is deallocated correctly when the Core is closed.
 
             if (glCurrentTask) {
-               ScopedObjectAccess lock(glCurrentTask);
-               SetOwner(head, glCurrentTask);
+               track_to = glCurrentTask;
+               track_lock = true;
             }
          }
       }
@@ -1894,33 +1935,72 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          auto obj = current_resource();
          if (obj IS &glDummyObject) { // If dummy object, track to the task
             if (glCurrentTask) {
-               ScopedObjectAccess lock(glCurrentTask);
-               SetOwner(head, glCurrentTask);
+               track_to = glCurrentTask;
+               track_lock = true;
             }
          }
-         else SetOwner(head, obj);
+         else track_to = obj;
       }
 
-      // After the header has been created we can set the context, then call the base class's NewObject() support.  If this
-      // object belongs to a derived class, we will also call its supporting NewObject() action if it has specified one.
-      //
-      // Note: Hooking into NewObject gives derived classes an opportunity to detect that they have been targeted by the client
-      // on creation, as opposed to during initialisation.  This can allow DerivedPtr to be configured early on in the
-      // process, making it possible to set custom fields that would depend on it.
+      // Track the object prior to NewPlacement so that action calls will work correctly.
 
-      kt::SwitchContext context(head);
+      {
+         std::lock_guard resource_lock(glmResources);
+         std::lock_guard object_lock(glmObjects);
+         glResources.insert_or_assign(object_id, ResourceRecord(object_id, head, 0, &glResourceObject));
+         glObjects.insert_or_assign(object_id, ObjectRecord(head));
+      }
 
-      if (mc->Base) {
-         if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
+      ERR error = ERR::Okay;
+      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
+         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
+         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
+
+         tlContext.emplace_back(head, nullptr, AC::NIL);
+         error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         tlContext.pop_back();
+      }
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
+         tlContext.emplace_back(head, nullptr, AC::NIL);
+         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         tlContext.pop_back();
+      }
+      else error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
+
+      if (error != ERR::Okay) {
+         FreeResource(head);
+         return error;
+      }
+
+      head->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // Keep flags requiring persistence.
+
+      if (track_to) {
+         if (track_lock) {
+            if (error = track_to->lock(); error != ERR::Okay) {
+               FreeResource(head);
+               return error;
+            }
+         }
+         // NOTE: SetOwner action hooks can potentially call the SetOwner() function and divert ownership to a different object.
+         error = set_owner(head, track_to);
+         if (track_lock) track_to->unlock();
+      }
+
+      if (!error) {
+         if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewObject)].PerformAction)) {
+            tlContext.emplace_back(head, nullptr, AC::NIL);
             if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
                log.warning(error);
             }
+            tlContext.pop_back();
          }
-      }
 
-      if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
-         if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
-            log.warning(error);
+         if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
+            tlContext.emplace_back(head, nullptr, AC::NIL);
+            if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
+               log.warning(error);
+            }
+            tlContext.pop_back();
          }
       }
 
@@ -1937,6 +2017,106 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    }
    else return ERR::AllocMemory;
 }
+
+//********************************************************************************************************************
+// Object creation hook for the Object class constructor in existing memory.
+//
+// 2026-05-25: This code is valid but will only work for simple classes.
+
+#if 0
+static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
+{
+   kt::Log log("NewPlacement");
+
+   auto class_id = ClassID;
+   if ((class_id IS CLASSID::NIL) or (not Object)) return log.warning(ERR::NullArgs);
+
+   auto mc = (extMetaClass *)FindClass(class_id);
+   if (not mc) return log.warning(ERR::MissingClass);
+
+   // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
+   // end up being tracked to its task rather than its parent object).
+
+   if ((Flags & NF::LOCAL) != NF::NIL) Flags &= ~NF::UNTRACKED;
+
+   // Force certain flags on the class' behalf
+
+   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
+
+   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
+      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
+   }
+
+   OBJECTID object_id = glResourceID++;
+
+   new (Object) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
+
+   Object->UID     = object_id;
+   Object->Class   = (extMetaClass *)mc;
+   Object->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // NF::PLACEMENT indicates the object was created by placement-new
+
+   {
+      std::lock_guard resource_lock(glmResources);
+      std::lock_guard object_lock(glmObjects);
+      glResources.insert_or_assign(object_id, ResourceRecord(object_id, Object, 0, &glResourceObject));
+      glObjects.insert_or_assign(object_id, ObjectRecord(Object));
+   }
+
+   // Tracking for our new object is configured here.
+
+   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
+   else if ((Flags & NF::UNTRACKED) != NF::NIL) {
+      if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
+      else {
+         // Untracked objects are owned by the current task.  This ensures that the object
+         // is deallocated correctly when the Core is closed.
+
+         if (glCurrentTask) {
+            ScopedObjectAccess lock(glCurrentTask);
+            set_owner(Object, glCurrentTask);
+         }
+      }
+   }
+   else { // Track the object to the current context
+      auto obj = current_resource();
+      if (obj IS &glDummyObject) { // If dummy object, track to the task
+         if (glCurrentTask) {
+            ScopedObjectAccess lock(glCurrentTask);
+            set_owner(Object, glCurrentTask);
+         }
+      }
+      else set_owner(Object, obj);
+   }
+
+   tlContext.emplace_back(Object, nullptr, AC::NIL);
+
+   ERR error = ERR::Okay;
+
+   if (mc->Base) {
+      if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
+         if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
+            log.warning(error);
+         }
+      }
+   }
+
+   if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
+      if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
+         log.warning(error);
+      }
+   }
+
+   tlContext.pop_back();
+
+   if (!error) {
+      ((extMetaClass *)Object->Class)->OpenCount++;
+      if (mc->Base) mc->Base->OpenCount++;
+   }
+   else FreeResource(Object); // This won't free the emplacement target, only the resources associated with it
+
+   return error;
+}
+#endif
 
 /*********************************************************************************************************************
 

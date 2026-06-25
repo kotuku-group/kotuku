@@ -86,7 +86,6 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Hide, SCINTILLA_Hide },
    { AC::Init, SCINTILLA_Init },
    { AC::NewObject, SCINTILLA_NewObject },
-   { AC::NewOwner, SCINTILLA_NewOwner },
    { AC::NewPlacement, SCINTILLA_NewPlacement },
    { AC::Redo, SCINTILLA_Redo },
    { AC::SaveToObject, SCINTILLA_SaveToObject },
@@ -94,4 +93,3 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Undo, SCINTILLA_Undo },
    { AC::NIL, nullptr }
 };
-

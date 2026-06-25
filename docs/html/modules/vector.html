@@ -20,7 +20,7 @@
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">InvalidData</th><td>There is an error in the provided data</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-<tr><th class="col-md-1">WrongClass</th><td>An object is not of the required type</td></tr>
+<tr><th class="col-md-1">WrongClass</th><td>An object is not of the required class type</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="ArcTo"><h2>ArcTo()</h2><p class="lead">Appends an arc command to a generated path.</p><div class="card card-info mb-3"><div class="card-header"><samp>void vec::ArcTo(APTR Path, DOUBLE RX, DOUBLE RY, DOUBLE Angle, DOUBLE X, DOUBLE Y, ARC Flags)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Path</td><td>The vector path to modify.</td></tr>
 <tr><td>RX</td><td>The horizontal radius of the arc.</td></tr>
@@ -241,7 +241,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 <tr><th class="col-md-1">NotFound</th><td>A search routine in this function failed</td></tr>
 <tr><th class="col-md-1">Syntax</th><td>Invalid syntax detected</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-<tr><th class="col-md-1">InvalidObject</th><td>An object is not of the required type</td></tr>
+<tr><th class="col-md-1">InvalidObject</th><td>An object is not of the required class type</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="ResetMatrix"><h2>ResetMatrix()</h2><p class="lead">Resets a transformation matrix to the identity transform.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR vec::ResetMatrix(struct VectorMatrix * Matrix)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Matrix</td><td>The target transformation matrix.</td></tr>
 </tbody></table></div></div>
@@ -536,6 +536,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 <tr><th>VPF::OUTLINE_VIEWPORTS</th><td>Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</td></tr>
 <tr><th>VPF::RENDER_TIME</th><td>Compute the drawing frame-rate for the <code>RenderTime</code> field.</td></tr>
 <tr><th>VPF::RESIZE</th><td>The vector will be stretched to fit the <a href="classes/vectorscene.html#tf-PageWidth">VectorScene⇒PageWidth</a> and <a href="classes/vectorscene.html#tf-PageHeight">VectorScene⇒PageHeight</a> values, if defined by the client.</td></tr>
+<tr><th>VPF::STABLE_RENDER</th><td>Use rendering algorithms that are stable across all platforms.</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="VSF"><h1>VSF Type</h1><p class="lead">Filter source types - these are used internally</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VSF::ALPHA</th><td>As for <code>GRAPHIC</code> except that only the alpha channel is used.</td></tr>
 <tr><th>VSF::BKGD</th><td>An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</td></tr>
@@ -646,7 +647,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 <tr><th>Angle</th><td><span class="text-nowrap">DOUBLE</span></td><td>Arc angle</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-Transition"><h1>Transition Structure</h1><p class="lead">For VectorTransition definitions</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Offset</th><td><span class="text-nowrap">DOUBLE</span></td><td>An offset from 0.0 to 1.0 at which to apply the transform.</td></tr>
-<tr><th>Transform</th><td><span class="text-nowrap">CSTRING</span></td><td>A transform string, as per SVG guidelines.</td></tr>
+<tr><th>Transform</th><td><span class="text-nowrap">STRING</span></td><td>A transform string, as per SVG guidelines.</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-VectorMatrix"><h1>VectorMatrix Structure</h1><p class="lead">Vector transformation matrix.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">struct VectorMatrix *</span></td><td>The next transform in the list.</td></tr>
 <tr><th>Vector</th><td><span class="text-nowrap">objVector *</span></td><td>The vector associated with the transform.</td></tr>

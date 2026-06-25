@@ -324,7 +324,7 @@ static ERR FILE_BufferContent(extFile *Self)
 
    if (Self->Buffer) return ERR::Okay;
 
-   acSeek(Self, 0, SEEK::START);
+   Self->seekStart(0);
 
    if (not Self->Size) {
       // If the file has no size, it could be a stream (or simply empty).  This routine handles this situation.
@@ -336,7 +336,7 @@ static ERR FILE_BufferContent(extFile *Self)
 
          uint8_t *buffer;
          if (!AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer)) {
-            acSeekStart(Self, 0);
+            Self->seekStart(0);
             acRead(Self, buffer, 1024 * 1024, &len);
             if (len > 0) {
                if (!AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer)) {
@@ -596,7 +596,7 @@ static ERR FILE_Init(extFile *Self)
 
    if (((Self->Flags & FL::BUFFER) != FL::NIL) and (Self->Path.empty())) {
       if (Self->Size < 0) Self->Size = 0;
-      Self->Flags |= FL::READ|FL::WRITE;
+      Self->Flags |= FL::READ|FL::WRITE|FL::VIRTUAL;
       if (not Self->Buffer) {
          // Allocate buffer if none specified.  An extra byte is allocated for a NULL byte on the end, in case the file
          // content is treated as a string.
@@ -617,11 +617,12 @@ static ERR FILE_Init(extFile *Self)
    auto volume = get_volume(Self->Path);
 
    if (volume IS "string") {
+      // The "string:" path enables buffer mode
       Self->Size = Self->Path.size() - 7;
 
       if (Self->Size > 0) {
          if (!AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer)) {
-            Self->Flags |= FL::READ|FL::WRITE;
+            Self->Flags |= FL::READ|FL::WRITE|FL::VIRTUAL|FL::BUFFER;
             Self->Permissions |= PERMIT::HIDDEN;
             copymem(Self->Path.c_str() + 7, Self->Buffer, Self->Size);
             return ERR::Okay;
@@ -633,6 +634,7 @@ static ERR FILE_Init(extFile *Self)
    else if (volume IS "std") {
       // Special accessors for direct access to standard input/output/error streams.
 
+      Self->Flags |= FL::VIRTUAL;
       Self->Flags &= ~(FL::NEW|FL::READ|FL::WRITE);
       Self->Permissions |= PERMIT::HIDDEN;
 
@@ -721,8 +723,8 @@ retrydir:
       return ERR::Okay;
    }
 
-   // Use RSF::CHECK_VIRTUAL to cause failure if the volume name is reserved by a support class.  By doing this we can
-   // return ERR::UseDerived and a support class can then initialise the file instead.
+   // Use RSF::CHECK_VIRTUAL to cause failure if the volume name is reserved by a derived class.  By doing this we can
+   // return ERR::UseDerived and a derived class can then initialise the file instead.
 
    auto resolveflags = RSF::NIL;
    if ((Self->Flags & FL::NEW) != FL::NIL) resolveflags |= RSF::NO_FILE_CHECK;
@@ -1268,15 +1270,13 @@ static ERR FILE_Seek(extFile *Self, struct acSeek *Args)
 
    // Set the new setting for the Self->Position field
 
-   if (Args->Position IS SEEK::START) {
-      Self->Position = (int64_t)Args->Offset;
-   }
+   if (Args->Position IS SEEK::START) Self->Position = (int64_t)Args->Offset;
    else if (Args->Position IS SEEK::END) {
-      Self->Position = Self->get<int64_t>(FID_Size) - (int64_t)Args->Offset;
+      int64_t size;
+      Self->getSize(size);
+      Self->Position = size - (int64_t)Args->Offset;
    }
-   else if (Args->Position IS SEEK::CURRENT) {
-      Self->Position = Self->Position + (int64_t)Args->Offset;
-   }
+   else if (Args->Position IS SEEK::CURRENT) Self->Position = Self->Position + (int64_t)Args->Offset;
    else return log.warning(ERR::Args);
 
    // Make sure we are greater than zero, otherwise set as zero
@@ -1347,7 +1347,7 @@ static ERR FILE_SetDate(extFile *Self, struct fl::SetDate *Args)
 
    #ifdef _WIN32
       std::string_view path;
-      if (!GET_ResolvedPath(Self, path)) {
+      if (!Self->getResolvedPath(path)) {
          auto result = winSetFileTime(path.data(), Self->isFolder,
             Args->Year, Args->Month, Args->Day, Args->Hour, Args->Minute, Args->Second);
 
@@ -2398,7 +2398,7 @@ The Position will always remain at zero if the file object represents a folder.
 static ERR SET_Position(extFile *Self, int64_t Value)
 {
    if (Self->initialised()) {
-      return acSeekStart(Self, Value);
+      return Self->seekStart(Value);
    }
    else {
       Self->Position = Value;
@@ -2483,13 +2483,13 @@ static ERR SET_Size(extFile *Self, int64_t Size)
       if (Self->initialised()) return ERR::NoSupport;
       else Self->Size = Size;
 
-      if (Self->Position > Self->Size) acSeekStart(Self, Size);
+      if (Self->Position > Self->Size) Self->seekStart(Size);
       return ERR::Okay;
    }
 
    if (not Self->initialised()) {
       Self->Size = Size;
-      if (Self->Position > Self->Size) acSeekStart(Self, Size);
+      if (Self->Position > Self->Size) Self->seekStart(Size);
       return ERR::Okay;
    }
 
@@ -2498,9 +2498,9 @@ static ERR SET_Size(extFile *Self, int64_t Size)
 
    if (!GET_ResolvedPath(Self, path)) {
       if (winSetEOF(path.data(), Size)) {
-         acSeek(Self, 0.0, SEEK::END);
+         Self->seekEnd(0);
          Self->Size = Size;
-         if (Self->Position > Self->Size) acSeekStart(Self, Size);
+         if (Self->Position > Self->Size) Self->seekStart(Size);
          return ERR::Okay;
       }
       else {
@@ -2519,7 +2519,7 @@ static ERR SET_Size(extFile *Self, int64_t Size)
    if (not ftruncate64(Self->Handle, Size)) {
    #endif
       Self->Size = Size;
-      if (Self->Position > Self->Size) acSeekStart(Self, Size);
+      if (Self->Position > Self->Size) Self->seekStart(Size);
       return ERR::Okay;
    }
    else {
@@ -2544,7 +2544,7 @@ static ERR SET_Size(extFile *Self, int64_t Size)
                      if (write(Self->Handle, &c, 1) IS 1) {
                         lseek64(Self->Handle, Self->Position, SEEK_SET);
                         Self->Size = Size;
-                        if (Self->Position > Self->Size) acSeekStart(Self, Size);
+                        if (Self->Position > Self->Size) Self->seekStart(Size);
                         return ERR::Okay;
                      }
                      else return convert_errno(errno, ERR::SystemCall);

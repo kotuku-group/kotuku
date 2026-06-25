@@ -648,9 +648,9 @@ class extVectorFilter : public objVectorFilter {
    extFilterEffect *Effects;           // Pointer to the first effect in the chain.
    extFilterEffect *LastEffect;
    std::vector<std::unique_ptr<filter_bitmap>> Bank;
-   TClipRectangle<int> VectorClip;           // Clipping region of the vector client (reflects the vector bounds)
+   TClipRectangle<int> VectorClip;     // Clipping region of the vector client (reflects the vector bounds)
    uint8_t BankIndex;
-   double BoundWidth, BoundHeight; // Filter boundary, computed on acDraw()
+   double BoundWidth, BoundHeight;     // Filter boundary, computed on acDraw()
    double TargetX, TargetY, TargetWidth, TargetHeight; // Target boundary, computed on acDraw()
    bool Rendered;
    bool Disabled;
@@ -667,6 +667,8 @@ class extVectorFilter : public objVectorFilter {
       AspectRatio    = VFA::MEET; // Scale X/Y values independently
       ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
    }
+
+   ~extVectorFilter();
 };
 
 class extFilterEffect : public objFilterEffect {
@@ -854,6 +856,13 @@ class extVectorScene : public objVectorScene {
    double GammaLUTValue = 1.0;
 };
 
+inline extVectorFilter::~extVectorFilter()
+{
+   acClear(this);
+   if (SourceGraphic) FreeResource(SourceGraphic);
+   if (SourceScene) FreeResource(SourceScene);
+}
+
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
 
@@ -892,6 +901,13 @@ class extVectorViewport : public extVector {
       vpClipOwner = nullptr;
       vpClipConfiguring = false;
       vpSeenShareVersion = 0;
+      vpAspectRatio = ARF::MEET|ARF::X_MID|ARF::Y_MID;
+      vpOverflowX   = VOF::VISIBLE;
+      vpOverflowY   = VOF::VISIBLE;
+
+      // NB: vpTargetWidth and vpTargetHeight are not set to a default because we need to know if the client has
+      // intentionally avoided setting the viewport and/or viewbox dimensions (which typically means that the viewport
+      // will expand to fit the parent).
    }
 };
 

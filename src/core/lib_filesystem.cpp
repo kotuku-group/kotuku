@@ -62,6 +62,7 @@ typedef int HANDLE;
 #include <condition_variable>
 #include <memory>
 #include <bit>
+#include <chrono>
 
 #ifdef _WIN32
  #include <io.h>
