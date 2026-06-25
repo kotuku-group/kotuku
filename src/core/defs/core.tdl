@@ -1231,6 +1231,12 @@ template <pcObject T> inline ERR FreeResource(T *Object) {
    return FreeResource(Object->UID);
 }
 
+template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
+inline ERR FreeResource(T *) {
+   static_assert(pcComplete<T>, "FreeResource() cannot be called with a pointer to an incomplete type.");
+   return ERR::NullArgs;
+}
+
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);

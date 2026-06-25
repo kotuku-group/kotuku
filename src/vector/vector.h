@@ -642,11 +642,7 @@ class extVectorFilter : public objVectorFilter {
       ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
    }
 
-   ~extVectorFilter() {
-      acClear(this);
-      if (SourceGraphic) FreeResource(SourceGraphic); 
-      if (SourceScene)   FreeResource(SourceScene);   
-   }
+   ~extVectorFilter();
 };
 
 class extFilterEffect : public objFilterEffect {
@@ -833,6 +829,13 @@ class extVectorScene : public objVectorScene {
    std::array<int, 256> GammaLUT; // Lazily built; valid only when GammaLUTValue matches Gamma
    double GammaLUTValue = 1.0;
 };
+
+inline extVectorFilter::~extVectorFilter()
+{
+   acClear(this);
+   if (SourceGraphic) FreeResource(SourceGraphic);
+   if (SourceScene) FreeResource(SourceScene);
+}
 
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
