@@ -42,7 +42,7 @@ end
 function buildScene()
    glWaveVP = glViewport.new('VectorViewport', { name='vp_gradient', x = 0, y = 20, xOffset = 0, yOffset=0, overflow='hidden', buffered = true })
    glWave = glWaveVP.new('VectorWave', { name='wave',
-      x = 0, y = 0, length='100%', amplitude = glAmplitude, fill='white', stroke='black', strokeWidth=1, thickness=10,
+      x = '2%', y = 0, length='96%', amplitude = glAmplitude, fill='white', stroke='black', strokeWidth=1, thickness=10,
       decay = glDecay, close = glClose, frequency = glFrequency
    })
 
