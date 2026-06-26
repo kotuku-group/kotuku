@@ -14,7 +14,7 @@ Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&g
 
 -END-
 
-TODO: Add support for BUTT, ROUND, SQUARE caps when Thickness > 0
+TODO: Allow the line cap and join styles to be configured when Thickness > 0 (currently fixed to ROUND).
 
 *********************************************************************************************************************/
 
@@ -161,108 +161,27 @@ static void add_sawtooth_vertices(extVectorWave *Vector, agg::path_storage &Path
    }
 }
 
-struct wave_point {
-   double x;
-   double y;
-};
-
-static bool get_unit_direction(const wave_point &Start, const wave_point &End, double &X, double &Y)
+static void apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale)
 {
-   double dx = End.x - Start.x;
-   double dy = End.y - Start.y;
-   double length = sqrt((dx * dx) + (dy * dy));
-   if (length <= 0.00000001) return false;
+   // The centreline path is converted into a filled outline using AGG's stroke generator.  This is more robust than
+   // a hand-rolled vertex offset because the stroker resolves inner-corner overlap at the sharp peaks that occur with
+   // high frequencies.  Without it, independently offset vertices on the concave side of each peak cross over,
+   // producing the self-intersecting artefacts visible as small 'X' shapes at the wave tips.
 
-   X = dx / length;
-   Y = dy / length;
-   return true;
-}
+   if (Path.total_vertices() < 2) return;
 
-static wave_point wave_normal(double Dx, double Dy)
-{
-   return { -Dy, Dx };
-}
+   agg::conv_stroke<agg::path_storage> stroke(Path);
+   stroke.width(Thickness);
+   stroke.line_join(VLJ::ROUND);  // Rounds the outer (convex) side of sharp peaks
+   stroke.inner_join(VIJ::ROUND); // Absorbs the inner (concave) side, preventing cross-over
+   stroke.line_cap(VLC::ROUND);
+   stroke.approximation_scale(ApproxScale > 0.0 ? ApproxScale : 1.0);
 
-static wave_point wave_offset_at_vertex(const std::vector<wave_point> &Points, int Index, double HalfThickness)
-{
-   int total = int(Points.size());
-   double prev_x = 0, prev_y = 0, next_x = 0, next_y = 0;
-   bool have_prev = (Index > 0) and get_unit_direction(Points[Index - 1], Points[Index], prev_x, prev_y);
-   bool have_next = (Index < total - 1) and get_unit_direction(Points[Index], Points[Index + 1], next_x, next_y);
-
-   if (have_prev and have_next) {
-      auto prev_normal = wave_normal(prev_x, prev_y);
-      auto next_normal = wave_normal(next_x, next_y);
-      double miter_x = prev_normal.x + next_normal.x;
-      double miter_y = prev_normal.y + next_normal.y;
-      double miter_length = sqrt((miter_x * miter_x) + (miter_y * miter_y));
-
-      if (miter_length > 0.00000001) {
-         miter_x /= miter_length;
-         miter_y /= miter_length;
-
-         double dot = (miter_x * next_normal.x) + (miter_y * next_normal.y);
-         if (std::abs(dot) > 0.1) {
-            double distance = HalfThickness / std::abs(dot);
-            double miter_limit = HalfThickness * 4.0;
-            if (distance > miter_limit) distance = miter_limit;
-            return { miter_x * distance, miter_y * distance };
-         }
-      }
-
-      return { next_normal.x * HalfThickness, next_normal.y * HalfThickness };
-   }
-   else if (have_next) {
-      auto normal = wave_normal(next_x, next_y);
-      return { normal.x * HalfThickness, normal.y * HalfThickness };
-   }
-   else if (have_prev) {
-      auto normal = wave_normal(prev_x, prev_y);
-      return { normal.x * HalfThickness, normal.y * HalfThickness };
-   }
-   else return { 0, 0 };
-}
-
-static void apply_wave_thickness(agg::path_storage &Path, double Thickness)
-{
-   std::vector<wave_point> points;
-   int total = Path.total_vertices();
-   points.reserve(total);
-
-   for (int i=0; i < total; i++) {
-      double x, y;
-      unsigned cmd = Path.vertex(i, &x, &y);
-      if (agg::is_vertex(cmd)) {
-         if (points.empty()) points.push_back({ x, y });
-         else {
-            auto &last = points.back();
-            double dx = x - last.x;
-            double dy = y - last.y;
-            if (((dx * dx) + (dy * dy)) > 0.000000000001) points.push_back({ x, y });
-         }
-      }
-   }
-
-   total = int(points.size());
-   if (total < 2) return;
-
-   std::vector<wave_point> offsets;
-   offsets.reserve(total);
-
-   double half_thickness = Thickness * 0.5;
-   for (int i=0; i < total; i++) {
-      offsets.push_back(wave_offset_at_vertex(points, i, half_thickness));
-   }
+   agg::path_storage outline;
+   outline.concat_path(stroke);
 
    Path.remove_all();
-   Path.move_to(points[0].x + offsets[0].x, points[0].y + offsets[0].y);
-   for (int i=1; i < total; i++) {
-      Path.line_to(points[i].x + offsets[i].x, points[i].y + offsets[i].y);
-   }
-
-   for (int i=total - 1; i >= 0; i--) {
-      Path.line_to(points[i].x - offsets[i].x, points[i].y - offsets[i].y);
-   }
+   Path.concat_path(outline);
 }
 
 //********************************************************************************************************************
@@ -354,7 +273,7 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
    }
 
    if (Vector->wThickness > 0) {
-      apply_wave_thickness(Path, Vector->wThickness);
+      apply_wave_thickness(Path, Vector->wThickness, Vector->Transform.scale());
    }
 
    if ((Vector->wClose != WVC::NIL) or (Vector->wThickness > 0)) Path.close_polygon();
