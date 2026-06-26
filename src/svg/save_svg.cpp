@@ -799,8 +799,24 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
       if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
       if (!wave->getPhase(dbl))     xml::NewAttrib(tag, "phase", dbl);
 
-      int close;
-      if (!wave->getClose(close)) xml::NewAttrib(tag, "close", close);
+      WVE envelope;
+      if (!wave->getEnvelope(envelope)) {
+         switch (envelope) {
+            case WVE::QUADRATIC:   xml::NewAttrib(tag, "envelope", "quadratic"); break;
+            case WVE::SMOOTHSTEP:  xml::NewAttrib(tag, "envelope", "smoothstep"); break;
+            case WVE::EXPONENTIAL: xml::NewAttrib(tag, "envelope", "exponential"); break;
+            default:               xml::NewAttrib(tag, "envelope", "linear"); break;
+         }
+      }
+
+      WVC close;
+      if (!wave->getClose(close)) {
+         switch (close) {
+            case WVC::TOP:    xml::NewAttrib(tag, "close", "top"); break;
+            case WVC::BOTTOM: xml::NewAttrib(tag, "close", "bottom"); break;
+            default: break;
+         }
+      }
       if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", dbl);
 
       ChildIndex = tag->ID;

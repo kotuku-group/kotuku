@@ -191,14 +191,19 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "PREVIOUS: Use the previous effect as input, or source graphic if no previous effect.")
 
   enums("WVC", { type="int", start=1, comment="Wave options." },
-    "NONE: Do not close the path.",
     "TOP: Close the path across the top of its area.",
     "BOTTOM: Close the path across the bottom of its area.")
 
   enums("WVS", { type="int", start=1, comment="Wave style options." },
-    "CURVED: Standard sine-wave curvature, this is the default.",
-    "ANGLED: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
+    "SMOOTH: Standard sine-wave curvature, this is the default.",
+    "TRIANGLE: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
     "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.")
+
+  enums("WVE", { type="int", start=1, comment="Wave envelope options." },
+    "LINEAR: Linear decay from start to end, this is the default.",
+    "QUADRATIC: Quadratic decay, weighted towards the end of the wave.",
+    "SMOOTHSTEP: Smoothstep decay with ease-in and ease-out.",
+    "EXPONENTIAL: Exponential decay, weighted strongly towards the end of the wave.")
 
   enums("GFALL", { type="int", start=1, comment="Gradient fall-off options." },
     "OPAQUE:     No fall-off.",
@@ -808,7 +813,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
+  klass('VectorWave', {
+    base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp',
+    references={ 'WVS', 'WVC', 'WVE' }, extended=true },
+  [[
+    ~int(WVE) Envelope
+    ~int(WVC) Close
+    ~int(WVS) Style
+  ]])
 
   klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' })
 

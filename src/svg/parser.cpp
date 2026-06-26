@@ -3477,13 +3477,19 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_height:    wave->setHeight(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_close:
                if (iequals("top", StrValue) or iequals("true", StrValue) or (StrValue IS "1")) {
-                  wave->setClose(int(WVC::TOP));
+                  wave->setClose(WVC::TOP);
                }
-               else if (iequals("bottom", StrValue)) wave->setClose(int(WVC::BOTTOM));
-               else wave->setClose(int(WVC::NIL));
+               else if (iequals("bottom", StrValue)) wave->setClose(WVC::BOTTOM);
+               else wave->setClose(WVC::NIL);
                return ERR::Okay;
             case SVF_amplitude: wave->setAmplitude(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_decay:     wave->setDecay(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_envelope:
+               if (iequals("quadratic", StrValue)) wave->setEnvelope(WVE::QUADRATIC);
+               else if (iequals("smoothstep", StrValue)) wave->setEnvelope(WVE::SMOOTHSTEP);
+               else if (iequals("exponential", StrValue)) wave->setEnvelope(WVE::EXPONENTIAL);
+               else wave->setEnvelope(WVE::LINEAR);
+               return ERR::Okay;
             case SVF_frequency: wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_phase:     wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_thickness: wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;

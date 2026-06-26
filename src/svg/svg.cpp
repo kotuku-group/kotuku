@@ -320,6 +320,7 @@ static constexpr auto SVF_elevation           = strhash("elevation");
 static constexpr auto SVF_ellipse             = strhash("ellipse");
 static constexpr auto SVF_enable_background   = strhash("enable-background");
 static constexpr auto SVF_end                 = strhash("end");
+static constexpr auto SVF_envelope            = strhash("envelope");
 static constexpr auto SVF_exclusion           = strhash("exclusion");
 static constexpr auto SVF_expanded            = strhash("expanded");
 static constexpr auto SVF_exponent            = strhash("exponent");
