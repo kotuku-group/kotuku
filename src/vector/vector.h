@@ -534,8 +534,8 @@ class extGradientContour : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientContour";
    using create = kt::Create<extGradientContour>;
 
-   Unit Floor = Unit(0);
-   Unit Multiplier = Unit(1);
+   double Floor = 0;
+   double Multiplier = 1;
 
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from

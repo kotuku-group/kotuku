@@ -92,7 +92,7 @@ Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, Unit &Value)
+static ERR GRADIENTDISTAL_SET_Floor(extGradientDistal *Self, double Value)
 {
    if (Value < 0) return ERR::OutOfRange;
    Self->Floor = Value;
@@ -111,7 +111,7 @@ Multiplier &lt; 10`.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, Unit &Value)
+static ERR GRADIENTDISTAL_SET_Multiplier(extGradientDistal *Self, double Value)
 {
    if ((Value < 0.01) or (Value > 10)) return ERR::OutOfRange;
    Self->Multiplier = Value;
@@ -165,8 +165,8 @@ static ERR GRADIENTDISTAL_SET_OuterFall(extGradientDistal *Self, GFALL Value)
 #include "gradient_distal_def.cpp"
 
 static const FieldArray clGradientDistalFields[] = {
-   { "Floor",       FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_Floor },
-   { "Multiplier",  FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_Multiplier },
+   { "Floor",       FDF_DOUBLE|FDF_RW, nullptr, GRADIENTDISTAL_SET_Floor },
+   { "Multiplier",  FDF_DOUBLE|FDF_RW, nullptr, GRADIENTDISTAL_SET_Multiplier },
    { "Radius",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_Radius },
    { "InnerRadius", FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerRadius },
    { "InnerFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },

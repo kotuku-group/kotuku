@@ -1278,10 +1278,29 @@ class objDisplay : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getManufacturer(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + 184));
+      return ERR::Okay;
+   }
+
    inline ERR getChipset(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      Value = *((std::string *)(((int8_t *)this) + 216));
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplay(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + 248));
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplayMfr(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + 280));
+      return ERR::Okay;
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 312));
+      return ERR::Okay;
    }
 
    inline ERR getGamma(std::span<double> &Value) noexcept {
@@ -1300,18 +1319,6 @@ class objDisplay : public Object {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getDisplay(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getDisplayMfr(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getInsideWidth(int &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->GetValue(this, &Value);
@@ -1319,17 +1326,6 @@ class objDisplay : public Object {
 
    inline ERR getInsideHeight(int &Value) noexcept {
       auto field = &this->Class->Dictionary[33];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getManufacturer(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getOpacity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
       return field->GetValue(this, &Value);
    }
 
@@ -1408,6 +1404,11 @@ class objDisplay : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setOpacity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setGamma(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x80101508, &Value);
@@ -1421,11 +1422,6 @@ class objDisplay : public Object {
    inline ERR setVDensity(const int Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setResizeFeedback(const FUNCTION Value) noexcept {

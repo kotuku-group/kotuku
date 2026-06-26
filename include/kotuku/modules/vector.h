@@ -1694,27 +1694,27 @@ class objGradientContour : public objGradient {
 
    // Customised field getting
 
-   inline ERR getFloor(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 280));
+   inline ERR getFloor(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 280));
       return ERR::Okay;
    }
 
-   inline ERR getMultiplier(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 296));
+   inline ERR getMultiplier(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setFloor(const Unit Value) noexcept {
+   inline ERR setFloor(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setMultiplier(const Unit Value) noexcept {
+   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };
@@ -1813,47 +1813,47 @@ class objGradientDistal : public objGradient {
 
    // Customised field getting
 
-   inline ERR getFloor(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 280));
+   inline ERR getFloor(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 280));
       return ERR::Okay;
    }
 
-   inline ERR getMultiplier(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 296));
+   inline ERR getMultiplier(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 312));
+      Value = *((Unit *)(((int8_t *)this) + 296));
       return ERR::Okay;
    }
 
    inline ERR getInnerRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 328));
+      Value = *((Unit *)(((int8_t *)this) + 312));
       return ERR::Okay;
    }
 
    inline ERR getInnerFall(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 344));
+      Value = *((int *)(((int8_t *)this) + 328));
       return ERR::Okay;
    }
 
    inline ERR getOuterFall(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 348));
+      Value = *((int *)(((int8_t *)this) + 332));
       return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setFloor(const Unit Value) noexcept {
+   inline ERR setFloor(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setMultiplier(const Unit Value) noexcept {
+   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setRadius(const Unit Value) noexcept {

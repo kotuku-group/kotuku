@@ -3,7 +3,7 @@
 // where the result is concatenated into a larger string (such as a percentage); plain attribute values are handled
 // by xml::NewAttrib() directly.
 
-static std::string fmt_num(double Value)
+inline std::string fmt_num(double Value)
 {
    return xml::attrib_to_string(Value);
 }
@@ -218,17 +218,18 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
             else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
                auto contour = (objGradientContour *)gradient;
-               Unit val;
-               if ((!error) and (!contour->getFloor(val))) set_dimension(tag, "floor", val);
-               if ((!error) and (!contour->getMultiplier(val))) set_dimension(tag, "multiplier", val);
+               double val;
+               if ((!error) and (!contour->getFloor(val))) xml::NewAttrib(tag, "floor", fmt_num(val));
+               if ((!error) and (!contour->getMultiplier(val))) xml::NewAttrib(tag, "multiplier", fmt_num(val));
             }
             else if (def->classID() IS CLASSID::GRADIENTDISTAL) {
                auto distal = (objGradientDistal *)gradient;
-               Unit val;
-               if ((!error) and (!distal->getFloor(val))) set_dimension(tag, "floor", val);
-               if ((!error) and (!distal->getMultiplier(val))) set_dimension(tag, "multiplier", val);
-               if ((!error) and (!distal->getRadius(val)) and (val.defined()) and (double(val) > 0)) {
-                  set_dimension(tag, "radius", val);
+               double val;
+               Unit unit;
+               if ((!error) and (!distal->getFloor(val))) xml::NewAttrib(tag, "floor", fmt_num(val));
+               if ((!error) and (!distal->getMultiplier(val))) xml::NewAttrib(tag, "multiplier", fmt_num(val));
+               if ((!error) and (!distal->getRadius(unit)) and (unit.defined()) and (unit > 0.0)) {
+                  set_dimension(tag, "radius", unit);
                }
             }
             else if (def->classID() IS CLASSID::GRADIENTRADIAL) {

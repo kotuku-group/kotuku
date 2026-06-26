@@ -203,7 +203,7 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
                else if (stop.Offset > 1.0) stop.Offset = 1.0;
             }
             else if (iequals("transform", name)) {
-               stop.Transform = value.c_str();
+               stop.Transform = value;
             }
             else log.warning("Unable to process stop attribute '%s'", name.c_str());
          }
@@ -334,7 +334,7 @@ static double read_time(const std::string_view Value)
 //********************************************************************************************************************
 // Designed for reading unit values such as '50%' and '6px'.  The returned value is scaled to pixels.
 
-static double read_unit(std::string_view &Value, int64_t *FieldID)
+static double read_unit(std::string_view &Value)
 {
    const double dpi = 96.0; // TODO: Needs to be derived from the display
 
@@ -373,13 +373,12 @@ static double read_unit(std::string_view &Value, int64_t *FieldID)
 // NOTE: It would be possible to deprecate this in future if the viewport host is given a viewbox area of (0 0 1 1)
 // as it should be.
 
-inline void set_double_units(OBJECTPTR Object, FIELD FieldID, const std::string_view Value, VUNIT Units)
+inline Unit parse_units(const std::string_view Value, VUNIT Units)
 {
-   auto field = FieldID;
-   auto v = Value;
-   double num = read_unit(v, &field);
-   if (Units IS VUNIT::BOUNDING_BOX) Object->set(field, Unit(num, FD_SCALED));
-   else Object->set(field, num);
+   auto v = std::string_view(Value);
+   double num = read_unit(v);
+   if (Units IS VUNIT::BOUNDING_BOX) return Unit(num, FD_SCALED);
+   else return Unit(num);
 }
 
 //********************************************************************************************************************
@@ -542,7 +541,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
          for (auto &inherit : Self->Inherit) {
             OBJECTPTR ref;
-            if (!Self->Scene->findDef(inherit.ID.c_str(), &ref)) {
+            if (!Self->Scene->findDef(inherit.ID, &ref)) {
                inherit.Object->set(FID_Inherit, ref);
             }
             else log.warning("Failed to resolve ID %s for inheritance.", inherit.ID.c_str());

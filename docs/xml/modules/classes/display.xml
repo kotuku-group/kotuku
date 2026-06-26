@@ -495,7 +495,7 @@
     <field>
       <name>Chipset</name>
       <comment>String describing the graphics chipset.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>STRING</type>
       <description>
 <p>This string describes the graphic card's chipset, if known.</p>
@@ -505,7 +505,7 @@
     <field>
       <name>Display</name>
       <comment>String describing the display (e.g. model name of the monitor).</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>STRING</type>
       <description>
 <p>This string describes the display device that is connected to the user's graphics card.</p>
@@ -515,7 +515,7 @@
     <field>
       <name>DisplayMfr</name>
       <comment>String describing the display manufacturer.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>STRING</type>
       <description>
 <p>This string names the manufacturer of the user's display device.</p>
@@ -611,7 +611,7 @@
     <field>
       <name>Manufacturer</name>
       <comment>String describing the manufacturer of the graphics hardware.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>STRING</type>
       <description>
 <p>The string in this field returns the name of the manufacturer that created the user's graphics card.  If this information is not detectable, a <code>NULL</code> pointer is returned.</p>
@@ -661,7 +661,7 @@
     <field>
       <name>Opacity</name>
       <comment>Determines the level of translucency applied to the display window (hosted displays only).</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field determines the translucency level applied to a hosted display window, expressed as a normalised value.  The default setting is 1, which makes the display fully opaque.  Lower values make the window more transparent where the host platform supports translucent windows.</p>
