@@ -573,8 +573,8 @@ class extGradientDistal : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientDistal";
    using create = kt::Create<extGradientDistal>;
 
-   Unit Floor = Unit(0);
-   Unit Multiplier = Unit(1);
+   double Floor = 0;
+   double Multiplier = 1;
    Unit Radius = Unit(0);
    Unit InnerRadius = Unit(0);
    GFALL InnerFall = GFALL::SMOOTHSTEP; // Alpha fall-off curve for the interior fade
@@ -599,8 +599,8 @@ class extGradientVoronoi : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
    using create = kt::Create<extGradientVoronoi>;
 
-   Unit Floor = Unit(0);
-   Unit Multiplier = Unit(1);
+   double Floor = 0;
+   double Multiplier = 1;
    kt::vector<VoronoiPoint> Points; // Optional list of Voronoi feature points provided by the client
    double HeightMin = 1.0;
    double HeightMax = 1.0;

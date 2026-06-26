@@ -178,8 +178,7 @@ end
    assert((edge.green > edge.red) and (edge.green > edge.blue),
       'Path outline should map to the green ramp midpoint (got ' ..
       edge.red .. ',' .. edge.green .. ',' .. edge.blue .. ')')
-   assert(edge.green > 120,
-      'Outline colour should be a strong green near the 0.5 stop (got green ' .. edge.green .. ')')
+   assert(edge.green > 120, 'Outline colour should be a strong green near the 0.5 stop (got green ' .. edge.green .. ')')
 end
 
 @Test function InteriorShadesTowardFirstStop()
@@ -427,7 +426,7 @@ end
 @Test function RadiusFieldRoundTrips()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, radius=15, stops=rampStops() })
-   assert(math.abs(gradient.radius - 15) < 0.001, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
+   assert(gradient.radius ≈ 15, 'Radius field should round-trip (got ' .. gradient.radius .. ')')
 end
 
 @Test function FloorAndMultiplierFieldsRoundTrip()
@@ -436,18 +435,15 @@ end
       units=VUNIT_BOUNDING_BOX, floor=0.25, multiplier=1.5, stops=rampStops()
    })
 
-   assert(math.abs(gradient.floor - 0.25) < 0.001,
-      'Floor field should round-trip (got ' .. gradient.floor .. ')')
-   assert(math.abs(gradient.multiplier - 1.5) < 0.001,
-      'Multiplier field should round-trip (got ' .. gradient.multiplier .. ')')
+   assert(gradient.floor ≈ 0.25, 'Floor field should round-trip (got ' .. gradient.floor .. ')')
+   assert(gradient.multiplier ≈ 1.5, 'Multiplier field should round-trip (got ' .. gradient.multiplier .. ')')
 end
 
 @Test function InnerRadiusRoundTrips()
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local gradient = scene.new('GradientDistal', { units=VUNIT_BOUNDING_BOX, innerRadius=12, stops=rampStops() })
 
-   assert(math.abs(gradient.innerRadius - 12) < 0.001,
-      'InnerRadius field should round-trip (got ' .. gradient.innerRadius .. ')')
+   assert(gradient.innerRadius ≈ 12, 'InnerRadius field should round-trip (got ' .. gradient.innerRadius .. ')')
 end
 
 @Test function InnerRadiusFadesInterior()
