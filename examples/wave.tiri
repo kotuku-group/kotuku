@@ -11,18 +11,19 @@ used to generate various waveforms.
    import 'gui/combobox'
    import 'gui/slider'
 
-local glWindow, glViewport, glWaveVP
-local glWave
-local glDecay = 1
-local glAmplitude = 50
-local glClose = 'top'
-local glFrequency = 6
-MIN_DECAY = -4
-MAX_DECAY = 4
-MIN_FREQUENCY = 0.01
-MAX_FREQUENCY = 100
-MIN_AMPLITUDE = 0
-MAX_AMPLITUDE = 500
+local glWindow, glViewport, glWaveVP, glWave
+
+glDecay = 1
+glAmplitude = 50
+glClose = 'top'
+glFrequency = 6
+
+MIN_DECAY <const> = -4
+MAX_DECAY <const> = 4
+MIN_FREQUENCY <const> = 0.01
+MAX_FREQUENCY <const> = 100
+MIN_AMPLITUDE <const> = 0
+MAX_AMPLITUDE <const> = 500
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -153,9 +154,7 @@ end
 
    glWindow = gui.window({ title='Wave Demo', insideWidth=1024, insideHeight=800 })
    glViewport = glWindow:clientViewport({
-      aspectRatio = ARF_MEET,
-      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-      end
+      aspectRatio = ARF_MEET
    })
 
    buildScene()
