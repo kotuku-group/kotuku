@@ -195,6 +195,314 @@ class RSTREAM;
 #include "dunit.h"
 
 //********************************************************************************************************************
+// stream_char provides indexing to specific characters in the stream.  It is designed to handle positional changes so
+// that text string boundaries can be crossed without incident.
+//
+// The index and offset are set to -1 if the stream_char is invalidated.
+
+struct stream_char {
+   INDEX index;     // Byte code position within the stream
+   size_t offset;   // Specific character offset within the bc_text.text string
+
+   stream_char() : index(-1), offset(-1) { }
+   stream_char(INDEX pIndex, uint32_t pOffset) : index(pIndex), offset(pOffset) { }
+   stream_char(INDEX pIndex) : index(pIndex), offset(0) { }
+
+   bool operator==(const stream_char &Other) const {
+      return (this->index IS Other.index) and (this->offset IS Other.offset);
+   }
+
+   bool operator<(const stream_char &Other) const {
+      if (this->index < Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset < Other.offset)) return true;
+      else return false;
+   }
+
+   bool operator>(const stream_char &Other) const {
+      if (this->index > Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset > Other.offset)) return true;
+      else return false;
+   }
+
+   bool operator<=(const stream_char &Other) const {
+      if (this->index < Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset <= Other.offset)) return true;
+      else return false;
+   }
+
+   bool operator>=(const stream_char &Other) const {
+      if (this->index > Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset >= Other.offset)) return true;
+      else return false;
+   }
+
+   void operator+=(const int Value) {
+      offset += Value;
+   }
+
+   inline void reset() { index = -1; offset = -1; }
+   inline bool valid() { return index != -1; }
+
+   inline void set(INDEX pIndex, uint32_t pOffset = 0) {
+      index  = pIndex;
+      offset = pOffset;
+   }
+
+   inline INDEX prev_code() {
+      index--;
+      if (index < 0) { index = -1; offset = -1; }
+      else offset = 0;
+      return index;
+   }
+
+   inline INDEX next_code() {
+      offset = 0;
+      index++;
+      return index;
+   }
+
+   // NB: None of these support unicode.
+
+   uint8_t get_char(RSTREAM &);
+   uint8_t get_char(RSTREAM &, int);
+   uint8_t get_prev_char(RSTREAM &);
+   uint8_t get_prev_char_or_inline(RSTREAM &);
+   void erase_char(RSTREAM &); // Erase a character OR an escape code.
+   void next_char(RSTREAM &);
+   void prev_char(RSTREAM &);
+};
+
+//********************************************************************************************************************
+// Basic font caching on an index basis.
+
+struct font_entry {
+   APTR handle;
+   std::string face;
+   std::string style;
+   FontMetrics metrics; // Derived from vec::GetFontMetrics() at the time of caching
+   int font_size; // 72 DPI pixel size
+   ALIGN align;
+   int16_t space_width = 0; // Cached pixel width of ' ' (matches m_space_width type)
+   double zero_width = 0;   // Cached pixel width of '0' (for DU::CHAR unit conversion)
+
+   font_entry(APTR pHandle, const std::string_view pFace, const std::string_view pStyle, double pSize) :
+      handle(pHandle), face(pFace), style(pStyle), font_size(pSize), align(ALIGN::NIL) {
+      vec::GetFontMetrics(pHandle, &metrics);
+      double kerning = 0;
+      space_width = int16_t(vec::CharWidth(pHandle, ' ', 0, &kerning) + kerning);
+      kerning = 0;
+      zero_width = vec::CharWidth(pHandle, '0', 0, &kerning) + kerning;
+   }
+
+   ~font_entry() { }
+
+   font_entry(font_entry &&other) noexcept { // Move constructor
+      handle      = other.handle;
+      metrics     = other.metrics;
+      font_size   = other.font_size;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
+      other.handle = nullptr;
+   }
+
+   font_entry(const font_entry &other) { // Copy constructor
+      handle      = other.handle;
+      font_size   = other.font_size;
+      metrics     = other.metrics;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
+   }
+
+   font_entry& operator=(font_entry &&other) noexcept { // Move assignment
+      if (this IS &other) return *this;
+      handle      = other.handle;
+      font_size   = other.font_size;
+      metrics     = other.metrics;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
+      other.handle = nullptr;
+      return *this;
+   }
+
+   font_entry& operator=(const font_entry& other) { // Copy assignment
+      if (this IS &other) return *this;
+      handle      = other.handle;
+      font_size   = other.font_size;
+      metrics     = other.metrics;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
+      return *this;
+   }
+
+   // NB: FontMetrics are not reported identically by all backends.
+   // Bitmap fonts expose Height as the full region above the baseline, while FreeType-backed fonts may expose Ascent
+   // for that role instead.
+
+   double descent() const {
+      auto gap = metrics.LineSpacing - metrics.Height - metrics.Descent;
+      return metrics.Descent + gap;
+   }
+};
+
+//********************************************************************************************************************
+// Refer to layout::new_segment().  A segment represents graphical content, which can be in the form of text,
+// graphics or both.  A segment can consist of one line only - so if the layout process encounters a boundary causing
+// wordwrap then a new segment must be created.
+
+struct doc_segment {
+   stream_char start;       // Starting index (including character if text)
+   stream_char stop;        // Stop at this index/character
+   stream_char trim_stop;   // The stopping point when whitespace is removed
+   FloatRect area;          // Dimensions of the segment.
+   double  descent;         // The largest descent (gutter) value in pixels after taking into account all fonts used on the line
+   double  align_width;     // Full width of this segment if it were non-breaking
+   RSTREAM *stream;         // The stream that this segment refers to
+   bool    edit;            // true if this segment represents content that can be edited
+   bool    allow_merge;     // true if this segment can be merged with siblings that have allow_merge set to true
+
+   inline double x(double Advance, FSO StyleOptions) {
+      if ((StyleOptions & FSO::ALIGN_CENTER) != FSO::NIL) return Advance + ((align_width - area.Width) * 0.5);
+      else if ((StyleOptions & FSO::ALIGN_RIGHT) != FSO::NIL) return Advance + (align_width - area.Width);
+      else return Advance;
+   }
+
+   inline double y(ALIGN VAlign, font_entry *Font) {
+      if ((VAlign & ALIGN::TOP) != ALIGN::NIL) return area.Y + Font->metrics.Ascent;
+      else if ((VAlign & ALIGN::VERTICAL) != ALIGN::NIL) {
+         const double avail_space = area.Height - descent;
+         return area.Y + avail_space - ((avail_space - Font->metrics.Ascent) * 0.5);
+      }
+      else return area.Y + area.Height - descent;
+   }
+};
+
+struct doc_clip {
+   double left = 0, top = 0, right = 0, bottom = 0;
+   INDEX index = 0; // The stream index of the object/table/item that is creating the clip.
+   bool transparent = false; // If true, wrapping will not be performed around the clip region.
+   std::string name;
+
+   doc_clip() = default;
+
+   doc_clip(double pLeft, double pTop, double pRight, double pBottom, int pIndex, bool pTransparent, const std::string &pName) :
+      left(pLeft), top(pTop), right(pRight), bottom(pBottom), index(pIndex), transparent(pTransparent), name(pName) {
+
+      if ((right - left > 20000) or (bottom - top > 20000)) {
+         kt::Log log;
+         log.warning("%s set invalid clip dimensions: %.0f,%.0f,%.0f,%.0f", name.c_str(), left, top, right, bottom);
+         right = left;
+         bottom = top;
+      }
+   }
+};
+
+struct doc_edit {
+   int max_chars;
+   std::string name;
+   std::string on_enter, on_exit, on_change;
+   std::vector<std::pair<std::string, std::string>> args;
+   bool line_breaks;
+
+   doc_edit() : max_chars(-1), args(0), line_breaks(false) { }
+};
+
+struct bc_link;
+struct bc_cell;
+
+struct mouse_over {
+   std::string function; // name of function to call.
+   double top, left, bottom, right;
+   int element_id;
+};
+
+struct tablecol {
+   double preset_width = 0;
+   double min_width = 0;   // For assisting layout
+   double width = 0;
+   bool preset_width_rel = false;
+};
+
+//********************************************************************************************************************
+
+struct link_activated {
+   std::map<std::string, std::string> Values;  // All key-values associated with the link.
+};
+
+//********************************************************************************************************************
+// Every instruction in the document stream is represented by a stream_code entity.  The code refers to what the thing
+// is, while the UID hash refers to further information in the Codes table.
+
+struct stream_code {
+   SCODE code;  // Type
+   BYTECODE uid; // Lookup for the Codes table
+
+   stream_code() : code(SCODE::NIL), uid(0) { }
+   stream_code(SCODE pCode, BYTECODE pID) : code(pCode), uid(pID) { }
+};
+
+//********************************************************************************************************************
+
+class entity {
+public:
+   BYTECODE uid;   // Unique identifier for lookup
+   SCODE code = SCODE::NIL; // Byte code
+
+   entity() { uid = alloc_bytecode_id(); }
+   entity(SCODE pCode) : code(pCode) { uid = alloc_bytecode_id(); }
+};
+
+//********************************************************************************************************************
+
+static ERR  activate_cell_edit(extDocument *, int, stream_char);
+static ERR  add_document_class(void);
+static int add_tabfocus(extDocument *, TT, BYTECODE);
+static void advance_tabfocus(extDocument *, int8_t);
+static void deactivate_edit(extDocument *, bool);
+static ERR  extract_script(extDocument *, std::string_view, objScript **, std::string &, std::string &);
+static void error_dialog(std::string_view, const std::string_view);
+static void error_dialog(std::string_view, ERR);
+static SEGINDEX find_segment(std::vector<doc_segment> &, stream_char, bool);
+static int  find_tabfocus(extDocument *, TT, BYTECODE);
+static ERR  flash_cursor(extDocument *, int64_t, int64_t);
+static int getutf8(CSTRING, int *);
+static ERR  insert_text(extDocument *, RSTREAM *, stream_char &, const std::string_view, bool);
+static ERR  insert_xml(extDocument *, RSTREAM *, objXML *, const objXML::TAGS &, int, STYLE = STYLE::NIL, IPF = IPF::NIL);
+static ERR  key_event(objVectorViewport *, KQ, KEY, int);
+static void layout_doc(extDocument *);
+static ERR  load_doc(extDocument *, std::string_view, bool, ULD = ULD::NIL);
+static void notify_disable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_enable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_focus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_free_script_context(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_lostfocus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static ERR  feedback_view(objVectorViewport *, FM);
+static void process_parameters(extDocument *, const std::string_view);
+static std::string_view read_unit(std::string_view, double &, bool &);
+static void redraw(extDocument *, bool);
+static ERR  report_event(extDocument *, DEF, entity *, KEYVALUE *);
+static void reset_cursor(extDocument *);
+static ERR  resolve_fontx_by_index(extDocument *, stream_char, double &);
+static int  safe_file_path(extDocument *, std::string_view);
+static void set_focus(extDocument *, int, CSTRING);
+static void show_bookmark(extDocument *, std::string_view);
+static std::string stream_to_string(RSTREAM &, stream_char, stream_char);
+static ERR  unload_doc(extDocument *, ULD = ULD::NIL);
+static bool valid_objectid(extDocument *, OBJECTID);
+static bool view_area(extDocument *, double, double, double, double);
+
+//********************************************************************************************************************
 // UI hooks for the client
 
 struct ui_hooks {
@@ -284,35 +592,6 @@ struct edit_cell {
 
 //********************************************************************************************************************
 
-struct link_activated {
-   std::map<std::string, std::string> Values;  // All key-values associated with the link.
-};
-
-//********************************************************************************************************************
-// Every instruction in the document stream is represented by a stream_code entity.  The code refers to what the thing
-// is, while the UID hash refers to further information in the Codes table.
-
-struct stream_code {
-   SCODE code;  // Type
-   BYTECODE uid; // Lookup for the Codes table
-
-   stream_code() : code(SCODE::NIL), uid(0) { }
-   stream_code(SCODE pCode, BYTECODE pID) : code(pCode), uid(pID) { }
-};
-
-//********************************************************************************************************************
-
-class entity {
-public:
-   BYTECODE uid;   // Unique identifier for lookup
-   SCODE code = SCODE::NIL; // Byte code
-
-   entity() { uid = alloc_bytecode_id(); }
-   entity(SCODE pCode) : code(pCode) { uid = alloc_bytecode_id(); }
-};
-
-//********************************************************************************************************************
-
 class docresource {
 public:
    OBJECTID object_id;
@@ -384,90 +663,6 @@ struct case_insensitive_map {
          [](unsigned char Left, unsigned char Right) {
             return std::tolower(Left) < std::tolower(Right);
          });
-   }
-};
-
-//********************************************************************************************************************
-// Basic font caching on an index basis.
-
-struct font_entry {
-   APTR handle;
-   std::string face;
-   std::string style;
-   FontMetrics metrics; // Derived from vec::GetFontMetrics() at the time of caching
-   int font_size; // 72 DPI pixel size
-   ALIGN align;
-   int16_t space_width = 0; // Cached pixel width of ' ' (matches m_space_width type)
-   double zero_width = 0;   // Cached pixel width of '0' (for DU::CHAR unit conversion)
-
-   font_entry(APTR pHandle, const std::string_view pFace, const std::string_view pStyle, double pSize) :
-      handle(pHandle), face(pFace), style(pStyle), font_size(pSize), align(ALIGN::NIL) {
-      vec::GetFontMetrics(pHandle, &metrics);
-      double kerning = 0;
-      space_width = int16_t(vec::CharWidth(pHandle, ' ', 0, &kerning) + kerning);
-      kerning = 0;
-      zero_width = vec::CharWidth(pHandle, '0', 0, &kerning) + kerning;
-   }
-
-   ~font_entry() { }
-
-   font_entry(font_entry &&other) noexcept { // Move constructor
-      handle      = other.handle;
-      metrics     = other.metrics;
-      font_size   = other.font_size;
-      face        = other.face;
-      style       = other.style;
-      align       = other.align;
-      space_width = other.space_width;
-      zero_width  = other.zero_width;
-      other.handle = nullptr;
-   }
-
-   font_entry(const font_entry &other) { // Copy constructor
-      handle      = other.handle;
-      font_size   = other.font_size;
-      metrics     = other.metrics;
-      face        = other.face;
-      style       = other.style;
-      align       = other.align;
-      space_width = other.space_width;
-      zero_width  = other.zero_width;
-   }
-
-   font_entry& operator=(font_entry &&other) noexcept { // Move assignment
-      if (this IS &other) return *this;
-      handle      = other.handle;
-      font_size   = other.font_size;
-      metrics     = other.metrics;
-      face        = other.face;
-      style       = other.style;
-      align       = other.align;
-      space_width = other.space_width;
-      zero_width  = other.zero_width;
-      other.handle = nullptr;
-      return *this;
-   }
-
-   font_entry& operator=(const font_entry& other) { // Copy assignment
-      if (this IS &other) return *this;
-      handle      = other.handle;
-      font_size   = other.font_size;
-      metrics     = other.metrics;
-      face        = other.face;
-      style       = other.style;
-      align       = other.align;
-      space_width = other.space_width;
-      zero_width  = other.zero_width;
-      return *this;
-   }
-
-   // NB: FontMetrics are not reported identically by all backends.
-   // Bitmap fonts expose Height as the full region above the baseline, while FreeType-backed fonts may expose Ascent
-   // for that role instead.
-
-   double descent() const {
-      auto gap = metrics.LineSpacing - metrics.Height - metrics.Descent;
-      return metrics.Descent + gap;
    }
 };
 
@@ -545,162 +740,6 @@ public:
 
 struct bc_font_end : public entity {
    bc_font_end() : entity(SCODE::FONT_END) { }
-};
-
-//********************************************************************************************************************
-// stream_char provides indexing to specific characters in the stream.  It is designed to handle positional changes so
-// that text string boundaries can be crossed without incident.
-//
-// The index and offset are set to -1 if the stream_char is invalidated.
-
-struct stream_char {
-   INDEX index;     // Byte code position within the stream
-   size_t offset;   // Specific character offset within the bc_text.text string
-
-   stream_char() : index(-1), offset(-1) { }
-   stream_char(INDEX pIndex, uint32_t pOffset) : index(pIndex), offset(pOffset) { }
-   stream_char(INDEX pIndex) : index(pIndex), offset(0) { }
-
-   bool operator==(const stream_char &Other) const {
-      return (this->index IS Other.index) and (this->offset IS Other.offset);
-   }
-
-   bool operator<(const stream_char &Other) const {
-      if (this->index < Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset < Other.offset)) return true;
-      else return false;
-   }
-
-   bool operator>(const stream_char &Other) const {
-      if (this->index > Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset > Other.offset)) return true;
-      else return false;
-   }
-
-   bool operator<=(const stream_char &Other) const {
-      if (this->index < Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset <= Other.offset)) return true;
-      else return false;
-   }
-
-   bool operator>=(const stream_char &Other) const {
-      if (this->index > Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset >= Other.offset)) return true;
-      else return false;
-   }
-
-   void operator+=(const int Value) {
-      offset += Value;
-   }
-
-   inline void reset() { index = -1; offset = -1; }
-   inline bool valid() { return index != -1; }
-
-   inline void set(INDEX pIndex, uint32_t pOffset = 0) {
-      index  = pIndex;
-      offset = pOffset;
-   }
-
-   inline INDEX prev_code() {
-      index--;
-      if (index < 0) { index = -1; offset = -1; }
-      else offset = 0;
-      return index;
-   }
-
-   inline INDEX next_code() {
-      offset = 0;
-      index++;
-      return index;
-   }
-
-   // NB: None of these support unicode.
-
-   uint8_t get_char(RSTREAM &);
-   uint8_t get_char(RSTREAM &, int);
-   uint8_t get_prev_char(RSTREAM &);
-   uint8_t get_prev_char_or_inline(RSTREAM &);
-   void erase_char(RSTREAM &); // Erase a character OR an escape code.
-   void next_char(RSTREAM &);
-   void prev_char(RSTREAM &);
-};
-
-//********************************************************************************************************************
-// Refer to layout::new_segment().  A segment represents graphical content, which can be in the form of text,
-// graphics or both.  A segment can consist of one line only - so if the layout process encounters a boundary causing
-// wordwrap then a new segment must be created.
-
-struct doc_segment {
-   stream_char start;       // Starting index (including character if text)
-   stream_char stop;        // Stop at this index/character
-   stream_char trim_stop;   // The stopping point when whitespace is removed
-   FloatRect area;          // Dimensions of the segment.
-   double  descent;         // The largest descent (gutter) value in pixels after taking into account all fonts used on the line
-   double  align_width;     // Full width of this segment if it were non-breaking
-   RSTREAM *stream;         // The stream that this segment refers to
-   bool    edit;            // true if this segment represents content that can be edited
-   bool    allow_merge;     // true if this segment can be merged with siblings that have allow_merge set to true
-
-   inline double x(double Advance, FSO StyleOptions) {
-      if ((StyleOptions & FSO::ALIGN_CENTER) != FSO::NIL) return Advance + ((align_width - area.Width) * 0.5);
-      else if ((StyleOptions & FSO::ALIGN_RIGHT) != FSO::NIL) return Advance + (align_width - area.Width);
-      else return Advance;
-   }
-
-   inline double y(ALIGN VAlign, font_entry *Font) {
-      if ((VAlign & ALIGN::TOP) != ALIGN::NIL) return area.Y + Font->metrics.Ascent;
-      else if ((VAlign & ALIGN::VERTICAL) != ALIGN::NIL) {
-         const double avail_space = area.Height - descent;
-         return area.Y + avail_space - ((avail_space - Font->metrics.Ascent) * 0.5);
-      }
-      else return area.Y + area.Height - descent;
-   }
-};
-
-struct doc_clip {
-   double left = 0, top = 0, right = 0, bottom = 0;
-   INDEX index = 0; // The stream index of the object/table/item that is creating the clip.
-   bool transparent = false; // If true, wrapping will not be performed around the clip region.
-   std::string name;
-
-   doc_clip() = default;
-
-   doc_clip(double pLeft, double pTop, double pRight, double pBottom, int pIndex, bool pTransparent, const std::string &pName) :
-      left(pLeft), top(pTop), right(pRight), bottom(pBottom), index(pIndex), transparent(pTransparent), name(pName) {
-
-      if ((right - left > 20000) or (bottom - top > 20000)) {
-         kt::Log log;
-         log.warning("%s set invalid clip dimensions: %.0f,%.0f,%.0f,%.0f", name.c_str(), left, top, right, bottom);
-         right = left;
-         bottom = top;
-      }
-   }
-};
-
-struct doc_edit {
-   int max_chars;
-   std::string name;
-   std::string on_enter, on_exit, on_change;
-   std::vector<std::pair<std::string, std::string>> args;
-   bool line_breaks;
-
-   doc_edit() : max_chars(-1), args(0), line_breaks(false) { }
-};
-
-struct bc_link;
-struct bc_cell;
-
-struct mouse_over {
-   std::string function; // name of function to call.
-   double top, left, bottom, right;
-   int element_id;
-};
-
-struct tablecol {
-   double preset_width = 0;
-   double min_width = 0;   // For assisting layout
-   double width = 0;
-   bool preset_width_rel = false;
 };
 
 //********************************************************************************************************************
@@ -1355,6 +1394,10 @@ class extDocument : public objDocument {
    inline void invalidate_text_width_cache() {
       WidthCacheGeneration++;
       if (!WidthCacheGeneration) WidthCacheGeneration = 1;
+   }
+
+   extDocument() {
+      unload_doc(this);
    }
 };
 

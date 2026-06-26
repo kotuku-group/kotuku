@@ -39,7 +39,6 @@ static const struct ActionArray clVectorPatternActions[] = {
    { AC::Draw, VECTORPATTERN_Draw },
    { AC::FreePlacement, VECTORPATTERN_FreePlacement },
    { AC::Init, VECTORPATTERN_Init },
-   { AC::NewObject, VECTORPATTERN_NewObject },
    { AC::NewPlacement, VECTORPATTERN_NewPlacement },
    { AC::NIL, nullptr }
 };

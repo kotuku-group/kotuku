@@ -390,16 +390,6 @@ exit:
    return error;
 }
 
-//********************************************************************************************************************
-
-static ERR IMAGE_Free(extImage *Self)
-{
-   if (Self->prvFile) { FreeResource(Self->prvFile); Self->prvFile = nullptr; }
-   if (Self->Bitmap)  { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-   if (Self->Mask)    { FreeResource(Self->Mask); Self->Mask = nullptr; }
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -ACTION-
@@ -494,13 +484,6 @@ static ERR IMAGE_Init(extImage *Self)
    }
 
    return ERR::NoSupport;
-}
-
-//********************************************************************************************************************
-
-static ERR IMAGE_NewObject(extImage *Self)
-{
-   return NewLocalObject(CLASSID::BITMAP, &Self->Bitmap);
 }
 
 //********************************************************************************************************************
