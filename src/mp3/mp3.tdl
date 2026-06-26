@@ -8,6 +8,8 @@ module({
   timestamp=20240611
 },
 function()
+  c_include('<kotuku/modules/audio.h>')
+
   restrict(function()
     loadFile(glPath .. 'common.tdl')
   end)

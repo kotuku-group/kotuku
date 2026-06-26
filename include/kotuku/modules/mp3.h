@@ -8,6 +8,8 @@
 
 #define MODVERSION_MP3 (1)
 
+#include <kotuku/modules/audio.h>
+
 class objMP3;
 
 // MP3 class definition
