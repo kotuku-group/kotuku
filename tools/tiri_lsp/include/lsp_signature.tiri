@@ -22,7 +22,10 @@ function signaturePositionToOffset(Doc:table, Position:table):num
       offset++
    end
 
-   offset += Position.character
+   -- Position.character counts UTF-16 code units; convert to bytes against the target line.
+   line_end = content:find('\n', offset) or (#content + 1)
+   line_text = content:sub(offset, line_end)
+   offset += utf16ColToByteCol(line_text, Position.character)
    if offset > #content then offset = #content end
    return offset
 end

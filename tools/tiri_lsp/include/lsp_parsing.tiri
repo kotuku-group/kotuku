@@ -19,6 +19,14 @@ rx_global_var   = <{ regex.new("^gl[A-Z]") }>
 rx_starts_upper = <{ regex.new("^[A-Z]") }>
 rx_all_upper    = <{ regex.new([[^[A-Z_]+$]]) }>
 
+-- Multi-byte (non-ASCII) operators recognised by the Tiri lexer, keyed by their UTF-8 byte sequence.  These are
+-- scanned byte-at-a-time by :sub(), so the tokeniser cannot match them with a single-character comparison and must
+-- look them up by their full sequence.  The value is the number of UTF-8 bytes the operator occupies.
+MULTIBYTE_OPERATORS = {
+   ['«'] = 2, ['»'] = 2, ['×'] = 2, ['÷'] = 2,
+   ['‥'] = 3, ['⁇'] = 3, ['≠'] = 3, ['≈'] = 3, ['≤'] = 3, ['≥'] = 3, ['↑'] = 3, ['▷'] = 3, ['⧺'] = 3
+}
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Semantic Token Encoder
 
@@ -278,8 +286,19 @@ global function tokenizeTiri(Source:str):array
       start_col = col
       start_pos = pos
 
+      -- Multi-byte operators (≈, ≠, ≤, ≥, «, », ×, ÷, ...).  :sub() is byte-indexed, so a single-byte comparison
+      -- can never match these; look up the full UTF-8 sequence and emit an operator token spanning its bytes.
+
+      op_bytes = (c:byte(0) or 0) >= 0x80 and (MULTIBYTE_OPERATORS[Source:sub(pos, pos + 3)] or
+         MULTIBYTE_OPERATORS[Source:sub(pos, pos + 2)]) or nil
+
+      if op_bytes then
+         addToken(line, col, op_bytes, 1, 0)  -- operator
+         pos += op_bytes
+         col += op_bytes
+
       -- Line comment: --
-      if c is '-' and pos + 1 < len and Source:sub(pos + 1, pos + 2) is '-' then
+      elseif c is '-' and pos + 1 < len and Source:sub(pos + 1, pos + 2) is '-' then
          comment_start = col
 
          -- Check for block comment --[[
@@ -705,10 +724,6 @@ global function tokenizeTiri(Source:str):array
             pos++
             col++
          end
-      elseif c is '≈' then -- approximate equality
-         addToken(line, col, 1, 1, 0)
-         pos++
-         col++
       elseif c is '&' then -- & bitwise AND
          addToken(line, col, 1, 1, 0)
          pos++
@@ -729,6 +744,29 @@ global function tokenizeTiri(Source:str):array
          pos++
          col++
       end
+   end
+
+   -- The scanner tracks byte columns, but the LSP wire format expects UTF-16 code units.  Convert each token's
+   -- start and length against its line so multi-byte operators (≈, ≠, ≤, ≥, ...) do not skew the highlighting of
+   -- everything that follows them on the same line.
+
+   line_starts = array<int>
+   line_starts:push(0)
+   scan = 0
+   while scan < len do
+      if Source:sub(scan, scan + 1) is '\n' then line_starts:push(scan + 1) end
+      scan++
+   end
+
+   for tok in values(tokens) do
+      line_start = line_starts[tok.line] or 0
+      line_end = Source:find('\n', line_start) or len
+      line_text = Source:sub(line_start, line_end)
+
+      byte_start = tok.char
+      byte_end = tok.char + tok.length
+      tok.char = byteColToUtf16Col(line_text, byte_start)
+      tok.length = byteColToUtf16Col(line_text, byte_end) - tok.char
    end
 
    return tokens
