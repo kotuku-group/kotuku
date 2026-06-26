@@ -3,7 +3,7 @@
   <ai:f n="Amplitude" c="Adjusts the generated wave amplitude." t="DOUBLE" a="GS"/>
   <ai:f n="Close" c="Closes the generated wave path at either the top or bottom." t="INT" a="GS"/>
   <ai:f n="Decay" c="Declares a rate of decay to apply to the wave amplitude." t="DOUBLE" a="GS"/>
-  <ai:f n="Degree" c="Declares the initial angle (in degrees) to use when generating the wave." t="DOUBLE" a="GS"/>
+  <ai:f n="Phase" c="Declares the initial phase, in degrees, to use when generating the wave." t="DOUBLE" a="GS"/>
   <ai:f n="Dimensions" c="Dimension flags define whether individual dimension fields contain fixed or scaled values." t="INT" a="GS"/>
   <ai:f n="Frequency" c="Defines the wave frequency (the distance between each wave)." t="DOUBLE" a="GS"/>
   <ai:f n="Height" c="The height of the area containing the wave." t="DOUBLE" a="GS"/>

@@ -143,8 +143,7 @@ static ERR TRANSITION_FreePlacement(extVectorTransition *Self) {
 
 static ERR TRANSITION_Init(extVectorTransition *Self)
 {
-   kt::Log log;
-   if (Self->Stops.size() < 2) return log.warning(ERR::FieldNotSet);
+   if (Self->Stops.size() < 2) return kt::Log().warning(ERR::FieldNotSet);
    return ERR::Okay;
 }
 

@@ -93,17 +93,6 @@
     </field>
 
     <field>
-      <name>Degree</name>
-      <comment>Declares the initial angle (in degrees) to use when generating the wave.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
-      <description>
-<p>The degree value defines the initial angle that is used when computing the sine wave.  The default is zero.</p>
-<p>Visually, changing the degree will affect the 'offset' of the generated wave.  Gradually incrementing the value will give the wave an appearance of moving from right to left.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Frequency</name>
       <comment>Defines the wave frequency (the distance between each wave).</comment>
       <access read="R" write="S">Read/Set</access>
@@ -124,13 +113,23 @@
     </field>
 
     <field>
+      <name>Phase</name>
+      <comment>Declares the initial phase, in degrees, to use when generating the wave.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The phase value defines the initial position that is used when computing the wave.  The default is zero.</p>
+<p>Visually, changing the phase will affect the 'offset' of the generated wave.  Gradually incrementing the value will give the wave an appearance of moving from right to left.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Style</name>
       <comment>Selects an alternative wave style.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>NOT IMPLEMENTED</p>
-<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field.</p>
+<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>CURVED</code> style generates a sine wave, <code>ANGLED</code> generates a triangular wave and <code>SAWTOOTH</code> generates a ramp with a sharp return edge.</p>
       </description>
     </field>
 

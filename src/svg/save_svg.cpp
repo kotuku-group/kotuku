@@ -797,7 +797,7 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
       if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
       if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
       if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
-      if (!wave->getDegree(dbl))    xml::NewAttrib(tag, "degree", dbl);
+      if (!wave->getPhase(dbl))     xml::NewAttrib(tag, "phase", dbl);
 
       int close;
       if (!wave->getClose(close)) xml::NewAttrib(tag, "close", close);

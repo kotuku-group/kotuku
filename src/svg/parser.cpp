@@ -3485,6 +3485,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_amplitude: wave->setAmplitude(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_decay:     wave->setDecay(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_frequency: wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_phase:     wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_thickness: wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;
          }
          break;

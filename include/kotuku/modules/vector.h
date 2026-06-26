@@ -4707,7 +4707,7 @@ class objVectorWave : public objVector {
       return ERR::Okay;
    }
 
-   inline ERR getDegree(double &Value) noexcept {
+   inline ERR getPhase(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1048));
       return ERR::Okay;
    }
@@ -4736,7 +4736,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -4756,7 +4756,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setFrequency(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4765,8 +4765,8 @@ class objVectorWave : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setDegree(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+   inline ERR setPhase(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4776,7 +4776,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setClose(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
+      auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

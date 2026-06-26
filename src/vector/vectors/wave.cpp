@@ -29,15 +29,49 @@ class extVectorWave : public extVector {
    double wAmplitude = 1.0;
    double wFrequency = 1.0;
    double wDecay = 1.0;
-   double wDegree = 0;
+   double wPhase = 0;
    double wThickness = 0;
    WVC wClose = WVC::NIL;
-   int wStyle = 0;
+   int wStyle = int(WVS::CURVED);
 
    extVectorWave() {
       GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
    }
 };
+
+//********************************************************************************************************************
+
+static double normalise_phase(double Phase)
+{
+   double phase = fmod(Phase, 360.0);
+   if (phase < 0.0) phase += 360.0;
+   return phase;
+}
+
+static double wave_angled(double Phase)
+{
+   double phase = normalise_phase(Phase);
+
+   if (phase < 90.0) return phase * (1.0 / 90.0);
+   else if (phase < 270.0) return 1.0 - ((phase - 90.0) * (1.0 / 90.0));
+   else return -1.0 + ((phase - 270.0) * (1.0 / 90.0));
+}
+
+static double wave_sawtooth(double Phase)
+{
+   return 1.0 - (normalise_phase(Phase) * (1.0 / 180.0));
+}
+
+static double wave_value(extVectorWave *Vector, double Phase)
+{
+   switch ((WVS)Vector->wStyle) {
+      case WVS::ANGLED:   return wave_angled(Phase);
+      case WVS::SAWTOOTH: return wave_sawtooth(Phase);
+      case WVS::CURVED:
+      case WVS::NIL:
+      default:            return sin(DEG2RAD * Phase);
+   }
+}
 
 //********************************************************************************************************************
 
@@ -66,7 +100,7 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
    const double amp = (height * 0.5) * Vector->wAmplitude;
    const double scale = 1.0 / Vector->Transform.scale(); // Essential for smooth curves when scale > 1.0
 
-   double x = 0, y = sin(DEG2RAD * Vector->wDegree) * amp + (height * 0.5);
+   double x = 0, y = wave_value(Vector, Vector->wPhase) * amp + (height * 0.5);
    if (Vector->Transition) apply_transition_xy(Vector->Transition, 0, &x, &y);
 
    if ((Vector->wClose IS WVC::NIL) or (Vector->wThickness > 0)) {
@@ -84,18 +118,18 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
    }
    else return;
 
-   // Sine wave generator.  This applies scaling so that the correct number of vertices are generated.  Also, the
+   // Wave generator.  This applies scaling so that the correct number of vertices are generated.  Also, the
    // last vertex is interpolated to end exactly at 360, ensuring that the path terminates accurately.
 
-   double degree = Vector->wDegree;
+   double phase = Vector->wPhase;
    double xscale = width * (1.0 / 360.0);
    double freq = Vector->wFrequency * scale;
    double angle;
    double last_x = x, last_y = y;
    if (Vector->wDecay IS 1.0) {
-      for (angle=scale; angle < 360; angle += scale, degree += freq) {
+      for (angle=scale; angle < 360; angle += scale, phase += freq) {
          double x = angle * xscale;
-         double y = (sin(DEG2RAD * degree) * amp) + (height * 0.5);
+         double y = (wave_value(Vector, phase) * amp) + (height * 0.5);
          if (Vector->Transition) apply_transition_xy(Vector->Transition, angle * (1.0 / 360.0), &x, &y);
          if ((std::abs(x - last_x) >= 0.5) or (std::abs(y - last_y) >= 0.5)) {
             Path.line_to(ox + x, oy + y);
@@ -103,34 +137,34 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
             last_y = y;
          }
       }
-      degree -= freq;
-      degree += freq * (360.0 - (angle - scale)) / scale;
+      phase -= freq;
+      phase += freq * (360.0 - (angle - scale)) / scale;
       double x = width;
-      double y = (sin(DEG2RAD * degree) * amp) + (height * 0.5);
+      double y = (wave_value(Vector, phase) * amp) + (height * 0.5);
       if (Vector->Transition) apply_transition_xy(Vector->Transition, angle * (1.0 / 360.0), &x, &y);
       Path.line_to(ox + x, oy + y);
    }
    else if (Vector->wDecay > 0) {
-      for (angle=scale; angle < 360; angle += scale, degree += freq) {
+      for (angle=scale; angle < 360; angle += scale, phase += freq) {
          double x = angle * xscale;
-         double y = (sin(DEG2RAD * degree) * amp) / exp((double)angle / decay) + (height * 0.5);
+         double y = (wave_value(Vector, phase) * amp) / exp((double)angle / decay) + (height * 0.5);
          if ((std::abs(x - last_x) >= 0.5) or (std::abs(y - last_y) >= 0.5)) {
             Path.line_to(ox + x, oy + y);
             last_x = x;
             last_y = y;
          }
       }
-      degree -= freq;
-      degree += freq * (360.0 - (angle - scale)) / scale;
+      phase -= freq;
+      phase += freq * (360.0 - (angle - scale)) / scale;
       double x = width;
-      double y = (sin(DEG2RAD * degree) * amp) / exp(360.0 / decay) + (height * 0.5);
+      double y = (wave_value(Vector, phase) * amp) / exp(360.0 / decay) + (height * 0.5);
       if (Vector->Transition) apply_transition_xy(Vector->Transition, angle * (1.0 / 360.0), &x, &y);
       Path.line_to(ox + x, oy + y);
    }
    else if (Vector->wDecay < 0) {
-      for (angle=scale; angle < 360; angle += scale, degree += freq) {
+      for (angle=scale; angle < 360; angle += scale, phase += freq) {
          double x = angle * xscale;
-         double y = (sin(DEG2RAD * degree) * amp) / log((double)angle / decay) + (height * 0.5);
+         double y = (wave_value(Vector, phase) * amp) / log((double)angle / decay) + (height * 0.5);
          if (Vector->Transition) apply_transition_xy(Vector->Transition, angle * (1.0 / 360.0), &x, &y);
          if ((std::abs(x - last_x) >= 0.5) or (std::abs(y - last_y) >= 0.5)) {
             Path.line_to(ox + x, oy + y);
@@ -138,10 +172,10 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
             last_y = y;
          }
       }
-      degree -= freq;
-      degree += freq * (360.0 - (angle - scale)) / scale;
+      phase -= freq;
+      phase += freq * (360.0 - (angle - scale)) / scale;
       double x = width;
-      double y = (sin(DEG2RAD * degree) * amp) / log(360.0 / decay) + (height * 0.5);
+      double y = (wave_value(Vector, phase) * amp) / log(360.0 / decay) + (height * 0.5);
       if (Vector->Transition) apply_transition_xy(Vector->Transition, angle * (1.0 / 360.0), &x, &y);
       Path.line_to(ox + x, oy + y);
    }
@@ -171,9 +205,7 @@ Move: Moves the vector to a new position.
 
 static ERR VECTORWAVE_Move(extVectorWave *Self, struct acMove *Args)
 {
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    if (Self->wX.scaled()) Self->wX = Unit((Self->wX * get_parent_width(Self)) + Args->DeltaX);
    else Self->wX = Unit(Self->wX + Args->DeltaX);
@@ -192,9 +224,7 @@ MoveToPoint: Moves the vector to a new fixed position.
 
 static ERR VECTORWAVE_MoveToPoint(extVectorWave *Self, struct acMoveToPoint *Args)
 {
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    if ((Args->Flags & MTF::RELATIVE) != MTF::NIL) {
       if ((Args->Flags & MTF::X) != MTF::NIL) Self->wX = Unit(Args->X, FD_SCALED);
@@ -278,18 +308,18 @@ static ERR VECTORWAVE_SET_Decay(extVectorWave *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Degree: Declares the initial angle (in degrees) to use when generating the wave.
+Phase: Declares the initial phase, in degrees, to use when generating the wave.
 
-The degree value defines the initial angle that is used when computing the sine wave.  The default is zero.
+The phase value defines the initial position that is used when computing the wave.  The default is zero.
 
-Visually, changing the degree will affect the 'offset' of the generated wave.  Gradually incrementing the value
+Visually, changing the phase will affect the 'offset' of the generated wave.  Gradually incrementing the value
 will give the wave an appearance of moving from right to left.
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_SET_Degree(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Phase(extVectorWave *Self, double Value)
 {
-   Self->wDegree = Value;
+   Self->wPhase = Value;
    reset_path(Self);
    return ERR::Okay;
 }
@@ -332,16 +362,21 @@ static ERR VECTORWAVE_SET_Height(extVectorWave *Self, Unit &Value)
 -FIELD-
 Style: Selects an alternative wave style.
 
-NOT IMPLEMENTED
-
 By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field.
+The `CURVED` style generates a sine wave, `ANGLED` generates a triangular wave and `SAWTOOTH` generates a ramp with a
+sharp return edge.
 
 *********************************************************************************************************************/
 
 static ERR VECTORWAVE_SET_Style(extVectorWave *Self, int Value)
 {
-   Self->wStyle = Value;
-   return ERR::Okay;
+   if ((Value IS int(WVS::NIL)) or (Value IS int(WVS::CURVED)) or (Value IS int(WVS::ANGLED)) or
+      (Value IS int(WVS::SAWTOOTH))) {
+      Self->wStyle = Value;
+      reset_path(Self);
+      return ERR::Okay;
+   }
+   else return ERR::InvalidValue;
 }
 
 /*********************************************************************************************************************
@@ -417,7 +452,7 @@ static const FieldArray clVectorWaveFields[] = {
    { "Amplitude",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Amplitude },
    { "Frequency",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Frequency },
    { "Decay",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Decay },
-   { "Degree",     FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Degree },
+   { "Phase",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Phase },
    { "Thickness",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Thickness },
    { "Close",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Close, &clVectorWaveWVC },
    { "Style",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Style, &clVectorWaveWVS },

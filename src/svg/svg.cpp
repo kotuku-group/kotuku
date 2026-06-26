@@ -479,6 +479,7 @@ static constexpr auto SVF_pattern             = strhash("pattern");
 static constexpr auto SVF_patternContentUnits = strhash("patternContentUnits");
 static constexpr auto SVF_patternTransform    = strhash("patternTransform");
 static constexpr auto SVF_patternUnits        = strhash("patternUnits");
+static constexpr auto SVF_phase               = strhash("phase");
 static constexpr auto SVF_phi                 = strhash("phi");
 static constexpr auto SVF_plus                = strhash("plus");
 static constexpr auto SVF_points              = strhash("points");
