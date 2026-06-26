@@ -100,6 +100,68 @@ global function markLineIndex(Doc:table, LineNo:num)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- UTF-16 <-> UTF-8 column conversion
+--
+-- LSP positions count characters in UTF-16 code units, whilst Tiri strings are byte-indexed.  Multi-byte operators
+-- such as ≈, ≠, ≤, ≥ occupy three UTF-8 bytes but a single UTF-16 unit, so edits and diagnostics on lines that
+-- contain them drift unless the column is converted.  The helpers below operate on a single line's byte text and
+-- treat the byte offset as the 0-based start used elsewhere by :sub(pos, pos + 1).
+--
+-- A UTF-8 lead byte determines both the codepoint's byte length and its UTF-16 unit count:
+--    0x00-0x7F : 1 byte,  1 unit
+--    0xC0-0xDF : 2 bytes, 1 unit
+--    0xE0-0xEF : 3 bytes, 1 unit
+--    0xF0-0xF7 : 4 bytes, 2 units (encoded as a surrogate pair in UTF-16)
+
+-- Return the UTF-8 byte length implied by a lead byte (defaults to 1 for ASCII and stray continuation bytes).
+
+function utf8SequenceLength(LeadByte:num):num
+   if LeadByte >= 0xF0 then return 4
+   elseif LeadByte >= 0xE0 then return 3
+   elseif LeadByte >= 0xC0 then return 2
+   end
+   return 1
+end
+
+-- Convert a UTF-16 column within LineText into a 0-based byte column.  Columns beyond the end of the line clamp to
+-- the line's byte length so that edits appending past the final character remain well-defined.
+
+global function utf16ColToByteCol(LineText:str, Utf16Col:num):num
+   len = #LineText
+   byte_pos = 0
+   units = 0
+
+   while units < Utf16Col and byte_pos < len do
+      lead = LineText:byte(byte_pos)   -- :byte() is 0-based
+      seq = utf8SequenceLength(lead)
+      byte_pos += seq
+      units += (seq is 4) and 2 or 1
+   end
+
+   if byte_pos > len then byte_pos = len end
+   return byte_pos
+end
+
+-- Convert a 0-based byte column within LineText into a UTF-16 column.  Used when byte-based columns from the parser
+-- or tokeniser are reported back to the client.
+
+global function byteColToUtf16Col(LineText:str, ByteCol:num):num
+   len = #LineText
+   if ByteCol > len then ByteCol = len end
+   byte_pos = 0
+   units = 0
+
+   while byte_pos < ByteCol do
+      lead = LineText:byte(byte_pos)   -- :byte() is 0-based
+      seq = utf8SequenceLength(lead)
+      byte_pos += seq
+      units += (seq is 4) and 2 or 1
+   end
+
+   return units
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- LSP Symbol Kinds (subset used for Tiri)
 
 global SYMBOL_KIND = {
@@ -403,6 +465,11 @@ global function computeDiagnostics(Doc:table)
             start_col, end_col = computeErrorRange(Doc, diag.line, diag.column)
          end
 
+         -- The parser reports byte columns; convert to UTF-16 for the client.
+         diag_line = getLine(Doc, diag.line) or ''
+         start_col = byteColToUtf16Col(diag_line, start_col)
+         end_col = byteColToUtf16Col(diag_line, end_col)
+
          lsp_diags:push({
             range = {
                start = { line = diag.line, character = start_col },
@@ -424,6 +491,11 @@ global function computeDiagnostics(Doc:table)
          if end_col <= start_col+1 then
             start_col, end_col = computeErrorRange(Doc, tip.line, tip.column)
          end
+
+         -- The parser reports byte columns; convert to UTF-16 for the client.
+         tip_line = getLine(Doc, tip.line) or ''
+         start_col = byteColToUtf16Col(tip_line, start_col)
+         end_col = byteColToUtf16Col(tip_line, end_col)
 
          lsp_diags:push({
             range = {

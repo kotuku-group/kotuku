@@ -9,7 +9,9 @@
 ----------------------------------------------------------------------------------------------------------------------
 -- Text Edit Helper
 
--- Convert line/character position to byte offset in document
+-- Convert line/character position to byte offset in document.  The LSP Character field counts UTF-16 code units,
+-- so it must be converted to bytes against the target line to stay aligned with multi-byte operators such as ≈.
+
 function positionToOffset(Content, Line, Character)
    offset = 0
    current_line = 0
@@ -22,8 +24,10 @@ function positionToOffset(Content, Line, Character)
       offset++
    end
 
-   -- Add character offset within the line
-   return offset + Character
+   -- Add the byte offset within the line, converting the UTF-16 column to bytes.
+   line_end = Content:find('\n', offset) or (#Content + 1)
+   line_text = Content:sub(offset, line_end)
+   return offset + utf16ColToByteCol(line_text, Character)
 end
 
 ----------------------------------------------------------------------------------------------------------------------

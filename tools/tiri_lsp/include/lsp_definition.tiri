@@ -113,15 +113,18 @@ function offsetToPosition(Content:str, Offset:num):table
    limit = Offset
    if limit > #Content then limit = #Content end
 
+   -- Character is reported as a UTF-16 column, so advance by whole UTF-8 sequences and count their unit width.
    while pos < limit do
       c = Content:sub(pos, pos + 1)
       if c is '\n' then
          line++
          character = 0
+         pos++
       else
-         character++
+         seq = utf8SequenceLength(Content:byte(pos))   -- :byte() is 0-based
+         character += (seq is 4) and 2 or 1
+         pos += seq
       end
-      pos++
    end
 
    return { line = line, character = character }
@@ -176,7 +179,10 @@ end
 
 function getStringAtPosition(Doc:table, Line:num, Character:num):table
    line_text = getLine(Doc, Line)
-   if not line_text or Character >= #line_text then return nil end
+   if not line_text then return nil end
+
+   byte_character = utf16ColToByteCol(line_text, Character)
+   if byte_character >= #line_text then return nil end
 
    pos = 0
    while pos < #line_text do
@@ -191,7 +197,7 @@ function getStringAtPosition(Doc:table, Line:num, Character:num):table
             if sc is '\\' and pos + 1 < #line_text then
                pos += 2
             elseif sc is quote then
-               if Character > start_pos and Character < pos then
+               if byte_character > start_pos and byte_character < pos then
                   return {
                      text = line_text:sub(start_pos + 1, pos),
                      quoteStart = start_pos,

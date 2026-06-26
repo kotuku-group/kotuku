@@ -13,7 +13,10 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
    -- context: 'identifier', 'method_call', 'field_access', 'module_call'
 
    lineText = getLine(Doc, Line)
-   if not lineText or Character >= #lineText then return nil end
+   if not lineText then return nil end
+
+   byte_character = utf16ColToByteCol(lineText, Character)
+   if byte_character >= #lineText then return nil end
 
    -- Helper to check if character is identifier-like
    function isIdent(C)
@@ -21,8 +24,8 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
    end
 
    -- Find token boundaries
-   startCol = Character
-   endCol = Character
+   startCol = byte_character
+   endCol = byte_character
 
    -- Scan backwards to find token start
    while startCol > 0 do
@@ -83,8 +86,8 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
    return {
       text     = token,
       object   = precedingIdent,
-      startCol = startCol,
-      endCol   = endCol,
+      startCol = byteColToUtf16Col(lineText, startCol),
+      endCol   = byteColToUtf16Col(lineText, endCol),
       context  = context
    }
 end
