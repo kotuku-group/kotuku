@@ -624,7 +624,7 @@ static constexpr auto glKotukuSVGNamespace = strhash("http://www.kotuku.dev/xmln
 
 static ERR  animation_timer(extSVG *, int64_t, int64_t);
 static void convert_styles(objXML::TAGS &);
-static double read_unit(std::string_view &, int64_t * = nullptr);
+static double read_unit(std::string_view &);
 
 static ERR  init_svg(void);
 static ERR  init_rsvg(void);

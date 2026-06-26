@@ -140,6 +140,11 @@ class Log { // C++ wrapper for Kotuku's log functionality
          #endif
          return Code;
       }
+
+      inline void fatal(ERR Code) {
+         FuncError(header, Code);
+         std::abort();
+      }
 };
 
 #pragma GCC diagnostic pop

@@ -61,7 +61,7 @@ Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_SET_Floor(extGradientVoronoi *Self, Unit &Value)
+static ERR GRADIENTVORONOI_SET_Floor(extGradientVoronoi *Self, double Value)
 {
    if (Value < 0) return ERR::OutOfRange;
    Self->Floor = Value;
@@ -129,7 +129,7 @@ Multiplier < 10`.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTVORONOI_SET_Multiplier(extGradientVoronoi *Self, Unit &Value)
+static ERR GRADIENTVORONOI_SET_Multiplier(extGradientVoronoi *Self, double Value)
 {
    if ((Value < 0.01) or (Value > 10)) return ERR::OutOfRange;
    Self->Multiplier = Value;
@@ -251,8 +251,8 @@ static ERR GRADIENTVORONOI_SET_WorleyMode(extGradientVoronoi *Self, WLF Value)
 #include "gradient_voronoi_def.cpp"
 
 static const FieldArray clGradientVoronoiFields[] = {
-   { "Floor",        FDF_UNIT|FDF_RW, nullptr, GRADIENTVORONOI_SET_Floor },
-   { "Multiplier",   FDF_UNIT|FDF_RW, nullptr, GRADIENTVORONOI_SET_Multiplier },
+   { "Floor",        FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_Floor },
+   { "Multiplier",   FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_Multiplier },
    { "Points",       FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENTVORONOI_SET_Points, "VoronoiPoint" },
    { "HeightMin",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_HeightMin },
    { "HeightMax",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTVORONOI_SET_HeightMax },

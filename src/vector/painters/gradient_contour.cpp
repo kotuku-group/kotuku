@@ -36,7 +36,7 @@ Multiplier`; the constraint against #Multiplier is enforced at initialisation.
 
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONTOUR_SET_Floor(extGradientContour *Self, Unit &Value)
+static ERR GRADIENTCONTOUR_SET_Floor(extGradientContour *Self, double Value)
 {
    if (Value < 0) return ERR::OutOfRange;
    Self->Floor = Value;
@@ -54,7 +54,7 @@ Multiplier < 10`.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, Unit &Value)
+static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, double Value)
 {
    if ((Value < 0.01) or (Value > 10)) return ERR::OutOfRange;
    Self->Multiplier = Value;
@@ -67,8 +67,8 @@ static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, Unit &Value)
 #include "gradient_contour_def.cpp"
 
 static const FieldArray clGradientContourFields[] = {
-   { "Floor",      FDF_UNIT|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Floor },
-   { "Multiplier", FDF_UNIT|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Multiplier },
+   { "Floor",      FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Floor },
+   { "Multiplier", FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Multiplier },
    END_FIELD
 };
 

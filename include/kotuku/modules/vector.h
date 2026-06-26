@@ -1694,27 +1694,27 @@ class objGradientContour : public objGradient {
 
    // Customised field getting
 
-   inline ERR getFloor(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 280));
+   inline ERR getFloor(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 280));
       return ERR::Okay;
    }
 
-   inline ERR getMultiplier(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 296));
+   inline ERR getMultiplier(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setFloor(const Unit Value) noexcept {
+   inline ERR setFloor(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setMultiplier(const Unit Value) noexcept {
+   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };
@@ -1813,47 +1813,47 @@ class objGradientDistal : public objGradient {
 
    // Customised field getting
 
-   inline ERR getFloor(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 280));
+   inline ERR getFloor(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 280));
       return ERR::Okay;
    }
 
-   inline ERR getMultiplier(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 296));
+   inline ERR getMultiplier(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 312));
+      Value = *((Unit *)(((int8_t *)this) + 296));
       return ERR::Okay;
    }
 
    inline ERR getInnerRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 328));
+      Value = *((Unit *)(((int8_t *)this) + 312));
       return ERR::Okay;
    }
 
    inline ERR getInnerFall(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 344));
+      Value = *((int *)(((int8_t *)this) + 328));
       return ERR::Okay;
    }
 
    inline ERR getOuterFall(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 348));
+      Value = *((int *)(((int8_t *)this) + 332));
       return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setFloor(const Unit Value) noexcept {
+   inline ERR setFloor(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setMultiplier(const Unit Value) noexcept {
+   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setRadius(const Unit Value) noexcept {
@@ -1896,53 +1896,53 @@ class objGradientVoronoi : public objGradient {
    // Customised field getting
 
    inline ERR getPoints(std::span<VoronoiPoint> &Value) noexcept {
-      auto ktv = (kt::vector<VoronoiPoint> *)(((int8_t *)this) + 312);
+      auto ktv = (kt::vector<VoronoiPoint> *)(((int8_t *)this) + 296);
       Value = std::span<VoronoiPoint>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
    inline ERR getWorleyMode(WLF &Value) noexcept {
-      Value = *((WLF *)(((int8_t *)this) + 372));
+      Value = *((WLF *)(((int8_t *)this) + 356));
       return ERR::Okay;
    }
 
    inline ERR getWorleyMetric(WLM &Value) noexcept {
-      Value = *((WLM *)(((int8_t *)this) + 376));
+      Value = *((WLM *)(((int8_t *)this) + 360));
       return ERR::Okay;
    }
 
-   inline ERR getFloor(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 280));
+   inline ERR getFloor(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 280));
       return ERR::Okay;
    }
 
-   inline ERR getMultiplier(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 296));
+   inline ERR getMultiplier(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
    inline ERR getHeightMin(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 336));
+      Value = *((double *)(((int8_t *)this) + 320));
       return ERR::Okay;
    }
 
    inline ERR getHeightMax(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 344));
+      Value = *((double *)(((int8_t *)this) + 328));
       return ERR::Okay;
    }
 
    inline ERR getJitter(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 352));
+      Value = *((double *)(((int8_t *)this) + 336));
       return ERR::Okay;
    }
 
    inline ERR getSeed(int64_t &Value) noexcept {
-      Value = *((int64_t *)(((int8_t *)this) + 360));
+      Value = *((int64_t *)(((int8_t *)this) + 344));
       return ERR::Okay;
    }
 
    inline ERR getPointCount(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 368));
+      Value = *((int *)(((int8_t *)this) + 352));
       return ERR::Okay;
    }
 
@@ -1964,14 +1964,14 @@ class objGradientVoronoi : public objGradient {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setFloor(const Unit Value) noexcept {
+   inline ERR setFloor(const double Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setMultiplier(const Unit Value) noexcept {
+   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setHeightMin(const double Value) noexcept {

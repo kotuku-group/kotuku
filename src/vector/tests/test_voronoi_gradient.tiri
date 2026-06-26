@@ -79,15 +79,15 @@ end
       jitter=0.5
    })
 
-   assert(math.abs(gradient.floor - 0.2) < 0.001, 'Floor field should round-trip')
-   assert(math.abs(gradient.multiplier - 1.8) < 0.001, 'Multiplier field should round-trip')
+   assert(gradient.floor ≈ 0.2, 'Floor field should round-trip')
+   assert(gradient.multiplier ≈ 1.8, 'Multiplier field should round-trip')
    assert(gradient.seed is 987654321, 'Seed field should round-trip')
    assert(gradient.pointCount is 19, 'PointCount field should round-trip')
    assert(gradient.worleyMode is WLF_F2_F1, 'WorleyMode field should round-trip')
    assert(gradient.worleyMetric is WLM_MANHATTAN, 'WorleyMetric field should round-trip')
-   assert(math.abs(gradient.heightMin - 0.25) < 0.001, 'HeightMin field should round-trip')
-   assert(math.abs(gradient.heightMax - 2.75) < 0.001, 'HeightMax field should round-trip')
-   assert(math.abs(gradient.jitter - 0.5) < 0.001, 'Jitter field should round-trip')
+   assert(gradient.heightMin ≈ 0.25, 'HeightMin field should round-trip')
+   assert(gradient.heightMax ≈ 2.75, 'HeightMax field should round-trip')
+   assert(gradient.jitter ≈ 0.5, 'Jitter field should round-trip')
 end
 
 @Test function UserspaceForcedToBoundingBox()

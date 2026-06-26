@@ -52,7 +52,7 @@ end
 
 @Test function SpanRoundTrips()
    local scene, gradient = newConicScene(VSPREAD_REPEAT, 0.25)
-   assert(math.abs(gradient.span - 0.25) < 0.001, 'Span should round-trip as a normalised turn fraction')
+   assert(gradient.span ≈ 0.25, 'Span should round-trip as a normalised turn fraction')
 end
 
 @Test function PadIgnoresSpan()

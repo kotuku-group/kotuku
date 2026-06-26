@@ -380,6 +380,12 @@ class extDisplay : public objDisplay {
    public:
    using create = kt::Create<extDisplay>;
 
+   std::string Manufacturer;
+   std::string Chipset;
+   std::string Display;
+   std::string DisplayMfr;
+   double Opacity;
+
    double Gamma[3];          // Red, green, blue gamma radioactivity indicator
    std::vector<struct resolution> Resolutions;
    FUNCTION  ResizeFeedback;
@@ -397,11 +403,67 @@ class extDisplay : public objDisplay {
    #else
       APTR   WindowHandle;
    #endif
-   float Opacity;
-   std::string Manufacturer;
-   std::string Chipset;
-   std::string Display;
-   std::string DisplayMfr;
+
+   extDisplay() {
+      if (NewLocalObject(CLASSID::BITMAP, &Bitmap) != ERR::Okay) {
+         kt::Log().fatal(ERR::NewObject);
+      }
+
+      OBJECTID id;
+      if (FindObject("SystemVideo", CLASSID::NIL, &id) != ERR::Okay) SetName(Bitmap, "SystemVideo");
+
+      if (not Name[0]) {
+         if (FindObject("SystemDisplay", CLASSID::NIL, &id) != ERR::Okay) SetName(this, "SystemDisplay");
+      }
+
+      #ifdef __xwindows__
+
+         Chipset      = "X11";
+         Display      = "X Windows";
+         DisplayMfr   = "N/A";
+         Manufacturer = "N/A";
+
+      #elif _WIN32
+
+         Chipset      = "Windows";
+         Display      = "Windows";
+         DisplayMfr   = "N/A";
+         Manufacturer = "N/A";
+
+      #elif _GLES_
+
+         Chipset      = "OpenGLES";
+         Display      = "OpenGL";
+         DisplayMfr   = "N/A";
+         Manufacturer = "N/A";
+
+      #else
+
+         Chipset      = "Unknown";
+         Display      = "Unknown";
+         DisplayMfr   = "Unknown";
+         Manufacturer = "Unknown";
+
+      #endif
+
+      Width       = 800;
+      Height      = 600;
+      RefreshRate = -1;
+      Gamma[0]    = 1.0;
+      Gamma[1]    = 1.0;
+      Gamma[2]    = 1.0;
+      Opacity     = 1.0;
+
+      #ifdef __xwindows__
+         DisplayType = DT::X11;
+      #elif _WIN32
+         DisplayType = DT::WINGDI;
+      #elif _GLES_
+         DisplayType = DT::GLES;
+      #else
+         DisplayType = DT::NATIVE;
+      #endif
+   }
 };
 
 extern void clean_clipboard(void);
