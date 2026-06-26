@@ -100,11 +100,11 @@ struct TiriBase {
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_TIRI_MODULE)
 extern struct TiriBase *TiriBase;
-namespace fl {
+namespace ti {
 template<class... Args> ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, Args... Tags) { return TiriBase->_SetVariable(Script,Name,Type,Tags...); }
 } // namespace
 #else
-namespace fl {
+namespace ti {
 extern ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...);
 } // namespace
 #endif // KOTUKU_STATIC

@@ -372,11 +372,12 @@ class extHTTP : public objHTTP {
       AuthAlgorithm  = "md5";
       KeepAlive      = true;
    }
+
+   ~extHTTP();
 };
 
 static ERR HTTP_Activate(extHTTP *);
 static ERR HTTP_Deactivate(extHTTP *);
-static ERR HTTP_Free(extHTTP *);
 static ERR HTTP_GetKey(extHTTP *, struct acGetKey *);
 static ERR HTTP_Init(extHTTP *);
 static ERR HTTP_SetKey(extHTTP *, struct acSetKey *);
@@ -978,28 +979,22 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 
 //********************************************************************************************************************
 
-static ERR HTTP_Free(extHTTP *Self)
+extHTTP::~extHTTP()
 {
-   if (Self->Socket) {
-      Self->Socket->set(FID_Feedback, (APTR)nullptr);
-      FreeResource(Self->Socket);
-      Self->Socket = nullptr;
+   if (Socket) {
+      Socket->set(FID_Feedback, (APTR)nullptr);
+      FreeResource(Socket);
    }
 
-   if (Self->AuthCallback.isScript()) UnsubscribeAction(Self->AuthCallback.Context, AC::Free);
-   if (Self->Incoming.isScript())     UnsubscribeAction(Self->Incoming.Context, AC::Free);
-   if (Self->StateChanged.isScript()) UnsubscribeAction(Self->StateChanged.Context, AC::Free);
-   if (Self->Outgoing.isScript())     UnsubscribeAction(Self->Outgoing.Context, AC::Free);
+   if (AuthCallback.isScript()) UnsubscribeAction(AuthCallback.Context, AC::Free);
+   if (Incoming.isScript())     UnsubscribeAction(Incoming.Context, AC::Free);
+   if (StateChanged.isScript()) UnsubscribeAction(StateChanged.Context, AC::Free);
+   if (Outgoing.isScript())     UnsubscribeAction(Outgoing.Context, AC::Free);
 
-   if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
-
-   if (Self->flInput)     { FreeResource(Self->flInput);     Self->flInput = nullptr; }
-   if (Self->flOutput)    { FreeResource(Self->flOutput);    Self->flOutput = nullptr; }
-   if (!Self->Password.empty()) {
-      secure_clear_memory(const_cast<char*>(Self->Password.data()), Self->Password.size());
-   }
-
-   return ERR::Okay;
+   if (TimeoutManager) UpdateTimer(TimeoutManager, 0);
+   if (flInput)  FreeResource(flInput);
+   if (flOutput) FreeResource(flOutput);
+   if (!Password.empty()) secure_clear_memory(const_cast<char*>(Password.data()), Password.size());
 }
 
 /*********************************************************************************************************************
