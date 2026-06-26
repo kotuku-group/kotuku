@@ -7,7 +7,7 @@
 FDEF argsSetVariable[] = { { "Error", FD_INT|FD_ERROR }, { "Script", FD_OBJECTPTR }, { "Name", FDF_CPPSTRING }, { "Type", FD_INT }, { "Variable", FD_TAGS }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
-   { (APTR)fl::SetVariable, "SetVariable", argsSetVariable },
+   { (APTR)ti::SetVariable, "SetVariable", argsSetVariable },
    { nullptr, nullptr, nullptr }
 };
 

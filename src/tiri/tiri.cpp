@@ -408,7 +408,8 @@ mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
-namespace fl {
+
+namespace ti {
 ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);

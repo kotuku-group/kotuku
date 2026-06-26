@@ -3,6 +3,9 @@
 set (MOD "mp3")
 set (INC_MOD_MP3 TRUE PARENT_SCOPE)
 
+idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
+
 add_library (${MOD})
 set_module_defaults (${MOD} "Mp3")
 target_sources (${MOD} PRIVATE "mp3.cpp")

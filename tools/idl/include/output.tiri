@@ -31,26 +31,28 @@ end
 -- Emit the class member storage declarations and any private or custom C++ blocks.
 
 function outputVisibleFields(Class:table, Private:str, Custom:str)
-   output('')
+   if classHasVisibleFields(Class) then
+      output('')
 
-   local max_len = 3 + Class.longestFieldType + 1 + 2
+      local max_len = 3 + Class.longestFieldType + 1 + 2
 
-   for f in values(Class.fields) do
-      if f.virtual then continue end
+      for f in values(Class.fields) do
+         if f.virtual then continue end
 
-      local left
-      local field_name = cName(f, true)
-      if field_name?? then
-         left = string.format(f'   %-{Class.longestType}s %s;', f.type, field_name)
-      else
-         left = string.format(f'   %-{Class.longestType}s;', f.type)
-      end
+         local left
+         local field_name = cName(f, true)
+         if field_name?? then
+            left = string.format(f'   %-{Class.longestType}s %s;', f.type, field_name)
+         else
+            left = string.format(f'   %-{Class.longestType}s;', f.type)
+         end
 
-      if f.comment?? then
-         local clean_comment = rx_comment_chars.replace(f.comment, '')
-         output(string.format('%-' .. max_len .. 's // %s', left, clean_comment))
-      else
-         output(left)
+         if f.comment?? then
+            local clean_comment = rx_comment_chars.replace(f.comment, '')
+            output(string.format('%-' .. max_len .. 's // %s', left, clean_comment))
+         else
+            output(left)
+         end
       end
    end
 
@@ -543,10 +545,7 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
    output('')
    output('   using create = kt::Create<obj' .. Class.name .. '>;')
 
-   if classHasVisibleFields(Class) then
-      outputVisibleFields(Class, Private, Custom)
-   end
-
+   outputVisibleFields(Class, Private, Custom)
    outputActionStubs(Class)
    outputNestedMethods(Class)
    outputFieldGetters(Class)
