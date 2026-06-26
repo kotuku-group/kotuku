@@ -100,6 +100,7 @@ capabilities.
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/strings.hpp>
 
@@ -615,49 +616,6 @@ static ERR SCINTILLA_Focus(extScintilla *Self)
    else return ERR::AccessObject;
 }
 
-//********************************************************************************************************************
-
-static ERR SCINTILLA_Free(extScintilla *Self, APTR)
-{
-   kt::Log log;
-
-   delete Self->API;
-   Self->API = nullptr;
-
-   if (Self->TimerID) { UpdateTimer(Self->TimerID, 0); Self->TimerID = 0; }
-
-   if ((Self->FocusID) and (Self->FocusID != Self->SurfaceID)) {
-
-      if (kt::ScopedObjectLock object(Self->FocusID, 500); object.granted()) {
-         UnsubscribeAction(*object, AC::NIL);
-      }
-   }
-
-   if (Self->SurfaceID) {
-      if (kt::ScopedObjectLock<objSurface> object(Self->SurfaceID, 500); object.granted()) {
-         object->removeCallback(C_FUNCTION(&draw_scintilla));
-         UnsubscribeAction(*object, AC::NIL);
-      }
-   }
-
-   /*if (Self->PointerLocked) {
-      RestoreCursor(PTR_DEFAULT, Self->UID);
-      Self->PointerLocked = FALSE;
-   }*/
-
-   if (Self->prvKeyEvent)  { UnsubscribeEvent(Self->prvKeyEvent); Self->prvKeyEvent = nullptr; }
-   if (Self->FileStream)   { FreeResource(Self->FileStream); Self->FileStream = nullptr; }
-   if (Self->Font)         { FreeResource(Self->Font);       Self->Font = nullptr; }
-   if (Self->BoldFont)     { FreeResource(Self->BoldFont);   Self->BoldFont = nullptr; }
-   if (Self->ItalicFont)   { FreeResource(Self->ItalicFont); Self->ItalicFont = nullptr; }
-   if (Self->BIFont)       { FreeResource(Self->BIFont);     Self->BIFont = nullptr; }
-
-   gfx::UnsubscribeInput(Self->InputHandle);
-
-   Self->~extScintilla();
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -981,48 +939,6 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    SCICALL(SCI_BEGINUNDOACTION);
    SCICALL(SCI_INSERTTEXT, pos, Args->String.data());
    SCICALL(SCI_ENDUNDOACTION);
-   return ERR::Okay;
-}
-
-//*****************************************************************************
-
-static ERR SCINTILLA_NewObject(extScintilla *Self, APTR)
-{
-   if (!NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Self->Font)) {
-      Self->Font->setFace("courier:10");
-      Self->LeftMargin  = 4;
-      Self->RightMargin = 30;
-      Self->AutoIndent  = TRUE;
-      Self->TabWidth    = 8;
-      Self->AllowTabs   = FALSE;
-
-      Self->BkgdColour.Red   = 255;
-      Self->BkgdColour.Green = 255;
-      Self->BkgdColour.Blue  = 255;
-      Self->BkgdColour.Alpha = 255;
-
-      Self->LineHighlight.Red   = 240;
-      Self->LineHighlight.Green = 240;
-      Self->LineHighlight.Blue  = 255;
-      Self->LineHighlight.Alpha = 255;
-
-      Self->CursorColour.Red   = 0;
-      Self->CursorColour.Green = 0;
-      Self->CursorColour.Blue  = 0;
-      Self->CursorColour.Alpha = 255;
-
-      Self->SelectFore.Red   = 255;
-      Self->SelectFore.Green = 255;
-      Self->SelectFore.Blue  = 255;
-      Self->SelectFore.Alpha = 255;
-
-      Self->SelectBkgd.Red   = 0;
-      Self->SelectBkgd.Green = 0;
-      Self->SelectBkgd.Blue  = 180;
-      Self->SelectBkgd.Alpha = 255;
-   }
-   else return ERR::NewObject;
-
    return ERR::Okay;
 }
 
@@ -2121,7 +2037,7 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
       if (CheckResourceExists(dialog_id) IS ERR::True) return;
    }
 
-   OBJECTPTR dialog;
+   objTiri *dialog;
    if (!NewObject(CLASSID::TIRI, &dialog)) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.tiri"));
 
@@ -2141,10 +2057,9 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
       else acSetKey(dialog, "message", Message);
 
       if ((!InitObject(dialog)) and (!acActivate(dialog))) {
-         kt::vector<std::string> *results;
-         int size;
-         if ((!dialog->get(FID_Results, results, size)) and (size > 0)) {
-            dialog_id = strtol((*results)[0].c_str(), nullptr, 0);
+         std::span<std::string> results;
+         if ((!dialog->getResults(results)) and (not results.empty())) {
+            dialog_id = svtonum<int>(results[0]);
          }
       }
    }
@@ -2403,6 +2318,41 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 #include "pan_menu.cxx"
 #include "pan_surface.cxx"
 #include "pan_listbox.cxx"
+
+//********************************************************************************************************************
+
+extScintilla::~extScintilla() {
+   delete API;
+
+   if (TimerID) UpdateTimer(TimerID, 0);
+
+   if ((FocusID) and (FocusID != SurfaceID)) {
+      if (kt::ScopedObjectLock object(FocusID, 500); object.granted()) {
+         UnsubscribeAction(*object, AC::NIL);
+      }
+   }
+
+   if (SurfaceID) {
+      if (kt::ScopedObjectLock<objSurface> object(SurfaceID, 500); object.granted()) {
+         object->removeCallback(C_FUNCTION(&draw_scintilla));
+         UnsubscribeAction(*object, AC::NIL);
+      }
+   }
+
+   /*if (PointerLocked) {
+      RestoreCursor(PTR_DEFAULT, UID);
+      PointerLocked = FALSE;
+   }*/
+
+   if (prvKeyEvent) UnsubscribeEvent(prvKeyEvent);
+   if (FileStream)  FreeResource(FileStream);
+   if (Font)        FreeResource(Font);
+   if (BoldFont)    FreeResource(BoldFont);
+   if (ItalicFont)  FreeResource(ItalicFont);
+   if (BIFont)      FreeResource(BIFont);
+
+   gfx::UnsubscribeInput(InputHandle);
+}
 
 //********************************************************************************************************************
 

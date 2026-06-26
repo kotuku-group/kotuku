@@ -321,6 +321,31 @@ class extPointer : public objPointer {
       CursorID = PTC::DEFAULT;
       ClickSlop = 2;
       ButtonClicks.resize(3); // 0 = LMB, 1 = RMB, 2 = MMB
+
+      Speed        = 160;
+      Acceleration = 0.8;
+      MaxSpeed     = 100;
+      WheelSpeed   = DEFAULT_WHEELSPEED;
+      DoubleClick  = 0.36;
+      ButtonOrder  = "123456789ABCDEF";
+
+      // Currently unused because all current targets have their own cursor management
+      #if 0
+      if (auto config = objConfig::create { fl::Path("user:config/pointer.cfg") }; config.ok()) {
+         config->read("POINTER", "Speed", Speed);
+         config->read("POINTER", "Acceleration", Acceleration);
+         config->read("POINTER", "MaxSpeed", MaxSpeed);
+         config->read("POINTER", "WheelSpeed", WheelSpeed);
+         config->read("POINTER", "DoubleClick", DoubleClick);
+         config->read("POINTER", "ButtonOrder", ButtonOrder);
+
+         if (DoubleClick < 0.2) DoubleClick = 0.2;
+
+         if (MaxSpeed < 2) MaxSpeed = 2;
+         else if (MaxSpeed > 200) MaxSpeed = 200;
+      }
+      #endif
+
    }
 };
 

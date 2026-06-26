@@ -76,7 +76,6 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::FreePlacement, DOCUMENT_FreePlacement },
    { AC::GetKey, DOCUMENT_GetKey },
    { AC::Init, DOCUMENT_Init },
-   { AC::NewObject, DOCUMENT_NewObject },
    { AC::NewPlacement, DOCUMENT_NewPlacement },
    { AC::Refresh, DOCUMENT_Refresh },
    { AC::SaveToObject, DOCUMENT_SaveToObject },

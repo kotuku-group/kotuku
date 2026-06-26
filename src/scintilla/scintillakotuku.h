@@ -37,6 +37,27 @@ class extScintilla : public objScintilla {
    uint16_t HoldModify:1;
    uint16_t AllowTabs:1;
    uint8_t  ScrollLocked;
+
+   extScintilla() {
+      if (NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Font) != ERR::Okay) {
+         kt::Log().fatal(ERR::NewObject);
+      }
+
+      Font->setFace("courier:10");
+      LeftMargin  = 4;
+      RightMargin = 30;
+      AutoIndent  = TRUE;
+      TabWidth    = 8;
+      AllowTabs   = FALSE;
+
+      BkgdColour    = RGB8 { 255, 255, 255, 255 };
+      LineHighlight = RGB8 { 240, 240, 255, 255 };
+      CursorColour  = RGB8 { 0, 0, 0, 255 };
+      SelectFore    = RGB8 { 255, 255, 255, 255 };
+      SelectBkgd    = RGB8 { 0, 0, 180, 255 };
+   }
+
+   ~extScintilla();
 };
 
 // This class inherits from ScintillaBase which inherits from Editor.  Responsible for a lot of the editing code.

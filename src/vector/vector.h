@@ -631,6 +631,16 @@ class extVectorPattern : public objVectorPattern, public SceneDef {
 
    objBitmap *Bitmap;
 
+   extVectorPattern() {
+      if (!NewLocalObject(CLASSID::VECTORSCENE, &Scene)) {
+         if (!NewObject(CLASSID::VECTORVIEWPORT, &Viewport)) {
+            SetOwner(Viewport, Scene);
+         }
+         else kt::Log().fatal(ERR::NewObject);
+      }
+      else kt::Log().fatal(ERR::NewObject);
+   }
+
    ~extVectorPattern();
 };
 
@@ -955,6 +965,8 @@ class extVectorPolygon : public extVector {
 
    std::vector<VectorPoint> Points;
    bool Closed:1;      // Polygons are closed (TRUE) and Polylines are open (FALSE)
+
+   extVectorPolygon();
 };
 
 class extVectorPath : public extVector, public SceneDef {

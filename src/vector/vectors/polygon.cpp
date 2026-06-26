@@ -171,17 +171,6 @@ static ERR VECTORPOLYGON_MoveToPoint(extVectorPolygon *Self, struct acMoveToPoin
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORPOLYGON_NewObject(extVectorPolygon *Self)
-{
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_polygon;
-   Self->Closed       = true;
-   Self->Points.push_back({ 0, 0 }); // Two blank points are needed on construction in order to satisfy polyline requirements.
-   Self->Points.push_back({ 0, 0 });
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Resize: Resize the polygon by its width and height.
@@ -409,6 +398,15 @@ static ERR POLY_SET_Y2(extVectorPolygon *Self, Unit &Value)
    Self->Points[1].Y = Value;
    reset_path(Self);
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+extVectorPolygon::extVectorPolygon() {
+   GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_polygon;
+   Closed       = true;
+   Points.push_back({ 0, 0 }); // Two blank points are needed on construction in order to satisfy polyline requirements.
+   Points.push_back({ 0, 0 });
 }
 
 //********************************************************************************************************************

@@ -1028,14 +1028,6 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
 }
 
 //********************************************************************************************************************
-
-static ERR DOCUMENT_NewObject(extDocument *Self)
-{
-   unload_doc(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
 // XML-safe element names for every SCODE entry.  Kept parallel to strCodes in document.cpp, but uses lowercase,
 // hyphenated tokens that are valid XML identifiers.  Used by the DATA::XML branch of ReadContent().
 

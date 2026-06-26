@@ -127,43 +127,6 @@ std::vector<sorted_segment> & extDocument::get_sorted_segments()
 
 struct layout; // Pre-def
 
-static ERR  activate_cell_edit(extDocument *, int, stream_char);
-static ERR  add_document_class(void);
-static int add_tabfocus(extDocument *, TT, BYTECODE);
-static void advance_tabfocus(extDocument *, int8_t);
-static void deactivate_edit(extDocument *, bool);
-static ERR  extract_script(extDocument *, std::string_view, objScript **, std::string &, std::string &);
-static void error_dialog(std::string_view, const std::string_view);
-static void error_dialog(std::string_view, ERR);
-static SEGINDEX find_segment(std::vector<doc_segment> &, stream_char, bool);
-static int  find_tabfocus(extDocument *, TT, BYTECODE);
-static ERR  flash_cursor(extDocument *, int64_t, int64_t);
-static int getutf8(CSTRING, int *);
-static ERR  insert_text(extDocument *, RSTREAM *, stream_char &, const std::string_view, bool);
-static ERR  insert_xml(extDocument *, RSTREAM *, objXML *, const objXML::TAGS &, int, STYLE = STYLE::NIL, IPF = IPF::NIL);
-static ERR  key_event(objVectorViewport *, KQ, KEY, int);
-static void layout_doc(extDocument *);
-static ERR  load_doc(extDocument *, std::string_view, bool, ULD = ULD::NIL);
-static void notify_disable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_enable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_focus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_free_script_context(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_lostfocus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static ERR  feedback_view(objVectorViewport *, FM);
-static void process_parameters(extDocument *, const std::string_view);
-static std::string_view read_unit(std::string_view, double &, bool &);
-static void redraw(extDocument *, bool);
-static ERR  report_event(extDocument *, DEF, entity *, KEYVALUE *);
-static void reset_cursor(extDocument *);
-static ERR  resolve_fontx_by_index(extDocument *, stream_char, double &);
-static int  safe_file_path(extDocument *, std::string_view);
-static void set_focus(extDocument *, int, CSTRING);
-static void show_bookmark(extDocument *, std::string_view);
-static std::string stream_to_string(RSTREAM &, stream_char, stream_char);
-static ERR  unload_doc(extDocument *, ULD = ULD::NIL);
-static bool valid_objectid(extDocument *, OBJECTID);
-static bool view_area(extDocument *, double, double, double, double);
-
 static ERR GET_WorkingPath(extDocument *, std::string_view &);
 
 #ifdef DBG_STREAM

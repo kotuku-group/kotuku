@@ -48,7 +48,6 @@ static int glDefaultSpeed = 160;
 static double glDefaultAcceleration = 0.8;
 static TIMER glRepeatTimer = 0;
 
-static void set_pointer_defaults(extPointer *);
 static ERR repeat_timer(extPointer *, int64_t, int64_t);
 static int examine_chain(extPointer *, int, SURFACELIST &, int);
 static bool get_over_object(extPointer *);
@@ -674,14 +673,6 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
    return ERR::Okay|ERR(ERR::Notified);
 }
 
-//********************************************************************************************************************
-
-static ERR POINTER_NewObject(extPointer *Self)
-{
-   set_pointer_defaults(Self);
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Refresh: Refreshes the pointer's target and cursor image.
@@ -1043,36 +1034,6 @@ static ERR POINTER_SET_Y(extPointer *Self, double Value)
    if (Self->initialised()) acMoveToPoint(Self, 0, Value, 0, MTF::Y);
    else Self->Y = Value;
    return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static void set_pointer_defaults(extPointer *Self)
-{
-   double speed        = glDefaultSpeed;
-   double acceleration = glDefaultAcceleration;
-   int maxspeed       = 100;
-   double wheelspeed   = DEFAULT_WHEELSPEED;
-   double doubleclick  = 0.36;
-   std::string buttonorder = "123456789ABCDEF";
-
-   if (auto config = objConfig::create { fl::Path("user:config/pointer.cfg") }; config.ok()) {
-      config->read("POINTER", "Speed", speed);
-      config->read("POINTER", "Acceleration", acceleration);
-      config->read("POINTER", "MaxSpeed", maxspeed);
-      config->read("POINTER", "WheelSpeed", wheelspeed);
-      config->read("POINTER", "DoubleClick", doubleclick);
-      config->read("POINTER", "ButtonOrder", buttonorder);
-   }
-
-   if (doubleclick < 0.2) doubleclick = 0.2;
-
-   Self->setFields(fl::Speed(speed),
-       fl::Acceleration(acceleration),
-       fl::MaxSpeed(maxspeed),
-       fl::WheelSpeed(wheelspeed),
-       fl::DoubleClick(doubleclick),
-       fl::ButtonOrder(buttonorder));
 }
 
 //********************************************************************************************************************

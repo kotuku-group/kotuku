@@ -77,20 +77,6 @@ static ERR VECTORPATTERN_Init(extVectorPattern *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORPATTERN_NewObject(extVectorPattern *Self)
-{
-   if (!NewLocalObject(CLASSID::VECTORSCENE, &Self->Scene)) {
-      if (!NewObject(CLASSID::VECTORVIEWPORT, &Self->Viewport)) {
-         SetOwner(Self->Viewport, Self->Scene);
-         return ERR::Okay;
-      }
-      else return ERR::NewObject;
-   }
-   else return ERR::NewObject;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-

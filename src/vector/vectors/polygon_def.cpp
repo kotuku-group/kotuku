@@ -14,7 +14,6 @@ static const struct ActionArray clVectorPolygonActions[] = {
    { AC::FreePlacement, VECTORPOLYGON_FreePlacement },
    { AC::Move, VECTORPOLYGON_Move },
    { AC::MoveToPoint, VECTORPOLYGON_MoveToPoint },
-   { AC::NewObject, VECTORPOLYGON_NewObject },
    { AC::NewPlacement, VECTORPOLYGON_NewPlacement },
    { AC::Resize, VECTORPOLYGON_Resize },
    { AC::NIL, nullptr }

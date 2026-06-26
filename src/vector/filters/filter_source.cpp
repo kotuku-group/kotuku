@@ -36,6 +36,19 @@ class extSourceFX : public extFilterEffect {
 
    extSourceFX() {
       SourceType = VSF::NONE;
+      if ((Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
+         if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Scene->UID))) {
+            if ((Bitmap = objBitmap::create::local(fl::Name("fx_src_cache"),
+                  fl::Width(1),
+                  fl::Height(1),
+                  fl::BitsPerPixel(32),
+                  fl::Flags(BMF::ALPHA_CHANNEL|BMF::NO_DATA)))) {
+            }
+            else kt::Log().fatal(ERR::CreateObject);
+         }
+         else kt::Log().fatal(ERR::CreateObject);
+      }
+      else kt::Log().fatal(ERR::CreateObject);
    }
 
    ~extSourceFX() {
@@ -186,26 +199,6 @@ static ERR SOURCEFX_Init(extSourceFX *Self)
    Self->Scene->Viewport->setColourSpace(Self->Filter->ColourSpace);
 
    return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR SOURCEFX_NewObject(extSourceFX *Self)
-{
-   if ((Self->Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
-      if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Self->Scene->UID))) {
-         if ((Self->Bitmap = objBitmap::create::local(fl::Name("fx_src_cache"),
-               fl::Width(1),
-               fl::Height(1),
-               fl::BitsPerPixel(32),
-               fl::Flags(BMF::ALPHA_CHANNEL|BMF::NO_DATA)))) {
-            return ERR::Okay;
-         }
-         else return ERR::CreateObject;
-      }
-      else return ERR::CreateObject;
-   }
-   else return ERR::CreateObject;
 }
 
 /*********************************************************************************************************************
