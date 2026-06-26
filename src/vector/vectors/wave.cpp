@@ -6,9 +6,9 @@ VectorWave: Extends the Vector class with support for sine wave based paths.
 The VectorWave class provides functionality for generating paths based on sine waves.  This feature is not part of the
 SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.
 
-The sine wave will be generated within a rectangular region at (#X,#Y) with size (#Width,#Height).  The horizontal
-center-line within the rectangle will dictate the orientation of the sine wave, and the path vertices are generated
-on a left-to-right basis.
+The sine wave will be generated from (#X,#Y) across #Length.  The parent view height provides the vertical region for
+centring and path closure, while #Amplitude defines the wave height.  The path vertices are generated on a
+left-to-right basis.
 
 Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.
 
@@ -27,8 +27,7 @@ class extVectorWave : public extVector {
    using create = kt::Create<extVectorWave>;
 
    Unit wX = Unit(0), wY = Unit(0);
-   Unit wWidth = Unit(0), wHeight = Unit(0);
-   double wAmplitude = 1.0;
+   Unit wLength = Unit(0), wAmplitude = Unit(0);
    double wFrequency = 1.0;
    double wDecay     = 1.0;
    double wPhase     = 0;
@@ -272,20 +271,22 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
 {
    Unit ox = Vector->wX;
    Unit oy = Vector->wY;
-   Unit width = Vector->wWidth;
-   Unit height = Vector->wHeight;
+   Unit length = Vector->wLength;
+   Unit amplitude = Vector->wAmplitude;
+   const double view_height = get_parent_height(Vector);
 
-   if (Vector->wX.scaled() or Vector->wY.scaled() or Vector->wWidth.scaled() or Vector->wHeight.scaled()) {
+   if (Vector->wX.scaled() or Vector->wLength.scaled()) {
       auto view_width = get_parent_width(Vector);
-      auto view_height = get_parent_height(Vector);
 
       if (Vector->wX.scaled()) ox = Unit(ox * view_width);
-      if (Vector->wY.scaled()) oy = Unit(oy * view_height);
-      if (Vector->wWidth.scaled()) width = Unit(width * view_width);
-      if (Vector->wHeight.scaled()) height = Unit(height * view_height);
+      if (Vector->wLength.scaled()) length = Unit(length * view_width);
    }
 
-   const double amp = (height * 0.5) * Vector->wAmplitude;
+   if (Vector->wY.scaled()) oy = Unit(oy * view_height);
+   if (Vector->wAmplitude.scaled()) amplitude = Unit(amplitude * view_height);
+
+   const double height = view_height;
+   const double amp = amplitude * 0.5;
    const double scale = 1.0 / Vector->Transform.scale(); // Essential for smooth curves when scale > 1.0
 
    double x = 0, y = decayed_wave_value(Vector, 0, Vector->wPhase, amp, height);
@@ -295,12 +296,12 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
       Path.move_to(ox + x, oy + y);
    }
    else if (Vector->wClose IS WVC::TOP) {
-      Path.move_to(ox + width, oy); // Top right
+      Path.move_to(ox + length, oy); // Top right
       Path.line_to(ox, oy); // Top left
       Path.line_to(ox + x, oy + y);
    }
    else if (Vector->wClose IS WVC::BOTTOM) {
-      Path.move_to(ox + width, oy + height); // Bottom right
+      Path.move_to(ox + length, oy + height); // Bottom right
       Path.line_to(ox, oy + height); // Bottom left
       Path.line_to(ox + x, oy + y);
    }
@@ -309,7 +310,7 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
    // Wave generator.  This applies scaling so that the correct number of vertices are generated.  Also, the
    // last vertex is interpolated to end exactly at 360, ensuring that the path terminates accurately.
 
-   double xscale = width * (1.0 / 360.0);
+   double xscale = length * (1.0 / 360.0);
    double angle;
    double last_x = x, last_y = y;
    if ((Vector->wStyle IS WVS::TRIANGLE) or (Vector->wStyle IS WVS::SAWTOOTH)) {
@@ -346,7 +347,7 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
          }
       }
       double phase = wave_phase_at_angle(Vector, 360.0);
-      double x = width;
+      double x = length;
       double y = decayed_wave_value(Vector, 360.0, phase, amp, height);
       if (Vector->Transition) apply_transition_xy(Vector->Transition, 1.0, &x, &y);
       Path.line_to(ox + x, oy + y);
@@ -404,7 +405,7 @@ static ERR VECTORWAVE_MoveToPoint(extVectorWave *Self, struct acMoveToPoint *Arg
 
 /*********************************************************************************************************************
 -ACTION-
-Resize: Changes the vector's area.
+Resize: Changes the vector's length and amplitude.
 -END-
 *********************************************************************************************************************/
 
@@ -412,29 +413,26 @@ static ERR VECTORWAVE_Resize(extVectorWave *Self, struct acResize *Args)
 {
    if (not Args) return ERR::NullArgs;
 
-   Self->wWidth = Unit(Args->Width);
-   Self->wHeight = Unit(Args->Height);
+   Self->wLength = Unit(Args->Width);
+   Self->wAmplitude = Unit(Args->Height);
    reset_path(Self);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
-Amplitude: Adjusts the generated wave amplitude.
+Amplitude: Defines the generated wave height.
 
-The Amplitude is expressed as a multiplier that adjusts the wave amplitude (i.e. height).  A value of 1.0 is the
-default.
+The Amplitude is expressed as a fixed or scaled value.  Fixed values are used directly, while scaled values are
+resolved against the parent view height.
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_SET_Amplitude(extVectorWave *Self, double Value)
+static ERR VECTORWAVE_SET_Amplitude(extVectorWave *Self, Unit &Value)
 {
-   if (Value > 0.0) {
-      Self->wAmplitude = Value;
-      reset_path(Self);
-      return ERR::Okay;
-   }
-   else return ERR::InvalidValue;
+   Self->wAmplitude = Value;
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -508,21 +506,6 @@ static ERR VECTORWAVE_SET_Frequency(extVectorWave *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Height: The height of the area containing the wave.
-
-The height of the area containing the wave is defined here as a fixed or scaled value.
-
-*********************************************************************************************************************/
-
-static ERR VECTORWAVE_SET_Height(extVectorWave *Self, Unit &Value)
-{
-   Self->wHeight = Value;
-   reset_path(Self);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
 Phase: Declares the initial phase, in degrees, to use when generating the wave.
 
 The phase value defines the initial position that is used when computing the wave.  The default is zero.
@@ -575,15 +558,15 @@ static ERR VECTORWAVE_SET_Thickness(extVectorWave *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Width: The width of the area containing the wave.
+Length: The horizontal length of the generated wave.
 
-The width of the area containing the wave is defined here as a fixed or scaled value.
+The length of the generated wave is defined here as a fixed or scaled value.
 
 *********************************************************************************************************************/
 
-static ERR VECTORWAVE_SET_Width(extVectorWave *Self, Unit &Value)
+static ERR VECTORWAVE_SET_Length(extVectorWave *Self, Unit &Value)
 {
-   Self->wWidth = Value;
+   Self->wLength = Value;
    reset_path(Self);
    return ERR::Okay;
 }
@@ -625,9 +608,8 @@ static ERR VECTORWAVE_SET_Y(extVectorWave *Self, Unit &Value)
 static const FieldArray clVectorWaveFields[] = {
    { "X",          FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_X },
    { "Y",          FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Y },
-   { "Width",      FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Width },
-   { "Height",     FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Height },
-   { "Amplitude",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Amplitude },
+   { "Length",     FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Length },
+   { "Amplitude",  FDF_UNIT|FDF_RW, nullptr, VECTORWAVE_SET_Amplitude },
    { "Frequency",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Frequency },
    { "Decay",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Decay },
    { "Envelope",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Envelope, &clVectorWaveWVE },

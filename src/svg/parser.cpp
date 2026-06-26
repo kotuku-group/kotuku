@@ -3473,8 +3473,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          switch (Hash) {
             case SVF_x:         wave->setX(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_y:         wave->setY(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_width:     wave->setWidth(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_height:    wave->setHeight(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_length:    wave->setLength(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_close:
                if (iequals("top", StrValue) or iequals("true", StrValue) or (StrValue IS "1")) {
                   wave->setClose(WVC::TOP);

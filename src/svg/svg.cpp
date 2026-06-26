@@ -417,6 +417,7 @@ static constexpr auto SVF_kotuku_spiral       = strhash("kotuku:spiral");
 static constexpr auto SVF_kotuku_transition   = strhash("kotuku:transition");
 static constexpr auto SVF_kotuku_wave         = strhash("kotuku:wave");
 static constexpr auto SVF_l                   = strhash("l");
+static constexpr auto SVF_length              = strhash("length");
 static constexpr auto SVF_lengthAdjust        = strhash("lengthAdjust");
 static constexpr auto SVF_letter_spacing      = strhash("letter-spacing");
 static constexpr auto SVF_lighten             = strhash("lighten");

@@ -122,9 +122,9 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's derived class ID is stored for future reference.</p>
 <p>The following C code illustrates a simple means of compressing a file to another file using a stream:</p>
 <pre>if (auto error = mtCompressStreamStart(compress); !error) {
-   LONG len;
-   LONG cmpsize = 0;
-   UBYTE input[4096];
+   int len;
+   int cmpsize = 0;
+   uint8_t input[4096];
    while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
       if (!len) break; // No more data to read.
 

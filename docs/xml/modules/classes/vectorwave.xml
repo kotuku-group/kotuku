@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorWave class provides functionality for generating paths based on sine waves.  This feature is not part of the SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.</p>
-<p>The sine wave will be generated within a rectangular region at (<fl>X</fl>,<fl>Y</fl>) with size (<fl>Width</fl>,<fl>Height</fl>).  The horizontal center-line within the rectangle will dictate the orientation of the sine wave, and the path vertices are generated on a left-to-right basis.</p>
+<p>The sine wave will be generated from (<fl>X</fl>,<fl>Y</fl>) across <fl>Length</fl>.  The parent view height provides the vertical region for centring and path closure, while <fl>Amplitude</fl> defines the wave height.  The path vertices are generated on a left-to-right basis.</p>
 <p>Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.</p></description>
     <source>
       <file path="vectors/">wave.cpp</file>
@@ -49,12 +49,12 @@
 
     <action>
       <name>Resize</name>
-      <comment>Changes the vector's area.</comment>
+      <comment>Changes the vector's length and amplitude.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
       <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
-        <param type="DOUBLE" name="Height">The new height of the object.</param>
+        <param type="DOUBLE" name="Height">The new amplitude of the wave.</param>
         <param type="DOUBLE" name="Depth">The new depth of the object.</param>
       </input>
     </action>
@@ -64,11 +64,11 @@
   <fields>
     <field>
       <name>Amplitude</name>
-      <comment>Adjusts the generated wave amplitude.</comment>
+      <comment>Defines the generated wave height.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
-<p>The Amplitude is expressed as a multiplier that adjusts the wave amplitude (i.e. height).  A value of 1.0 is the default.</p>
+<p>The Amplitude is expressed as a fixed or scaled value.  Fixed values are used directly, while scaled values are resolved against the parent view height.</p>
       </description>
     </field>
 
@@ -78,7 +78,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="WVC">WVC</type>
       <description>
-<p>Setting the Close field to <code>TOP</code> or <code>BOTTOM</code> will close the generated wave's path so that it is suitable for being filled.</p>
+<p>Setting the Close field to <code>TOP</code> or <code>BOTTOM</code> will close the generated wave's path so that it is suitable for being filled.  This setting is not compatible with the <fl>Thickness</fl> option.</p>
 <types lookup="WVC"/>
       </description>
     </field>
@@ -115,12 +115,12 @@
     </field>
 
     <field>
-      <name>Height</name>
-      <comment>The height of the area containing the wave.</comment>
+      <name>Length</name>
+      <comment>The horizontal length of the generated wave.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
-<p>The height of the area containing the wave is defined here as a fixed or scaled value.</p>
+<p>The length of the generated wave is defined here as a fixed or scaled value.</p>
       </description>
     </field>
 
@@ -148,21 +148,11 @@
 
     <field>
       <name>Thickness</name>
-      <comment>Expands the height of the wave to the specified value to produce a closed path.</comment>
+      <comment>Expands the diameter of the wave to the specified value to produce a closed path.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (height) of the wave is determined by the provided value.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Width</name>
-      <comment>The width of the area containing the wave.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>UNIT</type>
-      <description>
-<p>The width of the area containing the wave is defined here as a fixed or scaled value.</p>
+<p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (diameter) of the wave is determined by the provided value.  Thickness is not compatible with the <fl>Close</fl> option, and takes precedence over it.</p>
       </description>
     </field>
 

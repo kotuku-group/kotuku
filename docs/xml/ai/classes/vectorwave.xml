@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorWave" mod="Vector" c="Extends the Vector class with support for sine wave based paths." cat="Graphics" id="51bca8eb" v="1">
-  <ai:f n="Amplitude" c="Adjusts the generated wave amplitude." t="DOUBLE" a="GS"/>
+  <ai:f n="Amplitude" c="Defines the generated wave height." t="UNIT" a="GS"/>
   <ai:f n="Close" c="Closes the generated wave path at either the top or bottom." t="INT" a="GS"/>
   <ai:f n="Decay" c="Declares a rate of decay to apply to the wave amplitude." t="DOUBLE" a="GS"/>
   <ai:f n="Envelope" c="Selects the decay envelope applied to the wave amplitude." t="INT" a="GS"/>
   <ai:f n="Phase" c="Declares the initial phase, in degrees, to use when generating the wave." t="DOUBLE" a="GS"/>
   <ai:f n="Dimensions" c="Dimension flags define whether individual dimension fields contain fixed or scaled values." t="INT" a="GS"/>
   <ai:f n="Frequency" c="Defines the wave frequency (the distance between each wave)." t="DOUBLE" a="GS"/>
-  <ai:f n="Height" c="The height of the area containing the wave." t="DOUBLE" a="GS"/>
   <ai:f n="Style" c="Selects an alternative wave style." t="INT" a="GS"/>
-  <ai:f n="Thickness" c="Expands the height of the wave to the specified value to produce a closed path." t="DOUBLE" a="GS"/>
-  <ai:f n="Width" c="The width of the area containing the wave." t="DOUBLE" a="GS"/>
-  <ai:f n="X" c="The x coordinate of the wave. Can be expressed as a fixed or scaled coordinate." t="DOUBLE" a="GS"/>
-  <ai:f n="Y" c="The y coordinate of the wave. Can be expressed as a fixed or scaled coordinate." t="DOUBLE" a="GS"/>
+  <ai:f n="Thickness" c="Expands the diameter of the wave to the specified value to produce a closed path." t="DOUBLE" a="GS"/>
+  <ai:f n="Length" c="The horizontal length of the generated wave." t="UNIT" a="GS"/>
+  <ai:f n="X" c="The x coordinate of the wave. Can be expressed as a fixed or scaled coordinate." t="UNIT" a="GS"/>
+  <ai:f n="Y" c="The y coordinate of the wave. Can be expressed as a fixed or scaled coordinate." t="UNIT" a="GS"/>
 </ai:cl>

@@ -4682,17 +4682,17 @@ class objVectorWave : public objVector {
    // Customised field getting
 
    inline ERR getEnvelope(WVE &Value) noexcept {
-      Value = *((WVE *)(((int8_t *)this) + 1048));
+      Value = *((WVE *)(((int8_t *)this) + 1060));
       return ERR::Okay;
    }
 
    inline ERR getClose(WVC &Value) noexcept {
-      Value = *((WVC *)(((int8_t *)this) + 1072));
+      Value = *((WVC *)(((int8_t *)this) + 1056));
       return ERR::Okay;
    }
 
    inline ERR getStyle(WVS &Value) noexcept {
-      Value = *((WVS *)(((int8_t *)this) + 1076));
+      Value = *((WVS *)(((int8_t *)this) + 1064));
       return ERR::Okay;
    }
 
@@ -4706,38 +4706,33 @@ class objVectorWave : public objVector {
       return ERR::Okay;
    }
 
-   inline ERR getWidth(Unit &Value) noexcept {
+   inline ERR getLength(Unit &Value) noexcept {
       Value = *((Unit *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
-   inline ERR getHeight(Unit &Value) noexcept {
+   inline ERR getAmplitude(Unit &Value) noexcept {
       Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
-   inline ERR getAmplitude(double &Value) noexcept {
+   inline ERR getFrequency(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
-   inline ERR getFrequency(double &Value) noexcept {
+   inline ERR getDecay(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1032));
       return ERR::Okay;
    }
 
-   inline ERR getDecay(double &Value) noexcept {
+   inline ERR getPhase(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1040));
       return ERR::Okay;
    }
 
-   inline ERR getPhase(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1056));
-      return ERR::Okay;
-   }
-
    inline ERR getThickness(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1064));
+      Value = *((double *)(((int8_t *)this) + 1048));
       return ERR::Okay;
    }
 
@@ -4769,19 +4764,14 @@ class objVectorWave : public objVector {
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
+   inline ERR setLength(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setAmplitude(const double Value) noexcept {
+   inline ERR setAmplitude(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[45];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setFrequency(const double Value) noexcept {
@@ -4800,7 +4790,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setThickness(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
+      auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5864,4 +5854,3 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
-
