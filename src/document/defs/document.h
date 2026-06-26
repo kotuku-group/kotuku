@@ -1397,7 +1397,7 @@ class extDocument : public objDocument {
    }
 
    extDocument() {
-      unload_doc(this);
+      if (auto error = unload_doc(this); error != ERR::Okay) kt::Log().fatal(error);
    }
 };
 
