@@ -1953,8 +1953,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
       ERR error = ERR::Okay;
       if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
-         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
-         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
+         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should specify
+         // initialisers in the class definition or ensure that their constructor is visible to derived classes.
 
          tlContext.emplace_back(head, nullptr, AC::NIL);
          error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
@@ -1987,24 +1987,6 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          // NOTE: SetOwner action hooks can potentially call the SetOwner() function and divert ownership to a different object.
          error = set_owner(head, track_to);
          if (track_lock) track_to->unlock();
-      }
-
-      if (!error) {
-         if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewObject)].PerformAction)) {
-            tlContext.emplace_back(head, nullptr, AC::NIL);
-            if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
-               log.warning(error);
-            }
-            tlContext.pop_back();
-         }
-
-         if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
-            tlContext.emplace_back(head, nullptr, AC::NIL);
-            if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(head, nullptr)) != ERR::Okay) {
-               log.warning(error);
-            }
-            tlContext.pop_back();
-         }
       }
 
       if (!error) {
