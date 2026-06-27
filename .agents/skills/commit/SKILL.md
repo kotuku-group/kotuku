@@ -46,3 +46,8 @@ The `Label` is the most appropriate single-word label that categorises the most 
 If no label seems appropriate, do not include a label.
 
 Push to remote after completing your commit.
+
+## Note
+
+Do not compile, test or perform any verification of the staged files.
+If Git returns a pull-request URL after the commit, always report it back to the user as a clickable link.
