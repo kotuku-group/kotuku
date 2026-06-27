@@ -28,10 +28,10 @@ MAX_AMPLITUDE <const> = 500
 ----------------------------------------------------------------------------------------------------------------------
 
 function selectWave(Text:str):obj
-   glWave.style = choose Text from
-      'Smooth'   -> WVS_SMOOTH
-      'Sawtooth' -> WVS_SAWTOOTH
-      'Triangle' -> WVS_TRIANGLE
+   glWave.type = choose Text from
+      'Smooth'   -> WVT_SMOOTH
+      'Sawtooth' -> WVT_SAWTOOTH
+      'Triangle' -> WVT_TRIANGLE
    end
 
    glWaveVP.scene.surface.mtScheduleRedraw()
@@ -59,12 +59,7 @@ function buildScene()
       },
       events = {
          activate = function(Widget:table, Text:str)
-            glWave.style = choose Text from
-               'Smooth'   -> WVS_SMOOTH
-               'Sawtooth' -> WVS_SAWTOOTH
-               'Triangle' -> WVS_TRIANGLE
-            end
-            glWaveVP.scene.surface.mtScheduleRedraw()
+            selectWave(Text)
          end
       }
    })
