@@ -47,6 +47,7 @@ using namespace kt;
 #include "agg_rendering_buffer.h"
 #include "agg_scanline_p.h"
 #include "agg_scanline_u.h"
+#include "agg_stroke_resolve.h"
 #include "agg_span_allocator.h"
 #include "agg_span_converter.h"
 #include "agg_span_image_filter_rgba.h"

@@ -174,6 +174,7 @@ static void apply_wave_thickness(agg::path_storage &Path, double Thickness, doub
 
    agg::path_storage outline;
    outline.concat_path(stroke);
+   agg::resolve_stroke_self_intersections(outline);
 
    Path.remove_all();
    Path.concat_path(outline);

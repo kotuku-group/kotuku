@@ -64,6 +64,18 @@ if (NOT DISABLE_FONT)
    target_link_libraries (${MOD} PRIVATE freetype)
 endif()
 
+if (BUILD_TESTS)
+   add_executable (test_agg_stroke_resolve
+      "tests/test_agg_stroke_resolve.cpp"
+      "tests/test_agg_stroke_resolve_agglib.cpp")
+   target_include_directories (test_agg_stroke_resolve PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/agg/include")
+   target_link_libraries (test_agg_stroke_resolve PRIVATE ${MATH_LINK})
+   set_target_properties (test_agg_stroke_resolve PROPERTIES CXX_STANDARD 20)
+   add_test (NAME vector_agg_stroke_resolve COMMAND test_agg_stroke_resolve)
+   set_tests_properties (vector_agg_stroke_resolve PROPERTIES LABELS "vector;unit")
+endif ()
+
 flute_test(vector_readpainter "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_readpainter.tiri")
 flute_test(vector_parse_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parse_transform.tiri")
 flute_test(vector_convolve_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_convolve_validation.tiri")
