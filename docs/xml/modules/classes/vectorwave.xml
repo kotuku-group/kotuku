@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorWave class provides functionality for generating paths based on sine waves.  This feature is not part of the SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.</p>
-<p>The sine wave will be generated within a rectangular region at (<fl>X</fl>,<fl>Y</fl>) with size (<fl>Width</fl>,<fl>Height</fl>).  The horizontal center-line within the rectangle will dictate the orientation of the sine wave, and the path vertices are generated on a left-to-right basis.</p>
+<p>The sine wave will be generated from (<fl>X</fl>,<fl>Y</fl>) across <fl>Length</fl>.  The parent view height provides the vertical region for centring and path closure, while <fl>Amplitude</fl> defines the wave height.  The path vertices are generated on a left-to-right basis.</p>
 <p>Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.</p></description>
     <source>
       <file path="vectors/">wave.cpp</file>
@@ -49,7 +49,7 @@
 
     <action>
       <name>Resize</name>
-      <comment>Changes the vector's area.</comment>
+      <comment>Changes the vector's length and amplitude.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
       <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
@@ -64,11 +64,11 @@
   <fields>
     <field>
       <name>Amplitude</name>
-      <comment>Adjusts the generated wave amplitude.</comment>
+      <comment>Defines the generated wave height.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
-<p>The Amplitude is expressed as a multiplier that adjusts the wave amplitude (i.e. height).  A value of 1.0 is the default.</p>
+<p>The Amplitude is expressed as a fixed or scaled value.  Fixed values are used directly, while scaled values are resolved against the parent view height.</p>
       </description>
     </field>
 
@@ -76,9 +76,10 @@
       <name>Close</name>
       <comment>Closes the generated wave path at either the top or bottom.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>INT</type>
+      <type lookup="WVC">WVC</type>
       <description>
-<p>Setting the Close field to <code>TOP</code> or <code>BOTTOM</code> will close the generated wave's path so that it is suitable for being filled.</p>
+<p>Setting the Close field to <code>TOP</code> or <code>BOTTOM</code> will close the generated wave's path so that it is suitable for being filled.  This setting is not compatible with the <fl>Thickness</fl> option.</p>
+<types lookup="WVC"/>
       </description>
     </field>
 
@@ -88,18 +89,18 @@
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The amplitude of a sine wave can be decayed between its start and end points by setting the Decay field.  Using a decay gives the wave an appearance of being funnelled into a cone-like shape.  If the value is negative, the start and end points for the decay will be reversed.</p>
+<p>The amplitude of a wave can be decayed between its start and end points by setting the Decay field.  A value of <code>1.0</code> is the default and applies no decay.  Values between <code>0.0</code> and <code>1.0</code> set the amplitude multiplier at the end of the wave, so <code>0.5</code> tapers the wave to half amplitude and <code>0.999</code> remains visually close to no decay.  If the value is negative, the start and end points for the decay will be reversed.</p>
       </description>
     </field>
 
     <field>
-      <name>Degree</name>
-      <comment>Declares the initial angle (in degrees) to use when generating the wave.</comment>
+      <name>Envelope</name>
+      <comment>Selects the decay envelope applied to the wave amplitude.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type lookup="WVE">WVE</type>
       <description>
-<p>The degree value defines the initial angle that is used when computing the sine wave.  The default is zero.</p>
-<p>Visually, changing the degree will affect the 'offset' of the generated wave.  Gradually incrementing the value will give the wave an appearance of moving from right to left.</p>
+<p>The Envelope field controls how the <fl>Decay</fl> value is interpolated across the wave.  The default <code>LINEAR</code> envelope uses an even taper, while <code>QUADRATIC</code>, <code>SMOOTHSTEP</code> and <code>EXPONENTIAL</code> apply progressively stronger curves to the decay.</p>
+<types lookup="WVE"/>
       </description>
     </field>
 
@@ -114,43 +115,44 @@
     </field>
 
     <field>
-      <name>Height</name>
-      <comment>The height of the area containing the wave.</comment>
+      <name>Length</name>
+      <comment>The horizontal length of the generated wave.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
-<p>The height of the area containing the wave is defined here as a fixed or scaled value.</p>
+<p>The length of the generated wave is defined here as a fixed or scaled value.</p>
       </description>
     </field>
 
     <field>
-      <name>Style</name>
-      <comment>Selects an alternative wave style.</comment>
+      <name>Phase</name>
+      <comment>Declares the initial phase, in degrees, to use when generating the wave.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>INT</type>
+      <type>DOUBLE</type>
       <description>
-<p>NOT IMPLEMENTED</p>
-<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field.</p>
+<p>The phase value defines the initial position that is used when computing the wave.  The default is zero.</p>
+<p>Visually, changing the phase will affect the 'offset' of the generated wave.  Gradually incrementing the value will give the wave an appearance of moving from right to left.</p>
       </description>
     </field>
 
     <field>
       <name>Thickness</name>
-      <comment>Expands the height of the wave to the specified value to produce a closed path.</comment>
+      <comment>Expands the diameter of the wave to the specified value to produce a closed path.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
-<p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (height) of the wave is determined by the provided value.</p>
+<p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (diameter) of the wave is determined by the provided value.  If defined as a percentage, the value is resolved against the normalised diagonal of the parent viewport, matching the scaling rule used for #StrokeWidth. Thickness is not compatible with the <fl>Close</fl> option, and takes precedence over it.</p>
       </description>
     </field>
 
     <field>
-      <name>Width</name>
-      <comment>The width of the area containing the wave.</comment>
+      <name>Type</name>
+      <comment>Selects an alternative wave style.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>UNIT</type>
+      <type lookup="WVT">WVT</type>
       <description>
-<p>The width of the area containing the wave is defined here as a fixed or scaled value.</p>
+<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SMOOTH</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave and <code>SAWTOOTH</code> generates a ramp with a sharp return edge.</p>
+<types lookup="WVT"/>
       </description>
     </field>
 
@@ -175,6 +177,26 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="WVC" comment="Wave options.">
+      <const name="BOTTOM">Close the path across the bottom of its area.</const>
+      <const name="TOP">Close the path across the top of its area.</const>
+    </constants>
+
+    <constants lookup="WVE" comment="Wave envelope options.">
+      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the end of the wave.</const>
+      <const name="LINEAR">Linear decay from start to end, this is the default.</const>
+      <const name="QUADRATIC">Quadratic decay, weighted towards the end of the wave.</const>
+      <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
+    </constants>
+
+    <constants lookup="WVT" comment="Wave style options.">
+      <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
+      <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
+      <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

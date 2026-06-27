@@ -1088,14 +1088,20 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 
     <constants lookup="WVC" comment="Wave options.">
       <const name="BOTTOM">Close the path across the bottom of its area.</const>
-      <const name="NONE">Do not close the path.</const>
       <const name="TOP">Close the path across the top of its area.</const>
     </constants>
 
-    <constants lookup="WVS" comment="Wave style options.">
-      <const name="ANGLED">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
-      <const name="CURVED">Standard sine-wave curvature, this is the default.</const>
+    <constants lookup="WVE" comment="Wave envelope options.">
+      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the end of the wave.</const>
+      <const name="LINEAR">Linear decay from start to end, this is the default.</const>
+      <const name="QUADRATIC">Quadratic decay, weighted towards the end of the wave.</const>
+      <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
+    </constants>
+
+    <constants lookup="WVT" comment="Wave style options.">
       <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
+      <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
+      <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
     </constants>
 
   </types>

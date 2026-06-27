@@ -358,18 +358,27 @@ enum class VSF : int {
 
 enum class WVC : int {
    NIL = 0,
-   NONE = 1,
-   TOP = 2,
-   BOTTOM = 3,
+   TOP = 1,
+   BOTTOM = 2,
 };
 
 // Wave style options.
 
-enum class WVS : int {
+enum class WVT : int {
    NIL = 0,
-   CURVED = 1,
-   ANGLED = 2,
+   SMOOTH = 1,
+   TRIANGLE = 2,
    SAWTOOTH = 3,
+};
+
+// Wave envelope options.
+
+enum class WVE : int {
+   NIL = 0,
+   LINEAR = 1,
+   QUADRATIC = 2,
+   SMOOTHSTEP = 3,
+   EXPONENTIAL = 4,
 };
 
 // Gradient fall-off options.
@@ -4672,6 +4681,21 @@ class objVectorWave : public objVector {
 
    // Customised field getting
 
+   inline ERR getEnvelope(WVE &Value) noexcept {
+      Value = *((WVE *)(((int8_t *)this) + 1064));
+      return ERR::Okay;
+   }
+
+   inline ERR getClose(WVC &Value) noexcept {
+      Value = *((WVC *)(((int8_t *)this) + 1068));
+      return ERR::Okay;
+   }
+
+   inline ERR getType(WVT &Value) noexcept {
+      Value = *((WVT *)(((int8_t *)this) + 1072));
+      return ERR::Okay;
+   }
+
    inline ERR getX(Unit &Value) noexcept {
       Value = *((Unit *)(((int8_t *)this) + 960));
       return ERR::Okay;
@@ -4682,81 +4706,81 @@ class objVectorWave : public objVector {
       return ERR::Okay;
    }
 
-   inline ERR getWidth(Unit &Value) noexcept {
+   inline ERR getLength(Unit &Value) noexcept {
       Value = *((Unit *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
-   inline ERR getHeight(Unit &Value) noexcept {
+   inline ERR getAmplitude(Unit &Value) noexcept {
       Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
-   inline ERR getAmplitude(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1024));
+   inline ERR getThickness(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
    inline ERR getFrequency(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1032));
-      return ERR::Okay;
-   }
-
-   inline ERR getDecay(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1040));
       return ERR::Okay;
    }
 
-   inline ERR getDegree(double &Value) noexcept {
+   inline ERR getDecay(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1048));
       return ERR::Okay;
    }
 
-   inline ERR getThickness(double &Value) noexcept {
+   inline ERR getPhase(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1056));
-      return ERR::Okay;
-   }
-
-   inline ERR getClose(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1064));
-      return ERR::Okay;
-   }
-
-   inline ERR getStyle(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1068));
       return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setX(const Unit Value) noexcept {
+   inline ERR setEnvelope(const WVE Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setClose(const WVC Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setType(const WVT Value) noexcept {
       auto field = &this->Class->Dictionary[52];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setWidth(const Unit Value) noexcept {
+   inline ERR setX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[53];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setHeight(const Unit Value) noexcept {
+   inline ERR setY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setLength(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[55];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setAmplitude(const double Value) noexcept {
+   inline ERR setAmplitude(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[45];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setThickness(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setFrequency(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4765,24 +4789,9 @@ class objVectorWave : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setDegree(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+   inline ERR setPhase(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setThickness(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setClose(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setStyle(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };

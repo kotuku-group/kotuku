@@ -98,7 +98,7 @@ end
 @Test(name='CaseSensitiveNames') global function BasicsCaseSensitiveNames() hashTestSVG('basics/case-sensitive.svg', 0x61fc4322) end
 
 @Test global function Circles()         hashTestSVG('paths/circles.svg', 0xd91a717f) end
-@Test global function Morph()           hashTestSVG('paths/morph.svg', 0x90bf1a66) end
+@Test global function Morph()           hashTestSVG('paths/morph.svg', 0x22c9112b) end
 @Test global function EllipseVertices() hashTestSVG('paths/ellipse_vertices.svg', 0xa0a8e2df) end
 @Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0x6e755c7b) end
 @Test global function Rough()           hashTestSVG('paths/rough_js.svg', 0xdb8d9130) end
@@ -108,7 +108,7 @@ end
 @Test global function SuperShapes()     hashTestSVG('paths/supershapes.svg', 0x07dc5ee7) end
 @Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0x4cbc6fd9) end
 @Test global function Transitions()     hashTestSVG('paths/transitions.svg', 0x801a2fb0) end
-@Test global function Wave()            hashTestSVG('paths/wave.svg', 0xf35f8a72) end
+@Test global function Wave()            hashTestSVG('paths/wave.svg', 0xea7f93b8) end
 @Test global function W3Paths01()       hashTestSVG('paths/w3-paths-data-01-t.svg', 0x7fdb0e82) end
 @Test global function W3Paths02()       hashTestSVG('paths/w3-paths-data-02-t.svg', 0xb100cbc6) end
 @Test global function W3Paths03()       hashTestSVG('paths/w3-paths-data-03-f.svg', 0x0100b85b) end

@@ -792,16 +792,41 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
    if (!error) {
       if (!wave->getX(unit))        set_dimension(tag, "x", unit);
       if (!wave->getY(unit))        set_dimension(tag, "y", unit);
-      if (!wave->getWidth(unit))    set_dimension(tag, "width", unit);
-      if (!wave->getHeight(unit))   set_dimension(tag, "height", unit);
-      if (!wave->getAmplitude(dbl)) xml::NewAttrib(tag, "amplitude", dbl);
+      if (!wave->getLength(unit))   set_dimension(tag, "length", unit);
+      if (!wave->getAmplitude(unit)) set_dimension(tag, "amplitude", unit);
       if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
       if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
-      if (!wave->getDegree(dbl))    xml::NewAttrib(tag, "degree", dbl);
+      if (!wave->getPhase(dbl))     xml::NewAttrib(tag, "phase", dbl);
 
-      int close;
-      if (!wave->getClose(close)) xml::NewAttrib(tag, "close", close);
-      if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", dbl);
+      WVE envelope;
+      if (!wave->getEnvelope(envelope)) {
+         switch (envelope) {
+            case WVE::QUADRATIC:   xml::NewAttrib(tag, "envelope", "quadratic"); break;
+            case WVE::SMOOTHSTEP:  xml::NewAttrib(tag, "envelope", "smoothstep"); break;
+            case WVE::EXPONENTIAL: xml::NewAttrib(tag, "envelope", "exponential"); break;
+            default:               xml::NewAttrib(tag, "envelope", "linear"); break;
+         }
+      }
+
+      WVC close;
+      if (!wave->getClose(close)) {
+         switch (close) {
+            case WVC::TOP:    xml::NewAttrib(tag, "close", "top"); break;
+            case WVC::BOTTOM: xml::NewAttrib(tag, "close", "bottom"); break;
+            default: break;
+         }
+      }
+
+      WVT type;
+      if (!wave->getType(type)) {
+         switch (type) {
+            case WVT::TRIANGLE: xml::NewAttrib(tag, "type", "triangle"); break;
+            case WVT::SAWTOOTH: xml::NewAttrib(tag, "type", "sawtooth"); break;
+            default: break;
+         }
+      }
+
+      if (!wave->getThickness(unit)) set_dimension(tag, "thickness", unit);
 
       ChildIndex = tag->ID;
       error = save_svg_scan_std(Self, XML, Vector, tag->ID);

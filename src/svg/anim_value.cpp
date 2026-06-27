@@ -44,9 +44,11 @@ void anim_value::set_value(objVector &Vector)
          auto wave = (objVectorWave *)&Vector;
          switch (hash) {
             case SVF_close:     Vector.set(FID_Close, get_string()); return;
+            case SVF_envelope:  Vector.set(FID_Envelope, get_string()); return;
             case SVF_amplitude: wave->setAmplitude(get_numeric_value(Vector, FID_Amplitude)); return;
             case SVF_decay:     wave->setDecay(get_numeric_value(Vector, FID_Decay)); return;
             case SVF_frequency: wave->setFrequency(get_numeric_value(Vector, FID_Frequency)); return;
+            case SVF_phase:     wave->setPhase(get_numeric_value(Vector, FID_Phase)); return;
             case SVF_thickness: wave->setThickness(get_numeric_value(Vector, FID_Thickness)); return;
          }
          break;
