@@ -11,7 +11,7 @@ static const struct FieldDef clGradientDistalGFALL[] = {
 };
 
 static ERR GRADIENTDISTAL_NewPlacement(extGradientDistal *Self) {
-   new (Self) extGradientDistal;
+   new (Self) extGradientDistal(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

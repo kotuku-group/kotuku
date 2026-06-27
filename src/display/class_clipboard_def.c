@@ -23,7 +23,7 @@ static const struct MethodEntry clClipboardMethods[] = {
 };
 
 static ERR CLIPBOARD_NewPlacement(objClipboard *Self) {
-   new (Self) objClipboard;
+   new (Self) objClipboard(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -26,7 +26,7 @@ static const struct FieldDef clVectorPatternContentUnits[] = {
 };
 
 static ERR VECTORPATTERN_NewPlacement(extVectorPattern *Self) {
-   new (Self) extVectorPattern;
+   new (Self) extVectorPattern(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

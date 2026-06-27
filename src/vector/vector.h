@@ -449,6 +449,9 @@ class extVectorTransition : public objVectorTransition, public SceneDef {
    public:
    std::vector<TransitionStop> Stops;
    bool Dirty:1 = true;
+
+   extVectorTransition(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
+      objVectorTransition(ClassPtr, ObjectID) { }
 };
 
 class extGradient : public objGradient, public SceneDef {
@@ -457,6 +460,7 @@ class extGradient : public objGradient, public SceneDef {
    static constexpr CSTRING CLASS_NAME = "Gradient";
    using create = kt::Create<extGradient>;
 
+   extGradient(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objGradient(ClassPtr, ObjectID) { }
    ~extGradient();
 };
 
@@ -471,7 +475,7 @@ class extGradientLinear : public extGradient {
    double Length;
    bool CalcAngle; // True if the Angle/Length values require recalculation.
 
-   extGradientLinear() {
+   extGradientLinear(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
       Angle = 0;
       Length = 0;
       CalcAngle = true;
@@ -487,7 +491,7 @@ class extGradientRadial : public extGradient {
    Unit CX, CY, FX, FY, Radius, FocalRadius;
    int ContainFocal;
 
-   extGradientRadial() {
+   extGradientRadial(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
       CX = Unit(0.5, FD_SCALED);
       CY = Unit(0.5, FD_SCALED);
       Radius = Unit(0.5, FD_SCALED);
@@ -505,7 +509,7 @@ class extGradientConic : public extGradient {
    Unit CX, CY, Radius;
    double Span;
 
-   extGradientConic() {
+   extGradientConic(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
       CX = Unit(0.5, FD_SCALED);
       CY = Unit(0.5, FD_SCALED);
       Radius = Unit(0.5, FD_SCALED);
@@ -521,7 +525,7 @@ class extGradientDiamond : public extGradient {
 
    Unit CX, CY, Radius;
 
-   extGradientDiamond() {
+   extGradientDiamond(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
       CX = Unit(0.5, FD_SCALED);
       CY = Unit(0.5, FD_SCALED);
       Radius = Unit(0.5, FD_SCALED);
@@ -540,7 +544,7 @@ class extGradientContour : public extGradient {
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
    uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
 
-   extGradientContour() { }
+   extGradientContour(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
    ~extGradientContour() {
       if (ContourCache) delete ContourCache;
@@ -555,6 +559,8 @@ class extGradientGouraud : public extGradient {
 
    std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for GradientGouraud.
    GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
+
+   extGradientGouraud(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 };
 
 class extGradientMesh : public extGradient {
@@ -565,6 +571,8 @@ class extGradientMesh : public extGradient {
 
    std::unique_ptr<MeshGradient> Mesh; // Coons patch data for GradientMesh.
    GouraudCache MeshTriangles; // Cached tessellated/coloured triangle list.
+
+   extGradientMesh(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 };
 
 class extGradientDistal : public extGradient {
@@ -586,7 +594,7 @@ class extGradientDistal : public extGradient {
    double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
    int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
 
-   extGradientDistal() { }
+   extGradientDistal(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
    ~extGradientDistal() {
       if (SDFCache) delete SDFCache;
@@ -613,7 +621,7 @@ class extGradientVoronoi : public extGradient {
    agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
    uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
 
-   extGradientVoronoi() { }
+   extGradientVoronoi(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
    ~extGradientVoronoi() {
       if (WorleyCache) delete WorleyCache;
@@ -623,6 +631,8 @@ class extGradientVoronoi : public extGradient {
 class extVectorImage : public objVectorImage, public SceneDef {
    public:
    using create = kt::Create<extVectorImage>;
+
+   extVectorImage(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorImage(ClassPtr, ObjectID) { }
 };
 
 class extVectorPattern : public objVectorPattern, public SceneDef {
@@ -631,7 +641,7 @@ class extVectorPattern : public objVectorPattern, public SceneDef {
 
    objBitmap *Bitmap;
 
-   extVectorPattern() {
+   extVectorPattern(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVectorPattern(ClassPtr, ObjectID) {
       if (!NewLocalObject(CLASSID::VECTORSCENE, &Scene)) {
          if (!NewObject(CLASSID::VECTORVIEWPORT, &Viewport)) {
             SetOwner(Viewport, Scene);
@@ -666,7 +676,7 @@ class extVectorFilter : public objVectorFilter {
    bool Disabled;
    bool ReqBkgd; // True if the filter requires a background bitmap for one or more effects.
 
-   extVectorFilter() {
+   extVectorFilter(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorFilter(ClassPtr, ObjectID) {
       Units          = VUNIT::BOUNDING_BOX;
       PrimitiveUnits = VUNIT::UNDEFINED;
       Opacity        = 1.0;
@@ -692,7 +702,7 @@ class extFilterEffect : public objFilterEffect {
    uint8_t TailPadding[alignof(APTR) - sizeof(uint16_t)];
 #endif
 
-   extFilterEffect() {
+   extFilterEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
    }
 
@@ -779,7 +789,7 @@ class extVector : public objVector {
    uint16_t  ValidState:1;         // Can be set to false during path generation if the shape is invalid
    uint16_t  RequiresRedraw:1;
 
-   extVector() {
+   extVector(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVector(ClassPtr, ObjectID) {
       StrokeOpacity = 1.0;
       FillOpacity   = 1.0;
       Opacity       = 1.0;              // Overall opacity multiplier
@@ -843,7 +853,8 @@ class extVectorScene : public objVectorScene {
    bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
 
-   extVectorScene() : ShareVersion(1), SubtreeDirty(true) {
+   extVectorScene(objMetaClass *ClassPtr, OBJECTID ObjectID) :
+      objVectorScene(ClassPtr, ObjectID), ShareVersion(1), SubtreeDirty(true) {
       Gamma = 1;
       SampleMethod = VSM::AUTO;
    }
@@ -907,7 +918,7 @@ class extVectorViewport : public extVector {
    uint8_t vpBuffered:1; // True if the client requested that the viewport is buffered.
    uint8_t vpRefreshBuffer:1;
 
-   extVectorViewport() {
+   extVectorViewport(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       vpClipOwner = nullptr;
       vpClipConfiguring = false;
       vpSeenShareVersion = 0;
@@ -966,7 +977,7 @@ class extVectorPolygon : public extVector {
    std::vector<VectorPoint> Points;
    bool Closed:1;      // Polygons are closed (TRUE) and Polylines are open (FALSE)
 
-   extVectorPolygon();
+   extVectorPolygon(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
 
 class extVectorPath : public extVector, public SceneDef {
@@ -981,7 +992,7 @@ class extVectorPath : public extVector, public SceneDef {
    Unit pX, pY;
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 
-   extVectorPath();
+   extVectorPath(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
 
 class extVectorRectangle : public extVector {
@@ -995,7 +1006,7 @@ class extVectorRectangle : public extVector {
    std::array<coord, 4> rRound = {};
    bool   rFullControl = false; // Full control of rounding values enabled
 
-   extVectorRectangle();
+   extVectorRectangle(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
 
 //********************************************************************************************************************
@@ -1106,7 +1117,7 @@ class extVectorClip : public objVectorClip, public SceneDef {
    static constexpr CSTRING CLASS_NAME = "VectorClip";
    using create = kt::Create<extVectorClip>;
 
-   extVectorClip() {
+   extVectorClip(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorClip(ClassPtr, ObjectID) {
       Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
       ContentVersion = 1;
    }

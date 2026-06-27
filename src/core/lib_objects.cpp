@@ -1876,6 +1876,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       //if (not Object) return ERR::NullArgs;
       //if (tlContext.back().obj IS *Object) return ERR::Okay; // Guard against recursive calls (not an error)
       //return new_placement(ClassID, Flags, *Object);
+      return ERR::NoSupport;
    }
 
    kt::Log log(__FUNCTION__);
@@ -1909,7 +1910,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // Preset the Object header - the Object() constructor will skip initialisation of these fields during new placement.
+      // Preset the Object header so NewPlacement constructors can forward these values into the Object constructor.
 
       head->UID   = object_id;
       head->Class = (extMetaClass *)mc;
@@ -1966,35 +1967,32 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          tlContext.pop_back();
       }
       else {
-         new (head) class Object; // Dummy initialiser so that FreeResource() will work
+         new (head) class Object(mc, object_id); // Dummy initialiser so that FreeResource() will work
          error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
       }
 
-      if (error != ERR::Okay) {
-         FreeResource(head);
-         return error;
-      }
-
-      head->setFlag(Flags & (NF::LOCAL)); // Keep flags requiring persistence.
-
-      if (track_to) {
-         if (track_lock) {
-            if (error = track_to->lock(); error != ERR::Okay) {
-               FreeResource(head);
-               return error;
-            }
-         }
-         // NOTE: SetOwner action hooks can potentially call the SetOwner() function and divert ownership to a different object.
-         error = set_owner(head, track_to);
-         if (track_lock) track_to->unlock();
-      }
-
       if (!error) {
-         ((extMetaClass *)head->Class)->OpenCount++;
-         if (mc->Base) mc->Base->OpenCount++;
+         head->setFlag(Flags & (NF::LOCAL)); // Keep flags requiring persistence.
 
-         *Object = head;
-         return ERR::Okay;
+         if (track_to) {
+            if (track_lock) {
+               if (error = track_to->lock(); error != ERR::Okay) {
+                  FreeResource(head);
+                  return error;
+               }
+            }
+            // NOTE: SetOwner action hooks can potentially call the SetOwner() function and divert ownership to a different object.
+            error = set_owner(head, track_to);
+            if (track_lock) track_to->unlock();
+         }
+
+         if (!error) {
+            ((extMetaClass *)head->Class)->OpenCount++;
+            if (mc->Base) mc->Base->OpenCount++;
+
+            *Object = head;
+            return ERR::Okay;
+         }
       }
 
       FreeResource(head);

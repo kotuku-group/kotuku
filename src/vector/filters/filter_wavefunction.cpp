@@ -41,7 +41,7 @@ class extWaveFunctionFX : public extFilterEffect {
 
    void compute_wavefunction(int);
 
-   extWaveFunctionFX() {
+   extWaveFunctionFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
    }
 

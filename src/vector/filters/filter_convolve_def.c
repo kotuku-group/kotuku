@@ -8,7 +8,7 @@ static const struct FieldDef clConvolveFXEM[] = {
 };
 
 static ERR CONVOLVEFX_NewPlacement(extConvolveFX *Self) {
-   new (Self) extConvolveFX;
+   new (Self) extConvolveFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

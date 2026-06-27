@@ -149,6 +149,7 @@ class objXQuery : public Object {
    static constexpr CSTRING CLASS_NAME = "XQuery";
 
    using create = kt::Create<objXQuery>;
+   objXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string ErrorMsg;    // A readable description of the last parse or execution error.
    std::string Path;        // Base path for resolving relative references.

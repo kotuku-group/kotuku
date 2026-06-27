@@ -2325,6 +2325,7 @@ class objMetaClass : public Object {
    static constexpr CSTRING CLASS_NAME = "MetaClass";
 
    using create = kt::Create<objMetaClass>;
+   objMetaClass(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double  ClassVersion;                // The version number of the class.
    const struct FieldArray * Fields;    // Points to a FieldArray that describes the class' object structure.
@@ -2599,6 +2600,7 @@ class objStorageDevice : public Object {
    static constexpr CSTRING CLASS_NAME = "StorageDevice";
 
    using create = kt::Create<objStorageDevice>;
+   objStorageDevice(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    DEVICE  DeviceFlags;   // These read-only flags identify the type of device and its features.
    int64_t DeviceSize;    // Total storage capacity of the resolved volume, measured in bytes.
@@ -2679,6 +2681,7 @@ class objFile : public Object {
    static constexpr CSTRING CLASS_NAME = "File";
 
    using create = kt::Create<objFile>;
+   objFile(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t  Position;   // The current read/write byte position in a file.
    std::string Path;    // Specifies the location of a file or folder.
@@ -2980,6 +2983,7 @@ class objConfig : public Object {
    static constexpr CSTRING CLASS_NAME = "Config";
 
    using create = kt::Create<objConfig>;
+   objConfig(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Path;         // Set this field to the location of the source configuration file.
    std::string KeyFilter;    // Set this field to enable key filtering.
@@ -3180,6 +3184,7 @@ class objScript : public Object {
    static constexpr CSTRING CLASS_NAME = "Script";
 
    using create = kt::Create<objScript>;
+   objScript(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Procedure;              // Specifies a procedure name to be executed.
    std::string CacheFile;              // Compilable script languages can be compiled to a cache file.
@@ -3432,6 +3437,7 @@ class objTask : public Object {
    static constexpr CSTRING CLASS_NAME = "Task";
 
    using create = kt::Create<objTask>;
+   objTask(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string LaunchPath;                // Launched executables will start in the path specified here.
    std::string Name;                      // Name of the task.
@@ -3712,6 +3718,7 @@ class objThread : public Object {
    static constexpr CSTRING CLASS_NAME = "Thread";
 
    using create = kt::Create<objThread>;
+   objThread(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    FUNCTION Callback;    // This function will be called when the thread finishes.
    FUNCTION Routine;     // This function will be called when the thread starts.
@@ -3802,6 +3809,7 @@ class objModule : public Object {
    static constexpr CSTRING CLASS_NAME = "Module";
 
    using create = kt::Create<objModule>;
+   objModule(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    const struct Function * FunctionList;    // Refers to a list of public functions exported by the module.
    APTR ModBase;                            // The Module's function base (jump table) must be read from this field.
@@ -3913,6 +3921,7 @@ class objTime : public Object {
    static constexpr CSTRING CLASS_NAME = "Time";
 
    using create = kt::Create<objTime>;
+   objTime(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t SystemTime;    // Represents the system time when the time object was last queried.
    int     Year;          // Year (-ve for BC, +ve for AD).
@@ -4083,6 +4092,7 @@ class objCompression : public Object {
    static constexpr CSTRING CLASS_NAME = "Compression";
 
    using create = kt::Create<objCompression>;
+   objCompression(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Path;        // Set if the compressed data originates from, or is to be saved to a file source.
    std::string Password;    // Required if an archive needs an encryption password for access.
@@ -4293,6 +4303,7 @@ class objCompressedStream : public Object {
    static constexpr CSTRING CLASS_NAME = "CompressedStream";
 
    using create = kt::Create<objCompressedStream>;
+   objCompressedStream(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t   TotalOutput;  // A live counter of total bytes that have been output by the stream.
    OBJECTPTR Input;        // An input object that will supply data for decompression.

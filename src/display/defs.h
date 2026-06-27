@@ -317,7 +317,7 @@ class extPointer : public objPointer {
    int16_t     ButtonOrderFlags[12]; // Button order represented as JD flags
    uint8_t    prvOverCursorID;
 
-   extPointer() {
+   extPointer(objMetaClass *ClassPtr, OBJECTID ObjectID) : objPointer(ClassPtr, ObjectID) {
       CursorID = PTC::DEFAULT;
       ClickSlop = 2;
       ButtonClicks.resize(3); // 0 = LMB, 1 = RMB, 2 = MMB
@@ -380,7 +380,7 @@ class extSurface : public objSurface {
    uint8_t  CallbackCount;
    uint8_t  CallbackSize;         // Current size of the callback array.
 
-   extSurface() {
+   extSurface(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSurface(ClassPtr, ObjectID) {
       Opacity    = 1.0;
       WindowType = glpWindowType;
    }
@@ -429,7 +429,7 @@ class extDisplay : public objDisplay {
       APTR   WindowHandle;
    #endif
 
-   extDisplay() {
+   extDisplay(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDisplay(ClassPtr, ObjectID) {
       if (NewLocalObject(CLASSID::BITMAP, &Bitmap) != ERR::Okay) {
          kt::Log().fatal(ERR::NewObject);
       }
@@ -768,5 +768,5 @@ class extBitmap : public objBitmap {
       int prvGLFormat;
    #endif
 
-   extBitmap();
+   extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };

@@ -218,6 +218,7 @@ class objXML : public Object {
    static constexpr CSTRING CLASS_NAME = "XML";
 
    using create = kt::Create<objXML>;
+   objXML(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Path;       // Set this field if the XML document originates from a file source.
    std::string DocType;    // Root element name from a parsed DOCTYPE declaration.

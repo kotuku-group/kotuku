@@ -199,7 +199,7 @@ static ERR SEARCH_Init(objScintillaSearch *Self)
 
 static ERR SEARCH_NewPlacement(objScintillaSearch *Self)
 {
-   new (Self) objScintillaSearch;
+   new (Self) objScintillaSearch(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

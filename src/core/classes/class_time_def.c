@@ -9,7 +9,7 @@ static const struct MethodEntry clTimeMethods[] = {
 };
 
 static ERR TIME_NewPlacement(objTime *Self) {
-   new (Self) objTime;
+   new (Self) objTime(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

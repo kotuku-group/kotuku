@@ -144,6 +144,7 @@ class objHTTP : public Object {
    static constexpr CSTRING CLASS_NAME = "HTTP";
 
    using create = kt::Create<objHTTP>;
+   objHTTP(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double   DataTimeout;     // The data timeout value, relevant when receiving or sending data.
    double   ConnectTimeout;  // The initial connection timeout value, measured in seconds.

@@ -17,7 +17,7 @@ static const struct FieldDef clGradientVoronoiWLM[] = {
 };
 
 static ERR GRADIENTVORONOI_NewPlacement(extGradientVoronoi *Self) {
-   new (Self) extGradientVoronoi;
+   new (Self) extGradientVoronoi(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -402,7 +402,7 @@ static ERR POLY_SET_Y2(extVectorPolygon *Self, Unit &Value)
 
 //********************************************************************************************************************
 
-extVectorPolygon::extVectorPolygon() {
+extVectorPolygon::extVectorPolygon(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
    GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_polygon;
    Closed       = true;
    Points.push_back({ 0, 0 }); // Two blank points are needed on construction in order to satisfy polyline requirements.

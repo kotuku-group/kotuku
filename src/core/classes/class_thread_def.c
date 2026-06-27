@@ -13,7 +13,7 @@ static const struct MethodEntry clThreadMethods[] = {
 };
 
 static ERR THREAD_NewPlacement(extThread *Self) {
-   new (Self) extThread;
+   new (Self) extThread(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

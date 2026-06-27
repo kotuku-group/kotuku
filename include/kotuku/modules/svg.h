@@ -43,6 +43,7 @@ class objSVG : public Object {
    static constexpr CSTRING CLASS_NAME = "SVG";
 
    using create = kt::Create<objSVG>;
+   objSVG(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    OBJECTPTR Target;                // Destination container for the generated SVG scene graph elements.
    std::string Path;                // File system path to the source SVG document.

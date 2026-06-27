@@ -22,7 +22,7 @@ static const struct FieldDef clVectorWaveWVE[] = {
 };
 
 static ERR VECTORWAVE_NewPlacement(extVectorWave *Self) {
-   new (Self) extVectorWave;
+   new (Self) extVectorWave(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

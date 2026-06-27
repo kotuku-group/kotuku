@@ -69,7 +69,7 @@ static const struct MethodEntry clScintillaMethods[] = {
 };
 
 static ERR SCINTILLA_NewPlacement(extScintilla *Self) {
-   new (Self) extScintilla;
+   new (Self) extScintilla(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

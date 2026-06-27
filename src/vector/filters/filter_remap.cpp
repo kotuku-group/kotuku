@@ -134,7 +134,8 @@ class extRemapFX : public extFilterEffect {
    Component Blue;
    Component Alpha;
 
-   extRemapFX() : Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
+   extRemapFX(objMetaClass *ClassPtr, OBJECTID ObjectID) :
+      extFilterEffect(ClassPtr, ObjectID), Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
 
    Component * getComponent(CMP Component) {
       switch(Component) {

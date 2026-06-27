@@ -11,7 +11,7 @@ static const struct FieldDef clClientSocketState[] = {
 };
 
 static ERR CLIENTSOCKET_NewPlacement(extClientSocket *Self) {
-   new (Self) extClientSocket;
+   new (Self) extClientSocket(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -32,7 +32,7 @@ static const struct MethodEntry clNetServerMethods[] = {
 };
 
 static ERR NETSERVER_NewPlacement(extNetServer *Self) {
-   new (Self) extNetServer;
+   new (Self) extNetServer(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

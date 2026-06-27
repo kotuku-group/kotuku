@@ -80,6 +80,8 @@ class extConvolveFX : public extFilterEffect {
    bool   UnitXProvided = false, UnitYProvided = false;
    double Matrix[MAX_DIM * MAX_DIM] = {};
 
+   extConvolveFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
    inline uint8_t * getPixel(objBitmap *Bitmap, int X, int Y) const {
       if ((X >= Bitmap->Clip.Left) and (X < Bitmap->Clip.Right) and
           (Y >= Bitmap->Clip.Top) and (Y < Bitmap->Clip.Bottom)) {

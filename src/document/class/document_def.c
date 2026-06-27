@@ -54,7 +54,7 @@ static const struct MethodEntry clDocumentMethods[] = {
 };
 
 static ERR DOCUMENT_NewPlacement(extDocument *Self) {
-   new (Self) extDocument;
+   new (Self) extDocument(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

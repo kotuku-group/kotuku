@@ -46,6 +46,8 @@ class extMorphologyFX : public extFilterEffect {
 
    int RadiusX = 0, RadiusY = 0;
    MOP Operator = MOP::ERODE;
+
+   extMorphologyFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************

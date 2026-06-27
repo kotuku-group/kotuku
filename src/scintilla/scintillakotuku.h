@@ -38,7 +38,7 @@ class extScintilla : public objScintilla {
    uint16_t AllowTabs:1;
    uint8_t  ScrollLocked;
 
-   extScintilla() {
+   extScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) : objScintilla(ClassPtr, ObjectID) {
       if (NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Font) != ERR::Okay) {
          kt::Log().fatal(ERR::NewObject);
       }

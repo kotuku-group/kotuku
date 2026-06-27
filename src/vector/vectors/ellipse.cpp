@@ -21,7 +21,7 @@ class extVectorEllipse : public extVector {
    Unit eRadiusX = Unit(0), eRadiusY = Unit(0);
    int eVertices = 0;
 
-   extVectorEllipse() {
+   extVectorEllipse(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_ellipse;
    }
 };

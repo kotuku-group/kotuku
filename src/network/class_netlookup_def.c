@@ -19,7 +19,7 @@ static const struct MethodEntry clNetLookupMethods[] = {
 };
 
 static ERR NETLOOKUP_NewPlacement(extNetLookup *Self) {
-   new (Self) extNetLookup;
+   new (Self) extNetLookup(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

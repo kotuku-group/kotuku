@@ -15,7 +15,7 @@ static const struct FieldDef clColourFXCM[] = {
 };
 
 static ERR COLOURFX_NewPlacement(extColourFX *Self) {
-   new (Self) extColourFX;
+   new (Self) extColourFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

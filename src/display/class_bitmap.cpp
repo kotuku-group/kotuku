@@ -2858,7 +2858,7 @@ static ERR CalculatePixelRoutines(extBitmap *Self)
 
 //********************************************************************************************************************
 
-extBitmap::extBitmap()
+extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(ClassPtr, ObjectID)
 {
    constexpr int CBANK = 5;
    RGB8 *RGB;

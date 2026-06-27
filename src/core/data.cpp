@@ -283,7 +283,7 @@ thread_local int16_t tlLogStatus = 1;
 thread_local bool tlMainThread = false; // Will be set to TRUE on open, any other threads will remain FALSE.
 THREADID glMainThreadID = THREADID(0);
 
-Object glDummyObject;
+Object glDummyObject(nullptr, 0);
 ActionMessage *glCurrentActionMsg = nullptr;
 
 #if defined(__MINGW32__) || defined(__MINGW64__)

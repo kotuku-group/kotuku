@@ -716,13 +716,14 @@ class objVectorColour : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorColour";
 
    using create = kt::Create<objVectorColour>;
+   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
 
    double Red;    // The red component value.
    double Green;  // The green component value.
    double Blue;   // The blue component value.
    double Alpha;  // The alpha component value.
    public:
-   objVectorColour() : Alpha(1.0) {}
+   objVectorColour() : Object(nullptr, 0), Alpha(1.0) {}
 
    // Action stubs
 
@@ -785,6 +786,7 @@ class objVectorTransition : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorTransition";
 
    using create = kt::Create<objVectorTransition>;
+   objVectorTransition(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    // Action stubs
 
@@ -821,6 +823,7 @@ class objVectorScene : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorScene";
 
    using create = kt::Create<objVectorScene>;
+   objVectorScene(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t  RenderTime;           // Returns the rendering time of the last scene.
    double   Gamma;                // Private. Not currently implemented.
@@ -968,6 +971,13 @@ class objVectorImage : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorImage";
 
    using create = kt::Create<objVectorImage>;
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      X            = Unit(0);
+      Y            = Unit(0);
+      Units        = VUNIT::BOUNDING_BOX;
+      SpreadMethod = VSPREAD::CLIP;
+      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
+   }
 
    Unit    X;               // Apply a horizontal offset to the image, the origin of which is determined by the Units value.
    Unit    Y;               // Apply a vertical offset to the image, the origin of which is determined by the Units value.
@@ -978,7 +988,7 @@ class objVectorImage : public Object {
    ARF     AspectRatio;     // Flags that affect the aspect ratio of the image within its target vector.
 
 #ifdef PRV_VECTORIMAGE
-   objVectorImage() {
+   objVectorImage() : Object(nullptr, 0) {
       X            = Unit(0);
       Y            = Unit(0);
       Units        = VUNIT::BOUNDING_BOX;
@@ -1078,6 +1088,14 @@ class objVectorPattern : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorPattern";
 
    using create = kt::Create<objVectorPattern>;
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      SpreadMethod = VSPREAD::REPEAT;
+      Units        = VUNIT::BOUNDING_BOX;
+      ContentUnits = VUNIT::USERSPACE;
+      Opacity      = 1.0;
+      X            = Unit(0);
+      Y            = Unit(0);
+   }
 
    Unit    X;                            // X coordinate for the pattern.
    Unit    Y;                            // Y coordinate for the pattern.
@@ -1093,7 +1111,7 @@ class objVectorPattern : public Object {
    VUNIT   ContentUnits;                 // Not yet implemented.
 
 #ifdef PRV_VECTORPATTERN
-   objVectorPattern() {
+   objVectorPattern() : Object(nullptr, 0) {
       SpreadMethod = VSPREAD::REPEAT;
       Units        = VUNIT::BOUNDING_BOX;
       ContentUnits = VUNIT::USERSPACE;
@@ -1251,6 +1269,13 @@ class objGradient : public Object {
    static constexpr CSTRING CLASS_NAME = "Gradient";
 
    using create = kt::Create<objGradient>;
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+   }
 
    kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a gradient.
    kt::vector<GradientStop> Stops;       // Defines the colours to use for the gradient.
@@ -1266,7 +1291,7 @@ class objGradient : public Object {
    int     NumericID;                    // Numeric identifier for a vector.
 
 #ifdef PRV_GRADIENT
-   objGradient() {
+   objGradient() : Object(nullptr, 0) {
       Gamma        = 1.0;
       Easing       = GEZ::LINEAR;
       SpreadMethod = VSPREAD::PAD;
@@ -1428,6 +1453,7 @@ class objGradientLinear : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientLinear";
 
    using create = kt::Create<objGradientLinear>;
+   objGradientLinear(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1490,6 +1516,7 @@ class objGradientRadial : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientRadial";
 
    using create = kt::Create<objGradientRadial>;
+   objGradientRadial(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1582,6 +1609,7 @@ class objGradientConic : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientConic";
 
    using create = kt::Create<objGradientConic>;
+   objGradientConic(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1644,6 +1672,7 @@ class objGradientDiamond : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientDiamond";
 
    using create = kt::Create<objGradientDiamond>;
+   objGradientDiamond(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1696,6 +1725,7 @@ class objGradientContour : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientContour";
 
    using create = kt::Create<objGradientContour>;
+   objGradientContour(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1738,6 +1768,7 @@ class objGradientGouraud : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientGouraud";
 
    using create = kt::Create<objGradientGouraud>;
+   objGradientGouraud(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1782,6 +1813,7 @@ class objGradientMesh : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientMesh";
 
    using create = kt::Create<objGradientMesh>;
+   objGradientMesh(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1815,6 +1847,7 @@ class objGradientDistal : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientDistal";
 
    using create = kt::Create<objGradientDistal>;
+   objGradientDistal(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -1897,6 +1930,7 @@ class objGradientVoronoi : public objGradient {
    static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
 
    using create = kt::Create<objGradientVoronoi>;
+   objGradientVoronoi(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
 
    // Action stubs
 
@@ -2020,6 +2054,7 @@ class objFilterEffect : public Object {
    static constexpr CSTRING CLASS_NAME = "FilterEffect";
 
    using create = kt::Create<objFilterEffect>;
+   objFilterEffect(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    objFilterEffect * Next;    // Next filter in the chain.
    objFilterEffect * Prev;    // Previous filter in the chain.
@@ -2172,6 +2207,7 @@ class objImageFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ImageFX";
 
    using create = kt::Create<objImageFX>;
+   objImageFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2252,6 +2288,7 @@ class objSourceFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "SourceFX";
 
    using create = kt::Create<objSourceFX>;
+   objSourceFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2318,6 +2355,7 @@ class objBlurFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "BlurFX";
 
    using create = kt::Create<objBlurFX>;
+   objBlurFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2379,6 +2417,7 @@ class objColourFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ColourFX";
 
    using create = kt::Create<objColourFX>;
+   objColourFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2442,6 +2481,7 @@ class objCompositeFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "CompositeFX";
 
    using create = kt::Create<objCompositeFX>;
+   objCompositeFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2533,6 +2573,7 @@ class objConvolveFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "ConvolveFX";
 
    using create = kt::Create<objConvolveFX>;
+   objConvolveFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2687,6 +2728,7 @@ class objDisplacementFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "DisplacementFX";
 
    using create = kt::Create<objDisplacementFX>;
+   objDisplacementFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2768,6 +2810,7 @@ class objFloodFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "FloodFX";
 
    using create = kt::Create<objFloodFX>;
+   objFloodFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2838,6 +2881,7 @@ class objLightingFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "LightingFX";
 
    using create = kt::Create<objLightingFX>;
+   objLightingFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -2961,6 +3005,7 @@ class objMergeFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "MergeFX";
 
    using create = kt::Create<objMergeFX>;
+   objMergeFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -3013,6 +3058,7 @@ class objMorphologyFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "MorphologyFX";
 
    using create = kt::Create<objMorphologyFX>;
+   objMorphologyFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -3084,6 +3130,7 @@ class objOffsetFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "OffsetFX";
 
    using create = kt::Create<objOffsetFX>;
+   objOffsetFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -3158,6 +3205,7 @@ class objRemapFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "RemapFX";
 
    using create = kt::Create<objRemapFX>;
+   objRemapFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -3229,6 +3277,7 @@ class objTurbulenceFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "TurbulenceFX";
 
    using create = kt::Create<objTurbulenceFX>;
+   objTurbulenceFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -3330,6 +3379,7 @@ class objWaveFunctionFX : public objFilterEffect {
    static constexpr CSTRING CLASS_NAME = "WaveFunctionFX";
 
    using create = kt::Create<objWaveFunctionFX>;
+   objWaveFunctionFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
 
    // Action stubs
 
@@ -3452,6 +3502,7 @@ class objVectorClip : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorClip";
 
    using create = kt::Create<objVectorClip>;
+   objVectorClip(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    objVectorViewport * Viewport;    // This viewport hosts the Vector objects that will contribute to the clip path.
    std::string SID;                 // String identifier for a vector.
@@ -3514,6 +3565,7 @@ class objVectorFilter : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorFilter";
 
    using create = kt::Create<objVectorFilter>;
+   objVectorFilter(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    Unit   X;                     // X coordinate for the filter.
    Unit   Y;                     // Y coordinate for the filter.
@@ -3702,6 +3754,7 @@ class objVector : public Object {
    static constexpr CSTRING CLASS_NAME = "Vector";
 
    using create = kt::Create<objVector>;
+   objVector(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    objVector * Child;                 // The first child vector, or NULL.
    objVectorScene * Scene;            // Short-cut to the top-level VectorScene.
@@ -4175,6 +4228,7 @@ class objVectorPath : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorPath";
 
    using create = kt::Create<objVectorPath>;
+   objVectorPath(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -4301,6 +4355,7 @@ class objVectorText : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorText";
 
    using create = kt::Create<objVectorText>;
+   objVectorText(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -4640,6 +4695,7 @@ class objVectorGroup : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorGroup";
 
    using create = kt::Create<objVectorGroup>;
+   objVectorGroup(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -4662,6 +4718,7 @@ class objVectorWave : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorWave";
 
    using create = kt::Create<objVectorWave>;
+   objVectorWave(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -4806,6 +4863,7 @@ class objVectorRectangle : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorRectangle";
 
    using create = kt::Create<objVectorRectangle>;
+   objVectorRectangle(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -4936,6 +4994,7 @@ class objVectorPolygon : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorPolygon";
 
    using create = kt::Create<objVectorPolygon>;
+   objVectorPolygon(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -5046,6 +5105,7 @@ class objVectorShape : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorShape";
 
    using create = kt::Create<objVectorShape>;
+   objVectorShape(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -5218,6 +5278,7 @@ class objVectorSpiral : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorSpiral";
 
    using create = kt::Create<objVectorSpiral>;
+   objVectorSpiral(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -5340,6 +5401,7 @@ class objVectorEllipse : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorEllipse";
 
    using create = kt::Create<objVectorEllipse>;
+   objVectorEllipse(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -5450,6 +5512,7 @@ class objVectorViewport : public objVector {
    static constexpr CSTRING CLASS_NAME = "VectorViewport";
 
    using create = kt::Create<objVectorViewport>;
+   objVectorViewport(objMetaClass *pClass, OBJECTID pUID) noexcept : objVector(pClass, pUID) {}
 
    // Action stubs
 
@@ -5854,4 +5917,3 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
-

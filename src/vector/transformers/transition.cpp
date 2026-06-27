@@ -150,7 +150,7 @@ static ERR TRANSITION_Init(extVectorTransition *Self)
 //********************************************************************************************************************
 
 static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
-   new (Self) extVectorTransition;
+   new (Self) extVectorTransition(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -195,6 +195,8 @@ static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Trans
    }
    else return log.warning(ERR::DataSize);
 }
+
+//********************************************************************************************************************
 
 static const ActionArray clTransitionActions[] = {
    { AC::FreePlacement, TRANSITION_FreePlacement },

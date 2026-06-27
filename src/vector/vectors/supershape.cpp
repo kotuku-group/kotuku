@@ -34,7 +34,7 @@ class extVectorShape : public extVector {
    Unit Radius; // Radius/CX/CY remain virtual (their getters apply a defined() guard)
    Unit CX, CY;
 
-   extVectorShape() {
+   extVectorShape(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       Radius = 100;
       CX = 0;
       CY = 0;

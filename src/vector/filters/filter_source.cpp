@@ -34,7 +34,7 @@ class extSourceFX : public extFilterEffect {
    int  DataSize = 0;
    bool Render = true;              // Must be true if the bitmap cache needs to be rendered.
 
-   extSourceFX() {
+   extSourceFX(objMetaClass *ClassPtr, OBJECTID ObjectID) : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
       if ((Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
          if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Scene->UID))) {

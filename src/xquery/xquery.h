@@ -1021,6 +1021,8 @@ public:
    extXML *XML; // During query execution, the context XML document.
    bool StaleBuild = true; // If true, the compiled query needs to be rebuilt.
 
+   extXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : objXQuery(pClass, pUID) { }
+
    ~extXQuery() {
    }
 };

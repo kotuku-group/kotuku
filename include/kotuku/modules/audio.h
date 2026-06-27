@@ -178,6 +178,7 @@ class objAudio : public Object {
    static constexpr CSTRING CLASS_NAME = "Audio";
 
    using create = kt::Create<objAudio>;
+   objAudio(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int OutputRate;    // Determines the frequency to use for the output of audio data.
    int InputRate;     // Determines the frequency to use when recording audio data.
@@ -377,6 +378,7 @@ class objSound : public Object {
    static constexpr CSTRING CLASS_NAME = "Sound";
 
    using create = kt::Create<objSound>;
+   objSound(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Path;    // Location of the audio sample data.
    double   Volume;     // The volume to use when playing the sound sample.

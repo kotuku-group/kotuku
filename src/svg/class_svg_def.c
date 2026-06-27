@@ -17,7 +17,7 @@ static const struct MethodEntry clSVGMethods[] = {
 };
 
 static ERR SVG_NewPlacement(extSVG *Self) {
-   new (Self) extSVG;
+   new (Self) extSVG(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

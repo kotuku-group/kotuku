@@ -28,7 +28,7 @@ static const struct FieldDef clCompositeFXOP[] = {
 };
 
 static ERR COMPOSITEFX_NewPlacement(extCompositeFX *Self) {
-   new (Self) extCompositeFX;
+   new (Self) extCompositeFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

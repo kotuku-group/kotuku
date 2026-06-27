@@ -37,7 +37,7 @@ static const struct FieldDef clGradientEasing[] = {
 };
 
 static ERR GRADIENT_NewPlacement(extGradient *Self) {
-   new (Self) extGradient;
+   new (Self) extGradient(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

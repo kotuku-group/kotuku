@@ -75,6 +75,7 @@ class objFont : public Object {
    static constexpr CSTRING CLASS_NAME = "Font";
 
    using create = kt::Create<objFont>;
+   objFont(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double Point;           // The point size of a font.
    double GlyphSpacing;    // Adjusts the amount of spacing between each character.

@@ -80,6 +80,8 @@ class extBlurFX : public extFilterEffect {
    using create = kt::Create<extBlurFX>;
 
    double SX = 0, SY = 0;
+
+   extBlurFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************

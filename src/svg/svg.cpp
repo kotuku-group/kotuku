@@ -118,7 +118,7 @@ class extSVG : public objSVG {
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
    bool  PreserveWS; // Preserve white-space
 
-   extSVG() {
+   extSVG(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSVG(ClassPtr, ObjectID) {
       #ifdef __ANDROID__
          FrameRate = 30; // Choose a lower frame rate for Android devices, so as to minimise power consumption.
       #else

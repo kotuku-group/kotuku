@@ -21,7 +21,7 @@ static const struct FieldDef clControllerButtons[] = {
 };
 
 static ERR CONTROLLER_NewPlacement(objController *Self) {
-   new (Self) objController;
+   new (Self) objController(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

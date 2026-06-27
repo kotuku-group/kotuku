@@ -715,7 +715,7 @@ static ERR VECTORPATH_SET_TotalCommands(extVectorPath *Self, int Value)
 
 //********************************************************************************************************************
 
-extVectorPath::extVectorPath() {
+extVectorPath::extVectorPath(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
    GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_path;
 }
 

@@ -182,7 +182,7 @@ extern "C" ERR CLASS_NewPlacement(extMetaClass *);
 
 FDEF argsFindField[] = { { "ID", FD_INT }, { "Field:Field", FD_RESULT|FD_PTR|FD_STRUCT }, { "Source", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 
-extMetaClass glMetaClass;
+extMetaClass glMetaClass(&glMetaClass, 123);
 
 //********************************************************************************************************************
 // Standard signal action, applicable to all classes
@@ -431,7 +431,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
 ERR CLASS_NewPlacement(extMetaClass *Self)
 {
-   new (Self) extMetaClass;
+   new (Self) extMetaClass(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

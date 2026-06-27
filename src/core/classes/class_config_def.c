@@ -32,7 +32,7 @@ static const struct MethodEntry clConfigMethods[] = {
 };
 
 static ERR CONFIG_NewPlacement(extConfig *Self) {
-   new (Self) extConfig;
+   new (Self) extConfig(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

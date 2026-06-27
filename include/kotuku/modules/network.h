@@ -122,6 +122,7 @@ class objNetClient : public Object {
    static constexpr CSTRING CLASS_NAME = "NetClient";
 
    using create = kt::Create<objNetClient>;
+   objNetClient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    objNetClient * Next;              // The next client IP with connections to the NetServer.
    objNetClient * Prev;              // The previous client IP with connections to the NetServer.
@@ -189,6 +190,7 @@ class objClientSocket : public Object {
    static constexpr CSTRING CLASS_NAME = "ClientSocket";
 
    using create = kt::Create<objClientSocket>;
+   objClientSocket(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t ConnectTime;       // System time for the creation of this socket.
    objClientSocket * Prev;    // Previous socket in the chain.
@@ -302,6 +304,7 @@ class objProxy : public Object {
    static constexpr CSTRING CLASS_NAME = "Proxy";
 
    using create = kt::Create<objProxy>;
+   objProxy(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string NetworkFilter;    // The name of the network that the proxy is limited to.
    std::string GatewayFilter;    // The IP address of the gateway that the proxy is limited to.
@@ -459,6 +462,7 @@ class objNetLookup : public Object {
    static constexpr CSTRING CLASS_NAME = "NetLookup";
 
    using create = kt::Create<objNetLookup>;
+   objNetLookup(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t ClientData;    // Optional user data storage
    NLF     Flags;         // Optional flags
@@ -555,6 +559,7 @@ class objNetSocket : public Object {
    static constexpr CSTRING CLASS_NAME = "NetSocket";
 
    using create = kt::Create<objNetSocket>;
+   objNetSocket(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    APTR ClientData;        // A client-defined value that can be useful in action notify events.
    std::string Address;    // An IP address or domain name to connect to.
@@ -823,6 +828,7 @@ class objNetServer : public objNetSocket {
    static constexpr CSTRING CLASS_NAME = "NetServer";
 
    using create = kt::Create<objNetServer>;
+   objNetServer(objMetaClass *pClass, OBJECTID pUID) noexcept : objNetSocket(pClass, pUID) {}
 
    // Action stubs
 
