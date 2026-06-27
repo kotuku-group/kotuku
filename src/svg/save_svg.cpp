@@ -816,7 +816,17 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
             default: break;
          }
       }
-      if (!wave->getThickness(dbl)) xml::NewAttrib(tag, "thickness", dbl);
+
+      WVT type;
+      if (!wave->getType(type)) {
+         switch (type) {
+            case WVT::TRIANGLE: xml::NewAttrib(tag, "type", "triangle"); break;
+            case WVT::SAWTOOTH: xml::NewAttrib(tag, "type", "sawtooth"); break;
+            default: break;
+         }
+      }
+
+      if (!wave->getThickness(unit)) set_dimension(tag, "thickness", unit);
 
       ChildIndex = tag->ID;
       error = save_svg_scan_std(Self, XML, Vector, tag->ID);

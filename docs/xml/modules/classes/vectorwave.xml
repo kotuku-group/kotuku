@@ -54,7 +54,7 @@
       <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
-        <param type="DOUBLE" name="Height">The new amplitude of the wave.</param>
+        <param type="DOUBLE" name="Height">The new height of the object.</param>
         <param type="DOUBLE" name="Depth">The new depth of the object.</param>
       </input>
     </action>
@@ -136,23 +136,23 @@
     </field>
 
     <field>
-      <name>Style</name>
-      <comment>Selects an alternative wave style.</comment>
+      <name>Thickness</name>
+      <comment>Expands the diameter of the wave to the specified value to produce a closed path.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type lookup="WVS">WVS</type>
+      <type>UNIT</type>
       <description>
-<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SMOOTH</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave and <code>SAWTOOTH</code> generates a ramp with a sharp return edge.</p>
-<types lookup="WVS"/>
+<p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (diameter) of the wave is determined by the provided value.  If defined as a percentage, the value is resolved against the normalised diagonal of the parent viewport, matching the scaling rule used for #StrokeWidth. Thickness is not compatible with the <fl>Close</fl> option, and takes precedence over it.</p>
       </description>
     </field>
 
     <field>
-      <name>Thickness</name>
-      <comment>Expands the diameter of the wave to the specified value to produce a closed path.</comment>
+      <name>Type</name>
+      <comment>Selects an alternative wave style.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>DOUBLE</type>
+      <type lookup="WVT">WVT</type>
       <description>
-<p>Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path. The thickness (diameter) of the wave is determined by the provided value.  Thickness is not compatible with the <fl>Close</fl> option, and takes precedence over it.</p>
+<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SMOOTH</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave and <code>SAWTOOTH</code> generates a ramp with a sharp return edge.</p>
+<types lookup="WVT"/>
       </description>
     </field>
 
@@ -190,7 +190,7 @@
       <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
     </constants>
 
-    <constants lookup="WVS" comment="Wave style options.">
+    <constants lookup="WVT" comment="Wave style options.">
       <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
       <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
       <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>

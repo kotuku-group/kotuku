@@ -194,7 +194,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "TOP: Close the path across the top of its area.",
     "BOTTOM: Close the path across the bottom of its area.")
 
-  enums("WVS", { type="int", start=1, comment="Wave style options." },
+  enums("WVT", { type="int", start=1, comment="Wave style options." },
     "SMOOTH: Standard sine-wave curvature, this is the default.",
     "TRIANGLE: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
     "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.")
@@ -815,11 +815,11 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   klass('VectorWave', {
     base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp',
-    references={ 'WVS', 'WVC', 'WVE' }, extended=true },
+    references={ 'WVT', 'WVC', 'WVE' }, extended=true },
   [[
     ~int(WVE) Envelope
     ~int(WVC) Close
-    ~int(WVS) Style
+    ~int(WVT) Type
   ]])
 
   klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' })

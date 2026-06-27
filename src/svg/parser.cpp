@@ -3492,6 +3492,11 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_frequency: wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_phase:     wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_thickness: wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_type:
+               if (iequals("triangle", StrValue)) wave->setType(WVT::TRIANGLE);
+               else if (iequals("sawtooth", StrValue)) wave->setType(WVT::SAWTOOTH);
+               else wave->setType(WVT::SMOOTH);
+               return ERR::Okay;
          }
          break;
       }

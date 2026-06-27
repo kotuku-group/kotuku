@@ -364,7 +364,7 @@ enum class WVC : int {
 
 // Wave style options.
 
-enum class WVS : int {
+enum class WVT : int {
    NIL = 0,
    SMOOTH = 1,
    TRIANGLE = 2,
@@ -4682,17 +4682,17 @@ class objVectorWave : public objVector {
    // Customised field getting
 
    inline ERR getEnvelope(WVE &Value) noexcept {
-      Value = *((WVE *)(((int8_t *)this) + 1060));
+      Value = *((WVE *)(((int8_t *)this) + 1064));
       return ERR::Okay;
    }
 
    inline ERR getClose(WVC &Value) noexcept {
-      Value = *((WVC *)(((int8_t *)this) + 1056));
+      Value = *((WVC *)(((int8_t *)this) + 1068));
       return ERR::Okay;
    }
 
-   inline ERR getStyle(WVS &Value) noexcept {
-      Value = *((WVS *)(((int8_t *)this) + 1064));
+   inline ERR getType(WVT &Value) noexcept {
+      Value = *((WVT *)(((int8_t *)this) + 1072));
       return ERR::Okay;
    }
 
@@ -4716,23 +4716,23 @@ class objVectorWave : public objVector {
       return ERR::Okay;
    }
 
+   inline ERR getThickness(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1024));
+      return ERR::Okay;
+   }
+
    inline ERR getFrequency(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1024));
-      return ERR::Okay;
-   }
-
-   inline ERR getDecay(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1032));
-      return ERR::Okay;
-   }
-
-   inline ERR getPhase(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1040));
       return ERR::Okay;
    }
 
-   inline ERR getThickness(double &Value) noexcept {
+   inline ERR getDecay(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1048));
+      return ERR::Okay;
+   }
+
+   inline ERR getPhase(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1056));
       return ERR::Okay;
    }
 
@@ -4749,7 +4749,7 @@ class objVectorWave : public objVector {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setStyle(const WVS Value) noexcept {
+   inline ERR setType(const WVT Value) noexcept {
       auto field = &this->Class->Dictionary[52];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -4774,6 +4774,11 @@ class objVectorWave : public objVector {
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
+   inline ERR setThickness(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
    inline ERR setFrequency(const double Value) noexcept {
       auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
@@ -4786,11 +4791,6 @@ class objVectorWave : public objVector {
 
    inline ERR setPhase(const double Value) noexcept {
       auto field = &this->Class->Dictionary[48];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setThickness(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5854,3 +5854,4 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
+

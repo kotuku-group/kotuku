@@ -1098,7 +1098,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
     </constants>
 
-    <constants lookup="WVS" comment="Wave style options.">
+    <constants lookup="WVT" comment="Wave style options.">
       <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
       <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
       <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
