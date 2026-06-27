@@ -182,6 +182,9 @@ static const int HEAD_NAMELEN        = 26;  // File name
 static const int HEAD_EXTRALEN       = 28;  // System specific information
 static const int HEAD_LENGTH         = 30;  // END
 
+class extCompression;
+static void write_eof(extCompression *);
+
 class extCompression : public objCompression {
    public:
    OBJECTPTR   FileIO;           // File input/output
@@ -206,6 +209,21 @@ class extCompression : public objCompression {
       Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
       MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k
       WindowBits       = MAX_WBITS; // If negative then you get raw compression when dealing with buffers and stream data, i.e. no header information
+   }
+
+   ~extCompression() {
+      // Before terminating anything, write the EOF signature (if modifications have been made).
+
+      write_eof(this);
+
+      if (ArchiveHash) remove_archive(this);
+
+      if (Feedback.isScript()) {
+         UnsubscribeAction(Feedback.Context, AC::Free);
+         Feedback.clear();
+      }
+
+      if (FileIO) FreeResource(FileIO);
    }
 };
 
@@ -784,9 +802,9 @@ The following C code illustrates a simple means of compressing a file to another
 
 <pre>
 if (auto error = mtCompressStreamStart(compress); !error) {
-   LONG len;
-   LONG cmpsize = 0;
-   UBYTE input[4096];
+   int len;
+   int cmpsize = 0;
+   uint8_t input[4096];
    while (!(error = acRead(file, input, sizeof(input), &len))) {
       if (!len) break; // No more data to read.
 
@@ -1666,29 +1684,6 @@ static ERR COMPRESSION_Flush(extCompression *Self)
 
 //********************************************************************************************************************
 
-static ERR COMPRESSION_Free(extCompression *Self)
-{
-   // Before terminating anything, write the EOF signature (if modifications have been made).
-
-   write_eof(Self);
-
-   if (Self->ArchiveHash)  {
-      remove_archive(Self);
-      Self->ArchiveHash = 0;
-   }
-
-   if (Self->Feedback.isScript()) {
-      UnsubscribeAction(Self->Feedback.Context, AC::Free);
-      Self->Feedback.clear();
-   }
-
-   if (Self->FileIO)       { FreeResource(Self->FileIO); Self->FileIO = nullptr; }
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR COMPRESSION_Init(extCompression *Self)
 {
    kt::Log log;
@@ -1945,31 +1940,6 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
 #include "compression_fields.cpp"
 #include "compression_func.cpp"
 
-static const FieldDef clPermissionFlags[] = {
-   { "Read",         PERMIT::READ },
-   { "Write",        PERMIT::WRITE },
-   { "Exec",         PERMIT::EXEC },
-   { "Executable",   PERMIT::EXEC },
-   { "Delete",       PERMIT::DELETE },
-   { "Hidden",       PERMIT::HIDDEN },
-   { "Archive",      PERMIT::ARCHIVE },
-   { "Password",     PERMIT::PASSWORD },
-   { "UserID",       PERMIT::USERID },
-   { "GroupID",      PERMIT::GROUPID },
-   { "OthersRead",   PERMIT::OTHERS_READ },
-   { "OthersWrite",  PERMIT::OTHERS_WRITE },
-   { "OthersExec",   PERMIT::OTHERS_EXEC },
-   { "OthersDelete", PERMIT::OTHERS_DELETE },
-   { "GroupRead",    PERMIT::GROUP_READ },
-   { "GroupWrite",   PERMIT::GROUP_WRITE },
-   { "GroupExec",    PERMIT::GROUP_EXEC },
-   { "GroupDelete",  PERMIT::GROUP_DELETE },
-   { "AllRead",      PERMIT::ALL_READ },
-   { "AllWrite",     PERMIT::ALL_WRITE },
-   { "AllExec",      PERMIT::ALL_EXEC },
-   { nullptr, 0 }
-};
-
 #include "class_compression_def.c"
 
 static const FieldArray clFields[] = {
@@ -1981,7 +1951,7 @@ static const FieldArray clFields[] = {
    { "CompressionLevel", FDF_INT|FDF_RW, nullptr, SET_CompressionLevel },
    { "Flags",            FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clCompressionFlags },
    { "SegmentSize",      FDF_INT|FDF_SYSTEM|FDF_RW },
-   { "Permissions",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clPermissionFlags },
+   { "Permissions",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clCompressionPermissions },
    { "MinOutputSize",    FDF_INT|FDF_R },
    { "WindowBits",       FDF_INT|FDF_RW, nullptr, SET_WindowBits },
    // Virtual fields

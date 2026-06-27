@@ -94,7 +94,6 @@ static ERR COMPRESSION_FreePlacement(extCompression *Self) {
 
 static const struct ActionArray clCompressionActions[] = {
    { AC::Flush, COMPRESSION_Flush },
-   { AC::Free, COMPRESSION_Free },
    { AC::FreePlacement, COMPRESSION_FreePlacement },
    { AC::Init, COMPRESSION_Init },
    { AC::NewPlacement, COMPRESSION_NewPlacement },

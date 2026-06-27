@@ -184,9 +184,7 @@ information that may identify the compressed data is not included in the total.
 static ERR GET_UncompressedSize(extCompression *Self, int64_t *Value)
 {
    int64_t size = 0;
-   for (auto &f : Self->Files) {
-      size += f.OriginalSize;
-   }
+   for (auto &f : Self->Files) size += f.OriginalSize;
    *Value = size;
    return ERR::Okay;
 }
@@ -209,12 +207,10 @@ To support GZIP decompression, please set the WindowBits value to 47.
 
 static ERR SET_WindowBits(extCompression *Self, int Value)
 {
-   kt::Log log;
-
    if (((Value >= 8) and (Value <= 15)) or ((Value >= -15) and (Value <= -8)) or
        (Value IS 15 + 32) or (Value IS 16 + 32)) {
       Self->WindowBits = Value;
       return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
+   else return kt::Log().warning(ERR::OutOfRange);
 }
