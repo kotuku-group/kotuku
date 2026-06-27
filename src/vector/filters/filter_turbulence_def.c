@@ -7,7 +7,7 @@ static const struct FieldDef clTurbulenceFXTB[] = {
 };
 
 static ERR TURBULENCEFX_NewPlacement(extTurbulenceFX *Self) {
-   new (Self) extTurbulenceFX;
+   new (Self) extTurbulenceFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

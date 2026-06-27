@@ -430,7 +430,7 @@ class extMetaClass : public objMetaClass {
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
 
-   extMetaClass() {
+   extMetaClass(objMetaClass *ClassPtr, OBJECTID ObjectID) : objMetaClass(ClassPtr, ObjectID) {
       Local[0] = 0xff;
    }
 };
@@ -458,7 +458,7 @@ class extFile : public objFile {
    bool   isFolder;
    int    Handle;         // Native system file handle
 
-   extFile() {
+   extFile(objMetaClass *pClass, OBJECTID pUID) : objFile(pClass, pUID) {
       Handle = -1;
       Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
    }
@@ -476,6 +476,7 @@ class extThread : public objThread {
    std::atomic_int InterruptThreadID = 0; // Internal thread ID used by WakeThread() for cooperative shutdown
    std::atomic_bool Active;
 
+   extThread(objMetaClass *pClass, OBJECTID pUID) : objThread(pClass, pUID) { }
    ~extThread();
 };
 
@@ -511,7 +512,7 @@ class extTask : public objTask {
    #endif
    struct ActionEntry Actions[int(AC::END)]; // Action routines to be intercepted by the program
 
-   extTask() {
+   extTask(objMetaClass *pClass, OBJECTID pUID) : objTask(pClass, pUID) {
       TimeOut = 60 * 60 * 24;
    }
 
@@ -545,6 +546,8 @@ class extModule : public objModule {
    public:
    using create = kt::Create<extModule>;
    APTR   prvMBMemory;   // Module base memory
+
+   extModule(objMetaClass *pClass, OBJECTID pUID) : objModule(pClass, pUID) { }
    ~extModule();
 };
 
@@ -1078,7 +1081,8 @@ class objRootModule : public Object {
    struct ActionEntry prvActions[int(AC::END)]; // Action routines to be intercepted by the program
    std::string LibraryName; // Name of the library loaded from disk
 
-   objRootModule() = default;
+   objRootModule() noexcept : Object(nullptr, 0) { }
+   objRootModule(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : Object(ClassPtr, ObjectID) { }
    ~objRootModule();
 };
 

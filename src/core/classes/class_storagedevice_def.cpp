@@ -25,7 +25,7 @@ static const struct FieldDef clStorageDeviceDeviceFlags[] = {
 };
 
 static ERR STORAGEDEVICE_NewPlacement(objStorageDevice *Self) {
-   new (Self) objStorageDevice;
+   new (Self) objStorageDevice(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

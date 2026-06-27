@@ -32,7 +32,7 @@ class extMergeFX : public extFilterEffect {
 
    std::vector<MergeSource> List;
 
-   extMergeFX() {
+   extMergeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::IGNORE;
    }
 };

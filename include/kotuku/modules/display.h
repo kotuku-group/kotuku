@@ -547,6 +547,7 @@ class objBitmap : public Object {
    static constexpr CSTRING CLASS_NAME = "Bitmap";
 
    using create = kt::Create<objBitmap>;
+   objBitmap(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    struct RGBPalette * Palette;                                    // Points to a bitmap's colour palette.
    struct ColourFormat * ColourFormat;                             // Describes the colour format used to construct each bitmap pixel.
@@ -1062,6 +1063,7 @@ class objDisplay : public Object {
    static constexpr CSTRING CLASS_NAME = "Display";
 
    using create = kt::Create<objDisplay>;
+   objDisplay(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double   RefreshRate;  // Active display refresh rate.
    objBitmap * Bitmap;    // Reference to the display's bitmap information.
@@ -1462,6 +1464,7 @@ class objClipboard : public Object {
    static constexpr CSTRING CLASS_NAME = "Clipboard";
 
    using create = kt::Create<objClipboard>;
+   objClipboard(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    CPF Flags;    // Optional clipboard behaviour flags.
 
@@ -1540,6 +1543,7 @@ class objController : public Object {
    static constexpr CSTRING CLASS_NAME = "Controller";
 
    using create = kt::Create<objController>;
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Port(-1) {}
 
    double LeftTrigger;    // Left trigger value between 0.0 and 1.0.
    double RightTrigger;   // Right trigger value between 0.0 and 1.0.
@@ -1550,7 +1554,7 @@ class objController : public Object {
    CON    Buttons;        // Button values expressed as bit-fields.
    int    Port;           // The port number assigned to the controller.
    public:
-   objController() : Port(-1) { }
+   objController() : Object(nullptr, 0), Port(-1) { }
 
    // Action stubs
 
@@ -1627,6 +1631,7 @@ class objPointer : public Object {
    static constexpr CSTRING CLASS_NAME = "Pointer";
 
    using create = kt::Create<objPointer>;
+   objPointer(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double   Speed;         // Speed multiplier for pointer movement.
    double   Acceleration;  // The rate of acceleration for relative pointer movement.
@@ -1902,6 +1907,7 @@ class objSurface : public Object {
    static constexpr CSTRING CLASS_NAME = "Surface";
 
    using create = kt::Create<objSurface>;
+   objSurface(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    Unit     X;          // Determines the horizontal position of a surface object.
    Unit     Y;          // Determines the vertical position of a surface object.

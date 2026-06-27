@@ -1396,7 +1396,7 @@ class extDocument : public objDocument {
       if (!WidthCacheGeneration) WidthCacheGeneration = 1;
    }
 
-   extDocument() {
+   extDocument(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDocument(ClassPtr, ObjectID) {
       if (auto error = unload_doc(this); error != ERR::Okay) kt::Log().fatal(error);
    }
 };

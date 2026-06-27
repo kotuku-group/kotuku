@@ -9,7 +9,7 @@ static const struct FieldDef clVectorViewportVOF[] = {
 };
 
 static ERR VECTORVIEWPORT_NewPlacement(extVectorViewport *Self) {
-   new (Self) extVectorViewport;
+   new (Self) extVectorViewport(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

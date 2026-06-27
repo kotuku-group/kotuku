@@ -333,7 +333,7 @@ class extColourFX : public extFilterEffect {
    ColourMatrix *Matrix = nullptr;
    int TotalValues;
 
-   extColourFX() {
+   extColourFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       // Configure identity matrix
       Values[0]   = 1;
       Values[6]   = 1;

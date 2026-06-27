@@ -7,7 +7,7 @@ static const struct FieldDef clMorphologyFXMOP[] = {
 };
 
 static ERR MORPHOLOGYFX_NewPlacement(extMorphologyFX *Self) {
-   new (Self) extMorphologyFX;
+   new (Self) extMorphologyFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

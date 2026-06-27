@@ -57,6 +57,8 @@ class extConfig : public objConfig {
    using create = kt::Create<extConfig>;
    uint32_t CRC;   // CRC32, for determining if config data has been altered
 
+   extConfig(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objConfig(ClassPtr, ObjectID), CRC(0) { }
+
    ~extConfig() {
       if ((Flags & CNF::AUTO_SAVE) != CNF::NIL) {
          if (not Path.empty()) {

@@ -20,6 +20,8 @@ class extCompositeFX : public extFilterEffect {
    double K1 = 0, K2 = 0, K3 = 0, K4 = 0; // For the arithmetic operator
    OP Operator = OP::OVER; // OP constant
 
+   extCompositeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
    template <class CompositeOp>
    void doMix(objBitmap *InBitmap, objBitmap *MixBitmap, uint8_t *Dest, uint8_t *In, uint8_t *Mix) {
       const uint8_t A = Target->ColourFormat->AlphaPos>>3;

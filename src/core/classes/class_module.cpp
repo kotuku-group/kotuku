@@ -225,7 +225,7 @@ ERR ROOTMODULE_FreePlacement(objRootModule *Self)
 
 static ERR ROOTMODULE_NewPlacement(objRootModule *Self)
 {
-   new (Self) objRootModule;
+   new (Self) objRootModule(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -409,7 +409,7 @@ exit:
 
 static ERR MODULE_NewPlacement(extModule *Self)
 {
-   new (Self) extModule;
+   new (Self) extModule(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -465,7 +465,7 @@ static ERR VECTORRECTANGLE_SET_YOffset(extVectorRectangle *Self, Unit &Value)
 
 //********************************************************************************************************************
 
-extVectorRectangle::extVectorRectangle() {
+extVectorRectangle::extVectorRectangle(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
    GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_rectangle;
 }
 

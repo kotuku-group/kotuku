@@ -116,6 +116,7 @@ class objDocument : public Object {
    static constexpr CSTRING CLASS_NAME = "Document";
 
    using create = kt::Create<objDocument>;
+   objDocument(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Description;         // A description of the document, provided by its author.
    std::string Title;               // The title of the document.

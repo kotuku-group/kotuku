@@ -18,7 +18,7 @@ static const struct FieldDef clImageFXVSM[] = {
 };
 
 static ERR IMAGEFX_NewPlacement(extImageFX *Self) {
-   new (Self) extImageFX;
+   new (Self) extImageFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

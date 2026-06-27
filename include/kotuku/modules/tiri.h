@@ -45,6 +45,7 @@ class objTiri : public objScript {
    static constexpr CSTRING CLASS_NAME = "Tiri";
 
    using create = kt::Create<objTiri>;
+   objTiri(objMetaClass *pClass, OBJECTID pUID) noexcept : objScript(pClass, pUID) {}
 
    // Action stubs
 

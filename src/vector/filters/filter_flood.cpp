@@ -24,7 +24,7 @@ class extFloodFX : public extFilterEffect {
    double Opacity = 1.0;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
 
-   extFloodFX() {
+   extFloodFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
    }
 };

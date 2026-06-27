@@ -263,7 +263,7 @@ class extAudio : public objAudio {
 
    inline void finish(AudioChannel &Channel, bool Notify);
 
-   extAudio();
+   extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID);
    ~extAudio();
 
    private:
@@ -288,7 +288,7 @@ class extSound : public objSound {
    std::string NoteString;
    bool  Active;             // True once the sound is registered with the audio driver or mixer.
 
-   extSound() {
+   extSound(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSound(ClassPtr, ObjectID) {
       Compression = 50;     // 50% compression by default
       Volume      = 1.0;    // Playback at 100% volume level
       Pan         = 0;

@@ -221,7 +221,7 @@ class extVectorText : public extVector {
    bool txScaledFontSize;
 // bool txSpacingAndGlyphs:1;
 
-   extVectorText() {
+   extVectorText(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       txFontStyle     = "Regular";
       GeneratePath    = (void (*)(extVector *, agg::path_storage &))&generate_text;
       StrokeWidth     = 0.0;

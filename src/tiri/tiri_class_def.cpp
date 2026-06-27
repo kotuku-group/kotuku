@@ -22,7 +22,7 @@ static const struct FieldDef clTiriJOF[] = {
 };
 
 static ERR TIRI_NewPlacement(extTiri *Self) {
-   new (Self) extTiri;
+   new (Self) extTiri(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -22,6 +22,7 @@ class objMP3 : public objSound {
    static constexpr CSTRING CLASS_NAME = "MP3";
 
    using create = kt::Create<objMP3>;
+   objMP3(objMetaClass *pClass, OBJECTID pUID) noexcept : objSound(pClass, pUID) {}
 
 #ifdef PRV_MP3
    ~objMP3();

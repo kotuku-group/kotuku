@@ -160,7 +160,7 @@ class extTurbulenceFX : public extFilterEffect {
       if (Bitmap) FreeResource(Bitmap);
    }
 
-   extTurbulenceFX() {
+   extTurbulenceFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
    }
 };

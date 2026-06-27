@@ -36,7 +36,7 @@ class extVectorWave : public extVector {
    WVC wClose        = WVC::NIL;
    WVT wType         = WVT::SMOOTH;
 
-   extVectorWave() {
+   extVectorWave(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
    }
 };

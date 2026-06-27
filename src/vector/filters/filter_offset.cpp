@@ -17,6 +17,8 @@ class extOffsetFX : public extFilterEffect {
    using create = kt::Create<extOffsetFX>;
 
    int XOffset = 0, YOffset = 0;
+
+   extOffsetFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************

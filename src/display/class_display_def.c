@@ -67,7 +67,7 @@ static const struct MethodEntry clDisplayMethods[] = {
 };
 
 static ERR DISPLAY_NewPlacement(extDisplay *Self) {
-   new (Self) extDisplay;
+   new (Self) extDisplay(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

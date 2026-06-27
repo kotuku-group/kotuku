@@ -204,7 +204,10 @@ class extCompression : public objCompression {
    int   FileIndex;
    int16_t   CompressionCount;  // Counter of times that compression has occurred
 
-   extCompression() : Output(SIZE_COMPRESSION_BUFFER), Input(SIZE_COMPRESSION_BUFFER) {
+   extCompression(objMetaClass *ClassPtr, OBJECTID ObjectID) :
+      objCompression(ClassPtr, ObjectID),
+      Output(SIZE_COMPRESSION_BUFFER),
+      Input(SIZE_COMPRESSION_BUFFER) {
       CompressionLevel = 60; // 60% compression by default
       Permissions      = PERMIT::NIL; // Inherit permissions by default. PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
       MinOutputSize    = (32 * 1024) + 2048; // Has to at least match the minimum 'window size' of each compression block, plus extra in case of overflow.  Min window size is typically 16k

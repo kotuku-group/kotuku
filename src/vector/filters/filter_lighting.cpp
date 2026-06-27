@@ -165,6 +165,8 @@ class extLightingFX : public extFilterEffect {
    double ConeScale;
    point3 SpotDelta;
 
+   extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
    // Shift matrix components to the left, as we advance pixels to the right.
 
    constexpr void shiftMatrixLeft(std::array<uint8_t, 9> &m) {

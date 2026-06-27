@@ -82,7 +82,7 @@ static const struct MethodEntry clBitmapMethods[] = {
 };
 
 static ERR BITMAP_NewPlacement(extBitmap *Self) {
-   new (Self) extBitmap;
+   new (Self) extBitmap(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

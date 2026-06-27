@@ -151,7 +151,7 @@ static const struct MethodEntry clSurfaceMethods[] = {
 };
 
 static ERR SURFACE_NewPlacement(extSurface *Self) {
-   new (Self) extSurface;
+   new (Self) extSurface(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

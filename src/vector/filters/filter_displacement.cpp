@@ -52,6 +52,8 @@ class extDisplacementFX : public extFilterEffect {
    double Scale = 0; // SVG default requires this is 0, which makes the displacment algorithm ineffective.
    VSM ResampleMethod = VSM::BILINEAR; // Resample method.
    CMP XChannel = CMP::ALPHA, YChannel = CMP::ALPHA;
+
+   extDisplacementFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 static double SQRT2DIV2 = sqrt(2.0) / 2.0;

@@ -27,7 +27,7 @@ static const struct MethodEntry clTaskMethods[] = {
 };
 
 static ERR TASK_NewPlacement(extTask *Self) {
-   new (Self) extTask;
+   new (Self) extTask(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

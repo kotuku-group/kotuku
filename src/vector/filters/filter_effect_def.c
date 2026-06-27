@@ -43,7 +43,7 @@ static const struct FieldDef clFilterEffectVSF[] = {
 };
 
 static ERR FILTEREFFECT_NewPlacement(extFilterEffect *Self) {
-   new (Self) extFilterEffect;
+   new (Self) extFilterEffect(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

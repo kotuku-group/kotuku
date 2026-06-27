@@ -19,7 +19,7 @@ class extImage : public objImage {
       if (Mask)    FreeResource(Mask);
    }
 
-   extImage() {
+   extImage(objMetaClass *ClassPtr, OBJECTID ObjectID) : objImage(ClassPtr, ObjectID) {
       if (NewLocalObject(CLASSID::BITMAP, &Bitmap) != ERR::Okay) {
          kt::Log().fatal(ERR::NewObject);
       }

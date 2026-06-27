@@ -32,7 +32,7 @@ static const struct FieldDef clVectorImageAspectRatio[] = {
 };
 
 static ERR VECTORIMAGE_NewPlacement(extVectorImage *Self) {
-   new (Self) extVectorImage;
+   new (Self) extVectorImage(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

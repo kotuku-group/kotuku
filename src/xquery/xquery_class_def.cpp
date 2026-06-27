@@ -48,7 +48,7 @@ static const struct MethodEntry clXQueryMethods[] = {
 };
 
 static ERR XQUERY_NewPlacement(extXQuery *Self) {
-   new (Self) extXQuery;
+   new (Self) extXQuery(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

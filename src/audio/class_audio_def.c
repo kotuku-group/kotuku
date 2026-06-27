@@ -33,7 +33,7 @@ static const struct MethodEntry clAudioMethods[] = {
 };
 
 static ERR AUDIO_NewPlacement(extAudio *Self) {
-   new (Self) extAudio;
+   new (Self) extAudio(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

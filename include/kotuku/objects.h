@@ -198,11 +198,22 @@ struct alignas(8) Object { // Must be 64-bit aligned
    std::atomic_int ThreadID;     // Managed by locking functions.  Atomic due to volatility.
    char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
 
-   // NB: This constructor is called by NewObject(), no need to call it manually from client code.
-   // Class and UID are set by NewObject() prior to construction
+   Object(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
+      Class(ClassPtr),
+      DerivedPtr(nullptr),
+      CreatorMeta(nullptr),
+      Owner(nullptr),
+      NotifyFlags(0),
+      ActionDepth(0),
+      Queue(0),
+      SleepQueue(0),
+      RefCount(0),
+      UID(ObjectID),
+      Flags(0),
+      ThreadID(0),
+      Name("") { }
 
-   Object() : DerivedPtr(nullptr), CreatorMeta(nullptr), Owner(nullptr), NotifyFlags(0),
-      ActionDepth(0), Queue(0), SleepQueue(0), RefCount(0), Flags(0), ThreadID(0), Name("") { }
+   Object() = delete;
 
    [[nodiscard]] inline bool initialised() const { return Flags.load(std::memory_order_relaxed) & uint32_t(NF::INITIALISED); }
    [[nodiscard]] inline bool defined(NF pFlags) const { return Flags.load(std::memory_order_relaxed) & uint32_t(pFlags); }

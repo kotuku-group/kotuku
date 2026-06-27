@@ -37,7 +37,7 @@ static const struct MethodEntry clVectorSceneMethods[] = {
 };
 
 static ERR VECTORSCENE_NewPlacement(extVectorScene *Self) {
-   new (Self) extVectorScene;
+   new (Self) extVectorScene(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

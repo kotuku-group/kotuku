@@ -505,4 +505,6 @@ class extTiri : public objTiri {
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
    uint16_t RequireCounter;
+
+   extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }
 };

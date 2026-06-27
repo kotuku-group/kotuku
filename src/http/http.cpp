@@ -362,7 +362,7 @@ class extHTTP : public objHTTP {
    uint16_t KeepAlive:1;
    uint16_t ProxyDefined:1;   // TRUE if the ProxyServer has been manually set by the user
 
-   extHTTP() {
+   extHTTP(objMetaClass *ClassPtr, OBJECTID ObjectID) : objHTTP(ClassPtr, ObjectID) {
       Error          = ERR::Okay;
       DataTimeout    = 5.0;
       ConnectTimeout = 10.0;

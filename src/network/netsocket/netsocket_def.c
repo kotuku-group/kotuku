@@ -40,7 +40,7 @@ static const struct MethodEntry clNetSocketMethods[] = {
 };
 
 static ERR NETSOCKET_NewPlacement(extNetSocket *Self) {
-   new (Self) extNetSocket;
+   new (Self) extNetSocket(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

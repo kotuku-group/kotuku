@@ -34,7 +34,7 @@ class extCompressedStream : public objCompressedStream {
 
    ~extCompressedStream();
 
-   extCompressedStream() {
+   extCompressedStream(objMetaClass *ClassPtr, OBJECTID ObjectID) : objCompressedStream(ClassPtr, ObjectID) {
       Format = CF::GZIP;
    }
 

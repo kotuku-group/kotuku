@@ -25,7 +25,7 @@ class extVectorSpiral : public extVector {
    Unit Radius;
    Unit CX, CY;
 
-   extVectorSpiral() {
+   extVectorSpiral(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       Spacing = 0;
       Offset = 0;
       Radius = 0;

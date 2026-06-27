@@ -20,7 +20,7 @@ static const struct MethodEntry clRemapFXMethods[] = {
 };
 
 static ERR REMAPFX_NewPlacement(extRemapFX *Self) {
-   new (Self) extRemapFX;
+   new (Self) extRemapFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -538,12 +538,13 @@ end
 
 global function outputClassHeader(Class:table, Private:str, Custom:str)
    priority(f'class obj{Class.name};') -- Forward declaration
-   output('class obj' .. Class.name ..  ' : public ' .. (Class.base ?? 'Object') .. ' {')
+   output(f'class obj{Class.name} : public {Class.base ?? 'Object'} {{')
    output('   public:')
    output(f'   static constexpr CLASSID CLASS_ID = CLASSID::{Class.name:upper()};')
    output(f'   static constexpr CSTRING CLASS_NAME = "{Class.name}";')
    output('')
-   output('   using create = kt::Create<obj' .. Class.name .. '>;')
+   output(f'   using create = kt::Create<obj{Class.name}>;')
+   output(f'   obj{Class.name}(objMetaClass *pClass, OBJECTID pUID) noexcept : {Class.base ?? 'Object'}(pClass, pUID) {{}}')
 
    outputVisibleFields(Class, Private, Custom)
    outputActionStubs(Class)

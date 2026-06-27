@@ -66,7 +66,7 @@ static const struct FieldDef clPointerPTC[] = {
 };
 
 static ERR POINTER_NewPlacement(extPointer *Self) {
-   new (Self) extPointer;
+   new (Self) extPointer(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

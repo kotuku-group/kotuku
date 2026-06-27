@@ -132,7 +132,7 @@ static const struct MethodEntry clVectorMethods[] = {
 };
 
 static ERR VECTOR_NewPlacement(extVector *Self) {
-   new (Self) extVector;
+   new (Self) extVector(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

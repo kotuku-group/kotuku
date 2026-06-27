@@ -27,7 +27,7 @@ static const struct FieldDef clDisplacementFXVSM[] = {
 };
 
 static ERR DISPLACEMENTFX_NewPlacement(extDisplacementFX *Self) {
-   new (Self) extDisplacementFX;
+   new (Self) extDisplacementFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -12,7 +12,7 @@ static const struct FieldDef clImageFlags[] = {
 };
 
 static ERR IMAGE_NewPlacement(extImage *Self) {
-   new (Self) extImage;
+   new (Self) extImage(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -14,7 +14,7 @@ static const struct FieldDef clVectorClipFlags[] = {
 };
 
 static ERR VECTORCLIP_NewPlacement(extVectorClip *Self) {
-   new (Self) extVectorClip;
+   new (Self) extVectorClip(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

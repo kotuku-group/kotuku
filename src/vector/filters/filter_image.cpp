@@ -35,7 +35,7 @@ class extImageFX : public extFilterEffect {
    objBitmap *Bitmap;    // Bitmap containing source image data.
    objImage *Image;      // Origin image if loading a source file.
 
-   extImageFX() {
+   extImageFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS;
    }
 

@@ -28,7 +28,7 @@ static const struct FieldDef clVectorFilterAspectRatio[] = {
 };
 
 static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self) {
-   new (Self) extVectorFilter;
+   new (Self) extVectorFilter(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

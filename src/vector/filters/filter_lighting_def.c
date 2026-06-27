@@ -18,7 +18,7 @@ static const struct MethodEntry clLightingFXMethods[] = {
 };
 
 static ERR LIGHTINGFX_NewPlacement(extLightingFX *Self) {
-   new (Self) extLightingFX;
+   new (Self) extLightingFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

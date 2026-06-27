@@ -94,7 +94,7 @@ class extFont : public objFont {
    char prvEscape[2];
    uint8_t prvDefaultChar;
 
-   extFont() {
+   extFont(objMetaClass *ClassPtr, OBJECTID ObjectID) : objFont(ClassPtr, ObjectID) {
       TabSize         = 8;
       prvDefaultChar  = '.';
       prvLineCountCR  = 1;

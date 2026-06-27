@@ -118,6 +118,8 @@ class extClientSocket : public objClientSocket {
    #ifndef DISABLE_SSL
       TLSSession TLS;
    #endif
+
+   extClientSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objClientSocket(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************
@@ -144,7 +146,7 @@ class extNetSocket : public objNetSocket {
       TLSSession TLS;
    #endif
 
-   extNetSocket() {
+   extNetSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) : objNetSocket(ClassPtr, ObjectID) {
       // objNetSocket defaults
       Error    = ERR::Okay;
       State    = NTC::DISCONNECTED;
@@ -175,6 +177,8 @@ class extNetServer : public extNetSocket {
       #endif
    #endif
 
+   extNetServer(objMetaClass *ClassPtr, OBJECTID ObjectID) : extNetSocket(ClassPtr, ObjectID) { }
+
    ~extNetServer();
 };
 
@@ -183,6 +187,8 @@ class extNetLookup : public objNetLookup {
    FUNCTION Callback;
    struct DNSEntry Info;
    std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
+
+   extNetLookup(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objNetLookup(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************

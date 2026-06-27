@@ -23,7 +23,7 @@ static const struct MethodEntry clVectorTextMethods[] = {
 };
 
 static ERR VECTORTEXT_NewPlacement(extVectorText *Self) {
-   new (Self) extVectorText;
+   new (Self) extVectorText(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

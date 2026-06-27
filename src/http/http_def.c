@@ -126,7 +126,7 @@ static const struct FieldDef clHTTPCurrentState[] = {
 };
 
 static ERR HTTP_NewPlacement(extHTTP *Self) {
-   new (Self) extHTTP;
+   new (Self) extHTTP(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

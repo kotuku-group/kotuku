@@ -83,7 +83,7 @@ static const struct MethodEntry clCompressionMethods[] = {
 };
 
 static ERR COMPRESSION_NewPlacement(extCompression *Self) {
-   new (Self) extCompression;
+   new (Self) extCompression(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

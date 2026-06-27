@@ -33,7 +33,7 @@ static const struct FieldDef clFontALIGN[] = {
 };
 
 static ERR FONT_NewPlacement(extFont *Self) {
-   new (Self) extFont;
+   new (Self) extFont(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

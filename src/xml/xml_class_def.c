@@ -75,7 +75,7 @@ static const struct MethodEntry clXMLMethods[] = {
 };
 
 static ERR XML_NewPlacement(extXML *Self) {
-   new (Self) extXML;
+   new (Self) extXML(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
