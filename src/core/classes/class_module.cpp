@@ -58,6 +58,7 @@ static ERR SET_Name(extModule *, const std::string_view &);
 static const FieldDef clFlags[] = {
    { "LinkLibrary", MOF::LINK_LIBRARY },
    { "Static",      MOF::STATIC },
+   { "SystemProbe", MOF::SYSTEM_PROBE },
    { nullptr, 0 }
 };
 

@@ -385,6 +385,7 @@
               <li><a class="rounded" href="classes/gradientdistal.html">GradientDistal</a></li>
               <li><a class="rounded" href="classes/gradientgouraud.html">GradientGouraud</a></li>
               <li><a class="rounded" href="classes/gradientlinear.html">GradientLinear</a></li>
+              <li><a class="rounded" href="classes/gradientmesh.html">GradientMesh</a></li>
               <li><a class="rounded" href="classes/gradientradial.html">GradientRadial</a></li>
               <li><a class="rounded" href="classes/gradientvoronoi.html">GradientVoronoi</a></li>
               <li><a class="rounded" href="classes/vector.html">Vector</a></li>

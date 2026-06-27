@@ -44,8 +44,6 @@ static ERR POINTER_UngrabX11Pointer(extPointer *);
 static FunctionField mthGrabX11Pointer[] = { { "Surface", FD_INT }, { nullptr, 0 } };
 #endif
 
-static int glDefaultSpeed = 160;
-static double glDefaultAcceleration = 0.8;
 static TIMER glRepeatTimer = 0;
 
 static ERR repeat_timer(extPointer *, int64_t, int64_t);

@@ -450,8 +450,8 @@ can also be auto-generated using our IDL scripts - an approach that we strongly 
 
 <pre>
 ActionArray clActions[] = {
-   { AC::Free,          PIC_Free },
-   { AC::NewObject,     PIC_NewObject },
+   { AC::FreePlacement, PIC_FreePlacement },
+   { AC::NewPlacement,  PIC_NewPlacement },
    { AC::Init,          PIC_Init },
    { AC::Query,         PIC_Query },
    { AC::Read,          PIC_Read },
@@ -1371,6 +1371,8 @@ void scan_classes(void)
             auto modules = std::string("modules:") + list->Name;
 
             log.msg("Loading module for class scan: %s", modules.c_str());
+
+            // The SYSTEM_PROBE flag allows module initialisation callbacks to check the startup mode.
 
             objModule::create mod = { fl::Name(modules), fl::Flags(MOF::SYSTEM_PROBE) };
 

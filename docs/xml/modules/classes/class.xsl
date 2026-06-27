@@ -366,6 +366,7 @@
                         <li class="api-ref"><a class="rounded" href="gradientdistal.html">GradientDistal</a></li>
                         <li class="api-ref"><a class="rounded" href="gradientgouraud.html">GradientGouraud</a></li>
                         <li class="api-ref"><a class="rounded" href="gradientlinear.html">GradientLinear</a></li>
+                        <li class="api-ref"><a class="rounded" href="gradientmesh.html">GradientMesh</a></li>
                         <li class="api-ref"><a class="rounded" href="gradientradial.html">GradientRadial</a></li>
                         <li class="api-ref"><a class="rounded" href="gradientvoronoi.html">GradientVoronoi</a></li>
                         <li class="api-ref"><a class="rounded" href="vector.html">Vector</a></li>
