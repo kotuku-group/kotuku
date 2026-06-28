@@ -1208,9 +1208,10 @@ LJLIB_CF(debug_validate)
    bool include_symbols = flags.find("symbols") != std::string_view::npos;
 
    // The chunk name carries the source path through to the parser so that relative imports ('./lib') resolve
-   // against the document's directory.  Prefixing with '@' marks it as a file path (Lua source-naming convention).
+   // against the document's directory.  Use a literal chunk name so validation of unsaved or stale LSP buffers does
+   // not register the buffer path as a real FileSource entry.
 
-   std::string chunk_name = source_path.empty() ? std::string("=validate") : (std::string("@") + source_path);
+   std::string chunk_name = source_path.empty() ? std::string("=validate") : (std::string("=") + source_path);
 
    lua_newtable(L); // Create result table
 
