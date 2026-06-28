@@ -26,7 +26,7 @@
 //   debug.setHook([hook, mask [, count]]) - Sets the debug hook
 //   debug.getHook()             - Returns the current hook settings
 //   debug.traceback([msg [, level]]) - Returns a traceback string
-//   debug.validate(code [, flags]) - Parses code and returns diagnostics without execution
+//   debug.validate(code [, options]) - Parses code and returns diagnostics without execution
 //   debug.locality(name [, level]) - Returns locality of a variable: "local", "upvalue", "global", or "nil"
 //   debug.anno.get(func)        - Returns annotation entry for a function
 //   debug.anno.set(func, annotations [, source [, name]]) - Sets annotations for a function
@@ -1189,23 +1189,22 @@ LJLIB_CF(debug_validate)
 {
    CSTRING statement = luaL_checkstring(L, 1);
 
-   // The optional second argument may be a flags string (deprecated), or an options table accepting 'flags' and 'path'
-   // values.  A 'path' enables relative import resolution against the source file's directory (used by the LSP).
+   // The optional second argument may be an options table.  The 'symbols' boolean
+   // enables parser symbol extraction, and 'path' enables relative import resolution against the source file's
+   // directory (used by the LSP).
 
-   std::string flags;
    std::string source_path;
+   bool include_symbols = false;
    if (lua_istable(L, 2)) {
-      lua_getfield(L, 2, "flags");
-      if (CSTRING f = lua_tostring(L, -1)) flags.assign(f);
+      lua_getfield(L, 2, "symbols");
+      bool has_symbols_option = not lua_isnil(L, -1);
+      if (has_symbols_option) include_symbols = lua_toboolean(L, -1);
       lua_pop(L, 1);
 
       lua_getfield(L, 2, "path");
       if (CSTRING p = lua_tostring(L, -1)) source_path.assign(p);
       lua_pop(L, 1);
    }
-   else if (CSTRING f = luaL_optstring(L, 2, "")) flags.assign(f);
-
-   bool include_symbols = flags.find("symbols") != std::string_view::npos;
 
    // The chunk name carries the source path through to the parser so that relative imports ('./lib') resolve
    // against the document's directory.  Use a literal chunk name so validation of unsaved or stale LSP buffers does
