@@ -1,5 +1,6 @@
 
    import './compile_if_helper'
+   import './import_parent/child'
 
 @Test function ImportBasic()
    assert(helper_message is "Hello from imported module!",
@@ -20,4 +21,12 @@ end
 
 @Test function DebugMode()
    assert(debug_on or debug_off, "Debug state flags not set.")
+end
+
+@Test function ParentRelativeImport()
+   assert(parent_import_message is "Loaded through parent-relative import",
+      f"Expected parent import message, got '{parent_import_message}'")
+   assert(parent_import_value() is 73, "Expected parent import function to remain available")
+   assert(child_parent_message is "Loaded through parent-relative import from child",
+      f"Expected child import message, got '{child_parent_message}'")
 end

@@ -196,7 +196,7 @@ function hoverGetDocumentSymbols(Doc:table):array
 
    local result
    try
-      result = debug.validate(Doc.content, 'symbols')
+      result = debug.validate(Doc.content, { flags = 'symbols', path = lspUriToPath(Doc.uri) })
    except ex
       result = nil
    end

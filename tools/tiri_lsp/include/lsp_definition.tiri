@@ -411,13 +411,14 @@ function resolveScriptImport(Doc:table, Name:str):table
    doc_path = lspUriToPath(Doc.uri)
    base_path = getParentPath(doc_path)
    script_name = Name:endsWith('.tiri') and Name or (Name .. '.tiri')
+   local_import = Name:startsWith('./') or Name:startsWith('../')
 
-   if Name:startsWith('./') or Name:startsWith('../') then
+   if local_import then
       candidates:push(base_path .. script_name)
+   else
+      candidates:push('sdk:scripts/' .. script_name)
+      candidates:push('scripts:' .. script_name)
    end
-
-   candidates:push('sdk:scripts/' .. script_name)
-   candidates:push('scripts:' .. script_name)
 
    for candidate in values(candidates) do
       resolved = resolveExistingPath(candidate)
