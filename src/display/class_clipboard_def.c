@@ -35,7 +35,6 @@ static ERR CLIPBOARD_FreePlacement(objClipboard *Self) {
 static const struct ActionArray clClipboardActions[] = {
    { AC::Clear, CLIPBOARD_Clear },
    { AC::DataFeed, CLIPBOARD_DataFeed },
-   { AC::Free, CLIPBOARD_Free },
    { AC::FreePlacement, CLIPBOARD_FreePlacement },
    { AC::Init, CLIPBOARD_Init },
    { AC::NewPlacement, CLIPBOARD_NewPlacement },

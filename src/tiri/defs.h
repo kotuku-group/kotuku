@@ -507,4 +507,6 @@ class extTiri : public objTiri {
    uint16_t RequireCounter;
 
    extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }
+
+   ~extTiri();
 };

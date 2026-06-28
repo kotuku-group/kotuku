@@ -37,7 +37,6 @@ class objImage : public Object {
    static constexpr CSTRING CLASS_NAME = "Image";
 
    using create = kt::Create<objImage>;
-   objImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Quality(80) {}
 
    std::string Path;    // The location of source image data.
    objBitmap * Bitmap;  // Represents image data.
@@ -47,7 +46,7 @@ class objImage : public Object {
    int DisplayWidth;    // The preferred width to use when displaying the image.
    int Quality;         // Defines the quality level to use when saving the image.
    public:
-   objImage() : Object(nullptr, 0), Quality(80) { }
+   objImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Quality(80) {}
 
    // Action stubs
 

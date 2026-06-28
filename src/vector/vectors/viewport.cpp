@@ -114,29 +114,23 @@ static ERR VECTORVIEWPORT_Clear(extVectorViewport *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTORVIEWPORT_Free(extVectorViewport *Self)
+extVectorViewport::~extVectorViewport()
 {
-   if ((Self->Scene) and (!Self->Scene->collecting()) and (!((extVectorScene *)Self->Scene)->ResizeSubscriptions.empty())) {
-      if (((extVectorScene *)Self->Scene)->ResizeSubscriptions.contains(Self)) {
-         ((extVectorScene *)Self->Scene)->ResizeSubscriptions.erase(Self);
+   if ((Scene) and (!Scene->collecting()) and (!((extVectorScene *)Scene)->ResizeSubscriptions.empty())) {
+      if (((extVectorScene *)Scene)->ResizeSubscriptions.contains(this)) {
+         ((extVectorScene *)Scene)->ResizeSubscriptions.erase(this);
       }
    }
 
-   if (Self->vpDragCallback.defined()) {
-      Self->subscribeInput(JTYPE::NIL, C_FUNCTION(drag_callback));
+   if (vpDragCallback.defined()) {
+      subscribeInput(JTYPE::NIL, C_FUNCTION(drag_callback));
    }
 
-   if (Self->vpBuffer) {
-      if (Self->vpBufferData) {
-         FreeResource(Self->vpBufferData);
-         Self->vpBufferData = nullptr;
-      }
-      FreeResource(Self->vpBuffer);
-      Self->vpBuffer = nullptr;
-      if (Self->Scene) ((extVectorScene *)Self->Scene)->BufferCount--;
+   if (vpBuffer) {
+      if (vpBufferData) FreeResource(vpBufferData);
+      FreeResource(vpBuffer);
+      if (Scene) ((extVectorScene *)Scene)->BufferCount--;
    }
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************

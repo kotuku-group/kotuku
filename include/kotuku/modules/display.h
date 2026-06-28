@@ -1470,6 +1470,7 @@ class objClipboard : public Object {
 
 #ifdef PRV_CLIPBOARD
    FUNCTION RequestHandler;
+   ~objClipboard();
 #endif
 
    // Action stubs
@@ -1543,7 +1544,6 @@ class objController : public Object {
    static constexpr CSTRING CLASS_NAME = "Controller";
 
    using create = kt::Create<objController>;
-   objController(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Port(-1) {}
 
    double LeftTrigger;    // Left trigger value between 0.0 and 1.0.
    double RightTrigger;   // Right trigger value between 0.0 and 1.0.
@@ -1554,7 +1554,7 @@ class objController : public Object {
    CON    Buttons;        // Button values expressed as bit-fields.
    int    Port;           // The port number assigned to the controller.
    public:
-   objController() : Object(nullptr, 0), Port(-1) { }
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
 
    // Action stubs
 

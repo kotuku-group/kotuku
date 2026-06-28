@@ -398,14 +398,12 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
 
 //********************************************************************************************************************
 
-static ERR XQUERY_Free(extXQuery *Self)
+extXQuery::~extXQuery()
 {
-   if (Self->ResolveVariable.isScript()) {
-      UnsubscribeAction(Self->ResolveVariable.Context, AC::Free);
-      Self->ResolveVariable.clear();
+   if (ResolveVariable.isScript()) {
+      UnsubscribeAction(ResolveVariable.Context, AC::Free);
+      ResolveVariable.clear();
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

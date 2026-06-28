@@ -496,14 +496,12 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 
 //********************************************************************************************************************
 
-static ERR CLIPBOARD_Free(objClipboard *Self)
+objClipboard::~objClipboard()
 {
-   if (Self->RequestHandler.isScript()) {
-      UnsubscribeAction(Self->RequestHandler.Context, AC::Free);
-      Self->RequestHandler.clear();
+   if (RequestHandler.isScript()) {
+      UnsubscribeAction(RequestHandler.Context, AC::Free);
+      RequestHandler.clear();
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

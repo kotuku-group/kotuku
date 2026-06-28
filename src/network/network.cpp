@@ -120,6 +120,8 @@ class extClientSocket : public objClientSocket {
    #endif
 
    extClientSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objClientSocket(ClassPtr, ObjectID) { }
+
+   ~extClientSocket();
 };
 
 //********************************************************************************************************************
@@ -152,6 +154,8 @@ class extNetSocket : public objNetSocket {
       State    = NTC::DISCONNECTED;
       MsgLimit = 1024768;
    }
+
+   ~extNetSocket();
 };
 
 class extNetServer : public extNetSocket {
@@ -189,6 +193,8 @@ class extNetLookup : public objNetLookup {
    std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
 
    extNetLookup(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objNetLookup(ClassPtr, ObjectID) { }
+
+   ~extNetLookup();
 };
 
 //********************************************************************************************************************

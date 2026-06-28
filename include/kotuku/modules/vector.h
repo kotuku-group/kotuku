@@ -716,14 +716,15 @@ class objVectorColour : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorColour";
 
    using create = kt::Create<objVectorColour>;
-   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
 
    double Red;    // The red component value.
    double Green;  // The green component value.
    double Blue;   // The blue component value.
    double Alpha;  // The alpha component value.
-   public:
-   objVectorColour() : Object(nullptr, 0), Alpha(1.0) {}
+
+#ifdef PRV_VECTORCOLOUR
+   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
+#endif
 
    // Action stubs
 
@@ -971,13 +972,6 @@ class objVectorImage : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorImage";
 
    using create = kt::Create<objVectorImage>;
-   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      X            = Unit(0);
-      Y            = Unit(0);
-      Units        = VUNIT::BOUNDING_BOX;
-      SpreadMethod = VSPREAD::CLIP;
-      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
-   }
 
    Unit    X;               // Apply a horizontal offset to the image, the origin of which is determined by the Units value.
    Unit    Y;               // Apply a vertical offset to the image, the origin of which is determined by the Units value.
@@ -988,7 +982,7 @@ class objVectorImage : public Object {
    ARF     AspectRatio;     // Flags that affect the aspect ratio of the image within its target vector.
 
 #ifdef PRV_VECTORIMAGE
-   objVectorImage() : Object(nullptr, 0) {
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       X            = Unit(0);
       Y            = Unit(0);
       Units        = VUNIT::BOUNDING_BOX;
@@ -1088,14 +1082,6 @@ class objVectorPattern : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorPattern";
 
    using create = kt::Create<objVectorPattern>;
-   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      SpreadMethod = VSPREAD::REPEAT;
-      Units        = VUNIT::BOUNDING_BOX;
-      ContentUnits = VUNIT::USERSPACE;
-      Opacity      = 1.0;
-      X            = Unit(0);
-      Y            = Unit(0);
-   }
 
    Unit    X;                            // X coordinate for the pattern.
    Unit    Y;                            // Y coordinate for the pattern.
@@ -1111,7 +1097,7 @@ class objVectorPattern : public Object {
    VUNIT   ContentUnits;                 // Not yet implemented.
 
 #ifdef PRV_VECTORPATTERN
-   objVectorPattern() : Object(nullptr, 0) {
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       SpreadMethod = VSPREAD::REPEAT;
       Units        = VUNIT::BOUNDING_BOX;
       ContentUnits = VUNIT::USERSPACE;
@@ -1269,13 +1255,6 @@ class objGradient : public Object {
    static constexpr CSTRING CLASS_NAME = "Gradient";
 
    using create = kt::Create<objGradient>;
-   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      Gamma        = 1.0;
-      Easing       = GEZ::LINEAR;
-      SpreadMethod = VSPREAD::PAD;
-      Units        = VUNIT::BOUNDING_BOX;
-      Resolution   = 1;
-   }
 
    kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a gradient.
    kt::vector<GradientStop> Stops;       // Defines the colours to use for the gradient.
@@ -1291,17 +1270,17 @@ class objGradient : public Object {
    int     NumericID;                    // Numeric identifier for a vector.
 
 #ifdef PRV_GRADIENT
-   objGradient() : Object(nullptr, 0) {
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+#endif
+   public:
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       Gamma        = 1.0;
       Easing       = GEZ::LINEAR;
       SpreadMethod = VSPREAD::PAD;
       Units        = VUNIT::BOUNDING_BOX;
       Resolution   = 1;
    }
-
-   class GradientColours *Colours;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
-#endif
 
    // Action stubs
 
@@ -5917,3 +5896,4 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(F
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
 
 }
+

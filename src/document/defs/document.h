@@ -1399,6 +1399,8 @@ class extDocument : public objDocument {
    extDocument(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDocument(ClassPtr, ObjectID) {
       if (auto error = unload_doc(this); error != ERR::Okay) kt::Log().fatal(error);
    }
+
+   ~extDocument();
 };
 
 bc_button::bc_button() {

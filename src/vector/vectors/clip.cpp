@@ -28,11 +28,10 @@ the clipping path is sized to match the target vector.  A viewbox size of `0 0 1
 
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_Free(extVectorClip *Self)
+extVectorClip::~extVectorClip()
 {
-   if (Self->Viewport) ((extVectorViewport *)Self->Viewport)->vpClipOwner = nullptr;
-   if (Self->ViewportID) { FreeResource(Self->ViewportID); Self->ViewportID = 0; Self->Viewport = nullptr; }
-   return ERR::Okay;
+   if (Viewport) ((extVectorViewport *)Viewport)->vpClipOwner = nullptr;
+   if (ViewportID) FreeResource(ViewportID);
 }
 
 //********************************************************************************************************************

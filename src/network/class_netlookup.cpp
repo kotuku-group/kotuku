@@ -249,14 +249,12 @@ blocking, mutates-object
 
 *********************************************************************************************************************/
 
-static ERR NETLOOKUP_Free(extNetLookup *Self)
+extNetLookup::~extNetLookup()
 {
-   if (Self->Callback.isScript()) {
-      UnsubscribeAction(Self->Callback.Context, AC::Free);
-      Self->Callback.Type = CALL::NIL;
+   if (Callback.isScript()) {
+      UnsubscribeAction(Callback.Context, AC::Free);
+      Callback.Type = CALL::NIL;
    }
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************

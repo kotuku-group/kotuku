@@ -536,6 +536,7 @@ module({
   ]],
   [[
    FUNCTION RequestHandler;
+   ~objClipboard();
   ]])
 
   klass('Controller', { src='class_controller.cpp', output='class_controller_def.c', extended=false }, [[
@@ -550,7 +551,7 @@ module({
   ]],
   nil,
   [[
-   objController() : Port(-1) { }
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
   ]])
 
   klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC' }, extended=true }, [[

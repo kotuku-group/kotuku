@@ -82,21 +82,22 @@
 #include <android/configuration.h>
 #endif
 
-#define USE_XIMAGE         TRUE
-#define SIZE_FOCUSLIST     30
-#define DEFAULT_WHEELSPEED 500
-#define TIME_DBLCLICK      40
-#define REPEAT_BUTTONS     TRUE
-#define MAX_CURSOR_WIDTH   32
-#define MAX_CURSOR_HEIGHT  32
-#define DRAG_XOFFSET       10
-#define DRAG_YOFFSET       12
+#define USE_XIMAGE 1
 
-#define BF_DATA     0x01
-#define BF_WINVIDEO 0x02
+constexpr bool REPEAT_BUTTONS    = true;
+constexpr int SIZE_FOCUSLIST     = 30;
+constexpr int DEFAULT_WHEELSPEED = 500;
+constexpr int TIME_DBLCLICK      = 40;
+constexpr int MAX_CURSOR_WIDTH   = 32;
+constexpr int MAX_CURSOR_HEIGHT  = 32;
+constexpr int DRAG_XOFFSET       = 10;
+constexpr int DRAG_YOFFSET       = 12;
 
-#define BLEND_MAX_THRESHOLD 255
-#define BLEND_MIN_THRESHOLD 1
+constexpr uint8_t BF_DATA     = 0x01;
+constexpr uint8_t BF_WINVIDEO = 0x02;
+
+constexpr int BLEND_MAX_THRESHOLD = 255;
+constexpr int BLEND_MIN_THRESHOLD = 1;
 
 #define ALIGN32(a) (((a) + 3) & (~3))
 
@@ -347,6 +348,8 @@ class extPointer : public objPointer {
       #endif
 
    }
+
+   ~extPointer();
 };
 
 class extSurface : public objSurface {
@@ -384,6 +387,8 @@ class extSurface : public objSurface {
       Opacity    = 1.0;
       WindowType = glpWindowType;
    }
+
+   ~extSurface();
 
    inline void setFixedPosition(int X, int Y) {
       FixedX = std::clamp(X, -0x8000, 0x7fff);
@@ -489,6 +494,8 @@ class extDisplay : public objDisplay {
          DisplayType = DT::NATIVE;
       #endif
    }
+
+   ~extDisplay();
 };
 
 extern void clean_clipboard(void);
@@ -769,4 +776,5 @@ class extBitmap : public objBitmap {
    #endif
 
    extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID);
+   ~extBitmap();
 };

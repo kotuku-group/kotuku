@@ -32,7 +32,7 @@ The alpha component value, measured from 0 to 1.0.  The default is 1.0.
 
 static ERR VECTORCOLOUR_NewPlacement(objVectorColour *Self)
 {
-   new (Self) objVectorColour();
+   new (Self) objVectorColour(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
