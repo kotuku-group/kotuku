@@ -1,3 +1,4 @@
+// CHANGED: 2026-06-28 - Documented parent-relative ('../') import resolution.
 // VERIFIED: 2026-02-13
 
 [[ch-script-management]]
@@ -19,13 +20,15 @@ The `Name` argument identifies the library to import.  Resolution follows these 
 . The default search location is the `scripts:` volume.
 . Nested modules use `/` folder separators.
 . To import from the local directory, prefix with `./`. For example, a name of `./lib/mylib` resolves relative to the importing script.
+. To import from a parent directory, prefix with one or more `../` segments.  For example, `../shared/util` resolves relative to the importing script's parent directory.
 . Each library is imported at most once per compilation unit.  Subsequent `import` calls for the same library are silently ignored.
 
 [source,tiri]
 ----
-import 'json'          -- scripts:json.tiri
-import 'gui/button'    -- scripts:gui/button.tiri
-import './helpers'     -- ./helpers.tiri (relative to script)
+import 'json'             -- scripts:json.tiri
+import 'gui/button'       -- scripts:gui/button.tiri
+import './helpers'        -- ./helpers.tiri (relative to script)
+import '../shared/util'   -- ../shared/util.tiri (relative to script's parent)
 ----
 
 [discrete]

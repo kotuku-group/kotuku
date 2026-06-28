@@ -1,3 +1,4 @@
+// CHANGED: 2026-06-28 - Updated debug.validate() symbol-extraction calls to the { symbols=true } options form.
 // CHANGED: 2026-05-02 - Added parser annotation expressions and parser symbol metadata extraction.
 // VERIFIED: 2026-03-05
 
@@ -129,7 +130,7 @@ indexterm:[annotations, standard] The following annotations are recognised by st
 |Annotation |Purpose
 
 |`@Doc`
-|Attaches documentation text to a function for parser tooling.  The documentation text is read by `debug.validate(Code, 'symbols')` when it extracts symbol metadata (see <<sec-parser-symbol-metadata>>).  During normal source execution, a source-declared `@Doc` annotation is registered in `_ANNO` by name, but its argument payload is omitted.
+|Attaches documentation text to a function for parser tooling.  The documentation text is read by `debug.validate(Code, { symbols=true })` when it extracts symbol metadata (see <<sec-parser-symbol-metadata>>).  During normal source execution, a source-declared `@Doc` annotation is registered in `_ANNO` by name, but its argument payload is omitted.
 
 |`@Disabled`
 |Marks a function as disabled.  Recognised by the Flute test runner, which omits functions bearing this annotation from the discovered test list.
@@ -171,7 +172,7 @@ end
 |Registers the `Doc` annotation by name in `_ANNO`, but omits its arguments.
 
 |Doc parsing enabled
-|Preserves `text` so that `debug.validate(Code, 'symbols')` can populate symbol documentation.
+|Preserves `text` so that `debug.validate(Code, { symbols=true })` can populate symbol documentation.
 
 |Programmatic `debug.anno.set()`
 |Stores the supplied annotation data exactly as provided.
@@ -535,10 +536,10 @@ is empty if no arguments were provided).
 
 [[sec-parser-symbol-metadata]]
 === Parser Symbol Metadata
-indexterm:[parser symbol metadata] `debug.validate(Code, 'symbols')` parses `Code` without executing it and returns parser-derived symbol metadata in the
+indexterm:[parser symbol metadata] `debug.validate(Code, { symbols=true })` parses `Code` without executing it and returns parser-derived symbol metadata in the
 `symbols` field.  This mode enables documentation processing while the source is parsed.
 
-[.api]`Result = debug.validate(Code, 'symbols')`
+[.api]`Result = debug.validate(Code, { symbols=true })`
 
 When parsing succeeds, `Result.success` is `true` and `Result.symbols` is an array of symbol entries.  When parsing
 fails, diagnostics are returned as defined in <<sec-validation-and-diagnostics>>.
@@ -560,7 +561,7 @@ function greet(Name: str):str
 end
 ]=]
 
-result = debug.validate(code, 'symbols')
+result = debug.validate(code, { symbols=true })
 symbol = result.symbols[0]
 print(symbol.signature)       -- 'greet(Name: str):str'
 print(symbol.doc.summary)     -- 'Returns a greeting.'

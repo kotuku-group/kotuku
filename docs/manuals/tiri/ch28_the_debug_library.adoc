@@ -1,3 +1,4 @@
+// CHANGED: 2026-06-28 - debug.validate() now takes an options table ('symbols', 'path').
 // VERIFIED: 2026-03-06
 
 [[ch-the-debug-library]]
@@ -450,7 +451,7 @@ The `fileIndex` field returned by `debug.getInfo()` (with the `S` option) corres
 [discrete%unbreakable]
 ==== debug.validate()
 
-[.api]`result = debug.validate(Code, [Flags])`
+[.api]`result = debug.validate(Code, [Options])`
 
 Parses `Code` as a Tiri statement without executing it.  Returns a table describing the parse result.
 
@@ -548,7 +549,25 @@ if not result.success then
 end
 ----
 
-The optional `Flags` parameter is a string reserved for future use.  The default value `'s'` performs syntax-only parsing.
+The optional `Options` argument controls how the code is parsed.  Pass a table with any of the following fields:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`symbols`
+|boolean
+|Set to `true` to include parsed symbol metadata in the result's `symbols` field.
+
+|`path`
+|string
+|The source file path.  Supplying a path enables relative imports such as `'./lib'` and `'../lib'` to resolve against the file's directory.
+|===
+
+[source,tiri]
+----
+result = debug.validate(code, { symbols=true, path='scripts:app/main.tiri' })
+----
 
 [discrete]
 ==== debug.locality()

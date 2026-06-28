@@ -418,7 +418,7 @@ indexterm:[library, debug] See <<ch-the-debug-library>>.
 |`debug.getUserValue(Userdata)`           |Returns the user value table.
 |`debug.setUserValue(Userdata, Table)`    |Sets the user value table.
 |`debug.fileSources()`                    |Returns an array of loaded file sources.
-|`debug.validate(Code, [Flags])`          |Validates Tiri source code without executing it.
+|`debug.validate(Code, [Options])`        |Validates Tiri source code without executing it.
 |`debug.locality(Name, [Level])`          |Checks if a name is a local, upvalue, or global.
 |===
 
