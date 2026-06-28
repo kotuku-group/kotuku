@@ -23,8 +23,8 @@ and #YChannel to `CMP::GREEN`.
 The displacement map defines the inverse of the mapping performed.
 
 The Input image is to remain premultiplied for this filter effect.  The calculations using the pixel values
-from Mix are performed using non-premultiplied color values.  If the image from Mix consists of premultiplied
-color values, those values are automatically converted into non-premultiplied color values before performing this
+from Mix are performed using non-premultiplied colour values.  If the image from Mix consists of premultiplied
+colour values, those values are automatically converted into non-premultiplied colour values before performing this
 operation.
 
 -END-
@@ -49,8 +49,11 @@ class extDisplacementFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "DisplacementFX";
    using create = kt::Create<extDisplacementFX>;
 
-   double Scale;
-   CMP XChannel, YChannel;
+   double Scale = 0; // SVG default requires this is 0, which makes the displacment algorithm ineffective.
+   VSM ResampleMethod = VSM::BILINEAR; // Resample method.
+   CMP XChannel = CMP::ALPHA, YChannel = CMP::ALPHA;
+
+   extDisplacementFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 static double SQRT2DIV2 = sqrt(2.0) / 2.0;
@@ -126,25 +129,73 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
       else return Pixel[Type];
    };
 
+   auto get_input_pixel = [input, inBmp, in_width, in_height](int X, int Y) -> uint8_t * {
+      if ((X < 0) or (X >= in_width) or (Y < 0) or (Y >= in_height)) return nullptr;
+      else return input + (X * inBmp->BytesPerPixel) + (Y * inBmp->LineWidth);
+   };
+
+   auto sample_input_bilinear = [get_input_pixel](uint8_t *Output, double X, double Y) {
+      if ((X < 0.0) or (Y < 0.0)) {
+         ((uint32_t *)Output)[0] = 0;
+         return;
+      }
+
+      const int x0 = int(std::floor(X));
+      const int y0 = int(std::floor(Y));
+      const int x1 = x0 + 1;
+      const int y1 = y0 + 1;
+      const double tx = X - double(x0);
+      const double ty = Y - double(y0);
+
+      auto p00 = get_input_pixel(x0, y0);
+      auto p10 = get_input_pixel(x1, y0);
+      auto p01 = get_input_pixel(x0, y1);
+      auto p11 = get_input_pixel(x1, y1);
+
+      if (!p00) {
+         ((uint32_t *)Output)[0] = 0;
+         return;
+      }
+
+      for (int i=0; i < 4; i++) {
+         const double c00 = p00 ? double(p00[i]) : 0.0;
+         const double c10 = p10 ? double(p10[i]) : 0.0;
+         const double c01 = p01 ? double(p01[i]) : 0.0;
+         const double c11 = p11 ? double(p11[i]) : 0.0;
+         const double top = (c00 * (1.0 - tx)) + (c10 * tx);
+         const double bottom = (c01 * (1.0 - tx)) + (c11 * tx);
+         Output[i] = uint8_t(std::clamp(int(std::lrint((top * (1.0 - ty)) + (bottom * ty))), 0, 255));
+      }
+   };
+
    //log.warning("W/H: %dx%d; MW/H: %dx%d; IW/H: %dx%d; CW/H: %.2fx%.2f, BBox: %d", width, height, mix_width, mix_height, in_width, in_height, c_width, c_height, Self->Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX);
    //log.warning("X Channel: %d, Y Channel: %d; Scale: %.2f / %.2f -> %.2f,%.2f; WH: %dx%d", Self->XChannel, Self->YChannel, Self->Scale, scale_against, sx, sy, width, height);
 
-   static const double HALF8BIT = 255.0 * 0.5;
+   constexpr double HALF8BIT = 255.0 * 0.5;
+   const bool nearest = Self->ResampleMethod IS VSM::NEIGHBOUR;
    for (int y=0; y < draw_height; y++) {
       auto m = mix;
-      auto d = (uint32_t *)dest;
-      for (int x=0; x < draw_width; x++, m += mixBmp->BytesPerPixel, d++) {
+      auto d = dest;
+      for (int x=0; x < draw_width; x++, m += mixBmp->BytesPerPixel, d += Self->Target->BytesPerPixel) {
          auto dx = sample_mix(m, Self->XChannel, x_type);
          auto dy = sample_mix(m, Self->YChannel, y_type);
-         // TODO: SVG recommends using interpolation between pixels rather than the dropping the fractional part
-         // as done here.
-         const int cx = x + std::lrint(sx * (double(dx) - HALF8BIT));
-         const int cy = y + std::lrint(sy * (double(dy) - HALF8BIT));
-         if ((cx < 0) or (cx >= in_width) or (cy < 0) or (cy >= in_height)) {
-            // The source pixel is outside of retrievable bounds
-            *d = 0;
+         const double sample_x = double(x) + (sx * (double(dx) - HALF8BIT));
+         const double sample_y = double(y) + (sy * (double(dy) - HALF8BIT));
+
+         if (nearest) {
+            const int cx = std::lrint(sample_x);
+            const int cy = std::lrint(sample_y);
+            if ((cx < 0) or (cx >= in_width) or (cy < 0) or (cy >= in_height)) {
+               // The source pixel is outside of retrievable bounds
+               ((uint32_t *)d)[0] = 0;
+            }
+            else ((uint32_t *)d)[0] = ((uint32_t *)(input + (cx * 4) + (cy * inBmp->LineWidth)))[0];
          }
-         else *d = ((uint32_t *)(input + (cx * 4) + (cy * inBmp->LineWidth)))[0];
+         else if ((sample_x < 0.0) or (sample_x >= double(in_width)) or (sample_y < 0.0) or (sample_y >= double(in_height))) {
+            // The source pixel is outside of retrievable bounds
+            ((uint32_t *)d)[0] = 0;
+         }
+         else sample_input_bilinear(d, sample_x, sample_y);
       }
       mix  += mixBmp->LineWidth;
       dest += Self->Target->LineWidth;
@@ -153,17 +204,14 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR DISPLACEMENTFX_NewObject(extDisplacementFX *Self)
-{
-   Self->Scale = 0; // SVG default requires this is 0, which makes the displacment algorithm ineffective.
-   Self->XChannel = CMP::ALPHA;
-   Self->YChannel = CMP::ALPHA;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
+
+-FIELD-
+ResampleMethod: The resample algorithm to use for transforming the source image.
+
+Currently `NEIGHBOUR` and `BILINEAR` are supported.  Other resample methods fall back to bilinear filtering.
+
+!VSM
 
 -FIELD-
 Scale: Displacement scale factor.
@@ -171,61 +219,13 @@ Scale: Displacement scale factor.
 The amount is expressed in the coordinate system established by @VectorFilter.PrimitiveUnits on the parent @VectorFilter.
 When the value of this field is 0, this operation has no effect on the source image.
 
-*********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_GET_Scale(extDisplacementFX *Self, double *Value)
-{
-   *Value = Self->Scale;
-   return ERR::Okay;
-}
-
-static ERR DISPLACEMENTFX_SET_Scale(extDisplacementFX *Self, double Value)
-{
-   Self->Scale = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 XChannel: X axis channel selection.
 Lookup: CMP
 
-*********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_GET_XChannel(extDisplacementFX *Self, CMP *Value)
-{
-   *Value = Self->XChannel;
-   return ERR::Okay;
-}
-
-static ERR DISPLACEMENTFX_SET_XChannel(extDisplacementFX *Self, CMP Value)
-{
-   Self->XChannel = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 YChannel: Y axis channel selection.
 Lookup: CMP
-
-*********************************************************************************************************************/
-
-static ERR DISPLACEMENTFX_GET_YChannel(extDisplacementFX *Self, CMP *Value)
-{
-   *Value = Self->YChannel;
-   return ERR::Okay;
-}
-
-static ERR DISPLACEMENTFX_SET_YChannel(extDisplacementFX *Self, CMP Value)
-{
-   Self->YChannel = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
@@ -251,18 +251,11 @@ static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string_view &
 
 #include "filter_displacement_def.c"
 
-static const FieldDef clChannel[] = {
-   { "Red",   CMP::RED },
-   { "Green", CMP::GREEN },
-   { "Blue",  CMP::BLUE },
-   { "Alpha", CMP::ALPHA },
-   { nullptr, 0 }
-};
-
 static const FieldArray clDisplacementFXFields[] = {
-   { "Scale",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_Scale, DISPLACEMENTFX_SET_Scale },
-   { "XChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_XChannel, DISPLACEMENTFX_SET_XChannel, &clChannel },
-   { "YChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_YChannel, DISPLACEMENTFX_SET_YChannel, &clChannel },
+   { "Scale",     FDF_DOUBLE|FDF_RW },
+   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXVSM },
+   { "XChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
+   { "YChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
    { "XMLDef",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, DISPLACEMENTFX_GET_XMLDef },
    END_FIELD
 };

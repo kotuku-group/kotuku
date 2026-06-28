@@ -75,26 +75,6 @@ static ERR FONT_Draw(extFont *Self)
 
 //********************************************************************************************************************
 
-static ERR FONT_Free(extFont *Self)
-{
-   CACHE_LOCK lock(glCacheMutex);
-
-   if (Self->BmpCache) {
-      // Reduce the usage count.  Use a timed delay on freeing the font in case it is used again.
-      Self->BmpCache->OpenCount--;
-      if (!Self->BmpCache->OpenCount) {
-         if (!glCacheTimer) {
-            kt::SwitchContext ctx(modFont);
-            SubscribeTimer(60.0, C_FUNCTION(bitmap_cache_cleaner), &glCacheTimer);
-         }
-      }
-   }
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR FONT_Init(extFont *Self)
 {
    kt::Log log;
@@ -109,7 +89,7 @@ static ERR FONT_Init(extFont *Self)
    if (Self->Path.empty()) {
       std::string path;
       if (auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta); !error) {
-         error = Self->set(FID_Path, path);
+         error = Self->setPath(path);
          if (error != ERR::Okay) return error;
       }
       else {
@@ -421,25 +401,6 @@ Defines the exact font file to load before initialisation.  This bypasses normal
 database.
 
 This feature is ideal for use when distributing custom fonts with an application.
-
-*********************************************************************************************************************/
-
-static ERR SET_Path(extFont *Self, const std::string_view &Value)
-{
-   if (!Self->initialised()) {
-      Self->Path.assign(Value);
-      return ERR::Okay;
-   }
-   else return ERR::Failed;
-}
-
-static ERR GET_Location(extFont *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 MaxHeight: The maximum possible pixel height per character.
@@ -974,6 +935,23 @@ static ERR draw_bitmap_font(extFont *Self)
 
 //********************************************************************************************************************
 
+extFont::~extFont() {
+   CACHE_LOCK lock(glCacheMutex);
+
+   if (BmpCache) {
+      // Reduce the usage count.  Use a timed delay on freeing the font in case it is used again.
+      BmpCache->OpenCount--;
+      if (!BmpCache->OpenCount) {
+         if (!glCacheTimer) {
+            kt::SwitchContext ctx(modFont);
+            SubscribeTimer(60.0, C_FUNCTION(bitmap_cache_cleaner), &glCacheTimer);
+         }
+      }
+   }
+}
+
+//********************************************************************************************************************
+
 #include "class_font_def.c"
 
 static const FieldArray clFontFields[] = {
@@ -981,12 +959,12 @@ static const FieldArray clFontFields[] = {
    { "GlyphSpacing", FDF_DOUBLE|FDF_RW },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
    { "String",       FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
-   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Path",         FDF_CPPSTRING|FDF_RW },
    { "Style",        FDF_CPPSTRING|FDF_RI, nullptr, SET_Style },
    { "Face",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Face },
-   { "Outline",      FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, nullptr, 4 },
-   { "Underline",    FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, nullptr, 4 },
-   { "Colour",       FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, nullptr, 4 },
+   { "Outline",      FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },
+   { "Underline",    FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },
+   { "Colour",       FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, clFontFlags },
    { "Gutter",       FDF_INT|FDF_RI },
    { "LineSpacing",  FDF_INT|FDF_RW },
@@ -1008,7 +986,6 @@ static const FieldArray clFontFields[] = {
    { "Bold",         FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Bold, SET_Bold },
    { "Italic",       FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Italic, SET_Italic },
    { "LineCount",    FDF_VIRTUAL|FDF_INT|FDF_R, GET_LineCount },
-   { "Location",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW|FDF_PURE, GET_Location, SET_Path },
    { "Opacity",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, GET_Opacity, SET_Opacity },
    { "Width",        FDF_VIRTUAL|FDF_INT|FDF_R, GET_Width },
    { "YOffset",      FDF_VIRTUAL|FDF_INT|FDF_R, GET_YOffset },

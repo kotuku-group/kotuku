@@ -155,8 +155,10 @@ void doc_menu::refresh()
    // Resize the menu to match the new content.  If the height of the menu is excessive (relative to the height
    // of the display), we reduce it and utilise a scrollbar to see all menu items.
 
-   auto doc_width  = m_doc->get<double>(FID_PageWidth);
-   auto doc_height = m_doc->get<double>(FID_PageHeight);
+   Unit doc_width;
+   int doc_height;
+   m_doc->getPageWidth(doc_width);
+   m_doc->getPageHeight(doc_height);
 
    double view_width  = doc_width;
    double view_height = doc_height;
@@ -175,14 +177,14 @@ void doc_menu::refresh()
       m_view->setFields(fl::Height(view_height));
 
       objVectorViewport *doc_page, *doc_view;
-      if (!m_doc->get(FID_Page, doc_page)) {
-         if (!m_doc->get(FID_View, doc_view)) {
+      if (!m_doc->getPage(doc_page)) {
+         if (!m_doc->getView(doc_view)) {
             m_scroll.init((extDocument *)CurrentContext(), doc_page, doc_view);
             m_scroll.m_auto_adjust_view_size = false;
 
             OBJECTPTR clip;
             if (!m_scene->findDef("PageClip", &clip)) {
-               doc_page->set(FID_Mask, clip);
+               doc_page->setMask(clip);
             }
          }
       }

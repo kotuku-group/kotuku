@@ -13,19 +13,17 @@ module({ name="Image", copyright="Paul Manias © 2001-2026", version=1.0, timest
     "FORCE_ALPHA_32: If the image source includes an alpha channel mask, it will normally be separated out and stored in the #Mask field.  If you set the `FORCE_ALPHA_32` option before loading, the image will be forced into 32-bit graphics mode with alpha channel.  The mask information will be stored in the alpha byte and the #Mask field will not be set.")
 
   klass("Image", { src="image.cpp", output="image_def.c", extended=true }, [[
+    string Path         # Path to the image
     obj(Bitmap) Bitmap  # Bitmap details
     obj(Bitmap) Mask    # Monochrome bit mask or alpha channel
     int(PCF) Flags      # Optional flags
     int DisplayHeight   # Preferred display height
     int DisplayWidth    # Preferred display width
     int Quality         # Quality rating when saving image (0% low, 100% high)
-    int FrameRate       # Refresh & redraw the image X times per second.  Used by images that have an animation refresh rate
   ]],
   nil,
   [[
-   objImage() {
-      Quality = 80;
-   }
+   objImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Quality(80) {}
   ]])
 
   c_insert([[

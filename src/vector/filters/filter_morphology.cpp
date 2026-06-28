@@ -19,7 +19,7 @@ corresponding R,G,B,A values in the input image's kernel rectangle.
 Frequently this operation will take place on alpha-only images, such as that produced by the built-in input,
 SourceAlpha.  In that case, the implementation might want to optimize the single channel case.
 
-Because the algorithm operates on premultipied color values, it will always result in color values less than or
+Because the algorithm operates on premultiplied colour values, it will always result in colour values less than or
 equal to the alpha channel.
 
 -END-
@@ -44,8 +44,10 @@ class extMorphologyFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "MorphologyFX";
    using create = kt::Create<extMorphologyFX>;
 
-   int RadiusX, RadiusY;
-   MOP Operator;
+   int RadiusX = 0, RadiusY = 0;
+   MOP Operator = MOP::ERODE;
+
+   extMorphologyFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************
@@ -216,44 +218,16 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR MORPHOLOGYFX_NewObject(extMorphologyFX *Self)
-{
-   Self->Operator = MOP::ERODE;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
 Operator: Set to either `ERODE` or `DILATE`.
 Lookup: MOP
 
-*********************************************************************************************************************/
-
-static ERR MORPHOLOGYFX_GET_Operator(extMorphologyFX *Self, MOP *Value)
-{
-   *Value = Self->Operator;
-   return ERR::Okay;
-}
-
-static ERR MORPHOLOGYFX_SET_Operator(extMorphologyFX *Self, MOP Value)
-{
-   Self->Operator = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 RadiusX: X radius value.
 
 *********************************************************************************************************************/
-
-static ERR MORPHOLOGYFX_GET_RadiusX(extMorphologyFX *Self, int *Value)
-{
-   *Value = Self->RadiusX;
-   return ERR::Okay;
-}
 
 static ERR MORPHOLOGYFX_SET_RadiusX(extMorphologyFX *Self, int Value)
 {
@@ -270,12 +244,6 @@ static ERR MORPHOLOGYFX_SET_RadiusX(extMorphologyFX *Self, int Value)
 RadiusY: Y radius value.
 
 *********************************************************************************************************************/
-
-static ERR MORPHOLOGYFX_GET_RadiusY(extMorphologyFX *Self, int *Value)
-{
-   *Value = Self->RadiusY;
-   return ERR::Okay;
-}
 
 static ERR MORPHOLOGYFX_SET_RadiusY(extMorphologyFX *Self, int Value)
 {
@@ -317,16 +285,10 @@ static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string_view &Valu
 
 #include "filter_morphology_def.c"
 
-static const FieldDef clMorphologyFXOperator[] = {
-   { "Erode",  MOP::ERODE },
-   { "Dilate", MOP::DILATE },
-   { nullptr, 0 }
-};
-
 static const FieldArray clMorphologyFXFields[] = {
-   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_Operator, MORPHOLOGYFX_SET_Operator, &clMorphologyFXOperator },
-   { "RadiusX",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_RadiusX, MORPHOLOGYFX_SET_RadiusX },
-   { "RadiusY",  FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, MORPHOLOGYFX_GET_RadiusY, MORPHOLOGYFX_SET_RadiusY },
+   { "RadiusX",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
+   { "RadiusY",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
+   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clMorphologyFXMOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, MORPHOLOGYFX_GET_XMLDef },
    END_FIELD
 };

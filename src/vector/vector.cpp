@@ -19,7 +19,10 @@ JUMPTABLE_FONT
 OBJECTPTR clVectorScene = nullptr, clVectorViewport = nullptr, clVectorGroup = nullptr, clVectorColour = nullptr;
 OBJECTPTR clVectorEllipse = nullptr, clVectorRectangle = nullptr, clVectorPath = nullptr, clVectorWave = nullptr;
 OBJECTPTR clVectorFilter = nullptr, clVectorPolygon = nullptr, clVectorText = nullptr, clVectorClip = nullptr;
-OBJECTPTR clVectorGradient = nullptr, clVectorImage = nullptr, clVectorPattern = nullptr, clVector = nullptr;
+OBJECTPTR clGradient = nullptr, clGradientLinear = nullptr, clGradientRadial = nullptr, clGradientConic = nullptr;
+OBJECTPTR clGradientDiamond = nullptr, clGradientContour = nullptr, clGradientGouraud = nullptr, clGradientMesh = nullptr;
+OBJECTPTR clGradientDistal = nullptr, clGradientVoronoi = nullptr;
+OBJECTPTR clVectorImage = nullptr, clVectorPattern = nullptr, clVector = nullptr;
 OBJECTPTR clVectorSpiral = nullptr, clVectorShape = nullptr, clVectorTransition = nullptr, clImageFX = nullptr;
 OBJECTPTR clBlurFX = nullptr, clColourFX = nullptr, clCompositeFX = nullptr, clConvolveFX = nullptr, clFilterEffect = nullptr;
 OBJECTPTR clFloodFX = nullptr, clMergeFX = nullptr, clMorphologyFX = nullptr, clOffsetFX = nullptr, clTurbulenceFX = nullptr;
@@ -58,7 +61,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, glVectorModule);
+   glVectorModule = (OBJECTPTR)((objModule *)argModule)->Root;
 
    if (FT_Init_FreeType(&glFTLibrary)) {
       log.warning("Failed to initialise the FreeType font library.");
@@ -133,7 +136,16 @@ static ERR MODExpunge(void)
    if (clVectorPath)       { FreeResource(clVectorPath);       clVectorPath = nullptr; }
    if (clVectorPolygon)    { FreeResource(clVectorPolygon);    clVectorPolygon = nullptr; }
    if (clVectorText)       { FreeResource(clVectorText);       clVectorText = nullptr; }
-   if (clVectorGradient)   { FreeResource(clVectorGradient);   clVectorGradient = nullptr; }
+   if (clGradientDistal)   { FreeResource(clGradientDistal);   clGradientDistal = nullptr; }
+   if (clGradientVoronoi)  { FreeResource(clGradientVoronoi);  clGradientVoronoi = nullptr; }
+   if (clGradientMesh)     { FreeResource(clGradientMesh);     clGradientMesh = nullptr; }
+   if (clGradientGouraud)  { FreeResource(clGradientGouraud);  clGradientGouraud = nullptr; }
+   if (clGradientContour)  { FreeResource(clGradientContour);  clGradientContour = nullptr; }
+   if (clGradientDiamond)  { FreeResource(clGradientDiamond);  clGradientDiamond = nullptr; }
+   if (clGradientConic)    { FreeResource(clGradientConic);    clGradientConic = nullptr; }
+   if (clGradientRadial)   { FreeResource(clGradientRadial);   clGradientRadial = nullptr; }
+   if (clGradientLinear)   { FreeResource(clGradientLinear);   clGradientLinear = nullptr; }
+   if (clGradient)         { FreeResource(clGradient);         clGradient = nullptr; }
    if (clVectorGroup)      { FreeResource(clVectorGroup);      clVectorGroup = nullptr; }
    if (clVectorViewport)   { FreeResource(clVectorViewport);   clVectorViewport = nullptr; }
    if (clVectorPattern)    { FreeResource(clVectorPattern);    clVectorPattern = nullptr; }
@@ -188,12 +200,12 @@ static ERR MODExpunge(void)
 extern ERR MODOpen(OBJECTPTR Module);
 
 static STRUCTS glStructures = {
-   { "GradientStop", sizeof(GradientStop) },
-   { "MergeSource",  sizeof(MergeSource) },
-   { "PathCommand",  sizeof(PathCommand) },
-   { "Transition",   sizeof(Transition) },
-   { "VectorMatrix", sizeof(VectorMatrix) },
-   { "VectorPoint",  sizeof(VectorPoint) }
+   { "GradientStop", { sizeof(GradientStop), alignof(GradientStop) } },
+   { "MergeSource",  { sizeof(MergeSource),  alignof(MergeSource)  } },
+   { "PathCommand",  { sizeof(PathCommand),  alignof(PathCommand)  } },
+   { "Transition",   { sizeof(Transition),   alignof(Transition)   } },
+   { "VectorMatrix", { sizeof(VectorMatrix), alignof(VectorMatrix) } },
+   { "VectorPoint",  { sizeof(VectorPoint),  alignof(VectorPoint)  } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

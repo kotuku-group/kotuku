@@ -61,6 +61,39 @@ static int64_t utc_year_start_us(const int Year)
 }
 
 //********************************************************************************************************************
+// Convert a wall-clock timestamp (microseconds since the Unix epoch) into a local-time DateTime.  Declared in defs.h.
+
+ERR datetime_from_unix_us(int64_t MicroEpoch, struct DateTime &Date)
+{
+   Date.clear();
+
+   auto current_zone = std::chrono::current_zone();
+   if (not current_zone) return ERR::SystemCall;
+
+   std::chrono::system_clock::time_point utc { std::chrono::microseconds(MicroEpoch) };
+   auto local_time = current_zone->to_local(utc);
+   auto local_days = std::chrono::floor<std::chrono::days>(local_time);
+   auto ymd = std::chrono::year_month_day{local_days};
+   auto tod = std::chrono::hh_mm_ss{local_time - local_days};
+
+   if (not ymd.ok()) return ERR::SystemCall;
+
+   Date.Year   = int(ymd.year());
+   Date.Month  = unsigned(ymd.month());
+   Date.Day    = unsigned(ymd.day());
+   Date.Hour   = int(tod.hours().count());
+   Date.Minute = int(tod.minutes().count());
+   Date.Second = int(tod.seconds().count());
+
+   // Compute the local UTC offset in whole hours for the TimeZone field.
+
+   auto info = current_zone->get_info(utc);
+   Date.TimeZone = int(std::chrono::duration_cast<std::chrono::hours>(info.offset).count());
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 
 static bool is_utc_zone(std::string_view ZoneID)
 {

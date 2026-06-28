@@ -34,6 +34,8 @@ Rules - these take precedence over prior statements:
 
 Note: If currently in the `master` or `main` branch, create a new branch under `test/[name]` with a relevant name related to the changes and commit to that target.
 
+PowerShell caveat: Passing a multi-line message via `git commit -m @'...'@` only works when the opening `@'` and closing `'@` each sit alone on their own line at column 0.  Writing `-m @'...` on the same line as `git commit` causes the leading `@` to leak into the commit subject.  To avoid this, write the message to a temporary file and commit with `git commit -F <file>` (then delete the file).
+
 The `Label` is the most appropriate single-word label that categorises the most valuable changes being submitted.  For instance, if the most valuable changes are in the `Core` module, then `Core` is the appropriate label.  This rule is true of all module-based changes.  The following labels may be appropriate in other circumstances:
 
 * Script: For changes to Tiri scripts, such as in the `scripts/` and `examples/` folders.
@@ -44,3 +46,8 @@ The `Label` is the most appropriate single-word label that categorises the most 
 If no label seems appropriate, do not include a label.
 
 Push to remote after completing your commit.
+
+## Note
+
+Do not compile, test or perform any verification of the staged files.
+If Git returns a pull-request URL after the commit, always report it back to the user as a clickable link.

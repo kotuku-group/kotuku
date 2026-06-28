@@ -16,7 +16,9 @@ class extOffsetFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "OffsetFX";
    using create = kt::Create<extOffsetFX>;
 
-   int XOffset, YOffset;
+   int XOffset = 0, YOffset = 0;
+
+   extOffsetFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************
@@ -40,42 +42,10 @@ XOffset: The delta X coordinate for the input graphic.
 
 The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.
 
-*********************************************************************************************************************/
-
-static ERR OFFSETFX_GET_XOffset(extOffsetFX *Self, int *Value)
-{
-   *Value = Self->XOffset;
-   return ERR::Okay;
-}
-
-static ERR OFFSETFX_SET_XOffset(extOffsetFX *Self, int Value)
-{
-   Self->XOffset = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 YOffset: The delta Y coordinate for the input graphic.
 
 The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.
-
-*********************************************************************************************************************/
-
-static ERR OFFSETFX_GET_YOffset(extOffsetFX *Self, int *Value)
-{
-   *Value = Self->YOffset;
-   return ERR::Okay;
-}
-
-static ERR OFFSETFX_SET_YOffset(extOffsetFX *Self, int Value)
-{
-   Self->YOffset = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
@@ -101,8 +71,8 @@ static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string_view &Value)
 #include "filter_offset_def.c"
 
 static const FieldArray clOffsetFXFields[] = {
-   { "XOffset", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, OFFSETFX_GET_XOffset, OFFSETFX_SET_XOffset },
-   { "YOffset", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, OFFSETFX_GET_YOffset, OFFSETFX_SET_YOffset },
+   { "XOffset", FDF_INT|FDF_RW },
+   { "YOffset", FDF_INT|FDF_RW },
    { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, OFFSETFX_GET_XMLDef },
    END_FIELD
 };

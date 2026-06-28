@@ -31,14 +31,6 @@ extern ERR linuxReadController(int Port, double *Values, CON &Buttons);
 extern ERR linuxGetControllerPorts(int &Value);
 #endif
 
-//********************************************************************************************************************
-
-static ERR CONTROLLER_NewObject(objController *Self)
-{
-   Self->Port = -1;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Query: Get the current controller state.

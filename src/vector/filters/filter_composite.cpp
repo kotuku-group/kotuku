@@ -17,8 +17,10 @@ class extCompositeFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "CompositeFX";
    using create = kt::Create<extCompositeFX>;
 
-   double K1, K2, K3, K4; // For the arithmetic operator
-   OP Operator; // OP constant
+   double K1 = 0, K2 = 0, K3 = 0, K4 = 0; // For the arithmetic operator
+   OP Operator = OP::OVER; // OP constant
+
+   extCompositeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
    template <class CompositeOp>
    void doMix(objBitmap *InBitmap, objBitmap *MixBitmap, uint8_t *Dest, uint8_t *In, uint8_t *Mix) {
@@ -740,21 +742,11 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
 
 static ERR COMPOSITEFX_Init(extCompositeFX *Self)
 {
-   kt::Log log;
-
    if (Self->MixType IS VSF::NIL) {
-      log.warning("A mix input is required.");
+      kt::Log().warning("A MixType input is required.");
       return ERR::FieldNotSet;
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR COMPOSITEFX_NewObject(extCompositeFX *Self)
-{
-   Self->Operator = OP::OVER;
    return ERR::Okay;
 }
 
@@ -763,100 +755,20 @@ static ERR COMPOSITEFX_NewObject(extCompositeFX *Self)
 -FIELD-
 K1: Input value for the arithmetic operation.
 
-*********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_K1(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K1;
-   return ERR::Okay;
-}
-
-static ERR COMPOSITEFX_SET_K1(extCompositeFX *Self, double Value)
-{
-   Self->K1 = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 K2: Input value for the arithmetic operation.
-
-*********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_K2(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K2;
-   return ERR::Okay;
-}
-
-static ERR COMPOSITEFX_SET_K2(extCompositeFX *Self, double Value)
-{
-   Self->K2 = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 K3: Input value for the arithmetic operation.
 
-*********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_K3(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K3;
-   return ERR::Okay;
-}
-
-static ERR COMPOSITEFX_SET_K3(extCompositeFX *Self, double Value)
-{
-   Self->K3 = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 K4: Input value for the arithmetic operation.
-
-*********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_K4(extCompositeFX *Self, double *Value)
-{
-   *Value = Self->K4;
-   return ERR::Okay;
-}
-
-static ERR COMPOSITEFX_SET_K4(extCompositeFX *Self, double Value)
-{
-   Self->K4 = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Operator: The compositing algorithm to use for rendering.
 Lookup: OP
 
 Setting the Operator will determine the algorithm that is used for compositing.  The default is `OVER`.
-
-*********************************************************************************************************************/
-
-static ERR COMPOSITEFX_GET_Operator(extCompositeFX *Self, OP *Value)
-{
-   *Value = Self->Operator;
-   return ERR::Okay;
-}
-
-static ERR COMPOSITEFX_SET_Operator(extCompositeFX *Self, OP Value)
-{
-   Self->Operator = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the filter.
@@ -878,39 +790,12 @@ static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, std::string_view &Value)
 
 #include "filter_composite_def.c"
 
-static const FieldDef clCompositeOperator[] = {
-   { "Over",       OP::OVER },
-   { "In",         OP::IN },
-   { "Out",        OP::OUT },
-   { "Atop",       OP::ATOP },
-   { "Xor",        OP::XOR },
-   { "Arithmetic", OP::ARITHMETIC },
-   { "Screen",     OP::SCREEN },
-   { "Multiply",   OP::MULTIPLY },
-   { "Lighten",    OP::LIGHTEN },
-   { "Darken",     OP::DARKEN },
-   { "InvertRGB",  OP::INVERT_RGB },
-   { "Invert",     OP::INVERT },
-   { "Contrast",   OP::CONTRAST },
-   { "Dodge",      OP::DODGE },
-   { "Burn",       OP::BURN },
-   { "HardLight",  OP::HARD_LIGHT },
-   { "SoftLight",  OP::SOFT_LIGHT },
-   { "Difference", OP::DIFFERENCE },
-   { "Exclusion",  OP::EXCLUSION },
-   { "Plus",       OP::PLUS },
-   { "Minus",      OP::MINUS },
-   { "Subtract",   OP::SUBTRACT },
-   { "Overlay",    OP::OVERLAY },
-   { nullptr, 0 }
-};
-
 static const FieldArray clCompositeFXFields[] = {
-   { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, COMPOSITEFX_GET_Operator, COMPOSITEFX_SET_Operator, &clCompositeOperator },
-   { "K1",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K1, COMPOSITEFX_SET_K1 },
-   { "K2",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K2, COMPOSITEFX_SET_K2 },
-   { "K3",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K3, COMPOSITEFX_SET_K3 },
-   { "K4",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, COMPOSITEFX_GET_K4, COMPOSITEFX_SET_K4 },
+   { "K1",       FDF_DOUBLE|FDF_RW },
+   { "K2",       FDF_DOUBLE|FDF_RW },
+   { "K3",       FDF_DOUBLE|FDF_RW },
+   { "K4",       FDF_DOUBLE|FDF_RW },
+   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clCompositeFXOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, COMPOSITEFX_GET_XMLDef },
    END_FIELD
 };

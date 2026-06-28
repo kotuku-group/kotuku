@@ -126,43 +126,13 @@ static ERR NETSERVER_DisconnectSocket(extNetServer *Self, struct ns::DisconnectS
 
 //********************************************************************************************************************
 
-static ERR NETSERVER_Free(extNetServer *Self)
-{
-   #ifndef DISABLE_SSL
-      #ifndef _WIN32
-         if (Self->ServerSSLContext) {
-            SSL_CTX_free(Self->ServerSSLContext);
-            Self->ServerSSLContext = nullptr;
-         }
-      #endif
-   #endif
-
-   while (Self->Clients) free_client(Self, Self->Clients);
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR NETSERVER_Init(extNetServer *Self)
 {
-   ERR error;
-
-   if ((error = setup_server_socket(Self)) != ERR::Okay) {
+   if (auto error = setup_server_socket(Self); error != ERR::Okay) {
       free_socket(Self);
       return error;
    }
    else return error;
-}
-
-//********************************************************************************************************************
-
-static ERR NETSERVER_NewObject(extNetServer *Self)
-{
-   Self->ClientLimit    = 1024;
-   Self->SocketLimit    = 256;
-   Self->Backlog        = 10;
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -191,12 +161,6 @@ The certificate file must be in a supported format such as PEM, CRT, or P12.  If
 NetServer will either self-sign or use a localhost certificate, if available.
 
 *********************************************************************************************************************/
-
-static ERR NETSERVER_GET_SSLCertificate(extNetServer *Self, std::string_view &Value)
-{
-   Value = Self->SSLCertificate;
-   return ERR::Okay;
-}
 
 static ERR NETSERVER_SET_SSLCertificate(extNetServer *Self, const std::string_view &Value)
 {
@@ -229,12 +193,6 @@ will either self-sign or use a localhost private key, if available.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_SSLPrivateKey(extNetServer *Self, std::string_view &Value)
-{
-   Value = Self->SSLPrivateKey;
-   return ERR::Okay;
-}
-
 static ERR NETSERVER_SET_SSLPrivateKey(extNetServer *Self, const std::string_view &Value)
 {
    Self->SSLPrivateKey.clear();
@@ -262,50 +220,15 @@ SSLKeyPassword: SSL private key password.
 If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is
 not encrypted, this field can be left empty.
 
-*********************************************************************************************************************/
-
-static ERR NETSERVER_GET_SSLKeyPassword(extNetServer *Self, std::string_view &Value)
-{
-   Value = Self->SSLKeyPassword;
-   return ERR::Okay;
-}
-
-static ERR NETSERVER_SET_SSLKeyPassword(extNetServer *Self, const std::string_view &Value)
-{
-   Self->SSLKeyPassword.assign(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Clients: Lists all NetClient records connected to the NetServer.
-
-*********************************************************************************************************************/
-
-static ERR NETSERVER_GET_Clients(extNetServer *Self, objNetClient **Value)
-{
-   *Value = Self->Clients;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 TotalClients: Indicates the total number of clients currently connected to the NetServer.
 
 NetServer maintains a count of the total number of currently connected TCP client sockets.  You can read the total
 number of connections from this field.
-
-*********************************************************************************************************************/
-
-static ERR NETSERVER_GET_TotalClients(extNetServer *Self, int *Value)
-{
-   *Value = Self->TotalClients;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Backlog: The maximum number of connections that can be queued against the socket.
@@ -316,12 +239,6 @@ adjusts the maximum number of connections on the queue, which otherwise defaults
 If the backlog is exceeded, subsequent connections to the socket should expect a connection refused error.
 
 *********************************************************************************************************************/
-
-static ERR NETSERVER_GET_Backlog(extNetServer *Self, int *Value)
-{
-   *Value = Self->Backlog;
-   return ERR::Okay;
-}
 
 static ERR NETSERVER_SET_Backlog(extNetServer *Self, int Value)
 {
@@ -340,12 +257,6 @@ For socket limits per client, see the #SocketLimit field.
 
 *********************************************************************************************************************/
 
-static ERR NETSERVER_GET_ClientLimit(extNetServer *Self, int *Value)
-{
-   *Value = Self->ClientLimit;
-   return ERR::Okay;
-}
-
 static ERR NETSERVER_SET_ClientLimit(extNetServer *Self, int Value)
 {
    if (Value < 0) return ERR::OutOfRange;
@@ -361,12 +272,6 @@ SocketLimit: The maximum number of sockets that can be connected from a single c
 The SocketLimit value limits how many simultaneous ClientSocket connections may be opened by one NetClient record.
 
 *********************************************************************************************************************/
-
-static ERR NETSERVER_GET_SocketLimit(extNetServer *Self, int *Value)
-{
-   *Value = Self->SocketLimit;
-   return ERR::Okay;
-}
 
 static ERR NETSERVER_SET_SocketLimit(extNetServer *Self, int Value)
 {
@@ -614,17 +519,33 @@ static void free_client(extNetServer *Server, objNetClient *Client)
 
 //********************************************************************************************************************
 
+extNetServer::~extNetServer()
+{
+   #ifndef DISABLE_SSL
+      #ifndef _WIN32
+         if (ServerSSLContext) {
+            SSL_CTX_free(ServerSSLContext);
+            ServerSSLContext = nullptr;
+         }
+      #endif
+   #endif
+
+   while (Clients) free_client(this, Clients);
+}
+
+//********************************************************************************************************************
+
 #include "netserver_def.c"
 
 static const FieldArray clNetServerFields[] = {
-   { "TotalClients",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,     NETSERVER_GET_TotalClients },
-   { "Backlog",        FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE,    NETSERVER_GET_Backlog, NETSERVER_SET_Backlog },
-   { "ClientLimit",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,    NETSERVER_GET_ClientLimit, NETSERVER_SET_ClientLimit },
-   { "SocketLimit",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,    NETSERVER_GET_SocketLimit, NETSERVER_SET_SocketLimit },
-   { "SSLCertificate", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, NETSERVER_GET_SSLCertificate, NETSERVER_SET_SSLCertificate },
-   { "SSLPrivateKey",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, NETSERVER_GET_SSLPrivateKey, NETSERVER_SET_SSLPrivateKey },
-   { "SSLKeyPassword", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, NETSERVER_GET_SSLKeyPassword, NETSERVER_SET_SSLKeyPassword },
-   { "Clients",        FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE,  NETSERVER_GET_Clients, nullptr, CLASSID::NETCLIENT },
+   { "Clients",        FDF_OBJECT|FDF_R,     nullptr, nullptr, CLASSID::NETCLIENT },
+   { "SSLCertificate", FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLCertificate },
+   { "SSLPrivateKey",  FDF_CPPSTRING|FDF_RI, nullptr, NETSERVER_SET_SSLPrivateKey },
+   { "SSLKeyPassword", FDF_CPPSTRING|FDF_RI },
+   { "Backlog",        FDF_INT|FDF_RI,       nullptr, NETSERVER_SET_Backlog },
+   { "ClientLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_ClientLimit },
+   { "SocketLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_SocketLimit },
+   { "TotalClients",   FDF_INT|FDF_R },
    END_FIELD
 };
 

@@ -15,22 +15,6 @@ static const struct FieldDef clVectorTextVTXF[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clVectorTextVTS[] = {
-   { "Inherit", 0x00000000 },
-   { "Normal", 0x00000001 },
-   { "Wider", 0x00000002 },
-   { "Narrower", 0x00000003 },
-   { "UltraCondensed", 0x00000004 },
-   { "ExtraCondensed", 0x00000005 },
-   { "Condensed", 0x00000006 },
-   { "SemiCondensed", 0x00000007 },
-   { "Expanded", 0x00000008 },
-   { "SemiExpanded", 0x00000009 },
-   { "UltraExpanded", 0x0000000a },
-   { "ExtraExpanded", 0x0000000b },
-   { nullptr, 0 }
-};
-
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clVectorTextMethods[] = {
@@ -39,7 +23,7 @@ static const struct MethodEntry clVectorTextMethods[] = {
 };
 
 static ERR VECTORTEXT_NewPlacement(extVectorText *Self) {
-   new (Self) extVectorText;
+   new (Self) extVectorText(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -49,10 +33,8 @@ static ERR VECTORTEXT_FreePlacement(extVectorText *Self) {
 }
 
 static const struct ActionArray clVectorTextActions[] = {
-   { AC::Free, VECTORTEXT_Free },
    { AC::FreePlacement, VECTORTEXT_FreePlacement },
    { AC::Init, VECTORTEXT_Init },
-   { AC::NewObject, VECTORTEXT_NewObject },
    { AC::NewPlacement, VECTORTEXT_NewPlacement },
    { AC::NIL, nullptr }
 };

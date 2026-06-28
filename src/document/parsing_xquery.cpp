@@ -843,7 +843,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
 
    if (auto err = query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
       std::string_view msg;
-      if (!query->get(FID_ErrorMsg, msg)) {
+      if (!query->getErrorMsg(msg)) {
          Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
             "XQuery error evaluating \"{}\": {}.", Expression, msg.empty() ? std::string_view("(none)") : msg);
       }
@@ -853,7 +853,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
 
    XPathValue *query_value = nullptr;
-   if ((!query->get(FID_Result, query_value)) and query_value) {
+   if ((!query->getResult(query_value)) and query_value) {
       raw_value = *query_value;
       have_raw_value = true;
       if (OutValue) *OutValue = raw_value;
@@ -877,7 +877,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
    else {
       std::string_view result;
-      if (!query->get(FID_ResultString, result)) {
+      if (!query->getResultString(result)) {
          if ((OutString) and not result.empty()) OutString->assign(result);
          if ((OutBoolean) and not result.empty() and iequals("true", result)) *OutBoolean = true;
       }

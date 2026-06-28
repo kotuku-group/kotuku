@@ -43,15 +43,18 @@ class objSVG : public Object {
    static constexpr CSTRING CLASS_NAME = "SVG";
 
    using create = kt::Create<objSVG>;
+   objSVG(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   OBJECTPTR Target;         // Destination container for the generated SVG scene graph elements.
-   std::string Path;         // File system path to the source SVG document.
-   std::string Title;        // The title of the SVG document.
-   std::string Statement;    // String containing complete SVG document markup.
-   std::string Colour;       // Defines the default fill to use for currentColor references.
-   int       Frame;          // Constrains rendering to a specific frame number for frame-based display systems.
-   SVF       Flags;          // Configuration flags that modify SVG processing behaviour.
-   int       FrameRate;      // Controls the maximum frame rate for SVG animation playback.
+   OBJECTPTR Target;                // Destination container for the generated SVG scene graph elements.
+   std::string Path;                // File system path to the source SVG document.
+   std::string Title;               // The title of the SVG document.
+   std::string Statement;           // String containing complete SVG document markup.
+   std::string Colour;              // Defines the default fill to use for currentColor references.
+   objVectorViewport * Viewport;    // Reference to the primary VectorViewport containing the SVG document content.
+   objVectorScene * Scene;          // Reference to the VectorScene object containing the SVG scene graph.
+   int       Frame;                 // Constrains rendering to a specific frame number for frame-based display systems.
+   SVF       Flags;                 // Configuration flags that modify SVG processing behaviour.
+   int       FrameRate;             // Controls the maximum frame rate for SVG animation playback.
 
    // Action stubs
 
@@ -106,6 +109,16 @@ class objSVG : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getScene(objVectorScene * &Value) noexcept {
+      Value = this->Scene;
+      return ERR::Okay;
+   }
+
    inline ERR getFrame(int &Value) noexcept {
       Value = this->Frame;
       return ERR::Okay;
@@ -124,22 +137,7 @@ class objSVG : public Object {
    inline ERR getFrameCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
-   }
-
-   inline ERR getScene(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      auto error = field->GetValue(this, &Value);
-      return error;
-   }
-
-   inline ERR getViewport(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
+      return get_field(this, Value);
    }
 
 
@@ -147,12 +145,12 @@ class objSVG : public Object {
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x08000501, Value, 1);
+      return field->WriteValue(this, field, 0x08000501, Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setTitle(const std::string_view &Value) noexcept {
@@ -182,12 +180,12 @@ class objSVG : public Object {
 
    inline ERR setFrameRate(const int Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFrameCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };

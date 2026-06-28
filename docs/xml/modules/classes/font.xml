@@ -286,7 +286,7 @@ external leading or descent.</li>
     <field>
       <name>Path</name>
       <comment>The path to a font file.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Defines the exact font file to load before initialisation.  This bypasses normal face-name resolution through the font database.</p>
@@ -434,7 +434,7 @@ external leading or descent.</li>
       <field name="Next" type="struct FontList *">Pointer to the next entry in the list.</field>
       <field name="Name" type="STRING">The name of the font face.</field>
       <field name="Alias" type="STRING">Reference to another font Name if this is an alias.</field>
-      <field name="Points" type="INT *" size="0">Pointer to an array of fixed point sizes supported by the font.</field>
+      <field name="Points" type="INT" size="0">Pointer to an array of fixed point sizes supported by the font.</field>
       <field name="Styles" type="STRING">Supported styles are listed here in CSV format.</field>
       <field name="Axes" type="STRING">For variable fonts, lists all supported axis codes in CSV format</field>
       <field name="Scalable" type="INT8"><code>TRUE</code> if the font is scalable.</field>

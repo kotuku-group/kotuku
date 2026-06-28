@@ -149,6 +149,7 @@ class objXQuery : public Object {
    static constexpr CSTRING CLASS_NAME = "XQuery";
 
    using create = kt::Create<objXQuery>;
+   objXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string ErrorMsg;    // A readable description of the last parse or execution error.
    std::string Path;        // Base path for resolving relative references.
@@ -211,10 +212,9 @@ class objXQuery : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getResult(APTR &Value) noexcept {
+   inline ERR getResult(struct XPathValue * &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getResultString(std::string_view &Value) noexcept {
@@ -228,36 +228,33 @@ class objXQuery : public Object {
 
    inline ERR getFeatureFlags(int &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getResultType(int &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto error = field->GetValue(this, &Value);
-      return error;
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getResolveVariable(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[14];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      return error;
+      return get_field(this, Value);
    }
 
-   inline ERR getFunctions(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getFunctions(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }
 
-   inline ERR getVariables(kt::vector<std::string> * &Value) noexcept {
+   inline ERR getVariables(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
@@ -273,12 +270,12 @@ class objXQuery : public Object {
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setResolveVariable(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };

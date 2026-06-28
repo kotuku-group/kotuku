@@ -1974,7 +1974,7 @@ extend_page:
                   fl::Name("table_path"), fl::Owner(table->viewport->UID)
                }));
 
-               if (!table->fill.empty()) table->path->set(FID_Fill, table->fill);
+               if (!table->fill.empty()) table->path->setFill(table->fill);
 
                if (!table->stroke.empty()) {
                   table->path->setFields(fl::Stroke(table->stroke), fl::StrokeWidth(table_values.stroke_width));

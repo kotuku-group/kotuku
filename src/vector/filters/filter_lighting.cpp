@@ -140,14 +140,17 @@ class extLightingFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "LightingFX";
    using create = kt::Create<extLightingFX>;
 
-   FRGB   Colour;           // Colour of the light source.
-   FRGB   LinearColour;     // Colour of the light source in linear sRGB space.
-   double SpecularExponent; // Exponent value for specular lighting only.
-   double MapHeight;        // Maximum height of the surface for bump map calculations.
-   double Constant;         // The ks/kd constant value for the light mode.
-   double UnitX, UnitY;     // SVG kernel unit - scale value for X/Y
+   // The exported fields are declared first so that their concrete offsets line up with the field table.
+   // The 8-byte aligned members precede the narrower Type field to avoid padding before a direct-access field.
+   FRGB   Colour = { 1.0, 1.0, 1.0, 1.0 }; // Colour of the light source.
+   double Constant = 1.0;                   // The ks/kd constant value for the light mode.
+   double SpecularExponent = 1.0;           // Exponent value for specular lighting only (Exponent)
+   double MapHeight = 1.0;                  // Maximum height of the surface for bump map calculations (Scale)
+   double UnitX = 1.0, UnitY = 1.0;         // SVG kernel unit - scale value for X/Y
+   LT     Type = LT::DIFFUSE;               // Diffuse or Specular light scattering
+
+   FRGB   LinearColour = { 1.0, 1.0, 1.0, 1.0 }; // Colour of the light source in linear sRGB space.
    double X, Y, Z;          // Position of light source.
-   LT     Type;             // Diffuse or Specular light scattering
    LS     LightSource;      // Light source identifier, recorded for SVG output purposes only.
 
    // DISTANT LIGHT
@@ -162,16 +165,7 @@ class extLightingFX : public extFilterEffect {
    double ConeScale;
    point3 SpotDelta;
 
-   extLightingFX() {
-      SpecularExponent = 1.0;
-      Colour    = { 1.0, 1.0, 1.0, 1.0 };
-      LinearColour = { 1.0, 1.0, 1.0, 1.0 };
-      Type      = LT::DIFFUSE;
-      Constant  = 1.0;
-      MapHeight = 1.0;
-      UnitX     = 1.0;
-      UnitY     = 1.0;
-   }
+   extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
    // Shift matrix components to the left, as we advance pixels to the right.
 
@@ -801,37 +795,21 @@ static ERR LIGHTINGFX_SetSpotLight(extLightingFX *Self, struct lt::SetSpotLight 
 -FIELD-
 Colour: Defines the colour of the light source.
 
-Set the Colour field to define the colour of the light source.  The colour is defined as an array of four 32-bit
-floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha values in that
-order.
+Set the Colour field to define the colour of the light source.
 
 If the algorithm supports it, the Alpha component defines the intensity of the light source.
 
-The default colour is pure white, `1.0,1.0,1.0,1.0`.
+The default colour is pure white.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_Colour(extLightingFX *Self, float **Value, int *Elements)
+static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, FRGB *Value)
 {
-   *Value = (float *)&Self->Colour;
-   *Elements = 4;
-   return ERR::Okay;
-}
-
-static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, float *Value, int Elements)
-{
-   if (Value) {
-      if (Elements >= 1) Self->Colour.Red   = Value[0];
-      if (Elements >= 2) Self->Colour.Green = Value[1];
-      if (Elements >= 3) Self->Colour.Blue  = Value[2];
-      if (Elements >= 4) Self->Colour.Alpha = Value[3];
-      else Self->Colour.Alpha = 1;
-   }
+   if (Value) Self->Colour = *Value;
    else Self->Colour.Alpha = 0;
 
    Self->LinearColour = Self->Colour;
    glLinearRGB.convert(Self->LinearColour);
-
    return ERR::Okay;
 }
 
@@ -843,12 +821,6 @@ Constant: Specifies the ks/kd value in Phong lighting model.
 In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.
 
 *********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_Constant(extLightingFX *Self, double *Value)
-{
-   *Value = Self->Constant;
-   return ERR::Okay;
-}
 
 static ERR LIGHTINGFX_SET_Constant(extLightingFX *Self, double Value)
 {
@@ -869,12 +841,6 @@ shinier the end result.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_Exponent(extLightingFX *Self, double *Value)
-{
-   *Value = Self->SpecularExponent;
-   return ERR::Okay;
-}
-
 static ERR LIGHTINGFX_SET_Exponent(extLightingFX *Self, double Value)
 {
    if ((Value >= 1.0) and (Value <= 128.0)) {
@@ -889,41 +855,9 @@ static ERR LIGHTINGFX_SET_Exponent(extLightingFX *Self, double Value)
 -FIELD-
 Scale: The maximum height of the input surface (bump map) when the alpha input is 1.0.
 
-*********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_Scale(extLightingFX *Self, double *Value)
-{
-   *Value = Self->MapHeight;
-   return ERR::Okay;
-}
-
-static ERR LIGHTINGFX_SET_Scale(extLightingFX *Self, double Value)
-{
-   Self->MapHeight = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Type: Defines the type of surface light scattering, which can be specular or diffuse.
 Lookup: LT
-
-*********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_Type(extLightingFX *Self, LT *Value)
-{
-   *Value = Self->Type;
-   return ERR::Okay;
-}
-
-static ERR LIGHTINGFX_SET_Type(extLightingFX *Self, LT Value)
-{
-   Self->Type = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 UnitX: The intended distance in current filter units for dx in the surface normal calculation formulas.
@@ -937,12 +871,6 @@ thus potentially not scalable.  For some level of consistency across display med
 that a value be provided for at least one of ResX and #UnitX.
 
 *********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_UnitX(extLightingFX *Self, double *Value)
-{
-   *Value = Self->UnitX;
-   return ERR::Okay;
-}
 
 static ERR LIGHTINGFX_SET_UnitX(extLightingFX *Self, double Value)
 {
@@ -965,12 +893,6 @@ thus potentially not scalable.  For some level of consistency across display med
 that a value be provided for at least one of ResY and #UnitY.
 
 *********************************************************************************************************************/
-
-static ERR LIGHTINGFX_GET_UnitY(extLightingFX *Self, double *Value)
-{
-   *Value = Self->UnitY;
-   return ERR::Okay;
-}
 
 static ERR LIGHTINGFX_SET_UnitY(extLightingFX *Self, double Value)
 {
@@ -1005,22 +927,16 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string_view &Value)
 
 //********************************************************************************************************************
 
-static const FieldDef clLightingType[] = {
-   { "Diffuse",  LT::DIFFUSE },
-   { "Specular", LT::SPECULAR },
-   { nullptr, 0 }
-};
-
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
-   { "Colour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Colour, LIGHTINGFX_SET_Colour },
-   { "Constant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Constant, LIGHTINGFX_SET_Constant },
-   { "Exponent", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Exponent, LIGHTINGFX_SET_Exponent },
-   { "Scale",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_Scale, LIGHTINGFX_SET_Scale },
-   { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingType },
-   { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
-   { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
+   { "Colour",   FDF_STRUCT|FDF_RW, nullptr, LIGHTINGFX_SET_Colour, "FRGB" },
+   { "Constant", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Constant },
+   { "Exponent", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Exponent },
+   { "Scale",    FDF_DOUBLE|FDF_RW },
+   { "UnitX",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
+   { "UnitY",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
+   { "Type",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clLightingFXLT },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };

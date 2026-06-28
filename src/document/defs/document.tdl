@@ -77,10 +77,12 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
     string Author      # The author of the document
     string Copyright   # Copyright information for the document
     string Keywords    # Keywords for the document
+    string Path        # Optional file to load on initialisation
     obj(VectorViewport) Viewport  # The viewport that will host the document
     obj(VectorViewport) Focus     # Monitor this viewport for focus events
     obj(VectorViewport) View      # An internally created viewport that hosts the Page
     obj(VectorViewport) Page      # The Page contains the document content and is hosted by the View
+    obj(Script) ClientScript
     oid TabFocus         # If the tab key is pressed, focus can be changed to this object
     int(DEF) EventMask   # Event mask for selectively receiving events from the Document object.
     int(DCF) Flags       # Optional flags

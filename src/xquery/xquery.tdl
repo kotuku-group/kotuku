@@ -31,6 +31,7 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
     string Path        # Base path for resolving relative references.
     string Statement   # XQuery statements are specified here.
     large  MemoryUsage # The total amount of memory allocated by the last compilation or evaluation.
+    ~struct(*XPathValue) Result
   ]])
 
   c_insert([[

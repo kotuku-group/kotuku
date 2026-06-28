@@ -29,10 +29,10 @@ additional functionality in the future.
 // Message payload for thread completion callbacks (used by script, action, and method)
 
 struct ThreadMsg {
-   int       Callback;  // Client callback reference
-   int       ObjRef;    // Registry reference that pins the GCobject from GC collection
-   objScript *Owner;    // The parent script that owns the registry references
-   double    Key;       // Client-provided key value forwarded to the callback
+   int      Callback; // Client callback reference
+   int      ObjRef;   // Registry reference that pins the GCobject from GC collection
+   extTiri *Owner;    // The parent script that owns the registry references
+   double   Key;      // Client-provided key value forwarded to the callback
 };
 
 static bool has_results(const FunctionField *Args)
@@ -51,7 +51,8 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
 {
    kt::Log log("thread_callback");
 
-   auto prv = (prvTiri *)Msg->Owner->DerivedPtr;
+   auto tiri = (extTiri *)Msg->Owner;
+   auto lua = tiri->Lua;
 
    if (Msg->Callback != LUA_NOREF) {
       if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
@@ -69,15 +70,15 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
          });
          Msg->Owner->callback(Msg->Callback, args.data(), int(args.size()), nullptr);
       }
-      luaL_unref(prv->Lua, LUA_REGISTRYINDEX, Msg->Callback); // Drop the procedure reference
+      luaL_unref(lua, LUA_REGISTRYINDEX, Msg->Callback); // Drop the procedure reference
    }
 
    // Unpin the GCobject from the registry and release the pin on the underlying object.
 
-   lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Msg->ObjRef);
-   auto gc_script = lua_toobject(prv->Lua, -1);
-   lua_pop(prv->Lua, 1);
-   luaL_unref(prv->Lua, LUA_REGISTRYINDEX, Msg->ObjRef);
+   lua_rawgeti(lua, LUA_REGISTRYINDEX, Msg->ObjRef);
+   auto gc_script = lua_toobject(lua, -1);
+   lua_pop(lua, 1);
+   luaL_unref(lua, LUA_REGISTRYINDEX, Msg->ObjRef);
 
    if (gc_script and gc_script->ptr) gc_script->ptr->unpin(true);
    delete Msg;
@@ -99,7 +100,9 @@ static int async_script(lua_State *Lua)
    kt::Log log("async.script");
 
    GCobject *gc_script = lua_toobject(Lua, 1);
-   if (gc_script->classptr->ClassID != CLASSID::SCRIPT) luaL_error(Lua, ERR::WrongClass);
+   if (gc_script->classptr->ClassID != CLASSID::TIRI) {
+      luaL_error(Lua, ERR::WrongClass);
+   }
    if (not gc_script->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
    log.branch("Script: %d", gc_script->uid);
@@ -108,8 +111,8 @@ static int async_script(lua_State *Lua)
 
    // Share the parent's pool with the child script so that async.pool accesses the same data.
    {
-      auto parent_prv = (prvTiri *)Lua->script->DerivedPtr;
-      auto child_prv  = (prvTiri *)gc_script->ptr->DerivedPtr;
+      auto parent_prv = Lua->script;
+      auto child_prv  = (extTiri *)gc_script->ptr;
       if (parent_prv and child_prv) {
          if (not parent_prv->Pool) parent_prv->Pool = std::make_shared<SharedPool>();
          child_prv->Pool = parent_prv->Pool;
@@ -264,25 +267,24 @@ static int async_method(lua_State *Lua)
    auto gc_obj = lj_lib_checkobject(Lua, 1);
    if (not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
-   MethodEntry *table;
-   int total_methods, i;
+   std::span<MethodEntry> table;
 
-   auto type = lua_type(Lua, 2);
-   CSTRING method = nullptr;
-   AC method_id = AC::NIL;
-
-   if ((!gc_obj->classptr->get(FID_Methods, table, total_methods)) and (table)) {
+   if (!gc_obj->classptr->getMethods(table)) {
+      auto type = lua_type(Lua, 2);
+      CSTRING method = nullptr;
+      AC method_id = AC::NIL;
       bool found = false;
+      int i = 0;
 
       if (type IS LUA_TSTRING) {
          method = lua_tostring(Lua, 2);
-         for (i=1; i < total_methods; i++) {
+         for (i=1; i < std::ssize(table); i++) {
             if ((table[i].Name) and (iequals(table[i].Name, method))) { found = true; break; }
          }
       }
       else if (type IS LUA_TNUMBER) {
          method_id = AC(lua_tointeger(Lua, 2));
-         for (i=1; i < total_methods; i++) {
+         for (i=1; i < std::ssize(table); i++) {
             if (table[i].MethodID IS method_id) { found = true; break; }
          }
       }
@@ -367,10 +369,12 @@ static int async_method(lua_State *Lua)
 
          return 0;
       }
-   }
 
-   if (method) luaL_error(Lua, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
-   else luaL_error(Lua, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
+      if (method) luaL_error(Lua, ERR::Search, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
+      else luaL_error(Lua, ERR::Search, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
+   }
+   else luaL_error(Lua, ERR::NoMethods);
+
    return 0;
 }
 
@@ -506,9 +510,8 @@ static const luaL_Reg asynclib_methods[] = {
 
 static SharedPool * get_pool(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   if (not prv->Pool) prv->Pool = std::make_shared<SharedPool>();
-   return prv->Pool.get();
+   if (not Lua->script->Pool) Lua->script->Pool = std::make_shared<SharedPool>();
+   return Lua->script->Pool.get();
 }
 
 //********************************************************************************************************************
@@ -570,9 +573,7 @@ static int pool_set(lua_State *Lua)
          pv = PoolValue(lua_tonumber(Lua, 3));
          break;
       case LUA_TSTRING: {
-         size_t len;
-         auto s = lua_tolstring(Lua, 3, &len);
-         pv = PoolValue(std::string(s, len));
+         pv = PoolValue(std::string(lua_tostringview(Lua, 3)));
          break;
       }
       case LUA_TBOOLEAN:

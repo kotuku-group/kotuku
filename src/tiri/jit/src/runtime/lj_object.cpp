@@ -101,12 +101,11 @@ int lj_object_pairs(lua_State *L)
 {
    auto def = objectV(L->base);
 
-   Field *fields;
-   int total;
-   if (!def->classptr->get(FID_Dictionary, fields, total)) {
+   std::span<Field> fields;
+   if (!def->classptr->get(FID_Dictionary, fields)) {
       // Create the iterator closure with upvalues
-      lua_pushlightuserdata(L, fields);
-      lua_pushinteger(L, total);
+      lua_pushlightuserdata(L, fields.data());
+      lua_pushinteger(L, fields.size());
       lua_pushinteger(L, 0);
       lua_pushcclosure(L, object_next_pair, 3);
 
@@ -146,12 +145,11 @@ int lj_object_ipairs(lua_State *L)
 {
    auto def = objectV(L->base);
 
-   Field *fields;
-   int total;
-   if (!def->classptr->get(FID_Dictionary, fields, total)) {
+   std::span<Field> fields;
+   if (!def->classptr->get(FID_Dictionary, fields)) {
       // Create the iterator closure with upvalues
-      lua_pushlightuserdata(L, fields);
-      lua_pushinteger(L, total);
+      lua_pushlightuserdata(L, fields.data());
+      lua_pushinteger(L, fields.size());
       lua_pushcclosure(L, object_next_ipair, 2);
 
       // FFH return values are placed at specific stack positions:

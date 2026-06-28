@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientContour</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Contour-following colour gradient paint server.</comment>
+    <version>1</version>
+    <id>a3c36399</id>
+    <idstring>GRADIENTCONTOUR</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientContour follows the contours of the target vector path.  <code>Floor</code> controls the colour ramp floor and <code>Multiplier</code> controls the ramp scale.</p>
+<p>This gradient operates exclusively in <code>BOUNDING_BOX</code> space.  If <class name="Gradient" field="Units">Gradient.Units</class> is set to <code>USERSPACE</code> it will be reset to <code>BOUNDING_BOX</code> during initialisation.</p></description>
+    <source>
+      <file path="painters/">gradient_contour.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Floor</name>
+      <comment>Colour ramp floor for contour gradients.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The Floor value is used as the floor for contour gradient colour values.  It has a valid range of <code>0 &lt;= Floor &lt; Multiplier</code>; the constraint against <fl>Multiplier</fl> is enforced at initialisation.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Multiplier</name>
+      <comment>Colour ramp multiplier for contour gradients.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The Multiplier value acts as a multiplier for contour gradient colour values.  It has a valid range of <code>.01 &lt; Multiplier &lt; 10</code>.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

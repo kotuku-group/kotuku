@@ -82,7 +82,7 @@ function declareErrors()
     "Draw",                          -- An error occurred while drawing the object
     "NoMethods",                     -- The class does not export any methods
     "NoMatchingObject",              -- Unable to find object
-    "DEP01",                         -- DEPRECATED
+    "ImmutableField",                -- Cannot modify an immutable field value
     "MissingPath",                   -- The object is missing a path reference
     "ResourceNotLocked",             -- A lock was expected but not found
     "NoSearchResult",                -- The search yielded no results
@@ -206,6 +206,7 @@ function declareErrors()
     "NoSecureSockets",         -- A secure sockets layer is not available in this environment
     "ParameterRequired",       -- Missing required parameter
     "ParameterUnknown",        -- Unknown parameter name
+    "SetValueNotStruct",       -- Attempted to set a struct field with an incompatible value
     "END",
     { Notified = 0x40000000 }
   ) -- NB: Any new error messages need to be added to data_errors.c manually

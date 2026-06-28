@@ -26,6 +26,54 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Move</name>
+      <comment>Moves a polygon to a new position.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves a polygon to a new central position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+      <description>
+<p>This action will permanently modify the coordinates of a polygon so that they offset by the provided coordinate values.</p>
+<p>The operation will abort if any of the points in the polygon are discovered to be relative coordinates.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Resize</name>
+      <comment>Resize the polygon by its width and height.</comment>
+      <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Width">The new width of the object.</param>
+        <param type="DOUBLE" name="Height">The new height of the object.</param>
+        <param type="DOUBLE" name="Depth">The new depth of the object.</param>
+      </input>
+      <description>
+<p>This action will resize a polygon by adjusting all of its existing points.  The points are rescaled to guarantee that they are within the provided dimensions.</p>
+<p>If a Width and/or Height value of zero is passed, no scaling on the associated axis will occur.</p>
+      </description>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
       <name>Closed</name>
@@ -61,7 +109,7 @@
       <name>PointsArray</name>
       <comment>A series of numbered pairs that define the polygon.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>APTR []</type>
+      <type>VectorPoint[]</type>
       <description>
 <p>The PointsArray field can be set with a <st>VectorPoint</st> array that defines the shape of a polygon.  A minimum of two points is required for the shape to be valid.  The <st>VectorPoint</st> structure consists of the following fields:</p>
 <struct lookup="VectorPoint"/>
@@ -69,20 +117,10 @@
     </field>
 
     <field>
-      <name>TotalPoints</name>
-      <comment>The total number of coordinates defined in the Points field.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>TotalPoints is a read-only field value that reflects the total number of coordinates that have been set in the <fl>Points</fl> array.  The minimum value is 2.</p>
-      </description>
-    </field>
-
-    <field>
       <name>X1</name>
       <comment>Defines the X coordinate of the first point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the X coordinate of the first point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>
@@ -93,7 +131,7 @@
       <name>X2</name>
       <comment>Defines the X coordinate of the second point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the X coordinate of the second point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>
@@ -104,7 +142,7 @@
       <name>Y1</name>
       <comment>Defines the Y coordinate of the first point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the Y coordinate of the first point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>
@@ -115,7 +153,7 @@
       <name>Y2</name>
       <comment>Defines the Y coordinate of the second point.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>This field defines the Y coordinate of the second point of the polygon.  It is recommended that this field is only used when creating a VectorPolygon that will be used to draw a single line.</p>
 <p>By default the value will be treated as a fixed coordinate.  Scaled values are supported if the value is a defined as a percentage.</p>

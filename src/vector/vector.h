@@ -1,5 +1,9 @@
 
 #define PRV_VECTOR_MODULE
+#define PRV_GRADIENT
+#define PRV_VECTORPATTERN
+#define PRV_VECTORIMAGE
+#define PRV_VECTORCOLOUR
 
 template<class... Args> void DBG_TRANSFORM(Args...) {
    //log.trace(Args)
@@ -7,6 +11,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 
 #include <array>
 #include <memory>
+#include <vector>
 #include <unordered_set>
 #include <sstream>
 #include <set>
@@ -65,7 +70,8 @@ static const double INV_SQRT2   = 1.0 / SQRT2;
 extern OBJECTPTR clVectorScene, clVectorViewport, clVectorGroup, clVectorColour;
 extern OBJECTPTR clVectorEllipse, clVectorRectangle, clVectorPath, clVectorWave;
 extern OBJECTPTR clVectorFilter, clVectorPolygon, clVectorText, clVectorClip;
-extern OBJECTPTR clVectorGradient, clVectorImage, clVectorPattern, clVector;
+extern OBJECTPTR clGradient, clGradientLinear, clGradientRadial, clGradientConic, clGradientDiamond, clGradientContour;
+extern OBJECTPTR clGradientGouraud, clGradientMesh, clGradientDistal, clGradientVoronoi, clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX;
@@ -73,6 +79,8 @@ extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
 namespace agg { class gradient_contour; }
+namespace agg { class gradient_sdf; }
+namespace agg { class gradient_worley; }
 class objVectorTransition;
 class extVectorText;
 class extVector;
@@ -336,6 +344,22 @@ struct GouraudMesh {
    std::vector<int> Indices; // 3 indices per triangle (CCW); empty => flat triangle list
 };
 
+struct MeshPatchEdge {
+   agg::point_d p0, c0, c1, p1; // Cubic Bezier edge.
+};
+
+struct MeshPatch {
+   MeshPatchEdge edge[4]; // Top, right, bottom, left.
+   FRGB corner[4]; // Top-left, top-right, bottom-right, bottom-left.
+};
+
+struct MeshGradient {
+   int rows = 0;
+   int cols = 0;
+   std::vector<MeshPatch> patches;
+   bool bicubic = false;
+};
+
 // One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
 
 struct GouraudTriangle {
@@ -372,6 +396,7 @@ public:
 };
 
 //********************************************************************************************************************
+// All scene definitions inherit this class
 
 class SceneDef {
    public:
@@ -415,54 +440,219 @@ struct ClipMaskCache {
 
 //********************************************************************************************************************
 
-constexpr int MAX_TRANSITION_STOPS = 10;
-
 struct TransitionStop { // Passed to the Stops field.
-   double Offset;
-   struct VectorMatrix Matrix;
-   agg::trans_affine *AGGTransform;
+   double Offset = 0;
+   struct VectorMatrix Matrix = {};
+   std::unique_ptr<agg::trans_affine> AGGTransform;
 };
 
 class extVectorTransition : public objVectorTransition, public SceneDef {
    public:
-   int TotalStops; // Total number of stops registered.
+   std::vector<TransitionStop> Stops;
+   bool Dirty:1 = true;
 
-   TransitionStop Stops[MAX_TRANSITION_STOPS];
-   bool Dirty:1;
+   extVectorTransition(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
+      objVectorTransition(ClassPtr, ObjectID) { }
 };
 
-class extVectorGradient : public objVectorGradient, public SceneDef {
+class extGradient : public objGradient, public SceneDef {
    public:
-   using create = kt::Create<extVectorGradient>;
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENT;
+   static constexpr CSTRING CLASS_NAME = "Gradient";
+   using create = kt::Create<extGradient>;
 
-   std::vector<GradientStop> Stops;  // An array of gradient stop colours.
-   struct VectorMatrix *Matrices;
-   class GradientColours *Colours;
-   std::string ColourMap;
-   FRGB   Colour;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
-   std::string ID;
-   agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
-   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
-   std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for Type IS VGT::GOURAUD; null for all other gradient types
-   GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
-   int   NumericID;
+   extGradient(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objGradient(ClassPtr, ObjectID) { }
+   ~extGradient();
+};
+
+class extGradientLinear : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTLINEAR;
+   static constexpr CSTRING CLASS_NAME = "GradientLinear";
+   using create = kt::Create<extGradientLinear>;
+
+   Unit X1, Y1, X2, Y2;
    double Angle;
    double Length;
-   bool   CalcAngle; // True if the Angle/Length values require recalculation.
+   bool CalcAngle; // True if the Angle/Length values require recalculation.
+
+   extGradientLinear(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
+      Angle = 0;
+      Length = 0;
+      CalcAngle = true;
+   }
+};
+
+class extGradientRadial : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTRADIAL;
+   static constexpr CSTRING CLASS_NAME = "GradientRadial";
+   using create = kt::Create<extGradientRadial>;
+
+   Unit CX, CY, FX, FY, Radius, FocalRadius;
+   int ContainFocal;
+
+   extGradientRadial(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
+      CX = Unit(0.5, FD_SCALED);
+      CY = Unit(0.5, FD_SCALED);
+      Radius = Unit(0.5, FD_SCALED);
+      FocalRadius = Unit(0);
+      ContainFocal = false;
+   }
+};
+
+class extGradientConic : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTCONIC;
+   static constexpr CSTRING CLASS_NAME = "GradientConic";
+   using create = kt::Create<extGradientConic>;
+
+   Unit CX, CY, Radius;
+   double Span;
+
+   extGradientConic(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
+      CX = Unit(0.5, FD_SCALED);
+      CY = Unit(0.5, FD_SCALED);
+      Radius = Unit(0.5, FD_SCALED);
+      Span = 1.0;
+   }
+};
+
+class extGradientDiamond : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDIAMOND;
+   static constexpr CSTRING CLASS_NAME = "GradientDiamond";
+   using create = kt::Create<extGradientDiamond>;
+
+   Unit CX, CY, Radius;
+
+   extGradientDiamond(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) {
+      CX = Unit(0.5, FD_SCALED);
+      CY = Unit(0.5, FD_SCALED);
+      Radius = Unit(0.5, FD_SCALED);
+   }
+};
+
+class extGradientContour : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTCONTOUR;
+   static constexpr CSTRING CLASS_NAME = "GradientContour";
+   using create = kt::Create<extGradientContour>;
+
+   double Floor = 0;
+   double Multiplier = 1;
+
+   agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
+   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
+
+   extGradientContour(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+
+   ~extGradientContour() {
+      if (ContourCache) delete ContourCache;
+   }
+};
+
+class extGradientGouraud : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTGOURAUD;
+   static constexpr CSTRING CLASS_NAME = "GradientGouraud";
+   using create = kt::Create<extGradientGouraud>;
+
+   std::unique_ptr<GouraudMesh> Gouraud; // Mesh data for GradientGouraud.
+   GouraudCache GouraudTriangles; // Cached transformed/coloured triangle list, rebuilt on a mesh/transform change
+
+   extGradientGouraud(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+};
+
+class extGradientMesh : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTMESH;
+   static constexpr CSTRING CLASS_NAME = "GradientMesh";
+   using create = kt::Create<extGradientMesh>;
+
+   std::unique_ptr<MeshGradient> Mesh; // Coons patch data for GradientMesh.
+   GouraudCache MeshTriangles; // Cached tessellated/coloured triangle list.
+
+   extGradientMesh(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+};
+
+class extGradientDistal : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDISTAL;
+   static constexpr CSTRING CLASS_NAME = "GradientDistal";
+   using create = kt::Create<extGradientDistal>;
+
+   double Floor = 0;
+   double Multiplier = 1;
+   Unit Radius = Unit(0);
+   Unit InnerRadius = Unit(0);
+   GFALL InnerFall = GFALL::SMOOTHSTEP; // Alpha fall-off curve for the interior fade
+   GFALL OuterFall = GFALL::SMOOTHSTEP; // Alpha fall-off curve for the exterior fade
+
+   agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
+   uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
+   double SDFResolution = -1; // Resolution baked into SDFCache; a mismatch forces a rebuild
+   double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
+   int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
+
+   extGradientDistal(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+
+   ~extGradientDistal() {
+      if (SDFCache) delete SDFCache;
+   }
+};
+
+class extGradientVoronoi : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTVORONOI;
+   static constexpr CSTRING CLASS_NAME = "GradientVoronoi";
+   using create = kt::Create<extGradientVoronoi>;
+
+   double Floor = 0;
+   double Multiplier = 1;
+   kt::vector<VoronoiPoint> Points; // Optional list of Voronoi feature points provided by the client
+   double HeightMin = 1.0;
+   double HeightMax = 1.0;
+   double Jitter = 0.0;
+   int64_t Seed = 0;
+   int PointCount = 16;
+   WLF WorleyMode = WLF::F1;
+   WLM WorleyMetric = WLM::EUCLIDEAN;
+
+   agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
+   uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
+
+   extGradientVoronoi(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+
+   ~extGradientVoronoi() {
+      if (WorleyCache) delete WorleyCache;
+   }
 };
 
 class extVectorImage : public objVectorImage, public SceneDef {
    public:
    using create = kt::Create<extVectorImage>;
+
+   extVectorImage(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorImage(ClassPtr, ObjectID) { }
 };
 
 class extVectorPattern : public objVectorPattern, public SceneDef {
    public:
    using create = kt::Create<extVectorPattern>;
 
-   struct VectorMatrix *Matrices;
    objBitmap *Bitmap;
+
+   extVectorPattern(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVectorPattern(ClassPtr, ObjectID) {
+      if (!NewLocalObject(CLASSID::VECTORSCENE, &Scene)) {
+         if (!NewObject(CLASSID::VECTORVIEWPORT, &Viewport)) {
+            SetOwner(Viewport, Scene);
+         }
+         else kt::Log().fatal(ERR::NewObject);
+      }
+      else kt::Log().fatal(ERR::NewObject);
+   }
+
+   ~extVectorPattern();
 };
 
 class extVectorFilter : public objVectorFilter {
@@ -479,26 +669,27 @@ class extVectorFilter : public objVectorFilter {
    extFilterEffect *Effects;           // Pointer to the first effect in the chain.
    extFilterEffect *LastEffect;
    std::vector<std::unique_ptr<filter_bitmap>> Bank;
-   TClipRectangle<int> VectorClip;           // Clipping region of the vector client (reflects the vector bounds)
+   TClipRectangle<int> VectorClip;     // Clipping region of the vector client (reflects the vector bounds)
    uint8_t BankIndex;
-   double BoundWidth, BoundHeight; // Filter boundary, computed on acDraw()
+   double BoundWidth, BoundHeight;     // Filter boundary, computed on acDraw()
    double TargetX, TargetY, TargetWidth, TargetHeight; // Target boundary, computed on acDraw()
    bool Rendered;
    bool Disabled;
    bool ReqBkgd; // True if the filter requires a background bitmap for one or more effects.
 
-   extVectorFilter() {
+   extVectorFilter(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorFilter(ClassPtr, ObjectID) {
       Units          = VUNIT::BOUNDING_BOX;
       PrimitiveUnits = VUNIT::UNDEFINED;
       Opacity        = 1.0;
-      X              = -0.1; // -10% default as per SVG requirements
-      Y              = -0.1;
-      Width          = 1.2;  // +120% default as per SVG requirements
-      Height         = 1.2;
+      X              = Unit(-0.1, FD_SCALED); // -10% default as per SVG requirements
+      Y              = Unit(-0.1, FD_SCALED);
+      Width          = Unit(1.2, FD_SCALED);  // +120% default as per SVG requirements
+      Height         = Unit(1.2, FD_SCALED);
       AspectRatio    = VFA::MEET; // Scale X/Y values independently
       ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
-      Dimensions     = DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT;
    }
+
+   ~extVectorFilter();
 };
 
 class extFilterEffect : public objFilterEffect {
@@ -506,83 +697,118 @@ class extFilterEffect : public objFilterEffect {
    using create = kt::Create<extFilterEffect>;
 
    extVectorFilter *Filter; // Direct reference to the parent filter
-   uint16_t UsageCount;        // Total number of other effects utilising this effect to build a pipeline
+   uint16_t UsageCount;     // Total number of other effects utilising this effect to build a pipeline
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(uint16_t)];
+#endif
+
+   extFilterEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objFilterEffect(ClassPtr, ObjectID) {
+      SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
+   }
+
+   ~extFilterEffect() {
+      if (Filter) {
+         for (auto e = Filter->Effects; (e) and (UsageCount > 0); e = (extFilterEffect *)e->Next) {
+            if (e->Input IS this) { e->Input = nullptr; UsageCount--; }
+            if (e->Mix IS this) { e->Mix = nullptr; UsageCount--; }
+         }
+
+         if (Filter->Effects IS this) Filter->Effects = (extFilterEffect *)Next;
+         if (Filter->LastEffect IS this) Filter->LastEffect = (extFilterEffect *)Prev;
+      }
+
+      if (Prev) Prev->Next = Next;
+      if (Next) Next->Prev = Prev;
+   }
 };
 
 class extPainter : public VectorPainter {
 public:
-   GRADIENT_TABLE *GradientTable;
-   double GradientAlpha;
+   std::unique_ptr<GRADIENT_TABLE> GradientTable;
+   double GradientAlpha = 0;
+
+   void reset_cache() {
+      GradientTable.reset();
+      GradientAlpha = 0;
+   }
+
+   void reset() {
+      VectorPainter::reset();
+      reset_cache();
+   }
 };
 
 class extVector : public objVector {
    public:
    using create = kt::Create<extVector>;
 
+   std::string StrokeString;
+   std::string FillString;
+   std::string FilterString;
+   std::string SID;
+   VFR FillRule;
+   VFR ClipRule;
+   VLJ LineJoin;
+   VLC LineCap;
+   VIJ InnerJoin;
+   VMF MorphFlags;
+
    extPainter Fill[2], Stroke;
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
    TClipRectangle<double> Bounds; // Must be calculated by GeneratePath() and called from calc_full_boundary()
-   double StrokeWidth;
+   Unit StrokeWidth;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
-   std::string FilterString, StrokeString, FillString;
-   std::string SID;
+
    void   (*GeneratePath)(extVector *, agg::path_storage &);
-   agg::rasterizer_scanline_aa<>     *StrokeRaster;
-   agg::rasterizer_scanline_aa<>     *FillRaster;
-   std::vector<FeedbackSubscription> *FeedbackSubscriptions;
-   std::vector<InputSubscription>    *InputSubscriptions;
-   std::vector<KeyboardSubscription> *KeyboardSubscriptions;
+   std::unique_ptr<agg::rasterizer_scanline_aa<>> StrokeRaster;
+   std::unique_ptr<agg::rasterizer_scanline_aa<>> FillRaster;
+   std::unique_ptr<std::vector<FeedbackSubscription>> FeedbackSubscriptions;
+   std::unique_ptr<std::vector<InputSubscription>> InputSubscriptions;
+   std::unique_ptr<std::vector<KeyboardSubscription>> KeyboardSubscriptions;
    extVectorFilter     *Filter;
    extVectorViewport   *ParentView;
    extVectorClip       *ClipMask;
    extVectorTransition *Transition;
    extVector           *Morph;
    extVector           *AppendPath;
-   DashedStroke        *DashArray;
-   ClipMaskCache ClipCache;
-   filter_bitmap *IsolatedBuffer;
+   std::unique_ptr<DashedStroke> DashArray;
+   std::unique_ptr<ClipMaskCache> ClipCache;
+   std::unique_ptr<filter_bitmap> IsolatedBuffer;
    JTYPE InputMask;
-   int   NumericID;
    int   PathLength;
-   VMF   MorphFlags;
-   VFR   FillRule;
-   VFR   ClipRule;
    RC    Dirty;
    uint16_t  TabOrder;
    uint16_t  Isolated:1;
    uint16_t  DisableFillColour:1;  // Bitmap fonts set this to true in order to disable colour fills
    uint16_t  ButtonLock:1;
-   uint16_t  ScaledStrokeWidth:1;
    uint16_t  DisableHitTesting:1;
    uint16_t  ResizeSubscription:1;
    uint16_t  FGFill:1;
    uint16_t  Stroked:1;
    uint16_t  ValidState:1;         // Can be set to false during path generation if the shape is invalid
    uint16_t  RequiresRedraw:1;
-   agg::line_join_e  LineJoin;
-   agg::line_cap_e   LineCap;
-   agg::inner_join_e InnerJoin;
 
-   extVector() {
+   extVector(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVector(ClassPtr, ObjectID) {
       StrokeOpacity = 1.0;
       FillOpacity   = 1.0;
       Opacity       = 1.0;              // Overall opacity multiplier
       MiterLimit    = 4;                // SVG default is 4;
-      LineJoin      = agg::miter_join_revert;  // SVG default is miter; the 'revert' version matches SVG rules
-      LineCap       = agg::butt_cap;    // SVG default is butt
-      InnerJoin     = agg::inner_miter; // AGG only
-      NumericID     = 0x7fffffff;
-      StrokeWidth   = 1.0; // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
+      LineJoin      = VLJ::MITER; // SVG default is miter
+      LineCap       = VLC::BUTT;  // SVG default is butt
+      InnerJoin     = VIJ::MITER; // AGG only
+      StrokeWidth   = Unit(1); // SVG default is 1, note that an actual stroke colour needs to be defined for this value to actually matter.
       Visibility    = VIS::VISIBLE;
       FillRule      = VFR::NON_ZERO;
       ClipRule      = VFR::NON_ZERO;
       Dirty         = RC::DIRTY;
-      IsolatedBuffer = nullptr;
       TabOrder      = 255;
       ColourSpace   = VCS::INHERIT;
       ValidState    = true;
    }
+
+   ~extVector();
 
    // Methods
 
@@ -628,7 +854,13 @@ class extVectorScene : public objVectorScene {
    bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
 
-   extVectorScene() : ShareVersion(1), SubtreeDirty(true) { }
+   extVectorScene(objMetaClass *ClassPtr, OBJECTID ObjectID) :
+      objVectorScene(ClassPtr, ObjectID), ShareVersion(1), SubtreeDirty(true) {
+      Gamma = 1;
+      SampleMethod = VSM::AUTO;
+   }
+
+   ~extVectorScene();
 
    // Returns the rasteriser gamma table for the scene's current Gamma value; one shared LUT serves
    // every rasteriser in the scene.  Returns nullptr for identity gamma, which restores the
@@ -648,6 +880,13 @@ class extVectorScene : public objVectorScene {
    double GammaLUTValue = 1.0;
 };
 
+inline extVectorFilter::~extVectorFilter()
+{
+   acClear(this);
+   if (SourceGraphic) FreeResource(SourceGraphic);
+   if (SourceScene) FreeResource(SourceScene);
+}
+
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
 
@@ -657,45 +896,93 @@ class extVectorViewport : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorViewport";
    using create = kt::Create<extVectorViewport>;
 
-   FUNCTION vpDragCallback;
+   // Exported fields with concrete (direct-access) offsets must remain contiguous at the front in field-array order.
+   objBitmap *vpBuffer;
    double vpViewX, vpViewY, vpViewWidth, vpViewHeight;     // Viewbox values determine the area of the SVG content that is being sourced.  These values are always fixed pixel units.
-   double vpTargetX, vpTargetY, vpTargetXO, vpTargetYO, vpTargetWidth, vpTargetHeight; // Target dimensions
+   ARF   vpAspectRatio;
+   VOF   vpOverflowX, vpOverflowY;
+
+   FUNCTION vpDragCallback;
+   Unit vpTargetX, vpTargetY;
+   Unit vpTargetWidth, vpTargetHeight;
+   Unit vpTargetXO, vpTargetYO; // Target dimensions
    double vpXScale, vpYScale; // Internal scaling for ViewN -to-> TargetN; takes the AspectRatio into consideration.
    double vpFixedWidth, vpFixedHeight; // Fixed pixel position values, relative to parent viewport
    TClipRectangle<double> vpBounds; // Bounding box coordinates relative to (0,0), used for clipping
    double vpAlignX, vpAlignY;
-   objBitmap *vpBuffer;
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
    uint64_t vpSeenShareVersion; // Scene ShareVersion that was current when vpBuffer was last rendered.
    std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    extVectorClip *vpClipOwner;
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
-   DMF   vpDimensions;
-   ARF   vpAspectRatio;
-   VOF   vpOverflowX, vpOverflowY;
    uint8_t vpClipConfiguring:1;
    uint8_t vpDragging:1;
    uint8_t vpBuffered:1; // True if the client requested that the viewport is buffered.
    uint8_t vpRefreshBuffer:1;
 
-   extVectorViewport() {
+   extVectorViewport(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       vpClipOwner = nullptr;
       vpClipConfiguring = false;
       vpSeenShareVersion = 0;
+      vpAspectRatio = ARF::MEET|ARF::X_MID|ARF::Y_MID;
+      vpOverflowX   = VOF::VISIBLE;
+      vpOverflowY   = VOF::VISIBLE;
+
+      // NB: vpTargetWidth and vpTargetHeight are not set to a default because we need to know if the client has
+      // intentionally avoided setting the viewport and/or viewbox dimensions (which typically means that the viewport
+      // will expand to fit the parent).
    }
+
+   ~extVectorViewport();
 };
+
+inline static double unit_to_fixed(const Unit &Value, double ParentSize)
+{
+   return Value.scaled() ? (double(Value) * ParentSize) : double(Value);
+}
+
+// NB: If XOffset is defined without X then layout routines will presume X to be zero, effectively meaning XOffset is
+// always treatable as a width value.
+
+inline static bool viewport_has_target_width(const extVectorViewport *View)
+{
+   return View->vpTargetWidth.defined() or View->vpTargetXO.defined();
+}
+
+inline static bool viewport_has_target_height(const extVectorViewport *View)
+{
+   return View->vpTargetHeight.defined() or View->vpTargetYO.defined();
+}
+
+inline static double viewport_coordinate_width(const extVectorViewport *View)
+{
+   if (View->vpViewWidth > 0) return View->vpViewWidth;
+   else if (viewport_has_target_width(View)) return View->vpFixedWidth;
+   else if (View->Scene) return View->Scene->PageWidth;
+   else return 0;
+}
+
+inline static double viewport_coordinate_height(const extVectorViewport *View)
+{
+   if (View->vpViewHeight > 0) return View->vpViewHeight;
+   else if (viewport_has_target_height(View)) return View->vpFixedHeight;
+   else if (View->Scene) return View->Scene->PageHeight;
+   else return 0;
+}
 
 //********************************************************************************************************************
 
-class extVectorPoly : public extVector {
+class extVectorPolygon : public extVector {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORPOLYGON;
    static constexpr CSTRING CLASS_NAME = "VectorPolygon";
-   using create = kt::Create<extVectorPoly>;
+   using create = kt::Create<extVectorPolygon>;
 
    std::vector<VectorPoint> Points;
    bool Closed:1;      // Polygons are closed (TRUE) and Polylines are open (FALSE)
+
+   extVectorPolygon(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
 
 class extVectorPath : public extVector, public SceneDef {
@@ -707,11 +994,10 @@ class extVectorPath : public extVector, public SceneDef {
    std::vector<PathCommand> Commands;
    agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
    TClipRectangle<double> UnplacedBounds;
-   double pX, pY;
-   DMF pDimensions;
+   Unit pX, pY;
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 
-   extVectorPath();
+   extVectorPath(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
 
 class extVectorRectangle : public extVector {
@@ -720,21 +1006,88 @@ class extVectorRectangle : public extVector {
    static constexpr CSTRING CLASS_NAME = "VectorRectangle";
    using create = kt::Create<extVectorRectangle>;
 
-   struct coord { double x, y; };
-   double rX, rY, rWidth, rHeight, rXOffset, rYOffset;
-   std::array<coord, 4> rRound;
-   DMF    rDimensions;
-   bool   rFullControl;
+   struct coord { Unit x, y; };
+   Unit rX, rY, rWidth, rHeight, rXOffset, rYOffset;
+   std::array<coord, 4> rRound = {};
+   bool   rFullControl = false; // Full control of rounding values enabled
+
+   extVectorRectangle(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
 
 //********************************************************************************************************************
 
 class GradientColours {
    public:
-      GradientColours(const std::vector<GradientStop> &, VCS, double, double);
-      GradientColours(const std::array<FRGB, 256> &, double);
+      GradientColours(const kt::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
+      GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
       double resolution;
+      double gamma;
+
+      static double ease(GEZ Easing, double Value) {
+         switch (Easing) {
+            case GEZ::IN:
+               return Value * Value;
+
+            case GEZ::OUT: {
+               const double inverse = 1.0 - Value;
+               return 1.0 - (inverse * inverse);
+            }
+
+            case GEZ::IN_OUT:
+               return Value * Value * (3.0 - (2.0 * Value));
+
+            case GEZ::CUBIC_IN:
+               return Value * Value * Value;
+
+            case GEZ::CUBIC_OUT: {
+               const double inverse = 1.0 - Value;
+               return 1.0 - (inverse * inverse * inverse);
+            }
+
+            case GEZ::CUBIC_IN_OUT:
+               if (Value < 0.5) return 4.0 * Value * Value * Value;
+               else {
+                  const double inverse = -2.0 * Value + 2.0;
+                  return 1.0 - ((inverse * inverse * inverse) * 0.5);
+               }
+
+            case GEZ::LINEAR:
+            default:
+               return Value;
+         }
+      }
+
+      void apply_easing(GEZ Easing) {
+         if (Easing IS GEZ::LINEAR) return;
+
+         GRADIENT_TABLE src = table;
+
+         for (int i=0; i < std::ssize(table); i++) {
+            const double source = ease(Easing, double(i) / 255.0) * 255.0;
+            const int index = std::clamp(int(source), 0, 255);
+            const double blend = source - double(index);
+
+            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
+            else table[i] = src[255];
+         }
+      }
+
+      void apply_gamma(double Gamma) {
+         gamma = Gamma;
+         if (Gamma IS 1.0) return;
+
+         GRADIENT_TABLE src = table;
+
+         for (int i=0; i < std::ssize(table); i++) {
+            const double source = pow(double(i) / 255.0, Gamma) * 255.0;
+            const int index = std::clamp(int(source), 0, 255);
+            const double blend = source - double(index);
+
+            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
+            else table[i] = src[255];
+         }
+      }
 
       void apply_resolution(double Resolution) {
          resolution = 1.0 - Resolution;
@@ -769,10 +1122,12 @@ class extVectorClip : public objVectorClip, public SceneDef {
    static constexpr CSTRING CLASS_NAME = "VectorClip";
    using create = kt::Create<extVectorClip>;
 
-   extVectorClip() {
+   extVectorClip(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorClip(ClassPtr, ObjectID) {
       Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
       ContentVersion = 1;
    }
+
+   ~extVectorClip();
 
    TClipRectangle<double> Bounds;
    OBJECTID ViewportID;
@@ -880,7 +1235,7 @@ static void mark_buffers_for_refresh(extVector *Vector)
    if (Vector->Scene) ((extVectorScene *)Vector->Scene)->SubtreeDirty = true;
 
    for (auto node=Vector; node; ) {
-      node->ClipCache.clear();
+      node->ClipCache.reset();
 
       if ((!node->Parent) or (node->Parent->Class->BaseClassID != CLASSID::VECTOR)) break;
       node = (extVector *)node->Parent;
@@ -1017,8 +1372,16 @@ inline static void reset_final_path(objVector *Vector)
 template <class T>
 inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTransform)
 {
-   for (auto t=Vector.Matrices; t; t=t->Next) {
-      AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
+   if constexpr (std::is_pointer_v<std::decay_t<decltype(Vector.Matrices)>>) {
+      // Linked-list storage (objVector, viewports and patterns)
+      for (auto t=Vector.Matrices; t; t=t->Next) {
+         AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
+      }
+   }
+   else { // Contiguous kt::vector storage
+      for (auto &t : Vector.Matrices) {
+         AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
+      }
    }
 }
 
@@ -1205,12 +1568,7 @@ inline static double get_parent_width(const objVector *Vector)
 {
    auto eVector = (const extVector *)Vector;
    if (auto view = (extVectorViewport *)eVector->ParentView) {
-      if (view->vpViewWidth > 0) return view->vpViewWidth;
-      else if ((dmf::hasAnyWidth(view->vpDimensions)) or
-          ((dmf::hasAnyX(view->vpDimensions)) and (dmf::hasAnyXOffset(view->vpDimensions)))) {
-         return view->vpFixedWidth;
-      }
-      else return eVector->Scene->PageWidth;
+      return viewport_coordinate_width(view);
    }
    else if (eVector->Scene) return eVector->Scene->PageWidth;
    else return 0;
@@ -1220,12 +1578,7 @@ inline static double get_parent_height(const objVector *Vector)
 {
    auto eVector = (const extVector *)Vector;
    if (auto view = (extVectorViewport *)eVector->ParentView) {
-      if (view->vpViewHeight > 0) return view->vpViewHeight;
-      else if ((dmf::hasAnyHeight(view->vpDimensions)) or
-          ((dmf::hasAnyY(view->vpDimensions)) and (dmf::hasAnyYOffset(view->vpDimensions)))) {
-         return view->vpFixedHeight;
-      }
-      else return eVector->Scene->PageHeight;
+      return viewport_coordinate_height(view);
    }
    else if (eVector->Scene) return eVector->Scene->PageHeight;
    else return 0;
@@ -1399,25 +1752,25 @@ void configure_stroke(extVector &Vector, T &Stroke)
 {
    Stroke.width(Vector.fixed_stroke_width());
 
-   if (Vector.LineJoin)  Stroke.line_join(Vector.LineJoin); //miter, round, bevel
-   if (Vector.LineCap)   Stroke.line_cap(Vector.LineCap); // butt, square, round
-   if (Vector.InnerJoin) Stroke.inner_join(Vector.InnerJoin); // miter, round, bevel, jag
+   if (Vector.LineJoin != VLJ::INHERIT)  Stroke.line_join(Vector.LineJoin); // miter, round, bevel
+   if (Vector.LineCap != VLC::INHERIT)   Stroke.line_cap(Vector.LineCap); // butt, square, round
+   if (Vector.InnerJoin != VIJ::INHERIT) Stroke.inner_join(Vector.InnerJoin); // miter, round, bevel, jag
 
    // It has been noted that there may be issues between miter_join, miter_join_revert and line-caps that
    // need further investigation.  This section experiments with adjusting the line-cap according to the selected
    // line-join.
 
    /*
-   if (Vector.LineJoin) {
+   if (Vector.LineJoin != VLJ::INHERIT) {
       if (Vector.classID() IS CLASSID::VECTORPOLYGON) {
          if (((extVectorPoly &)Vector).Closed) {
             switch(Vector.LineJoin) {
-               case agg::miter_join:        Stroke.line_cap(agg::square_cap); break;
-               case agg::bevel_join:        Stroke.line_cap(agg::square_cap); break;
-               case agg::miter_join_revert: Stroke.line_cap(agg::square_cap); break;
-               case agg::round_join:        Stroke.line_cap(agg::round_cap); break;
-               case agg::miter_join_round:  Stroke.line_cap(agg::round_cap); break;
-               case agg::inherit_join:      break;
+               case VLJ::MITER_SMART: Stroke.line_cap(VLC::SQUARE); break;
+               case VLJ::BEVEL:       Stroke.line_cap(VLC::SQUARE); break;
+               case VLJ::MITER:       Stroke.line_cap(VLC::SQUARE); break;
+               case VLJ::ROUND:       Stroke.line_cap(VLC::ROUND); break;
+               case VLJ::MITER_ROUND: Stroke.line_cap(VLC::ROUND); break;
+               case VLJ::INHERIT:     break;
             }
          }
       }
@@ -1510,7 +1863,7 @@ extern void ClosePath(APTR Path);
 extern void RewindPath(APTR Path);
 extern int GetVertex(APTR Path, double * X, double * Y);
 extern ERR ApplyPath(APTR Path, objVectorPath * VectorPath);
-extern ERR Rotate(struct VectorMatrix * Matrix, double Angle, double CenterX, double CenterY);
+extern ERR Rotate(struct VectorMatrix * Matrix, double Angle, double CX, double CY);
 extern ERR Translate(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Skew(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Multiply(struct VectorMatrix * Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);

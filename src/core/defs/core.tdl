@@ -6,7 +6,7 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
         "../fs_identify.cpp", "../fs_resolution.cpp", "../fs_volumes.cpp"
   } }, function()
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
-  cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
+  cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<span>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
 
   privateNames({ "ScriptArg", "CoreBase" })
 
@@ -95,16 +95,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "DETACHED: Forces the new process to be detached from the parent.",
     "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
     "PIPE: Enable the output pipe to the launched process so that it can read data.")
-
-  hash("AHASH", "0x%s",
-    "ACTIVATE",     "CLEAR",         "FREEWARNING",  "COPYDATA",
-    "DATAFEED",     "DEACTIVATE",    "DRAW",         "FLUSH",       "FOCUS",        "FREE",
-    "GETKEY",       "DRAGDROP",      "HIDE",         "INIT",        "LOCK",         "LOSTFOCUS",    "MOVE",
-    "MOVETOBACK",   "MOVETOFRONT",   "NEWCHILD",     "NEWOWNER",    "NEWOBJECT",    "REDO",         "QUERY",
-    "READ",         "RENAME",        "RESET",        "RESIZE",      "SAVEIMAGE",    "SAVETOOBJECT",
-    "SEEK",         "SETKEY",        "SHOW",         "TIMER",       "UNLOCK",       "NEXT",         "PREV",
-    "WRITE",        "SETFIELD",      "CLIPBOARD",    "REFRESH",     "DISABLE",      "ENABLE",       "REDIMENSION",
-    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO",         "FREEPLACEMENT")
 
   flags("MHF", { comment="Internal options for requesting function tables from modules." },
     "STATIC: Keep the module code in memory",
@@ -297,10 +287,8 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
-    { UNIQUE = "0x40000000: Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, ~Core.NewObject() will return `ERR::ObjectExists`.  This flag works in conjunction with the `Name` parameter.",
-      NAME   = "0x80000000: Use the Name parameter to name the created object.  This flag is not required if using `UNIQUE`.",
-      PRIVATE = 0
-    }
+    "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
+    { PRIVATE = 0 }
   )
 
   constants("MAX", { }, {
@@ -358,7 +346,8 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "MEMORY_USAGE: The total amount of memory used by the current process, in bytes.",
     "MAIN_THREAD: Read-only, returns `true` if called from the main thread.",
     "MAIN_THREAD_ID: Read-only, returns the ID of the main thread.",
-    "WINDOWS_ICON: The Microsoft Windows resource icon ID for this process."
+    "WINDOWS_ICON: The Microsoft Windows resource icon ID for this process.",
+    "STRUCT_DB: Returns a map of hashed struct names and corresponding struct sizes."
   )
 
   enums("RP", { type="int", start=1, comment="Path types for SetResourcePath()" },
@@ -546,7 +535,12 @@ typedef AC ACTIONID;
 #define __attribute__(a)
 #endif
 
-typedef const std::vector<std::pair<std::string, uint32_t>> STRUCTS;
+struct StructInfo {
+   uint16_t Size;       // Byte size of the structure (sizeof)
+   uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+};
+
+typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
 typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
@@ -820,22 +814,41 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     uint   Type   # Additional type information
   ]],
   [[
-   constexpr Unit(double pValue, int pType = FD_DOUBLE) : Value(pValue), Type(pType) { }
-   constexpr Unit() : Value(0), Type(0) { }
-   explicit Unit(std::string_view String) { read(String); }
+   static constexpr double DefaultDPI = 96.0;
+   static constexpr double DefaultFontSize = 16.0;
+   // Note that the type holds optional FD metadata; the use of FD_DOUBLE is unnecessary
+   constexpr Unit(double pValue, int pType = 0) : Value(pValue), Type(pType) { }
+   constexpr Unit() : Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { }
+   explicit Unit(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) :
+      Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { read(String, FontSize, DPI); }
+
    constexpr operator double() const { return Value; }
+   constexpr int round() const { return int(Value + 0.5); }
+
+   double operator*() const { return Value; };
+
    constexpr void set(const double pValue) { Value = pValue; }
-   constexpr bool scaled() { return (Type & FD_SCALED) ? true : false; }
-   inline void read(std::string_view String) {
+   constexpr bool scaled() const { return (Type & FD_SCALED) ? true : false; }
+   constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
+   inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
+
+   void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
+      Type = 0;
       const auto start = String.find_first_not_of(" \n\r\t");
       if (start != std::string::npos) String.remove_prefix(start);
       if (String.starts_with('+')) String.remove_prefix(1);
       auto [ end, error ] = std::from_chars(String.data(), String.data() + String.size(), Value);
-      if (error != std::errc()) { Value = 0; return; }
+      if (error != std::errc()) { Value = std::numeric_limits<double>::quiet_NaN(); return; }
 
       String = String.substr(end - String.data());
-      if (String.starts_with("%")) { Value *= 0.01; Type = FD_DOUBLE|FD_SCALED; }
-      else Type = FD_DOUBLE;
+      if (String.starts_with("%")) { Value *= 0.01; Type = FD_SCALED; }
+      else if (String.starts_with("em")) Value *= FontSize;
+      else if (String.starts_with("ex")) Value *= FontSize * 0.5;
+      else if (String.starts_with("in")) Value *= DPI;
+      else if (String.starts_with("cm")) Value *= (1.0 / 2.54) * DPI;
+      else if (String.starts_with("mm")) Value *= (1.0 / 25.4) * DPI;
+      else if (String.starts_with("pt")) Value *= (4.0 / 3.0);
+      else if (String.starts_with("pc")) Value *= (4.0 / 3.0) * 12.0;
    }
    ]])
 
@@ -1021,7 +1034,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
     fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
     ptr SetValue       # A virtual function that will set the value for this field
-    fptr(error obj struct(*Field) int cptr int) WriteValue # An internal function for writing to this field
+    fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
     uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
     ushort Offset      # Field offset within the object
@@ -1029,8 +1042,9 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     uint Flags         # Special flags that describe the field
   ]],
   [[
-   inline bool readable() { return (Flags & FD_READ) ? true : false; }
-   inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool readable() const { return (Flags & FD_READ) ? true : false; }
+   inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
   ]]) -- [32/52]
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
@@ -1205,6 +1219,12 @@ template <pcObject T> inline ERR FreeResource(T *Object) {
    return FreeResource(Object->UID);
 }
 
+template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
+inline ERR FreeResource(T *) {
+   static_assert(pcComplete<T>, "FreeResource() cannot be called with a pointer to an incomplete type.");
+   return ERR::NullArgs;
+}
+
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
@@ -1284,11 +1304,11 @@ typedef std::vector<obj_read> READ_TABLE;
 // Object field write handler structure for Tiri code
 
 struct obj_write {
-   typedef ERR JUMP(struct lua_State *, OBJECTPTR, struct Field *, int);
+   typedef ERR JUMP(struct lua_State *, OBJECTPTR, const struct Field *, int);
 
    uint32_t Hash;
    JUMP *Call;
-   struct Field *Field;
+   const struct Field *Field;
 
    auto operator<=>(const obj_write &Other) const {
        if (Hash < Other.Hash) return -1;
@@ -1296,7 +1316,7 @@ struct obj_write {
        return 0;
    }
 
-   obj_write(uint32_t pHash, JUMP pJump, struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
+   obj_write(uint32_t pHash, JUMP pJump, const struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
    obj_write(uint32_t pHash, JUMP pJump) : Hash(pHash), Call(pJump) { }
    obj_write(uint32_t pHash) : Hash(pHash) { }
 };
@@ -1313,7 +1333,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
 
   klass("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
     double ClassVersion    # Version of the class
-    cstruct(*FieldArray) Fields  # Original field array supplied by the module
+    array(cstruct(FieldArray)) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
     string ClassName       # Name of the class
     string FileExtension   # File extension(s) supported by this class
@@ -1327,6 +1347,9 @@ typedef std::vector<obj_write> WRITE_TABLE;
     cid BaseClassID        # Base-class ID
     int OpenCount          # Number of objects allocated to this class
     int(CCF) Category      # Assigned category
+    int PublicSize         # Byte-size of the class as seen by the client
+    ~array(struct(ActionEntry)) ActionTable
+    ~array(struct(MethodEntry)) Methods
   ]],
   [[
     // Field table cache for Tiri - eliminates per-instance hash tables.
@@ -1370,7 +1393,10 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     large     Position  # The current read/write byte position in a file.
     string    Path      # The file path.
     int(FL)   Flags     # File flags and options.
-    ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
+    array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
+    ~struct(DateTime) Date
+    ~struct(DateTime) Created
+    ~int(PERMIT) Permissions
   ]],
   nil,
   [[
@@ -1466,52 +1492,61 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   })
 
   klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
-    string Path         # Location of the script
     string Procedure    # Specifies a procedure name to be executed
+    string CacheFile
+    string Path         # Location of the script
     string ErrorMessage # Human readable error string defined on failure
+    string Statement
+    string WorkingPath
+    vector(string) Results
     oid Target          # The object that script objects must be initialised to, e.g. for obj.new()
     int(SCF) Flags      # Optional flags
     error Error         # If an error occurred, this field will indicate the error number
     int CurrentLine     # Current line being executed, or failed line if script execution terminated
     int LineOffset      # An optional offset to use when reporting line numbers
   ]],
+  nil,
   [[
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars;                 // Global parameters
-   kt::vector<std::string> Results;
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   std::string String;
-   std::string WorkingPath;
-   std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      TotalArgs;            // Total number of ProcArgs
    OBJECTID ScriptOwnerID;
+
+#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
+   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
+#endif
   ]])
 
   c_insert([==[
 namespace sc {
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
+inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args) noexcept {
+   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
    return Action(sc::Callback::id, Function.Context, &args);
+}
+
+inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args, ERR &Result) noexcept {
+   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
+   ERR error = Action(sc::Callback::id, Function.Context, &args);
+   Result = args.Error;
+   return(error);
+}
+
+template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
+   return Call(Function, std::span<const ScriptArg>(Args));
 }
 
 template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
+   return Call(Function, std::span<const ScriptArg>(Args), Result);
 }
 
 inline ERR Call(const FUNCTION &Function) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
+   return Call(Function, std::span<const ScriptArg>());
 }
 
 inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
+   return Call(Function, std::span<const ScriptArg>(), Result);
 }
 } // namespace
   ]==])
@@ -1629,6 +1664,8 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
 
   klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
     output="../compression/class_compression_def.c", extended=true }, [[
+    string Path             # Location of the compressed data
+    string Password
     large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
     oid Output              # Reference to output object for user messages
     int CompressionLevel    # Compression level (percentage - 0% none, 100% high)

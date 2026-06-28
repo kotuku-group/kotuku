@@ -50,10 +50,14 @@ static void fill_image(VectorState &, const TClipRectangle<double> &, agg::path_
    agg::rasterizer_scanline_aa<> &, double Alpha = 1.0, SceneRenderer *Render = nullptr);
 
 static void fill_gradient(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
-   const agg::trans_affine &, double, double, extVectorGradient &, GRADIENT_TABLE *,
+   const agg::trans_affine &, double, double, extGradient &, GRADIENT_TABLE *,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);
 
-static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extVectorGradient &, double,
+static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extGradientGouraud &, double,
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *Render = nullptr);
+
+static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, double, extGradientMesh &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
    SceneRenderer *Render = nullptr);
 
@@ -131,10 +135,12 @@ static void notify_def_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APT
 
 static void clear_def_host_scene(OBJECTPTR Def, extVectorScene *Scene)
 {
+   if (Def->baseClassID() IS CLASSID::GRADIENT) {
+      if (((extGradient *)Def)->HostScene IS Scene) ((extGradient *)Def)->HostScene = nullptr;
+      return;
+   }
+
    switch(Def->classID()) {
-      case CLASSID::VECTORGRADIENT:
-         if (((extVectorGradient *)Def)->HostScene IS Scene) ((extVectorGradient *)Def)->HostScene = nullptr;
-         break;
       case CLASSID::VECTORIMAGE:
          if (((extVectorImage *)Def)->HostScene IS Scene) ((extVectorImage *)Def)->HostScene = nullptr;
          break;
@@ -232,7 +238,7 @@ For example, if creating a gradient with a name of `redGradient` it would be pos
 `url(#redGradient)` in common graphics attributes such as `fill` and `stroke`.
 
 At the time of writing, the provided object must belong to one of the following classes to be valid: @Vector,
-@VectorScene, @VectorGradient, @VectorImage, @VectorPath, @VectorPattern, @VectorFilter, @VectorTransition,
+@VectorScene, @Gradient, @VectorImage, @VectorPath, @VectorPattern, @VectorFilter, @VectorTransition,
 @VectorClip.
 
 -INPUT-
@@ -264,8 +270,11 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
    OBJECTPTR def = Args->Def;
    std::string name(Args->Name);
 
+   if (def->baseClassID() IS CLASSID::GRADIENT) {
+      ((extGradient *)def)->HostScene = Self;
+   }
+   else
    switch(def->classID()) {
-      case CLASSID::VECTORGRADIENT:   ((extVectorGradient*)def)->HostScene = Self; break;
       case CLASSID::VECTORIMAGE:      ((extVectorImage *)def)->HostScene = Self; break;
       case CLASSID::VECTORPATH:       ((extVectorPath*)def)->HostScene = Self; break;
       case CLASSID::VECTORPATTERN:    ((extVectorPattern*)def)->HostScene = Self; break;
@@ -473,22 +482,21 @@ static ERR VECTORSCENE_Flush(extVectorScene *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTORSCENE_Free(extVectorScene *Self, APTR Args)
+extVectorScene::~extVectorScene()
 {
-   clear_defs(Self);
+   clear_defs(this);
 
-   if (Self->Viewport) Self->Viewport->Parent = nullptr;
-   if (Self->Buffer)   { delete Self->Buffer; Self->Buffer = nullptr; }
-   if (Self->InputHandle) { gfx::UnsubscribeInput(Self->InputHandle); Self->InputHandle = 0; }
+   if (Viewport) Viewport->Parent = nullptr;
+   if (Buffer)   delete Buffer;
+   if (InputHandle) gfx::UnsubscribeInput(InputHandle);
 
-   if (Self->SurfaceID) {
+   if (SurfaceID) {
       OBJECTPTR surface;
-      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
+      if (!AccessObject(SurfaceID, 5000, &surface)) {
          UnsubscribeAction(surface, AC::NIL);
          ReleaseObject(surface);
       }
    }
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -533,16 +541,6 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORSCENE_NewObject(extVectorScene *Self)
-{
-   Self->SampleMethod = VSM::AUTO;
-
-   // Please refer to the Reset action for setting variable defaults
-   return VECTORSCENE_Reset(Self);
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Redimension: Redefines the size of the page.
@@ -585,65 +583,6 @@ static ERR VECTORSCENE_Resize(extVectorScene *Self, struct acResize *Args)
    if (Args->Width >= 1.0)  Self->PageWidth  = int(Args->Width);
    if (Args->Height >= 1.0) Self->PageHeight = int(Args->Height);
    return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-SearchByID: Search for a vector by numeric ID.
-
-This method will search a scene for an object that matches a given `ID` (vector ID's can be set with the
-@Vector.NumericID or @Vector.ID fields).  If multiple vectors are using the same ID, repeated calls can be made
-to this method to find them all.  This is achieved by calling this method on the vector that was last returned
-as a `Result`.
-
-Note that searching for string-based ID's is achieved by converting the string to a case-sensitive hash
-with `strhash()` and using that as the ID.
-
--INPUT-
-int ID: The ID to search for.
-&obj Result: This parameter will be updated with the discovered vector, or `NULL` if not found.
-
--ERRORS-
-Okay
-NullArgs
-Search: A vector with a matching ID was not found.
-
--TAGS-
-pure-query, object-owns-result
--END-
-
-*********************************************************************************************************************/
-
-static ERR VECTORSCENE_SearchByID(extVectorScene *Self, struct sc::SearchByID *Args)
-{
-   if (!Args) return ERR::NullArgs;
-   Args->Result = nullptr;
-
-   auto vector = (extVector *)Self->Viewport;
-   while (vector) {
-      //log.msg("Search","%.3d: %p <- #%d -> %p Child %p", vector->Index, vector->Prev, vector->UID, vector->Next, vector->Child);
-cont:
-      if (vector->NumericID IS Args->ID) {
-         Args->Result = vector;
-         return ERR::Okay;
-      }
-
-      if (vector->Child) vector = (extVector *)vector->Child;
-      else if (vector->Next) vector = (extVector *)vector->Next;
-      else {
-         while ((vector = get_parent(vector))) { // Unwind back up the stack, looking for the first Parent with a Next field.
-            if (vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Search;
-            if (vector->Next) {
-               vector = (extVector *)vector->Next;
-               goto cont;
-            }
-         }
-         return ERR::Search;
-      }
-   }
-
-   return ERR::Search;
 }
 
 /*********************************************************************************************************************
@@ -797,16 +736,6 @@ Surface: May refer to a @Surface object for enabling automatic rendering.
 
 Setting the Surface field will enable automatic rendering to a display @Surface.  The use of features such as input
 event handling and user focus management will also require an associated surface as a pre-requisite.
-
-*********************************************************************************************************************/
-
-static ERR SET_Surface(extVectorScene *Self, OBJECTID Value)
-{
-   Self->SurfaceID = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Viewport: References the first object in the scene, which must be a @VectorViewport object.
@@ -1018,10 +947,10 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
 static const FieldArray clSceneFields[] = {
    { "RenderTime",   FDF_INT64|FDF_R|FDF_PURE, GET_RenderTime },
    { "Gamma",        FDF_DOUBLE|FDF_RW },
-   { "HostScene",    FDF_OBJECT|FDF_RI,    nullptr, nullptr, CLASSID::VECTORSCENE },
-   { "Viewport",     FDF_OBJECT|FD_R,      nullptr, nullptr, CLASSID::VECTORVIEWPORT },
-   { "Bitmap",       FDF_OBJECT|FDF_RW,    nullptr, SET_Bitmap, CLASSID::BITMAP },
-   { "Surface",      FDF_OBJECTID|FDF_RI,  nullptr, SET_Surface, CLASSID::SURFACE },
+   { "HostScene",    FDF_OBJECT|FDF_RI,   nullptr, nullptr, CLASSID::VECTORSCENE },
+   { "Viewport",     FDF_OBJECT|FD_R,     nullptr, nullptr, CLASSID::VECTORVIEWPORT },
+   { "Bitmap",       FDF_OBJECT|FDF_RW,   nullptr, SET_Bitmap, CLASSID::BITMAP },
+   { "Surface",      FDF_OBJECTID|FDF_RI, nullptr, nullptr, CLASSID::SURFACE },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clVectorSceneFlags },
    { "PageWidth",    FDF_INT|FDF_RW,      nullptr, SET_PageWidth },
    { "PageHeight",   FDF_INT|FDF_RW,      nullptr, SET_PageHeight },

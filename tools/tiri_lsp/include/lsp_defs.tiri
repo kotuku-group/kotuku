@@ -207,7 +207,8 @@ glKeywords = {
    -- Variables
    ['local'] = { comment = 'Declares a local variable (block-scoped).' },
    ['global'] = { comment = 'Declares a global variable.' },
-   ['import'] = { comment = 'Loads a Tiri module into the current scope.' },
+   ['import'] = { comment = 'Inlines a Tiri script library at parse time. Use ./ or ../ for local libraries.' },
+   ['as'] = { comment = 'Introduces a local alias for an imported library namespace.' },
 
    -- Pattern matching
    ['choose'] = { comment = 'Pattern matching expression (switch-like).' },

@@ -1177,7 +1177,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
 
       if cl.actions.NewPlacement then
          mdef ..= f'static ERR {Name:upper()}_NewPlacement({cl.cppName} *Self) {{\n'
-         mdef ..= f'   new (Self) {cl.cppName};\n'
+         mdef ..= f'   new (Self) {cl.cppName}(Self->Class, Self->UID);\n'
          mdef ..= f'   return ERR::Okay;\n'
          mdef ..= '}\n\n'
       end

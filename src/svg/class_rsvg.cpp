@@ -21,7 +21,7 @@ handling of both standard (.svg) and compressed (.svgz) SVG files.
 static ERR RSVG_Activate(extImage *Self)
 {
    prvSVG *prv;
-   if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
+   if (not (prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
 
    ERR error;
    if ((error = acQuery(Self)) != ERR::Okay) return error;
@@ -53,17 +53,17 @@ static ERR RSVG_Init(extImage *Self)
    kt::Log log;
    std::string_view path;
 
-   Self->get(FID_Path, path);
+   Self->getPath(path);
 
    if (path.empty() or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
       return ERR::NoSupport; // Creating new SVG's is not supported in this module.
    }
 
-   char *buffer;
+   std::span<int8_t> header;
 
    if (wildcmp("*.svg|*.svgz", path));
-   else if (!Self->get(FID_Header, buffer)) {
-      if (strisearch("<svg", buffer) >= 0) {
+   else if (!Self->getHeader(header)) {
+      if (strisearch("<svg", std::string_view((CSTRING)header.data(), header.size())) >= 0) {
       }
       else return ERR::NoSupport;
    }
@@ -88,15 +88,15 @@ static ERR RSVG_Query(extImage *Self)
    prvSVG *prv;
    objBitmap *bmp;
 
-   if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
-   if (!(bmp = Self->Bitmap)) return log.warning(ERR::ObjectCorrupt);
+   if (not (prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
+   if (not (bmp = Self->Bitmap)) return log.warning(ERR::ObjectCorrupt);
 
    if (Self->Queried) return ERR::Okay;
    Self->Queried = TRUE;
 
-   if (!prv->SVG) {
+   if (not prv->SVG) {
       std::string_view path;
-      if (!Self->get(FID_Path, path)) {
+      if (!Self->getPath(path)) {
          if ((prv->SVG = objSVG::create::local(fl::Path(path)))) {
          }
          else return log.warning(ERR::CreateObject);
@@ -106,7 +106,7 @@ static ERR RSVG_Query(extImage *Self)
 
    objVectorScene *scene;
    ERR error;
-   if ((!(error = prv->SVG->get(FID_Scene, scene))) and (scene)) {
+   if ((!(error = prv->SVG->getScene(scene))) and (scene)) {
       if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) {
          bmp->Flags |= BMF::ALPHA_CHANNEL;
          bmp->BitsPerPixel  = 32;
@@ -117,7 +117,7 @@ static ERR RSVG_Query(extImage *Self)
 
       objVector *view = scene->Viewport;
       while ((view) and (view->classID() != CLASSID::VECTORVIEWPORT)) view = view->Next;
-      if (!view) {
+      if (not view) {
          log.warning("SVG source file does not define a valid <svg/> tag.");
          return ERR::Failed;
       }
@@ -129,32 +129,32 @@ static ERR RSVG_Query(extImage *Self)
 
       // If the SVG source doesn't specify fixed dimensions, automatically force rescaling to the display width and height.
 
-      if (!view_width)  view->set(FID_Width, Unit(1.0, FD_SCALED));
-      if (!view_height) view->set(FID_Height, Unit(1.0, FD_SCALED));
+      if (not view_width)  view->set(FID_Width, Unit(1.0, FD_SCALED));
+      if (not view_height) view->set(FID_Height, Unit(1.0, FD_SCALED));
 
       if ((Self->DisplayWidth > 0) and (Self->DisplayHeight > 0)) { // Client specified the display size?
          // Give the vector scene a target width and height.
-         if (!view_width) scene->setPageWidth(Self->DisplayWidth);
+         if (not view_width) scene->setPageWidth(Self->DisplayWidth);
          else scene->setPageWidth(view_width);
 
-         if (!view_height) scene->setPageHeight(Self->DisplayHeight);
+         if (not view_height) scene->setPageHeight(Self->DisplayHeight);
          else scene->setPageHeight(view_height);
       }
 
-      if (!bmp->Width) {
+      if (not bmp->Width) {
          if (view_width) bmp->Width = view_width;
          else if (Self->DisplayWidth) bmp->Width = Self->DisplayWidth;
-         if (!bmp->Width) bmp->Width = 1024;
+         if (not bmp->Width) bmp->Width = 1024;
       }
 
-      if (!bmp->Height) {
+      if (not bmp->Height) {
          if (view_height) bmp->Height = view_height;
          else if (Self->DisplayHeight) bmp->Height = Self->DisplayHeight;
-         if (!bmp->Height) bmp->Height = bmp->Width; // Equivalent to width in order to maintain a 1:1 scale
+         if (not bmp->Height) bmp->Height = bmp->Width; // Equivalent to width in order to maintain a 1:1 scale
       }
 
-      if (!Self->DisplayWidth)  Self->DisplayWidth  = bmp->Width;
-      if (!Self->DisplayHeight) Self->DisplayHeight = bmp->Height;
+      if (not Self->DisplayWidth)  Self->DisplayWidth  = bmp->Width;
+      if (not Self->DisplayHeight) Self->DisplayHeight = bmp->Height;
       if (bmp->BitsPerPixel < 15) bmp->BitsPerPixel = 32;
 
       error = acQuery(bmp);
@@ -171,9 +171,9 @@ static ERR RSVG_Query(extImage *Self)
 static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
 {
    prvSVG *prv;
-   if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
+   if (not (prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    if (prv->SVG) {
       if (!Self->Bitmap->initialised()) {
@@ -182,7 +182,7 @@ static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
 
       if (!Action(AC::Resize, Self->Bitmap, Args)) {
          objVectorScene *scene;
-         if ((!prv->SVG->get(FID_Scene, scene)) and (scene)) {
+         if ((!prv->SVG->getScene(scene)) and (scene)) {
             scene->setPageWidth(Self->Bitmap->Width);
             scene->setPageHeight(Self->Bitmap->Height);
 

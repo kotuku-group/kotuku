@@ -19,20 +19,6 @@
     </source>
   </info>
 
-  <actions>
-    <action>
-      <name>Free</name>
-      <comment>Terminate the object.</comment>
-      <prototype>ERR FreeResource(*Object)</prototype>
-      <tiriPrototype>err = Object.acFree()</tiriPrototype>
-      <description>
-<p>This routine may block temporarily if there are unresolved requests awaiting completion in separate threads.</p>
-      </description>
-      <tags>blocking, mutates-object</tags>
-    </action>
-
-  </actions>
-
   <methods>
     <method>
       <name>BlockingResolveAddress</name>
@@ -130,7 +116,7 @@
       <name>Addresses</name>
       <comment>List of resolved IP addresses.</comment>
       <access read="G">Get</access>
-      <type>STRUCT []</type>
+      <type>IPAddress[]</type>
       <description>
 <p>A list of the most recently resolved IP addresses can be read from this field.</p>
       </description>
@@ -185,5 +171,11 @@
 
   </types>
   <structs>
+    <struct name="IPAddress">
+      <field name="Data" type="INT" size="4">128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</field>
+      <field name="Type" type="IPADDR" lookup="IPADDR">Identifies the address Data value as a V4 or V6 address type.</field>
+      <field name="Port" type="INT">For UDP packets, identifies the client port number in host byte order.</field>
+    </struct>
+
   </structs>
 </book>

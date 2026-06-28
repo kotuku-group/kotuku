@@ -21,8 +21,8 @@ struct luaL_Reg {
 
 extern void luaL_openlib(lua_State *, const char *, const luaL_Reg *, int);
 extern void luaL_register(lua_State *, const char *, const luaL_Reg *);
-extern int luaL_typerror(lua_State *, int, const char *);
-extern int luaL_argerror(lua_State *, int, const char *);
+[[noreturn]] extern void luaL_typerror(lua_State *, int, const char *);
+[[noreturn]] extern void luaL_argerror(lua_State *, int, const char *);
 extern const char * luaL_checklstring(lua_State *, int, size_t * = nullptr);
 extern uint32_t luaL_checkstringhash(lua_State *, int);
 extern const char * luaL_optlstring(lua_State *, int, const char *, size_t * = nullptr);
@@ -50,7 +50,7 @@ constexpr int LUA_REFNIL = -1;
 
 extern int luaL_ref(lua_State *, int t);
 extern void luaL_unref(lua_State *, int t, int ref);
-extern lua_State * luaL_newstate(class objScript *);
+extern lua_State * luaL_newstate(class extTiri *);
 extern const char * luaL_gsub(lua_State *, const char *s, const char *p, const char *r);
 extern const char * luaL_findtable(lua_State *, int idx, const char *fname, int szhint);
 extern void luaL_traceback (lua_State *, lua_State *L1, const char *msg, int level);

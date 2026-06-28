@@ -28,28 +28,25 @@ static ERR GET_ButtonState(extPointer *, int *);
 
 static ERR SET_ButtonOrder(extPointer *, std::string_view &);
 static ERR SET_MaxSpeed(extPointer *, int);
-static ERR PTR_SET_X(extPointer *, double);
-static ERR PTR_SET_Y(extPointer *, double);
+static ERR POINTER_SET_X(extPointer *, double);
+static ERR POINTER_SET_Y(extPointer *, double);
 
 #ifdef _WIN32
-static ERR PTR_SetWinCursor(extPointer *, struct ptrSetWinCursor *);
+static ERR POINTER_SetWinCursor(extPointer *, struct ptrSetWinCursor *);
 static FunctionField mthSetWinCursor[]  = { { "Cursor", FD_INT }, { nullptr, 0 } };
 #endif
 
 #ifdef __xwindows__
 #undef True
 #undef False
-static ERR PTR_GrabX11Pointer(extPointer *, struct ptrGrabX11Pointer *);
-static ERR PTR_UngrabX11Pointer(extPointer *);
+static ERR POINTER_GrabX11Pointer(extPointer *, struct ptrGrabX11Pointer *);
+static ERR POINTER_UngrabX11Pointer(extPointer *);
 static FunctionField mthGrabX11Pointer[] = { { "Surface", FD_INT }, { nullptr, 0 } };
 #endif
 
-static int glDefaultSpeed = 160;
-static double glDefaultAcceleration = 0.8;
 static TIMER glRepeatTimer = 0;
 
 static ERR repeat_timer(extPointer *, int64_t, int64_t);
-static void set_pointer_defaults(extPointer *);
 static int examine_chain(extPointer *, int, SURFACELIST &, int);
 static bool get_over_object(extPointer *);
 static void process_ptr_button(extPointer *, struct dcDeviceInput *);
@@ -80,7 +77,7 @@ inline void add_input(CSTRING Debug, InputEvent &input, JTYPE Flags, OBJECTID Re
 
 //********************************************************************************************************************
 #ifdef _WIN32
-static ERR PTR_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
+static ERR POINTER_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 {
    winSetCursor(GetWinCursor(Args->Cursor));
    Self->CursorID = Args->Cursor;
@@ -92,14 +89,11 @@ static ERR PTR_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 // Private action used to grab the window cursor under X11.  Can only be executed by the task that owns the pointer.
 
 #ifdef __xwindows__
-static ERR PTR_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
+static ERR POINTER_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
 {
    APTR xwin;
-   OBJECTPTR surface;
-
-   if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
-      surface->get(FID_WindowHandle, xwin);
-      ReleaseObject(surface);
+   if (ScopedObjectLock<objSurface> surface(Self->SurfaceID, 5000); surface.granted()) {
+      surface->getWindowHandle(xwin);
 
       if (xwin) XGrabPointer(XDisplay, (Window)xwin, 1, 0, GrabModeAsync, GrabModeAsync, (Window)xwin, None, CurrentTime);
    }
@@ -107,7 +101,7 @@ static ERR PTR_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
    return ERR::Okay;
 }
 
-static ERR PTR_UngrabX11Pointer(extPointer *Self)
+static ERR POINTER_UngrabX11Pointer(extPointer *Self)
 {
    XUngrabPointer(XDisplay, CurrentTime);
    return ERR::Okay;
@@ -132,7 +126,7 @@ release record so click, drag and repeat handling can return to a consistent sta
 // NOTE: See input_event_loop() if you are looking for the main input event processing loop.  Incoming events are
 // pushed onto the glInputEvents queue and processed in the main thread at a later time.
 
-static ERR PTR_DataFeed(extPointer *Self, struct acDataFeed *Args)
+static ERR POINTER_DataFeed(extPointer *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
@@ -140,8 +134,11 @@ static ERR PTR_DataFeed(extPointer *Self, struct acDataFeed *Args)
 
    if (Args->Datatype IS DATA::DEVICE_INPUT) {
       if (auto input = (struct dcDeviceInput *)Args->Buffer) {
-         for (int i=0; i < std::ssize(Self->Buttons); i++) {
-            if ((Self->Buttons[i].LastClicked) and (CheckResourceExists(Self->Buttons[i].LastClicked) != ERR::Okay)) Self->Buttons[i].LastClicked = 0;
+         // Remove any stale objects
+         for (int i=0; i < std::ssize(Self->ButtonClicks); i++) {
+            if (Self->ButtonClicks[i].LastClicked) {
+               if (CheckResourceExists(Self->ButtonClicks[i].LastClicked) != ERR::Okay) Self->ButtonClicks[i].LastClicked = 0;
+            }
          }
 
          for (auto i=sizeof(struct dcDeviceInput); i <= (size_t)Args->Size; i+=sizeof(struct dcDeviceInput), input++) {
@@ -194,6 +191,8 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
       return;
    }
 
+   if (bi >= std::ssize(Self->ButtonClicks)) Self->ButtonClicks.resize(bi+1);
+
    if (userinput.Value <= 0) {
       // Button released.  Button releases are always reported relative to the object that received the original button press.
       // The surface immediately below the pointer does not receive any information about the release.
@@ -206,9 +205,9 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
          gfx::RestoreCursor(PTC::DEFAULT, 0);
       }
 
-      if (Self->Buttons[bi].LastClicked) {
+      if ((bi < std::ssize(Self->ButtonClicks)) and (Self->ButtonClicks[bi].LastClicked)) {
          int absx, absy;
-         if (!get_surface_abs(Self->Buttons[bi].LastClicked, &absx, &absy, 0, 0)) {
+         if (!get_surface_abs(Self->ButtonClicks[bi].LastClicked, &absx, &absy, 0, 0)) {
             uiflags |= Self->DragSourceID ? JTYPE::DRAG_ITEM : JTYPE::NIL;
 
             if ((std::abs(Self->X - Self->LastReleaseX) > Self->ClickSlop) or
@@ -216,14 +215,14 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
                uiflags |= JTYPE::DRAGGED;
             }
 
-            if (Self->Buttons[bi].DblClick) {
+            if (Self->ButtonClicks[bi].DblClick) {
                if ((uiflags & JTYPE::DRAGGED) IS JTYPE::NIL) uiflags |= JTYPE::DBL_CLICK;
             }
 
-            add_input("ButtonRelease-LastClicked", userinput, uiflags, Self->Buttons[bi].LastClicked, Self->OverObjectID,
+            add_input("ButtonRelease-LastClicked", userinput, uiflags, Self->ButtonClicks[bi].LastClicked, Self->OverObjectID,
                Self->X, Self->Y, Self->X - absx, Self->Y - absy); // OverX/Y is reported relative to the click-held surface
          }
-         Self->Buttons[bi].LastClicked = 0;
+         Self->ButtonClicks[bi].LastClicked = 0;
       }
 
       Self->LastReleaseX = Self->X;
@@ -261,22 +260,22 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
          // Before performing the click, we first check that there are no objects waiting for click-releases in the
          // designated fields.  If there are, we send them UserClickRelease() actions to retain system integrity.
 
-         if (Self->Buttons[bi].LastClicked) {
-            log.warning("Did not receive a release for button %d on surface #%d.", bi, Self->Buttons[bi].LastClicked);
+         if (Self->ButtonClicks[bi].LastClicked) {
+            log.warning("Did not receive a release for button %d on surface #%d.", bi, Self->ButtonClicks[bi].LastClicked);
 
-            add_input("ButtonPress-ForceRelease", userinput, uiflags, Self->Buttons[bi].LastClicked, Self->OverObjectID,
+            add_input("ButtonPress-ForceRelease", userinput, uiflags, Self->ButtonClicks[bi].LastClicked, Self->OverObjectID,
                Self->X, Self->Y, Self->OverX, Self->OverY);
          }
 
-         if (((double)(userinput.Timestamp - Self->Buttons[bi].LastClickTime)) / 1000000.0 < Self->DoubleClick) {
+         if (((double)(userinput.Timestamp - Self->ButtonClicks[bi].LastClickTime)) / 1000000.0 < Self->DoubleClick) {
             log.trace("Double click detected (under %.2fs)", Self->DoubleClick);
-            Self->Buttons[bi].DblClick = TRUE;
+            Self->ButtonClicks[bi].DblClick = TRUE;
             uiflags |= JTYPE::DBL_CLICK;
          }
-         else Self->Buttons[bi].DblClick = FALSE;
+         else Self->ButtonClicks[bi].DblClick = FALSE;
 
-         Self->Buttons[bi].LastClicked   = Self->OverObjectID;
-         Self->Buttons[bi].LastClickTime = userinput.Timestamp;
+         Self->ButtonClicks[bi].LastClicked   = Self->OverObjectID;
+         Self->ButtonClicks[bi].LastClickTime = userinput.Timestamp;
 
          Self->LastClickX = Self->X;
          Self->LastClickY = Self->Y;
@@ -294,7 +293,7 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
       SubscribeTimer(0.02, C_FUNCTION(repeat_timer), &glRepeatTimer); // Use a timer subscription so that repeat button clicks can be supported (the interval indicates the rate of the repeat)
    }
 
-   if ((Self->DragSourceID) and (!Self->Buttons[bi].LastClicked)) {
+   if ((Self->DragSourceID) and (!Self->ButtonClicks[bi].LastClicked)) {
       // Drag and drop has been released.  Inform the destination surface of the item's release.
 
       if (Self->DragSurface) {
@@ -421,7 +420,7 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
       if (Self->AnchorID) {
          // Do nothing as only the anchor surface receives a message (see earlier)
       }
-      else if (Self->Buttons[0].LastClicked) {
+      else if (Self->ButtonClicks[0].LastClicked) {
          // This routine is used when the user is holding down the left mouse button (indicated by LastClicked).  The X/Y
          // coordinates are worked out in relation to the clicked object by climbing the Surface object hierarchy.
 
@@ -441,12 +440,12 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
          }
 
          int absx, absy;
-         if (!get_surface_abs(Self->Buttons[0].LastClicked, &absx, &absy, 0, 0)) {
+         if (!get_surface_abs(Self->ButtonClicks[0].LastClicked, &absx, &absy, 0, 0)) {
             auto uiflags = Self->DragSourceID ? JTYPE::DRAG_ITEM : JTYPE::NIL;
 
             // Send the movement message to the last clicked object
 
-            add_input("Movement-LastClicked", userinput, uiflags, Self->Buttons[0].LastClicked, Self->OverObjectID,
+            add_input("Movement-LastClicked", userinput, uiflags, Self->ButtonClicks[0].LastClicked, Self->OverObjectID,
                Self->X, Self->Y, Self->X - absx, Self->Y - absy); // OverX/Y reported relative to the click-held surface
 
             get_over_object(Self);
@@ -456,15 +455,15 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
 
             // JTYPE::SECONDARY indicates to the receiver of the input message that it is not the primary recipient.
 
-            if (Self->Buttons[0].LastClicked != Self->OverObjectID) {
+            if (Self->ButtonClicks[0].LastClicked != Self->OverObjectID) {
                add_input("Movement-LastClicked", userinput, uiflags|JTYPE::SECONDARY, Self->OverObjectID, Self->OverObjectID,
                   Self->X, Self->Y, Self->OverX, Self->OverY);
             }
 
          }
          else {
-            log.warning("Failed to get info for surface #%d.", Self->Buttons[0].LastClicked);
-            Self->Buttons[0].LastClicked = 0;
+            log.warning("Failed to get info for surface #%d.", Self->ButtonClicks[0].LastClicked);
+            Self->ButtonClicks[0].LastClicked = 0;
          }
       }
       else {
@@ -495,20 +494,19 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
 
 //********************************************************************************************************************
 
-static ERR PTR_Free(extPointer *Self)
+extPointer::~extPointer()
 {
-   acHide(Self);
+   acHide(this);
 
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
+   if (Bitmap) FreeResource(Bitmap);
 
 /*
    OBJECTPTR object;
-   if ((Self->SurfaceID) and (!AccessObject(Self->SurfaceID, 5000, &object))) {
+   if ((SurfaceID) and (!AccessObject(SurfaceID, 5000, &object))) {
       UnsubscribeFeed(object);
       ReleaseObject(object);
    }
 */
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -517,7 +515,7 @@ Hide: Hides the pointer cursor.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Hide(extPointer *Self)
+static ERR POINTER_Hide(extPointer *Self)
 {
    kt::Log log;
 
@@ -529,7 +527,7 @@ static ERR PTR_Hide(extPointer *Self)
       OBJECTPTR surface;
 
       if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
-         surface->get(FID_WindowHandle, xwin);
+         surface->getWindowHandle(xwin);
          XDefineCursor(XDisplay, (Window)xwin, GetX11Cursor(Self->CursorID));
          ReleaseObject(surface);
       }
@@ -544,7 +542,7 @@ static ERR PTR_Hide(extPointer *Self)
 
 //********************************************************************************************************************
 
-static ERR PTR_Init(extPointer *Self)
+static ERR POINTER_Init(extPointer *Self)
 {
    kt::Log log;
 
@@ -591,7 +589,7 @@ immediately by forwarding the resulting position to #MoveToPoint().
 
 *********************************************************************************************************************/
 
-static ERR PTR_Move(extPointer *Self, struct acMove *Args)
+static ERR POINTER_Move(extPointer *Self, struct acMove *Args)
 {
    kt::Log log;
 
@@ -615,7 +613,7 @@ translated into input events for the affected surface or object.
 
 *********************************************************************************************************************/
 
-static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
+static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
 {
    kt::Log log;
 
@@ -628,12 +626,10 @@ static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
    }
 */
 #ifdef __xwindows__
-   OBJECTPTR surface;
-
-   if (auto error = AccessObject(Self->SurfaceID, 3000, &surface); !error) {
+   if (ScopedObjectLock<objSurface> surface(Self->SurfaceID, 3000); surface.granted()) {
       APTR xwin;
 
-      if (!surface->get(FID_WindowHandle, xwin)) {
+      if (!surface->getWindowHandle(xwin)) {
          if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
          if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
          if (Self->X < 0) Self->X = 0;
@@ -643,9 +639,8 @@ static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
          Self->HostX = Self->X;
          Self->HostY = Self->Y;
       }
-      ReleaseObject(surface);
    }
-   else return log.warning(error)|ERR::Notified;
+   else return log.warning(surface.error)|ERR::Notified;
 #elif _WIN32
    OBJECTPTR surface;
 
@@ -675,16 +670,6 @@ static ERR PTR_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
    return ERR::Okay|ERR(ERR::Notified);
 }
 
-//********************************************************************************************************************
-
-static ERR PTR_NewObject(extPointer *Self)
-{
-   Self->CursorID = PTC::DEFAULT;
-   Self->ClickSlop = 2;
-   set_pointer_defaults(Self);
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Refresh: Refreshes the pointer's target and cursor image.
@@ -695,7 +680,7 @@ underlying surface.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Refresh(extPointer *Self)
+static ERR POINTER_Refresh(extPointer *Self)
 {
    // Calling OverObject will refresh the cursor image from the underlying surface object.  Incidentally, the point of
    // all this is to satisfy the Surface class' need to have the pointer refreshed if a surface's cursor ID is changed.
@@ -714,7 +699,7 @@ move the pointer or clear the current cursor ownership state.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Reset(extPointer *Self)
+static ERR POINTER_Reset(extPointer *Self)
 {
    Self->Speed        = 150;
    Self->Acceleration = 0.50;
@@ -734,7 +719,7 @@ to the destination object in configuration format.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_SaveToObject(extPointer *Self, struct acSaveToObject *Args)
+static ERR POINTER_SaveToObject(extPointer *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
@@ -760,7 +745,7 @@ Show: Shows the pointer cursor.
 -END-
 *********************************************************************************************************************/
 
-static ERR PTR_Show(extPointer *Self)
+static ERR POINTER_Show(extPointer *Self)
 {
    kt::Log log;
 
@@ -772,7 +757,7 @@ static ERR PTR_Show(extPointer *Self)
       OBJECTPTR surface;
 
       if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
-         surface->get(FID_WindowHandle, xwin);
+         surface->getWindowHandle(xwin);
          XDefineCursor(XDisplay, (Window)xwin, GetX11Cursor(Self->CursorID));
          ReleaseObject(surface);
       }
@@ -893,8 +878,8 @@ static ERR GET_ButtonState(extPointer *Self, int *Value)
 {
    int i;
    int state = 0;
-   for (i=0; i < std::ssize(Self->Buttons); i++) {
-      if (Self->Buttons[i].LastClicked) state |= 1<<i;
+   for (i=0; i < std::ssize(Self->ButtonClicks); i++) {
+      if (Self->ButtonClicks[i].LastClicked) state |= 1<<i;
    }
 
    *Value = state;
@@ -1024,7 +1009,7 @@ X: The horizontal position of the pointer within its display.
 
 *********************************************************************************************************************/
 
-static ERR PTR_SET_X(extPointer *Self, double Value)
+static ERR POINTER_SET_X(extPointer *Self, double Value)
 {
    if (Self->initialised()) acMoveToPoint(Self, Value, 0, 0, MTF::X);
    else Self->X = Value;
@@ -1041,41 +1026,11 @@ Setting #X or #Y on an initialised pointer forwards the change through #MoveToPo
 
 *********************************************************************************************************************/
 
-static ERR PTR_SET_Y(extPointer *Self, double Value)
+static ERR POINTER_SET_Y(extPointer *Self, double Value)
 {
    if (Self->initialised()) acMoveToPoint(Self, 0, Value, 0, MTF::Y);
    else Self->Y = Value;
    return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static void set_pointer_defaults(extPointer *Self)
-{
-   double speed        = glDefaultSpeed;
-   double acceleration = glDefaultAcceleration;
-   int maxspeed       = 100;
-   double wheelspeed   = DEFAULT_WHEELSPEED;
-   double doubleclick  = 0.36;
-   std::string buttonorder = "123456789ABCDEF";
-
-   if (auto config = objConfig::create { fl::Path("user:config/pointer.cfg") }; config.ok()) {
-      config->read("POINTER", "Speed", speed);
-      config->read("POINTER", "Acceleration", acceleration);
-      config->read("POINTER", "MaxSpeed", maxspeed);
-      config->read("POINTER", "WheelSpeed", wheelspeed);
-      config->read("POINTER", "DoubleClick", doubleclick);
-      config->read("POINTER", "ButtonOrder", buttonorder);
-   }
-
-   if (doubleclick < 0.2) doubleclick = 0.2;
-
-   Self->setFields(fl::Speed(speed),
-       fl::Acceleration(acceleration),
-       fl::MaxSpeed(maxspeed),
-       fl::WheelSpeed(wheelspeed),
-       fl::DoubleClick(doubleclick),
-       fl::ButtonOrder(buttonorder));
 }
 
 //********************************************************************************************************************
@@ -1196,19 +1151,19 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
    // The subscription is automatically removed if no buttons are held down
 
    bool unsub = true;
-   for (int i=0; i < std::ssize(Self->Buttons); i++) {
-      if (Self->Buttons[i].LastClicked) {
+   for (int i=0; i < std::ssize(Self->ButtonClicks); i++) {
+      if (Self->ButtonClicks[i].LastClicked) {
          auto time = PreciseTime();
-         if (Self->Buttons[i].LastClickTime + 300000LL <= time) {
+         if (Self->ButtonClicks[i].LastClickTime + 300000LL <= time) {
             InputEvent input;
             clearmem(&input, sizeof(input));
 
             int surface_x, surface_y;
-            if (Self->Buttons[i].LastClicked IS Self->OverObjectID) {
+            if (Self->ButtonClicks[i].LastClicked IS Self->OverObjectID) {
                input.X = Self->OverX;
                input.Y = Self->OverY;
             }
-            else if (!get_surface_abs(Self->Buttons[i].LastClicked, &surface_x, &surface_y, 0, 0)) {
+            else if (!get_surface_abs(Self->ButtonClicks[i].LastClicked, &surface_x, &surface_y, 0, 0)) {
                input.X = Self->X - surface_x;
                input.Y = Self->Y - surface_y;
             }
@@ -1220,10 +1175,10 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
             input.Type        = JET(int(JET::BUTTON_1) + i);
             input.Mask        = JTYPE::BUTTON|JTYPE::REPEATED;
             input.Flags       = JTYPE::BUTTON|JTYPE::REPEATED;
-            input.Value       = 1.0; // Self->Buttons[i].LastValue
+            input.Value       = 1.0; // Self->ButtonClicks[i].LastValue
             input.Timestamp   = time;
             input.DeviceID    = 0;
-            input.RecipientID = Self->Buttons[i].LastClicked;
+            input.RecipientID = Self->ButtonClicks[i].LastClicked;
             input.OverID      = Self->OverObjectID;
             input.AbsX        = Self->X;
             input.AbsY        = Self->Y;
@@ -1242,54 +1197,7 @@ static ERR repeat_timer(extPointer *Self, int64_t Elapsed, int64_t Unused)
 
 //********************************************************************************************************************
 
-FieldDef CursorLookup[] = {
-   { "None",            0 },
-   { "Default",         PTC::DEFAULT },             // Values start from 1 and go up
-   { "SizeBottomLeft",  PTC::SIZE_BOTTOM_LEFT },
-   { "SizeBottomRight", PTC::SIZE_BOTTOM_RIGHT },
-   { "SizeTopLeft",     PTC::SIZE_TOP_LEFT },
-   { "SizeTopRight",    PTC::SIZE_TOP_RIGHT },
-   { "SizeLeft",        PTC::SIZE_LEFT },
-   { "SizeRight",       PTC::SIZE_RIGHT },
-   { "SizeTop",         PTC::SIZE_TOP },
-   { "SizeBottom",      PTC::SIZE_BOTTOM },
-   { "Crosshair",       PTC::CROSSHAIR },
-   { "Sleep",           PTC::SLEEP },
-   { "Sizing",          PTC::SIZING },
-   { "SplitVertical",   PTC::SPLIT_VERTICAL },
-   { "SplitHorizontal", PTC::SPLIT_HORIZONTAL },
-   { "Magnifier",       PTC::MAGNIFIER },
-   { "Hand",            PTC::HAND },
-   { "HandLeft",        PTC::HAND_LEFT },
-   { "HandRight",       PTC::HAND_RIGHT },
-   { "Text",            PTC::TEXT },
-   { "Paintbrush",      PTC::PAINTBRUSH },
-   { "Stop",            PTC::STOP },
-   { "Invisible",       PTC::INVISIBLE },
-   { "Custom",          PTC::CUSTOM },
-   { "Dragable",        PTC::DRAGGABLE },
-   { nullptr, 0 }
-};
-
-static const ActionArray clPointerActions[] = {
-   { AC::DataFeed,     PTR_DataFeed },
-   { AC::Free,         PTR_Free },
-   { AC::Hide,         PTR_Hide },
-   { AC::Init,         PTR_Init },
-   { AC::Move,         PTR_Move },
-   { AC::MoveToPoint,  PTR_MoveToPoint },
-   { AC::NewObject,    PTR_NewObject },
-   { AC::Refresh,      PTR_Refresh },
-   { AC::Reset,        PTR_Reset },
-   { AC::SaveToObject, PTR_SaveToObject },
-   { AC::Show,         PTR_Show },
-   { AC::NIL, nullptr }
-};
-
-static const FieldDef clPointerFlags[] = {
-   { "Visible",  PF::VISIBLE },
-   { nullptr, 0 }
-};
+#include "class_pointer_def.c"
 
 static const FunctionField mthSetCursor[]     = { { "Surface", FD_INT }, { "Flags", FD_INT }, { "Cursor", FD_INT }, { "Name", FD_STRING }, { "Owner", FD_INT }, { "PreviousCursor", FD_INT|FD_RESULT }, { nullptr, 0 } };
 static const FunctionField mthRestoreCursor[] = { { "Cursor", FD_INT }, { "Owner", FD_INT }, { nullptr, 0 } };
@@ -1297,11 +1205,11 @@ static const FunctionField mthRestoreCursor[] = { { "Cursor", FD_INT }, { "Owner
 static const MethodEntry clPointerMethods[] = {
    // Private methods
 #ifdef _WIN32
-   { MT_PtrSetWinCursor,     (APTR)PTR_SetWinCursor,   "SetWinCursor",   mthSetWinCursor,  sizeof(struct ptrSetWinCursor) },
+   { MT_PtrSetWinCursor,     (APTR)POINTER_SetWinCursor,   "SetWinCursor",   mthSetWinCursor,  sizeof(struct ptrSetWinCursor) },
 #endif
 #ifdef __xwindows__
-   { MT_PtrGrabX11Pointer,   (APTR)PTR_GrabX11Pointer,   "GrabX11Pointer",   mthGrabX11Pointer, sizeof(struct ptrGrabX11Pointer) },
-   { MT_PtrUngrabX11Pointer, (APTR)PTR_UngrabX11Pointer, "UngrabX11Pointer", nullptr, 0 },
+   { MT_PtrGrabX11Pointer,   (APTR)POINTER_GrabX11Pointer,   "GrabX11Pointer",   mthGrabX11Pointer, sizeof(struct ptrGrabX11Pointer) },
+   { MT_PtrUngrabX11Pointer, (APTR)POINTER_UngrabX11Pointer, "UngrabX11Pointer", nullptr, 0 },
 #endif
    { AC::NIL, nullptr, nullptr, nullptr, 0 }
 };
@@ -1311,8 +1219,8 @@ static const FieldArray clPointerFields[] = {
    { "Acceleration", FDF_DOUBLE|FDF_RW },
    { "DoubleClick",  FDF_DOUBLE|FDF_RW },
    { "WheelSpeed",   FDF_DOUBLE|FDF_RW },
-   { "X",            FDF_DOUBLE|FDF_RW, nullptr, PTR_SET_X },
-   { "Y",            FDF_DOUBLE|FDF_RW, nullptr, PTR_SET_Y },
+   { "X",            FDF_DOUBLE|FDF_RW, nullptr, POINTER_SET_X },
+   { "Y",            FDF_DOUBLE|FDF_RW, nullptr, POINTER_SET_Y },
    { "OverX",        FDF_DOUBLE|FDF_R },
    { "OverY",        FDF_DOUBLE|FDF_R },
    { "OverZ",        FDF_DOUBLE|FDF_R },
@@ -1320,7 +1228,7 @@ static const FieldArray clPointerFields[] = {
    { "Input",        FDF_OBJECTID|FDF_RW },
    { "Surface",      FDF_OBJECTID|FDF_RW, nullptr, nullptr, CLASSID::SURFACE },
    { "Anchor",       FDF_OBJECTID|FDF_R, nullptr, nullptr, CLASSID::SURFACE },
-   { "CursorID",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &CursorLookup },
+   { "CursorID",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clPointerPTC },
    { "CursorOwner",  FDF_OBJECTID|FDF_RW },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clPointerFlags },
    { "Restrict",     FDF_OBJECTID|FDF_R, nullptr, nullptr, CLASSID::SURFACE },
@@ -1336,6 +1244,16 @@ static const FieldArray clPointerFields[] = {
    { "ButtonOrder",  FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_ButtonOrder, SET_ButtonOrder },
    END_FIELD
 };
+
+//********************************************************************************************************************
+
+PTC get_cursor_id(std::string_view Name)
+{
+   for (int i=0; clPointerPTC[i].Name; i++) {
+      if (iequals(clPointerPTC[i].Name, Name)) return PTC(clPointerPTC[i].Value);
+   }
+   return PTC::NIL;
+}
 
 //********************************************************************************************************************
 

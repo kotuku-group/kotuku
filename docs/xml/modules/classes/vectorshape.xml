@@ -24,7 +24,7 @@
     <field>
       <name>A</name>
       <comment>A parameter for the Superformula.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field sets the Superformula's 'A' parameter value.</p>
@@ -34,7 +34,7 @@
     <field>
       <name>B</name>
       <comment>A parameter for the Superformula.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field sets the Superformula's 'B' parameter value.</p>
@@ -42,20 +42,20 @@
     </field>
 
     <field>
-      <name>CenterX</name>
+      <name>CX</name>
       <comment>The center of the shape on the x-axis.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The horizontal center of the shape is defined here as either a fixed or scaled value.</p>
       </description>
     </field>
 
     <field>
-      <name>CenterY</name>
+      <name>CY</name>
       <comment>The center of the shape on the y-axis.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The vertical center of the shape is defined here as either a fixed or scaled value.</p>
       </description>
@@ -64,7 +64,7 @@
     <field>
       <name>Close</name>
       <comment>A parameter for the super shape algorithm.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>If TRUE, the shape path will be closed between the beginning and end points.</p>
@@ -72,27 +72,9 @@
     </field>
 
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags define whether individual dimension fields contain fixed or scaled values.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-      <description>
-<p>The following dimension flags are supported:</p>
-<types lookup="DMF">
-<type name="FIXED_CENTER_X">The <fl>CenterX</fl> value is a fixed coordinate.</type>
-<type name="FIXED_CENTER_Y">The <fl>CenterY</fl> value is a fixed coordinate.</type>
-<type name="FIXED_RADIUS">The <fl>Radius</fl> value is a fixed coordinate.</type>
-<type name="SCALED_CENTER_X">The <fl>CenterX</fl> value is a scaled coordinate.</type>
-<type name="SCALED_CENTER_Y">The <fl>CenterY</fl> value is a scaled coordinate.</type>
-<type name="SCALED_RADIUS">The <fl>Radius</fl> value is a scaled coordinate.</type>
-</types>
-      </description>
-    </field>
-
-    <field>
       <name>M</name>
       <comment>A parameter for the Superformula.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field sets the Superformula's 'M' parameter value.</p>
@@ -102,7 +84,7 @@
     <field>
       <name>Mod</name>
       <comment>A special modification parameter that alters the super shape algorithm.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The Mod field alters the super shape algorithm, sometimes in radical ways that allow entirely new shapes to be discovered in the super shape library.  The value that is specified will result in a formula being applied to the generated 'r' value.  Possible values and their effects are:</p>
@@ -123,7 +105,7 @@
     <field>
       <name>N1</name>
       <comment>A parameter for the super shape algorithm.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field sets the Superformula's 'N1' parameter value.</p>
@@ -133,7 +115,7 @@
     <field>
       <name>N2</name>
       <comment>A parameter for the super shape algorithm.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field sets the Superformula's 'N2' parameter value.</p>
@@ -143,7 +125,7 @@
     <field>
       <name>N3</name>
       <comment>A parameter for the super shape algorithm.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field sets the Superformula's 'N3' parameter value.</p>
@@ -153,7 +135,7 @@
     <field>
       <name>Phi</name>
       <comment>A parameter for the super shape algorithm.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The Phi value has an impact on the length of the generated path.  If the super shape parameters form a circular path (whereby the last vertex meets the first) then the Phi value should not be modified.  If the path does not meet itself then the Phi value should be increased until it does.  The minimum (and default) value is 2.  It is recommended that the Phi value is increased in increments of 2 until the desired effect is achieved.</p>
@@ -164,7 +146,7 @@
       <name>Radius</name>
       <comment>The radius of the generated shape.  Expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Radius defines the final size of the generated shape.  It can be expressed in fixed or scaled terms.</p>
       </description>
@@ -173,7 +155,7 @@
     <field>
       <name>Repeat</name>
       <comment>Repeat the generated shape multiple times.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>If set to a value greater than one, the Repeat field will cause the generated shape to be replicated multiple times at consistent intervals leading to the center point.</p>
@@ -184,7 +166,7 @@
     <field>
       <name>Spiral</name>
       <comment>Alters the generated super shape so that it forms a spiral.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Setting the Spiral field to a value greater than one will cause the path generator to form spirals, up to the value specified.  For instance, a value of 5 will generate five spirals.</p>
@@ -194,7 +176,7 @@
     <field>
       <name>Vertices</name>
       <comment>Limits the total number of vertices generated for the super shape.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Setting a value in Vertices will limit the total number of vertices that are generated for the super shape.  This feature is useful for generating common convex geometrical shapes such as triangles, polygons, hexagons and so forth; because their vertices will always touch the sides of an elliptical area.</p>

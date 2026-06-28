@@ -67,7 +67,7 @@ static const struct MethodEntry clDisplayMethods[] = {
 };
 
 static ERR DISPLAY_NewPlacement(extDisplay *Self) {
-   new (Self) extDisplay;
+   new (Self) extDisplay(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -85,7 +85,6 @@ static const struct ActionArray clDisplayActions[] = {
    { AC::Enable, DISPLAY_Enable },
    { AC::Flush, DISPLAY_Flush },
    { AC::Focus, DISPLAY_Focus },
-   { AC::Free, DISPLAY_Free },
    { AC::FreePlacement, DISPLAY_FreePlacement },
    { AC::Hide, DISPLAY_Hide },
    { AC::Init, DISPLAY_Init },
@@ -93,7 +92,6 @@ static const struct ActionArray clDisplayActions[] = {
    { AC::MoveToBack, DISPLAY_MoveToBack },
    { AC::MoveToFront, DISPLAY_MoveToFront },
    { AC::MoveToPoint, DISPLAY_MoveToPoint },
-   { AC::NewObject, DISPLAY_NewObject },
    { AC::NewPlacement, DISPLAY_NewPlacement },
    { AC::Redimension, DISPLAY_Redimension },
    { AC::Resize, DISPLAY_Resize },

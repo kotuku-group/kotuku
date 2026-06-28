@@ -10,8 +10,11 @@
 
 #ifdef __cplusplus
 #include <functional>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <sstream>
+#include <type_traits>
 #ifndef STRINGS_HPP
 #include <kotuku/strings.hpp>
 #endif
@@ -215,6 +218,7 @@ class objXML : public Object {
    static constexpr CSTRING CLASS_NAME = "XML";
 
    using create = kt::Create<objXML>;
+   objXML(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Path;       // Set this field if the XML document originates from a file source.
    std::string DocType;    // Root element name from a parsed DOCTYPE declaration.
@@ -423,6 +427,12 @@ class objXML : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getTags(std::span<struct XTag> &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      auto get_field = (ERR (*)(APTR, std::span<struct XTag> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getStatement(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
@@ -437,19 +447,12 @@ class objXML : public Object {
       return error;
    }
 
-   inline ERR getTags(APTR * &Value, int &Elements) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
-      auto error = get_field(this, Value, Elements);
-      return error;
-   }
-
 
    // Customised field setting
 
    inline ERR setPath(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setDocType(const std::string_view &Value) noexcept {
@@ -468,7 +471,7 @@ class objXML : public Object {
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Source = Value;
       return ERR::Okay;
    }
@@ -480,7 +483,7 @@ class objXML : public Object {
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, 0x00804328, &Value, 1);
+      return field->WriteValue(this, field, 0x00804328, &Value);
    }
 
 };
@@ -600,6 +603,31 @@ inline void NewAttrib(XTag &Tag, const std::string_view Name, const std::string_
 
 inline void NewAttrib(XTag *Tag, const std::string_view Name, const std::string_view Value) {
    Tag->Attribs.emplace_back(Name, Value);
+}
+
+// Convert an arithmetic value to its attribute string representation.  Floating point values are formatted via a
+// stream so that insignificant trailing zeros are dropped (e.g. "10" rather than "10.000000") while retaining
+// sufficient precision; integral values use the more direct std::to_string().
+
+template <class T> requires std::is_arithmetic_v<T>
+inline std::string attrib_to_string(const T Value) {
+   if constexpr (std::is_floating_point_v<T>) {
+      std::ostringstream buffer;
+      buffer << std::setprecision(std::numeric_limits<T>::max_digits10);
+      buffer << Value;
+      return buffer.str();
+   }
+   else return std::to_string(Value);
+}
+
+template <class T> requires std::is_arithmetic_v<T>
+inline void NewAttrib(XTag &Tag, const std::string_view Name, const T Value) {
+   Tag.Attribs.emplace_back(Name, attrib_to_string(Value));
+}
+
+template <class T> requires std::is_arithmetic_v<T>
+inline void NewAttrib(XTag *Tag, const std::string_view Name, const T Value) {
+   Tag->Attribs.emplace_back(Name, attrib_to_string(Value));
 }
 
 inline std::string GetContent(const XTag &Tag) {

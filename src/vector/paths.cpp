@@ -85,26 +85,6 @@ void gen_vector_path(extVector *Vector)
       // vpBX1/BY1/BX2/BY2 are fixed coordinate bounding box values from root position (0,0) and define the clip region imposed on all children of the viewport.
       // vpFixedX/Y are the fixed coordinate position of the viewport relative to root position (0,0)
 
-      if (!dmf::hasAnyHorizontalPosition(view->vpDimensions)) { // Client failed to set a horizontal position
-         view->vpTargetX = 0;
-         view->vpDimensions |= DMF::FIXED_X;
-      }
-      else if (dmf::hasAnyXOffset(view->vpDimensions) and (!dmf::has(view->vpDimensions, DMF::FIXED_X|DMF::SCALED_X|DMF::FIXED_WIDTH|DMF::SCALED_WIDTH))) {
-         // Client set an offset but failed to combine it with a width or position value.
-         view->vpTargetX = 0;
-         view->vpDimensions |= DMF::FIXED_X;
-      }
-
-      if (!dmf::hasAnyVerticalPosition(view->vpDimensions)) { // Client failed to set a vertical position
-         view->vpTargetY = 0;
-         view->vpDimensions |= DMF::FIXED_Y;
-      }
-      else if (dmf::hasAnyYOffset(view->vpDimensions) and (!dmf::has(view->vpDimensions, DMF::FIXED_Y|DMF::SCALED_Y|DMF::FIXED_HEIGHT|DMF::SCALED_HEIGHT))) {
-         // Client set an offset but failed to combine it with a height or position value.
-         view->vpTargetY = 0;
-         view->vpDimensions |= DMF::FIXED_Y;
-      }
-
       if (parent_view) {
          if (parent_view->vpViewWidth) parent_width = parent_view->vpViewWidth;
          else parent_width = parent_view->vpFixedWidth;
@@ -114,7 +94,8 @@ void gen_vector_path(extVector *Vector)
 
          if ((!parent_width) or (!parent_height)) {
             // NB: It is perfectly legal, even if unlikely, that a viewport has a width/height of zero.
-            log.msg("Size of parent viewport #%d is %.2fx%.2f, dimensions $%.8x", parent_view->UID, parent_view->vpFixedWidth, parent_view->vpFixedHeight, int(parent_view->vpDimensions));
+            log.msg("Size of parent viewport #%d is %.2fx%.2f", parent_view->UID, parent_view->vpFixedWidth,
+               parent_view->vpFixedHeight);
          }
 
          parent_id = parent_view->UID;
@@ -129,44 +110,28 @@ void gen_vector_path(extVector *Vector)
       // NB: In SVG it is a requirement that the top level viewport is always located at (0,0), but we
       // leave that as something for the SVG parser to enforce.
 
-      if (dmf::hasScaledX(view->vpDimensions)) view->FinalX = (parent_width * view->vpTargetX);
-      else view->FinalX = view->vpTargetX;
+      view->FinalX = view->vpTargetX.defined() ? unit_to_fixed(view->vpTargetX, parent_width) : 0;
+      view->FinalY = view->vpTargetY.defined() ? unit_to_fixed(view->vpTargetY, parent_height) : 0;
 
-      if (dmf::hasScaledY(view->vpDimensions)) view->FinalY = (parent_height * view->vpTargetY);
-      else view->FinalY = view->vpTargetY;
+      view->vpFixedWidth = view->vpTargetWidth.defined() ? unit_to_fixed(view->vpTargetWidth, parent_width) :
+         parent_width;
+      view->vpFixedHeight = view->vpTargetHeight.defined() ? unit_to_fixed(view->vpTargetHeight, parent_height) :
+         parent_height;
 
-      if (dmf::hasScaledWidth(view->vpDimensions)) view->vpFixedWidth = parent_width * view->vpTargetWidth;
-      else if (dmf::hasWidth(view->vpDimensions)) view->vpFixedWidth = view->vpTargetWidth;
-      else view->vpFixedWidth = parent_width;
-
-      if (dmf::hasScaledHeight(view->vpDimensions)) view->vpFixedHeight = parent_height * view->vpTargetHeight;
-      else if (dmf::hasHeight(view->vpDimensions)) view->vpFixedHeight = view->vpTargetHeight;
-      else view->vpFixedHeight = parent_height;
-
-      if (dmf::hasScaledXOffset(view->vpDimensions)) {
-         if (dmf::hasAnyX(view->vpDimensions)) {
-            view->vpFixedWidth = parent_width - (parent_width * view->vpTargetXO) - view->FinalX;
+      if (view->vpTargetXO.defined()) {
+         auto offset = unit_to_fixed(view->vpTargetXO, parent_width);
+         if (view->vpTargetX.defined() or (not view->vpTargetWidth.defined())) {
+            view->vpFixedWidth = parent_width - offset - view->FinalX;
          }
-         else view->FinalX = parent_width - view->vpFixedWidth - (parent_width * view->vpTargetXO);
-      }
-      else if (dmf::hasXOffset(view->vpDimensions)) {
-         if (dmf::hasAnyX(view->vpDimensions)) {
-            view->vpFixedWidth = parent_width - view->vpTargetXO - view->FinalX;
-         }
-         else view->FinalX = parent_width - view->vpFixedWidth - view->vpTargetXO;
+         else view->FinalX = parent_width - view->vpFixedWidth - offset;
       }
 
-      if (dmf::hasScaledYOffset(view->vpDimensions)) {
-         if (dmf::hasAnyY(view->vpDimensions)) {
-            view->vpFixedHeight = parent_height - (parent_height * view->vpTargetYO) - view->FinalY;
+      if (view->vpTargetYO.defined()) {
+         auto offset = unit_to_fixed(view->vpTargetYO, parent_height);
+         if (view->vpTargetY.defined() or (not view->vpTargetHeight.defined())) {
+            view->vpFixedHeight = parent_height - offset - view->FinalY;
          }
-         else view->FinalY = parent_height - view->vpFixedHeight - (parent_height * view->vpTargetYO);
-      }
-      else if (dmf::hasYOffset(view->vpDimensions)) {
-         if (dmf::hasAnyY(view->vpDimensions)) {
-            view->vpFixedHeight = parent_height - view->vpTargetYO - view->FinalY;
-         }
-         else view->FinalY = parent_height - view->vpFixedHeight - view->vpTargetYO;
+         else view->FinalY = parent_height - view->vpFixedHeight - offset;
       }
 
       // Contained vectors are normally scaled to the area defined by the viewport.
@@ -184,8 +149,9 @@ void gen_vector_path(extVector *Vector)
          view->vpFixedHeight = parent_height;
       }
 
-      log.trace("Vector: #%d, Dimensions: $%.8x, Parent: #%d %.2fw %.2fh, Target: %.2fw %.2fh, Viewbox: %.2f %.2f %.2f %.2f",
-         Vector->UID, view->vpDimensions, parent_id, parent_width, parent_height, target_width, target_height, view->vpViewX, view->vpViewY, view->vpViewWidth, view->vpViewHeight);
+      log.trace("Vector: #%d, Parent: #%d %.2fw %.2fh, Target: %.2fw %.2fh, Viewbox: %.2f %.2f %.2f %.2f",
+         Vector->UID, parent_id, parent_width, parent_height, target_width, target_height, view->vpViewX, view->vpViewY,
+         view->vpViewWidth, view->vpViewHeight);
 
       // This part computes the alignment of the viewbox (source) within the viewport's target area.
       // AspectRatio choices affect this, e.g. "xMinYMin slice".  Note that alignment specifically impacts
@@ -347,7 +313,7 @@ void gen_vector_path(extVector *Vector)
 
       if ((Vector->Fill[0].Colour.Alpha > 0) or (Vector->Fill[0].Gradient) or (Vector->Fill[0].Image) or (Vector->Fill[0].Pattern)) {
          if (!Vector->FillRaster) {
-            Vector->FillRaster = new (std::nothrow) agg::rasterizer_scanline_aa<>;
+            Vector->FillRaster.reset(new (std::nothrow) agg::rasterizer_scanline_aa<>);
             if (!Vector->FillRaster) return;
          }
          else Vector->FillRaster->reset();
@@ -357,8 +323,7 @@ void gen_vector_path(extVector *Vector)
          Vector->FillRaster->add_path(fill_path);
       }
       else if (Vector->FillRaster) {
-         delete Vector->FillRaster;
-         Vector->FillRaster = nullptr;
+         Vector->FillRaster.reset();
       }
 
       if (Vector->Stroked) {
@@ -366,7 +331,7 @@ void gen_vector_path(extVector *Vector)
          // is not required if the vector scale is <= 1.0 (the angle_tolerance controls this).
 
          if (!Vector->StrokeRaster) {
-            Vector->StrokeRaster = new (std::nothrow) agg::rasterizer_scanline_aa<>;
+            Vector->StrokeRaster.reset(new (std::nothrow) agg::rasterizer_scanline_aa<>);
             if (!Vector->StrokeRaster) return;
          }
          else Vector->StrokeRaster->reset();
@@ -387,8 +352,7 @@ void gen_vector_path(extVector *Vector)
          }
       }
       else if (Vector->StrokeRaster) {
-         delete Vector->StrokeRaster;
-         Vector->StrokeRaster = nullptr;
+         Vector->StrokeRaster.reset();
       }
 
       Vector->Dirty &= ~RC::FINAL_PATH;

@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorPattern class is used by Vector painting algorithms to fill and stroke vectors with pre-rendered patterns. It is the most efficient way of rendering a common set of graphics multiple times.</p>
-<p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <method class="VectorScene">AddDef</method> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>
+<p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>
 <p>A special use case is made for patterns that are applied as a fill operation in <class name="VectorViewport">VectorViewport</class> objects.  In this case the renderer will dynamically render the pattern as a background within the viewport.  This ensures that the pattern is rendered at maximum fidelity whenever it is used, and not affected by bitmap clipping restrictions.  It should be noted that this means the image caching feature will be disabled.</p>
 <p>It is strongly recommended that the VectorPattern is owned by the <class name="VectorScene">VectorScene</class> that is handling the definition.  This will ensure that the VectorPattern is deallocated when the scene is destroyed.</p></description>
     <source>
@@ -22,22 +22,39 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Draw</name>
+      <comment>Draws object graphics to drawable areas.</comment>
+      <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="X">The X position of the region to be drawn.</param>
+        <param type="INT" name="Y">The Y position of the region to be drawn.</param>
+        <param type="INT" name="Width">The width of the region to be drawn.</param>
+        <param type="INT" name="Height">The height of the region to be drawn.</param>
+      </input>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags are stored here.</comment>
-      <access read="R">Read</access>
-      <type lookup="DMF">DMF</type>
+      <name>ContentUnits</name>
+      <comment>Not yet implemented.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="VUNIT">VUNIT</type>
       <description>
-<types lookup="DMF"/>
+<p>In compliance with SVG requirements, the application of ContentUnits is only effective if the Viewport's X, Y, Width and Height fields have been defined.  The default setting is <code>USERSPACE</code>.</p>
+<types lookup="VUNIT"/>
       </description>
     </field>
 
     <field>
       <name>Height</name>
       <comment>Height of the pattern tile.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled, then the dimension is calculated relative to the bounding box or viewport applying the pattern, dependent on the <fl>Units</fl> setting.</p>
       </description>
@@ -55,12 +72,11 @@
 
     <field>
       <name>Matrices</name>
-      <comment>A linked list of transform matrices that have been applied to the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>APTR</type>
+      <comment>Applies one or more transforms to a pattern.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;VectorMatrix&gt;</type>
       <description>
-<p>All transforms that have been applied to the pattern can be read from the Matrices field.  Each transform is represented by a <st>VectorMatrix</st> structure, and are linked in the order in which they were applied to the pattern.</p>
-<p>Setting this field is always additive unless NULL is passed, in which case all existing matrices are removed.</p>
+<p>A transform can be applied to a pattern via one or more matrices.  These will influence how pattern fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
 <struct lookup="VectorMatrix"/>
       </description>
     </field>
@@ -91,7 +107,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="VSPREAD">VSPREAD</type>
       <description>
-<p>Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is PAD.</p>
+<p>Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is <code>VSPREAD::PAD</code>.</p>
 <types lookup="VSPREAD"/>
       </description>
     </field>
@@ -112,7 +128,7 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="VUNIT">VUNIT</type>
       <description>
-<p>This field declares the coordinate system that is used for values in the <fl>X</fl> and <fl>Y</fl> fields.  The default setting is <code>BOUNDING_BOX</code>, which means the pattern will be drawn to scale in realtime.  The most efficient method is USERSPACE, which allows the pattern image to be persistently cached.</p>
+<p>This field declares the coordinate system that is used for values in the <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl> and <fl>Height</fl> fields.  The default setting is <code>BOUNDING_BOX</code>, which means the pattern will be drawn to scale in realtime.  The most efficient method is <code>USERSPACE</code>, which allows the pattern image to be persistently cached.</p>
 <types lookup="VUNIT"/>
       </description>
     </field>
@@ -130,8 +146,8 @@
     <field>
       <name>Width</name>
       <comment>Width of the pattern tile.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled, the dimension is calculated relative to the bounding box or viewport applying the pattern, dependent on the <fl>Units</fl> setting.</p>
       </description>
@@ -140,8 +156,8 @@
     <field>
       <name>X</name>
       <comment>X coordinate for the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the starting coordinate for mapping patterns.</p>
       </description>
@@ -150,8 +166,8 @@
     <field>
       <name>Y</name>
       <comment>Y coordinate for the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the starting coordinate for mapping patterns.</p>
       </description>
@@ -159,35 +175,6 @@
 
   </fields>
   <types>
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
-    </constants>
-
     <constants lookup="VSPREAD" comment="Spread method options define the method to use for tiling filled graphics.">
       <const name="CLIP">Do not scale the graphic.  Clip it if it extends past imposed boundaries.</const>
       <const name="PAD">Scale the graphic to the object bounds.</const>

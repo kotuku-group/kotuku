@@ -436,19 +436,12 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
    }
 
    if (not Name.empty()) log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %.*s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, int(Name.size()), Name.data());
-   else log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, CursorLookup[int(CursorID)].Name);
+   else log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %d", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, int(CursorID));
 
    // Extract the cursor ID from the cursor name if no ID was given
 
    if (CursorID IS PTC::NIL) {
-      if (not Name.empty()) {
-         for (int i=0; CursorLookup[i].Name; i++) {
-            if (iequals(CursorLookup[i].Name, Name)) {
-               CursorID = PTC(CursorLookup[i].Value);
-               break;
-            }
-         }
-      }
+      if (not Name.empty()) CursorID = get_cursor_id(Name);
       else CursorID = pointer->CursorID;
    }
 
@@ -480,7 +473,7 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
    // If CRF::NOBUTTONS is used, the cursor can only be set if no mouse buttons are held down at the current time.
 
    if ((Flags & CRF::NO_BUTTONS) != CRF::NIL) {
-      if ((pointer->Buttons[0].LastClicked) or (pointer->Buttons[1].LastClicked) or (pointer->Buttons[2].LastClicked)) {
+      if ((pointer->ButtonClicks[0].LastClicked) or (pointer->ButtonClicks[1].LastClicked) or (pointer->ButtonClicks[2].LastClicked)) {
          ReleaseObject(pointer);
          return ERR::NothingDone;
       }
@@ -514,7 +507,7 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
                if (ScopedObjectLock<objSurface> surface(pointer->SurfaceID, 1000); surface.granted()) {
                   if (surface->DisplayID) {
                      if (ScopedObjectLock<objDisplay> display(surface->DisplayID, 1000); display.granted()) {
-                        if ((!display->get(FID_WindowHandle, xwin)) and (xwin)) {
+                        if ((!display->getWindowHandle(xwin)) and (xwin)) {
                            xcursor = get_x11_cursor(CursorID);
                            XDefineCursor(XDisplay, (Window)xwin, xcursor);
                            XFlush(XDisplay);
@@ -548,15 +541,15 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
    flags = Flags;
    if ((flags & (CRF::LMB|CRF::MMB|CRF::RMB)) != CRF::NIL) {
       if ((flags & CRF::LMB) != CRF::NIL) {
-         if (pointer->Buttons[0].LastClicked) pointer->CursorRelease |= 0x01;
+         if (pointer->ButtonClicks[0].LastClicked) pointer->CursorRelease |= 0x01;
          else flags &= ~(CRF::RESTRICT); // The LMB has already been released by the user, so do not allow restrict/anchoring
       }
       else if ((flags & CRF::RMB) != CRF::NIL) {
-         if (pointer->Buttons[1].LastClicked) pointer->CursorRelease |= 0x02;
+         if (pointer->ButtonClicks[1].LastClicked) pointer->CursorRelease |= 0x02;
          else flags &= ~(CRF::RESTRICT); // The MMB has already been released by the user, so do not allow restrict/anchoring
       }
       else if ((flags & CRF::MMB) != CRF::NIL) {
-         if (pointer->Buttons[2].LastClicked) pointer->CursorRelease |= 0x04;
+         if (pointer->ButtonClicks[2].LastClicked) pointer->CursorRelease |= 0x04;
          else flags &= ~(CRF::RESTRICT); // The MMB has already been released by the user, so do not allow restrict/anchoring
       }
    }
@@ -730,7 +723,7 @@ ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes
    if (!Source) return log.warning(ERR::NullArgs);
 
    if (auto pointer = (extPointer *)gfx::AccessPointer()) {
-      if (!pointer->Buttons[0].LastClicked) {
+      if (!pointer->ButtonClicks[0].LastClicked) {
          ReleaseObject(pointer);
          return log.warning(ERR::InvalidState);
       }

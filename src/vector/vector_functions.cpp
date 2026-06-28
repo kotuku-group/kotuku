@@ -102,21 +102,15 @@ static void rotate_matrix(VectorMatrix &Matrix, double Angle, double CenterX, do
 static ERR skew_matrix(VectorMatrix &Matrix, double X, double Y)
 {
    if ((X > -90) and (X < 90)) {
-      VectorMatrix skew = {
-         .ScaleX = 1.0, .ShearY = 0, .ShearX = tan(X * DEG2RAD),
-         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
-      };
-
+      VectorMatrix skew;
+      skew.ShearX = tan(X * DEG2RAD);
       multiply_matrix(Matrix, skew);
    }
    else return ERR::OutOfRange;
 
    if ((Y > -90) and (Y < 90)) {
-      VectorMatrix skew = {
-         .ScaleX = 1.0, .ShearY = tan(Y * DEG2RAD), .ShearX = 0,
-         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
-      };
-
+      VectorMatrix skew;
+      skew.ShearY = tan(Y * DEG2RAD);
       multiply_matrix(Matrix, skew);
    }
    else return ERR::OutOfRange;
@@ -496,7 +490,7 @@ simple vector shapes are required.  However, it is limited in that advanced rend
 available to the client.
 
 At least one of `StrokeStyle` or `FillStyle` is required to render visible output.  Valid styles are allocated and
-configured using recognised vector style objects, specifically @VectorImage, @VectorPattern and @VectorGradient.  If a
+configured using recognised vector style objects, specifically @VectorImage, @VectorPattern and @Gradient.  If a
 fill or stroke operation is not required, set the relevant parameter to `NULL`.  Stroke rendering is also disabled when
 `StrokeWidth` is less than `0.001`.
 

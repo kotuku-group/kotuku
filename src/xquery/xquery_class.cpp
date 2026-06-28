@@ -398,14 +398,12 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
 
 //********************************************************************************************************************
 
-static ERR XQUERY_Free(extXQuery *Self)
+extXQuery::~extXQuery()
 {
-   if (Self->ResolveVariable.isScript()) {
-      UnsubscribeAction(Self->ResolveVariable.Context, AC::Free);
-      Self->ResolveVariable.clear();
+   if (ResolveVariable.isScript()) {
+      UnsubscribeAction(ResolveVariable.Context, AC::Free);
+      ResolveVariable.clear();
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -820,7 +818,7 @@ Duplicate function names are not removed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Functions(extXQuery *Self, kt::vector<std::string> **Value)
+static ERR GET_Functions(extXQuery *Self, std::span<std::string> &Value)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -844,7 +842,7 @@ static ERR GET_Functions(extXQuery *Self, kt::vector<std::string> **Value)
       }
    }
 
-   *Value = &Self->ListFunctions;
+   Value = std::span<std::string>(Self->ListFunctions.data(), Self->ListFunctions.size());
    return ERR::Okay;
 }
 
@@ -1024,7 +1022,7 @@ Duplicate variable names are not removed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
+static ERR GET_Variables(extXQuery *Self, std::span<std::string> &Value)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -1055,7 +1053,7 @@ static ERR GET_Variables(extXQuery *Self, kt::vector<std::string> **Value)
       }
    }
 
-   *Value = &Self->ListVariables;
+   Value = std::span<std::string>(Self->ListVariables.data(), Self->ListVariables.size());
    return ERR::Okay;
 }
 
@@ -1068,6 +1066,7 @@ static const FieldArray clFields[] = {
    { "Path",            FDF_CPPSTRING|FDF_RW },
    { "Statement",       FDF_CPPSTRING|FDF_RW, nullptr, SET_Statement },
    { "MemoryUsage",     FDF_INT64|FDF_R },
+   // Virtual fields
    { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_PURE|FDF_R, GET_Result, nullptr, "XPathValue" },
    { "ResultString",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_R, GET_ResultString },
    { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_PURE|FDF_R, GET_FeatureFlags, nullptr, &clXQueryXQF },

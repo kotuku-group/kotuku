@@ -16,7 +16,7 @@
 <p>The MorphologyFX class performs &quot;fattening&quot; or &quot;thinning&quot; of artwork.  It is particularly useful for fattening or thinning an alpha channel.</p>
 <p>The dilation (or erosion) kernel is a rectangle with a width of <code>2 * RadiusX</code> and a height of <code>2 * RadiusY</code>. In dilation, the output pixel is the individual component-wise maximum of the corresponding R,G,B,A values in the input image's kernel rectangle.  In erosion, the output pixel is the individual component-wise minimum of the corresponding R,G,B,A values in the input image's kernel rectangle.</p>
 <p>Frequently this operation will take place on alpha-only images, such as that produced by the built-in input, SourceAlpha.  In that case, the implementation might want to optimize the single channel case.</p>
-<p>Because the algorithm operates on premultipied color values, it will always result in color values less than or equal to the alpha channel.</p></description>
+<p>Because the algorithm operates on premultiplied colour values, it will always result in colour values less than or equal to the alpha channel.</p></description>
     <source>
       <file path="filters/">filter_morphology.cpp</file>
     </source>
@@ -42,8 +42,8 @@
     <field>
       <name>Operator</name>
       <comment>Set to either <code>ERODE</code> or <code>DILATE</code>.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="MOP">INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="MOP">MOP</type>
       <description>
 <types lookup="MOP"/>
       </description>
@@ -52,14 +52,14 @@
     <field>
       <name>RadiusX</name>
       <comment>X radius value.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
     </field>
 
     <field>
       <name>RadiusY</name>
       <comment>Y radius value.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
     </field>
 

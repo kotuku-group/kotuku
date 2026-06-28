@@ -100,7 +100,7 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
       // Convert the file date stamp into a DOS time stamp for zip
 
       DateTime *tm;
-      if (!file->get(FID_Date, tm)) {
+      if (!file->getDate(tm)) {
          if (tm->Year < 1980) entry.Timestamp = 0x00210000;
          else entry.Timestamp = ((tm->Year-1980)<<25) | (tm->Month<<21) | (tm->Day<<16) | (tm->Hour<<11) | (tm->Minute<<5) | (tm->Second>>1);
       }
@@ -212,7 +212,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    // Send feedback
 
    CompressionFeedback fb(FDB::COMPRESS_FILE, Self->FileIndex, Location.c_str(), filename.c_str());
-   file->get(FID_Size, fb.OriginalSize);
+   file->getSize(fb.OriginalSize);
 
    switch (send_feedback(Self, &fb)) {
       case ERR::Terminate:
@@ -260,7 +260,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    if (deflateInit2(&Self->Zip, level, Z_DEFLATED, -MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY) IS Z_OK) {
       deflateend = true;
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
    }
    else return ERR::InvalidData;
@@ -280,7 +280,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    std::string_view symlink;
    if (((Self->Flags & CMF::NO_LINKS) IS CMF::NIL) and ((file->Flags & FL::LINK) != FL::NIL)) {
-      if (!file->get(FID_Link, symlink)) {
+      if (!file->getLink(symlink)) {
          log.msg("Note: File \"%s\" is a symbolic link to \"%.*s\"", filename.c_str(), int(symlink.size()), symlink.data());
          entry.Flags |= ZIP_LINK;
       }
@@ -289,13 +289,13 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    // Convert the file date stamp into a DOS time stamp for zip
 
    DateTime *time;
-   if (!file->get(FID_Date, time)) {
+   if (!file->getDate(time)) {
       if (time->Year < 1980) entry.Timestamp = 0x00210000;
       else entry.Timestamp = ((time->Year-1980)<<25) | (time->Month<<21) | (time->Day<<16) | (time->Hour<<11) | (time->Minute<<5) | (time->Second>>1);
    }
 
    PERMIT permissions;
-   if (!file->get(FID_Permissions, (int &)permissions)) {
+   if (!file->getPermissions(permissions)) {
       if ((permissions & PERMIT::USER_READ) != PERMIT::NIL)   entry.Flags |= ZIP_UREAD;
       if ((permissions & PERMIT::GROUP_READ) != PERMIT::NIL)  entry.Flags |= ZIP_GREAD;
       if ((permissions & PERMIT::OTHERS_READ) != PERMIT::NIL) entry.Flags |= ZIP_OREAD;
@@ -322,7 +322,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
       // Compress the symbolic link to the zip file, rather than the data
       Self->Zip.next_in   = (Bytef *)symlink.data();
       Self->Zip.avail_in  = symlink.size();
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
       if (deflate(&Self->Zip, Z_NO_FLUSH) != Z_OK) {
          log.warning("Failure during data compression.");
@@ -331,19 +331,19 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
       entry.CRC = GenCRC32(entry.CRC, (APTR)symlink.data(), symlink.size());
    }
    else {
-      struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER };
+      struct acRead read = { .Buffer = Self->Input.data(), .Length = SIZE_COMPRESSION_BUFFER };
       while ((!Action(AC::Read, *file, &read)) and (read.Result > 0)) {
-         Self->Zip.next_in  = Self->Input;
+         Self->Zip.next_in  = Self->Input.data();
          Self->Zip.avail_in = read.Result;
 
          while (Self->Zip.avail_in) {
             if (!Self->Zip.avail_out) {
                // Write out the compression buffer because it is at capacity
-               struct acWrite write = { .Buffer = Self->Output, .Length = SIZE_COMPRESSION_BUFFER };
+               struct acWrite write = { .Buffer = Self->Output.data(), .Length = SIZE_COMPRESSION_BUFFER };
                Action(AC::Write, Self->FileIO, &write);
 
                // Reset the compression buffer
-               Self->Zip.next_out  = Self->Output;
+               Self->Zip.next_out  = Self->Output.data();
                Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
 
                fb.CompressedSize = Self->Zip.total_out;
@@ -357,7 +357,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
             }
          }
 
-         entry.CRC = GenCRC32(entry.CRC, Self->Input, read.Result);
+         entry.CRC = GenCRC32(entry.CRC, Self->Input.data(), read.Result);
       }
    }
 
@@ -426,23 +426,21 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
    if (fl::ReadLE(Self->FileIO, &namelen) != ERR::Okay) return ERR::Read;
    if (fl::ReadLE(Self->FileIO, &extralen) != ERR::Okay) return ERR::Read;
    int chunksize  = HEAD_LENGTH + namelen + extralen + File->CompressedSize;
-   double currentpos = File->Offset + chunksize;
-   if (acSeekStart(Self->FileIO, currentpos) != ERR::Okay) return log.warning(ERR::Seek);
+   double read_cursor = File->Offset + chunksize;
+   if (acSeekStart(Self->FileIO, read_cursor) != ERR::Okay) return log.warning(ERR::Seek);
 
-   double writepos = File->Offset;
+   double write_cursor = File->Offset;
 
-   struct acRead read = { Self->Input, SIZE_COMPRESSION_BUFFER };
-   while ((!Action(AC::Read, Self->FileIO, &read)) and (read.Result > 0)) {
-      if (acSeekStart(Self->FileIO, writepos) != ERR::Okay) return log.warning(ERR::Seek);
-      struct acWrite write = { Self->Input, read.Result };
-      if (Action(AC::Write, Self->FileIO, &write) != ERR::Okay) return log.warning(ERR::Write);
-      writepos += write.Result;
-
-      currentpos += read.Result;
-      if (acSeekStart(Self->FileIO, currentpos) != ERR::Okay) return log.warning(ERR::Seek);
+   int read_result, write_result;
+   while ((!acRead(Self->FileIO, Self->Input.data(), SIZE_COMPRESSION_BUFFER, &read_result)) and (read_result > 0)) {
+      if (acSeekStart(Self->FileIO, write_cursor) != ERR::Okay) return log.warning(ERR::Seek);
+      if (acWrite(Self->FileIO, Self->Input.data(), read_result, &write_result) != ERR::Okay) return log.warning(ERR::Write);
+      write_cursor += write_result;
+      read_cursor += read_result;
+      if (acSeekStart(Self->FileIO, read_cursor) != ERR::Okay) return log.warning(ERR::Seek);
    }
 
-   Self->FileIO->set(FID_Size, writepos);
+   Self->FileIO->set(FID_Size, write_cursor);
 
    // Adjust the offset of files that are ahead of this one
 

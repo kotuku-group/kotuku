@@ -9,8 +9,10 @@ MP3: Sound class extension
 
 *********************************************************************************************************************/
 
+#define PRV_MP3
 #include <kotuku/main.h>
 #include <kotuku/modules/audio.h>
+#include <kotuku/modules/mp3.h>
 #include <kotuku/strings.hpp>
 
 extern "C" {
@@ -22,8 +24,6 @@ extern "C" {
 #include <array>
 
 using namespace kt;
-
-#define VER_MP3 1.0
 
 JUMPTABLE_CORE
 JUMPTABLE_AUDIO
@@ -88,7 +88,7 @@ struct id3tag {
    uint8_t genre;
 };
 
-static int find_frame(objSound *, uint8_t *, int);
+static int find_frame(objMP3 *, uint8_t *, int);
 
 //********************************************************************************************************************
 
@@ -133,13 +133,13 @@ static const int bitrate_table[5][15] = {
 
 static const int samplerate_table[3] = { 44100, 48000, 32000 };
 
-static int64_t calc_length(objSound *, int);
+static int64_t calc_length(objMP3 *, int);
 
 //********************************************************************************************************************
 // The ID3v1 tag can be located at the end of the MP3 file.
 // There may also be an 'Enhanced TAG' just prior to the ID3v1 header - this code does not support it yet.
 
-static bool parse_id3v1(objSound *Self)
+static bool parse_id3v1(objMP3 *Self)
 {
    kt::Log log(__FUNCTION__);
 
@@ -214,7 +214,7 @@ const int XING_STREAM_SIZE  = 2; // The compressed audio stream size in bytes is
 const int XING_TOC          = 4; // TOC entries are defined.
 const int XING_SCALE        = 8; // VBR quality is indicated from 0 (best) to 100 (worst).
 
-static int check_xing(objSound *Self, const uint8_t *Frame)
+static int check_xing(objMP3 *Self, const uint8_t *Frame)
 {
    kt::Log log;
 
@@ -294,28 +294,15 @@ static int check_xing(objSound *Self, const uint8_t *Frame)
    return 1;
 }
 
-
-//********************************************************************************************************************
-
-static ERR MP3_Free(objSound *Self)
-{
-   prvMP3 *prv;
-   if (!(prv = (prvMP3 *)Self->DerivedPtr)) return ERR::Okay;
-
-   if (prv->File) { FreeResource(prv->File); prv->File = nullptr; }
-
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 // Playback is managed by Sound.acActivate()
 
-static ERR MP3_Init(objSound *Self)
+static ERR MP3_Init(objMP3 *Self)
 {
    kt::Log log;
 
    std::string_view location;
-   Self->get(FID_Path, location);
+   Self->getPath(location);
 
    if (location.empty() or ((Self->Flags & SDF::NEW) != SDF::NIL)) {
       // If no location has been specified, assume that the sound is being
@@ -399,7 +386,7 @@ static ERR MP3_Init(objSound *Self)
 
 //********************************************************************************************************************
 
-static ERR MP3_Read(objSound *Self, struct acRead *Args)
+static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
 {
    kt::Log log;
 
@@ -543,7 +530,7 @@ static ERR MP3_Read(objSound *Self, struct acRead *Args)
 // Accuracy when seeking within an MP3 file is not guaranteed.  This means that offsets can be a little too far
 // forward or backward relative to the known length.
 
-static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
+static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
 {
    kt::Log log;
 
@@ -607,7 +594,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
 
             if (!prv->StreamSize) {
                int64_t size;
-               prv->File->get(FID_Size, size);
+               prv->File->getSize(size);
                prv->StreamSize = size - prv->SeekOffset;
             }
 
@@ -627,7 +614,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
       }
 
       int active;
-      if (!Self->get(FID_Active, active)) {
+      if (!Self->getActive(active)) {
          if (active) {
             log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
             Self->deactivate();
@@ -651,7 +638,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
 #define SIZE_BUFFER     256000  // Load up to this many bytes to determine if the file is in variable bit-rate
 #define SIZE_CBR_BUFFER 51200   // Load at least this many bytes to determine if the file is in constant bit-rate
 
-static int64_t calc_length(objSound *Self, int ReduceEnd)
+static int64_t calc_length(objMP3 *Self, int ReduceEnd)
 {
    kt::Log log(__FUNCTION__);
    int buffer_size;
@@ -800,7 +787,7 @@ static int64_t calc_length(objSound *Self, int ReduceEnd)
 
 //********************************************************************************************************************
 
-static int find_frame(objSound *Self, uint8_t *Buffer, int BufferSize)
+static int find_frame(objMP3 *Self, uint8_t *Buffer, int BufferSize)
 {
    kt::Log log(__FUNCTION__);
    int bitrate, frame_size;
@@ -856,13 +843,15 @@ static int find_frame(objSound *Self, uint8_t *Buffer, int BufferSize)
 
 //********************************************************************************************************************
 
-static const struct ActionArray clActions[] = {
-   { AC::Free, MP3_Free },
-   { AC::Init, MP3_Init },
-   { AC::Read, MP3_Read },
-   { AC::Seek, MP3_Seek },
-   { AC::NIL, nullptr }
-};
+#include "mp3_def.cpp"
+
+//********************************************************************************************************************
+
+objMP3::~objMP3() {
+   prvMP3 *prv;
+   if (!(prv = (prvMP3 *)DerivedPtr)) return;
+   if (prv->File) FreeResource(prv->File);
+}
 
 //********************************************************************************************************************
 
@@ -875,13 +864,14 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    clMP3 = objMetaClass::create::global(
       fl::BaseClassID(CLASSID::SOUND),
       fl::ClassID(CLASSID::MP3),
-      fl::ClassVersion(VER_MP3),
+      fl::ClassVersion(1.0),
       fl::FileExtension("mp3"),
       fl::FileDescription("MP3 Audio Stream"),
       fl::Icon("filetypes/audio"),
       fl::Name("MP3"),
+      fl::Size(sizeof(objMP3)),
       fl::Category(CCF::AUDIO),
-      fl::Actions(clActions),
+      fl::Actions(clMP3Actions),
       fl::Path(MOD_PATH));
 
    return clMP3 ? ERR::Okay : ERR::AddClass;

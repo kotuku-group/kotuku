@@ -24,6 +24,7 @@ namespace agg
         m_num_dashes(0),
         m_curr_dash(0),
         m_closed(0),
+        m_seam_overlap(false),
         m_status(initial),
         m_src_vertex(0)
     {
@@ -72,6 +73,7 @@ namespace agg
       m_status = initial;
       m_src_vertices.remove_all();
       m_closed = 0;
+      m_seam_overlap = false;
    }
 
    void vcgen_dash::add_vertex(double x, double y, unsigned cmd) {
@@ -82,12 +84,13 @@ namespace agg
    }
 
    void vcgen_dash::rewind(unsigned) {
-      if (m_status == initial) {
+      if (m_status IS initial) {
          m_src_vertices.close(m_closed != 0);
          shorten_path(m_src_vertices, m_shorten, m_closed);
       }
       m_status = ready;
       m_src_vertex = 0;
+      m_seam_overlap = false;
    }
 
    unsigned vcgen_dash::vertex(double *x, double *y) {
@@ -128,6 +131,8 @@ namespace agg
 
                   *x = m_v2->x - (m_v2->x - m_v1->x) * m_curr_rest / m_v1->dist;
                   *y = m_v2->y - (m_v2->y - m_v1->y) * m_curr_rest / m_v1->dist;
+
+                  if (m_seam_overlap and (m_curr_dash & 1)) m_status = stop;
                }
                else {
                   m_curr_dash_start += m_curr_rest;
@@ -140,7 +145,18 @@ namespace agg
                   m_curr_rest = m_v1->dist;
 
                   if (m_closed) {
-                     if (m_src_vertex > m_src_vertices.size()) m_status = stop;
+                     if (m_src_vertex > m_src_vertices.size()) {
+                        // A visible dash can straddle a closed contour's seam.  Continue it through the start
+                        // vertex once so the downstream stroke generator sees a continuous sub-path there.
+
+                        if ((not m_seam_overlap) and ((m_curr_dash & 1) IS 0) and
+                            (m_curr_dash_start < m_dashes[m_curr_dash])) {
+                           m_seam_overlap = true;
+                           m_src_vertex = 1;
+                           m_v2 = &m_src_vertices[m_src_vertex];
+                        }
+                        else m_status = stop;
+                     }
                      else m_v2 = &m_src_vertices[ (m_src_vertex >= m_src_vertices.size()) ? 0 : m_src_vertex ];
                   }
                   else if (m_src_vertex >= m_src_vertices.size()) m_status = stop;
@@ -157,4 +173,3 @@ namespace agg
       return path_cmd_stop;
    }
 }
-

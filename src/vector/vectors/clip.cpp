@@ -28,11 +28,10 @@ the clipping path is sized to match the target vector.  A viewbox size of `0 0 1
 
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_Free(extVectorClip *Self)
+extVectorClip::~extVectorClip()
 {
-   if (Self->Viewport) ((extVectorViewport *)Self->Viewport)->vpClipOwner = nullptr;
-   if (Self->ViewportID) { FreeResource(Self->ViewportID); Self->ViewportID = 0; Self->Viewport = nullptr; }
-   return ERR::Okay;
+   if (Viewport) ((extVectorViewport *)Viewport)->vpClipOwner = nullptr;
+   if (ViewportID) FreeResource(ViewportID);
 }
 
 //********************************************************************************************************************
@@ -76,8 +75,7 @@ static ERR VECTORCLIP_Init(extVectorClip *Self)
 static ERR VECTORCLIP_NewChild(extVectorClip *Self, struct acNewChild *Args)
 {
    if (Self->initialised()) {
-      kt::Log log;
-      log.warning("Child objects not supported - assign this %s to Viewport instead.", Args->Object->className());
+      kt::Log().warning("Child objects not supported - assign this %s to Viewport instead.", Args->Object->className());
       return ERR::NoSupport;
    }
    else return ERR::Okay;
@@ -91,12 +89,6 @@ Lookup: VCLF
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_GET_Flags(extVectorClip *Self, VCLF *Value)
-{
-   *Value = Self->Flags;
-   return ERR::Okay;
-}
-
 static ERR VECTORCLIP_SET_Flags(extVectorClip *Self, VCLF Value)
 {
    if (Self->Flags != Value) {
@@ -109,6 +101,12 @@ static ERR VECTORCLIP_SET_Flags(extVectorClip *Self, VCLF Value)
 
 /*********************************************************************************************************************
 -FIELD-
+SID: String identifier for a vector.
+
+The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other
+circumstances.
+
+-FIELD-
 Units: Defines the coordinate system for fields X, Y, Width and Height.
 
 The default coordinate system for clip-paths is `BOUNDING_BOX`, which positions the clipping region relative to the
@@ -116,12 +114,6 @@ vector that references it.  The alternative is `USERSPACE`, which positions the 
 viewport.
 -END-
 *********************************************************************************************************************/
-
-static ERR VECTORCLIP_GET_Units(extVectorClip *Self, VUNIT *Value)
-{
-   *Value = Self->Units;
-   return ERR::Okay;
-}
 
 static ERR VECTORCLIP_SET_Units(extVectorClip *Self, VUNIT Value)
 {
@@ -142,20 +134,15 @@ declared here.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_GET_Viewport(extVectorClip *Self, objVectorViewport **Value)
-{
-   *Value = Self->Viewport;
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 #include "clip_def.cpp"
 
 static const FieldArray clClipFields[] = {
-   { "Viewport", FDF_OBJECT|FDF_R|FDF_PURE, VECTORCLIP_GET_Viewport },
-   { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTORCLIP_GET_Units, VECTORCLIP_SET_Units, &clVectorClipUnits },
-   { "Flags",    FDF_INTFLAGS|FDF_RW|FDF_PURE, VECTORCLIP_GET_Flags, VECTORCLIP_SET_Flags, &clVectorClipFlags },
+   { "Viewport", FDF_OBJECT|FDF_R, nullptr },
+   { "SID",      FDF_CPPSTRING|FDF_RW },
+   { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORCLIP_SET_Units, &clVectorClipUnits },
+   { "Flags",    FDF_INTFLAGS|FDF_RW, nullptr, VECTORCLIP_SET_Flags, &clVectorClipFlags },
    END_FIELD
 };
 

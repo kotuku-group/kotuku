@@ -7,7 +7,6 @@ static const struct FieldDef clScintillaEventFlags[] = {
    { "NewChar", 0x00000008 },
    { nullptr, 0 }
 };
-
 static const struct FieldDef clScintillaFlags[] = {
    { "Disabled", 0x00000001 },
    { "DetectLexer", 0x00000002 },
@@ -70,7 +69,12 @@ static const struct MethodEntry clScintillaMethods[] = {
 };
 
 static ERR SCINTILLA_NewPlacement(extScintilla *Self) {
-   new (Self) extScintilla;
+   new (Self) extScintilla(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR SCINTILLA_FreePlacement(extScintilla *Self) {
+   Self->~extScintilla();
    return ERR::Okay;
 }
 
@@ -82,11 +86,9 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Draw, SCINTILLA_Draw },
    { AC::Enable, SCINTILLA_Enable },
    { AC::Focus, SCINTILLA_Focus },
-   { AC::Free, SCINTILLA_Free },
+   { AC::FreePlacement, SCINTILLA_FreePlacement },
    { AC::Hide, SCINTILLA_Hide },
    { AC::Init, SCINTILLA_Init },
-   { AC::NewObject, SCINTILLA_NewObject },
-   { AC::NewOwner, SCINTILLA_NewOwner },
    { AC::NewPlacement, SCINTILLA_NewPlacement },
    { AC::Redo, SCINTILLA_Redo },
    { AC::SaveToObject, SCINTILLA_SaveToObject },
@@ -94,4 +96,3 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Undo, SCINTILLA_Undo },
    { AC::NIL, nullptr }
 };
-

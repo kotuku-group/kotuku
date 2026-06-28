@@ -126,7 +126,7 @@ static const struct FieldDef clHTTPCurrentState[] = {
 };
 
 static ERR HTTP_NewPlacement(extHTTP *Self) {
-   new (Self) extHTTP;
+   new (Self) extHTTP(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -138,7 +138,6 @@ static ERR HTTP_FreePlacement(extHTTP *Self) {
 static const struct ActionArray clHTTPActions[] = {
    { AC::Activate, HTTP_Activate },
    { AC::Deactivate, HTTP_Deactivate },
-   { AC::Free, HTTP_Free },
    { AC::FreePlacement, HTTP_FreePlacement },
    { AC::GetKey, HTTP_GetKey },
    { AC::Init, HTTP_Init },

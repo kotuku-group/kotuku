@@ -1,0 +1,96 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientRadial</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Radial colour gradient paint server.</comment>
+    <version>1</version>
+    <id>07c3da5b</id>
+    <idstring>GRADIENTRADIAL</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientRadial draws a colour ramp from a centre point to a radius.  Optional focal coordinates and a focal radius support displaced radial gradients.</p></description>
+    <source>
+      <file path="painters/">gradient_radial.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>CX</name>
+      <comment>The horizontal centre point of the gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The <code>(CX, CY)</code> coordinates define the centre point of the radial gradient.  By default, the centre point is set to <code>50%</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CY</name>
+      <comment>The vertical centre point of the gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The <code>(CX, CY)</code> coordinates define the centre point of the radial gradient.  By default, the centre point is set to <code>50%</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ContainFocal</name>
+      <comment>Confines the focal point to the base radius.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>When enabled, the focal point is constrained so that it remains within the base radial gradient circle.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FX</name>
+      <comment>The horizontal focal point for radial gradients.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The <code>(FX, FY)</code> coordinates define the focal point for radial gradients.  If left undefined, the focal point will match the centre of the gradient.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FY</name>
+      <comment>The vertical focal point for radial gradients.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The <code>(FX, FY)</code> coordinates define the focal point for radial gradients.  If left undefined, the focal point will match the centre of the gradient.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FocalRadius</name>
+      <comment>The size of the focal radius for radial gradients.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>If a radial gradient has a defined focal point by setting <fl>FX</fl> and <fl>FY</fl>, the FocalRadius can adjust the size of the focal area.  The default of zero ensures that the focal area matches that defined by <fl>Radius</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Radius</name>
+      <comment>The radius of the gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The radius of the gradient can be defined as a fixed unit or scaled relative to its container.  A default radius of 50% applies if this field is not set.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

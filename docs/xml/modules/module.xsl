@@ -378,12 +378,21 @@
         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button>
           <div class="collapse" id="vectors-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li><a class="rounded" href="classes/gradient.html">Gradient</a></li>
+              <li><a class="rounded" href="classes/gradientconic.html">GradientConic</a></li>
+              <li><a class="rounded" href="classes/gradientcontour.html">GradientContour</a></li>
+              <li><a class="rounded" href="classes/gradientdiamond.html">GradientDiamond</a></li>
+              <li><a class="rounded" href="classes/gradientdistal.html">GradientDistal</a></li>
+              <li><a class="rounded" href="classes/gradientgouraud.html">GradientGouraud</a></li>
+              <li><a class="rounded" href="classes/gradientlinear.html">GradientLinear</a></li>
+              <li><a class="rounded" href="classes/gradientmesh.html">GradientMesh</a></li>
+              <li><a class="rounded" href="classes/gradientradial.html">GradientRadial</a></li>
+              <li><a class="rounded" href="classes/gradientvoronoi.html">GradientVoronoi</a></li>
               <li><a class="rounded" href="classes/vector.html">Vector</a></li>
               <li><a class="rounded" href="classes/vectorclip.html">VectorClip</a></li>
               <li><a class="rounded" href="classes/vectorcolour.html">VectorColour</a></li>
               <li><a class="rounded" href="classes/vectorellipse.html">VectorEllipse</a></li>
               <li><a class="rounded" href="classes/vectorfilter.html">VectorFilter</a></li>
-              <li><a class="rounded" href="classes/vectorgradient.html">VectorGradient</a></li>
               <li><a class="rounded" href="classes/vectorgroup.html">VectorGroup</a></li>
               <li><a class="rounded" href="classes/vectorimage.html">VectorImage</a></li>
               <li><a class="rounded" href="classes/vectorpath.html">VectorPath</a></li>

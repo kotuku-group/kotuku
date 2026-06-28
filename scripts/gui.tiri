@@ -411,8 +411,8 @@ gui.simpleGradient = function(Scene:obj, Name:str, Colours, X1:num, Y1:num, X2:n
       i++
    end
 
-   local gradient = Scene.new('VectorGradient', {
-      name=Name, type='linear', stops=stops, x1=X1, y1=Y1, x2=X2, y2=Y2, units=(Units ?? 'boundingbox')
+   local gradient = Scene.new('GradientLinear', {
+      name=Name, stops=stops, x1=X1, y1=Y1, x2=X2, y2=Y2, units=(Units ?? 'boundingbox')
    })
 
    if IgnoreClashes then -- Do not fail if a resource with the same name already exists (nb: will return nil).

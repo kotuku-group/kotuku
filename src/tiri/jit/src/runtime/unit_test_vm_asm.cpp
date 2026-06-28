@@ -24,7 +24,7 @@
 #include <string>
 #include <string_view>
 
-static objScript *glStringTestScript = nullptr;
+static extTiri *glStringTestScript = nullptr;
 
 #if defined(_MSC_VER)
 #define NOINLINE_TEST __declspec(noinline)

@@ -10,7 +10,7 @@ static const struct MethodEntry clProxyMethods[] = {
 };
 
 static ERR PROXY_NewPlacement(extProxy *Self) {
-   new (Self) extProxy;
+   new (Self) extProxy(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -33,7 +33,6 @@ Key build options (use with `-D` flag):
 - `KOTUKU_STATIC=ON/OFF` - Build as static libraries instead of modules
 - `BUILD_TESTS=ON/OFF` - Enable/disable Flute tests
 - `UNIT_TESTS=ON/OFF` - Enable compiled C++ unit tests (prolongs build)
-- `BUILD_DEFS=ON/OFF` - Auto-generate C/C++ headers from TDL files
 - `RUN_ANYWHERE=ON/OFF` - Build for local folder execution
 - `KOTUKU_VLOG=ON/OFF` - Enables trace level log messages via log.trace() in Debug builds (has no effect on Release builds).
 
@@ -73,11 +72,10 @@ Kōtuku uses a modular architecture where each major feature is implemented as a
 Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to generate documentation, include files and C++ stubs:
 
 - TDL files define classes, methods, fields, and constants
-- When `BUILD_DEFS=ON`, the build system generates C/C++ headers from TDL using tools in `tools/idl/`
+- The `build_headers` target generates C/C++ headers and XML documentation from TDL using tools in `tools/idl/`
 - Class implementations are in `class_*.cpp` files
 - Generated headers go to `include/kotuku/` directory
-- Normal builds consume the existing generated headers; after changing `.tdl` files, configure with `BUILD_DEFS=ON`
-  and rebuild to regenerate headers.
+- Normal builds consume the existing generated headers.  After changing `.tdl` files, C++ blueprints or embedded documentation, run `build_headers` to regenerate headers and XML documentation.  Use `touch` on any `.tdl` file beforehand if needing to force regeneration of its downstream files.
 
 ### Scripting Integration
 
@@ -114,9 +112,9 @@ build/agents-install/origo tools/flute.tiri file=src/network/tests/test_bind_add
 The build system heavily uses code generation:
 - TDL files are processed by `tools/idl/idl-c.tiri` to generate C headers
 - `tools/idl/idl-compile.tiri` generates IDL definition strings
-- Generated files are created in build directories and copied to `include/` only when `BUILD_DEFS=ON`
-- Normal agent builds generally use `BUILD_DEFS=OFF` and consume the existing generated files.  Use `BUILD_DEFS=ON`
-  after changing `.tdl` files, and only when a working `origo` executable is available to run the IDL tools.
+- Normal agent builds consume the existing generated files.  When headers or XML documentation require regeneration,
+  run `cmake --build build/agents --config Debug --target build_headers --parallel` from a configured build tree.
+- The `build_headers` target requires a working installed `origo` executable so that the IDL tools can run.
 
 ### Multi-Platform Considerations
 

@@ -4,8 +4,8 @@ module({
   name="Tiri",
   copyright="Paul Manias © 2006-2026",
   version=1.0,
-  prefix="fl",
-  status="beta",
+  prefix="ti",
+  status="stable",
   src="tiri.cpp",
   comment="Tiri is a JIT optimised language that extends the Script class.",
   timestamp=20240611
@@ -35,12 +35,17 @@ function()
      { TRACE = "TRACE_TOKENS|TRACE_EXPECT|TRACE_BOUNDARY|TRACE_OPERATORS|TRACE_REGISTERS|TRACE_CFG|TRACE_ASSIGNMENTS|TRACE_VALUE_CATEGORY|TRACE_TYPES" }
   )
 
---[[
   klass('Tiri', {
-    src={ 'tiri_class.cpp' }
-  })
---]]
+    base = 'Script',
+    extended = true,
+    src = { 'tiri_class.cpp' },
+    output = 'tiri_class_def.cpp',
+    references = { 'JOF' }
+  },
+  [[
+    ~int(JOF) JitOptions
+  ]])
 
-  functionNames("fl",
+  functionNames("ti",
     "SetVariable")
 end)

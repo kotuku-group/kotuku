@@ -85,7 +85,7 @@ static const struct MethodEntry clFileMethods[] = {
 };
 
 static ERR FILE_NewPlacement(extFile *Self) {
-   new (Self) extFile;
+   new (Self) extFile(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

@@ -82,21 +82,22 @@
 #include <android/configuration.h>
 #endif
 
-#define USE_XIMAGE         TRUE
-#define SIZE_FOCUSLIST     30
-#define DEFAULT_WHEELSPEED 500
-#define TIME_DBLCLICK      40
-#define REPEAT_BUTTONS     TRUE
-#define MAX_CURSOR_WIDTH   32
-#define MAX_CURSOR_HEIGHT  32
-#define DRAG_XOFFSET       10
-#define DRAG_YOFFSET       12
+#define USE_XIMAGE 1
 
-#define BF_DATA     0x01
-#define BF_WINVIDEO 0x02
+constexpr bool REPEAT_BUTTONS    = true;
+constexpr int SIZE_FOCUSLIST     = 30;
+constexpr int DEFAULT_WHEELSPEED = 500;
+constexpr int TIME_DBLCLICK      = 40;
+constexpr int MAX_CURSOR_WIDTH   = 32;
+constexpr int MAX_CURSOR_HEIGHT  = 32;
+constexpr int DRAG_XOFFSET       = 10;
+constexpr int DRAG_YOFFSET       = 12;
 
-#define BLEND_MAX_THRESHOLD 255
-#define BLEND_MIN_THRESHOLD 1
+constexpr uint8_t BF_DATA     = 0x01;
+constexpr uint8_t BF_WINVIDEO = 0x02;
+
+constexpr int BLEND_MAX_THRESHOLD = 255;
+constexpr int BLEND_MIN_THRESHOLD = 1;
 
 #define ALIGN32(a) (((a) + 3) & (~3))
 
@@ -113,6 +114,9 @@
 
 using namespace kt;
 class extBitmap;
+
+extern SWIN glpWindowType;
+extern PTC get_cursor_id(std::string_view Name);
 
 #define UpdateSurfaceRecord(a) update_surface_copy(a)
 
@@ -284,14 +288,16 @@ extern std::vector<SurfaceRecord> glSurfaces;
 //********************************************************************************************************************
 
 class extPointer : public objPointer {
+   struct ButtonClick {
+      int64_t LastClickTime = 0;    // Timestamp of recorded click
+      OBJECTID LastClicked = 0;     // Most recently clicked object for this button
+      uint8_t DblClick:1 = false;   // TRUE if last click was a double-click
+   };
+
    public:
    using create = kt::Create<extPointer>;
 
-   struct {
-      int64_t LastClickTime;      // Timestamp
-      OBJECTID LastClicked;     // Most recently clicked object
-      uint8_t DblClick:1;         // TRUE if last click was a double-click
-   } Buttons[10];
+   std::vector<ButtonClick> ButtonClicks;
    int64_t    ClickTime;
    int64_t    AnchorTime;
    double   LastClickX, LastClickY;
@@ -300,7 +306,8 @@ class extPointer : public objPointer {
    OBJECTID CursorReleaseID;
    OBJECTID DragSurface;        // Draggable surface anchored to the pointer position
    OBJECTID DragParent;         // Parent of the draggable surface
-   int     CursorRelease;
+   int      CursorRelease;
+   // Changes to the cursor can be buffered until the pointer is released
    PTC      BufferCursor;
    CRF      BufferFlags;
    OBJECTID BufferOwner;
@@ -309,12 +316,40 @@ class extPointer : public objPointer {
    char     Device[32];
    std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
    int16_t     ButtonOrderFlags[12]; // Button order represented as JD flags
-   int8_t     PostComposite;        // Enable post-composite drawing (default)
    uint8_t    prvOverCursorID;
-   struct {
-      int16_t HotX;
-      int16_t HotY;
-   } Cursors[int(PTC::END)];
+
+   extPointer(objMetaClass *ClassPtr, OBJECTID ObjectID) : objPointer(ClassPtr, ObjectID) {
+      CursorID = PTC::DEFAULT;
+      ClickSlop = 2;
+      ButtonClicks.resize(3); // 0 = LMB, 1 = RMB, 2 = MMB
+
+      Speed        = 160;
+      Acceleration = 0.8;
+      MaxSpeed     = 100;
+      WheelSpeed   = DEFAULT_WHEELSPEED;
+      DoubleClick  = 0.36;
+      ButtonOrder  = "123456789ABCDEF";
+
+      // Currently unused because all current targets have their own cursor management
+      #if 0
+      if (auto config = objConfig::create { fl::Path("user:config/pointer.cfg") }; config.ok()) {
+         config->read("POINTER", "Speed", Speed);
+         config->read("POINTER", "Acceleration", Acceleration);
+         config->read("POINTER", "MaxSpeed", MaxSpeed);
+         config->read("POINTER", "WheelSpeed", WheelSpeed);
+         config->read("POINTER", "DoubleClick", DoubleClick);
+         config->read("POINTER", "ButtonOrder", ButtonOrder);
+
+         if (DoubleClick < 0.2) DoubleClick = 0.2;
+
+         if (MaxSpeed < 2) MaxSpeed = 2;
+         else if (MaxSpeed > 200) MaxSpeed = 200;
+      }
+      #endif
+
+   }
+
+   ~extPointer();
 };
 
 class extSurface : public objSurface {
@@ -324,13 +359,8 @@ class extSurface : public objSurface {
    int64_t    LastRedimension;      // Timestamp of the last redimension call
    objBitmap *Bitmap;
    SurfaceCallback *Callback;
-   APTR      Data;
+   APTR     Data;
    double   Opacity;
-   int     XOffset, YOffset;     // Fixed horizontal and vertical offset
-   double  XOffsetPercent;       // Scaled horizontal offset
-   double  YOffsetPercent;       // Scaled vertical offset
-   double  WidthPercent, HeightPercent; // Scaled width and height
-   double  XPercent, YPercent;   // Scaled coordinate
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
    OBJECTID PrevModalID;          // Previous surface to have been modal
    OBJECTID BitmapOwnerID;        // The surface object that owns the root bitmap
@@ -341,6 +371,7 @@ class extSurface : public objSurface {
    SWIN     WindowType;           // See SWIN constants
    TIMER    RedrawTimer;          // For ScheduleRedraw()
    SurfaceCallback CallbackCache[3]; // For AddCallback()
+   int16_t FixedWidth, FixedHeight, FixedX, FixedY, FixedXO, FixedYO;
    uint16_t InheritedRoot:1;      // TRUE if the user set the RootLayer manually
    uint16_t ParentDefined:1;      // TRUE if the parent field was set manually
    uint16_t RedrawScheduled:1;
@@ -351,11 +382,39 @@ class extSurface : public objSurface {
    int8_t   BytesPerPixel;        // Bitmap bytes per pixel
    uint8_t  CallbackCount;
    uint8_t  CallbackSize;         // Current size of the callback array.
+
+   extSurface(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSurface(ClassPtr, ObjectID) {
+      Opacity    = 1.0;
+      WindowType = glpWindowType;
+   }
+
+   ~extSurface();
+
+   inline void setFixedPosition(int X, int Y) {
+      FixedX = std::clamp(X, -0x8000, 0x7fff);
+      FixedY = std::clamp(Y, -0x8000, 0x7fff);
+   }
+
+   inline void setFixedSize(int Width, int Height) {
+      FixedWidth  = std::clamp(Width, -0x8000, 0x7fff);
+      FixedHeight = std::clamp(Height, -0x8000, 0x7fff);
+   }
+
+   inline void setFixedArea(int X, int Y, int Width, int Height) {
+      setFixedPosition(X, Y);
+      setFixedSize(Width, Height);
+   }
 };
 
 class extDisplay : public objDisplay {
    public:
    using create = kt::Create<extDisplay>;
+
+   std::string Manufacturer;
+   std::string Chipset;
+   std::string Display;
+   std::string DisplayMfr;
+   double Opacity;
 
    double Gamma[3];          // Red, green, blue gamma radioactivity indicator
    std::vector<struct resolution> Resolutions;
@@ -374,11 +433,69 @@ class extDisplay : public objDisplay {
    #else
       APTR   WindowHandle;
    #endif
-   float Opacity;
-   std::string Manufacturer;
-   std::string Chipset;
-   std::string Display;
-   std::string DisplayMfr;
+
+   extDisplay(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDisplay(ClassPtr, ObjectID) {
+      if (NewLocalObject(CLASSID::BITMAP, &Bitmap) != ERR::Okay) {
+         kt::Log().fatal(ERR::NewObject);
+      }
+
+      OBJECTID id;
+      if (FindObject("SystemVideo", CLASSID::NIL, &id) != ERR::Okay) SetName(Bitmap, "SystemVideo");
+
+      if (not Name[0]) {
+         if (FindObject("SystemDisplay", CLASSID::NIL, &id) != ERR::Okay) SetName(this, "SystemDisplay");
+      }
+
+      #ifdef __xwindows__
+
+         Chipset      = "X11";
+         Display      = "X Windows";
+         DisplayMfr   = "N/A";
+         Manufacturer = "N/A";
+
+      #elif _WIN32
+
+         Chipset      = "Windows";
+         Display      = "Windows";
+         DisplayMfr   = "N/A";
+         Manufacturer = "N/A";
+
+      #elif _GLES_
+
+         Chipset      = "OpenGLES";
+         Display      = "OpenGL";
+         DisplayMfr   = "N/A";
+         Manufacturer = "N/A";
+
+      #else
+
+         Chipset      = "Unknown";
+         Display      = "Unknown";
+         DisplayMfr   = "Unknown";
+         Manufacturer = "Unknown";
+
+      #endif
+
+      Width       = 800;
+      Height      = 600;
+      RefreshRate = -1;
+      Gamma[0]    = 1.0;
+      Gamma[1]    = 1.0;
+      Gamma[2]    = 1.0;
+      Opacity     = 1.0;
+
+      #ifdef __xwindows__
+         DisplayType = DT::X11;
+      #elif _WIN32
+         DisplayType = DT::WINGDI;
+      #elif _GLES_
+         DisplayType = DT::GLES;
+      #else
+         DisplayType = DT::NATIVE;
+      #endif
+   }
+
+   ~extDisplay();
 };
 
 extern void clean_clipboard(void);
@@ -435,14 +552,12 @@ extern objCompression *glCompress;
 extern struct CoreBase *CoreBase;
 extern ColourFormat glColourFormat;
 extern bool glHeadless;
-extern FieldDef CursorLookup[];
 extern TIMER glRefreshPointerTimer;
 extern extBitmap *glComposite;
 extern double glpRefreshRate, glpGammaRed, glpGammaGreen, glpGammaBlue;
 extern int glpDisplayWidth, glpDisplayHeight, glpDisplayX, glpDisplayY;
 extern int glpDisplayDepth; // If zero, the display depth will be based on the hosted desktop's bit depth.
 extern int glpMaximise, glpFullScreen;
-extern SWIN glpWindowType;
 extern char glpDPMS[20];
 extern uint8_t *glDemultiply;
 extern std::array<uint8_t, 256 * 256> glAlphaLookup;
@@ -659,4 +774,7 @@ class extBitmap : public objBitmap {
       int prvGLPixel;
       int prvGLFormat;
    #endif
+
+   extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID);
+   ~extBitmap();
 };

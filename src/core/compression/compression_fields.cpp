@@ -106,25 +106,6 @@ Path: Set if the compressed data originates from, or is to be saved to a file so
 
 To load or create a new file archive, set the Path field to the path of that file.
 
-*********************************************************************************************************************/
-
-static ERR GET_Path(extCompression *Self, std::string_view &Value)
-{
-   if (not Self->Path.empty()) {
-      Value = Self->Path;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Path(extCompression *Self, std::string_view &Value)
-{
-   Self->Path = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 MinOutputSize: Indicates the minimum output buffer size that will be needed during de/compression.
 
@@ -151,12 +132,6 @@ of an existing archive, create a new compression object with the desired passwor
 across to it.
 
 *********************************************************************************************************************/
-
-static ERR GET_Password(extCompression *Self, std::string_view &Value)
-{
-   Value = Self->Password;
-   return ERR::Okay;
-}
 
 static ERR SET_Password(extCompression *Self, std::string_view &Value)
 {
@@ -209,9 +184,7 @@ information that may identify the compressed data is not included in the total.
 static ERR GET_UncompressedSize(extCompression *Self, int64_t *Value)
 {
    int64_t size = 0;
-   for (auto &f : Self->Files) {
-      size += f.OriginalSize;
-   }
+   for (auto &f : Self->Files) size += f.OriginalSize;
    *Value = size;
    return ERR::Okay;
 }
@@ -234,12 +207,10 @@ To support GZIP decompression, please set the WindowBits value to 47.
 
 static ERR SET_WindowBits(extCompression *Self, int Value)
 {
-   kt::Log log;
-
    if (((Value >= 8) and (Value <= 15)) or ((Value >= -15) and (Value <= -8)) or
        (Value IS 15 + 32) or (Value IS 16 + 32)) {
       Self->WindowBits = Value;
       return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
+   else return kt::Log().warning(ERR::OutOfRange);
 }

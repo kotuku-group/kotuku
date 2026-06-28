@@ -363,8 +363,8 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {
-               int size;
-               if (!(error = file->get(FID_Size, size))) {
+               int64_t size;
+               if (!(error = file->getSize(size))) {
                   if (size <= 0) return ERR::NoData;
 
                   if (auto buffer = new (std::nothrow) char[size+1]) {
@@ -660,28 +660,26 @@ static ERR DOCUMENT_Focus(extDocument *Self, APTR Args)
 
 //********************************************************************************************************************
 
-static ERR DOCUMENT_Free(extDocument *Self)
+extDocument::~extDocument()
 {
-   if (Self->FlashTimer)  { UpdateTimer(Self->FlashTimer, 0); Self->FlashTimer = 0; }
+   if (FlashTimer)  UpdateTimer(FlashTimer, 0);
 
-   if ((Self->Focus) and (Self->Focus != Self->Viewport)) UnsubscribeAction(Self->Focus, AC::NIL);
+   if ((Focus) and (Focus != Viewport)) UnsubscribeAction(Focus, AC::NIL);
 
-   if (Self->PretextXML) { FreeResource(Self->PretextXML); Self->PretextXML = nullptr; }
+   if (PretextXML) FreeResource(PretextXML);
 
-   if (Self->Viewport) UnsubscribeAction(Self->Viewport, AC::NIL);
+   if (Viewport) UnsubscribeAction(Viewport, AC::NIL);
 
-   if (Self->EventCallback.isScript()) {
-      UnsubscribeAction(Self->EventCallback.Context, AC::Free);
-      Self->EventCallback.clear();
+   if (EventCallback.isScript()) {
+      UnsubscribeAction(EventCallback.Context, AC::Free);
+      EventCallback.clear();
    }
 
-   unload_doc(Self, ULD::NIL);
+   unload_doc(this, ULD::NIL);
 
-   if (Self->Query) { FreeResource(Self->Query); Self->Query = nullptr; }
-   if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }
-   if (Self->View) { FreeResource(Self->View); Self->View = nullptr; }
-
-   return ERR::Okay;
+   if (Query) FreeResource(Query);
+   if (Page) FreeResource(Page);
+   if (View) FreeResource(View);
 }
 
 /*********************************************************************************************************************
@@ -842,8 +840,8 @@ static ERR DOCUMENT_Init(extDocument *Self)
    if (not Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
    if (not Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
 
-   float bkgd[4] = { 1.0, 1.0, 1.0, 1.0 };
-   Self->Viewport->setFillColour(bkgd, 4);
+   FRGB bkgd { 1.0, 1.0, 1.0, 1.0 };
+   Self->Viewport->setFillColour(bkgd);
 
    // Allocate the view and page areas.  NB: If the parent Viewport is terminated then the
    // Page and View references will be nullified automatically.
@@ -1025,14 +1023,6 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
    #endif
 
    return error;
-}
-
-//********************************************************************************************************************
-
-static ERR DOCUMENT_NewObject(extDocument *Self)
-{
-   unload_doc(Self);
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -2123,23 +2113,23 @@ static const FieldArray clFields[] = {
    { "Author",       FDF_CPPSTRING|FDF_R },
    { "Copyright",    FDF_CPPSTRING|FDF_R },
    { "Keywords",     FDF_CPPSTRING|FDF_R },
+   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
    { "Viewport",     FDF_OBJECT|FDF_RW, nullptr, SET_Viewport, CLASSID::VECTORVIEWPORT },
    { "Focus",        FDF_OBJECT|FDF_RI, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
    { "View",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
    { "Page",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
+   { "ClientScript", FDF_OBJECT|FDF_I },
    { "TabFocus",     FDF_OBJECTID|FDF_RW },
    { "EventMask",    FDF_INTFLAGS|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clDocumentEventMask },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, SET_Flags, &clDocumentFlags },
    { "PageHeight",   FDF_INT|FDF_R },
    { "Error",        FDF_INT|FDF_R },
    // Virtual fields
-   { "ClientScript",  FDF_OBJECT|FDF_I,        nullptr, SET_ClientScript },
-   { "EventCallback", FDF_FUNCTION|FDF_RW,     GET_EventCallback, SET_EventCallback },
-   { "Path",          FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Path },
-   { "Origin",        FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Origin },
-   { "PageWidth",     FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_PageWidth, SET_PageWidth },
-   { "Pretext",       FDF_CPPSTRING|FDF_W,     nullptr, SET_Pretext },
-   { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
-   { "WorkingPath",   FDF_CPPSTRING|FDF_R,     GET_WorkingPath, nullptr },
+   { "EventCallback", FDF_FUNCTION|FDF_RW,  GET_EventCallback, SET_EventCallback },
+   { "Origin",        FDF_CPPSTRING|FDF_RW, GET_Origin, SET_Origin },
+   { "PageWidth",     FDF_UNIT|FDF_RW,      GET_PageWidth, SET_PageWidth },
+   { "Pretext",       FDF_CPPSTRING|FDF_W,  nullptr, SET_Pretext },
+   { "WorkingPath",   FDF_CPPSTRING|FDF_R,  GET_WorkingPath, nullptr },
    END_FIELD
 };

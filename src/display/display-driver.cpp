@@ -1046,7 +1046,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    CoreBase = argCoreBase;
    glDisplayContext = CurrentContext();
 
-   argModule->get(FID_Root, glModule);
+   glModule = (OBJECTPTR)((objModule *)argModule)->Root;
 
    if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
 
@@ -1762,7 +1762,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
    // Adjust coordinates by offset values
 
    APTR drawable;
-   dest->get(FID_Handle, drawable);
+   dest->getHandle(drawable);
 
    win32RedrawWindow(Self->WindowHandle, drawable,
       x, y, width, height, xdest, ydest,
@@ -1796,12 +1796,12 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "BitmapSurface", sizeof(BitmapSurface) },
-   { "CursorInfo",    sizeof(CursorInfo) },
-   { "DisplayInfo",   sizeof(DisplayInfo) },
-   { "PixelFormat",   sizeof(PixelFormat) },
-   { "SurfaceCoords", sizeof(SurfaceCoords) },
-   { "SurfaceInfo",   sizeof(SurfaceInfo) }
+   { "BitmapSurface", { sizeof(BitmapSurface), alignof(BitmapSurface) } },
+   { "CursorInfo",    { sizeof(CursorInfo),    alignof(CursorInfo)    } },
+   { "DisplayInfo",   { sizeof(DisplayInfo),   alignof(DisplayInfo)   } },
+   { "PixelFormat",   { sizeof(PixelFormat),   alignof(PixelFormat)   } },
+   { "SurfaceCoords", { sizeof(SurfaceCoords), alignof(SurfaceCoords) } },
+   { "SurfaceInfo",   { sizeof(SurfaceInfo),   alignof(SurfaceInfo)   } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

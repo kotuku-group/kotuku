@@ -106,9 +106,7 @@ class extSVG : public objSVG {
    double SVGVersion;
    double AnimEpoch;  // Epoch time for the animations.
    objXML *XML;
-   objVectorScene *Scene;
    std::string Folder;
-   class objVectorViewport *Viewport; // First viewport (the <svg> tag) to be created on parsing the SVG document.
    std::list<std::variant<anim_transform, anim_motion, anim_value>> Animations; // NB: Pointer stability is a container requirement
    ankerl::unordered_dense::map<OBJECTID, svgAnimState> Animatrix; // For animated transforms, a vector may have one matrix only.
    std::vector<std::unique_ptr<svgLink>> Links;
@@ -119,57 +117,20 @@ class extSVG : public objSVG {
    TIMER AnimationTimer;
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
    bool  PreserveWS; // Preserve white-space
+
+   extSVG(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSVG(ClassPtr, ObjectID) {
+      #ifdef __ANDROID__
+         FrameRate = 30; // Choose a lower frame rate for Android devices, so as to minimise power consumption.
+      #else
+         FrameRate = 60;
+      #endif
+      Colour = "rgb(0,0,0)"; // Default colour, used for 'currentColor' references
+   }
+
+   ~extSVG();
 };
 
 struct svgState {
-   enum class DU : uint8_t {
-      NIL = 0,
-      PIXEL,  // px
-      SCALED, // %: Scale to fill empty space
-   };
-
-   // Field Unit.  Makes it user to define field values that could be fixed or scaled.
-
-   struct FUNIT {
-      svgState *state;
-      FIELD field_id;
-      double value;
-      DU type;
-
-      constexpr FUNIT() noexcept : state(nullptr), field_id(0), value(0), type(DU::NIL) { }
-
-      // With field
-      explicit FUNIT(svgState *pState, FIELD pField, double pValue, DU pType = DU::NIL) noexcept : state(pState), field_id(pField), value(pValue), type(pType) { }
-
-      FUNIT(svgState *pState, FIELD pField, const std::string &pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept :
-         FUNIT(pState, pValue, pType, pMin) { field_id = pField; }
-
-      FUNIT(svgState *pState, FIELD pField, std::string_view pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept :
-         FUNIT(pState, pValue, pType, pMin) { field_id = pField; }
-
-      // Without field
-      explicit FUNIT(svgState *pState, double pValue, DU pType = DU::PIXEL) noexcept : state(pState), value(pValue), type(pType) { }
-
-      FUNIT(svgState *pState, std::string pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept :
-         FUNIT(pState, std::string_view(pValue), pType, pMin) { }
-
-      FUNIT(svgState *pState, std::string_view pValue, DU pType = DU::NIL, double pMin = -DBL_MAX) noexcept;
-
-      constexpr bool empty() const noexcept { return (type == DU::NIL) || (!value); }
-      constexpr void clear() noexcept { value = 0; type = DU::PIXEL; }
-
-      operator double() const noexcept { return value; }
-      operator DU() const noexcept { return type; }
-
-      inline bool valid_size() const noexcept { // Return true if this is a valid width/height
-         return (value >= 0.001);
-      }
-
-      inline ERR set(OBJECTPTR Object) const noexcept {
-         return Object->set(field_id, Unit(value, (type == DU::SCALED) ? (FD_DOUBLE|FD_SCALED) : FD_DOUBLE));
-      }
-   };
-
    std::string m_color;       // currentColor value, initialised to SVG.Colour
    std::string m_stop_color;
    std::string m_fill;        // Defaults to rgb(0,0,0)
@@ -193,10 +154,7 @@ private:
    class extSVG *Self;
    objVectorScene *Scene;
 
-   inline FUNIT UNIT(FIELD pField, double pValue, DU pType = DU::NIL) { return FUNIT(this, pField, pValue, pType); };
-   inline FUNIT UNIT(FIELD pField, const std::string &pValue, DU pType = DU::NIL) { return FUNIT(this, pField, pValue, pType); };
-   inline FUNIT UNIT(double pValue, DU pType = DU::PIXEL) { return FUNIT(this, pValue, pType); }
-   inline FUNIT UNIT(const std::string &pValue, DU pType = DU::PIXEL) { return FUNIT(this, pValue, pType); }
+   inline Unit SVGUnit(std::string_view Value) const { return Unit(Value, m_font_size_px, glDisplayDPI); }
 
 public:
    svgState(class extSVG *pSVG) : m_color(pSVG->Colour), m_fill("rgb(0,0,0)"), m_font_size("12pt"), m_font_family("Noto Sans"), m_font_size_px(16), m_stroke_width(0),
@@ -210,7 +168,7 @@ public:
 private:
    void applyTag(const XTag &) noexcept;
    void applyStateToVector(objVector *) const noexcept;
-   const std::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
+   const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
    ERR  set_property(objVector *, uint32_t, XTag &, const std::string) noexcept;
    ERR  process_tag(XTag &, XTag &, OBJECTPTR, objVector * &) noexcept;
 
@@ -238,19 +196,29 @@ private:
    ERR  proc_conicgradient(const XTag &) noexcept;
    ERR  proc_contourgradient(const XTag &) noexcept;
    ERR  proc_diamondgradient(const XTag &) noexcept;
+   ERR  proc_distalgradient(const XTag &) noexcept;
    ERR  proc_lineargradient(const XTag &) noexcept;
+   ERR  proc_meshgradient(const XTag &) noexcept;
    ERR  proc_radialgradient(const XTag &) noexcept;
 
    void process_attrib(XTag &, objVector *) noexcept;
    void process_inherit_refs(XTag &) noexcept;
    void process_shape_children(XTag &, OBJECTPTR) noexcept;
-   ERR  set_paint_server(objVector *, FIELD, const std::string);
-   ERR  current_colour(objVector *, FRGB &) noexcept;
+   void resolve_paint_server(const std::string &) noexcept;
+   bool current_colour(objVector *, FRGB &) noexcept;
 
-   void parse_contourgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_diamondgradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_lineargradient(const XTag &, objVectorGradient *, std::string &) noexcept;
-   void parse_radialgradient(const XTag &, objVectorGradient &, std::string &) noexcept;
+   void parse_contourgradient(const XTag &, objGradientContour *, std::string &) noexcept;
+   void parse_conicgradient(const XTag &, objGradientConic *, std::string &) noexcept;
+   void parse_diamondgradient(const XTag &, objGradientDiamond *, std::string &) noexcept;
+   void parse_distalgradient(const XTag &, objGradientDistal *, std::string &) noexcept;
+   void parse_lineargradient(const XTag &, objGradientLinear *, std::string &) noexcept;
+   void parse_meshgradient(const XTag &, objGradientMesh *, std::string &) noexcept;
+   void parse_radialgradient(const XTag &, objGradientRadial *, std::string &) noexcept;
+   bool parse_gradient_href(const std::string &, objGradient *) noexcept;
+   void parse_gradient_hrefs(const XTag &, objGradient *, bool &) noexcept;
+   void parse_gradient_defaults(kt::Log &, const XTag &, objGradient *, uint32_t, const std::string &,
+      const std::string &, std::string &) noexcept;
+   void set_gradient_stops(const XTag &, objGradient *, bool) noexcept;
 
    ERR  parse_fe_blur(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_colour_matrix(objVectorFilter *, XTag &) noexcept;
@@ -352,6 +320,7 @@ static constexpr auto SVF_elevation           = strhash("elevation");
 static constexpr auto SVF_ellipse             = strhash("ellipse");
 static constexpr auto SVF_enable_background   = strhash("enable-background");
 static constexpr auto SVF_end                 = strhash("end");
+static constexpr auto SVF_envelope            = strhash("envelope");
 static constexpr auto SVF_exclusion           = strhash("exclusion");
 static constexpr auto SVF_expanded            = strhash("expanded");
 static constexpr auto SVF_exponent            = strhash("exponent");
@@ -402,6 +371,7 @@ static constexpr auto SVF_font_style          = strhash("font-style");
 static constexpr auto SVF_font_variant        = strhash("font-variant");
 static constexpr auto SVF_font_weight         = strhash("font-weight");
 static constexpr auto SVF_frequency           = strhash("frequency");
+static constexpr auto SVF_floor               = strhash("floor");
 static constexpr auto SVF_from                = strhash("from");
 static constexpr auto SVF_fx                  = strhash("fx");
 static constexpr auto SVF_fy                  = strhash("fy");
@@ -447,6 +417,7 @@ static constexpr auto SVF_kotuku_spiral       = strhash("kotuku:spiral");
 static constexpr auto SVF_kotuku_transition   = strhash("kotuku:transition");
 static constexpr auto SVF_kotuku_wave         = strhash("kotuku:wave");
 static constexpr auto SVF_l                   = strhash("l");
+static constexpr auto SVF_length              = strhash("length");
 static constexpr auto SVF_lengthAdjust        = strhash("lengthAdjust");
 static constexpr auto SVF_letter_spacing      = strhash("letter-spacing");
 static constexpr auto SVF_lighten             = strhash("lighten");
@@ -471,6 +442,9 @@ static constexpr auto SVF_maskContentUnits    = strhash("maskContentUnits");
 static constexpr auto SVF_maskUnits           = strhash("maskUnits");
 static constexpr auto SVF_matrix              = strhash("matrix");
 static constexpr auto SVF_max                 = strhash("max");
+static constexpr auto SVF_meshgradient        = strhash("meshgradient");
+static constexpr auto SVF_meshpatch           = strhash("meshpatch");
+static constexpr auto SVF_meshrow             = strhash("meshrow");
 static constexpr auto SVF_method              = strhash("method");
 static constexpr auto SVF_middle              = strhash("middle");
 static constexpr auto SVF_min                 = strhash("min");
@@ -480,6 +454,7 @@ static constexpr auto SVF_miter_clip          = strhash("miter-clip");
 static constexpr auto SVF_miter_round         = strhash("miter-round");
 static constexpr auto SVF_mod                 = strhash("mod");
 static constexpr auto SVF_mode                = strhash("mode");
+static constexpr auto SVF_multiplier          = strhash("multiplier");
 static constexpr auto SVF_multiply            = strhash("multiply");
 static constexpr auto SVF_n                   = strhash("n");
 static constexpr auto SVF_n1                  = strhash("n1");
@@ -506,6 +481,7 @@ static constexpr auto SVF_pattern             = strhash("pattern");
 static constexpr auto SVF_patternContentUnits = strhash("patternContentUnits");
 static constexpr auto SVF_patternTransform    = strhash("patternTransform");
 static constexpr auto SVF_patternUnits        = strhash("patternUnits");
+static constexpr auto SVF_phase               = strhash("phase");
 static constexpr auto SVF_phi                 = strhash("phi");
 static constexpr auto SVF_plus                = strhash("plus");
 static constexpr auto SVF_points              = strhash("points");
@@ -538,6 +514,8 @@ static constexpr auto SVF_ry                  = strhash("ry");
 static constexpr auto SVF_saturate            = strhash("saturate");
 static constexpr auto SVF_scale               = strhash("scale");
 static constexpr auto SVF_screen              = strhash("screen");
+static constexpr auto SVF_distalGradient      = strhash("distalGradient");
+static constexpr auto SVF_padding             = strhash("padding");
 static constexpr auto SVF_seed                = strhash("seed");
 static constexpr auto SVF_semi_condensed      = strhash("semi_condensed");
 static constexpr auto SVF_semi_expanded       = strhash("semi_expanded");
@@ -550,6 +528,7 @@ static constexpr auto SVF_SourceGraphic       = strhash("SourceGraphic");
 static constexpr auto SVF_spacing             = strhash("spacing");
 static constexpr auto SVF_specularConstant    = strhash("specularConstant");
 static constexpr auto SVF_specularExponent    = strhash("specularExponent");
+static constexpr auto SVF_span                = strhash("span");
 static constexpr auto SVF_spiral              = strhash("spiral");
 static constexpr auto SVF_spreadMethod        = strhash("spreadMethod");
 static constexpr auto SVF_square              = strhash("square");
@@ -634,6 +613,11 @@ static constexpr auto SVF_morph            = strhash("morph");
 static constexpr auto SVF_pathTransition   = strhash("pathTransition");
 static constexpr auto SVF_shape            = strhash("shape");
 static constexpr auto SVF_wave             = strhash("wave");
+static constexpr auto SVF_inOut            = strhash("inOut");
+static constexpr auto SVF_cubicIn          = strhash("cubicIn");
+static constexpr auto SVF_cubicOut         = strhash("cubicOut");
+static constexpr auto SVF_cubicInOut       = strhash("cubicInOut");
+static constexpr auto SVF_easing           = strhash("easing");
 
 static constexpr auto glSVGNamespace = strhash("http://www.w3.org/2000/svg");
 static constexpr auto glKotukuNamespace = strhash("http://www.kotuku.dev/namespaces/kotuku");
@@ -643,7 +627,7 @@ static constexpr auto glKotukuSVGNamespace = strhash("http://www.kotuku.dev/xmln
 
 static ERR  animation_timer(extSVG *, int64_t, int64_t);
 static void convert_styles(objXML::TAGS &);
-static double read_unit(std::string_view &, int64_t * = nullptr);
+static double read_unit(std::string_view &);
 
 static ERR  init_svg(void);
 static ERR  init_rsvg(void);
@@ -708,7 +692,6 @@ static bool svg_tag_is(const XTag &Tag, uint32_t Hash) noexcept
 
 //********************************************************************************************************************
 
-#include "funit.cpp"
 #include "utility.cpp"
 #include "save_svg.cpp"
 

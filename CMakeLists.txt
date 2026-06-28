@@ -4,7 +4,7 @@
 # Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 # Fast Config:     cmake -S . -B build/fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #                  (FastBuild optimises for compilation speed rather than runtime performance - uses -O0, faster linkers, minimal debug info)
-# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF -DBUILD_DEFS=OFF
+# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF
 #
 # A build can target a local folder by adding -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #
@@ -76,7 +76,7 @@ else ()
    set (RUN_ANYWHERE ON)
 endif ()
 option (BUILD_TESTS       "Enable Flute tests" ON)
-option (BUILD_DEFS        "Auto-generate C/C++ headers and documentation" OFF)
+option (BUILD_DEFS        "Build generated C/C++ headers and documentation as part of the default build" OFF)
 option (DISABLE_SSL       "Disable built-in SSL support even if available on this system" OFF)
 option (DISABLE_X11       "Disable X11 even if available on this system" OFF)
 option (DISABLE_AUDIO     "Disable Audio API" OFF)
@@ -131,6 +131,12 @@ set (BUILD_RPATH_USE_ORIGIN TRUE)
 
 set (INCLUDE_OUTPUT "${PROJECT_SOURCE_DIR}/include/kotuku")
 set (DOCS "${PROJECT_SOURCE_DIR}/docs/xml")
+
+# Ensure the top-level include directory is visible to all builds and tools that
+# run during the build (some generated-header steps and tools may compile
+# helper sources outside target-specific include directories). This helps
+# avoid C1083 errors when headers under include/kotuku are referenced.
+include_directories("${PROJECT_SOURCE_DIR}/include")
 
 set(REQUIRED_MODS core tiri xml xquery regex json)
 
@@ -237,6 +243,33 @@ int main() {
 	PRINTF64_PRID
    FAIL_REGEX "warning")
 
+check_cxx_source_compiles ("
+#include <cstddef>
+#include <cstdint>
+
+struct Base {
+   void *Pointer;
+   uint16_t Count;
+   ~Base() {}
+};
+
+struct Derived : public Base {
+   int Value;
+};
+
+static_assert(offsetof(Derived, Value) < sizeof(Base));
+
+int main() {
+   return 0;
+}"
+   KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+
+if (KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+   message (STATUS "C++ compiler reuses base-class tail padding for derived fields.")
+else ()
+   message (STATUS "C++ compiler keeps derived fields after the full base-class size.")
+endif ()
+
 find_program (XXD_CMD "xxd")
 find_program (OD_CMD "od")
 find_program (ORIGO_CMD "origo" NO_DEFAULT_PATH PATHS "${ORIGO_CMD_PATH}")
@@ -244,12 +277,17 @@ find_file (IDL_C_SCRIPT "idl-c.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (IDL_COMPILE_SCRIPT "idl-compile.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (FLUTE_SCRIPT "flute.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools")
 
+set (KOTUKU_DEFS_AVAILABLE TRUE)
+
 if (ORIGO_CMD STREQUAL "ORIGO_CMD-NOTFOUND")
-   message (STATUS "Definitions will not be built and tests are disabled.")
+   message (STATUS "Definition generation targets are unavailable because no installed Origo executable was found.")
+   set (KOTUKU_DEFS_AVAILABLE FALSE)
    set (BUILD_DEFS OFF)
 else ()
    if (BUILD_DEFS)
       message (STATUS "Definitions will be built with the Origo exe installed @ ${ORIGO_CMD}.")
+   else ()
+      message (STATUS "Definition generation is available with: cmake --build <build-dir> --target build_headers")
    endif ()
 endif ()
 
@@ -296,7 +334,16 @@ else ()
    endif ()
 endif ()
 
-add_custom_target(build_headers ALL COMMENT "Generate headers and definition files on the fly")
+if (BUILD_DEFS)
+   add_custom_target (build_headers ALL COMMENT "Generate headers and definition files on the fly")
+elseif (KOTUKU_DEFS_AVAILABLE)
+   add_custom_target (build_headers COMMENT "Generate headers and definition files on demand")
+else ()
+   add_custom_target (build_headers
+      COMMAND ${CMAKE_COMMAND} -E echo "Cannot generate definitions: install or build Origo, then reconfigure this build tree."
+      COMMAND ${CMAKE_COMMAND} -E false
+      COMMENT "Definition generation is unavailable")
+endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Register generated header targets with the aggregate target while also making them discoverable for
@@ -366,7 +413,7 @@ endfunction ()
 function (idl_gen)
    cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES;DEPENDS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -438,7 +485,7 @@ endfunction ()
 function (idl_compile)
    cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -511,7 +558,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
    endif ()
 
    get_property (KOTUKU_LOCAL_HEADER_TARGETS DIRECTORY PROPERTY KOTUKU_GENERATED_HEADER_TARGETS)
-   if (KOTUKU_LOCAL_HEADER_TARGETS)
+   if (BUILD_DEFS AND KOTUKU_LOCAL_HEADER_TARGETS)
       add_dependencies (${ARG_TARGET} ${KOTUKU_LOCAL_HEADER_TARGETS})
    endif ()
 

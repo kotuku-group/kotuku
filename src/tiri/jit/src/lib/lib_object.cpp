@@ -87,20 +87,22 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static int object_get_string(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_object(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_ptr(lua_State *, const obj_read &, GCobject *);
+[[nodiscard]] static int object_get_unit(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_double(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_large(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_ulong(lua_State *, const obj_read &, GCobject *);
 [[nodiscard]] static int object_get_long(lua_State *, const obj_read &, GCobject *);
 
-[[nodiscard]] static ERR object_set_array(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_function(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_object(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_ptr(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_cppstring(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_double(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, Field *, int);
-[[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, Field *, int);
+[[nodiscard]] static ERR object_set_array(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_function(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_object(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_ptr(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_cppstring(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_double(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, const Field *, int);
+[[nodiscard]] static ERR object_set_struct(lua_State *, OBJECTPTR, const Field *, int);
 
 inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    lua_pushvalue(Lua, 1); // Duplicate the object reference
@@ -302,42 +304,40 @@ READ_TABLE * get_read_table(objMetaClass *Class)
       jmp.push_back(obj_read(hash, glJumpActions[code]));
    }
 
-   MethodEntry *methods;
-   int total_methods;
-   if (!Class->get(FID_Methods, methods, total_methods)) {
-      auto methods_span = std::span(methods, total_methods);
+   std::span<const MethodEntry> methods_span;
+   if (!Class->get(FID_Methods, methods_span)) {
       for (auto &method : methods_span | std::views::drop(1)) {
          if (method.MethodID != AC::NIL) {
             auto hash = simple_hash(method.Name, simple_hash("mt"));
-            jmp.push_back(obj_read(hash, obj_jump_method, &method));
+            jmp.push_back(obj_read(hash, obj_jump_method, (APTR)&method));
          }
       }
    }
 
-   Field *dict;
-   int total_dict;
-   if (!Class->get(FID_Dictionary, dict, total_dict)) {
-      auto dict_span = std::span(dict, total_dict);
+   std::span<const Field> dict_span;
+   if (!Class->get(FID_Dictionary, dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & FDF_R; })) {
          auto hash = field.FieldID;
+         auto field_ptr = (APTR)&field;
 
          if (field.Flags & FD_ARRAY) {
-            jmp.push_back(obj_read(hash, object_get_array, &field));
+            jmp.push_back(obj_read(hash, object_get_array, field_ptr));
          }
-         else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, &field));
-         else if (field.Flags & FD_STRING) jmp.push_back(obj_read(hash, object_get_string, &field));
+         else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, field_ptr));
+         else if (field.Flags & FD_STRING) jmp.push_back(obj_read(hash, object_get_string, field_ptr));
          else if (field.Flags & FD_POINTER) {
             if (field.Flags & (FD_OBJECT|FD_LOCAL)) {
-               jmp.push_back(obj_read(hash, object_get_object, &field));
+               jmp.push_back(obj_read(hash, object_get_object, field_ptr));
             }
-            else jmp.push_back(obj_read(hash, object_get_ptr, &field));
+            else jmp.push_back(obj_read(hash, object_get_ptr, field_ptr));
          }
-         else if (field.Flags & FD_DOUBLE) jmp.push_back(obj_read(hash, object_get_double, &field));
-         else if (field.Flags & FD_INT64) jmp.push_back(obj_read(hash, object_get_large, &field));
+         else if (field.Flags & FD_DOUBLE) jmp.push_back(obj_read(hash, object_get_double, field_ptr));
+         else if (field.Flags & FD_INT64) jmp.push_back(obj_read(hash, object_get_large, field_ptr));
          else if (field.Flags & FD_INT) {
-            if (field.Flags & FD_UNSIGNED) jmp.push_back(obj_read(hash, object_get_ulong, &field));
-            else jmp.push_back(obj_read(hash, object_get_long, &field));
+            if (field.Flags & FD_UNSIGNED) jmp.push_back(obj_read(hash, object_get_ulong, field_ptr));
+            else jmp.push_back(obj_read(hash, object_get_long, field_ptr));
          }
+         else if (field.Flags & FD_UNIT) jmp.push_back(obj_read(hash, object_get_unit, field_ptr));
          else if (field.Flags & FD_FUNCTION); // Unsupported
          else kt::Log().warning("Unable to support field %s.%s for reading", Class->Name, field.Name);
       }
@@ -372,10 +372,8 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
    kt::ScopedObjectLock lock(Class);
 
    WRITE_TABLE &jmp = Class->WriteTable;
-   Field *dict;
-   int total_dict;
-   if (!Class->get(FID_Dictionary, dict, total_dict)) {
-      auto dict_span = std::span(dict, total_dict);
+   std::span<const Field> dict_span;
+   if (!Class->get(FID_Dictionary, dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & (FD_W|FD_I); })) {
          char ch[2] = { field.Name[0], 0 };
          if ((ch[0] >= 'A') and (ch[0] <= 'Z')) ch[0] = ch[0] - 'A' + 'a';
@@ -407,6 +405,12 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
          }
          else if (field.Flags & (FD_INT|FD_INT64)) {
             jmp.push_back(obj_write(hash, object_set_number, &field));
+         }
+         else if (field.Flags & FD_STRUCT) {
+            jmp.push_back(obj_write(hash, object_set_struct, &field));
+         }
+         else if (field.Flags & FD_UNIT) {
+            jmp.push_back(obj_write(hash, object_set_unit, &field));
          }
       }
    }
@@ -467,7 +471,10 @@ extern int object_newindex(lua_State *Lua)
    auto func = std::lower_bound(read_table->begin(), read_table->end(), hash_key, read_hash);
    if ((func != read_table->end()) and (func->Hash IS keystr->hash)) {
       auto result = func->Call(Lua, *func, def); // On error, result is 0 and CaughtError is defined.
-      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
+      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) {
+         luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(),
+            luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
+      }
       return result;
    }
 
@@ -493,11 +500,10 @@ extern int object_newindex(lua_State *Lua)
 
    *Args = nullptr;
    if (auto mc = FindClass(ClassID)) {
-      MethodEntry *table;
-      int total_methods;
+      std::span<MethodEntry> table;
       ACTIONID action_id;
-      if ((!mc->get(FID_Methods, table, total_methods)) and (table)) {
-         for (int i=1; i < total_methods; i++) {
+      if (!mc->get(FID_Methods, table)) {
+         for (unsigned i=1; i < table.size(); i++) {
             if ((table[i].Name) and (iequals(action, table[i].Name))) {
                action_id = table[i].MethodID;
                *Args = table[i].Args;
@@ -573,9 +579,9 @@ LJLIB_CF(object_new)
             FreeResource(obj);
 
             if (field_error != ERR::Okay) {
-               luaL_error(L, field_error, "Failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
+               luaL_error(L, field_error, "obj.new() failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
             }
-            else luaL_error(L, error, "Failed to Init() %s: %s", class_name, GetErrorMsg(error));
+            else luaL_error(L, error, "obj.new() failed to Init() %s: %s", class_name, GetErrorMsg(error));
 
             return 0;
          }
@@ -675,17 +681,16 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 static int object_state(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    kt::Log log(__FUNCTION__);
-   if (auto it = prv->StateMap.find(def->uid); it != prv->StateMap.end()) {
+   if (auto it = Lua->script->StateMap.find(def->uid); it != Lua->script->StateMap.end()) {
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, it->second);
       return 1;
    }
    else {
       lua_createtable(Lua, 0, 0);
       auto state_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      prv->StateMap[def->uid] = state_ref;
+      Lua->script->StateMap[def->uid] = state_ref;
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, state_ref);
       return 1;
    }
@@ -877,17 +882,16 @@ static int object_subscribe(lua_State *Lua)
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
    if (auto error = SubscribeAction(obj, action_id, &callback); !error) {
-      auto prv = (prvTiri *)Lua->script->DerivedPtr;
-      auto &acsub = prv->ActionList.emplace_back();
+      auto &acsub = Lua->script->ActionList.emplace_back();
 
       if (not lua_isnil(Lua, 3)) {
-         lua_settop(prv->Lua, 3);
-         acsub.Reference = luaL_ref(prv->Lua, LUA_REGISTRYINDEX);
+         lua_settop(Lua->script->Lua, 3);
+         acsub.Reference = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
       else acsub.Reference = 0;
 
-      lua_settop(prv->Lua, 2);
-      acsub.Function = luaL_ref(prv->Lua, LUA_REGISTRYINDEX);
+      lua_settop(Lua, 2);
+      acsub.Function = luaL_ref(Lua, LUA_REGISTRYINDEX);
       acsub.Object   = def;
       acsub.Args     = arglist;
       acsub.ObjectID = def->uid;
@@ -926,8 +930,7 @@ static int object_unsubscribe(lua_State *Lua)
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   std::erase_if(prv->ActionList, [&](auto& item) {
+   std::erase_if(Lua->script->ActionList, [&](auto& item) {
       bool should_remove = (item.ObjectID IS def->uid) and ((action_id IS AC::NIL) or (item.ActionID IS action_id));
       if (should_remove) {
          luaL_unref(Lua, LUA_REGISTRYINDEX, item.Function);

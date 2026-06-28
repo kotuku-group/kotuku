@@ -18,7 +18,7 @@ static const struct FieldDef clSoundStream[] = {
 };
 
 static ERR SOUND_NewPlacement(extSound *Self) {
-   new (Self) extSound;
+   new (Self) extSound(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

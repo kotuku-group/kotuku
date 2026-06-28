@@ -79,7 +79,9 @@ class extBlurFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "BlurFX";
    using create = kt::Create<extBlurFX>;
 
-   double SX, SY;
+   double SX = 0, SY = 0;
+
+   extBlurFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 };
 
 //********************************************************************************************************************
@@ -549,44 +551,12 @@ The (SX,SY) field values define the standard deviation of the gaussian blur alon
 
 If either value is 0 or less, the effect is disabled on that axis.
 
-*********************************************************************************************************************/
-
-static ERR BLURFX_GET_SX(extBlurFX *Self, double *Value)
-{
-   *Value = Self->SX;
-   return ERR::Okay;
-}
-
-static ERR BLURFX_SET_SX(extBlurFX *Self, double Value)
-{
-   Self->SX = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 SY: The standard deviation of the blur on the x axis.
 
 The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
 
 If either value is 0 or less, the effect is disabled on that axis.
-
-*********************************************************************************************************************/
-
-static ERR BLURFX_GET_SY(extBlurFX *Self, double *Value)
-{
-   *Value = Self->SY;
-   return ERR::Okay;
-}
-
-static ERR BLURFX_SET_SY(extBlurFX *Self, double Value)
-{
-   Self->SY = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
@@ -611,9 +581,9 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string_view &Value)
 #include "filter_blur_def.c"
 
 static const FieldArray clBlurFXFields[] = {
-   { "SX",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, BLURFX_GET_SX, BLURFX_SET_SX },
-   { "SY",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, BLURFX_GET_SY, BLURFX_SET_SY },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, BLURFX_GET_XMLDef, nullptr },
+   { "SX",     FDF_DOUBLE|FDF_RW },
+   { "SY",     FDF_DOUBLE|FDF_RW },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, BLURFX_GET_XMLDef },
    END_FIELD
 };
 

@@ -51,6 +51,8 @@ struct struct_name {
 };
 
 struct struct_hash { // Stops when an invalid character is encountered (typically a colon separator)
+   using is_transparent = void; // Enables heterogeneous string_view lookups in std::unordered_map
+
    std::size_t operator()(const struct_name &k) const {
       uint32_t hash = 5381;
       for (auto c : k.name) {
@@ -74,4 +76,20 @@ struct struct_hash { // Stops when an invalid character is encountered (typicall
       }
       return hash;
    }
+};
+
+struct struct_equal { // Transparent comparator supporting struct_name and string_view keys
+   using is_transparent = void;
+
+   // A raw string_view may carry a colon-delimited suffix (e.g. "TimeZoneInfo:Info").  Struct keys only
+   // retain the portion before the colon, so the suffix must be stripped before comparison to mirror the
+   // truncation performed by the struct_name constructor.
+   static std::string_view prefix(const std::string_view Name) {
+      auto colon = Name.find(':');
+      return (colon IS std::string_view::npos) ? Name : Name.substr(0, colon);
+   }
+
+   bool operator()(const struct_name &a, const struct_name &b) const { return a == b; }
+   bool operator()(const struct_name &a, const std::string_view b) const { return a == prefix(b); }
+   bool operator()(const std::string_view a, const struct_name &b) const { return b == prefix(a); }
 };

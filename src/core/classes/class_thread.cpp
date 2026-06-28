@@ -315,10 +315,9 @@ the thread object.  It is paired with the #DataSize field, which reflects the si
 
 *********************************************************************************************************************/
 
-static ERR GET_Data(extThread *Self, APTR *Value, int *Elements)
+static ERR GET_Data(extThread *Self, std::span<uint8_t> &Value)
 {
-   *Value = Self->Data;
-   *Elements = Self->DataSize;
+   Value = std::span<uint8_t>((uint8_t *)Self->Data, Self->DataSize);
    return ERR::Okay;
 }
 

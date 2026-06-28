@@ -38,13 +38,13 @@ namespace agg
 
       vcgen_stroke();
 
-      void line_cap(line_cap_e lc)     { m_stroker.line_cap(lc); }
-      void line_join(line_join_e lj)   { m_stroker.line_join(lj); }
-      void inner_join(inner_join_e ij) { m_stroker.inner_join(ij); }
+      void line_cap(VLC LineCap)     { m_stroker.line_cap(LineCap); }
+      void line_join(VLJ LineJoin)   { m_stroker.line_join(LineJoin); }
+      void inner_join(VIJ InnerJoin) { m_stroker.inner_join(InnerJoin); }
 
-      line_cap_e   line_cap()   const { return m_stroker.line_cap(); }
-      line_join_e  line_join()  const { return m_stroker.line_join(); }
-      inner_join_e inner_join() const { return m_stroker.inner_join(); }
+      VLC line_cap()   const { return m_stroker.line_cap(); }
+      VLJ line_join()  const { return m_stroker.line_join(); }
+      VIJ inner_join() const { return m_stroker.inner_join(); }
 
       void width(double w) { m_stroker.width(w); }
       void miter_limit(double ml) { m_stroker.miter_limit(ml); }

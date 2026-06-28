@@ -23,7 +23,7 @@ static const struct MethodEntry clScriptMethods[] = {
 };
 
 static ERR SCRIPT_NewPlacement(objScript *Self) {
-   new (Self) objScript;
+   new (Self) objScript(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

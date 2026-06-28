@@ -29,29 +29,19 @@ signal an end to the streaming process.
 class extCompressedStream : public objCompressedStream {
    public:
    uint8_t *OutputBuffer;
-   uint8_t Inflating:1;
-   uint8_t Deflating:1;
-   z_stream Stream;
+   ZStream Stream;
    gz_header Header;
 
    ~extCompressedStream();
 
-   extCompressedStream() {
+   extCompressedStream(objMetaClass *ClassPtr, OBJECTID ObjectID) : objCompressedStream(ClassPtr, ObjectID) {
       Format = CF::GZIP;
    }
 
    void reset() {
       TotalOutput = 0;
 
-      if (Inflating) {
-         inflateEnd(&Stream);
-         Inflating = false;
-      }
-
-      if (Deflating) {
-         deflateEnd(&Stream);
-         Deflating = false;
-      }
+      Stream.reset();
 
       if (OutputBuffer) { FreeResource(OutputBuffer); OutputBuffer = nullptr; }
    }
@@ -98,28 +88,25 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
 
    if (length <= 0) return ERR::Okay;
 
-   if (!Self->Inflating) {
+   if (!Self->Stream.active()) {
       log.trace("Initialising decompression of the stream.");
-      clearmem(&Self->Stream, sizeof(Self->Stream));
       switch (Self->Format) {
          case CF::ZLIB:
-            if (inflateInit2(&Self->Stream, MAX_WBITS) != Z_OK) return log.warning(ERR::Decompression);
+            if (Self->Stream.inflate_init(MAX_WBITS) != Z_OK) return log.warning(ERR::Decompression);
             break;
 
          case CF::DEFLATE:
-            if (inflateInit2(&Self->Stream, -MAX_WBITS) != Z_OK) return log.warning(ERR::Decompression);
+            if (Self->Stream.inflate_init(-MAX_WBITS) != Z_OK) return log.warning(ERR::Decompression);
             break;
 
          case CF::GZIP:
          default:
-            if (inflateInit2(&Self->Stream, 15 + 32) != Z_OK) return log.warning(ERR::Decompression);
+            if (Self->Stream.inflate_init(15 + 32) != Z_OK) return log.warning(ERR::Decompression);
             // Read the uncompressed size from the gzip header
-            if (inflateGetHeader(&Self->Stream, &Self->Header) != Z_OK) {
+            if (inflateGetHeader(Self->Stream.get(), &Self->Header) != Z_OK) {
                return log.warning(ERR::InvalidData);
             }
       }
-
-      Self->Inflating = TRUE;
    }
 
    APTR output = Args->Buffer;
@@ -133,29 +120,29 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
       }
    }
 
-   Self->Stream.next_in  = inputstream;
-   Self->Stream.avail_in = length;
+   Self->Stream->next_in  = inputstream;
+   Self->Stream->avail_in = length;
 
    ERR error = ERR::Okay;
    int result = Z_OK;
-   while ((result IS Z_OK) and (Self->Stream.avail_in > 0) and (outputsize > 0)) {
-      Self->Stream.next_out  = (Bytef *)output;
-      Self->Stream.avail_out = outputsize;
-      result = inflate(&Self->Stream, Z_SYNC_FLUSH);
+   while ((result IS Z_OK) and (Self->Stream->avail_in > 0) and (outputsize > 0)) {
+      Self->Stream->next_out  = (Bytef *)output;
+      Self->Stream->avail_out = outputsize;
+      result = inflate(Self->Stream.get(), Z_SYNC_FLUSH);
 
       if ((result) and (result != Z_STREAM_END)) {
-         error = convert_zip_error(&Self->Stream, result);
+         error = convert_zip_error(Self->Stream.get(), result);
          break;
       }
 
       if (error != ERR::Okay) break;
 
-      Args->Result += outputsize - Self->Stream.avail_out;
-      output = (Bytef *)output + outputsize - Self->Stream.avail_out;
+      Args->Result += outputsize - Self->Stream->avail_out;
+      output = (Bytef *)output + outputsize - Self->Stream->avail_out;
 
       if (result IS Z_STREAM_END) { // Decompression is complete
-         Self->Inflating = FALSE;
-         Self->TotalOutput = Self->Stream.total_out;
+         Self->TotalOutput = Self->Stream->total_out;
+         Self->Stream.reset();
          return ERR::Okay;
       }
    }
@@ -233,31 +220,28 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
    if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   if (!Self->Deflating) {
-      clearmem(&Self->Stream, sizeof(Self->Stream));
-
+   if (!Self->Stream.active()) {
       switch (Self->Format) {
          case CF::ZLIB:
-            if (deflateInit2(&Self->Stream, 9, Z_DEFLATED, MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY)) {
+            if (Self->Stream.deflate_init(9, MAX_WBITS)) {
                return log.warning(ERR::Compression);
             }
             break;
 
          case CF::DEFLATE:
-            if (deflateInit2(&Self->Stream, 9, Z_DEFLATED, -MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY)) {
+            if (Self->Stream.deflate_init(9, -MAX_WBITS)) {
                return log.warning(ERR::Compression);
             }
             break;
 
          case CF::GZIP:
          default:
-            if (deflateInit2(&Self->Stream, 9, Z_DEFLATED, 15 + 32, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY)) {
+            if (Self->Stream.deflate_init(9, 15 + 32)) {
                return log.warning(ERR::Compression);
             }
       }
 
       Self->TotalOutput = 0;
-      Self->Deflating = TRUE;
    }
 
    if (!Self->OutputBuffer) {
@@ -268,30 +252,29 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
    int mode;
    if (Args->Length IS -1) { // A length of -1 is a signal to complete the compression process.
       mode = Z_FINISH;
-      Self->Stream.next_in  = Self->OutputBuffer;
-      Self->Stream.avail_in = 0;
+      Self->Stream->next_in  = Self->OutputBuffer;
+      Self->Stream->avail_in = 0;
    }
    else {
       mode = Z_NO_FLUSH;
-      Self->Stream.next_in  = (Bytef *)Args->Buffer;
-      Self->Stream.avail_in = Args->Length;
+      Self->Stream->next_in  = (Bytef *)Args->Buffer;
+      Self->Stream->avail_in = Args->Length;
    }
 
    // If zlib succeeds but sets avail_out to zero, this means that data was written to the output buffer, but the
    // output buffer is not large enough (so keep calling until avail_out > 0).
 
-   Self->Stream.avail_out = 0;
-   while (Self->Stream.avail_out IS 0) {
-      Self->Stream.next_out  = Self->OutputBuffer;
-      Self->Stream.avail_out = MIN_OUTPUT_SIZE;
+   Self->Stream->avail_out = 0;
+   while (Self->Stream->avail_out IS 0) {
+      Self->Stream->next_out  = Self->OutputBuffer;
+      Self->Stream->avail_out = MIN_OUTPUT_SIZE;
 
-      if ((deflate(&Self->Stream, mode))) {
-         deflateEnd(&Self->Stream);
-         Self->Deflating = FALSE;
+      if ((deflate(Self->Stream.get(), mode))) {
+         Self->Stream.reset();
          return ERR::BufferOverflow;
       }
 
-      const int len = MIN_OUTPUT_SIZE - Self->Stream.avail_out; // Get number of compressed bytes that were output
+      const int len = MIN_OUTPUT_SIZE - Self->Stream->avail_out; // Get number of compressed bytes that were output
 
       if (len > 0) {
          Self->TotalOutput += len;
@@ -307,10 +290,7 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
       }
    }
 
-   if (mode IS Z_FINISH) {
-      deflateEnd(&Self->Stream);
-      Self->Deflating = FALSE;
-   }
+   if (mode IS Z_FINISH) Self->Stream.reset();
 
    return ERR::Okay;
 }

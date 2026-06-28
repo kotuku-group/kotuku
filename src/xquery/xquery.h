@@ -1021,8 +1021,10 @@ public:
    extXML *XML; // During query execution, the context XML document.
    bool StaleBuild = true; // If true, the compiled query needs to be rebuilt.
 
-   ~extXQuery() {
-   }
+   extXQuery() noexcept : objXQuery(nullptr, 0) { }
+   extXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : objXQuery(pClass, pUID) { }
+
+   ~extXQuery();
 };
 
 // Transparent string hash/equality functors for heterogeneous lookup on ankerl maps

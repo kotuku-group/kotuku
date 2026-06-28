@@ -170,7 +170,7 @@ static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    auto Self = (extVector *)CurrentContext();
    if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) {
       Self->ClipMask = nullptr;
-      Self->ClipCache.clear();
+      Self->ClipCache.reset();
    }
 }
 
@@ -273,90 +273,6 @@ static ERR VECTOR_Enable(extVector *Self)
   // It is up to the client to subscribe to the Enable action if any activity needs to take place.
   Self->Flags &= ~VF::DISABLED;
   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR VECTOR_Free(extVector *Self)
-{
-   Self->ClipCache.clear();
-
-   if (Self->ClipMask)   UnsubscribeAction(Self->ClipMask, AC::Free);
-   if (Self->Transition) UnsubscribeAction(Self->Transition, AC::Free);
-   if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
-   if (Self->AppendPath) UnsubscribeAction(Self->AppendPath, AC::Free);
-
-   if (Self->Fill[0].GradientTable) { delete Self->Fill[0].GradientTable; Self->Fill[0].GradientTable = nullptr; }
-   if (Self->Fill[1].GradientTable) { delete Self->Fill[1].GradientTable; Self->Fill[1].GradientTable = nullptr; }
-   if (Self->Stroke.GradientTable)  { delete Self->Stroke.GradientTable; Self->Stroke.GradientTable = nullptr; }
-   if (Self->DashArray)             { delete Self->DashArray; Self->DashArray = nullptr; }
-   if (Self->IsolatedBuffer)        { delete Self->IsolatedBuffer; Self->IsolatedBuffer = nullptr; }
-
-   // Patch the nearest vectors that are linked to this one.
-   if (Self->Next) Self->Next->Prev = Self->Prev;
-   if (Self->Prev) Self->Prev->Next = Self->Next;
-   if ((Self->Parent) and (!Self->Prev)) {
-      if (Self->Parent->classID() IS CLASSID::VECTORSCENE) ((objVectorScene *)Self->Parent)->Viewport = (objVectorViewport *)Self->Next;
-      else ((extVector *)Self->Parent)->Child = Self->Next;
-   }
-
-   if (Self->Child) {
-      // Clear the parent reference for all children of the vector (essential for maintaining pointer integrity).
-      auto &scan = Self->Child;
-      while (scan) {
-         scan->Parent = nullptr;
-         scan = scan->Next;
-      }
-   }
-
-   if ((Self->Scene) and (!Self->Scene->collecting())) {
-      auto scene = (extVectorScene *)Self->Scene;
-      if ((Self->ParentView) and (Self->ResizeSubscription)) {
-         if (scene->ResizeSubscriptions.contains(Self->ParentView)) {
-            scene->ResizeSubscriptions[Self->ParentView].erase(Self);
-         }
-      }
-      scene->InputSubscriptions.erase(Self);
-      scene->KeyboardSubscriptions.erase(Self);
-
-      if (scene->ActiveVector IS Self->UID) {
-         if (scene->Cursor != PTC::DEFAULT) {
-            kt::ScopedObjectLock<objSurface> surface(scene->SurfaceID);
-            if ((surface.granted()) and (surface.obj->Cursor != PTC::DEFAULT)) {
-               surface.obj->setCursor(PTC::DEFAULT);
-            }
-         }
-      }
-   }
-
-   {
-      const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
-      auto pos = std::find(glVectorFocusList.begin(), glVectorFocusList.end(), Self);
-      if (pos != glVectorFocusList.end()) glVectorFocusList.erase(pos, glVectorFocusList.end());
-   }
-
-   {
-      const std::lock_guard<std::mutex> lock(glResizeLock);
-      if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(Self))) {
-         glResizeSubscriptions.erase(Self);
-      }
-   }
-
-   if (Self->Matrices) {
-      VectorMatrix *next;
-      for (auto t=Self->Matrices; t; t=next) {
-         next = t->Next;
-         FreeResource(t);
-      }
-   }
-
-   delete Self->StrokeRaster; Self->StrokeRaster = nullptr;
-   delete Self->FillRaster;   Self->FillRaster   = nullptr;
-   delete Self->InputSubscriptions;    Self->InputSubscriptions    = nullptr;
-   delete Self->KeyboardSubscriptions; Self->KeyboardSubscriptions = nullptr;
-   delete Self->FeedbackSubscriptions; Self->FeedbackSubscriptions = nullptr;
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -508,7 +424,7 @@ static ERR VECTOR_Init(extVector *Self)
 {
    kt::Log log;
 
-   if (Self->classID() IS CLASSID::VECTOR) {
+   if (not Self->isDerived()) {
       log.warning("Vector cannot be instantiated directly (use a derived class).");
       return ERR::UseDerived;
    }
@@ -574,14 +490,12 @@ static ERR VECTOR_MoveToFront(extVector *Self)
 
 static ERR VECTOR_NewOwner(extVector *Self, struct acNewOwner *Args)
 {
-   kt::Log log;
-
    if (Self->classID() IS CLASSID::NIL) return ERR::Okay;
 
    // Modifying the owner after the root vector has been established is not permitted.
    // The client should instead create a new object under the target and transfer the field values.
 
-   if (Self->initialised()) return log.warning(ERR::AlreadyDefined);
+   if (Self->initialised()) return kt::Log().warning(ERR::AlreadyDefined);
 
    set_parent(Self, Args->NewOwner);
 
@@ -623,7 +537,6 @@ static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
 
    VectorMatrix *transform;
    if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform)) {
-
       transform->Vector = Self;
       transform->ScaleX = 1.0;
       transform->ScaleY = 1.0;
@@ -850,7 +763,7 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
 
    if (Args->Mask != FM::NIL) {
       if (!Self->FeedbackSubscriptions) {
-         Self->FeedbackSubscriptions = new (std::nothrow) std::vector<FeedbackSubscription>;
+         Self->FeedbackSubscriptions.reset(new (std::nothrow) std::vector<FeedbackSubscription>);
          if (!Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
@@ -913,7 +826,7 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       if ((!Self->Scene) or (!Self->Scene->SurfaceID)) return ERR::FieldNotSet;
 
       if (!Self->InputSubscriptions) {
-         Self->InputSubscriptions = new (std::nothrow) std::vector<InputSubscription>;
+         Self->InputSubscriptions.reset(new (std::nothrow) std::vector<InputSubscription>);
          if (!Self->InputSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
@@ -978,7 +891,7 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
    if (!Self->Scene->SurfaceID) return log.warning(ERR::FieldNotSet);
 
    if (!Self->KeyboardSubscriptions) {
-      Self->KeyboardSubscriptions = new (std::nothrow) std::vector<KeyboardSubscription>;
+      Self->KeyboardSubscriptions.reset(new (std::nothrow) std::vector<KeyboardSubscription>);
       if (!Self->KeyboardSubscriptions) return log.warning(ERR::AllocMemory);
    }
 
@@ -1172,12 +1085,6 @@ terms of outcome, the ClipRule works similarly to #FillRule.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_ClipRule(extVector *Self, VFR *Value)
-{
-   *Value = Self->ClipRule;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_ClipRule(extVector *Self, VFR Value)
 {
    Self->ClipRule = Value;
@@ -1251,44 +1158,37 @@ then the list of values is repeated to yield an even number of values.  Thus `5,
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_DashArray(extVector *Self, double **Value, int *Elements)
+static ERR VECTOR_GET_DashArray(extVector *Self, std::span<const double> &Array)
 {
-   if (Self->DashArray) {
-      *Value    = Self->DashArray->values.data();
-      *Elements = std::ssize(Self->DashArray->values);
-   }
-   else {
-      *Value    = nullptr;
-      *Elements = 0;
-   }
+   if (Self->DashArray) Array = std::span<const double>(Self->DashArray->values.data(), Self->DashArray->values.size());
+   else Array = std::span<const double>{};
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_DashArray(extVector *Self, double *Value, int Elements)
+static ERR VECTOR_SET_DashArray(extVector *Self, const std::span<const double> &Array)
 {
    kt::Log log;
 
-   if (Self->DashArray) { delete Self->DashArray; Self->DashArray = nullptr; }
+   Self->DashArray.reset();
 
-   if ((Value) and (Elements >= 1)) {
+   if (Array.size() > 0) {
       int total;
 
-      if (Elements & 1) total = Elements * 2; // To satisfy requirements, the dash path can be doubled to make an even number.
-      else total = Elements;
+      if (Array.size() & 1) total = Array.size() * 2; // To satisfy requirements, the dash path can be doubled to make an even number.
+      else total = Array.size();
 
-      Self->DashArray = new (std::nothrow) DashedStroke(Self->BasePath, total);
+      Self->DashArray.reset(new (std::nothrow) DashedStroke(Self->BasePath, total));
       if (Self->DashArray) {
-         for (int i=0; i < Elements; i++) Self->DashArray->values[i] = Value[i];
-         if (Elements & 1) {
-            for (int i=0; i < Elements; i++) Self->DashArray->values[Elements+i] = Value[i];
+         for (unsigned i=0; i < Array.size(); i++) Self->DashArray->values[i] = Array[i];
+         if (Array.size() & 1) {
+            for (unsigned i=0; i < Array.size(); i++) Self->DashArray->values[Array.size()+i] = Array[i];
          }
 
          double total_length = 0;
          for (int i=0; i < std::ssize(Self->DashArray->values)-1; i+=2) {
             if ((Self->DashArray->values[i] < 0) or (Self->DashArray->values[i+1] < 0)) { // Negative values can cause an infinite drawing cycle.
                log.warning("Invalid dash array value pair (%f, %f)", Self->DashArray->values[i], Self->DashArray->values[i+1]);
-               delete Self->DashArray;
-               Self->DashArray = nullptr;
+               Self->DashArray.reset();
                return ERR::InvalidValue;
             }
 
@@ -1298,8 +1198,7 @@ static ERR VECTOR_SET_DashArray(extVector *Self, double *Value, int Elements)
 
          if (total_length <= 0) {
             log.warning("DashArray total length <= 0.");
-            delete Self->DashArray;
-            Self->DashArray = nullptr;
+            Self->DashArray.reset();
             return ERR::InvalidValue;
          }
 
@@ -1371,20 +1270,15 @@ feature is intended for programmed use-cases and is not SVG compliant.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Fill(extVector *Self, std::string_view &Value)
-{
-   Value = Self->FillString;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
 {
    // Note that if an internal routine sets DisableFillColour then the colour will be stored but effectively does nothing.
    Self->FillString.clear();
    Self->FGFill = false;
+   Self->Fill[0].reset();
+   Self->Fill[1].reset();
 
    if (Value.empty()) {
-      Self->Fill[0].reset();
       return ERR::Okay;
    }
 
@@ -1427,29 +1321,24 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
 -FIELD-
 FillColour: Defines a solid colour for filling the vector path.
 
-Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array
-of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements
-consist of Red, Green, Blue and Alpha values in that order.
+Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an FRGB
+structuure of normalised values in sRGB colourspace.  Values are unclamped so that colour spaces other than sRGB are
+not negatively impacted.
 
 If the Alpha component is set to zero then the FillColour will be ignored by the renderer.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_FillColour(extVector *Self, float **Value, int *Elements)
+static ERR VECTOR_GET_FillColour(extVector *Self, struct FRGB **Value)
 {
-   *Value = (float *)&Self->Fill[0].Colour;
-   *Elements = 4;
+   *Value = &Self->Fill[0].Colour;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_FillColour(extVector *Self, float *Value, int Elements)
+static ERR VECTOR_SET_FillColour(extVector *Self, struct FRGB *Value)
 {
    if (Value) {
-      if (Elements >= 1) Self->Fill[0].Colour.Red   = Value[0];
-      if (Elements >= 2) Self->Fill[0].Colour.Green = Value[1];
-      if (Elements >= 3) Self->Fill[0].Colour.Blue  = Value[2];
-      if (Elements >= 4) Self->Fill[0].Colour.Alpha = Value[3];
-      else Self->Fill[0].Colour.Alpha = 1;
+      Self->Fill[0].Colour = Value[0];
 
       // If the raster filler doesn't exist for this vector then we'll need to regenerate it.
 
@@ -1462,7 +1351,6 @@ static ERR VECTOR_SET_FillColour(extVector *Self, float *Value, int Elements)
    }
 
    Self->FillString.clear();
-
    return ERR::Okay;
 }
 
@@ -1476,16 +1364,8 @@ the #Opacity to determine a final opacity value for the render.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_FillOpacity(extVector *Self, double *Value)
-{
-   *Value = Self->FillOpacity;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_FillOpacity(extVector *Self, double Value)
 {
-   kt::Log log;
-
    if ((Value >= 0) and (Value <= 1.0)) {
       Self->FillOpacity = Value;
 
@@ -1493,7 +1373,7 @@ static ERR VECTOR_SET_FillOpacity(extVector *Self, double Value)
       else mark_buffers_for_refresh(Self);
       return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
+   else return ERR::OutOfRange;
 }
 
 /*********************************************************************************************************************
@@ -1509,12 +1389,6 @@ for further details on filter configuration.
 The Filter value can be in the format `ID` or `url(#SID)` according to client preference.
 
 *********************************************************************************************************************/
-
-static ERR VECTOR_GET_Filter(extVector *Self, std::string_view &Value)
-{
-   Value = Self->FilterString;
-   return ERR::Okay;
-}
 
 static ERR VECTOR_SET_Filter(extVector *Self, const std::string_view &Value)
 {
@@ -1559,12 +1433,6 @@ interpretation of "inside" is not so obvious.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_FillRule(extVector *Self, VFR *Value)
-{
-   *Value = Self->FillRule;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_FillRule(extVector *Self, VFR Value)
 {
    if (Value != Self->FillRule) {
@@ -1581,28 +1449,6 @@ SID: String identifier for a vector.
 The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other
 circumstances.
 
-*********************************************************************************************************************/
-
-static ERR VECTOR_GET_SID(extVector *Self, std::string_view &Value)
-{
-   Value = Self->SID;
-   return ERR::Okay;
-}
-
-static ERR VECTOR_SET_SID(extVector *Self, const std::string_view &Value)
-{
-   if (Value.empty()) {
-      Self->SID.clear();
-      Self->NumericID = 0;
-   }
-   else {
-      Self->SID = Value;
-      Self->NumericID = strhash(Value);
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 InnerJoin: Adjusts the handling of thickly stroked paths that cross back at the join.
 Lookup: VIJ
@@ -1620,27 +1466,9 @@ path.
 
 // See the AGG bezier_div demo to get a better understanding of what is affected by this field value.
 
-static ERR VECTOR_GET_InnerJoin(extVector *Self, VIJ *Value)
-{
-   if (Self->InnerJoin IS agg::inner_miter)      *Value = VIJ::MITER;
-   else if (Self->InnerJoin IS agg::inner_round) *Value = VIJ::ROUND;
-   else if (Self->InnerJoin IS agg::inner_bevel) *Value = VIJ::BEVEL;
-   else if (Self->InnerJoin IS agg::inner_jag)   *Value = VIJ::JAG;
-   else if (Self->InnerJoin IS agg::inner_inherit) *Value = VIJ::INHERIT;
-   else *Value = VIJ::NIL;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_InnerJoin(extVector *Self, VIJ Value)
 {
-   switch(Value) {
-      case VIJ::MITER: Self->InnerJoin = agg::inner_miter; break;
-      case VIJ::ROUND: Self->InnerJoin = agg::inner_round; break;
-      case VIJ::BEVEL: Self->InnerJoin = agg::inner_bevel; break;
-      case VIJ::JAG:   Self->InnerJoin = agg::inner_jag; break;
-      case VIJ::INHERIT: Self->InnerJoin = agg::inner_inherit; break;
-      default: return ERR::InvalidValue;
-   }
+   Self->InnerJoin = Value;
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
@@ -1659,25 +1487,9 @@ of a stroked path.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_LineCap(extVector *Self, VLC *Value)
-{
-   if (Self->LineCap IS agg::butt_cap)         *Value = VLC::BUTT;
-   else if (Self->LineCap IS agg::square_cap)  *Value = VLC::SQUARE;
-   else if (Self->LineCap IS agg::round_cap)   *Value = VLC::ROUND;
-   else if (Self->LineCap IS agg::inherit_cap) *Value = VLC::INHERIT;
-   else *Value = VLC::NIL;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_LineCap(extVector *Self, VLC Value)
 {
-   switch(Value) {
-      case VLC::BUTT:    Self->LineCap = agg::butt_cap; break;
-      case VLC::SQUARE:  Self->LineCap = agg::square_cap; break;
-      case VLC::ROUND:   Self->LineCap = agg::round_cap; break;
-      case VLC::INHERIT: Self->LineCap = agg::inherit_cap; break;
-      default: return ERR::InvalidValue;
-   }
+   Self->LineCap = Value;
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
@@ -1692,30 +1504,9 @@ that are being stroked.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_LineJoin(extVector *Self, VLJ *Value)
-{
-   if (Self->LineJoin IS agg::miter_join_revert) *Value = VLJ::MITER;
-   else if (Self->LineJoin IS agg::round_join)   *Value = VLJ::ROUND;
-   else if (Self->LineJoin IS agg::bevel_join)   *Value = VLJ::BEVEL;
-   else if (Self->LineJoin IS agg::inherit_join) *Value = VLJ::INHERIT;
-   else if (Self->LineJoin IS agg::miter_join)   *Value = VLJ::MITER_SMART;
-   else if (Self->LineJoin IS agg::miter_join_round)  *Value = VLJ::MITER_ROUND;
-   else *Value = VLJ::NIL;
-
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_LineJoin(extVector *Self, VLJ Value)
 {
-   switch (Value) {
-      case VLJ::MITER:        Self->LineJoin = agg::miter_join_revert; break;
-      case VLJ::ROUND:        Self->LineJoin = agg::round_join; break;
-      case VLJ::BEVEL:        Self->LineJoin = agg::bevel_join; break;
-      case VLJ::MITER_SMART:  Self->LineJoin = agg::miter_join; break;
-      case VLJ::MITER_ROUND:  Self->LineJoin = agg::miter_join_round; break;
-      case VLJ::INHERIT:      Self->LineJoin = agg::inherit_join; break;
-      default: return ERR::InvalidValue;
-   }
+   Self->LineJoin = Value;
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
@@ -1743,13 +1534,13 @@ static ERR VECTOR_SET_Mask(extVector *Self, extVectorClip *Value)
       if (Self->ClipMask) {
          UnsubscribeAction(Self->ClipMask, AC::Free);
          Self->ClipMask = nullptr;
-         Self->ClipCache.clear();
+         Self->ClipCache.reset();
       }
       return ERR::Okay;
    }
    else if (Value->classID() IS CLASSID::VECTORCLIP) {
       if (Self->ClipMask) UnsubscribeAction(Self->ClipMask, AC::Free);
-      Self->ClipCache.clear();
+      Self->ClipCache.reset();
       if (Value->initialised()) { // Ensure that the mask is initialised.
          SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_clipmask));
          Self->ClipMask = Value;
@@ -1791,14 +1582,12 @@ them for theta less than approximately 29 degrees, and a limit of 10.0 converts 
 
 static ERR VECTOR_SET_MiterLimit(extVector *Self, double Value)
 {
-   kt::Log log;
-
    if (Value >= 1.0) {
       Self->MiterLimit = Value;
       mark_buffers_for_refresh(Self);
       return ERR::Okay;
    }
-   else return log.warning(ERR::InvalidValue);
+   else return ERR::InvalidValue;
 }
 
 /*********************************************************************************************************************
@@ -1850,12 +1639,6 @@ static ERR VECTOR_SET_Morph(extVector *Self, extVector *Value)
 MorphFlags: Optional flags that affect morphing.
 
 *********************************************************************************************************************/
-
-static ERR VECTOR_GET_MorphFlags(extVector *Self, VMF *Value)
-{
-   *Value = Self->MorphFlags;
-   return ERR::Okay;
-}
 
 static ERR VECTOR_SET_MorphFlags(extVector *Self, VMF Value)
 {
@@ -1919,31 +1702,6 @@ static ERR VECTOR_SET_Next(extVector *Self, extVector *Value)
    }
 
    mark_buffers_for_refresh(Self);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-NumericID: A unique identifier for the vector.
-
-This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the
-#SID field if that has been defined previously.
-
-If NumericID is set by the client, then any value in #SID will be immediately cleared.
-
-*********************************************************************************************************************/
-
-static ERR VECTOR_GET_NumericID(extVector *Self, int *Value)
-{
-   *Value = Self->NumericID;
-   return ERR::Okay;
-}
-
-static ERR VECTOR_SET_NumericID(extVector *Self, int Value)
-{
-   Self->NumericID = Value;
-   Self->SID.clear();
    return ERR::Okay;
 }
 
@@ -2218,15 +1976,10 @@ the ~ReadPainter() function in the Vector module.  Please refer to it for furthe
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Stroke(extVector *Self, std::string_view &Value)
-{
-   Value = Self->StrokeString;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
 {
    Self->StrokeString.clear();
+   Self->Stroke.reset();
 
    if (not Value.empty()) {
       Self->StrokeString = Value;
@@ -2240,7 +1993,6 @@ static ERR VECTOR_SET_Stroke(extVector *Self, const std::string_view &Value)
          if (fallback.Colour.Alpha) Self->Stroke.Colour = fallback.Colour;
       }
    }
-   else Self->Stroke.reset();
 
    Self->Stroked = Self->is_stroked();
    mark_buffers_for_refresh(Self);
@@ -2260,22 +2012,15 @@ This field is complemented by the #StrokeOpacity and #Stroke fields.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_StrokeColour(extVector *Self, float **Value, int *Elements)
+static ERR VECTOR_GET_StrokeColour(extVector *Self, struct FRGB **Value)
 {
-   *Value = (float *)&Self->Stroke.Colour;
-   *Elements = 4;
+   *Value = &Self->Stroke.Colour;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_StrokeColour(extVector *Self, float *Value, int Elements)
+static ERR VECTOR_SET_StrokeColour(extVector *Self, struct FRGB *Value)
 {
-   if (Value) {
-      if (Elements >= 1) Self->Stroke.Colour.Red   = Value[0];
-      if (Elements >= 2) Self->Stroke.Colour.Green = Value[1];
-      if (Elements >= 3) Self->Stroke.Colour.Blue  = Value[2];
-      if (Elements >= 4) Self->Stroke.Colour.Alpha = Value[3];
-      else Self->Stroke.Colour.Alpha = 1;
-   }
+   if (Value) Self->Stroke.Colour = *Value;
    else Self->Stroke.Colour.Alpha = 0;
 
    Self->Stroked = Self->is_stroked();
@@ -2294,12 +2039,6 @@ Please note that thinly stroked paths may not be able to appear as fully opaque 
 rendering.
 
 *********************************************************************************************************************/
-
-static ERR VECTOR_GET_StrokeOpacity(extVector *Self, double *Value)
-{
-   *Value = Self->StrokeOpacity;
-   return ERR::Okay;
-}
 
 static ERR VECTOR_SET_StrokeOpacity(extVector *Self, double Value)
 {
@@ -2324,13 +2063,16 @@ The size of the stroke is also affected by scaling factors imposed by transforms
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_StrokeWidth(extVector *Self, Unit *Value)
+static ERR VECTOR_GET_StrokeWidth(extVector *Self, Unit &Value)
 {
-   if (Value->scaled()) {
-      if (Self->ScaledStrokeWidth) Value->set(Self->StrokeWidth * 100.0);
-      else Value->set(0);
+   if (Value.scaled()) {
+      if (Self->StrokeWidth.scaled()) Value = Self->StrokeWidth;
+      else {
+         const auto diagonal = get_parent_diagonal(Self) * INV_SQRT2;
+         Value = Unit((diagonal > 0.0) ? double(Self->StrokeWidth) / diagonal : 0.0, FD_SCALED);
+      }
    }
-   else Value->set(Self->fixed_stroke_width());
+   else Value = Unit(Self->fixed_stroke_width());
 
    return ERR::Okay;
 }
@@ -2339,7 +2081,6 @@ static ERR VECTOR_SET_StrokeWidth(extVector *Self, Unit &Value)
 {
    if ((Value >= 0.0) and (Value <= 2000.0)) {
       Self->StrokeWidth = Value;
-      Self->ScaledStrokeWidth = Value.scaled();
       Self->Stroked = Self->is_stroked();
       mark_dirty(Self, RC::FINAL_PATH); // Not really a path change, but needed for some dependent code like clip-masks.
       return ERR::Okay;
@@ -2474,7 +2215,7 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
 
 double extVector::fixed_stroke_width()
 {
-   if (this->ScaledStrokeWidth) {
+   if (this->StrokeWidth.scaled()) {
       return get_parent_diagonal(this) * INV_SQRT2 * this->StrokeWidth;
    }
    else return this->StrokeWidth;
@@ -2482,51 +2223,74 @@ double extVector::fixed_stroke_width()
 
 //********************************************************************************************************************
 
-static const FieldDef clMorphFlags[] = {
-   { "Stretch",     VMF::STRETCH },
-   { "AutoSpacing", VMF::AUTO_SPACING },
-   { "XMin",        VMF::X_MIN },
-   { "XMid",        VMF::X_MID },
-   { "XMax",        VMF::X_MAX },
-   { "YMin",        VMF::Y_MIN },
-   { "YMid",        VMF::Y_MID },
-   { "YMax",        VMF::Y_MAX },
-   { nullptr, 0 }
-};
+extVector::~extVector() {
+   ClipCache.reset();
 
-static const FieldDef clLineJoin[] = {
-   { "Miter",      VLJ::MITER },
-   { "Round",      VLJ::ROUND },
-   { "Bevel",      VLJ::BEVEL },
-   { "MiterSmart", VLJ::MITER_SMART },
-   { "MiterRound", VLJ::MITER_ROUND },
-   { "Inherit",    VLJ::INHERIT },
-   { nullptr, 0 }
-};
+   if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
+   if (Transition) UnsubscribeAction(Transition, AC::Free);
+   if (Morph)      UnsubscribeAction(Morph, AC::Free);
+   if (AppendPath) UnsubscribeAction(AppendPath, AC::Free);
 
-static const FieldDef clLineCap[] = {
-   { "Butt",    VLC::BUTT },
-   { "Square",  VLC::SQUARE },
-   { "Round",   VLC::ROUND },
-   { "Inherit", VLC::INHERIT },
-   { nullptr, 0 }
-};
+   // Patch the nearest vectors that are linked to this one.
+   if (Next) Next->Prev = Prev;
+   if (Prev) Prev->Next = Next;
+   if ((Parent) and (!Prev)) {
+      if (Parent->classID() IS CLASSID::VECTORSCENE) ((objVectorScene *)Parent)->Viewport = (objVectorViewport *)Next;
+      else ((extVector *)Parent)->Child = Next;
+   }
 
-static const FieldDef clInnerJoin[] = {
-   { "Miter",   VIJ::MITER },
-   { "Round",   VIJ::ROUND },
-   { "Bevel",   VIJ::BEVEL },
-   { "Jag",     VIJ::JAG },
-   { "Inherit", VIJ::INHERIT },
-   { nullptr, 0 }
-};
+   if (Child) {
+      // Clear the parent reference for all children of the vector (essential for maintaining pointer integrity).
+      auto &scan = Child;
+      while (scan) {
+         scan->Parent = nullptr;
+         scan = scan->Next;
+      }
+   }
 
-static const FieldDef clFillRule[] = {
-   { "EvenOdd", VFR::EVEN_ODD },
-   { "NonZero", VFR::NON_ZERO },
-   { "Inherit", VFR::INHERIT },
-   { nullptr, 0 }
-};
+   if ((Scene) and (!Scene->collecting())) {
+      auto scene = (extVectorScene *)Scene;
+      if ((ParentView) and (ResizeSubscription)) {
+         if (scene->ResizeSubscriptions.contains(ParentView)) {
+            scene->ResizeSubscriptions[ParentView].erase(this);
+         }
+      }
+      scene->InputSubscriptions.erase(this);
+      scene->KeyboardSubscriptions.erase(this);
+
+      if (scene->ActiveVector IS UID) {
+         if (scene->Cursor != PTC::DEFAULT) {
+            kt::ScopedObjectLock<objSurface> surface(scene->SurfaceID);
+            if ((surface.granted()) and (surface.obj->Cursor != PTC::DEFAULT)) {
+               surface.obj->setCursor(PTC::DEFAULT);
+            }
+         }
+      }
+   }
+
+   {
+      const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+      auto pos = std::find(glVectorFocusList.begin(), glVectorFocusList.end(), this);
+      if (pos != glVectorFocusList.end()) glVectorFocusList.erase(pos, glVectorFocusList.end());
+   }
+
+   {
+      const std::lock_guard<std::mutex> lock(glResizeLock);
+      if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(this))) {
+         glResizeSubscriptions.erase(this);
+      }
+   }
+
+   if (Matrices) {
+      VectorMatrix *next;
+      for (auto t=Matrices; t; t=next) {
+         next = t->Next;
+         FreeResource(t);
+      }
+   }
+}
+
+//********************************************************************************************************************
 
 #include "vector_def.c"
 
@@ -2537,8 +2301,8 @@ static const FieldArray clVectorFields[] = {
    { "Prev",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Prev, CLASSID::VECTOR },
    { "Parent",          FDF_OBJECT|FD_R },
    { "Matrices",        FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "VectorMatrix" },
-   { "StrokeOpacity",   FDF_DOUBLE|FDF_RW|FDF_PURE, VECTOR_GET_StrokeOpacity, VECTOR_SET_StrokeOpacity },
-   { "FillOpacity",     FDF_DOUBLE|FDF_RW|FDF_PURE, VECTOR_GET_FillOpacity, VECTOR_SET_FillOpacity },
+   { "StrokeOpacity",   FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_StrokeOpacity },
+   { "FillOpacity",     FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_FillOpacity },
    { "Opacity",         FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_Opacity },
    { "MiterLimit",      FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_MiterLimit },
    { "InnerMiterLimit", FDF_DOUBLE|FD_RW },
@@ -2549,32 +2313,34 @@ static const FieldArray clVectorFields[] = {
    { "PathQuality",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorPathQuality },
    { "ColourSpace",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorColourSpace },
    { "PathTimestamp",   FDF_INT|FDF_R },
+   // Directly accessible private fields
+   { "Stroke",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Stroke },
+   { "Fill",         FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Fill },
+   { "Filter",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Filter },
+   { "SID",          FDF_CPPSTRING|FDF_RW },
+   { "FillRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_FillRule, &clVectorVFR },
+   { "ClipRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_ClipRule, &clVectorVFR },
+   { "LineJoin",     FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineJoin, &clVectorVLJ },
+   { "LineCap",      FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineCap, &clVectorVLC },
+   { "InnerJoin",    FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_InnerJoin, &clVectorVIJ },
+   { "MorphFlags",   FDF_INTFLAGS|FDF_RW,       nullptr, VECTOR_SET_MorphFlags, &clVectorVMF },
    // Virtual fields
-   { "ClipRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW,  VECTOR_GET_ClipRule, VECTOR_SET_ClipRule, &clFillRule },
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
-   { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                    VECTOR_GET_DisplayScale },
-   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Mask, VECTOR_SET_Mask },
-   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Morph, VECTOR_SET_Morph },
-   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
-   { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE,        VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clMorphFlags },
-   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE,             VECTOR_GET_NumericID, VECTOR_SET_NumericID },
-   { "SID",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_SID, VECTOR_SET_SID },
-   { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,                  nullptr, VECTOR_SET_ResizeEvent },
-   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,       VECTOR_GET_Sequence },
-   { "Stroke",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Stroke, VECTOR_SET_Stroke },
-   { "StrokeColour", FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE,   VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour },
-   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
-   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,          VECTOR_GET_Transition, VECTOR_SET_Transition },
-   { "Fill",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Fill, VECTOR_SET_Fill },
-   { "FillColour",   FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FDF_RW|FDF_PURE,  VECTOR_GET_FillColour, VECTOR_SET_FillColour },
-   { "FillRule",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE,  VECTOR_GET_FillRule, VECTOR_SET_FillRule, &clFillRule },
-   { "Filter",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE,       VECTOR_GET_Filter, VECTOR_SET_Filter },
-   { "LineJoin",     FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineJoin, VECTOR_SET_LineJoin, &clLineJoin },
-   { "LineCap",      FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_LineCap, VECTOR_SET_LineCap, &clLineCap },
-   { "InnerJoin",    FDF_VIRTUAL|FD_INT|FD_LOOKUP|FDF_RW|FDF_PURE,    VECTOR_GET_InnerJoin, VECTOR_SET_InnerJoin, &clInnerJoin },
-   { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,               VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
+   { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
+   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Mask, VECTOR_SET_Mask },
+   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Morph, VECTOR_SET_Morph },
+   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
+   { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
+   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
+   { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
+   { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE,      VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
+   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Transition, VECTOR_SET_Transition },
+   { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,    VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },
+   { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,         VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
    END_FIELD
 };
+
+//********************************************************************************************************************
 
 static ERR init_vector(void)
 {

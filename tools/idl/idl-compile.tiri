@@ -439,7 +439,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Returns fields as a list returned by cType, featuring { type, name, docType, fullType, comment }
 
-global function extractFields(Def:str, Origin:str):table
+global function extractStructFields(Def:str, Origin:str):table
    fields = { }
    Def ?! return fields
    for line, content in Def:split('\n') do
@@ -448,8 +448,12 @@ global function extractFields(Def:str, Origin:str):table
       local type, name = rx_type_name.extract(content)
 
       if type?? then
-         field = cType({ type=type:trim(), name=name:trim() }, Origin)
-         table.insert(fields, field)
+         if type:startsWith('!') then
+            error('struct() declarations should not contain virtual fields.')
+         else
+            field = cType({ type=type:trim(), name=name:trim() }, Origin)
+            table.insert(fields, field)
+         end
       elseif not content:trim()?? then
          -- Ignore empty line
       else
@@ -471,7 +475,7 @@ global function struct(Name:str, Options:table, Def:str)
       name    = Name,
       version = Options.version,
       type    = Options.type,
-      fields  = extractFields(Def, Name)
+      fields  = extractStructFields(Def, Name)
    }
    struct.sequence = sequenceStruct(struct.fields)
    glStructures[Name] = struct

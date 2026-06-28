@@ -9,8 +9,6 @@ Name: System
 
 *********************************************************************************************************************/
 
-#include <stdlib.h>
-
 #ifdef __unix__
  #include <stdio.h>
  #include <unistd.h>
@@ -388,14 +386,15 @@ int64_t GetResource(RES Resource)
    switch(Resource) {
       case RES::PRIVILEGED:      return glPrivileged;
       case RES::LOG_LEVEL:       return glLogLevel;
-      case RES::PROCESS_STATE:   return MAXINT(glTaskState);
+      case RES::PROCESS_STATE:   return int64_t(glTaskState);
       case RES::LOG_DEPTH:       return tlDepth;
-      case RES::JNI_ENV:         return (MAXINT)glJNIEnv;
+      case RES::JNI_ENV:         return (int64_t)glJNIEnv;
       case RES::THREAD_ID:       return int(get_thread_id());
-      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
+      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (int64_t)glDisplayDriver.c_str(); else return 0;
       case RES::MAIN_THREAD:     return tlMainThread ? true : false;
       case RES::MAIN_THREAD_ID:  return int(glMainThreadID);
       case RES::WINDOWS_ICON:    return glWindowsIcon;
+      case RES::STRUCT_DB:       return (int64_t)&glStructSizes;
 
       case RES::MEMORY_USAGE: {
          #ifdef __linux__

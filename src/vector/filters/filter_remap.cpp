@@ -134,7 +134,8 @@ class extRemapFX : public extFilterEffect {
    Component Blue;
    Component Alpha;
 
-   extRemapFX() : Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
+   extRemapFX(objMetaClass *ClassPtr, OBJECTID ObjectID) :
+      extFilterEffect(ClassPtr, ObjectID), Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
 
    Component * getComponent(CMP Component) {
       switch(Component) {
@@ -239,7 +240,7 @@ static ERR REMAPFX_SelectDiscrete(extRemapFX *Self, struct rf::SelectDiscrete *A
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Values)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Values)) return log.warning(ERR::NullArgs);
    if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
@@ -274,7 +275,7 @@ static ERR REMAPFX_SelectIdentity(extRemapFX *Self, struct rf::SelectIdentity *A
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_identity();
@@ -311,7 +312,7 @@ static ERR REMAPFX_SelectGamma(extRemapFX *Self, struct rf::SelectGamma *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_gamma(Args->Amplitude, Args->Exponent, Args->Offset);
@@ -348,7 +349,7 @@ static ERR REMAPFX_SelectInvert(extRemapFX *Self, struct rf::SelectInvert *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_invert();
@@ -385,7 +386,7 @@ static ERR REMAPFX_SelectLinear(extRemapFX *Self, struct rf::SelectLinear *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (Args->Slope < 0) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
@@ -425,7 +426,7 @@ static ERR REMAPFX_SelectMask(extRemapFX *Self, struct rf::SelectMask *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_mask(Args->Mask);
@@ -463,7 +464,7 @@ static ERR REMAPFX_SelectTable(extRemapFX *Self, struct rf::SelectTable *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Values)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Values)) return log.warning(ERR::NullArgs);
    if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {

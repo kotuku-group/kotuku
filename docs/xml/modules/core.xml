@@ -726,7 +726,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>FindField</name>
     <category>Fields</category>
     <comment>Finds field descriptors for any class, by ID.</comment>
-    <prototype>struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</prototype>
+    <prototype>const struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</prototype>
     <tiriPrototype>any, Target:obj = FindField(Object:obj, FieldID:num)</tiriPrototype>
     <tags>object-owns-result, nullable-result, pure-query</tags>
     <input>
@@ -743,7 +743,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>The resulting <st>Field</st> structure is immutable.</p>
 <p>Note: To lookup the field definition of a <class name="MetaClass">MetaClass</class>, use the <class name="MetaClass" method="FindField">MetaClass.FindField()</class> method.</p>
     </description>
-    <result type="struct Field *">Returns a pointer to the <st>Field</st> descriptor, otherwise <code>NULL</code> if not found.</result>
+    <result type="const struct Field *">Returns a pointer to the <st>Field</st> descriptor, otherwise <code>NULL</code> if not found.</result>
   </function>
 
   <function>
@@ -2246,58 +2246,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="WRITE">Device is writeable</const>
     </constants>
 
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
-    </constants>
-
-    <constants lookup="DRL" comment="Compass directions.">
-      <const name="EAST"/>
-      <const name="NORTH"/>
-      <const name="NORTH_EAST"/>
-      <const name="NORTH_WEST"/>
-      <const name="SOUTH"/>
-      <const name="SOUTH_EAST"/>
-      <const name="SOUTH_WEST"/>
-      <const name="WEST"/>
-    </constants>
-
-    <constants lookup="EDGE" comment="Edge flags">
-      <const name="ALL"/>
-      <const name="BOTTOM"/>
-      <const name="BOTTOM_LEFT"/>
-      <const name="BOTTOM_RIGHT"/>
-      <const name="LEFT"/>
-      <const name="RIGHT"/>
-      <const name="TOP"/>
-      <const name="TOP_LEFT"/>
-      <const name="TOP_RIGHT"/>
-    </constants>
-
     <constants lookup="EVG" comment="Event categories.">
       <const name="ANDROID">Android specific events that do not already fit existing categories.</const>
       <const name="APP">Custom event dispatched from an application</const>
@@ -2659,20 +2607,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="SHIFT">Synonym for <code>L_SHIFT | R_SHIFT</code></const>
     </constants>
 
-    <constants lookup="LAYOUT" comment="Universal values for alignment of graphic layouts in documents.">
-      <const name="BACKGROUND">Graphic is placed behind text.  The text will not be wrapped around the object</const>
-      <const name="EMBEDDED">Graphic is embedded in the text stream (treated as a character).  The height of the line can be extended to match the height of the graphic in this mode.</const>
-      <const name="FOREGROUND">Graphic is placed in front of the text.  The text will not be wrapped around the object</const>
-      <const name="IGNORE_CURSOR">The object has a fixed X/Y position, unrelated to the cursor</const>
-      <const name="LEFT">The text boundary is extended to the left edge of the page.</const>
-      <const name="LOCK">Lock the position of the graphic to the top left of the view and not the scrolling position of the page.</const>
-      <const name="RIGHT">The text boundary is extended to the right edge of the page.</const>
-      <const name="SQUARE">The default.  Text will clip around the image's border</const>
-      <const name="TIGHT">Text wraps to the shape of the image (alpha blended/masked images only)</const>
-      <const name="TILE">The graphic will be tiled.  Tiled graphics also meet the <code>BACKGROUND</code> criteria (no wrapping).</const>
-      <const name="WIDE">The text boundary is extended to the left and right edges of the page.</const>
-    </constants>
-
     <constants lookup="LDF" comment="Flags for LoadFile()">
       <const name="CHECK_EXISTS">Limits the routine to checking the file cache for the existence of the file.  If found, the relevant cache entry is returned. The open count is not incremented by this action (it is therefore unnecessary to follow-up with a call to UnloadFile()).  If no up-to-date cache entry is available, <code>ERR::Search</code> is returned.</const>
     </constants>
@@ -2732,14 +2666,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="SYSTEM_PROBE">Indicates that the module is being probed.  Do not use outside of the core library.</const>
     </constants>
 
-    <constants lookup="MOVE" comment="Generic flags for controlling movement.">
-      <const name="ALL">Synonym for <code>DOWN | UP | LEFT | RIGHT</code></const>
-      <const name="DOWN"/>
-      <const name="LEFT"/>
-      <const name="RIGHT"/>
-      <const name="UP"/>
-    </constants>
-
     <constants lookup="MSF" comment="Message flags.">
       <const name="NO_DUPLICATE">If the <code>Type</code> parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with <code>ERR::Okay</code>.</const>
       <const name="UPDATE">If <code>Type</code> matches a queued message, update that message's data in place.</const>
@@ -2775,12 +2701,10 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="FREE_ON_UNLOCK">Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
-      <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
       <const name="PRIVATE"/>
       <const name="RECLASSED">The object switched from the base-class to a derived class during initialisation.</const>
       <const name="SIGNALLED">The object has been signalled and is awaiting processing.</const>
       <const name="TIMER_SUB">The object is subscribed to a timer interval.</const>
-      <const name="UNIQUE">Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, <function module="Core">NewObject</function> will return <code>ERR::ObjectExists</code>.  This flag works in conjunction with the <code>Name</code> parameter.</const>
       <const name="UNTRACKED">An object created with this flag will not be tracked back to the object that created it.</const>
     </constants>
 
@@ -2906,6 +2830,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="PRIVILEGED">This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</const>
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
+      <const name="STRUCT_DB">Returns a map of hashed struct names and corresponding struct sizes.</const>
       <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
       <const name="TOTAL_SHARED_MEMORY">The total amount of shared memory in use (system wide).</const>
@@ -3049,13 +2974,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Args" type="const struct FunctionField *">List of fields that are passed to this action.</field>
     </struct>
 
-    <struct name="CIEXYZ" comment="Colour structure for CIE X, Y and Z components.">
-      <field name="X" type="FLOAT">X is a mix of the three CIE RGB curves chosen to be non-negative</field>
-      <field name="Y" type="FLOAT">Luminance value from 0 to 1.0</field>
-      <field name="Z" type="FLOAT">Z is quasi-equal to blue</field>
-      <field name="Alpha" type="FLOAT">Alpha blending value from 0 to 1.0</field>
-    </struct>
-
     <struct name="ChildEntry" comment="Structure for ListChildren() function">
       <field name="ObjectID" type="OBJECTID">Object ID</field>
       <field name="ClassID" type="CLASSID">The class ID of the referenced object.</field>
@@ -3158,7 +3076,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
       <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>

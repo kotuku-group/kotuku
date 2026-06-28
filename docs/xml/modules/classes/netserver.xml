@@ -101,7 +101,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="WrongClass">An object is not of the required type</error>
+        <error code="WrongClass">An object is not of the required class type</error>
       </result>
       <tags>mutates-object, closes-handle</tags>
     </method>
@@ -112,7 +112,7 @@
     <field>
       <name>Backlog</name>
       <comment>The maximum number of connections that can be queued against the socket.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Incoming TCP connections to NetServer objects are queued until they are accepted by the object.  Setting the Backlog adjusts the maximum number of connections on the queue, which otherwise defaults to 10.</p>
@@ -123,7 +123,7 @@
     <field>
       <name>ClientLimit</name>
       <comment>The maximum number of clients (unique IP addresses) that can be connected to a NetServer.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The ClientLimit value limits the maximum number of IP addresses that can be connected to the socket at any one time. For socket limits per client, see the <fl>SocketLimit</fl> field.</p>
@@ -133,14 +133,14 @@
     <field>
       <name>Clients</name>
       <comment>Lists all NetClient records connected to the NetServer.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>OBJECTPTR</type>
     </field>
 
     <field>
       <name>SSLCertificate</name>
       <comment>SSL certificate file to use for SSL NetServer listeners.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>Set SSLCertificate to the path of an SSL certificate file to use when the NetServer is initialised with SSL enabled. The certificate file must be in a supported format such as PEM, CRT, or P12.  If no certificate is defined, the NetServer will either self-sign or use a localhost certificate, if available.</p>
@@ -150,7 +150,7 @@
     <field>
       <name>SSLKeyPassword</name>
       <comment>SSL private key password.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is not encrypted, this field can be left empty.</p>
@@ -160,7 +160,7 @@
     <field>
       <name>SocketLimit</name>
       <comment>The maximum number of sockets that can be connected from a single client IP address.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>The SocketLimit value limits how many simultaneous ClientSocket connections may be opened by one NetClient record.</p>
@@ -170,7 +170,7 @@
     <field>
       <name>TotalClients</name>
       <comment>Indicates the total number of clients currently connected to the NetServer.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>INT</type>
       <description>
 <p>NetServer maintains a count of the total number of currently connected TCP client sockets.  You can read the total number of connections from this field.</p>

@@ -309,11 +309,11 @@ static ERR insert_text(extDocument *Self, RSTREAM *Stream, stream_char &Index, c
 
 //********************************************************************************************************************
 
-static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD UnloadFlags)
+static ERR load_doc(extDocument *Self, std::string_view Path, bool Unload, ULD UnloadFlags)
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch("Loading file '%s', page '%s'", Path.c_str(), Self->PageName.c_str());
+   log.branch("Loading file '%.*s', page '%s'", int(Path.size()), Path.data(), Self->PageName.c_str());
 
    if (Unload) unload_doc(Self, UnloadFlags);
 
@@ -322,7 +322,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
    // Generate a path without parameter values.
 
    auto i = Path.find_first_of("&#?");
-   if (i != std::string::npos) Path.erase(i);
+   if (i != std::string::npos) Path = Path.substr(0, i);
 
    if (!AnalysePath(Path, nullptr)) {
       auto task = CurrentTask();
@@ -359,7 +359,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
          else return Self->Error;
       }
       else {
-         error_dialog("Document Load Error", std::string("Failed to load document file '") + Path + "'");
+         error_dialog("Document Load Error", std::format("Failed to load document file '{}'", Path));
          return log.warning(ERR::OpenFile);
       }
    }
@@ -946,9 +946,9 @@ void ui_link::exec(extDocument *Self)
                   if ((Self->Path[end] IS '&') or (Self->Path[end] IS '#') or (Self->Path[end] IS '?')) break;
                }
                auto path = std::string(Self->Path, end) + origin.ref;
-               Self->set(FID_Path, path);
+               Self->setPath(path);
             }
-            else Self->set(FID_Path, origin.ref);
+            else Self->setPath(origin.ref);
 
             if (!Self->Bookmark.empty()) show_bookmark(Self, Self->Bookmark);
          }
@@ -976,7 +976,7 @@ void ui_link::exec(extDocument *Self)
             auto identify_text = std::string(identify_path);
             if (!IdentifyFile(identify_text, CLASSID::NIL, &class_id, &derived_id)) {
                if (class_id IS CLASSID::DOCUMENT) {
-                  Self->set(FID_Path, lk);
+                  Self->setPath(lk);
 
                   if (!Self->Bookmark.empty()) show_bookmark(Self, Self->Bookmark);
                   else log.msg("No bookmark was preset.");

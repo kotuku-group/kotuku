@@ -66,7 +66,7 @@ public:
    int FindEnabled = -1;
    bool Find = false;
 
-   extProxy() {
+   extProxy(objMetaClass *ClassPtr, OBJECTID ObjectID) : objProxy(ClassPtr, ObjectID) {
       Enabled = true;
       Port = 80;
    }

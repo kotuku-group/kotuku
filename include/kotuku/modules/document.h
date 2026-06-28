@@ -116,16 +116,19 @@ class objDocument : public Object {
    static constexpr CSTRING CLASS_NAME = "Document";
 
    using create = kt::Create<objDocument>;
+   objDocument(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    std::string Description;         // A description of the document, provided by its author.
    std::string Title;               // The title of the document.
    std::string Author;              // The author(s) of the document.
    std::string Copyright;           // Copyright information for the document.
    std::string Keywords;            // Includes keywords declared by the source document.
+   std::string Path;                // Identifies the location of a document file to load.
    objVectorViewport * Viewport;    // A client-specific viewport that will host the document graphics.
    objVectorViewport * Focus;       // Refers to the object that will be monitored for user focusing.
    objVectorViewport * View;        // The viewing area of the document.
    objVectorViewport * Page;        // The Page contains the document content and is hosted by the View
+   objScript * ClientScript;        // Allows an external script object to be used by a document file.
    OBJECTID TabFocusID;             // Allows the user to hit the tab key to focus on other GUI objects.
    DEF      EventMask;              // Specifies events that need to be reported from the Document object.
    DCF      Flags;                  // Optional flags that affect object behaviour.
@@ -253,6 +256,11 @@ class objDocument : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
    inline ERR getViewport(objVectorViewport * &Value) noexcept {
       Value = this->Viewport;
       return ERR::Okay;
@@ -307,15 +315,6 @@ class objDocument : public Object {
       return error;
    }
 
-   inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
    inline ERR getOrigin(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       SetObjectContext(this, field, AC::NIL);
@@ -325,12 +324,10 @@ class objDocument : public Object {
       return error;
    }
 
-   inline ERR getPageWidth(int &Value) noexcept {
+   inline ERR getPageWidth(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
-      Unit var(0, FD_DOUBLE);
-      auto error = field->GetValue(this, &var);
-      if (error IS ERR::Okay) Value = var.Value;
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -347,14 +344,25 @@ class objDocument : public Object {
 
    // Customised field setting
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
    inline ERR setViewport(objVectorViewport * Value) noexcept {
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, 0x08000301, Value, 1);
+      return field->WriteValue(this, field, 0x08000301, Value);
    }
 
    inline ERR setFocus(objVectorViewport * Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Focus = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setClientScript(objScript * Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->ClientScript = Value;
       return ERR::Okay;
    }
 
@@ -370,38 +378,27 @@ class objDocument : public Object {
 
    inline ERR setFlags(const DCF Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setClientScript(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, 0x08000401, Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setEventCallback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setOrigin(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
-   inline ERR setPageWidth(const int Value) noexcept {
+   inline ERR setPageWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      Unit var(Value);
-      return field->WriteValue(this, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setPretext(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, 0x00804200, &Value, 1);
+      return field->WriteValue(this, field, 0x00804200, &Value);
    }
 
 };

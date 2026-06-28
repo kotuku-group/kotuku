@@ -302,5 +302,21 @@ end
 
    assert(err is ERR_Okay, 'Inner decompression loop failed: ' .. mSys.GetErrorMsg(err))
    err = cmp.mtDecompressStreamEnd('streamedOutput')
+   assert(err is ERR_Okay, 'DecompressStreamEnd() failed: ' .. mSys.GetErrorMsg(err))
    glOutFile = nil
+   processing.collect() -- Flush the decompressed output to disk
+
+   -- Verify that the streamed round-trip reproduced the original source exactly.
+
+   source_file = obj.new('file', { path='scripts:gui.tiri' })
+   source_size = source_file.size
+
+   output_file = obj.new('file', { path='temp:gui.tiri' })
+   assert(output_file.size is source_size, f"Decompressed size {output_file.size} does not match source size {source_size}.")
+
+   source_data = array<byte, source_size>
+   output_data = array<byte, source_size>
+   assert(mSys.ReadFileToBuffer('scripts:gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
+   assert(mSys.ReadFileToBuffer('temp:gui.tiri', output_data) is ERR_Okay, 'Failed to read decompressed output.')
+   assert(output_data:getString() is source_data:getString(), 'Round-tripped stream output does not match the source.')
 end

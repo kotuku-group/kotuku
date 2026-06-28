@@ -1400,7 +1400,7 @@ static void load_config(extAudio *Self)
 
 //********************************************************************************************************************
 
-extAudio::extAudio()
+extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPtr, ObjectID)
 {
    OutputRate  = 44100;        // Rate for output to speakers
    InputRate   = 44100;        // Input rate for recording

@@ -107,6 +107,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   ]])
 
   klass("Sound", { src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
+    string Path
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from

@@ -3,23 +3,32 @@
 Please note that this is not an extension of the Vector class.  It is used for the purposes of gradient definitions only.
 
 -CLASS-
-VectorGradient: Provides support for the filling and stroking of vectors with colour gradients.
+Gradient: Base class for colour gradient paint servers.
 
-The VectorGradient class is used by Vector painting algorithms to fill and stroke vectors with gradients.  This is
-achieved by initialising a VectorGradient object with the desired settings and then registering it with
-a @VectorScene via the @VectorScene.AddDef() method.
+Gradient stores the common state shared by all gradient paint servers.  Concrete gradient classes such as
+@GradientLinear, @GradientRadial and @GradientGouraud provide the fields that describe a specific gradient shape.
 
-Any vector within the target scene will be able to utilise the gradient for filling or stroking by referencing its
-name through the @Vector.Fill and @Vector.Stroke fields.  For instance 'url(#redgradient)'.
-
-It is strongly recommended that the VectorGradient is owned by the @VectorScene that is handling the
-definition.  This will ensure that the VectorGradient is de-allocated when the scene is destroyed.
+Gradient objects are definition objects and should normally be registered with a @VectorScene via
+@VectorScene.AddDef() before being referenced by vector fill or stroke attributes.
 
 -END-
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_SET_Stops(extVectorGradient *Self, GradientStop *Value, int Elements);
+static ERR GRADIENT_SET_Stops(extGradient *, std::span<const GradientStop> *);
+
+static ERR rebuild_gradient_colours(extGradient *);
+static void invalidate_gradient_tables(extGradient *);
+
+static ERR init_gradient_linear(void);
+static ERR init_gradient_radial(void);
+static ERR init_gradient_conic(void);
+static ERR init_gradient_diamond(void);
+static ERR init_gradient_contour(void);
+static ERR init_gradient_gouraud(void);
+static ERR init_gradient_mesh(void);
+static ERR init_gradient_distal(void);
+static ERR init_gradient_voronoi(void);
 
 // Return a gradient table for a vector with its opacity multiplier applied.  The table is cached with the vector so
 // that it does not need to be recalculated when required again.
@@ -28,7 +37,7 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
 {
    kt::Log log(__FUNCTION__);
 
-   GradientColours *cols = ((extVectorGradient *)Painter.Gradient)->Colours;
+   GradientColours *cols = ((extGradient *)Painter.Gradient)->Colours;
    if (not cols) {
       log.warning("No colour table in gradient %p.", Painter.Gradient);
       return nullptr;
@@ -39,10 +48,9 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
       return &cols->table;
    }
    else {
-      if ((Painter.GradientTable) and (Opacity IS Painter.GradientAlpha)) return Painter.GradientTable;
+      if ((Painter.GradientTable) and (Opacity IS Painter.GradientAlpha)) return Painter.GradientTable.get();
 
-      delete Painter.GradientTable;
-      Painter.GradientTable = new (std::nothrow) GRADIENT_TABLE();
+      Painter.GradientTable.reset(new (std::nothrow) GRADIENT_TABLE());
       if (not Painter.GradientTable) {
          log.warning("Failed to allocate fill gradient table");
          return nullptr;
@@ -54,7 +62,7 @@ GRADIENT_TABLE * get_fill_gradient_table(extPainter &Painter, double Opacity)
             cols->table[i].a * Opacity);
       }
 
-      return Painter.GradientTable;
+      return Painter.GradientTable.get();
    }
 }
 
@@ -64,12 +72,10 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
 {
    kt::Log log(__FUNCTION__);
 
-   GradientColours *cols = ((extVectorGradient *)Vector.Stroke.Gradient)->Colours;
+   GradientColours *cols = ((extGradient *)Vector.Stroke.Gradient)->Colours;
    if (not cols) {
-      if (not cols) {
-         log.warning("No colour table referenced in stroke gradient %p for vector #%d.", Vector.Stroke.Gradient, Vector.UID);
-         return nullptr;
-      }
+      log.warning("No colour table referenced in stroke gradient %p for vector #%d.", Vector.Stroke.Gradient, Vector.UID);
+      return nullptr;
    }
 
    if ((Vector.StrokeOpacity IS 1.0) and (Vector.Opacity IS 1.0)) {
@@ -78,10 +84,11 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
    }
    else {
       double opacity = Vector.StrokeOpacity * Vector.Opacity;
-      if ((Vector.Stroke.GradientTable) and (opacity IS Vector.Stroke.GradientAlpha)) return Vector.Stroke.GradientTable;
+      if ((Vector.Stroke.GradientTable) and (opacity IS Vector.Stroke.GradientAlpha)) {
+         return Vector.Stroke.GradientTable.get();
+      }
 
-      delete Vector.Stroke.GradientTable;
-      Vector.Stroke.GradientTable = new (std::nothrow) GRADIENT_TABLE();
+      Vector.Stroke.GradientTable.reset(new (std::nothrow) GRADIENT_TABLE());
       if (not Vector.Stroke.GradientTable) {
          log.warning("Failed to allocate stroke gradient table");
          return nullptr;
@@ -89,10 +96,39 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
       Vector.Stroke.GradientAlpha = opacity;
 
       for (unsigned i=0; i < Vector.Stroke.GradientTable->size(); i++) {
-         (*Vector.Stroke.GradientTable)[i] = agg::rgba8(cols->table[i].r, cols->table[i].g, cols->table[i].b, cols->table[i].a * opacity);
+         (*Vector.Stroke.GradientTable)[i] = agg::rgba8(cols->table[i].r, cols->table[i].g, cols->table[i].b,
+            cols->table[i].a * opacity);
       }
 
-      return Vector.Stroke.GradientTable;
+      return Vector.Stroke.GradientTable.get();
+   }
+}
+
+//********************************************************************************************************************
+// Clear cached opacity-adjusted gradient tables on vectors that reference a modified shared gradient.
+
+static void invalidate_gradient_painter_table(extPainter &Painter, extGradient *Target)
+{
+   if (Painter.Gradient IS Target) {
+      Painter.GradientTable.reset();
+   }
+}
+
+static void invalidate_gradient_tables(extVector *Vector, extGradient *Target)
+{
+   for (auto node=Vector; node; node=(extVector *)node->Next) {
+      invalidate_gradient_painter_table(node->Fill[0], Target);
+      invalidate_gradient_painter_table(node->Fill[1], Target);
+      invalidate_gradient_painter_table(node->Stroke, Target);
+
+      if (node->Child) invalidate_gradient_tables((extVector *)node->Child, Target);
+   }
+}
+
+static void invalidate_gradient_tables(extGradient *Self)
+{
+   if ((Self->HostScene) and (Self->HostScene->Viewport)) {
+      invalidate_gradient_tables((extVector *)Self->HostScene->Viewport, Self);
    }
 }
 
@@ -100,8 +136,12 @@ GRADIENT_TABLE * get_stroke_gradient_table(extVector &Vector)
 // Constructor for the GradientColours class.  This expects to be called whenever the Gradient class updates the
 // Stops array.
 
-GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution)
+GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
+   double Gamma, GEZ Easing)
 {
+   resolution = 1.0;
+   gamma = 1.0;
+
    int stop, i1, i2, i;
 
    for (stop=0; stop < std::ssize(Stops)-1; stop++) {
@@ -113,8 +153,10 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
       if (i2 < 0) i2 = 0;
       else if (i2 > 255) i2 = 255;
 
-      agg::rgba8 begin(Stops[stop].RGB.Red*255, Stops[stop].RGB.Green*255, Stops[stop].RGB.Blue*255, Stops[stop].RGB.Alpha * Alpha * 255);
-      agg::rgba8 end(Stops[stop+1].RGB.Red*255, Stops[stop+1].RGB.Green*255, Stops[stop+1].RGB.Blue*255, Stops[stop+1].RGB.Alpha * Alpha * 255);
+      agg::rgba8 begin(Stops[stop].RGB.Red * 255, Stops[stop].RGB.Green * 255,
+         Stops[stop].RGB.Blue * 255, Stops[stop].RGB.Alpha * Alpha * 255);
+      agg::rgba8 end(Stops[stop+1].RGB.Red * 255, Stops[stop+1].RGB.Green * 255,
+         Stops[stop+1].RGB.Blue * 255, Stops[stop+1].RGB.Alpha * Alpha * 255);
 
       if ((stop IS 0) and (i1 > 0)) {
          for (i=0; i < i1; i++) table[i] = begin;
@@ -122,10 +164,9 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
 
       if (i1 < i2) {
          for (i=i1; i <= i2; i++) {
-            double j = (double)(i - i1) / (double)(i2-i1);
-            if (ColourSpace IS VCS::LINEAR_RGB) {
-               table[i] = begin.linear_gradient(end, j);
-            }
+            double j = double(i - i1) / double(i2 - i1);
+            j = GradientColours::ease(Easing, j);
+            if (ColourSpace IS VCS::LINEAR_RGB) table[i] = begin.linear_gradient(end, j);
             else table[i] = begin.gradient(end, j);
          }
       }
@@ -136,37 +177,52 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
       }
    }
 
+   apply_gamma(Gamma);
    if (Resolution < 1) apply_resolution(Resolution);
 }
 
-GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution)
+GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution, double Gamma, GEZ Easing)
 {
+   resolution = 1.0;
+   gamma = 1.0;
+
    for (int i=0; i < std::ssize(Map); i++) {
       table[i] = agg::rgba8(Map[i]);
    }
 
+   apply_easing(Easing);
+   apply_gamma(Gamma);
    if (Resolution < 1) apply_resolution(Resolution);
 }
 
-//********************************************************************************************************************
-
-static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
+static ERR rebuild_gradient_colours(extGradient *Self)
 {
-   if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
-   if (Self->ContourCache) { delete Self->ContourCache; Self->ContourCache = nullptr; }
+   kt::Log log(__FUNCTION__);
+   std::unique_ptr<GradientColours> colours;
 
-   VectorMatrix *next;
-   for (auto node=Self->Matrices; node; node=next) {
-      next = node->Next;
-      FreeResource(node);
+   if (not Self->Stops.empty()) {
+      colours.reset(new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution,
+         Self->Gamma, Self->Easing));
    }
-   Self->Matrices = nullptr;
+   else if (not Self->ColourMap.empty()) {
+      if (auto it = glColourMaps.find(Self->ColourMap); it != glColourMaps.end()) {
+         colours.reset(new (std::nothrow) GradientColours(it->second, Self->Resolution, Self->Gamma, Self->Easing));
+      }
+      else return log.warning(ERR::NotFound);
+   }
+   else return ERR::Okay;
+
+   if (not colours) return log.warning(ERR::AllocMemory);
+
+   if (Self->Colours) delete Self->Colours;
+   Self->Colours = colours.release();
+   invalidate_gradient_tables(Self);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR VECTORGRADIENT_Init(extVectorGradient *Self)
+static ERR GRADIENT_Init(extGradient *Self)
 {
    kt::Log log;
 
@@ -180,80 +236,6 @@ static ERR VECTORGRADIENT_Init(extVectorGradient *Self)
       return ERR::OutOfRange;
    }
 
-   if ((Self->Type IS VGT::CONTOUR) and (Self->Units IS VUNIT::USERSPACE)) {
-      log.warning("Contour gradients are not compatible with Units.USERSPACE.");
-      Self->Units = VUNIT::BOUNDING_BOX;
-   }
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR VECTORGRADIENT_NewObject(extVectorGradient *Self)
-{
-   Self->SpreadMethod = VSPREAD::PAD;
-   Self->Type    = VGT::LINEAR;
-   Self->Units   = VUNIT::BOUNDING_BOX;
-   // SVG requires that these are all set to 50%
-   Self->CenterX = 0.5;
-   Self->CenterY = 0.5;
-   Self->Radius  = 0.5;
-   Self->X1      = 0;
-   Self->X2      = 1.0; // Set for contoured gradients.
-   Self->Flags  |= VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
-   Self->Resolution = 1;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-CenterX: The horizontal center point of the gradient.
-
-The `(CenterX, CenterY)` coordinates define the center point of the gradient.  The center point will only be used if
-the gradient type requires it (such as the radial type).  By default, the center point is set to `50%`.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_CenterX(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->CenterX);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_CenterX(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CX) & (~VGF::FIXED_CX);
-   else Self->Flags = (Self->Flags | VGF::FIXED_CX) & (~VGF::SCALED_CX);
-   Self->CenterX = Value;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-CenterY: The vertical center point of the gradient.
-
-The `(CenterX, CenterY)` coordinates define the center point of the gradient.  The center point will only be used if
-the gradient type requires it (such as the radial type).  By default, the center point is set to `50%`.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_CenterY(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->CenterY);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_CenterY(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_CY) & (~VGF::FIXED_CY);
-   else Self->Flags = (Self->Flags | VGF::FIXED_CY) & (~VGF::SCALED_CY);
-
-   Self->CenterY = Value;
-   Self->modified();
    return ERR::Okay;
 }
 
@@ -262,44 +244,28 @@ static ERR VECTORGRADIENT_SET_CenterY(extVectorGradient *Self, Unit &Value)
 -FIELD-
 Colour: The default background colour to use when clipping is enabled.
 
-The colour value in this field is applicable only when a gradient is in clip-mode - by specifying the `VSPREAD::CLIP`
-flag in #SpreadMethod.  By default, this field has an alpha value of 0 to ensure that nothing is drawn
-outside the initial bounds of the gradient.  Setting any other colour value here will otherwise
-fill-in those areas.
-
-The Colour value is defined in floating-point RGBA format, using a range of 0 - 1.0 per component.
+The colour value in this field is applicable only when a gradient is in clip-mode by specifying the `VSPREAD::CLIP`
+flag in #SpreadMethod.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside
+the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_Colour(extVectorGradient *Self, float **Value, int *Elements)
+static ERR GRADIENT_SET_Colour(extGradient *Self, FRGB *Value)
 {
-   *Value = (float *)&Self->Colour;
-   *Elements = 4;
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_Colour(extVectorGradient *Self, float *Value, int Elements)
-{
-   kt::Log log;
    if (Value) {
-      if (Elements >= 3) {
-         Self->Colour.Red   = Value[0];
-         Self->Colour.Green = Value[1];
-         Self->Colour.Blue  = Value[2];
-         Self->Colour.Alpha = (Elements >= 4) ? Value[3] : 1.0;
+      Self->Colour = *Value;
 
-         Self->ColourRGB.Red   = int(Self->Colour.Red * 255.0);
-         Self->ColourRGB.Green = int(Self->Colour.Green * 255.0);
-         Self->ColourRGB.Blue  = int(Self->Colour.Blue * 255.0);
-         Self->ColourRGB.Alpha = int(Self->Colour.Alpha * 255.0);
-      }
-      else return log.warning(ERR::InvalidValue);
+      Self->ColourRGB.Red   = std::clamp<uint8_t>(Self->Colour.Red * 255.0, 0, 255);
+      Self->ColourRGB.Green = std::clamp<uint8_t>(Self->Colour.Green * 255.0, 0, 255);
+      Self->ColourRGB.Blue  = std::clamp<uint8_t>(Self->Colour.Blue * 255.0, 0, 255);
+      Self->ColourRGB.Alpha = std::clamp<uint8_t>(Self->Colour.Alpha * 255.0, 0, 255);
    }
    else Self->Colour.Alpha = 0;
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
+
 /*********************************************************************************************************************
 
 -FIELD-
@@ -316,23 +282,21 @@ The use of colourmaps and custom stops are mutually exclusive.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_ColourMap(extVectorGradient *Self, std::string_view &Value)
-{
-   if (not Self->ColourMap.empty()) Value = Self->ColourMap;
-   else Value = std::string_view{};
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_ColourMap(extVectorGradient *Self, const std::string_view &Value)
+static ERR GRADIENT_SET_ColourMap(extGradient *Self, const std::string_view &Value)
 {
    if (Value.empty()) return ERR::NoData;
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, Self->Resolution,
+         Self->Gamma, Self->Easing));
+      if (not colours) return ERR::AllocMemory;
+
       if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(it->second, Self->Resolution);
-      if (not Self->Colours) return ERR::AllocMemory;
+      Self->Colours = colours.release();
+      Self->Stops.clear();
       Self->ColourMap = Value;
-      Self->modified();
+      invalidate_gradient_tables(Self);
+      if (Self->initialised()) Self->modified();
       return ERR::Okay;
    }
    else return ERR::NotFound;
@@ -348,230 +312,134 @@ By default, gradients are rendered using the standard RGB colour space and alpha
 space to `LINEAR_RGB` will force the renderer to automatically convert sRGB values to linear RGB when blending.
 
 -FIELD-
-Flags: Dimension flags are stored here.
-Lookup: VGF
+Easing: Selects the easing function for interpolation between gradient stops.
+Lookup: GEZ
 
-Dimension flags that indicate whether field values are fixed or scaled are defined here.
-
--FIELD-
-FocalRadius: The size of the focal radius for radial gradients.
-
-If a radial gradient has a defined focal point (by setting #FocalX and #FocalY) then the FocalRadius can be used to
-adjust the size of the focal area.  The default of zero ensures that the focal area matches that defined by #Radius,
-which is the standard maintained by SVG.
-
-The FocalRadius value has no effect if the gradient is linear.
+Easing modifies the interpolation position between each adjacent pair of #Stops.  For gradients sourced from #ColourMap,
+it remaps the lookup position through the selected easing function before #Gamma and #Resolution are applied.  The
+default `GEZ::LINEAR` mode leaves the gradient unchanged.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_FocalRadius(extVectorGradient *Self, Unit *Value)
+static ERR GRADIENT_SET_Easing(extGradient *Self, GEZ Value)
 {
-   Value->set(Self->FocalRadius);
-   return ERR::Okay;
-}
+   const GEZ old_easing = Self->Easing;
+   if (old_easing IS Value) return ERR::Okay;
 
-static ERR VECTORGRADIENT_SET_FocalRadius(extVectorGradient *Self, Unit &Value)
-{
-   if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FOCAL_RADIUS) & (~VGF::FIXED_FOCAL_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_FOCAL_RADIUS) & (~VGF::SCALED_FOCAL_RADIUS);
-
-      Self->FocalRadius = Value;
-      Self->modified();
-      return ERR::Okay;
+   Self->Easing = Value;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Easing = old_easing;
+         return error;
+      }
    }
-   else return ERR::OutOfRange;
-}
 
-/*********************************************************************************************************************
-
--FIELD-
-FocalX: The horizontal focal point for radial gradients.
-
-The `(FocalX, FocalY)` coordinates define the focal point for radial gradients.  If left undefined, the focal point
-will match the center of the gradient.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_FocalX(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->FocalX);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_FocalX(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FX) & (~VGF::FIXED_FX);
-   else Self->Flags = (Self->Flags | VGF::FIXED_FX) & (~VGF::SCALED_FX);
-
-   Self->FocalX = Value;
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-FocalY: The vertical focal point for radial gradients.
+Gamma: Applies a gamma curve to the gradient ramp.
 
-The `(FocalX, FocalY)` coordinates define the focal point for radial gradients.  If left undefined, the focal point
-will match the center of the gradient.
+Gamma remaps the completed colour ramp before #Resolution is applied.  Values greater than `1.0` bias the ramp toward
+the first colour, while values between `0.0` and `1.0` bias it toward the last colour.  A value of `1.0` leaves the
+gradient unchanged.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_FocalY(extVectorGradient *Self, Unit *Value)
+static ERR GRADIENT_SET_Gamma(extGradient *Self, double Value)
 {
-   Value->set(Self->FocalY);
-   return ERR::Okay;
-}
+   if (Value <= 0) return ERR::OutOfRange;
 
-static ERR VECTORGRADIENT_SET_FocalY(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_FY) & (~VGF::FIXED_FY);
-   else Self->Flags = (Self->Flags | VGF::FIXED_FY) & (~VGF::SCALED_FY);
+   const double old_gamma = Self->Gamma;
+   if (old_gamma IS Value) return ERR::Okay;
 
-   Self->FocalY = Value;
-   Self->modified();
+   Self->Gamma = Value;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Gamma = old_gamma;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
--FIELD-
-ID: String identifier for a vector.
 
-The ID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the
-existing object name and automatically assigned ID's for identifiers.
+-FIELD-
+SID: String identifier for a gradient.
+
+The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing
+object name and automatically assigned ID's for identifiers.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_ID(extVectorGradient *Self, std::string_view &Value)
-{
-   Value = Self->ID;
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_ID(extVectorGradient *Self, const std::string_view &Value)
+static ERR GRADIENT_SET_SID(extGradient *Self, const std::string_view &Value)
 {
    if (not Value.empty()) {
-      Self->ID = Value;
+      Self->SID = Value;
       Self->NumericID = strhash(Value);
    }
    else {
-      Self->ID.clear();
+      Self->SID.clear();
       Self->NumericID = 0;
    }
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
+
 -FIELD-
-Matrices: A linked list of transform matrices that have been applied to the gradient.
+Matrices: Applies one or more transforms to a gradient.
 
-All transforms that have been applied to the gradient can be read from the Matrices field.  Each transform is
-represented by a !VectorMatrix structure, and are linked in the order in which they were applied to the gradient.
-
-!VectorMatrix
+A transform can be applied to a gradient via one or more matrices.  These will influence how gradient fills are
+rendered within their vector space.  Each matrix is represented by a !VectorMatrix structure, and the matrices are
+linked in the order in which they should be applied.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_Matrices(extVectorGradient *Self, VectorMatrix **Value)
+static ERR GRADIENT_SET_Matrices(extGradient *Self, const std::span<const VectorMatrix> *Value)
 {
-   *Value = Self->Matrices;
-   return ERR::Okay;
-}
+   if (Value) {
+      Self->Matrices.assign(Value->begin(), Value->end());
 
-static ERR VECTORGRADIENT_SET_Matrices(extVectorGradient *Self, VectorMatrix *Value)
-{
-   if (not Value) {
-      auto hook = &Self->Matrices;
-      while (Value) {
-         VectorMatrix *matrix;
-         if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
-            matrix->Vector = nullptr;
-            matrix->Next   = nullptr;
-            matrix->ScaleX = Value->ScaleX;
-            matrix->ScaleY = Value->ScaleY;
-            matrix->ShearX = Value->ShearX;
-            matrix->ShearY = Value->ShearY;
-            matrix->TranslateX = Value->TranslateX;
-            matrix->TranslateY = Value->TranslateY;
-            *hook = matrix;
-            hook = &matrix->Next;
-         }
-         else return ERR::AllocMemory;
-
-         Value = Value->Next;
+      VectorMatrix *prev = nullptr;
+      for (auto &matrix : Self->Matrices) {
+         matrix.Vector = nullptr;
+         matrix.Next = nullptr;
+         if (prev) prev->Next = &matrix;
+         prev = &matrix;
       }
    }
-   else {
-      VectorMatrix *next;
-      for (auto node=Self->Matrices; node; node=next) {
-         next = node->Next;
-         FreeResource(node);
-      }
-      Self->Matrices = nullptr;
-   }
+   else Self->Matrices.clear();
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-NumericID: A unique identifier for the vector.
+NumericID: Numeric identifier for a vector.
 
-This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the
-#ID field if that has been defined previously.
-
-If NumericID is set by the client, then any value in #ID will be immediately cleared.
+The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client,
+then any value in #SID will be immediately cleared.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_NumericID(extVectorGradient *Self, int *Value)
-{
-   *Value = Self->NumericID;
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_NumericID(extVectorGradient *Self, int Value)
+static ERR GRADIENT_SET_NumericID(extGradient *Self, int Value)
 {
    Self->NumericID = Value;
-   Self->ID.clear();
+   Self->SID.clear();
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
--FIELD-
-Radius: The radius of the gradient.
 
-The radius of the gradient can be defined as a fixed unit or scaled relative to its container.  A default radius of
-50% (0.5) applies if this field is not set.
-
-The Radius value has no effect if the gradient is linear.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_Radius(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->Radius);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_Radius(extVectorGradient *Self, Unit &Value)
-{
-   if (Value >= 0) {
-      if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_RADIUS) & (~VGF::FIXED_RADIUS);
-      else Self->Flags = (Self->Flags | VGF::FIXED_RADIUS) & (~VGF::SCALED_RADIUS);
-
-      Self->Radius = Value;
-      Self->modified();
-      return ERR::Okay;
-   }
-   else return ERR::OutOfRange;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Resolution: Affects the rate of change for colours in the gradient.
 
@@ -585,7 +453,7 @@ Resolution is at its maximum when this value is set to 1 (the default).
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_SET_Resolution(extVectorGradient *Self, double Value)
+static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
 {
    if ((Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
 
@@ -593,24 +461,13 @@ static ERR VECTORGRADIENT_SET_Resolution(extVectorGradient *Self, double Value)
    Self->Resolution = Value;
 
    if ((Self->Colours) and (Self->Colours->resolution != Value)) {
-      // Field gradients bake Resolution into the colour table, so the table must be regenerated.
       if (Self->initialised()) {
          Self->modified();
-         if (not Self->Stops.empty()) {
-            auto copy = Self->Stops;
-            VECTORGRADIENT_SET_Stops(Self, copy.data(), copy.size());
-         }
-         else if (not Self->ColourMap.empty()) {
-            VECTORGRADIENT_SET_ColourMap(Self, Self->ColourMap.c_str());
-         }
+         if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) return error;
       }
       else Self->Colours->apply_resolution(Value);
    }
-   else if (changed and Self->initialised()) {
-      // Gouraud gradients (and any type with no colour table) apply Resolution per pixel at render time, so there
-      // is no table to rebuild; just flag the change so the scene redraws.
-      Self->modified();
-   }
+   else if (changed and Self->initialised()) Self->modified();
 
    return ERR::Okay;
 }
@@ -625,7 +482,7 @@ The default setting is `VSPREAD::PAD`.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_SET_SpreadMethod(extVectorGradient *Self, VSPREAD Value)
+static ERR GRADIENT_SET_SpreadMethod(extGradient *Self, VSPREAD Value)
 {
    Self->SpreadMethod = Value;
    Self->modified();
@@ -642,162 +499,27 @@ to define a start and end point for interpolating the gradient colours.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_Stops(extVectorGradient *Self, GradientStop **Value, int *Elements)
+static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *Value)
 {
-   *Value    = Self->Stops.data();
-   *Elements = Self->Stops.size();
-   return ERR::Okay;
-}
+   if ((Value) and (Value->size() >= 2)) {
+      auto stops = kt::vector<GradientStop>(Value->begin(), Value->end());
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
+         stops, Self->ColourSpace, 1.0, Self->Resolution, Self->Gamma, Self->Easing));
+      if (not colours) return ERR::AllocMemory;
 
-static ERR VECTORGRADIENT_SET_Stops(extVectorGradient *Self, GradientStop *Value, int Elements)
-{
-   Self->Stops.clear();
-
-   if (Elements >= 2) {
-      Self->modified();
-      Self->Stops.insert(Self->Stops.end(), &Value[0], &Value[Elements]);
+      Self->Stops = std::move(stops);
       if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution);
-      if (not Self->Colours) return ERR::AllocMemory;
+      Self->Colours = colours.release();
+      Self->ColourMap.clear();
+      invalidate_gradient_tables(Self);
+      Self->modified();
       return ERR::Okay;
    }
-   else {
-      kt::Log log;
-      log.warning("Array size %d < 2", Elements);
-      return ERR::InvalidValue;
-   }
+   else return kt::Log().warning(ERR::InvalidValue);
 }
 
 /*********************************************************************************************************************
 
--FIELD-
-Vertices: Defines the coloured vertices for a Gouraud gradient.
-
-When #Type is set to `VGT::GOURAUD`, the Vertices array defines the mesh of coloured points across which colour is
-interpolated barycentrically.  Each !GouraudVertex carries an `(X, Y)` position and an `FRGB` colour.
-
-By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one
-triangle.  Supplying an #Indices array instead expresses triangle connectivity explicitly, allowing vertices (and
-their colours) to be shared between adjacent triangles for crack-free seams.
-
-The coordinate system for vertex positions is determined by #Units.  Under `BOUNDING_BOX` (the default) a normalised
-mesh in the range `0 - 1.0` is scaled into the target path's bounds; under `USERSPACE` the positions are taken
-directly in the viewport's coordinate space.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_Vertices(extVectorGradient *Self, GouraudVertex **Value, int *Elements)
-{
-   if (Self->Gouraud) {
-      *Value    = Self->Gouraud->Vertices.data();
-      *Elements = Self->Gouraud->Vertices.size();
-   }
-   else {
-      *Value    = nullptr;
-      *Elements = 0;
-   }
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_Vertices(extVectorGradient *Self, GouraudVertex *Value, int Elements)
-{
-   if ((not Value) or (Elements < 3)) {
-      kt::Log log;
-      log.warning("A Gouraud gradient requires at least three vertices (got %d).", Elements);
-      return ERR::InvalidValue;
-   }
-
-   if (not Self->Gouraud) Self->Gouraud = std::make_unique<GouraudMesh>();
-
-   if (not Self->Gouraud->Indices.empty()) {
-      for (auto idx : Self->Gouraud->Indices) {
-         if ((idx < 0) or (idx >= Elements)) {
-            kt::Log log;
-            log.warning("Gouraud index %d is outside the new vertex range 0 - %d.", idx, Elements - 1);
-            return ERR::OutOfRange;
-         }
-      }
-   }
-
-   Self->Gouraud->Vertices.assign(&Value[0], &Value[Elements]);
-   Self->GouraudTriangles.Valid = false;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-Indices: Defines triangle connectivity for a Gouraud gradient.
-
-The Indices array provides triangle connectivity for a Gouraud gradient's #Vertices, with three indices per
-triangle referencing vertices in counter-clockwise order.  Supplying indices allows vertices to be shared between
-adjacent triangles, guaranteeing crack-free seams.
-
-If left empty, the #Vertices array is treated as a flat triangle list, where every three consecutive vertices form
-one triangle.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_Indices(extVectorGradient *Self, int **Value, int *Elements)
-{
-   if (Self->Gouraud) {
-      *Value    = Self->Gouraud->Indices.data();
-      *Elements = Self->Gouraud->Indices.size();
-   }
-   else {
-      *Value    = nullptr;
-      *Elements = 0;
-   }
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_Indices(extVectorGradient *Self, int *Value, int Elements)
-{
-   if (not Self->Gouraud) Self->Gouraud = std::make_unique<GouraudMesh>();
-
-   if ((not Value) or (Elements <= 0)) Self->Gouraud->Indices.clear();
-   else if ((Elements % 3) != 0) {
-      kt::Log().warning("The Indices array length %d is not a multiple of three.", Elements);
-      return ERR::InvalidValue;
-   }
-   else {
-      const auto total_vertices = Self->Gouraud->Vertices.size();
-      for (int i=0; i < Elements; i++) {
-         if (Value[i] < 0) {
-            kt::Log().warning("Gouraud index %d at position %d is negative.", Value[i], i);
-            return ERR::OutOfRange;
-         }
-         if ((total_vertices > 0) and (size_t(Value[i]) >= total_vertices)) {
-            kt::Log().warning("Gouraud index %d at position %d is outside the vertex range 0 - %d.",
-               Value[i], i, int(total_vertices) - 1);
-            return ERR::OutOfRange;
-         }
-      }
-
-      Self->Gouraud->Indices.assign(&Value[0], &Value[Elements]);
-   }
-
-   Self->GouraudTriangles.Valid = false;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-TotalStops: Total number of stops defined in the Stops array.
-
-This read-only field indicates the total number of stops that have been defined in the #Stops array.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_TotalStops(extVectorGradient *Self, int *Value)
-{
-   *Value = Self->Stops.size();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Transform: Applies a transform to the gradient.
 
@@ -805,169 +527,34 @@ A transform can be applied to the gradient by setting this field with an SVG com
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, const std::string_view &Commands)
+static ERR GRADIENT_SET_Transform(extGradient *Self, const std::string_view &Commands)
 {
    if (Commands.empty()) return kt::Log().warning(ERR::InvalidValue);
 
-   Self->modified();
+   if (Self->initialised()) Self->modified();
 
-   if (not Self->Matrices) {
-      VectorMatrix *matrix;
-      if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&matrix)) {
-         matrix->Vector = nullptr;
-         matrix->Next   = Self->Matrices;
-         matrix->ScaleX = 1.0;
-         matrix->ScaleY = 1.0;
-         matrix->ShearX = 0;
-         matrix->ShearY = 0;
-         matrix->TranslateX = 0;
-         matrix->TranslateY = 0;
-
-         Self->Matrices = matrix;
-         return vec::ParseTransform(Self->Matrices, Commands);
-      }
-      else return ERR::AllocMemory;
+   if (Self->Matrices.empty()) {
+      Self->Matrices.resize(1);
+      return vec::ParseTransform(Self->Matrices.data(), Commands);
    }
    else {
-      vec::ResetMatrix(Self->Matrices);
-      return vec::ParseTransform(Self->Matrices, Commands);
+      vec::ResetMatrix(Self->Matrices.data());
+      return vec::ParseTransform(Self->Matrices.data(), Commands);
    }
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-Type: Specifies the type of gradient (e.g. `RADIAL`, `LINEAR`)
-Lookup: VGT
-
-The type of the gradient to be drawn is specified here.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_SET_Type(extVectorGradient *Self, VGT Value)
-{
-   Self->Type = Value;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-Units: Defines the coordinate system for #X1, #Y1, #X2 and #Y2.
+Units: Defines the coordinate system for gradient coordinates.
 
 The default coordinate system for gradients is `BOUNDING_BOX`, which positions the gradient around the vector that
 references it.  The alternative is `USERSPACE`, which positions the gradient scaled to the current viewport.
 
--FIELD-
-X1: Initial X coordinate for the gradient.
-
-For linear gradients, the `(X1, Y1)` field values define the starting coordinate for mapping linear gradients.  The
-gradient will be drawn from `(X1, Y1)` to `(X2, Y2)`.  Coordinate values can be expressed as units that are
-scaled to the target space.
-
-For contour gradients, `X1` is used as the floor for the gradient colour values and `X2` acts as a multiplier.
-`X1` has a range of `0 < X1 < X2` and `X2` has a range of `.01 < X2 < 10`.
-
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_X1(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->X1);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_X1(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X1) & (~VGF::FIXED_X1);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X1) & (~VGF::SCALED_X1);
-   Self->X1 = Value;
-   Self->CalcAngle = true;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-X2: Final X coordinate for the gradient.
-
-For linear gradients, the `(X1, Y1)` field values define the starting coordinate for mapping linear gradients.  The
-gradient will be drawn from `(X1, Y1)` to `(X2, Y2)`.  Coordinate values can be expressed as units that are
-scaled to the target space.
-
-For contour gradients, `X1` is used as the floor for the gradient colour values and `X2` acts as a multiplier.
-`X1` has a range of `0 < X1 < X2` and `X2` has a range of `.01 < X2 < 10`.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_X2(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->X2);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_X2(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_X2) & (~VGF::FIXED_X2);
-   else Self->Flags = (Self->Flags | VGF::FIXED_X2) & (~VGF::SCALED_X2);
-   Self->X2 = Value;
-   Self->CalcAngle = true;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-Y1: Initial Y coordinate for the gradient.
-
-The `(X1, Y1)` field values define the starting coordinate for mapping linear gradients.  Other gradient types ignore
-these values.  The gradient will be drawn from `(X1, Y1)` to `(X2, Y2)`.
-
-Coordinate values can also be expressed as units that are scaled to the target space.
-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_Y1(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->Y1);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_Y1(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_Y1) & (~VGF::FIXED_Y1);
-   else Self->Flags = (Self->Flags | VGF::FIXED_Y1) & (~VGF::SCALED_Y1);
-   Self->Y1 = Value;
-   Self->CalcAngle = true;
-   Self->modified();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-Y2: Final Y coordinate for the gradient.
-
-The `(X2, Y2)` field values define the end coordinate for mapping linear gradients.  Other gradient types ignore
-these values.  The gradient will be drawn from `(X1, Y1)` to `(X2, Y2)`.
-
-Coordinate values can also be expressed as units that are scaled to the target space.
--END-
-*********************************************************************************************************************/
-
-static ERR VECTORGRADIENT_GET_Y2(extVectorGradient *Self, Unit *Value)
-{
-   Value->set(Self->Y2);
-   return ERR::Okay;
-}
-
-static ERR VECTORGRADIENT_SET_Y2(extVectorGradient *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Flags = (Self->Flags | VGF::SCALED_Y2) & (~VGF::FIXED_Y2);
-   else Self->Flags = (Self->Flags | VGF::FIXED_Y2) & (~VGF::SCALED_Y2);
-   Self->Y2 = Value;
-   Self->CalcAngle = true;
-   Self->modified();
-   return ERR::Okay;
+extGradient::~extGradient() {
+   if (Colours) delete Colours;
 }
 
 //********************************************************************************************************************
@@ -975,37 +562,20 @@ static ERR VECTORGRADIENT_SET_Y2(extVectorGradient *Self, Unit &Value)
 #include "gradient_def.c"
 
 static const FieldArray clGradientFields[] = {
-   { "X1",           FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_X1, VECTORGRADIENT_SET_X1 },
-   { "Y1",           FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Y1, VECTORGRADIENT_SET_Y1 },
-   { "X2",           FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_X2, VECTORGRADIENT_SET_X2 },
-   { "Y2",           FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Y2, VECTORGRADIENT_SET_Y2 },
-   { "CenterX",      FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_CenterX, VECTORGRADIENT_SET_CenterX },
-   { "CenterY",      FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_CenterY, VECTORGRADIENT_SET_CenterY },
-   { "FocalX",       FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalX, VECTORGRADIENT_SET_FocalX },
-   { "FocalY",       FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalY, VECTORGRADIENT_SET_FocalY },
-   { "Radius",       FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Radius, VECTORGRADIENT_SET_Radius },
-   { "FocalRadius",  FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalRadius, VECTORGRADIENT_SET_FocalRadius },
-   { "Resolution",   FDF_DOUBLE|FDF_RW, nullptr, VECTORGRADIENT_SET_Resolution },
-   { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORGRADIENT_SET_SpreadMethod, &clVectorGradientSpreadMethod },
-   { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clVectorGradientUnits },
-   { "Type",         FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, VECTORGRADIENT_SET_Type, &clVectorGradientType },
-   { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clVectorGradientFlags },
-   { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clVectorGradientColourSpace },
+   { "Matrices",     FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENT_SET_Matrices, "VectorMatrix" },
+   { "Stops",        FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, GRADIENT_SET_Stops, "GradientStop" },
+   { "SID",          FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_SID },
+   { "ColourMap",    FDF_CPPSTRING|FDF_RW,      nullptr, GRADIENT_SET_ColourMap },
+   { "Resolution",   FDF_DOUBLE|FDF_RW,         nullptr, GRADIENT_SET_Resolution },
+   { "Gamma",        FDF_DOUBLE|FDF_RW,         nullptr, GRADIENT_SET_Gamma },
+   { "Colour",       FDF_STRUCT|FD_RW,          nullptr, GRADIENT_SET_Colour, "FRGB" },
+   { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_SpreadMethod, &clGradientSpreadMethod },
+   { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clGradientUnits },
+   { "ColourSpace",  FDF_INT|FDF_RI,            nullptr, nullptr, &clGradientColourSpace },
+   { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
+   { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
-   { "Colour",       FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE, VECTORGRADIENT_GET_Colour, VECTORGRADIENT_SET_Colour },
-   { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, VECTORGRADIENT_GET_ColourMap, VECTORGRADIENT_SET_ColourMap },
-   { "CX",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_CenterX, VECTORGRADIENT_SET_CenterX },
-   { "CY",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_CenterY, VECTORGRADIENT_SET_CenterY },
-   { "FX",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalX, VECTORGRADIENT_SET_FocalX },
-   { "FY",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_FocalY, VECTORGRADIENT_SET_FocalY },
-   { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Matrices, VECTORGRADIENT_SET_Matrices, "VectorMatrix" },
-   { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_NumericID, VECTORGRADIENT_SET_NumericID },
-   { "ID",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_ID, VECTORGRADIENT_SET_ID },
-   { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Stops, VECTORGRADIENT_SET_Stops, "GradientStop" },
-   { "Vertices",     FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Vertices, VECTORGRADIENT_SET_Vertices, "GouraudVertex" },
-   { "Indices",      FDF_VIRTUAL|FDF_ARRAY|FDF_INT|FDF_RW|FDF_PURE, VECTORGRADIENT_GET_Indices, VECTORGRADIENT_SET_Indices },
-   { "TotalStops",   FDF_INT|FDF_R|FDF_PURE, VECTORGRADIENT_GET_TotalStops },
-   { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, VECTORGRADIENT_SET_Transform },
+   { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
    END_FIELD
 };
 
@@ -1013,14 +583,27 @@ static const FieldArray clGradientFields[] = {
 
 ERR init_gradient(void) // The gradient is a definition type for creating gradients and not drawing.
 {
-   clVectorGradient = objMetaClass::create::global(
-      fl::BaseClassID(CLASSID::VECTORGRADIENT),
-      fl::Name("VectorGradient"),
+   clGradient = objMetaClass::create::global(
+      fl::BaseClassID(CLASSID::GRADIENT),
+      fl::Name("Gradient"),
       fl::Category(CCF::GRAPHICS),
-      fl::Actions(clVectorGradientActions),
+      fl::Actions(clGradientActions),
       fl::Fields(clGradientFields),
-      fl::Size(sizeof(extVectorGradient)),
+      fl::Size(sizeof(extGradient)),
       fl::Path(MOD_PATH));
 
-   return clVectorGradient ? ERR::Okay : ERR::AddClass;
+   if (!clGradient) return ERR::AddClass;
+
+   ERR error;
+   if ((error = init_gradient_linear()) != ERR::Okay) return error;
+   if ((error = init_gradient_radial()) != ERR::Okay) return error;
+   if ((error = init_gradient_conic()) != ERR::Okay) return error;
+   if ((error = init_gradient_diamond()) != ERR::Okay) return error;
+   if ((error = init_gradient_contour()) != ERR::Okay) return error;
+   if ((error = init_gradient_gouraud()) != ERR::Okay) return error;
+   if ((error = init_gradient_mesh()) != ERR::Okay) return error;
+   if ((error = init_gradient_distal()) != ERR::Okay) return error;
+   if ((error = init_gradient_voronoi()) != ERR::Okay) return error;
+
+   return error;
 }

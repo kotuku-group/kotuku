@@ -150,7 +150,7 @@
       <name>Commands</name>
       <comment>Direct pointer to the PathCommand array.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>PathCommand[]</type>
       <description>
 <p>Read the Commands field to obtain a direct pointer to the <st>PathCommand</st> array.  This will allow the control points of the path to be modified directly, but it is not possible to resize the path.  After making changes to the path, call <action>Flush</action> to register the changes for the next redraw.</p>
 <p>This field can also be written at any time with a new array of <st>PathCommand</st> structures.  Doing so will clear the existing path, if any.</p>
@@ -205,7 +205,7 @@ Z: Close Path
       <name>X</name>
       <comment>The left-side of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
       </description>
@@ -215,7 +215,7 @@ Z: Close Path
       <name>Y</name>
       <comment>The top of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>Setting Y moves the computed path so that its top-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
       </description>

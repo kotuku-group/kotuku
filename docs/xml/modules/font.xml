@@ -187,7 +187,7 @@
       <field name="Next" type="struct FontList *">Pointer to the next entry in the list.</field>
       <field name="Name" type="STRING">The name of the font face.</field>
       <field name="Alias" type="STRING">Reference to another font Name if this is an alias.</field>
-      <field name="Points" type="INT *" size="0">Pointer to an array of fixed point sizes supported by the font.</field>
+      <field name="Points" type="INT" size="0">Pointer to an array of fixed point sizes supported by the font.</field>
       <field name="Styles" type="STRING">Supported styles are listed here in CSV format.</field>
       <field name="Axes" type="STRING">For variable fonts, lists all supported axis codes in CSV format</field>
       <field name="Scalable" type="INT8"><code>TRUE</code> if the font is scalable.</field>

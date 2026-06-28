@@ -16,7 +16,7 @@ static const struct MethodEntry clVectorPathMethods[] = {
 };
 
 static ERR VECTORPATH_NewPlacement(extVectorPath *Self) {
-   new (Self) extVectorPath;
+   new (Self) extVectorPath(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

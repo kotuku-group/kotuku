@@ -94,7 +94,7 @@ class extFont : public objFont {
    char prvEscape[2];
    uint8_t prvDefaultChar;
 
-   extFont() {
+   extFont(objMetaClass *ClassPtr, OBJECTID ObjectID) : objFont(ClassPtr, ObjectID) {
       TabSize         = 8;
       prvDefaultChar  = '.';
       prvLineCountCR  = 1;
@@ -102,6 +102,8 @@ class extFont : public objFont {
       GlyphSpacing    = 1.0;
       Style           = "Regular";
    }
+
+   ~extFont();
 };
 
 #include "font_def.c"
@@ -360,7 +362,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, modFont);
+   modFont = (OBJECTPTR)((objModule *)argModule)->Root;
 
    auto cleanup = [] {
       if (glFTLibrary) { FT_Done_FreeType(glFTLibrary); glFTLibrary = nullptr; }
@@ -1238,7 +1240,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "FontList", sizeof(FontList) }
+   { "FontList", { sizeof(FontList), alignof(FontList) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

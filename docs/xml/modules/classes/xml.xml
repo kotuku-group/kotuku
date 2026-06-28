@@ -763,7 +763,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Tags</name>
       <comment>Provides direct access to the XML document structure.</comment>
       <access read="G">Get</access>
-      <type>STRUCT []</type>
+      <type>XTag[]</type>
       <description>
 <p>The Tags field exposes the complete XML document structure as a hierarchical array of <st>XTag</st> structures.  This field becomes available after successful XML parsing and provides the primary interface for reading XML content programmatically.</p>
 <p>Each <st>XTag</st> will have at least one attribute set in the <code>Attribs</code> array.  The first attribute will either reflect the tag name or a content string if the <code>Name</code> is undefined.  The <code>Children</code> array provides access to all child elements.</p>

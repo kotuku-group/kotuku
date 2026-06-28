@@ -100,7 +100,7 @@
       <description>
 <p>This method will add a new definition object to the root of a vector tree and gives it a name.  This feature is provided to support SVG style referencing for features such as gradients, images and patterns.  By providing a name with the definition object, the object can then be referenced in URL strings.</p>
 <p>For example, if creating a gradient with a name of <code>redGradient</code> it would be possible to reference it with <code>url(#redGradient)</code> in common graphics attributes such as <code>fill</code> and <code>stroke</code>.</p>
-<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="VectorGradient">VectorGradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
+<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="Gradient">Gradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -142,27 +142,6 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Search">A definition with the given Name was not found.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
-      <tags>pure-query, object-owns-result</tags>
-    </method>
-
-    <method>
-      <name>SearchByID</name>
-      <comment>Search for a vector by numeric ID.</comment>
-      <prototype>ERR sc::SearchByID(OBJECTPTR Object, INT ID, OBJECTPTR * Result)</prototype>
-      <tiriPrototype>err, Result:obj = SearchByID(ID:num)</tiriPrototype>
-      <input>
-        <param type="INT" name="ID">The ID to search for.</param>
-        <param type="OBJECTPTR *" name="Result">This parameter will be updated with the discovered vector, or <code>NULL</code> if not found.</param>
-      </input>
-      <description>
-<p>This method will search a scene for an object that matches a given <code>ID</code> (vector ID's can be set with the <class name="Vector" field="NumericID">Vector.NumericID</class> or <class name="Vector" field="ID">Vector.ID</class> fields).  If multiple vectors are using the same ID, repeated calls can be made to this method to find them all.  This is achieved by calling this method on the vector that was last returned as a <code>Result</code>.</p>
-<p>Note that searching for string-based ID's is achieved by converting the string to a case-sensitive hash with <code>strhash()</code> and using that as the ID.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Search">A vector with a matching ID was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>pure-query, object-owns-result</tags>
@@ -247,7 +226,7 @@
     <field>
       <name>Surface</name>
       <comment>May refer to a <class name="Surface">Surface</class> object for enabling automatic rendering.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>Setting the Surface field will enable automatic rendering to a display <class name="Surface">Surface</class>.  The use of features such as input event handling and user focus management will also require an associated surface as a pre-requisite.</p>
@@ -272,6 +251,7 @@
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
+      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
     </constants>
 
     <constants lookup="VSM">

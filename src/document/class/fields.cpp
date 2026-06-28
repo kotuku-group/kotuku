@@ -22,16 +22,6 @@ embedded documents.
 
 If a document defines a default script in its content, it will have priority over the one referenced here.
 
-*********************************************************************************************************************/
-
-static ERR SET_ClientScript(extDocument *Self, objScript *Value)
-{
-   Self->ClientScript = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Description: A description of the document, provided by its author.
 
@@ -81,9 +71,7 @@ static ERR SET_EventCallback(extDocument *Self, FUNCTION *Value)
          SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_script_context));
       }
    }
-   else {
-      Self->EventCallback.clear();
-   }
+   else Self->EventCallback.clear();
 
    unsubscribe_script_context(Self, old_context);
    return ERR::Okay;
@@ -154,12 +142,6 @@ Other means of opening a document include loading the data manually and passing 
 -END-
 
 *********************************************************************************************************************/
-
-static ERR GET_Path(extDocument *Self, std::string_view &Value)
-{
-   Value = Self->Path;
-   return ERR::Okay;
-}
 
 static ERR SET_Path(extDocument *Self, const std::string_view &Value)
 {
@@ -242,6 +224,12 @@ changed without causing a load operation.
 
 *********************************************************************************************************************/
 
+static ERR GET_Origin(extDocument *Self, std::string_view &Value)
+{
+   Value = Self->Path;
+   return ERR::Okay;
+}
+
 static ERR SET_Origin(extDocument *Self, const std::string_view &Value)
 {
    Self->Path.assign(Value);
@@ -266,35 +254,28 @@ object instead.
 
 *********************************************************************************************************************/
 
-static ERR GET_PageWidth(extDocument *Self, Unit *Value)
+static ERR GET_PageWidth(extDocument *Self, Unit &Value)
 {
-   double value;
-
    // Reading the PageWidth returns the pixel width of the page after parsing.
 
    if (Self->initialised()) {
-      value = Self->CalcWidth;
+      double value = Self->CalcWidth;
 
-      if (Value->scaled()) {
+      if (Value.scaled()) {
          if (Self->VPWidth <= 0) return ERR::GetField;
          value *= Self->VPWidth;
       }
+      Value = Unit(value);
    }
-   else value = Self->PageWidth;
+   else Value = Unit(Self->PageWidth);
 
-   Value->set(value);
    return ERR::Okay;
 }
 
-static ERR SET_PageWidth(extDocument *Self, Unit *Value)
+static ERR SET_PageWidth(extDocument *Self, Unit &Value)
 {
-   if (Value->Value <= 0) {
-      kt::Log log;
-      return log.warning(ERR::OutOfRange);
-   }
-
-   Self->PageWidth = *Value;
-
+   if (double(Value) <= 0) return kt::Log().warning(ERR::OutOfRange);
+   Self->PageWidth = Value;
    return ERR::Okay;
 }
 
@@ -422,7 +403,7 @@ static ERR GET_WorkingPath(extDocument *Self, std::string_view &Value)
    if (path) { // Extract absolute path
       Self->WorkingPath.assign(Self->Path, 0, last_sep);
    }
-   else if (CurrentTask()->get(FID_Path, task_path); not task_path.empty()) {
+   else if (CurrentTask()->getPath(task_path); not task_path.empty()) {
       // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
       std::string buf(task_path);

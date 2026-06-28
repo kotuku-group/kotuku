@@ -32,7 +32,7 @@ static const struct MethodEntry clNetServerMethods[] = {
 };
 
 static ERR NETSERVER_NewPlacement(extNetServer *Self) {
-   new (Self) extNetServer;
+   new (Self) extNetServer(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -42,10 +42,8 @@ static ERR NETSERVER_FreePlacement(extNetServer *Self) {
 }
 
 static const struct ActionArray clNetServerActions[] = {
-   { AC::Free, NETSERVER_Free },
    { AC::FreePlacement, NETSERVER_FreePlacement },
    { AC::Init, NETSERVER_Init },
-   { AC::NewObject, NETSERVER_NewObject },
    { AC::NewPlacement, NETSERVER_NewPlacement },
    { AC::Read, NETSERVER_Read },
    { AC::Write, NETSERVER_Write },

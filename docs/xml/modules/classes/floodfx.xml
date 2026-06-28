@@ -39,8 +39,8 @@
     <field>
       <name>Colour</name>
       <comment>The colour of the fill in RGB float format.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>FLOAT []</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>struct FRGB</type>
       <description>
 <p>This field defines the colour of the flood fill in floating-point RGBA format, in a range of 0 - 1.0 per component.</p>
 <p>The colour is complemented by the <fl>Opacity</fl> field.</p>
@@ -50,7 +50,7 @@
     <field>
       <name>Opacity</name>
       <comment>Modifies the opacity of the flood colour.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 

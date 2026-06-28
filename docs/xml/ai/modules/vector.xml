@@ -541,10 +541,16 @@
     <ai:k n="TOP" c="Close the path across the top of its area."/>
   </ai:c>
   <ai:c l="WVS" c="Wave style options.">
-    <ai:k n="ANGLED" c="Chevron style angles at 45 degrees either side of the peak and bottom edge."/>
-    <ai:k n="CURVED" c="Standard sine-wave curvature, this is the default."/>
     <ai:k n="SAWTOOTH" c="Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom."/>
+    <ai:k n="SMOOTH" c="Standard sine-wave curvature, this is the default."/>
+    <ai:k n="TRIANGLE" c="Chevron style angles at 45 degrees either side of the peak and bottom edge."/>
   </ai:c>
+  <ai:c l="WVE" c="Wave envelope options.">
+     <ai:k n="EXPONENTIAL" c="Exponential decay, weighted strongly towards the end of the wave."/>
+     <ai:k n="LINEAR" c="Linear decay from start to end, this is the default."/>
+     <ai:k n="QUADRATIC" c="Quadratic decay, weighted towards the end of the wave."/>
+     <ai:k n="SMOOTHSTEP" c="Smoothstep decay with ease-in and ease-out."/>
+   </ai:c>
   <ai:s n="FontMetrics">
     <ai:f n="Height" t="INT" c="Capitalised font height"/>
     <ai:f n="LineSpacing" t="INT" c="Vertical advance from one line to the next"/>

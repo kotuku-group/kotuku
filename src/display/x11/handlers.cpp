@@ -693,7 +693,7 @@ void process_movement(Window Window, int X, int Y)
 
       OBJECTID display_id;
       if ((display_id = get_display(Window))) {
-         pointer->set(FID_Surface, GetOwnerID(display_id)); // Alter the surface of the pointer so that it refers to the correct root window
+         pointer->setSurface(GetOwnerID(display_id)); // Alter the surface of the pointer so that it refers to the correct root window
       }
 
       // Refer to the handler code in the Display class to see how the HostX and HostY fields are updated from afar.

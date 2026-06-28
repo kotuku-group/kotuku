@@ -23,12 +23,12 @@ extern struct CoreBase *CoreBase;
 
 static std::string glProcedure;
 static objSurface *glTarget = nullptr;
-kt::vector<std::string> *glArgs;
+std::span<std::string> glArgs;
 static int glArgsIndex = 0;
 //static STRING glAllow = nullptr;
 static std::string glTargetFile;
 static std::string glStatement;
-static OBJECTPTR glTask = nullptr;
+static objTask *glTask = nullptr;
 static objScript *glScript = nullptr;
 static bool glSandbox = false;
 static bool glRelaunched = false;
@@ -36,7 +36,7 @@ static bool glTime = false;
 static bool glDialog = false;
 static bool glBackstage = false;
 
-static ERR exec_source(std::string, int, const std::string);
+static ERR exec_source(std::string_view, int, const std::string_view);
 
 #ifdef _WIN32
 inline void select_window_icon_resource(const std::string_view Path)
@@ -72,7 +72,7 @@ The following options can be used when executing script files:
 )";
 
 static std::string glDialogScript =
-R"(STRING:import 'gui/filedialog'
+R"(string:import 'gui/filedialog'
 try
  gui.dialog.file({
   filterList = { { name='Script Files', ext='.tiri' } },
@@ -92,7 +92,7 @@ except ex
 end
 processing.sleep()
 if glRunFile then
- obj.new('script', { src = glRunFile }).acActivate()
+ obj.new('tiri', { src = glRunFile }).acActivate()
 end
 )";
 
@@ -122,10 +122,9 @@ static ERR process_args(void)
 {
    kt::Log log("Origo");
 
-   if ((!glTask->get(FID_Parameters, &glArgs)) and (glArgs)) {
-      kt::vector<std::string> &args = *glArgs;
-      for (unsigned i=0; i < args.size(); i++) {
-         auto hash = kt::strhash(args[i]);
+   if ((!glTask->getParameters(glArgs))) {
+      for (unsigned i=0; i < glArgs.size(); i++) {
+         auto hash = kt::strhash(glArgs[i]);
          if (hash IS ARG_HELP1 or hash IS ARG_HELP2) { // Print help for the user
             printf("%s", glHelp.c_str());
             return ERR::Terminate;
@@ -155,33 +154,33 @@ static ERR process_args(void)
          }
          else if (hash IS ARG_BACKSTAGE) {
             glBackstage = true;
-            if (i + 1 < args.size()) {
-               if (atoi(args[i+1].c_str()) > 0) i++; // Port is optional
+            if (i + 1 < glArgs.size()) {
+               if (atoi(glArgs[i+1].c_str()) > 0) i++; // Port is optional
             }
          }
          else if (hash IS ARG_PROCEDURE) {
-            if (i + 1 < args.size()) {
-               glProcedure.assign(args[i+1]);
+            if (i + 1 < glArgs.size()) {
+               glProcedure.assign(glArgs[i+1]);
                i++;
             }
          }
          else if (hash IS ARG_STATEMENT or hash IS ARG_C or hash IS ARG_E) {
             // NB: The support for -c and -e exists only for AI agents that like to use this syntax for whatever reason...
-            if (i + 1 < args.size()) {
-               glStatement.assign(args[i+1]);
+            if (i + 1 < glArgs.size()) {
+               glStatement.assign(glArgs[i+1]);
                i++;
             }
          }
          else if (hash IS ARG_JIT_OPTIONS or hash IS ARG_LOG_FILE) {
             // For some system parameters we need to skip the next argument.
-            if (i + 1 < args.size()) i++;
+            if (i + 1 < glArgs.size()) i++;
          }
-         else if (kt::startswith("--", args[i])) {
+         else if (kt::startswith("--", glArgs[i])) {
             // Unrecognised argument beginning with '--', ignore it.
          }
          else { // If argument not recognised, assume this arg is the target file.
-            if (ResolvePath(args[i], RSF::APPROXIMATE, &glTargetFile) != ERR::Okay) {
-               printf("Unable to find file '%s'\n", args[i].c_str());
+            if (ResolvePath(glArgs[i], RSF::APPROXIMATE, &glTargetFile) != ERR::Okay) {
+               printf("Unable to find file '%s'\n", glArgs[i].c_str());
                return ERR::Terminate;
             }
             glArgsIndex = i + 1;
@@ -213,7 +212,7 @@ static ERR select_file_dialog(void)
    }
    else glDialogScript.replace(start, 8, "kotuku:");
 
-   return exec_source(glDialogScript.c_str(), glTime, glProcedure);
+   return exec_source(glDialogScript, glTime, glProcedure);
 }
 
 //********************************************************************************************************************
@@ -246,11 +245,11 @@ extern "C" int main(int argc, char **argv)
          result = select_file_dialog();
       }
       else if (not glStatement.empty()) {
-         result = exec_source(std::string("STRING:") + glStatement, glTime, glProcedure);
+         result = exec_source(std::string("string:") + glStatement, glTime, glProcedure);
       }
       else if (not glTargetFile.empty()) {
          std::string_view path;
-         if (!glTask->get(FID_Path, path)) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
+         if (!glTask->getPath(path)) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
          else log.error("No working path.");
 
          LOC type;
@@ -263,7 +262,8 @@ extern "C" int main(int argc, char **argv)
          // Engage default behaviour if no parameters have been specified
          // Check for the presence of package.zip or main.tiri files in the working directory
 
-         auto path = glTask->get<std::string_view>(FID_ProcessPath);
+         std::string_view path;
+         glTask->getProcessPath(path);
          if (path.empty()) path = ".";
          std::string exe_path(path);
          if (not ((exe_path.ends_with("/")) or (exe_path.ends_with("\\")))) {

@@ -249,14 +249,12 @@ blocking, mutates-object
 
 *********************************************************************************************************************/
 
-static ERR NETLOOKUP_Free(extNetLookup *Self)
+extNetLookup::~extNetLookup()
 {
-   if (Self->Callback.isScript()) {
-      UnsubscribeAction(Self->Callback.Context, AC::Free);
-      Self->Callback.Type = CALL::NIL;
+   if (Callback.isScript()) {
+      UnsubscribeAction(Callback.Context, AC::Free);
+      Callback.Type = CALL::NIL;
    }
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -419,11 +417,10 @@ object-owns-result, volatile-result
 
 *********************************************************************************************************************/
 
-static ERR GET_Addresses(extNetLookup *Self, int8_t **Value, int *Elements)
+static ERR GET_Addresses(extNetLookup *Self, std::span<IPAddress> &Value)
 {
    if (not Self->Info.Addresses.empty()) {
-      *Value = (int8_t *)Self->Info.Addresses.data();
-      *Elements = Self->Info.Addresses.size();
+      Value = std::span<IPAddress>(Self->Info.Addresses.data(), Self->Info.Addresses.size());
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;

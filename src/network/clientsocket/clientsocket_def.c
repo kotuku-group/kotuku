@@ -11,7 +11,7 @@ static const struct FieldDef clClientSocketState[] = {
 };
 
 static ERR CLIENTSOCKET_NewPlacement(extClientSocket *Self) {
-   new (Self) extClientSocket;
+   new (Self) extClientSocket(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -22,7 +22,6 @@ static ERR CLIENTSOCKET_FreePlacement(extClientSocket *Self) {
 
 static const struct ActionArray clClientSocketActions[] = {
    { AC::Deactivate, CLIENTSOCKET_Deactivate },
-   { AC::Free, CLIENTSOCKET_Free },
    { AC::FreePlacement, CLIENTSOCKET_FreePlacement },
    { AC::Init, CLIENTSOCKET_Init },
    { AC::NewPlacement, CLIENTSOCKET_NewPlacement },

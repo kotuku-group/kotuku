@@ -21,7 +21,7 @@ static const struct FieldDef clControllerButtons[] = {
 };
 
 static ERR CONTROLLER_NewPlacement(objController *Self) {
-   new (Self) objController;
+   new (Self) objController(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -32,7 +32,6 @@ static ERR CONTROLLER_FreePlacement(objController *Self) {
 
 static const struct ActionArray clControllerActions[] = {
    { AC::FreePlacement, CONTROLLER_FreePlacement },
-   { AC::NewObject, CONTROLLER_NewObject },
    { AC::NewPlacement, CONTROLLER_NewPlacement },
    { AC::Query, CONTROLLER_Query },
    { AC::NIL, nullptr }

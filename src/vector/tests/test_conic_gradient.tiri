@@ -1,0 +1,129 @@
+   include 'display'
+   include 'vector'
+
+   mGfx ?= mod.load('display')
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function stop(Offset, R, G, B)
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+function rampStops()
+   local stops = { }
+   table.insert(stops, stop(0.0, 1.0, 0.0, 0.0))
+   table.insert(stops, stop(1.0, 0.0, 0.0, 1.0))
+   return stops
+end
+
+function newConicScene(Spread, Span)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local gradient = scene.new('GradientConic', {
+      units=VUNIT_USERSPACE, cx=50, cy=50, radius=50, spreadMethod=Spread, span=Span, stops=rampStops()
+   })
+   check scene.mtAddDef('conic', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#conic)' })
+   return scene, gradient
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+@Test function SpanRoundTrips()
+   local scene, gradient = newConicScene(VSPREAD_REPEAT, 0.25)
+   assert(gradient.span ≈ 0.25, 'Span should round-trip as a normalised turn fraction')
+end
+
+@Test function PadIgnoresSpan()
+   local full_scene = newConicScene(VSPREAD_PAD, 1.0)
+   local span_scene = newConicScene(VSPREAD_PAD, 0.25)
+   local full_bmp = newBitmap(100, 100)
+   local span_bmp = newBitmap(100, 100)
+
+   assert(drawHash(full_scene, full_bmp) is drawHash(span_scene, span_bmp),
+      'PAD spread should ignore GradientConic Span')
+end
+
+@Test function ReflectDefaultSweepsTriangle()
+   -- At Span 1.0 a REFLECT spread forms a single triangular sweep across the full turn: the ramp runs from the
+   -- start colour to the end colour across the first half-turn, then back to the start across the second half-turn.
+
+   local scene = newConicScene(VSPREAD_REFLECT, 1.0)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local right = mGfx.ReadRGBPixel(bmp, 80, 50)  -- angle 0:  start of the sweep (red)
+   local left  = mGfx.ReadRGBPixel(bmp, 20, 50)  -- angle pi: peak of the triangle (blue)
+
+   assert((right.red > right.blue) and (right.red > 180),
+      'The start of a conic reflect sweep should be red-dominant (got ' ..
+      right.red .. ',' .. right.green .. ',' .. right.blue .. ')')
+   assert((left.blue > left.red) and (left.blue > 180),
+      'A full-turn REFLECT sweep should reach the end colour at the half-turn peak (got ' ..
+      left.red .. ',' .. left.green .. ',' .. left.blue .. ')')
+end
+
+@Test function ReflectUsesSpan()
+   local scene = newConicScene(VSPREAD_REFLECT, 0.5)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local right = mGfx.ReadRGBPixel(bmp, 80, 50)
+   local down = mGfx.ReadRGBPixel(bmp, 49, 80)
+
+   assert((right.red > right.blue) and (right.red > 180),
+      'The start of a conic reflect cycle should be red-dominant (got ' ..
+      right.red .. ',' .. right.green .. ',' .. right.blue .. ')')
+   assert((down.blue > down.red) and (down.blue > 180),
+      'A 0.5 Span with REFLECT should reach the end colour at a quarter turn (got ' ..
+      down.red .. ',' .. down.green .. ',' .. down.blue .. ')')
+end
+
+@Test function ReflectNearFullSpanApproachesFullSweep()
+   local scene = newConicScene(VSPREAD_REFLECT, 0.99)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local left = mGfx.ReadRGBPixel(bmp, 20, 50)
+
+   assert((left.blue > left.red) and (left.blue > 180),
+      'A 0.99 Span with REFLECT should remain close to the full reflected sweep (got ' ..
+      left.red .. ',' .. left.green .. ',' .. left.blue .. ')')
+end
+
+@Test function RepeatUsesSpan()
+   local scene = newConicScene(VSPREAD_REPEAT, 0.25)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local right = mGfx.ReadRGBPixel(bmp, 80, 50)
+   local down = mGfx.ReadRGBPixel(bmp, 49, 80)
+
+   assert((right.red > right.blue) and (right.red > 180),
+      'The start of a conic repeat cycle should be red-dominant (got ' ..
+      right.red .. ',' .. right.green .. ',' .. right.blue .. ')')
+   assert((down.red > down.blue) and (down.red > 180),
+      'A 0.25 Span with REPEAT should restart the cycle every quarter turn (got ' ..
+      down.red .. ',' .. down.green .. ',' .. down.blue .. ')')
+end

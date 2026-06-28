@@ -22,10 +22,8 @@
 //********************************************************************************************************************
 // Helper: Check if operator tracing is enabled
 
-static inline bool should_trace_operators(FuncState* fs)
-{
-   auto prv = (prvTiri *)fs->L->script->DerivedPtr;
-   return (prv->JitOptions & JOF::TRACE_OPERATORS) != JOF::NIL;
+inline bool should_trace_operators(FuncState* fs) {
+   return (fs->L->script->JitOptions & JOF::TRACE_OPERATORS) != JOF::NIL;
 }
 
 //********************************************************************************************************************

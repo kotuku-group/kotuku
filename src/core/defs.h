@@ -251,6 +251,7 @@ extern std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
 extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
 extern std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes;
 
 extern std::condition_variable_any cvObjects;
 
@@ -429,7 +430,7 @@ class extMetaClass : public objMetaClass {
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
 
-   extMetaClass() {
+   extMetaClass(objMetaClass *ClassPtr, OBJECTID ObjectID) : objMetaClass(ClassPtr, ObjectID) {
       Local[0] = 0xff;
    }
 };
@@ -457,7 +458,7 @@ class extFile : public objFile {
    bool   isFolder;
    int    Handle;         // Native system file handle
 
-   extFile() {
+   extFile(objMetaClass *pClass, OBJECTID pUID) : objFile(pClass, pUID) {
       Handle = -1;
       Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
    }
@@ -475,6 +476,7 @@ class extThread : public objThread {
    std::atomic_int InterruptThreadID = 0; // Internal thread ID used by WakeThread() for cooperative shutdown
    std::atomic_bool Active;
 
+   extThread(objMetaClass *pClass, OBJECTID pUID) : objThread(pClass, pUID) { }
    ~extThread();
 };
 
@@ -510,7 +512,7 @@ class extTask : public objTask {
    #endif
    struct ActionEntry Actions[int(AC::END)]; // Action routines to be intercepted by the program
 
-   extTask() {
+   extTask(objMetaClass *pClass, OBJECTID pUID) : objTask(pClass, pUID) {
       TimeOut = 60 * 60 * 24;
    }
 
@@ -544,6 +546,8 @@ class extModule : public objModule {
    public:
    using create = kt::Create<extModule>;
    APTR   prvMBMemory;   // Module base memory
+
+   extModule(objMetaClass *pClass, OBJECTID pUID) : objModule(pClass, pUID) { }
    ~extModule();
 };
 
@@ -974,7 +978,7 @@ class extObjectContext : public ObjectContext {
       action = pAction;
    }
 
-   inline extObjectContext(OBJECTPTR pObject, struct Field *pField = nullptr) noexcept {
+   inline extObjectContext(OBJECTPTR pObject, const struct Field *pField = nullptr) noexcept {
       tlContext.emplace_back(pObject, pField, AC::NIL);
 
       obj    = pObject;
@@ -982,7 +986,7 @@ class extObjectContext : public ObjectContext {
       action = AC::NIL;
    }
 
-   inline extObjectContext(OBJECTPTR pObject, struct Field *pField, AC pAction) noexcept {
+   inline extObjectContext(OBJECTPTR pObject, const struct Field *pField, AC pAction) noexcept {
       tlContext.emplace_back(pObject, pField, pAction);
 
       obj    = pObject;
@@ -1077,7 +1081,8 @@ class objRootModule : public Object {
    struct ActionEntry prvActions[int(AC::END)]; // Action routines to be intercepted by the program
    std::string LibraryName; // Name of the library loaded from disk
 
-   objRootModule() = default;
+   objRootModule() noexcept : Object(nullptr, 0) { }
+   objRootModule(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : Object(ClassPtr, ObjectID) { }
    ~objRootModule();
 };
 
@@ -1160,7 +1165,7 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 void   scan_classes(void);
 #endif
 
-ERR  writeval_default(OBJECTPTR, Field *, int, const void *, int);
+ERR  writeval_default(OBJECTPTR, const Field *, int, const void *);
 ERR  check_paths(std::string_view, PERMIT);
 extern "C" ERR validate_process(int);
 
@@ -1296,6 +1301,13 @@ inline int64_t calc_timestamp(struct DateTime *Date) {
           ((int64_t)Date->Month * 60LL * 60LL * 24LL * 31LL) +
           ((int64_t)Date->Year * 60LL * 60LL * 24LL * 31LL * 12LL));
 }
+
+// Convert a wall-clock timestamp (microseconds since the Unix epoch, e.g. as produced by std::chrono::system_clock
+// or the Time class's SystemTime field) into a broken-down DateTime expressed in the host's local time zone.  Returns
+// ERR::Okay on success, or ERR::SystemCall if the local zone or calendar conversion fails.  NB: This is NOT compatible
+// with PreciseTime(), which returns a monotonic steady_clock value that has no relationship to the calendar.
+
+extern ERR datetime_from_unix_us(int64_t MicroEpoch, struct DateTime &Date);
 
 inline uint16_t reverse_word(uint16_t Value) {
     return (((Value & 0x00FF) << 8) | ((Value & 0xFF00) >> 8));

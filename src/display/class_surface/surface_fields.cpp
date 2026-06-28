@@ -171,37 +171,6 @@ static ERR SET_Modal(extSurface *Self, int Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Movement: Limits the movement of a surface object to vertical or horizontal shifts.
-Lookup: MOVE
-
-Set `Movement` to limit movement performed by #Move() to horizontal movement, vertical movement, both axes or neither
-axis.  By default, surfaces can move horizontally and vertically.
-
-This field affects #Move() only.  Direct writes to coordinate fields bypass the movement restriction.
-
-*********************************************************************************************************************/
-
-static ERR GET_Movement(extSurface *Self, int *Value)
-{
-   *Value = 0;
-   if ((Self->Flags & RNF::NO_HORIZONTAL) IS RNF::NIL) *Value |= MOVE_HORIZONTAL;
-   if ((Self->Flags & RNF::NO_VERTICAL) IS RNF::NIL) *Value |= MOVE_VERTICAL;
-   return ERR::Okay;
-}
-
-static ERR SET_Movement(extSurface *Self, int Flags)
-{
-   if (Flags IS MOVE_HORIZONTAL) Self->Flags = (Self->Flags & RNF::NO_HORIZONTAL) | RNF::NO_VERTICAL;
-   else if (Flags IS MOVE_VERTICAL) Self->Flags = (Self->Flags & RNF::NO_VERTICAL) | RNF::NO_HORIZONTAL;
-   else if (Flags IS (MOVE_HORIZONTAL|MOVE_VERTICAL)) Self->Flags &= ~(RNF::NO_VERTICAL | RNF::NO_HORIZONTAL);
-   else Self->Flags |= RNF::NO_HORIZONTAL|RNF::NO_VERTICAL;
-
-   UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
 Opacity: Defines the translucency applied when drawing a surface.
 
 `Opacity` is expressed as a normalised multiplier.  The default value of `1.0` draws the surface as fully opaque.  Lower

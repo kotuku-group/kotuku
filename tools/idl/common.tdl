@@ -50,7 +50,7 @@ enums("AC", { type="int", start=1, comment="Action identifiers.", module="Core" 
     "Signal",       "Activate",       "Redimension",  "Clear",    "FreeWarning",  "Enable",       "CopyData",
     "DataFeed",     "Deactivate",     "Draw",         "Flush",    "Focus",        "Free",         "SaveSettings",
     "GetKey",       "DragDrop",       "Hide",         "Init",     "Lock",         "LostFocus",    "Move",
-    "MoveToBack",   "MoveToFront",    "NewChild",     "NewOwner", "NewObject",    "Redo",         "Query",
+    "MoveToBack",   "MoveToFront",    "NewChild",     "NewOwner", "NewObject",    "Redo",         "Query", -- NewObject deprecated
     "Read",         "Rename",         "Reset",        "Resize",   "SaveImage",    "SaveToObject", "MoveToPoint",
     "Seek",         "SetKey",         "Show",         "Undo",     "Unlock",       "Next",         "Prev",
     "Write",        "SetField",       "Clipboard",    "Refresh",  "Disable",      "NewPlacement", "FreePlacement",

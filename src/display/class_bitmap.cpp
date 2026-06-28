@@ -1071,59 +1071,6 @@ static ERR BITMAP_Flush(extBitmap *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR BITMAP_Free(extBitmap *Self)
-{
-   #ifdef __xwindows__
-      if (Self->x11.XShmImage) {
-         // Tell the X11 server to detach from the memory block
-         XShmDetach(XDisplay, &Self->x11.ShmInfo);
-         Self->x11.XShmImage = false;
-         free_shm(Self->Data, Self->x11.ShmInfo.shmid);
-         Self->Data = nullptr;
-      }
-
-      if (Self->x11.gc) {
-         XFreeGC(XDisplay, Self->x11.gc);
-         Self->x11.gc = 0;
-      }
-   #endif
-
-   if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
-      FreeResource(Self->Data);
-      Self->Data = nullptr;
-   }
-
-   if (Self->prvCompress) { FreeResource(Self->prvCompress); Self->prvCompress = nullptr; }
-
-   if (Self->ResolutionChangeHandle) {
-      UnsubscribeEvent(Self->ResolutionChangeHandle);
-      Self->ResolutionChangeHandle = nullptr;
-   }
-
-   #ifdef __xwindows__
-      if ((Self->x11.drawable) and (Self->x11.window != Self->x11.drawable)) {
-         if (XDisplay) XFreePixmap(XDisplay, Self->x11.drawable);
-         Self->x11.drawable = 0;
-      }
-
-      if (Self->x11.readable) {
-         XDestroyImage(Self->x11.readable);
-         Self->x11.readable = nullptr;
-      }
-   #endif
-
-   #ifdef _WIN32
-      if (Self->win.Drawable) {
-         winDeleteDC(Self->win.Drawable);
-         Self->win.Drawable = nullptr;
-      }
-   #endif
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -1481,79 +1428,6 @@ static ERR BITMAP_Lock(extBitmap *Self)
    return lock_surface(Self, SURFACE_READWRITE);
 
 #endif
-}
-
-//********************************************************************************************************************
-
-static ERR BITMAP_NewObject(extBitmap *Self)
-{
-   constexpr int CBANK = 5;
-   RGB8 *RGB;
-   int i, j;
-
-   Self->Palette      = &Self->prvPaletteArray;
-   Self->ColourFormat = &Self->prvColourFormat;
-   Self->ColourSpace  = CS::SRGB;
-   Self->BlendMode    = BLM::AUTO;
-   Self->Opacity      = 255;
-
-   // Generate the standard colour palette
-
-   Self->Palette = &Self->prvPaletteArray;
-   Self->Palette->AmtColours = 256;
-
-   RGB = Self->Palette->Col;
-   RGB++; // Skip the black pixel at the start
-
-   for (i=0; i < 6; i++) {
-      for (j=0; j < CBANK; j++) {
-         RGB[(i*CBANK) + j].Red   = (i * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 0;
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-      }
-   }
-
-   for (i=6; i < 12; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Red   = ((i-6) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 51;
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-      }
-   }
-
-   for (i=12; i < 18; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-12) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 102;
-      }
-   }
-
-   for (i=18; i < 24; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-18) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 153;
-      }
-   }
-
-   for (i=24; i < 30; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-24) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 204;
-      }
-   }
-
-   for (i=30; i < 36; i++) {
-      for (j=0; j < 5; j++) {
-         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
-         RGB[(i*CBANK) + j].Red   = ((i-30) * 255/CBANK);
-         RGB[(i*CBANK) + j].Green = 255;
-      }
-   }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2562,7 +2436,7 @@ The new pixel value must be defined in the `RGB` parameter.
 Flags: Optional flags.
 
 -FIELD-
-Handle: Private.  Platform-dependent field for referencing video memory.
+Handle: Platform-dependent field for referencing video memory.
 -END-
 
 *********************************************************************************************************************/
@@ -2931,6 +2805,109 @@ static ERR CalculatePixelRoutines(extBitmap *Self)
 
 //********************************************************************************************************************
 
+extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(ClassPtr, ObjectID)
+{
+   constexpr int CBANK = 5;
+   RGB8 *RGB;
+   int i, j;
+
+   Palette      = &prvPaletteArray;
+   ColourFormat = &prvColourFormat;
+   ColourSpace  = CS::SRGB;
+   BlendMode    = BLM::AUTO;
+   Opacity      = 255;
+
+   // Generate the standard colour palette
+
+   Palette = &prvPaletteArray;
+   Palette->AmtColours = 256;
+
+   RGB = Palette->Col;
+   RGB++; // Skip the black pixel at the start
+
+   for (i=0; i < 6; i++) {
+      for (j=0; j < CBANK; j++) {
+         RGB[(i*CBANK) + j].Red   = (i * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 0;
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+      }
+   }
+
+   for (i=6; i < 12; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Red   = ((i-6) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 51;
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+      }
+   }
+
+   for (i=12; i < 18; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-12) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 102;
+      }
+   }
+
+   for (i=18; i < 24; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-18) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 153;
+      }
+   }
+
+   for (i=24; i < 30; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-24) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 204;
+      }
+   }
+
+   for (i=30; i < 36; i++) {
+      for (j=0; j < 5; j++) {
+         RGB[(i*CBANK) + j].Blue  = (j + 1) * 255/CBANK;
+         RGB[(i*CBANK) + j].Red   = ((i-30) * 255/CBANK);
+         RGB[(i*CBANK) + j].Green = 255;
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+extBitmap::~extBitmap()
+{
+   #ifdef __xwindows__
+      if (x11.XShmImage) {
+         // Tell the X11 server to detach from the memory block
+         XShmDetach(XDisplay, &x11.ShmInfo);
+         x11.XShmImage = false;
+         free_shm(Data, x11.ShmInfo.shmid);
+      }
+
+      if (x11.gc) XFreeGC(XDisplay, x11.gc);
+   #endif
+
+   if ((Data) and (prvAFlags & BF_DATA)) FreeResource(Data);
+   if (prvCompress) FreeResource(prvCompress);
+   if (ResolutionChangeHandle) UnsubscribeEvent(ResolutionChangeHandle);
+
+   #ifdef __xwindows__
+      if ((x11.drawable) and (x11.window != x11.drawable)) {
+         if (XDisplay) XFreePixmap(XDisplay, x11.drawable);
+      }
+
+      if (x11.readable) XDestroyImage(x11.readable);
+   #endif
+
+   #ifdef _WIN32
+      if (win.Drawable) winDeleteDC(win.Drawable);
+   #endif
+}
+
+//********************************************************************************************************************
+
 #include "lib_mempixels.cpp"
 
 #ifdef __xwindows__
@@ -2949,7 +2926,7 @@ static ERR CalculatePixelRoutines(extBitmap *Self)
 
 static const FieldArray clBitmapFields[] = {
    { "Palette",       FDF_POINTER|FDF_RW, nullptr, SET_Palette },
-   { "ColourFormat",  FDF_POINTER|FDF_STRUCT|FDF_R, NULL, NULL, "ColourFormat" },
+   { "ColourFormat",  FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "ColourFormat" },
    { "DrawUCPixel",   FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCPixel },
    { "DrawUCRPixel",  FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCRPixel },
    { "ReadUCPixel",   FDF_POINTER|FDF_R, nullptr, nullptr, &argsReadUCPixel },
@@ -2978,13 +2955,13 @@ static const FieldArray clBitmapFields[] = {
    { "Opacity",       FDF_INT|FDF_RW },
    { "BlendMode",     FDF_INT|FDF_RW|FDF_LOOKUP, nullptr, nullptr, &clBitmapBlendMode },
    { "DataID",        FDF_INT|FDF_SYSTEM|FDF_R },
-   { "TransColour",   FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_Trans, 4 },
-   { "Bkgd",          FDF_ARRAY|FD_BYTE|FDF_RW, nullptr, SET_Bkgd, 4 },
+   { "TransColour",   FDF_STRUCT|FDF_RW, nullptr, SET_Trans, "RGB8" },
+   { "Bkgd",          FDF_STRUCT|FDF_RW, nullptr, SET_Bkgd, "RGB8" },
    { "BkgdIndex",     FDF_INT|FDF_RW, nullptr, SET_BkgdIndex },
    { "ColourSpace",   FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clBitmapColourSpace },
    // Virtual fields
    { "Clip",          FDF_POINTER|FDF_STRUCT|FDF_RW|FDF_PURE, GET_Clip, SET_Clip },
-   { "Handle",        FDF_POINTER|FDF_SYSTEM|FDF_RW|FDF_PURE, GET_Handle, SET_Handle },
+   { "Handle",        FDF_POINTER|FDF_RW|FDF_PURE, GET_Handle, SET_Handle },
    END_FIELD
 };
 

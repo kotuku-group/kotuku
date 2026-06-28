@@ -118,6 +118,10 @@ class extClientSocket : public objClientSocket {
    #ifndef DISABLE_SSL
       TLSSession TLS;
    #endif
+
+   extClientSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objClientSocket(ClassPtr, ObjectID) { }
+
+   ~extClientSocket();
 };
 
 //********************************************************************************************************************
@@ -144,12 +148,14 @@ class extNetSocket : public objNetSocket {
       TLSSession TLS;
    #endif
 
-   extNetSocket() {
+   extNetSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) : objNetSocket(ClassPtr, ObjectID) {
       // objNetSocket defaults
       Error    = ERR::Okay;
       State    = NTC::DISCONNECTED;
       MsgLimit = 1024768;
    }
+
+   ~extNetSocket();
 };
 
 class extNetServer : public extNetSocket {
@@ -158,21 +164,26 @@ class extNetServer : public extNetSocket {
    static constexpr CSTRING CLASS_NAME = "NetServer";
    using create = kt::Create<extNetServer>;
 
-   objNetClient *LastClient;   // For linked-list management.
    objNetClient *Clients;      // Lists all clients connected to the NetServer.
    std::string SSLCertificate; // SSL certificate file to use for SSL listeners.
    std::string SSLPrivateKey;  // Private key file to use for SSL listeners.
    std::string SSLKeyPassword; // SSL private key password.
-   int    Backlog;             // The maximum number of connections that can be queued against the socket.
-   int    ClientLimit;         // The maximum number of client IP addresses that can be connected to the NetServer.
-   int    SocketLimit;         // Limits the number of connected sockets per client IP address.
+   int    Backlog = 10;        // The maximum number of connections that can be queued against the socket.
+   int    ClientLimit = 1024;  // The maximum number of client IP addresses that can be connected to the NetServer.
+   int    SocketLimit = 256;   // Limits the number of connected sockets per client IP address.
    int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
+
+   objNetClient *LastClient;   // For linked-list management.
 
    #ifndef DISABLE_SSL
       #ifndef _WIN32
          SSL_CTX *ServerSSLContext = nullptr;
       #endif
    #endif
+
+   extNetServer(objMetaClass *ClassPtr, OBJECTID ObjectID) : extNetSocket(ClassPtr, ObjectID) { }
+
+   ~extNetServer();
 };
 
 class extNetLookup : public objNetLookup {
@@ -180,6 +191,10 @@ class extNetLookup : public objNetLookup {
    FUNCTION Callback;
    struct DNSEntry Info;
    std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
+
+   extNetLookup(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objNetLookup(ClassPtr, ObjectID) { }
+
+   ~extNetLookup();
 };
 
 //********************************************************************************************************************
@@ -542,7 +557,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, glNetworkModule);
+   glNetworkModule = (OBJECTPTR)((objModule *)argModule)->Root;
 
    glPlatform = create_platform();
    if (!glPlatform) return ERR::NoSupport;
@@ -1058,9 +1073,9 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "DNSEntry",  sizeof(DNSEntry) },
-   { "IPAddress", sizeof(IPAddress) },
-   { "NetQueue",  sizeof(NetQueue) }
+   { "DNSEntry",  { sizeof(DNSEntry),  alignof(DNSEntry)  } },
+   { "IPAddress", { sizeof(IPAddress), alignof(IPAddress) } },
+   { "NetQueue",  { sizeof(NetQueue),  alignof(NetQueue)  } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

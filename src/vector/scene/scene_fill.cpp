@@ -1,7 +1,9 @@
 
 //********************************************************************************************************************
 
-static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extVectorGradient &, double,
+static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, double, extGradientGouraud &, double,
+   agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
+static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, double, extGradientMesh &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
 
 //********************************************************************************************************************
@@ -51,9 +53,14 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
    }
 
    if (Painter.Gradient) {
-      auto &gradient = *((extVectorGradient *)Painter.Gradient);
-      if (gradient.Type IS VGT::GOURAUD) {
-         fill_gouraud(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, gradient,
+      auto &gradient = *((extGradient *)Painter.Gradient);
+      if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+         fill_gouraud(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientGouraud &)gradient,
+            State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
+            build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
+      }
+      else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
+         fill_mesh(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientMesh &)gradient,
             State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
             build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
       }
@@ -85,8 +92,8 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
 {
    const double c_width  = (Image.Units IS VUNIT::USERSPACE) ? ViewWidth : Bounds.width();
    const double c_height = (Image.Units IS VUNIT::USERSPACE) ? ViewHeight : Bounds.height();
-   const double dx = Bounds.left + (dmf::hasScaledX(Image.Dimensions) ? (c_width * Image.X) : Image.X);
-   const double dy = Bounds.top + (dmf::hasScaledY(Image.Dimensions) ? (c_height * Image.Y) : Image.Y);
+   const double dx = Bounds.left + (Image.X.scaled() ? (c_width * double(Image.X)) : double(Image.X));
+   const double dy = Bounds.top + (Image.Y.scaled() ? (c_height * double(Image.Y)) : double(Image.Y));
 
    auto t_scale = Transform.scale();
    Path.approximation_scale(t_scale);
@@ -161,6 +168,41 @@ static uint64_t gouraud_mesh_fingerprint(const GouraudMesh &Mesh)
 }
 
 //********************************************************************************************************************
+// FNV-1a fingerprint of a mesh gradient's patch geometry and corner colours.
+
+static uint64_t mesh_gradient_fingerprint(const MeshGradient &Mesh, int Segments)
+{
+   uint64_t hash = 0xcbf29ce484222325ULL;
+   auto mix = [&hash](uint64_t Value) {
+      hash ^= Value;
+      hash *= 0x100000001b3ULL;
+   };
+
+   mix(Mesh.rows);
+   mix(Mesh.cols);
+   mix(Mesh.bicubic ? 1 : 0);
+   mix(Segments);
+   mix(Mesh.patches.size());
+
+   for (auto &patch : Mesh.patches) {
+      for (auto &edge : patch.edge) {
+         mix(std::bit_cast<uint64_t>(edge.p0.x)); mix(std::bit_cast<uint64_t>(edge.p0.y));
+         mix(std::bit_cast<uint64_t>(edge.c0.x)); mix(std::bit_cast<uint64_t>(edge.c0.y));
+         mix(std::bit_cast<uint64_t>(edge.c1.x)); mix(std::bit_cast<uint64_t>(edge.c1.y));
+         mix(std::bit_cast<uint64_t>(edge.p1.x)); mix(std::bit_cast<uint64_t>(edge.p1.y));
+      }
+      for (auto &colour : patch.corner) {
+         mix(std::bit_cast<uint32_t>(colour.Red));
+         mix(std::bit_cast<uint32_t>(colour.Green));
+         mix(std::bit_cast<uint32_t>(colour.Blue));
+         mix(std::bit_cast<uint32_t>(colour.Alpha));
+      }
+   }
+
+   return hash;
+}
+
+//********************************************************************************************************************
 // Guard against stale or malformed indexed meshes.  The field setter validates incoming arrays, but rendering also
 // checks the final mesh so direct C++ edits or legacy data cannot index outside the prepared vertex list.
 
@@ -189,8 +231,18 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
    agg::renderer_base<agg::pixfmt_psl> &RenderBase, SceneRenderer *Render, std::vector<uint8_t> &Bitmap,
    agg::rendering_buffer &Buffer)
 {
-   const unsigned width = RenderBase.width();
-   const unsigned height = RenderBase.height();
+   // The triangle raster and the path Raster both operate in render-space coordinates.  When rendering into a
+   // buffered viewport the target bitmap is offset by (origin_x, origin_y), so render-space (origin_x, origin_y) maps
+   // to buffer pixel (0,0) and the render base only spans the buffer dimensions.  The mask, however, is indexed by
+   // the render-space coordinates of the triangle scanlines, so it must extend to cover the origin offset as well;
+   // otherwise the bottom/right edge of the shape (which sits at render-space y >= buffer height) samples beyond the
+   // mask and is silently clipped.  Mirror the clip-mask convention (scene_clipping.cpp) of sizing to the full
+   // render-space extent from (0,0).
+
+   const unsigned origin_x = Render ? unsigned(std::max(0, Render->bitmap_origin_x())) : 0;
+   const unsigned origin_y = Render ? unsigned(std::max(0, Render->bitmap_origin_y())) : 0;
+   const unsigned width = RenderBase.width() + origin_x;
+   const unsigned height = RenderBase.height() + origin_y;
    if ((!width) or (!height)) return false;
 
    Bitmap.assign(size_t(width) * size_t(height), 0);
@@ -238,7 +290,7 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
 //   * VCS::LINEAR_RGB -> colours are decoded to linear here, so span_gouraud_rgba_linear interpolates in linear
 //     space and re-encodes each output pixel back to sRGB for storage.
 
-static void rebuild_gouraud_cache(extVectorGradient &Gradient, const GouraudMesh &Mesh, const agg::trans_affine &Transform,
+static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, const agg::trans_affine &Transform,
    double Opacity, VCS ColourSpace, uint64_t MeshHash)
 {
    const auto &verts = Mesh.Vertices;
@@ -263,9 +315,8 @@ static void rebuild_gouraud_cache(extVectorGradient &Gradient, const GouraudMesh
 
    const size_t tri_count = Mesh.Indices.empty() ? (verts.size() / 3) : (Mesh.Indices.size() / 3);
 
-   auto &cache = Gradient.GouraudTriangles;
-   cache.Triangles.clear();
-   cache.Triangles.reserve(tri_count);
+   Cache.Triangles.clear();
+   Cache.Triangles.reserve(tri_count);
 
    auto fetch = [&](size_t Tri, int Corner) -> const PreparedVertex & {
       const int idx = Mesh.Indices.empty() ? int(Tri * 3 + Corner) : Mesh.Indices[Tri * 3 + Corner];
@@ -286,18 +337,80 @@ static void rebuild_gouraud_cache(extVectorGradient &Gradient, const GouraudMesh
       tri.x[0] = a.x; tri.y[0] = a.y; tri.colour[0] = a.colour;
       tri.x[1] = b.x; tri.y[1] = b.y; tri.colour[1] = b.colour;
       tri.x[2] = c.x; tri.y[2] = c.y; tri.colour[2] = c.colour;
-      cache.Triangles.push_back(tri);
+      Cache.Triangles.push_back(tri);
    }
 
-   cache.Transform   = Transform;
-   cache.MeshHash    = MeshHash;
-   cache.Opacity     = Opacity;
-   cache.ColourSpace = ColourSpace;
-   cache.Valid       = true;
+   Cache.Transform   = Transform;
+   Cache.MeshHash    = MeshHash;
+   Cache.Opacity     = Opacity;
+   Cache.ColourSpace = ColourSpace;
+   Cache.Valid       = true;
+}
+
+static void render_gouraud_triangles(const GouraudCache &Cache, double Resolution, VCS ColourSpace,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rendering_buffer &PathMaskBuffer)
+{
+   typedef agg::span_allocator<agg::rgba8> span_allocator_type;
+   span_allocator_type span_allocator;
+   agg::rasterizer_scanline_aa<> triangle_raster;
+   agg::alpha_mask_gray8 alpha_mask(PathMaskBuffer);
+   agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+
+   // The Resolution field reduces the gradient's colour resolution, mirroring the field gradients.  It maps to a
+   // count of 1/(1-Resolution) distinct colours; for a Gouraud fill that becomes the number of discrete levels each
+   // output channel is snapped to.  The 8-bit output span cannot represent more than 256 channel values, so counts
+   // at or above 256 disable banding and use the plain span path.
+
+   const double resolution = std::clamp(Resolution, 0.0, 1.0);
+   const double level_count = (resolution < 1.0) ? std::round(1.0 / (1.0 - resolution)) : 256.0;
+   const int levels = int(std::clamp(level_count, 2.0, 256.0));
+   const bool quantise = (levels < 256);
+
+   // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
+   // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
+   //
+   // Each triangle is rendered as a separate anti-aliased scanline pass, so the partial edge coverage of adjacent
+   // triangles does not sum to full opacity along a shared edge.  That leaves a faint translucent seam where the
+   // background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a 6-vertex polygon (colours
+   // are still interpolated from the original vertices via miter joins), so feeding the rasteriser that dilated
+   // outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry identical colours on both
+   // sides, the overlap blends invisibly and seals the seam.
+
+   auto render_triangles = [&]<typename SpanGen>() {
+      constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
+      for (auto &tri : Cache.Triangles) {
+         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
+         auto make_span = [&] {
+            if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels); }) {
+               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels);
+            }
+            else {
+               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION);
+            }
+         };
+         auto span_gen = make_span();
+
+         triangle_raster.reset();
+         triangle_raster.add_path(span_gen);
+         agg::render_scanlines_aa(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
+      }
+   };
+
+   if (ColourSpace IS VCS::LINEAR_RGB) {
+      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
+      else render_triangles.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+   }
+   else {
+      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
+      else render_triangles.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
+   }
 }
 
 static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth, double ViewHeight,
-   extVectorGradient &Gradient, double Opacity, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
+   extGradientGouraud &Gradient, double Opacity, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
    agg::rasterizer_scanline_aa<> &Raster, const agg::trans_affine &Transform, SceneRenderer *Render)
 {
    if ((!Gradient.Gouraud) or (Gradient.Gouraud->Vertices.empty())) return;
@@ -331,66 +444,188 @@ static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bound
    const VCS colour_space = Gradient.ColourSpace;
    const uint64_t mesh_hash = gouraud_mesh_fingerprint(mesh);
    if (!Gradient.GouraudTriangles.matches(mesh_hash, transform, Opacity, colour_space)) {
-      rebuild_gouraud_cache(Gradient, mesh, transform, Opacity, colour_space, mesh_hash);
+      rebuild_gouraud_cache(Gradient.GouraudTriangles, mesh, transform, Opacity, colour_space, mesh_hash);
    }
 
-   typedef agg::span_allocator<agg::rgba8> span_allocator_type;
-   span_allocator_type span_allocator;
-   agg::rasterizer_scanline_aa<> triangle_raster;
-   agg::alpha_mask_gray8 alpha_mask(path_mask_buffer);
-   agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+   render_gouraud_triangles(Gradient.GouraudTriangles, Gradient.Resolution, colour_space, RenderBase, path_mask_buffer);
+}
 
-   // The Resolution field reduces the gradient's colour resolution, mirroring the field gradients.  It maps to a
-   // count of 1/(1-Resolution) distinct colours; for a Gouraud fill that becomes the number of discrete levels each
-   // output channel is snapped to.  The 8-bit output span cannot represent more than 256 channel values, so counts
-   // at or above 256 disable banding and use the plain span path.
+//********************************************************************************************************************
+// Mesh gradient tessellation.  A bilinear Coons patch is evaluated from four boundary cubic Beziers.  Patch colours
+// are interpolated bilinearly in the same (u,v) parameter space, then each grid cell is emitted as two Gouraud
+// triangles for the shared renderer above.
+
+static agg::point_d mesh_point_add(const agg::point_d &A, const agg::point_d &B)
+{
+   return agg::point_d(A.x + B.x, A.y + B.y);
+}
+
+static agg::point_d mesh_point_sub(const agg::point_d &A, const agg::point_d &B)
+{
+   return agg::point_d(A.x - B.x, A.y - B.y);
+}
+
+static agg::point_d mesh_point_mul(const agg::point_d &A, double Scale)
+{
+   return agg::point_d(A.x * Scale, A.y * Scale);
+}
+
+static agg::point_d mesh_edge_eval(const MeshPatchEdge &Edge, double T)
+{
+   const double mt = 1.0 - T;
+   const double b0 = mt * mt * mt;
+   const double b1 = 3.0 * mt * mt * T;
+   const double b2 = 3.0 * mt * T * T;
+   const double b3 = T * T * T;
+
+   return agg::point_d((Edge.p0.x * b0) + (Edge.c0.x * b1) + (Edge.c1.x * b2) + (Edge.p1.x * b3),
+      (Edge.p0.y * b0) + (Edge.c0.y * b1) + (Edge.c1.y * b2) + (Edge.p1.y * b3));
+}
+
+static agg::point_d mesh_coons_eval(const MeshPatch &Patch, double U, double V)
+{
+   const auto top = mesh_edge_eval(Patch.edge[0], U);
+   const auto right = mesh_edge_eval(Patch.edge[1], V);
+   const auto bottom = mesh_edge_eval(Patch.edge[2], 1.0 - U);
+   const auto left = mesh_edge_eval(Patch.edge[3], 1.0 - V);
+
+   const auto p00 = Patch.edge[0].p0;
+   const auto p10 = Patch.edge[0].p1;
+   const auto p11 = Patch.edge[1].p1;
+   const auto p01 = Patch.edge[3].p0;
+
+   auto boundary = mesh_point_add(mesh_point_mul(top, 1.0 - V), mesh_point_mul(bottom, V));
+   boundary = mesh_point_add(boundary, mesh_point_mul(left, 1.0 - U));
+   boundary = mesh_point_add(boundary, mesh_point_mul(right, U));
+
+   auto bilinear = mesh_point_add(mesh_point_mul(p00, (1.0 - U) * (1.0 - V)),
+      mesh_point_mul(p10, U * (1.0 - V)));
+   bilinear = mesh_point_add(bilinear, mesh_point_mul(p11, U * V));
+   bilinear = mesh_point_add(bilinear, mesh_point_mul(p01, (1.0 - U) * V));
+
+   return mesh_point_sub(boundary, bilinear);
+}
+
+static agg::rgba8 mesh_colour_eval(const MeshPatch &Patch, double U, double V, double Opacity, bool Linear)
+{
+   const double w00 = (1.0 - U) * (1.0 - V);
+   const double w10 = U * (1.0 - V);
+   const double w11 = U * V;
+   const double w01 = (1.0 - U) * V;
+
+   FRGB corner[4] = { Patch.corner[0], Patch.corner[1], Patch.corner[2], Patch.corner[3] };
+   if (Linear) {
+      for (auto &colour : corner) glLinearRGB.convert(colour);
+   }
+
+   FRGB colour = {};
+   colour.Red   = (corner[0].Red * w00) + (corner[1].Red * w10) + (corner[2].Red * w11) +
+      (corner[3].Red * w01);
+   colour.Green = (corner[0].Green * w00) + (corner[1].Green * w10) + (corner[2].Green * w11) +
+      (corner[3].Green * w01);
+   colour.Blue  = (corner[0].Blue * w00) + (corner[1].Blue * w10) + (corner[2].Blue * w11) +
+      (corner[3].Blue * w01);
+   colour.Alpha = (corner[0].Alpha * w00) + (corner[1].Alpha * w10) + (corner[2].Alpha * w11) +
+      (corner[3].Alpha * w01);
+
+   return agg::rgba8(colour, colour.Alpha * Opacity);
+}
+
+struct MeshPreparedVertex {
+   double x, y;
+   agg::rgba8 colour;
+};
+
+static void mesh_push_triangle(GouraudCache &Cache, const MeshPreparedVertex &A, const MeshPreparedVertex &B,
+   const MeshPreparedVertex &C)
+{
+   const double area = (B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y);
+   if (std::abs(area) < 1e-6) return;
+
+   GouraudTriangle tri;
+   tri.x[0] = A.x; tri.y[0] = A.y; tri.colour[0] = A.colour;
+   tri.x[1] = B.x; tri.y[1] = B.y; tri.colour[1] = B.colour;
+   tri.x[2] = C.x; tri.y[2] = C.y; tri.colour[2] = C.colour;
+   Cache.Triangles.push_back(tri);
+}
+
+static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, const agg::trans_affine &Transform,
+   double Opacity, VCS ColourSpace, uint64_t MeshHash, int Segments)
+{
+   const bool linear = (ColourSpace IS VCS::LINEAR_RGB);
+   const int stride = Segments + 1;
+   std::vector<MeshPreparedVertex> vertices(size_t(stride) * size_t(stride));
+
+   Cache.Triangles.clear();
+   Cache.Triangles.reserve(Mesh.patches.size() * size_t(Segments) * size_t(Segments) * 2);
+
+   for (auto &patch : Mesh.patches) {
+      for (int y=0; y <= Segments; y++) {
+         const double v = double(y) / double(Segments);
+         for (int x=0; x <= Segments; x++) {
+            const double u = double(x) / double(Segments);
+            auto point = mesh_coons_eval(patch, u, v);
+            Transform.transform(&point.x, &point.y);
+
+            auto &vertex = vertices[size_t(y * stride + x)];
+            vertex.x = point.x;
+            vertex.y = point.y;
+            vertex.colour = mesh_colour_eval(patch, u, v, Opacity, linear);
+         }
+      }
+
+      for (int y=0; y < Segments; y++) {
+         for (int x=0; x < Segments; x++) {
+            const auto &p00 = vertices[size_t(y * stride + x)];
+            const auto &p10 = vertices[size_t(y * stride + x + 1)];
+            const auto &p01 = vertices[size_t((y + 1) * stride + x)];
+            const auto &p11 = vertices[size_t((y + 1) * stride + x + 1)];
+
+            mesh_push_triangle(Cache, p00, p10, p11);
+            mesh_push_triangle(Cache, p00, p11, p01);
+         }
+      }
+   }
+
+   Cache.Transform   = Transform;
+   Cache.MeshHash    = MeshHash;
+   Cache.Opacity     = Opacity;
+   Cache.ColourSpace = ColourSpace;
+   Cache.Valid       = true;
+}
+
+static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth, double ViewHeight,
+   extGradientMesh &Gradient, double Opacity, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
+   agg::rasterizer_scanline_aa<> &Raster, const agg::trans_affine &Transform, SceneRenderer *Render)
+{
+   if ((!Gradient.Mesh) or (Gradient.Mesh->patches.empty())) return;
+
+   std::vector<uint8_t> path_mask;
+   agg::rendering_buffer path_mask_buffer;
+   if (!build_gouraud_path_mask(Raster, RenderBase, Render, path_mask, path_mask_buffer)) return;
+
+   const double c_width  = (Gradient.Units IS VUNIT::USERSPACE) ? ViewWidth  : Bounds.width();
+   const double c_height = (Gradient.Units IS VUNIT::USERSPACE) ? ViewHeight : Bounds.height();
+   const double x_offset = (Gradient.Units IS VUNIT::USERSPACE) ? 0 : Bounds.left;
+   const double y_offset = (Gradient.Units IS VUNIT::USERSPACE) ? 0 : Bounds.top;
+
+   agg::trans_affine transform;
+   if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
+      transform.scale(c_width, c_height);
+      transform.translate(x_offset, y_offset);
+   }
+   apply_transforms(Gradient, transform);
+   transform *= Transform;
 
    const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
-   const double level_count = (resolution < 1.0) ? std::round(1.0 / (1.0 - resolution)) : 256.0;
-   const int levels = int(std::clamp(level_count, 2.0, 256.0));
-   const bool quantise = (levels < 256);
-
-   // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
-   // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
-   //
-   // Each triangle is rendered as a separate anti-aliased scanline pass, so the partial edge coverage of adjacent
-   // triangles does not sum to full opacity along a shared edge.  That leaves a faint translucent seam where the
-   // background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a 6-vertex polygon (colours
-   // are still interpolated from the original vertices via miter joins), so feeding the rasteriser that dilated
-   // outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry identical colours on both
-   // sides, the overlap blends invisibly and seals the seam.
-
-   auto render_triangles = [&]<typename SpanGen>() {
-      constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
-      for (auto &tri : Gradient.GouraudTriangles.Triangles) {
-         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
-         auto make_span = [&] {
-            if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels); }) {
-               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels);
-            }
-            else {
-               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION);
-            }
-         };
-         auto span_gen = make_span();
-
-         triangle_raster.reset();
-         triangle_raster.add_path(span_gen);
-         agg::render_scanlines_aa(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
-      }
-   };
-
-   if (colour_space IS VCS::LINEAR_RGB) {
-      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
-      else render_triangles.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+   const int segments = int(std::clamp(std::round(4.0 + (resolution * 28.0)), 1.0, 64.0));
+   const VCS colour_space = Gradient.ColourSpace;
+   const uint64_t mesh_hash = mesh_gradient_fingerprint(*Gradient.Mesh, segments);
+   if (!Gradient.MeshTriangles.matches(mesh_hash, transform, Opacity, colour_space)) {
+      rebuild_mesh_cache(Gradient.MeshTriangles, *Gradient.Mesh, transform, Opacity, colour_space, mesh_hash, segments);
    }
-   else {
-      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
-      else render_triangles.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
-   }
+
+   render_gouraud_triangles(Gradient.MeshTriangles, Gradient.Resolution, colour_space, RenderBase, path_mask_buffer);
 }
 
 //********************************************************************************************************************
@@ -418,11 +653,18 @@ static uint64_t path_fingerprint(const agg::path_storage &Path)
    return hash;
 }
 
+static uint64_t mix_fingerprint(uint64_t Hash, uint64_t Value)
+{
+   Hash ^= Value;
+   Hash *= 0x100000001b3ULL;
+   return Hash;
+}
+
 //********************************************************************************************************************
-// Gradient fills.  // The Raster must contain the shape's path.
+// Gradient fills.
 
 static void fill_gradient(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage *Path,
-   const agg::trans_affine &Transform, double ViewWidth, double ViewHeight, extVectorGradient &Gradient,
+   const agg::trans_affine &Transform, double ViewWidth, double ViewHeight, extGradient &Gradient,
    GRADIENT_TABLE *Table, agg::renderer_base<agg::pixfmt_psl> &RenderBase,
    agg::rasterizer_scanline_aa<> &Raster, SceneRenderer *Render)
 {
@@ -443,6 +685,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
    Path->approximation_scale(Transform.scale());
 
+   // Most gradients are masked by the target vector's own path, which is carried by Raster.  An SDF gradient is the
+   // exception: it describes a signed field that extends beyond the path, so its branch redirects active_raster at a
+   // padded coverage region to expose the exterior half of the ramp.
+
+   agg::rasterizer_scanline_aa<> *active_raster = &Raster;
+
    auto render_gradient = [&]<typename Method>(Method SpreadMethod, double SpanA, double SpanB) {
       typedef agg::span_gradient<agg::rgba8, interpolator_type, Method, color_array_type> span_gradient_type;
       typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, span_gradient_type> renderer_gradient_type;
@@ -452,62 +700,68 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       if ((!Render) or (Render->clip_stack_empty())) {
          agg::scanline_u8 scanline;
-         agg::render_scanlines(Raster, scanline, solidrender_gradient);
+         agg::render_scanlines(*active_raster, scanline, solidrender_gradient);
       }
       else { // Masked gradient
          agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
-         agg::render_scanlines(Raster, masked_scanline, solidrender_gradient);
+         agg::render_scanlines(*active_raster, masked_scanline, solidrender_gradient);
       }
    };
 
-   if (Gradient.Type IS VGT::LINEAR) {
+   auto resolve_unit = [](Unit &Value, double Offset, double Span) {
+      return Value.scaled() ? Offset + (Span * Value) : Offset + Value;
+   };
+
+   auto resolve_span = [](Unit &Value, double Span) {
+      return Value.scaled() ? Span * Value : double(Value);
+   };
+
+   if (Gradient.classID() IS CLASSID::GRADIENTLINEAR) {
+      auto &linear = (extGradientLinear &)Gradient;
+
+      // An undefined coordinate (NaN) leaves the gradient geometry incomplete, so there is nothing to render.
+      if (std::isnan(linear.X1) or std::isnan(linear.Y1) or std::isnan(linear.X2) or std::isnan(linear.Y2)) return;
+
       auto span = MAX_SPAN;
       if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
          // NOTE: In this mode we are mapping a 1x1 gradient square into the target path, which means
          // the gradient is stretched into position as a square.  We don't map the (X,Y) points to the
          // bounding box and draw point-to-point.
 
-         const double x = x_offset + (c_width * Gradient.X1);
-         const double y = y_offset + (c_height * Gradient.Y1);
+         const double x = x_offset + (c_width * linear.X1);
+         const double y = y_offset + (c_height * linear.Y1);
 
-         if (Gradient.CalcAngle) {
-            const double dx = Gradient.X2 - Gradient.X1;
-            const double dy = Gradient.Y2 - Gradient.Y1;
-            Gradient.Angle     = atan2(dy, dx);
-            Gradient.Length    = sqrt((dx * dx) + (dy * dy));
-            Gradient.CalcAngle = false;
+         if (linear.CalcAngle) {
+            const double dx = linear.X2 - linear.X1;
+            const double dy = linear.Y2 - linear.Y1;
+            linear.Angle     = atan2(dy, dx);
+            linear.Length    = sqrt((dx * dx) + (dy * dy));
+            linear.CalcAngle = false;
          }
 
-         transform.scale(Gradient.Length);
-         transform.rotate(Gradient.Angle);
+         transform.scale(linear.Length);
+         transform.rotate(linear.Angle);
          transform.scale(c_width / span, c_height / span);
          transform.translate(x, y);
       }
       else {
          TClipRectangle<double> area;
-         if ((Gradient.Flags & VGF::SCALED_X1) != VGF::NIL) area.left = x_offset + (c_width * Gradient.X1);
-         else area.left = x_offset + Gradient.X1;
+         area.left = resolve_unit(linear.X1, x_offset, c_width);
+         area.right = resolve_unit(linear.X2, x_offset, c_width);
+         area.top = resolve_unit(linear.Y1, y_offset, c_height);
+         area.bottom = resolve_unit(linear.Y2, y_offset, c_height);
 
-         if ((Gradient.Flags & VGF::SCALED_X2) != VGF::NIL) area.right = x_offset + (c_width * Gradient.X2);
-         else area.right = x_offset + Gradient.X2;
-
-         if ((Gradient.Flags & VGF::SCALED_Y1) != VGF::NIL) area.top = y_offset + (c_height * Gradient.Y1);
-         else area.top = y_offset + Gradient.Y1;
-
-         if ((Gradient.Flags & VGF::SCALED_Y2) != VGF::NIL) area.bottom = y_offset + (c_height * Gradient.Y2);
-         else area.bottom = y_offset + Gradient.Y2;
-
-         if (Gradient.CalcAngle) {
+         if (linear.CalcAngle) {
             const double dx = area.width();
             const double dy = area.height();
-            Gradient.Angle     = atan2(dy, dx);
-            Gradient.Length    = sqrt((dx * dx) + (dy * dy));
-            Gradient.CalcAngle = false;
+            linear.Angle     = atan2(dy, dx);
+            linear.Length    = sqrt((dx * dx) + (dy * dy));
+            linear.CalcAngle = false;
          }
 
-         transform.scale(Gradient.Length / span);
-         transform.rotate(Gradient.Angle);
+         transform.scale(linear.Length / span);
+         transform.rotate(linear.Angle);
          transform.translate(area.left, area.top);
       }
 
@@ -531,23 +785,24 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       }
       else render_gradient(gradient_func, 0, span);
    }
-   else if (Gradient.Type IS VGT::RADIAL) {
+   else if (Gradient.classID() IS CLASSID::GRADIENTRADIAL) {
+      auto &radial = (extGradientRadial &)Gradient;
+
+      if (std::isnan(radial.CX) or std::isnan(radial.CY) or std::isnan(radial.Radius)) return;
+
       agg::point_d c, f;
 
-      double radial_col_span = Gradient.Radius;
-      double focal_radius = Gradient.FocalRadius;
-      if (focal_radius <= 0) focal_radius = Gradient.Radius;
+      double radial_col_span = radial.Radius;
+      double focal_radius = radial.FocalRadius;
+      if (focal_radius <= 0) focal_radius = radial_col_span;
 
       if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
          // NOTE: In this mode we are stretching a 1x1 gradient square into the target path.
 
-         c.x = Gradient.CenterX;
-         c.y = Gradient.CenterY;
-         if ((Gradient.Flags & (VGF::SCALED_FX|VGF::FIXED_FX)) != VGF::NIL) f.x = Gradient.FocalX;
-         else f.x = c.x;
-
-         if ((Gradient.Flags & (VGF::SCALED_FY|VGF::FIXED_FY)) != VGF::NIL) f.y = Gradient.FocalY;
-         else f.y = c.y;
+         c.x = radial.CX;
+         c.y = radial.CY;
+         f.x = radial.FX.defined() ? double(radial.FX) : c.x;
+         f.y = radial.FY.defined() ? double(radial.FY) : c.y;
 
          transform.translate(c);
          transform.scale(c_width, c_height);
@@ -568,24 +823,15 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          f.y *= MAX_SPAN;
       }
       else {
-         if ((Gradient.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * Gradient.CenterX);
-         else c.x = x_offset + Gradient.CenterX;
+         c.x = resolve_unit(radial.CX, x_offset, c_width);
+         c.y = resolve_unit(radial.CY, y_offset, c_height);
+         f.x = radial.FX.defined() ? resolve_unit(radial.FX, x_offset, c_width) : c.x;
+         f.y = radial.FY.defined() ? resolve_unit(radial.FY, y_offset, c_height) : c.y;
 
-         if ((Gradient.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * Gradient.CenterY);
-         else c.y = y_offset + Gradient.CenterY;
-
-         if ((Gradient.Flags & VGF::SCALED_FX) != VGF::NIL) f.x = x_offset + (c_width * Gradient.FocalX);
-         else if ((Gradient.Flags & VGF::FIXED_FX) != VGF::NIL) f.x = x_offset + Gradient.FocalX;
-         else f.x = c.x;
-
-         if ((Gradient.Flags & VGF::SCALED_FY) != VGF::NIL) f.y = y_offset + (c_height * Gradient.FocalY);
-         else if ((Gradient.Flags & VGF::FIXED_FY) != VGF::NIL) f.y = y_offset + Gradient.FocalY;
-         else f.y = c.y;
-
-         if ((Gradient.Flags & VGF::SCALED_RADIUS) != VGF::NIL) { // Gradient is a ratio of the viewport's dimensions
-            radial_col_span = (ViewWidth + ViewHeight) * radial_col_span * 0.5;
-            focal_radius = (ViewWidth + ViewHeight) * focal_radius * 0.5;
-         }
+         const double average_view_size = (ViewWidth + ViewHeight) * 0.5;
+         radial_col_span = resolve_span(radial.Radius, average_view_size);
+         if (radial.FocalRadius > 0) focal_radius = resolve_span(radial.FocalRadius, average_view_size);
+         else focal_radius = radial_col_span;
 
          transform.translate(c);
          apply_transforms(Gradient, transform);
@@ -619,7 +865,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          //
          // SVG requires the focal point to be within the base radius, this can be enforced by setting CONTAIN_FOCAL.
 
-         if ((Gradient.Flags & VGF::CONTAIN_FOCAL) != VGF::NIL) {
+         if (radial.ContainFocal) {
             agg::point_d d = { f.x - c.x, f.y - c.y };
             const double sqr_radius = radial_col_span * radial_col_span;
             const double outside = ((d.x * d.x) / sqr_radius) + ((d.y * d.y) / sqr_radius);
@@ -648,32 +894,31 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          else render_gradient(gradient_func, 0, radial_col_span);
       }
    }
-   else if (Gradient.Type IS VGT::DIAMOND) {
+   else if (Gradient.classID() IS CLASSID::GRADIENTDIAMOND) {
+      auto &diamond = (extGradientDiamond &)Gradient;
+
+      if (std::isnan(diamond.CX) or std::isnan(diamond.CY) or std::isnan(diamond.Radius)) return;
+
       agg::point_d c;
 
-      if ((Gradient.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * Gradient.CenterX);
-      else c.x = x_offset + Gradient.CenterX;
-
-      if ((Gradient.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * Gradient.CenterY);
-      else c.y = y_offset + Gradient.CenterY;
+      c.x = resolve_unit(diamond.CX, x_offset, c_width);
+      c.y = resolve_unit(diamond.CY, y_offset, c_height);
 
       // Standard diamond gradient, where the focal point is the same as the gradient center
 
-      double radial_col_span = Gradient.Radius;
+      double radial_col_span = diamond.Radius;
       if (Gradient.Units IS VUNIT::USERSPACE) {
-         if ((Gradient.Flags & VGF::SCALED_RADIUS) != VGF::NIL) {
-            radial_col_span = (ViewWidth + ViewHeight) * Gradient.Radius * 0.5;
-         }
-         else transform *= agg::trans_affine_scaling(Gradient.Radius * 0.01);
+         if (diamond.Radius.scaled()) radial_col_span = (ViewWidth + ViewHeight) * diamond.Radius * 0.5;
+         else transform *= agg::trans_affine_scaling(diamond.Radius * 0.01);
       }
       else { // Align to vector's bounding box
          // Set radial_col_span to the wider of the width/height
          if (c_height > c_width) {
-            radial_col_span = c_height * Gradient.Radius;
+            radial_col_span = c_height * diamond.Radius;
             transform.scaleX(c_width / c_height);
          }
          else {
-            radial_col_span = c_width * Gradient.Radius;
+            radial_col_span = c_width * diamond.Radius;
             transform.scaleY(c_height / c_width);
          }
       }
@@ -699,32 +944,31 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       }
       else render_gradient(gradient_func, 0, radial_col_span);
    }
-   else if (Gradient.Type IS VGT::CONIC) {
+   else if (Gradient.classID() IS CLASSID::GRADIENTCONIC) {
+      auto &conic = (extGradientConic &)Gradient;
+
+      if (std::isnan(conic.CX) or std::isnan(conic.CY) or std::isnan(conic.Radius)) return;
+
       agg::point_d c;
 
-      if ((Gradient.Flags & VGF::SCALED_CX) != VGF::NIL) c.x = x_offset + (c_width * Gradient.CenterX);
-      else c.x = x_offset + Gradient.CenterX;
-
-      if ((Gradient.Flags & VGF::SCALED_CY) != VGF::NIL) c.y = y_offset + (c_height * Gradient.CenterY);
-      else c.y = y_offset + Gradient.CenterY;
+      c.x = resolve_unit(conic.CX, x_offset, c_width);
+      c.y = resolve_unit(conic.CY, y_offset, c_height);
 
       // Standard conic gradient, where the focal point is the same as the gradient center
 
-      double radial_col_span = Gradient.Radius;
+      double radial_col_span = conic.Radius;
       if (Gradient.Units IS VUNIT::USERSPACE) {
-         if ((Gradient.Flags & VGF::SCALED_RADIUS) != VGF::NIL) {
-            radial_col_span = (ViewWidth + ViewHeight) * Gradient.Radius * 0.5;
-         }
-         else transform *= agg::trans_affine_scaling(Gradient.Radius * 0.01);
+         if (conic.Radius.scaled()) radial_col_span = (ViewWidth + ViewHeight) * conic.Radius * 0.5;
+         else transform *= agg::trans_affine_scaling(conic.Radius * 0.01);
       }
       else { // Bounding box
          // Set radial_col_span to the wider of the width/height
          if (c_height > c_width) {
-            radial_col_span = c_height * Gradient.Radius;
+            radial_col_span = c_height * conic.Radius;
             transform.scaleX(c_width / c_height);
          }
          else {
-            radial_col_span = c_width * Gradient.Radius;
+            radial_col_span = c_width * conic.Radius;
             transform.scaleY(c_height / c_width);
          }
       }
@@ -735,30 +979,49 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       transform *= Transform;
       transform.invert();
 
-      render_gradient(gradient_func, 0, radial_col_span);
+      if (Gradient.SpreadMethod IS VSPREAD::REFLECT) {
+         if (conic.Span < 1.0) {
+            agg::gradient_conic_reflect_span span_func(conic.Span);
+            agg::gradient_reflect_adaptor<agg::gradient_conic_reflect_span> spread_method(span_func);
+            render_gradient(spread_method, 0, radial_col_span);
+         }
+         else render_gradient(gradient_func, 0, radial_col_span);
+      }
+      else if (Gradient.SpreadMethod IS VSPREAD::REPEAT) {
+         agg::gradient_conic_span span_func(conic.Span);
+         agg::gradient_repeat_adaptor<agg::gradient_conic_span> spread_method(span_func);
+         render_gradient(spread_method, 0, radial_col_span);
+      }
+      else if (Gradient.SpreadMethod IS VSPREAD::CLIP) {
+         agg::gradient_conic_span span_func(conic.Span);
+         agg::gradient_clip_adaptor<agg::gradient_conic_span> spread_method(span_func);
+         render_gradient(spread_method, 0, radial_col_span);
+      }
+      else render_gradient(gradient_func, 0, radial_col_span);
    }
-   else if (Gradient.Type IS VGT::CONTOUR) {
+   else if (Gradient.classID() IS CLASSID::GRADIENTCONTOUR) {
+      auto &contour = (extGradientContour &)Gradient;
       // The contour's distance transform buffer depends only on the path content, so it is cached with the
       // gradient and reused until the path's fingerprint changes.  The d1/d2 values only affect a small
       // lookup table and can be updated freely on the cached object.
 
-      auto x2 = std::clamp(Gradient.X2, 0.01, 10.0);
-      auto x1 = std::clamp(Gradient.X1, 0.0, x2);
+      auto multiplier = std::clamp<double>(contour.Multiplier, 0.01, 10.0);
+      auto floor = std::clamp<double>(contour.Floor, 0.0, multiplier);
 
       bool rebuild = false;
-      if (!Gradient.ContourCache) {
-         Gradient.ContourCache = new agg::gradient_contour();
+      if (!contour.ContourCache) {
+         contour.ContourCache = new agg::gradient_contour();
          rebuild = true;
       }
 
-      auto &gradient_func = *Gradient.ContourCache;
-      gradient_func.d1(x1 * 256.0);  // d1 is added to the DT base values
-      gradient_func.d2(x2);  // d2 is a multiplier of the base DT value
+      auto &gradient_func = *contour.ContourCache;
+      gradient_func.d1(floor * 256.0);  // d1 is added to the DT base values
+      gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
 
       const auto hash = path_fingerprint(*Path);
-      if ((rebuild) or (hash != Gradient.ContourHash)) {
+      if ((rebuild) or (hash != contour.ContourHash)) {
          gradient_func.contour_create(*Path);
-         Gradient.ContourHash = hash;
+         contour.ContourHash = hash;
       }
 
       transform.translate(Bounds.left, Bounds.top);
@@ -783,6 +1046,205 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          render_gradient(spread_method, 0, 256.0);
       }
       else render_gradient(gradient_func, 0, 256.0);
+   }
+   else if (Gradient.classID() IS CLASSID::GRADIENTVORONOI) {
+      auto &voronoi = (extGradientVoronoi &)Gradient;
+      // The Worley field buffer depends on the path and all generation parameters.  The d1/d2 values only affect
+      // the small lookup table, so they can be updated without rebuilding the feature-point field.
+
+      auto multiplier = std::clamp<double>(voronoi.Multiplier, 0.01, 10.0);
+      auto floor = std::clamp<double>(voronoi.Floor, 0.0, multiplier);
+
+      bool rebuild = false;
+      if (!voronoi.WorleyCache) {
+         voronoi.WorleyCache = new agg::gradient_worley();
+         rebuild = true;
+      }
+
+      auto &gradient_func = *voronoi.WorleyCache;
+      gradient_func.d1(floor * 256.0);
+      gradient_func.d2(multiplier);
+
+      const auto path_hash = path_fingerprint(*Path);
+      const auto resolved_seed = voronoi.Seed ? uint64_t(voronoi.Seed) : path_hash;
+      const bool use_points = not voronoi.Points.empty();
+
+      uint64_t hash = path_hash;
+      hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
+      hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMetric)));
+      if (use_points) {
+         hash = mix_fingerprint(hash, uint64_t(voronoi.Points.size()));
+         for (auto &point : voronoi.Points) {
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.X));
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.Y));
+            hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(point.Height));
+         }
+      }
+      else {
+         hash = mix_fingerprint(hash, resolved_seed);
+         hash = mix_fingerprint(hash, uint64_t(voronoi.PointCount));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMin));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.HeightMax));
+         hash = mix_fingerprint(hash, std::bit_cast<uint64_t>(voronoi.Jitter));
+      }
+
+      if ((rebuild) or (hash != voronoi.WorleyHash)) {
+         std::vector<agg::worley_feature> points;
+         if (use_points) {
+            points.reserve(voronoi.Points.size());
+            for (auto &point : voronoi.Points) points.push_back({ point.X, point.Y, point.Height });
+         }
+
+         gradient_func.worley_create(*Path, resolved_seed, voronoi.PointCount, voronoi.WorleyMode,
+            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter,
+            use_points ? &points : nullptr);
+         voronoi.WorleyHash = hash;
+      }
+
+      transform.translate(Bounds.left, Bounds.top);
+      apply_transforms(Gradient, transform);
+      transform *= Transform;
+      transform.invert();
+
+      if (Gradient.SpreadMethod IS VSPREAD::REFLECT) {
+         agg::gradient_reflect_adaptor<agg::gradient_worley> spread_method(gradient_func);
+         render_gradient(spread_method, 0, 256.0);
+      }
+      else if (Gradient.SpreadMethod IS VSPREAD::REPEAT) {
+         agg::gradient_repeat_adaptor<agg::gradient_worley> spread_method(gradient_func);
+         render_gradient(spread_method, 0, 256.0);
+      }
+      else if (Gradient.SpreadMethod IS VSPREAD::CLIP) {
+         agg::gradient_clip_adaptor<agg::gradient_worley> spread_method(gradient_func);
+         render_gradient(spread_method, 0, 256.0);
+      }
+      else render_gradient(gradient_func, 0, 256.0);
+   }
+   else if (Gradient.classID() IS CLASSID::GRADIENTDISTAL) {
+      auto &distal = (extGradientDistal &)Gradient;
+
+      if (std::isnan(distal.Radius) or std::isnan(distal.InnerRadius)) return;
+
+      // The SDF gradient's signed distance field buffer depends on the path content and the configured padding,
+      // so it is cached with the gradient and reused until the path's fingerprint changes.  Unlike the contour
+      // buffer, it is padded outward so that the exterior half of the colour ramp has room to be rendered.
+
+      auto multiplier = std::clamp<double>(distal.Multiplier, 0.01, 10.0);
+      auto floor = std::clamp<double>(distal.Floor, 0.0, multiplier);
+
+      bool rebuild = false;
+      if (!distal.SDFCache) {
+         distal.SDFCache = new agg::gradient_sdf();
+         rebuild = true;
+      }
+
+      auto &gradient_func = *distal.SDFCache;
+      const double max_bound = (Bounds.width() > Bounds.height()) ? Bounds.width() : Bounds.height();
+      const double radius = resolve_span(distal.Radius, max_bound);
+      gradient_func.padding(radius);
+      gradient_func.inner_radius(resolve_span(distal.InnerRadius, max_bound));
+      gradient_func.d1(floor * 256.0);  // d1 is added to the signed DT base values
+      gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
+
+      // The InnerFall / OuterFall curves are baked into the SDF alpha buffer, so a curve change invalidates the cache
+      // exactly like a Radius change (see the field setters, which reset SDFHash).  The GFALL enum values map 1:1 to
+      // agg::sdf_falloff_curve; NIL falls back to smoothstep.
+
+      auto fall_curve = [](GFALL Value) {
+         if (Value IS GFALL::NIL) return agg::sdf_falloff_curve::smoothstep;
+         return agg::sdf_falloff_curve(int(Value));
+      };
+      gradient_func.inner_fall(fall_curve(distal.InnerFall));
+      gradient_func.outer_fall(fall_curve(distal.OuterFall));
+
+      // The spread method selects how the exterior fade behaves beyond the first Radius cycle.  PAD fades once and
+      // stops; REPEAT and REFLECT tile the cycle outward until the parent area is covered.  The unsupported VSPREAD
+      // variants (PAD-equivalents, REFLECT_X/Y, plus the CLIP handling below) collapse to a single padded fade.
+
+      agg::sdf_spread spread = agg::sdf_spread::pad;
+      if (Gradient.SpreadMethod IS VSPREAD::REPEAT) spread = agg::sdf_spread::repeat;
+      else if (Gradient.SpreadMethod IS VSPREAD::REFLECT) spread = agg::sdf_spread::reflect;
+      gradient_func.spread(spread);
+
+      // For REPEAT/REFLECT the exterior must extend far enough to fill the parent area.  The cycle length stays at
+      // Radius; the fill extent is the furthest the field has to reach from the path bounds to cover the view, so a
+      // tiled fade always paints out to (and a little past) the parent edges regardless of where the shape sits.
+
+      double fill_extent = radius;
+      if (spread != agg::sdf_spread::pad) {
+         const double reach_x = std::max(Bounds.left, ViewWidth - Bounds.right);
+         const double reach_y = std::max(Bounds.top, ViewHeight - Bounds.bottom);
+         fill_extent = std::max({ radius, reach_x, reach_y });
+      }
+      gradient_func.fill_extent(fill_extent);
+
+      // Resolution stepping is baked into the SDF alpha buffer too.  The base Resolution setter does not touch the
+      // SDF cache, so a change is detected here and forces a rebuild alongside the path fingerprint check.
+
+      const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
+      gradient_func.resolution(resolution);
+
+      const auto hash = path_fingerprint(*Path);
+      if ((rebuild) or (hash != distal.SDFHash) or (resolution != distal.SDFResolution) or
+          (int(spread) != distal.SDFSpread) or (fill_extent != distal.SDFExtent)) {
+         gradient_func.sdf_create(*Path);
+         distal.SDFHash = hash;
+         distal.SDFResolution = resolution;
+         distal.SDFSpread = int(spread);
+         distal.SDFExtent = fill_extent;
+      }
+
+      // The path is rendered into the SDF buffer at an inset of (origin_x, origin_y) to leave a margin for the
+      // exterior field.  Offset the gradient sampling transform by the same amount so the outline stays aligned
+      // with the path edge.
+
+      const double margin_x = gradient_func.sdf_origin_x();
+      const double margin_y = gradient_func.sdf_origin_y();
+      const double region_x = Bounds.left - margin_x;
+      const double region_y = Bounds.top - margin_y;
+
+      transform.translate(region_x, region_y);
+      apply_transforms(Gradient, transform);
+      transform *= Transform;
+      transform.invert();
+
+      agg::rasterizer_scanline_aa<> sdf_raster;
+
+      if (Gradient.SpreadMethod != VSPREAD::CLIP) {
+         // Unlike the path-masked gradients, the SDF describes a signed field that extends beyond the target path.
+         // To expose the exterior half of the ramp the coverage is widened to the full padded field extent rather
+         // than the path itself.  Any active clip stack still constrains the result inside render_gradient.
+
+         agg::path_storage region;
+         region.move_to(region_x, region_y);
+         region.line_to(region_x + gradient_func.sdf_width(), region_y);
+         region.line_to(region_x + gradient_func.sdf_width(), region_y + gradient_func.sdf_height());
+         region.line_to(region_x, region_y + gradient_func.sdf_height());
+         region.close_polygon();
+         agg::conv_transform<agg::path_storage> region_trans(region, Transform);
+         sdf_raster.add_path(region_trans);
+         active_raster = &sdf_raster;
+      }
+
+      // The SDF glow uses a dedicated span generator that modulates per-pixel alpha by a smoothstep falloff so the
+      // exterior fades to transparent over the padding distance and stops contributing once alpha reaches zero.
+      // If SpreadMethod is CLIP, the original target path raster remains active and clips the field to the fill.
+
+      typedef agg::span_gradient_sdf<agg::rgba8, interpolator_type, color_array_type> sdf_span_type;
+      typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, sdf_span_type> sdf_renderer_type;
+
+      sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0);
+      sdf_renderer_type sdf_render(RenderBase, span_allocator, sdf_span);
+
+      if ((!Render) or (Render->clip_stack_empty())) {
+         agg::scanline_u8 scanline;
+         agg::render_scanlines(*active_raster, scanline, sdf_render);
+      }
+      else {
+         agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
+         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+         agg::render_scanlines(*active_raster, masked_scanline, sdf_render);
+      }
    }
 }
 
@@ -812,27 +1274,27 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
 
    if (Pattern.Units IS VUNIT::USERSPACE) { // Use fixed coords in the pattern; equiv. to 'userSpaceOnUse' in SVG
       double target_width, target_height;
-      if (dmf::hasScaledWidth(Pattern.Dimensions)) target_width = elem_width * Pattern.Width;
-      else if (dmf::hasWidth(Pattern.Dimensions)) target_width = Pattern.Width;
+      if (Pattern.Width.scaled()) target_width = elem_width * Pattern.Width;
+      else if (Pattern.Width.defined()) target_width = Pattern.Width;
       else target_width = 1;
 
-      if (dmf::hasScaledHeight(Pattern.Dimensions)) target_height = elem_height * Pattern.Height;
-      else if (dmf::hasHeight(Pattern.Dimensions)) target_height = Pattern.Height;
+      if (Pattern.Height.scaled()) target_height = elem_height * Pattern.Height;
+      else if (Pattern.Height.defined()) target_height = Pattern.Height;
       else target_height = 1;
 
-      if (dmf::hasScaledX(Pattern.Dimensions)) dx = x_offset + (elem_width * Pattern.X);
-      else if (dmf::hasX(Pattern.Dimensions)) dx = x_offset + Pattern.X;
+      if (Pattern.X.scaled()) dx = x_offset + (elem_width * Pattern.X);
+      else if (Pattern.X.defined()) dx = x_offset + Pattern.X;
       else dx = x_offset;
 
-      if (dmf::hasScaledY(Pattern.Dimensions)) dy = y_offset + (elem_height * Pattern.Y);
-      else if (dmf::hasY(Pattern.Dimensions)) dy = y_offset + Pattern.Y;
+      if (Pattern.Y.scaled()) dy = y_offset + (elem_height * Pattern.Y);
+      else if (Pattern.Y.defined()) dy = y_offset + Pattern.Y;
       else dy = y_offset;
 
-      int page_width = int(target_width);
-      int page_height = int(target_height);
+      auto page_width = int(target_width);
+      auto page_height = int(target_height);
 
       if ((page_width != Pattern.Scene->PageWidth) or (page_height != Pattern.Scene->PageHeight)) {
-         Pattern.Scene->PageWidth = page_width;
+         Pattern.Scene->PageWidth  = page_width;
          Pattern.Scene->PageHeight = page_height;
          mark_dirty(Pattern.Scene->Viewport, RC::DIRTY);
       }
@@ -847,13 +1309,14 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       ((extVectorViewport *)Pattern.Viewport)->vpAspectRatio = ARF::X_MAX|ARF::Y_MAX; // Stretch the 1x1 viewport to match the PageW/H
 
       if (Pattern.ContentUnits IS VUNIT::BOUNDING_BOX) {
-         Pattern.Viewport->setFields(fl::ViewWidth(Pattern.Width), fl::ViewHeight(Pattern.Height));
+         Pattern.Viewport->setViewWidth(double(Pattern.Width));
+         Pattern.Viewport->setViewHeight(double(Pattern.Height));
       }
 
-      if (dmf::hasScaledWidth(Pattern.Dimensions)) target_width = Pattern.Width * elem_width;
+      if (Pattern.Width.scaled()) target_width = Pattern.Width * elem_width;
       else target_width = Pattern.Width;
 
-      if (dmf::hasScaledHeight(Pattern.Dimensions)) target_height = Pattern.Height * elem_height;
+      if (Pattern.Height.scaled()) target_height = Pattern.Height * elem_height;
       else target_height = Pattern.Height;
 
       dx = x_offset + ((elem_width * Pattern.X) * (SCALE_BITMAP ? t_scale : 1.0));
@@ -862,8 +1325,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       // Scale the bitmap so that it matches the final scale on the display.  This requires a matching inverse
       // adjustment when computing the final transform.
 
-      int page_width = int(target_width * (SCALE_BITMAP ? t_scale : 1.0));
-      int page_height = int(target_height * (SCALE_BITMAP ? t_scale : 1.0));
+      auto page_width = int(target_width * (SCALE_BITMAP ? t_scale : 1.0));
+      auto page_height = int(target_height * (SCALE_BITMAP ? t_scale : 1.0));
 
       // Mark the bitmap for recomputation if needed.
 
@@ -893,8 +1356,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
 
    agg::trans_affine transform;
 
-   if (Pattern.Matrices) { // Client used the 'patternTransform' SVG attribute
-      auto &m = *Pattern.Matrices;
+   if (not Pattern.Matrices.empty()) { // Client used the 'patternTransform' SVG attribute
+      auto &m = Pattern.Matrices[0];
       transform.load_all(m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX + dx, m.TranslateY + dy);
    }
    else transform.translate(dx, dy);

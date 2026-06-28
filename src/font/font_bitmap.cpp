@@ -113,7 +113,7 @@ static ERR read_winfont_entries(objFile *File, std::vector<winFont> &Fonts)
    if (fl::ReadLE(File, &size_shift) != ERR::Okay) return ERR::Read;
 
    uint16_t font_count = 0;
-   int font_offset = 0;
+   int64_t font_offset = 0;
    uint16_t type_id = 0;
    ERR error = fl::ReadLE(File, &type_id);
 
@@ -123,7 +123,7 @@ static ERR read_winfont_entries(objFile *File, std::vector<winFont> &Fonts)
 
       if (type_id IS 0x8008) {
          font_count = count;
-         File->get(FID_Position, font_offset);
+         File->getPosition(font_offset);
          font_offset += 4;
          break;
       }

@@ -22,6 +22,16 @@
       <class>DisplacementFX</class>
       <class>FilterEffect</class>
       <class>FloodFX</class>
+      <class>Gradient</class>
+      <class>GradientConic</class>
+      <class>GradientContour</class>
+      <class>GradientDiamond</class>
+      <class>GradientDistal</class>
+      <class>GradientGouraud</class>
+      <class>GradientLinear</class>
+      <class>GradientMesh</class>
+      <class>GradientRadial</class>
+      <class>GradientVoronoi</class>
       <class>ImageFX</class>
       <class>LightingFX</class>
       <class>MergeFX</class>
@@ -35,7 +45,6 @@
       <class>VectorColour</class>
       <class>VectorEllipse</class>
       <class>VectorFilter</class>
-      <class>VectorGradient</class>
       <class>VectorGroup</class>
       <class>VectorImage</class>
       <class>VectorPath</class>
@@ -71,7 +80,7 @@
       <error code="Okay">Operation successful.</error>
       <error code="InvalidData">There is an error in the provided data</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="WrongClass">An object is not of the required type</error>
+      <error code="WrongClass">An object is not of the required class type</error>
     </result>
   </function>
 
@@ -182,7 +191,7 @@
     </input>
     <description>
 <p>Use DrawPath() to draw a generated path to a <class name="Bitmap">Bitmap</class>, using customised fill and stroke definitions.  This functionality provides an effective alternative to configuring vector scenes for situations where only simple vector shapes are required.  However, it is limited in that advanced rendering options and effects are not available to the client.</p>
-<p>At least one of <code>StrokeStyle</code> or <code>FillStyle</code> is required to render visible output.  Valid styles are allocated and configured using recognised vector style objects, specifically <class name="VectorImage">VectorImage</class>, <class name="VectorPattern">VectorPattern</class> and <class name="VectorGradient">VectorGradient</class>.  If a fill or stroke operation is not required, set the relevant parameter to <code>NULL</code>.  Stroke rendering is also disabled when <code>StrokeWidth</code> is less than <code>0.001</code>.</p>
+<p>At least one of <code>StrokeStyle</code> or <code>FillStyle</code> is required to render visible output.  Valid styles are allocated and configured using recognised vector style objects, specifically <class name="VectorImage">VectorImage</class>, <class name="VectorPattern">VectorPattern</class> and <class name="Gradient">Gradient</class>.  If a fill or stroke operation is not required, set the relevant parameter to <code>NULL</code>.  Stroke rendering is also disabled when <code>StrokeWidth</code> is less than <code>0.001</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -507,7 +516,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <error code="NotFound">A search routine in this function failed</error>
       <error code="Syntax">Invalid syntax detected</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="InvalidObject">An object is not of the required type</error>
+      <error code="InvalidObject">An object is not of the required class type</error>
     </result>
   </function>
 
@@ -760,35 +769,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="RED">The red colour channel.</const>
     </constants>
 
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
-    </constants>
-
     <constants lookup="EM">
       <const name="DUPLICATE">The input image is extended along its borders by duplicating the color values at its edges.</const>
       <const name="NONE">The input image is extended with colour values of zero.</const>
@@ -800,6 +780,25 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="HAS_FOCUS">The vector has gained the user focus.</const>
       <const name="LOST_FOCUS">The vector has lost the user focus.</const>
       <const name="PATH_CHANGED">The vector path has been modified or affected by a transform.</const>
+    </constants>
+
+    <constants lookup="GEZ" comment="Gradient easing functions.">
+      <const name="CUBIC_IN">Cubic ease-in.</const>
+      <const name="CUBIC_IN_OUT">Cubic ease-in and ease-out.</const>
+      <const name="CUBIC_OUT">Cubic ease-out.</const>
+      <const name="IN">Ease-in (slow start).</const>
+      <const name="IN_OUT">Smoothstep-style ease-in and ease-out.</const>
+      <const name="LINEAR">Linear interpolation (no easing) - the default.</const>
+      <const name="OUT">Ease-out (slow end).</const>
+    </constants>
+
+    <constants lookup="GFALL" comment="Gradient fall-off options.">
+      <const name="CLEAR">Disables the gradient.</const>
+      <const name="CUBIC">Cubic fall-off - very tight glow hugging the outline.</const>
+      <const name="LINEAR">Linear fall-off (even taper).</const>
+      <const name="OPAQUE">No fall-off.</const>
+      <const name="QUADRATIC">Quadratic fall-off - fast drop, thin tail — natural glow.</const>
+      <const name="SMOOTHSTEP">Smoothstep fall-off - S-curve; brightest, holds the inner half.</const>
     </constants>
 
     <constants lookup="LS" comment="Light source identifiers.">
@@ -921,7 +920,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     </constants>
 
     <constants lookup="VGF" comment="Gradient flags">
-      <const name="CONTAIN_FOCAL">Contain the FX,FY point to the base radius.</const>
       <const name="FIXED_CX">CX is fixed</const>
       <const name="FIXED_CY">CY is fixed</const>
       <const name="FIXED_FOCAL_RADIUS">Focal radius is fixed</const>
@@ -942,15 +940,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="SCALED_X2">X2 is scaled</const>
       <const name="SCALED_Y1">Y1 is scaled</const>
       <const name="SCALED_Y2">Y2 is scaled</const>
-    </constants>
-
-    <constants lookup="VGT" comment="VectorGradient options.">
-      <const name="CONIC">The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.</const>
-      <const name="CONTOUR">Contoured gradients follow the contours of the vector path in which they are rendered.</const>
-      <const name="DIAMOND">A diamond gradient is drawn as a square emanating from the center point.</const>
-      <const name="GOURAUD">A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.</const>
-      <const name="LINEAR">A linear gradient is drawn from <code>(X1, Y1)</code> to <code>(X2, Y2)</code>.</const>
-      <const name="RADIAL">A radial gradient is drawn from <code>CenterX, CenterY</code> to <code>Radius</code>.  An optional focal point can be expressed with <code>FX</code> and <code>FY</code>.</const>
     </constants>
 
     <constants lookup="VIJ" comment="Inner join options for angled lines.">
@@ -1007,6 +996,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
+      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
     </constants>
 
     <constants lookup="VSF" comment="Filter source types - these are used internally">
@@ -1082,16 +1072,36 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="USERSPACE">Coordinates are scaled to the current viewport.</const>
     </constants>
 
+    <constants lookup="WLF" comment="Worley field modes.">
+      <const name="F1">Distance to nearest point.</const>
+      <const name="F2">Distance to second-nearest point.</const>
+      <const name="F2_F1">Distance between the nearest and second-nearest points.</const>
+      <const name="PEAKS">Additive peaks or terrain using per-point heights.</const>
+      <const name="WEIGHTED">Additively-weighted Voronoi using per-point heights.</const>
+    </constants>
+
+    <constants lookup="WLM" comment="Worley distance metrics.">
+      <const name="CHEBYSHEV"/>
+      <const name="EUCLIDEAN"/>
+      <const name="MANHATTAN"/>
+    </constants>
+
     <constants lookup="WVC" comment="Wave options.">
       <const name="BOTTOM">Close the path across the bottom of its area.</const>
-      <const name="NONE">Do not close the path.</const>
       <const name="TOP">Close the path across the top of its area.</const>
     </constants>
 
-    <constants lookup="WVS" comment="Wave style options.">
-      <const name="ANGLED">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
-      <const name="CURVED">Standard sine-wave curvature, this is the default.</const>
+    <constants lookup="WVE" comment="Wave envelope options.">
+      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the end of the wave.</const>
+      <const name="LINEAR">Linear decay from start to end, this is the default.</const>
+      <const name="QUADRATIC">Quadratic decay, weighted towards the end of the wave.</const>
+      <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
+    </constants>
+
+    <constants lookup="WVT" comment="Wave style options.">
       <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
+      <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
+      <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
     </constants>
 
   </types>
@@ -1103,13 +1113,13 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
     </struct>
 
-    <struct name="GouraudVertex" comment="Describes a coloured vertex for the VectorGradient Vertices field.">
+    <struct name="GouraudVertex" comment="Describes a coloured vertex for the GradientGouraud Vertices field.">
       <field name="X" type="DOUBLE">The X coordinate of the vertex.</field>
       <field name="Y" type="DOUBLE">The Y coordinate of the vertex.</field>
       <field name="Colour" type="struct FRGB">The floating point RGB colour assigned to this vertex.</field>
     </struct>
 
-    <struct name="GradientStop" comment="Describes a colour stop for the VectorGradient Stops field.">
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
       <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
       <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
     </struct>
@@ -1117,6 +1127,45 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     <struct name="MergeSource" comment="Input source declaration for MergeFX">
       <field name="SourceType" type="VSF" lookup="VSF">The type of the required source.</field>
       <field name="Effect" type="objFilterEffect *">Effect pointer if the <code>SourceType</code> is <code>REFERENCE</code>.</field>
+    </struct>
+
+    <struct name="MeshPatchRecord" comment="Describes one bilinear Coons patch for the GradientMesh Patches field.">
+      <field name="TopP0X" type="DOUBLE">Top edge starting X coordinate.</field>
+      <field name="TopP0Y" type="DOUBLE">Top edge starting Y coordinate.</field>
+      <field name="TopC0X" type="DOUBLE">Top edge first control point X coordinate.</field>
+      <field name="TopC0Y" type="DOUBLE">Top edge first control point Y coordinate.</field>
+      <field name="TopC1X" type="DOUBLE">Top edge second control point X coordinate.</field>
+      <field name="TopC1Y" type="DOUBLE">Top edge second control point Y coordinate.</field>
+      <field name="TopP1X" type="DOUBLE">Top edge ending X coordinate.</field>
+      <field name="TopP1Y" type="DOUBLE">Top edge ending Y coordinate.</field>
+      <field name="RightP0X" type="DOUBLE">Right edge starting X coordinate.</field>
+      <field name="RightP0Y" type="DOUBLE">Right edge starting Y coordinate.</field>
+      <field name="RightC0X" type="DOUBLE">Right edge first control point X coordinate.</field>
+      <field name="RightC0Y" type="DOUBLE">Right edge first control point Y coordinate.</field>
+      <field name="RightC1X" type="DOUBLE">Right edge second control point X coordinate.</field>
+      <field name="RightC1Y" type="DOUBLE">Right edge second control point Y coordinate.</field>
+      <field name="RightP1X" type="DOUBLE">Right edge ending X coordinate.</field>
+      <field name="RightP1Y" type="DOUBLE">Right edge ending Y coordinate.</field>
+      <field name="BottomP0X" type="DOUBLE">Bottom edge starting X coordinate.</field>
+      <field name="BottomP0Y" type="DOUBLE">Bottom edge starting Y coordinate.</field>
+      <field name="BottomC0X" type="DOUBLE">Bottom edge first control point X coordinate.</field>
+      <field name="BottomC0Y" type="DOUBLE">Bottom edge first control point Y coordinate.</field>
+      <field name="BottomC1X" type="DOUBLE">Bottom edge second control point X coordinate.</field>
+      <field name="BottomC1Y" type="DOUBLE">Bottom edge second control point Y coordinate.</field>
+      <field name="BottomP1X" type="DOUBLE">Bottom edge ending X coordinate.</field>
+      <field name="BottomP1Y" type="DOUBLE">Bottom edge ending Y coordinate.</field>
+      <field name="LeftP0X" type="DOUBLE">Left edge starting X coordinate.</field>
+      <field name="LeftP0Y" type="DOUBLE">Left edge starting Y coordinate.</field>
+      <field name="LeftC0X" type="DOUBLE">Left edge first control point X coordinate.</field>
+      <field name="LeftC0Y" type="DOUBLE">Left edge first control point Y coordinate.</field>
+      <field name="LeftC1X" type="DOUBLE">Left edge second control point X coordinate.</field>
+      <field name="LeftC1Y" type="DOUBLE">Left edge second control point Y coordinate.</field>
+      <field name="LeftP1X" type="DOUBLE">Left edge ending X coordinate.</field>
+      <field name="LeftP1Y" type="DOUBLE">Left edge ending Y coordinate.</field>
+      <field name="TopLeft" type="struct FRGB">Colour assigned to the top-left patch corner.</field>
+      <field name="TopRight" type="struct FRGB">Colour assigned to the top-right patch corner.</field>
+      <field name="BottomRight" type="struct FRGB">Colour assigned to the bottom-right patch corner.</field>
+      <field name="BottomLeft" type="struct FRGB">Colour assigned to the bottom-left patch corner.</field>
     </struct>
 
     <struct name="PathCommand" comment="Base structure for path commands.">
@@ -1137,7 +1186,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 
     <struct name="Transition" comment="For VectorTransition definitions">
       <field name="Offset" type="DOUBLE">An offset from 0.0 to 1.0 at which to apply the transform.</field>
-      <field name="Transform" type="CSTRING">A transform string, as per SVG guidelines.</field>
+      <field name="Transform" type="STRING">A transform string, as per SVG guidelines.</field>
     </struct>
 
     <struct name="VectorMatrix" comment="Vector transformation matrix.">
@@ -1155,7 +1204,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     <struct name="VectorPainter" comment="Deserialised painter information; compliant with SVG painter definitions.">
       <field name="Pattern" type="objVectorPattern *">A <class name="VectorPattern">VectorPattern</class> object, suitable for pattern based fills.</field>
       <field name="Image" type="objVectorImage *">A <class name="VectorImage">VectorImage</class> object, suitable for image fills.</field>
-      <field name="Gradient" type="objVectorGradient *">A <class name="VectorGradient">VectorGradient</class> object, suitable for gradient fills.</field>
+      <field name="Gradient" type="objGradient *">A <class name="Gradient">Gradient</class> object, suitable for gradient fills.</field>
       <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</field>
     </struct>
 
@@ -1164,6 +1213,12 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <field name="Y" type="DOUBLE">The Y coordinate of this point.</field>
       <field name="XScaled" type="UINT8"><code>TRUE</code> if the <code>X</code> value is scaled to its viewport (between 0 and 1.0).</field>
       <field name="YScaled" type="UINT8"><code>TRUE</code> if the <code>Y</code> value is scaled to its viewport (between 0 and 1.0).</field>
+    </struct>
+
+    <struct name="VoronoiPoint" comment="Describes a feature point for the GradientVoronoi Points field.">
+      <field name="X" type="DOUBLE">The X coordinate of the feature point.</field>
+      <field name="Y" type="DOUBLE">The Y coordinate of the feature point.</field>
+      <field name="Height" type="DOUBLE">The per-point height used by WEIGHTED and PEAKS modes.</field>
     </struct>
 
   </structs>

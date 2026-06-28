@@ -362,29 +362,28 @@ static ERR DISPLAY_Focus(extDisplay *Self)
 
 //********************************************************************************************************************
 
-static ERR DISPLAY_Free(extDisplay *Self)
+extDisplay::~extDisplay()
 {
    kt::Log log;
 
-   if ((Self->Flags & SCR::AUTO_SAVE) != SCR::NIL) {
+   if ((Flags & SCR::AUTO_SAVE) != SCR::NIL) {
       log.trace("Autosave enabled.");
-      acSaveSettings(Self);
+      acSaveSettings(this);
    }
    else log.trace("Autosave disabled.");
 
 #ifdef __xwindows__
    XEvent xevent;
 
-   if (Self->WindowHandle IS (APTR)glDisplayWindow) glDisplayWindow = 0;
+   if (WindowHandle IS (APTR)glDisplayWindow) glDisplayWindow = 0;
 
-   if (Self->XPixmap) {
-      XFreePixmap(XDisplay, Self->XPixmap);
-      Self->XPixmap = 0;
-      ((extBitmap *)Self->Bitmap)->x11.drawable = 0;
+   if (XPixmap) {
+      XFreePixmap(XDisplay, XPixmap);
+      ((extBitmap *)Bitmap)->x11.drawable = 0;
    }
 
-   if (Self->XWindowHandle) {
-      if (auto colormap = glX11Colormaps.find(Self->XWindowHandle); colormap != glX11Colormaps.end()) {
+   if (XWindowHandle) {
+      if (auto colormap = glX11Colormaps.find(XWindowHandle); colormap != glX11Colormaps.end()) {
          XFreeColormap(XDisplay, colormap->second);
          glX11Colormaps.erase(colormap);
       }
@@ -393,13 +392,13 @@ static ERR DISPLAY_Free(extDisplay *Self)
    // Kill all expose events associated with the X Window owned by the display
 
    if (XDisplay) {
-      while (XCheckWindowEvent(XDisplay, Self->XWindowHandle,
+      while (XCheckWindowEvent(XDisplay, XWindowHandle,
          ExposureMask|FocusChangeMask|StructureNotifyMask, &xevent) IS True);
 
-      if ((Self->Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
-         if (Self->WindowHandle) {
-            XDestroyWindow(XDisplay, Self->XWindowHandle);
-            Self->WindowHandle = nullptr;
+      if ((Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
+         if (WindowHandle) {
+            XDestroyWindow(XDisplay, XWindowHandle);
+            WindowHandle = nullptr;
          }
       }
    }
@@ -408,11 +407,8 @@ static ERR DISPLAY_Free(extDisplay *Self)
 #endif
 
 #ifdef _WIN32
-   if ((Self->Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
-      if (Self->WindowHandle) {
-         winDestroyWindow(Self->WindowHandle);
-         Self->WindowHandle = nullptr;
-      }
+   if ((Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
+      if (WindowHandle) winDestroyWindow(WindowHandle);
    }
 #endif
 
@@ -420,17 +416,15 @@ static ERR DISPLAY_Free(extDisplay *Self)
    glActiveDisplayID = 0;
 #endif
 
-   acHide(Self);  // Hide the display.  In OpenGL this will remove the display resources.
+   acHide(this);  // Hide the display.  In OpenGL this will remove the display resources.
 
    // Free the display's bitmap buffer
 
-   if (Self->BufferID) { FreeResource(Self->BufferID); Self->BufferID = 0; }
+   if (BufferID) FreeResource(BufferID);
 
    // Free the display's video bitmap
 
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-
-   return ERR::Okay;
+   if (Bitmap) FreeResource(Bitmap);
 }
 
 /*********************************************************************************************************************
@@ -821,9 +815,9 @@ static ERR DISPLAY_Init(extDisplay *Self)
             bmp->x11.drawable = Self->XPixmap;
          }
 
-         std::string name;
-         if (!(CurrentTask()->get(FID_Name, name)) and not name.empty()) {
-            XStoreName(XDisplay, Self->XWindowHandle, name.c_str());
+         std::string_view name;
+         if (!(CurrentTask()->getName(name)) and not name.empty()) {
+            XStoreName(XDisplay, Self->XWindowHandle, name.data());
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
@@ -857,7 +851,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       }
       else { // If we are the window manager, set up the root window as our display.
          if (not Self->WindowHandle) Self->XWindowHandle = DefaultRootWindow(XDisplay);
-         bmp->set(FID_Handle, (APTR)Self->XWindowHandle);
+         bmp->setHandle((APTR)Self->XWindowHandle);
          XChangeWindowAttributes(XDisplay, Self->XWindowHandle, CWEventMask|CWCursor, &swa);
 
          #ifdef XRANDR_ENABLED
@@ -909,7 +903,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
 
          std::string_view name;
-         CurrentTask()->get(FID_Name, name);
+         CurrentTask()->getName(name);
          HWND popover = 0;
          if (Self->PopOverID) {
             if (ScopedObjectLock<extDisplay> other_display(Self->PopOverID, 3000); other_display.granted()) {
@@ -1200,70 +1194,6 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
    return ERR::NoSupport;
 
 #endif
-}
-
-//********************************************************************************************************************
-
-static ERR DISPLAY_NewObject(extDisplay *Self)
-{
-   if (NewLocalObject(CLASSID::BITMAP, &Self->Bitmap) != ERR::Okay) return ERR::NewObject;
-
-   OBJECTID id;
-   if (FindObject("SystemVideo", CLASSID::NIL, &id) != ERR::Okay) SetName(Self->Bitmap, "SystemVideo");
-
-   if (not Self->Name[0]) {
-      if (FindObject("SystemDisplay", CLASSID::NIL, &id) != ERR::Okay) SetName(Self, "SystemDisplay");
-   }
-
-   #ifdef __xwindows__
-
-      Self->Chipset      = "X11";
-      Self->Display      = "X Windows";
-      Self->DisplayMfr   = "N/A";
-      Self->Manufacturer = "N/A";
-
-   #elif _WIN32
-
-      Self->Chipset      = "Windows";
-      Self->Display      = "Windows";
-      Self->DisplayMfr   = "N/A";
-      Self->Manufacturer = "N/A";
-
-   #elif _GLES_
-
-      Self->Chipset      = "OpenGLES";
-      Self->Display      = "OpenGL";
-      Self->DisplayMfr   = "N/A";
-      Self->Manufacturer = "N/A";
-
-   #else
-
-      Self->Chipset      = "Unknown";
-      Self->Display      = "Unknown";
-      Self->DisplayMfr   = "Unknown";
-      Self->Manufacturer = "Unknown";
-
-   #endif
-
-   Self->Width       = 800;
-   Self->Height      = 600;
-   Self->RefreshRate = -1;
-   Self->Gamma[0]    = 1.0;
-   Self->Gamma[1]    = 1.0;
-   Self->Gamma[2]    = 1.0;
-   Self->Opacity     = 1.0;
-
-   #ifdef __xwindows__
-      Self->DisplayType = DT::X11;
-   #elif _WIN32
-      Self->DisplayType = DT::WINGDI;
-   #elif _GLES_
-      Self->DisplayType = DT::GLES;
-   #else
-      Self->DisplayType = DT::NATIVE;
-   #endif
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2139,15 +2069,6 @@ Chipset: String describing the graphics chipset.
 
 This string describes the graphic card's chipset, if known.
 
-*********************************************************************************************************************/
-
-static ERR GET_Chipset(extDisplay *Self, std::string_view &Value)
-{
-   Value = Self->Chipset;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 HDensity: Returns the horizontal pixel density for the display.
 
@@ -2293,30 +2214,10 @@ Display: String describing the display (e.g. model name of the monitor).
 
 This string describes the display device that is connected to the user's graphics card.
 
-*********************************************************************************************************************/
-
-static ERR GET_Display(extDisplay *Self, std::string_view &Value)
-{
-   Value = Self->Display;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 DisplayMfr: String describing the display manufacturer.
 
 This string names the manufacturer of the user's display device.
-
-*********************************************************************************************************************/
-
-static ERR GET_DisplayMfr(extDisplay *Self, std::string_view &Value)
-{
-   Value = Self->DisplayMfr;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 DisplayType: Identifies the active display backend.
@@ -2352,8 +2253,8 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
          log.msg("Switching window type.");
 
          bool maximise = true;
-         CSTRING title = nullptr;
-         Self->get(FID_Title, title); // Get the window title before we kill it
+         std::string_view title;
+         Self->getTitle(title); // Get the window title before we kill it
 
          OBJECTID surface_id = winLookupSurfaceID(Self->WindowHandle);
          winSetSurfaceID(Self->WindowHandle, 0); // Nullify the surface ID to prevent WM_DESTROY from being acted upon
@@ -2361,7 +2262,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 
          HWND popover = 0;
          if ((Self->WindowHandle = winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               maximise, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? false : true, title, FALSE, 255, TRUE))) {
+               maximise, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? false : true, title.data(), FALSE, 255, TRUE))) {
 
             Self->Flags = Self->Flags ^ SCR::BORDERLESS;
 
@@ -2431,9 +2332,9 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             return ERR::CreateResource;
          }
 
-         STRING name;
-         if (!(CurrentTask()->get(FID_Name, name)) and (name)) {
-            XStoreName(XDisplay, Self->XWindowHandle, name);
+         std::string_view name;
+         if (!(CurrentTask()->getName(name)) and (not name.empty())) {
+            XStoreName(XDisplay, Self->XWindowHandle, name.data());
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
@@ -2458,7 +2359,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 
          glKeyFlags = KQ::NIL;
 
-         Self->Bitmap->set(FID_Handle, Self->WindowHandle);
+         Self->Bitmap->setHandle(Self->WindowHandle);
          acResize(Self->Bitmap, Self->Width, Self->Height, 0);
 
          if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
@@ -2510,19 +2411,16 @@ To modify the display gamma values, please refer to the #SetGamma() and #SetGamm
 
 *********************************************************************************************************************/
 
-static ERR GET_Gamma(extDisplay *Self, double **Value, int *Elements)
+static ERR GET_Gamma(extDisplay *Self, std::span<const double> &Value)
 {
-   *Elements = 3;
-   *Value = Self->Gamma;
+   Value = std::span<const double>(Self->Gamma, 3);
    return ERR::Okay;
 }
 
-static ERR SET_Gamma(extDisplay *Self, double *Value, int Elements)
+static ERR SET_Gamma(extDisplay *Self, std::span<const double> &Array)
 {
-   if (Value) {
-      if (Elements > 3) Elements = 3;
-      int16_t i;
-      for (i=0; i < Elements; i++) Self->Gamma[i] = Value[i];
+   if (Array.data()) {
+      for (unsigned i=0; i < std::min<size_t>(Array.size(), 3); i++) Self->Gamma[i] = Array[i];
    }
    return ERR::Okay;
 }
@@ -2592,16 +2490,6 @@ Manufacturer: String describing the manufacturer of the graphics hardware.
 The string in this field returns the name of the manufacturer that created the user's graphics card.  If this
 information is not detectable, a `NULL` pointer is returned.
 
-*********************************************************************************************************************/
-
-static ERR GET_Manufacturer(extDisplay *Self, std::string_view &Value)
-{
-   Value = Self->Manufacturer;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 MaxHScan: The maximum horizontal scan rate of the display output device.
 
@@ -2634,12 +2522,6 @@ default setting is 1, which makes the display fully opaque.  Lower values make t
 host platform supports translucent windows.
 
 *********************************************************************************************************************/
-
-static ERR GET_Opacity(extDisplay *Self, double *Value)
-{
-   *Value = Self->Opacity;
-   return ERR::Okay;
-}
 
 static ERR SET_Opacity(extDisplay *Self, double Value)
 {
@@ -2994,20 +2876,20 @@ static const FieldArray DisplayFields[] = {
    { "TopMargin",      FDF_INT|FDF_R },
    { "BottomMargin",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Chipset",             FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_R,  GET_Chipset },
-   { "Gamma",               FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_PURE|FDF_RI, GET_Gamma, SET_Gamma },
-   { "HDensity",            FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_HDensity, SET_HDensity },
-   { "VDensity",            FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_VDensity, SET_VDensity },
-   { "Display",             FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_R,  GET_Display },
-   { "DisplayMfr",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_R,  GET_DisplayMfr },
-   { "InsideWidth",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideWidth },
-   { "InsideHeight",        FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideHeight },
-   { "Manufacturer",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_R,  GET_Manufacturer },
-   { "Opacity",             FDF_VIRTUAL|FDF_DOUBLE|FDF_PURE|FDF_RW,    GET_Opacity, SET_Opacity },
-   { "ResizeFeedback",      FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW,  GET_ResizeFeedback, SET_ResizeFeedback },
-   { "WindowHandle",        FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW,   GET_WindowHandle, SET_WindowHandle },
-   { "Title",               FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_RW, GET_Title, SET_Title },
-   { "TotalResolutions",    FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_TotalResolutions },
+   { "Manufacturer",     FDF_CPPSTRING|FDF_R },
+   { "Chipset",          FDF_CPPSTRING|FDF_R },
+   { "Display",          FDF_CPPSTRING|FDF_R },
+   { "DisplayMfr",       FDF_CPPSTRING|FDF_R },
+   { "Opacity",          FDF_DOUBLE|FDF_RW, nullptr, SET_Opacity },
+   { "Gamma",            FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_PURE|FDF_RI, GET_Gamma, SET_Gamma },
+   { "HDensity",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_HDensity, SET_HDensity },
+   { "VDensity",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_VDensity, SET_VDensity },
+   { "InsideWidth",      FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideWidth },
+   { "InsideHeight",     FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideHeight },
+   { "ResizeFeedback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW,  GET_ResizeFeedback, SET_ResizeFeedback },
+   { "WindowHandle",     FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW,   GET_WindowHandle, SET_WindowHandle },
+   { "Title",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_RW, GET_Title, SET_Title },
+   { "TotalResolutions", FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_TotalResolutions },
    END_FIELD
 };
 

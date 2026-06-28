@@ -69,6 +69,20 @@ end
    assert((function_name.modifiers & 4) != 0, '@FunctionName should be marked readonly.')
 end
 
+@Test function ImportKeywordAndAliasReceiveSemanticTokens()
+   source = "import '../server' as serverLib\n"
+
+   tokens = tokenizeTiri(source)
+
+   import_keyword = findToken(tokens, 0, 0, 'import')
+   alias_keyword = findToken(tokens, 0, 19, 'as')
+   import_path = findToken(tokens, 0, 7, "'../server'")
+
+   assert(import_keyword and import_keyword.type is 0, 'import should be highlighted as a keyword.')
+   assert(alias_keyword and alias_keyword.type is 0, 'import alias keyword should be highlighted as a keyword.')
+   assert(import_path and import_path.type is 4, 'Parent-relative import path should remain a string token.')
+end
+
 @Test function RangeSeparatorsReceiveContextualSemanticTokens()
    source = 'range_value = {0 to 5}\n' ..
       'range_value = {0 into 5}\n' ..
@@ -156,6 +170,94 @@ test_data = f'{{"id":{i},"data":"test_data_{i}"}}'
    result = computeDiagnostics(doc)
 
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept escaped braces in f-strings.')
+end
+
+@Test function MultiByteOperatorsReceiveSemanticTokens()
+   -- ≈, ≠, ≤, ≥ are three UTF-8 bytes but a single UTF-16 column.  The operator itself should be highlighted, and
+   -- the number following it must sit at the correct UTF-16 column rather than drifting by the operator's extra bytes.
+
+   source = '1.0 ≈ 2.0\n' ..   -- 3-byte operator
+      '1.0 ≠ 2.0\n' ..        -- 3-byte operator
+      '1.0 × 2.0\n'           -- 2-byte operator
+
+   tokens = tokenizeTiri(source)
+
+   -- The operator occupies UTF-16 column 4 with a width of one unit on every line.
+   for line = 0, 2 do
+      op = nil
+      for token in values(tokens) do
+         if token.line is line and token.char is 4 then op = token end
+      end
+      assert(op and op.type is 1, 'Multi-byte operator on line ' .. line .. ' should be highlighted as an operator.')
+      assert(op.length is 1, 'Multi-byte operator on line ' .. line .. ' should span one UTF-16 column.')
+   end
+
+   -- The trailing number aligns to UTF-16 column 6 on every line, independent of the operator's byte width.
+   for line = 0, 2 do
+      number = findToken(tokens, line, 6, '2.0')
+      assert(number and number.type is 5,
+         'Number after a multi-byte operator on line ' .. line .. ' should keep its UTF-16 alignment.')
+   end
+end
+
+@Test function MultiByteOperatorDiagnosticsUseCurrentParser()
+   doc = makeDoc('result = 1.0 ≈ 1.000001\n' ..
+      'unequal = 1.0 ≠ 2.0\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept multi-byte comparison operators.')
+end
+
+@Test function MultiByteOperatorHoverUsesUtf16Position()
+   doc = makeDoc('result = 1.0 ≈ value\n')
+   token = getTokenAtPosition(doc, 0, 15)
+
+   assert(token and token.text is 'value', 'Hover token extraction should convert UTF-16 columns to byte offsets.')
+   assert(token.startCol is 15, 'Hover token range should report the UTF-16 start column.')
+   assert(token.endCol is 20, 'Hover token range should report the UTF-16 end column.')
+end
+
+@Test function IncrementalEditAtEndOfLineUsesFullLineText()
+   uri = glSemanticTokensTestUri .. '#edit'
+   glDocuments[uri] = {
+      uri = uri,
+      languageId = 'tiri',
+      version = 1,
+      content = 'abc\n',
+      lineIndex = nil
+   }
+
+   server = {
+      _handlers = {},
+      verbose = false,
+      logMessage = function(Message) end
+   }
+   state = {
+      clientSocket = {
+         acWrite = function(Text) return ERR_Okay end
+      }
+   }
+
+   registerCoreHandlers(server)
+   server._handlers['textDocument/didChange']({
+      jsonrpc = '2.0',
+      params = {
+         textDocument = { uri = uri, version = 2 },
+         contentChanges = array<table> {
+            {
+               range = {
+                  start = { line = 0, character = 3 },
+                  ['end'] = { line = 0, character = 3 }
+               },
+               text = '!'
+            }
+         }
+      }
+   }, state)
+
+   assert(glDocuments[uri].content is 'abc!\n',
+      'Incremental edit at an end-of-line UTF-16 column should append after the final character.')
+   glDocuments[uri] = nil
 end
 
 @Test function ParserAnnotationHoverDocumentation()

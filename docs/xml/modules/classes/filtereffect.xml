@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects mut not be instantiated directly by the client.</p>
+<p>The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects must not be instantiated directly by the client.</p>
 <p>The documented fields and actions here are integral to all effects that utilise this class.</p></description>
     <source>
       <file path="filters/">filter_effect.cpp</file>
@@ -23,14 +23,14 @@
   <actions>
     <action>
       <name>MoveToBack</name>
-      <comment>Move an effect to the front of the VectorFilter's list order.</comment>
+      <comment>Move an effect to the back of the VectorFilter's list order.</comment>
       <prototype>ERR acMoveToBack(*Object)</prototype>
       <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToFront</name>
-      <comment>Move an object to the front of its current location.</comment>
+      <comment>Move an effect to the front of the VectorFilter's list order.</comment>
       <prototype>ERR acMoveToFront(*Object)</prototype>
       <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
     </action>
@@ -39,21 +39,10 @@
 
   <fields>
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags are stored here.</comment>
-      <access read="R">Read</access>
-      <type lookup="DMF">DMF</type>
-      <description>
-<p>Dimension flags are automatically defined when setting the <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl> and <fl>Height</fl> fields.</p>
-<types lookup="DMF"/>
-      </description>
-    </field>
-
-    <field>
       <name>Height</name>
       <comment>Primitive height of the effect area.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>UNIT</type>
       <description>
 <p>The <code>(Width, Height)</code> field values define the dimensions of the effect within the target clipping area.</p>
       </description>
@@ -72,7 +61,7 @@
 
     <field>
       <name>Mix</name>
-      <comment>Reference to another effect to be used a mixer with Input.</comment>
+      <comment>Reference to another effect to be used as a mixer with Input.</comment>
       <access read="R" write="S">Read/Set</access>
       <type class="FilterEffect">*FilterEffect</type>
       <description>
@@ -127,8 +116,8 @@
     <field>
       <name>Width</name>
       <comment>Primitive width of the effect area.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the effect within the target clipping area.</p>
       </description>
@@ -137,8 +126,8 @@
     <field>
       <name>X</name>
       <comment>Primitive X coordinate for the effect.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the offset of the effect within the target clipping area.</p>
       </description>
@@ -147,8 +136,8 @@
     <field>
       <name>Y</name>
       <comment>Primitive Y coordinate for the effect.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the offset of the effect within the target clipping area.</p>
       </description>
@@ -156,35 +145,6 @@
 
   </fields>
   <types>
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
-    </constants>
-
     <constants lookup="VSF" comment="Filter source types - these are used internally">
       <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
       <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>

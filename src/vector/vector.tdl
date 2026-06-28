@@ -89,7 +89,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "BLUE: The blue colour channel.",
     "ALPHA: The alpha channel.")
 
-  enums("VLJ", { type="int", start=0, comment="Options for the look of line joins." }, // Match to agg::line_join_e
+  enums("VLJ", { type="int", start=0, comment="Options for the look of line joins." },
     "MITER: The default.  A sharp corner is used to join path segments.  The corner is formed by extending the outer edges of the stroke at the tangents of the path segments until they intersect. If the ‘stroke-miterlimit’ is exceeded, the line join falls back to BEVEL.",
     "MITER_SMART: An alternative form of MITER that extends beyond the intersection point, similarly to the miter-clip SVG rules.",
     "ROUND: The join is rounded.",
@@ -97,26 +97,18 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "MITER_ROUND: Default to `MITER`, but switch to `ROUND` if the miter limit is exceeded.",
     "INHERIT: Inherit the join option from the parent.")
 
-  enums("VLC", { type="int", start=1, comment="Line-cap options." }, // Match to agg::line_cap_e
+  enums("VLC", { type="int", start=1, comment="Line-cap options." },
     "BUTT: The default.  The line is sharply squared off at its exact end point.",
     "SQUARE: Similar to butt, the line is sharply squared off but will extend past the end point by `StrokeWidth / 2`.",
     "ROUND: The line cap is a half-circle and the line's end-point forms the center point.",
     "INHERIT: The cap type is inherited from the parent (defaults to butt if unspecified).")
 
-  enums("VIJ", { type="int", start=1, comment="Inner join options for angled lines." },  // Match to agg::inner_join_e
+  enums("VIJ", { type="int", start=1, comment="Inner join options for angled lines." },
     "BEVEL: Blunts the edge of the join.",
     "MITER: Forms a sharp point at the join.  Typically not the best looking option.",
     "JAG: A special non-SVG option.",
     "ROUND: Rounds the edge of the join to produce the best looking results.",
     "INHERIT: Inherit the parent's join value.")
-
-  enums("VGT", { type="int", start=0, comment="VectorGradient options." },
-    "LINEAR: A linear gradient is drawn from `(X1, Y1)` to `(X2, Y2)`.",
-    "RADIAL: A radial gradient is drawn from `CenterX, CenterY` to `Radius`.  An optional focal point can be expressed with `FX` and `FY`.",
-    "CONIC: The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.",
-    "DIAMOND: A diamond gradient is drawn as a square emanating from the center point.",
-    "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.",
-    "GOURAUD: A Gouraud gradient interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.")
 
   enums('VTS', { type='int', start=0, comment='Options for stretching text in VectorText.' },
     'INHERIT',
@@ -199,14 +191,48 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "PREVIOUS: Use the previous effect as input, or source graphic if no previous effect.")
 
   enums("WVC", { type="int", start=1, comment="Wave options." },
-    "NONE: Do not close the path.",
     "TOP: Close the path across the top of its area.",
     "BOTTOM: Close the path across the bottom of its area.")
 
-  enums("WVS", { type="int", start=1, comment="Wave style options." },
-    "CURVED: Standard sine-wave curvature, this is the default.",
-    "ANGLED: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
+  enums("WVT", { type="int", start=1, comment="Wave style options." },
+    "SMOOTH: Standard sine-wave curvature, this is the default.",
+    "TRIANGLE: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
     "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.")
+
+  enums("WVE", { type="int", start=1, comment="Wave envelope options." },
+    "LINEAR: Linear decay from start to end, this is the default.",
+    "QUADRATIC: Quadratic decay, weighted towards the end of the wave.",
+    "SMOOTHSTEP: Smoothstep decay with ease-in and ease-out.",
+    "EXPONENTIAL: Exponential decay, weighted strongly towards the end of the wave.")
+
+  enums("GFALL", { type="int", start=1, comment="Gradient fall-off options." },
+    "OPAQUE:     No fall-off.",
+    "LINEAR:     Linear fall-off (even taper).",
+    "QUADRATIC:  Quadratic fall-off - fast drop, thin tail — natural glow.",
+    "CUBIC:      Cubic fall-off - very tight glow hugging the outline.",
+    "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
+    "CLEAR:      Disables the gradient.")
+
+  enums("GEZ", { type="int", start=0, comment="Gradient easing functions." },
+    "LINEAR:       Linear interpolation (no easing) - the default.",
+    "IN:           Ease-in (slow start).",
+    "OUT:          Ease-out (slow end).",
+    "IN_OUT:       Smoothstep-style ease-in and ease-out.",
+    "CUBIC_IN:     Cubic ease-in.",
+    "CUBIC_OUT:    Cubic ease-out.",
+    "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
+
+  enums("WLF", { type="int", start=0, comment="Worley field modes." },
+    "F1: Distance to nearest point.",
+    "F2_F1: Distance between the nearest and second-nearest points.",
+    "F2: Distance to second-nearest point.",
+    "WEIGHTED: Additively-weighted Voronoi using per-point heights.",
+    "PEAKS: Additive peaks or terrain using per-point heights.")
+
+  enums("WLM", { type="int", start=0, comment="Worley distance metrics." },
+    "EUCLIDEAN",
+    "MANHATTAN",
+    "CHEBYSHEV")
 
   enums("CM", { type="int", start=0, comment="Colour modes for ColourFX." },
     "NONE: Do nothing.",
@@ -240,14 +266,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     'FIXED_FX: FX is fixed',
     'FIXED_FY: FY is fixed',
     'FIXED_RADIUS: Radius is fixed',
-    'FIXED_FOCAL_RADIUS: Focal radius is fixed',
-    'CONTAIN_FOCAL: Contain the FX,FY point to the base radius.')
+    'FIXED_FOCAL_RADIUS: Focal radius is fixed')
 
   flags("VPF", { comment="Optional flags for the VectorScene object." },
     "BITMAP_SIZED: Automatically adjust the @VectorScene.PageWidth and @VectorScene.PageHeight to match the target @Bitmap.Width and @Bitmap.Height.",
     "RENDER_TIME: Compute the drawing frame-rate for the `RenderTime` field.",
     "RESIZE: The vector will be stretched to fit the @VectorScene.PageWidth and @VectorScene.PageHeight values, if defined by the client.",
-    "OUTLINE_VIEWPORTS: Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.")
+    "OUTLINE_VIEWPORTS: Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.",
+    "STABLE_RENDER: Use rendering algorithms that are stable across all platforms.")
 
   enums("TB", { type="int", start=0, "Function identifier for TurbulenceFX." },
     "TURBULENCE: Use the standard turbulence function.",
@@ -303,20 +329,59 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "CHILD_HAS_FOCUS: A child of the vector has gained the user focus.",
      "LOST_FOCUS: The vector has lost the user focus.")
 
-  struct('GradientStop', { comment='Describes a colour stop for the VectorGradient Stops field.' }, [[
-   double Offset     # An offset in the range of 0 - 1.0
-   struct(FRGB) RGB  # A floating point RGB value.
+  struct('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
+    double Offset     # An offset in the range of 0 - 1.0
+    struct(FRGB) RGB  # A floating point RGB value.
   ]])
 
-  struct('GouraudVertex', { comment='Describes a coloured vertex for the VectorGradient Vertices field.' }, [[
-   double X             # The X coordinate of the vertex.
-   double Y             # The Y coordinate of the vertex.
-   struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
+  struct('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
+    double X             # The X coordinate of the vertex.
+    double Y             # The Y coordinate of the vertex.
+    struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
+  ]])
+
+  struct('MeshPatchRecord', { comment='Describes one bilinear Coons patch for the GradientMesh Patches field.' }, [[
+    double TopP0X             # Top edge starting X coordinate.
+    double TopP0Y             # Top edge starting Y coordinate.
+    double TopC0X             # Top edge first control point X coordinate.
+    double TopC0Y             # Top edge first control point Y coordinate.
+    double TopC1X             # Top edge second control point X coordinate.
+    double TopC1Y             # Top edge second control point Y coordinate.
+    double TopP1X             # Top edge ending X coordinate.
+    double TopP1Y             # Top edge ending Y coordinate.
+    double RightP0X           # Right edge starting X coordinate.
+    double RightP0Y           # Right edge starting Y coordinate.
+    double RightC0X           # Right edge first control point X coordinate.
+    double RightC0Y           # Right edge first control point Y coordinate.
+    double RightC1X           # Right edge second control point X coordinate.
+    double RightC1Y           # Right edge second control point Y coordinate.
+    double RightP1X           # Right edge ending X coordinate.
+    double RightP1Y           # Right edge ending Y coordinate.
+    double BottomP0X          # Bottom edge starting X coordinate.
+    double BottomP0Y          # Bottom edge starting Y coordinate.
+    double BottomC0X          # Bottom edge first control point X coordinate.
+    double BottomC0Y          # Bottom edge first control point Y coordinate.
+    double BottomC1X          # Bottom edge second control point X coordinate.
+    double BottomC1Y          # Bottom edge second control point Y coordinate.
+    double BottomP1X          # Bottom edge ending X coordinate.
+    double BottomP1Y          # Bottom edge ending Y coordinate.
+    double LeftP0X            # Left edge starting X coordinate.
+    double LeftP0Y            # Left edge starting Y coordinate.
+    double LeftC0X            # Left edge first control point X coordinate.
+    double LeftC0Y            # Left edge first control point Y coordinate.
+    double LeftC1X            # Left edge second control point X coordinate.
+    double LeftC1Y            # Left edge second control point Y coordinate.
+    double LeftP1X            # Left edge ending X coordinate.
+    double LeftP1Y            # Left edge ending Y coordinate.
+    struct(FRGB) TopLeft      # Colour assigned to the top-left patch corner.
+    struct(FRGB) TopRight     # Colour assigned to the top-right patch corner.
+    struct(FRGB) BottomRight  # Colour assigned to the bottom-right patch corner.
+    struct(FRGB) BottomLeft   # Colour assigned to the bottom-left patch corner.
   ]])
 
   struct('Transition', { comment='For VectorTransition definitions' }, [[
-    double Offset   # An offset from 0.0 to 1.0 at which to apply the transform.
-    cstr Transform  # A transform string, as per SVG guidelines.
+    double Offset     # An offset from 0.0 to 1.0 at which to apply the transform.
+    string Transform  # A transform string, as per SVG guidelines.
   ]])
 
   struct("VectorPoint", { comment="Structure for the VectorPolygon PointsArray field." }, [[
@@ -327,10 +392,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   struct("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
-    obj(VectorPattern)  Pattern   # A @VectorPattern object, suitable for pattern based fills.
-    obj(VectorImage)    Image     # A @VectorImage object, suitable for image fills.
-    obj(VectorGradient) Gradient  # A @VectorGradient object, suitable for gradient fills.
-    struct(FRGB) Colour           # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
+    obj(VectorPattern) Pattern   # A @VectorPattern object, suitable for pattern based fills.
+    obj(VectorImage)   Image     # A @VectorImage object, suitable for image fills.
+    obj(Gradient)      Gradient  # A @Gradient object, suitable for gradient fills.
+    struct(FRGB)       Colour    # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
   ]],
   [[
    void reset() {
@@ -367,6 +432,33 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     double TranslateX           # Matrix value E
     double TranslateY           # Matrix value F
     int    Tag                  # An optional tag value defined by the client for matrix identification.
+  ]],
+  [[
+   void reset() {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = 1.0;
+      ShearY = 0.0;
+      ShearX = 0.0;
+      ScaleY = 1.0;
+      TranslateX = 0.0;
+      TranslateY = 0.0;
+      Tag = 0;
+   }
+
+   VectorMatrix() : Next(nullptr), Vector(nullptr), ScaleX(1), ShearY(0), ShearX(0), ScaleY(1), TranslateX(0), TranslateY(0), Tag(0) {}
+
+   VectorMatrix(const VectorMatrix &Other) {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = Other.ScaleX;
+      ShearY = Other.ShearY;
+      ShearX = Other.ShearX;
+      ScaleY = Other.ScaleY;
+      TranslateX = Other.TranslateX;
+      TranslateY = Other.TranslateY;
+      Tag = Other.Tag;
+   }
   ]])
 
   // Pre-defined tags for VectorMatrix
@@ -395,19 +487,23 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    double Green
    double Blue
    double Alpha
+  ]],
+  [[
+   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
   ]])
 
   klass('VectorTransition', {
     src='transformers/transition.cpp',
     references={ 'Transition' }, extended=true,
     comment="Transitions are used to gradually apply transforms over distance."
-  })
+  }, [[
+    ~vector(struct(Transition)) Stops
+  ]])
 
   methods('vectorscene', 'Sc', {
     { id=1, name='AddDef' },
-    { id=2, name='SearchByID' },
-    { id=3, name='FindDef' },
-    { id=4, name='Debug' }
+    { id=2, name='FindDef' },
+    { id=3, name='Debug' }
   })
 
   klass('VectorScene', { src='scene/scene.cpp', output='scene/scene_def.c', extended=true }, [[
@@ -423,22 +519,31 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    int(VSM) SampleMethod         # Method to use for resampling images and patterns.
   ]])
 
-  klass('VectorImage', { src='painters/image.cpp', extended=true }, [[
-    double X                   # Starting horizontal coordinate
-    double Y                   # Starting vertical coordinate
+  klass('VectorImage', { src='painters/image.cpp', extended=true, output='painters/image_def.cpp' }, [[
+    unit X                     # Starting horizontal coordinate
+    unit Y                     # Starting vertical coordinate
     obj(Image)   Image
     obj(Bitmap)  Bitmap
     int(VUNIT)   Units         # Defines the coordinate system for `(X, Y)`
-    int(DMF)     Dimensions
     int(VSPREAD) SpreadMethod
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
+  ]],
+  [[
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      X            = Unit(0);
+      Y            = Unit(0);
+      Units        = VUNIT::BOUNDING_BOX;
+      SpreadMethod = VSPREAD::CLIP;
+      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
+   }
   ]])
 
-  klass('VectorPattern', { src='painters/pattern.cpp', extended=true }, [[
-    double X                      # Starting horizontal coordinate
-    double Y                      # Starting vertical coordinate
-    double Width                  # Width of the canvas
-    double Height                 # Height of the canvas
+  klass('VectorPattern', { src='painters/pattern.cpp', output='painters/pattern_def.cpp', extended=true }, [[
+    unit X                        # Starting horizontal coordinate
+    unit Y                        # Starting vertical coordinate
+    unit Width                    # Width of the canvas
+    unit Height                   # Height of the canvas
+    vector(struct(VectorMatrix)) Matrices
     double Opacity                # Level of opacity from 0 - 1.0
     obj(VectorScene) Scene        # Internal scene
     obj(VectorViewport) Viewport  # Internal viewport
@@ -446,26 +551,78 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VSPREAD) SpreadMethod     # Behaviour to use when pattern bounds do not match the vector path.
     int(VUNIT) Units              # VUNIT constant
     int(VUNIT) ContentUnits       # VUNIT constant
-    int(DMF) Dimensions           # Flags for the dimension values.
+  ]],
+  [[
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      SpreadMethod = VSPREAD::REPEAT;
+      Units        = VUNIT::BOUNDING_BOX;
+      ContentUnits = VUNIT::USERSPACE;
+      Opacity      = 1.0;
+      X            = Unit(0);
+      Y            = Unit(0);
+   }
   ]])
 
-  klass('VectorGradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
-    double X1                    # Starting X coordinate of the gradient 'line'
-    double Y1                    # Starting Y coordinate of the gradient 'line'
-    double X2                    # Ending X of the gradient 'line'
-    double Y2                    # Ending Y of the gradient 'line'
-    double CenterX               # Center X coordinate of radial gradient shapes.
-    double CenterY               # Center Y coordinate of radial gradient shapes.
-    double FocalX                # Focal X coordinate for radial gradient shapes.
-    double FocalY                # Focal Y coordinate for radial gradient shapes.
-    double Radius                # The radius size for radial gradients.
-    double FocalRadius           # The size of the focal radius for radial gradients.
+  struct('VoronoiPoint', {
+   comment='Describes a feature point for the GradientVoronoi Points field.'
+  }, [[
+    double X       # The X coordinate of the feature point.
+    double Y       # The Y coordinate of the feature point.
+    double Height  # The per-point height used by WEIGHTED and PEAKS modes.
+  ]])
+
+  klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
+    vector(struct(VectorMatrix)) Matrices
+    vector(struct(GradientStop)) Stops
+    string SID
+    string ColourMap             # Name of a gradient colour map.
+    struct(FRGB) Colour
     double Resolution            # Alters the rate of change for gradient colours.
+    double Gamma                 # Applies a gamma curve to the gradient ramp.
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
-    int(VUNIT) Units             # Defines the coordinate system for `(X1, Y1), (X2, Y2)`
-    int(VGT) Type
-    int(VGF) Flags               # Optional flags.
+    int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
+    int(GEZ) Easing              # Easing function applied between gradient stops.
+    int   NumericID
+  ]],
+  [[
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+  ]],
+  [[
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+   }
+  ]])
+
+  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })
+
+  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', extended=true })
+
+  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', extended=true })
+
+  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', extended=true })
+
+  klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
+
+  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true }, [[
+    ~vector(struct(GouraudVertex)) Vertices
+  ]])
+
+  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', extended=true }, [[
+    ~vector(struct(MeshPatchRecord)) Patches
+  ]])
+
+  klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
+
+  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
+    ~vector(struct(VoronoiPoint)) Points # Optional list of Voronoi feature points provided by the client
+    ~int(WLF) WorleyMode
+    ~int(WLM) WorleyMetric
   ]])
 
   klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
@@ -474,11 +631,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     obj(Bitmap) Target      # Target bitmap for rendering the effect.
     obj(FilterEffect) Input # The effect uses another effect as an input.
     obj(FilterEffect) Mix   # Reference to an additional effect for mixing, e.g. compositing
-    double X                # Primitive x coordinate.
-    double Y                # Primitive y coordinate.
-    double Width            # Primitive width.
-    double Height           # Primitive height.
-    int(DMF) Dimensions     # Primitive dimensions.
+    unit X                  # Primitive x coordinate.
+    unit Y                  # Primitive y coordinate.
+    unit Width              # Primitive width.
+    unit Height             # Primitive height.
     int(VSF) SourceType     # Desired source input.
     int(VSF) MixType        # Optional input for mixing.
   ]])
@@ -507,54 +663,83 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=21, name='SetSpotLight' }
   })
 
-  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true })
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+    ~int(ARF) AspectRatio
+  ]])
 
-  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true })
+  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true }, [[
+    ~int(ARF) AspectRatio
+  ]])
 
   klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
 
-  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true })
+  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true, references={ 'CM' } }, [[
+    ~int(CM) Mode
+  ]])
 
-  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true })
+  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true, references={ 'OP'  } }, [[
+    ~int(OP) Operator
+  ]])
 
-  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true })
+  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true, references={ 'EM' } }, [[
+    ~int(EM) EdgeMode
+  ]])
 
-  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true })
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+    ~int(CMP) XChannel
+    ~int(CMP) YChannel
+  ]])
 
-  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true })
+  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[
+    ~struct(FRGB) Colour
+  ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true })
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT' } }, [[
+    ~struct(FRGB) Colour
+    ~int(LT) Type
+  ]])
 
-  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true })
+  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[
+    ~array(struct(MergeSource)) SourceList
+  ]])
 
-  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true })
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
+    ~int(MOP) Operator
+  ]])
 
   klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
 
   klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 
-  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', extended=true })
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB' }, extended=true }, [[
+    ~int(TB) Type
+  ]])
 
-  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true })
+  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
+    ~vector(struct(GradientStop)) Stops
+    ~int(ARF) AspectRatio
+  ]])
 
   klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp', extended=true }, [[
     obj(VectorViewport) Viewport # Hosts the Vector objects that will contribute to the clip path.
+    string SID
     int(VUNIT) Units             # Defines the coordinate system for fields X, Y, Width and Height.
     int(VCLF) Flags              # Optional flags.
   ]])
 
   klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[
-    double X                  # Left-most position of filter area
-    double Y                  # Top-most position of filter area
-    double Width              # Width of filter area
-    double Height             # Height of filter area
+    unit X                    # Left-most position of filter area
+    unit Y                    # Top-most position of filter area
+    unit Width                # Width of filter area
+    unit Height               # Height of filter area
     double Opacity            # Level of opacity from 0 - 1.0
     obj(VectorFilter) Inherit # Reference to another pattern from which to inherit attributes
     int ResX                  # Width of the intermediate images in pixels
     int ResY                  # Height of the intermediate images in pixels
     int(VUNIT) Units          # VUNIT constant
     int(VUNIT) PrimitiveUnits # VUNIT constant
-    int(DMF) Dimensions       # Flags for detailing area values
     int(VCS) ColourSpace      # Operating colour space for RGB values
     int(VFA) AspectRatio      # Aspect ratio to use when scaling X/Y values
   ]])
@@ -572,7 +757,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=10, name='FreeMatrix' }
   })
 
-  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true }, [[
+  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true, references={ 'VIJ', 'VLC', 'VLJ', 'VFR', 'VMF' } }, [[
     obj(Vector) Child       # The first child vector, or `NULL`.
     obj(VectorScene) Scene  # Short-cut to the top-level @VectorScene.
     obj(Vector) Next        # The next vector in the branch, or `NULL`.
@@ -591,6 +776,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(RQ)  PathQuality    # Defines the quality of rendered path outlines.
     int(VCS) ColourSpace    # Desired colour space to use when blending colours.
     int      PathTimestamp  # This counter is modified each time the path is regenerated.
+    ~struct(FRGB) StrokeColour
+    ~struct(FRGB) FillColour
+    ~int(VFR) FillRule
+    ~int(VFR) ClipRule
+    ~int(VMF) MorphFlags
+    ~int(VLJ) LineJoin
+    ~int(VLC) LineCap
+    ~int(VIJ) InnerJoin
   ]])
 
   // VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
@@ -603,7 +796,9 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=34, name='SetCommandList' }
   })
 
-  klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true })
+  klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true }, [[
+    ~array(struct(PathCommand)) Commands
+  ]])
 
   // VectorText method ID's start high enough to give a cushion from inherited Vector methods.
 
@@ -611,23 +806,40 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=30, name='DeleteLine' }
   })
 
-  klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF', 'VTS' }, extended=true })
+  klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF' }, extended=true }, [[
+    ~int(ALIGN) Align
+    ~int(VTXF) TextFlags
+  ]])
 
   klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  klass('VectorWave', { base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp', references={ 'WVS', 'WVC' }, extended=true })
+  klass('VectorWave', {
+    base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp',
+    references={ 'WVT', 'WVC', 'WVE' }, extended=true },
+  [[
+    ~int(WVE) Envelope
+    ~int(WVC) Close
+    ~int(WVT) Type
+  ]])
 
-  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true })
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' })
 
-  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true })
+  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true, output='vectors/polygon_def.cpp' }, [[
+    ~array(struct(VectorPoint)) PointsArray
+  ]])
 
-  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true })
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true, output='vectors/supershape_def.cpp' })
 
-  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', extended=true })
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true })
 
-  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true })
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true, output='vectors/ellipse_def.cpp' })
 
-  klass('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true })
+  klass('VectorViewport', { base='Vector', references={ 'VOF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true }, [[
+    ~int(ARF) AspectRatio
+    ~int(VOF) Overflow
+    ~int(VOF) OverflowX
+    ~int(VOF) OverflowY
+  ]])
 
   functionNames('vec',
     'DrawPath',
@@ -677,16 +889,6 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
    This.ScaleX     = t0;
    This.ShearX     = t2;
    This.TranslateX = t4;
-}
-
-//********************************************************************************************************************
-
-inline void SET_VECTOR_COLOUR(objVectorColour *Colour, double Red, double Green, double Blue, double Alpha) {
-   Colour->Class->ClassID = CLASSID::VECTORCOLOUR;
-   Colour->Red   = Red;
-   Colour->Green = Green;
-   Colour->Blue  = Blue;
-   Colour->Alpha = Alpha;
 }
   ]])
 

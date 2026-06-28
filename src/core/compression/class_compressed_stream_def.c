@@ -8,7 +8,7 @@ static const struct FieldDef clCompressedStreamFormat[] = {
 };
 
 static ERR COMPRESSEDSTREAM_NewPlacement(extCompressedStream *Self) {
-   new (Self) extCompressedStream;
+   new (Self) extCompressedStream(Self->Class, Self->UID);
    return ERR::Okay;
 }
 

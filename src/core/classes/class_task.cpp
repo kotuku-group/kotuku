@@ -1817,12 +1817,12 @@ This field provides direct access to the actions of a task, and is intended for 
 returned from ~CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
 Kotuku's object oriented design.
 
-The Actions field points to a lookup table of !ActionEntry items.  Hooking into an action involves writing its `AC`
-index in the table with a pointer to the action routine.  For example:
+The Actions field points to a lookup table of !ActionEntry items.  To create an action hook, set its `AC`
+table index with a pointer to the action routine.  For example:
 
 <pre>
-if (not AccessObject(CurrentTask(), 5000, &task)) {
-   task->get(FID_Actions, actions);
+if (!AccessObject(CurrentTask(), 5000, &task)) {
+   task->getActions(actions);
    actions[AC::Seek] = PROGRAM_Seek;
    ReleaseObject(task);
 }
@@ -2033,13 +2033,12 @@ Keys: Returns a list of all key names available to the GetKeys() action.
 
 *********************************************************************************************************************/
 
-static ERR GET_Keys(extTask *Self, kt::vector<std::string> **Value, int *Elements)
+static ERR GET_Keys(extTask *Self, std::span<std::string> &Value)
 {
    Self->Keys.clear();
    Self->Keys.reserve(Self->Fields.size());
    for (const auto &kv : Self->Fields) Self->Keys.emplace_back(kv.first);
-   *Value = &Self->Keys;
-   *Elements = Self->Keys.size();
+   Value = std::span<std::string>(Self->Keys.data(), Self->Keys.size());
    return ERR::Okay;
 }
 
@@ -2149,12 +2148,6 @@ Leading spaces will be ignored by the string parser.  The Location string can be
 only the quoted portion of the string will be used as the source path.
 
 *********************************************************************************************************************/
-
-static ERR GET_Location(extTask *Self, std::string_view &Value)
-{
-   Value = Self->Location;
-   return ERR::Okay;
-}
 
 static ERR SET_Location(extTask *Self, const std::string_view &Value)
 {
@@ -2445,6 +2438,7 @@ static const FieldArray clFields[] = {
    { "LaunchPath",      FDF_CPPSTRING|FDF_RW },
    { "Name",            FDF_CPPSTRING|FDF_RW },
    { "Location",        FDF_CPPSTRING|FDF_RW, nullptr, SET_Location },
+   { "Src",             FDF_SYNONYM },
    { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "ProcessPath",     FDF_CPPSTRING|FDF_R },
    { "TimeOut",         FDF_DOUBLE|FDF_RW },
@@ -2462,8 +2456,6 @@ static const FieldArray clFields[] = {
    { "InputCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN
    { "OutputCallback",  FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_OutputCallback,  SET_OutputCallback }, // STDOUT
    { "Priority",        FDF_VIRTUAL|FDF_INT|FDF_RW,                  GET_Priority, SET_Priority },
-   // Synonyms
-   { "Src",             FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_Location, SET_Location },
    END_FIELD
 };
 

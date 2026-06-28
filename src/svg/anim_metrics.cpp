@@ -66,19 +66,21 @@ void anim_base::set_orig_value(svgState &State)
             break;
 
          case SVF_stroke_width:
-            target_attrib_orig.assign(std::to_string(obj->get<double>(FID_StrokeWidth)));
+            if (Unit stroke_width; !obj->getStrokeWidth(stroke_width)) {
+               target_attrib_orig.assign(std::to_string(double(stroke_width)));
+            }
             break;
 
          case SVF_fill: {
             std::string_view val;
-            if ((!obj->get(FID_Fill, val)) and not val.empty()) target_attrib_orig = val;
+            if ((!obj->getFill(val)) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_fill;
             break;
          }
 
          case SVF_stroke: {
             std::string_view val;
-            if ((!obj->get(FID_Stroke, val)) and not val.empty()) target_attrib_orig = val;
+            if ((!obj->getStroke(val)) and not val.empty()) target_attrib_orig = val;
             else target_attrib_orig = State.m_stroke;
             break;
          }
@@ -459,15 +461,14 @@ FRGB anim_base::get_colour_value(objVector &Vector, FIELD Field)
       vec::ReadPainter(nullptr, to, &to_col, nullptr);
    }
    else if (not by.empty()) {
-      float *colour;
-      int elements;
-      if ((!Vector.get(Field, colour, elements)) and (elements IS 4)) {
-         from_col.Colour = { colour[0], colour[1], colour[2], colour[3] };
+      FRGB *colour;
+      if (!Vector.get(Field, colour)) {
+         from_col.Colour = *colour;
          vec::ReadPainter(nullptr, to, &to_col, nullptr);
-         to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + colour[0], 0.0, 1.0);
-         to_col.Colour.Green = std::clamp<float>(to_col.Colour.Green + colour[1], 0.0, 1.0);
-         to_col.Colour.Blue  = std::clamp<float>(to_col.Colour.Blue  + colour[2], 0.0, 1.0);
-         to_col.Colour.Alpha = std::clamp<float>(to_col.Colour.Alpha + colour[3], 0.0, 1.0);
+         to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + colour->Red, 0.0, 1.0);
+         to_col.Colour.Green = std::clamp<float>(to_col.Colour.Green + colour->Green, 0.0, 1.0);
+         to_col.Colour.Blue  = std::clamp<float>(to_col.Colour.Blue  + colour->Blue, 0.0, 1.0);
+         to_col.Colour.Alpha = std::clamp<float>(to_col.Colour.Alpha + colour->Alpha, 0.0, 1.0);
       }
       else return { 0, 0, 0, 0 };
    }

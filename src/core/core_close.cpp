@@ -231,7 +231,7 @@ void CloseCore(void)
 
       if (!glCrashStatus) {
          #ifdef __linux__
-            if (glFileMonitor) { FreeResource(glFileMonitor); glFileMonitor = nullptr; }
+            if (glFileMonitor) { FreeResource(GetMemoryID(glFileMonitor)); glFileMonitor = nullptr; }
          #endif
 
          free_file_cache();

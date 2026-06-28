@@ -1,0 +1,189 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="-//W3C//DTD XHTML 1.1//EN" xml:lang="en" xsi:schemaLocation="http://www.w3.org/MarkUp/SCHEMA/xhtml11.xsd"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></meta><script type="text/javascript" async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script type="text/javascript">
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../../css/bootstrap.min.css" rel="stylesheet"></link><link href="../../css/module-template.css" rel="stylesheet"></link><script type="text/javascript">
+          var shiftWindow = function() { scrollBy(0, -100) };
+          window.addEventListener("hashchange", shiftWindow);
+          function load() { if (window.location.hash) shiftWindow(); }
+        </script></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button><div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="../api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/kotuku-group/kotuku">GitHub</a></li></ul></div></div></nav>
+<div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+<ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button><div class="collapse" id="mod-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal"><li class="api-ref"><a class="rounded" href="../audio.html">Audio</a></li><li class="api-ref"><a class="rounded" href="../core.html">Core</a></li><li class="api-ref"><a class="rounded" href="../display.html">Display</a></li><li class="api-ref"><a class="rounded" href="../font.html">Font</a></li><li class="api-ref"><a class="rounded" href="../network.html">Network</a></li><li class="api-ref"><a class="rounded" href="../regex.html">Regex</a></li><li class="api-ref"><a class="rounded" href="../tiri.html">Tiri</a></li><li class="api-ref"><a class="rounded" href="../vector.html">Vector</a></li><li class="api-ref"><a class="rounded" href="../xml.html">XML</a></li><li class="api-ref"><a class="rounded" href="../xquery.html">XQuery</a></li></ul></div></li></ul>
+<ul class="list-unstyled"><li class="border-top my-3"></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button><div class="collapse" id="audio-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1"><li class="api-ref"><a class="rounded" href="audio.html">Audio</a></li><li class="api-ref"><a class="rounded" href="sound.html">Sound</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="file.html">File</a></li><li class="api-ref"><a class="rounded" href="metaclass.html">MetaClass</a></li><li class="api-ref"><a class="rounded" href="module.html">Module</a></li><li class="api-ref"><a class="rounded" href="storagedevice.html">StorageDevice</a></li><li class="api-ref"><a class="rounded" href="task.html">Task</a></li><li class="api-ref"><a class="rounded" href="thread.html">Thread</a></li><li class="api-ref"><a class="rounded" href="time.html">Time</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="compression.html">Compression</a></li><li class="api-ref"><a class="rounded" href="compressedstream.html">CompressedStream</a></li><li class="api-ref"><a class="rounded" href="config.html">Config</a></li><li class="api-ref"><a class="rounded" href="script.html">Script</a></li><li class="api-ref"><a class="rounded" href="xml.html">XML</a></li><li class="api-ref"><a class="rounded" href="xquery.html">XQuery</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="controller.html">Controller</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="blurfx.html">BlurFX</a></li><li class="api-ref"><a class="rounded" href="colourfx.html">ColourFX</a></li><li class="api-ref"><a class="rounded" href="compositefx.html">CompositeFX</a></li><li class="api-ref"><a class="rounded" href="convolvefx.html">ConvolveFX</a></li><li class="api-ref"><a class="rounded" href="displacementfx.html">DisplacementFX</a></li><li class="api-ref"><a class="rounded" href="filtereffect.html">FilterEffect</a></li><li class="api-ref"><a class="rounded" href="floodfx.html">FloodFX</a></li><li class="api-ref"><a class="rounded" href="imagefx.html">ImageFX</a></li><li class="api-ref"><a class="rounded" href="lightingfx.html">LightingFX</a></li><li class="api-ref"><a class="rounded" href="mergefx.html">MergeFX</a></li><li class="api-ref"><a class="rounded" href="morphologyfx.html">MorphologyFX</a></li><li class="api-ref"><a class="rounded" href="offsetfx.html">OffsetFX</a></li><li class="api-ref"><a class="rounded" href="remapfx.html">RemapFX</a></li><li class="api-ref"><a class="rounded" href="sourcefx.html">SourceFX</a></li><li class="api-ref"><a class="rounded" href="turbulencefx.html">TurbulenceFX</a></li><li class="api-ref"><a class="rounded" href="wavefunctionfx.html">WaveFunctionFX</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="scintilla.html">Scintilla</a></li><li class="api-ref"><a class="rounded" href="scintillasearch.html">ScintillaSearch</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="bitmap.html">Bitmap</a></li><li class="api-ref"><a class="rounded" href="clipboard.html">Clipboard</a></li><li class="api-ref"><a class="rounded" href="display.html">Display</a></li><li class="api-ref"><a class="rounded" href="document.html">Document</a></li><li class="api-ref"><a class="rounded" href="font.html">Font</a></li><li class="api-ref"><a class="rounded" href="image.html">Image</a></li><li class="api-ref"><a class="rounded" href="pointer.html">Pointer</a></li><li class="api-ref"><a class="rounded" href="surface.html">Surface</a></li><li class="api-ref"><a class="rounded" href="svg.html">SVG</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="clientsocket.html">ClientSocket</a></li><li class="api-ref"><a class="rounded" href="http.html">HTTP</a></li><li class="api-ref"><a class="rounded" href="netclient.html">NetClient</a></li><li class="api-ref"><a class="rounded" href="netlookup.html">NetLookup</a></li><li class="api-ref"><a class="rounded" href="netserver.html">NetServer</a></li><li class="api-ref"><a class="rounded" href="netsocket.html">NetSocket</a></li><li class="api-ref"><a class="rounded" href="proxy.html">Proxy</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="gradient.html">Gradient</a></li><li class="api-ref"><a class="rounded" href="gradientconic.html">GradientConic</a></li><li class="api-ref"><a class="rounded" href="gradientcontour.html">GradientContour</a></li><li class="api-ref"><a class="rounded" href="gradientdiamond.html">GradientDiamond</a></li><li class="api-ref"><a class="rounded" href="gradientdistal.html">GradientDistal</a></li><li class="api-ref"><a class="rounded" href="gradientgouraud.html">GradientGouraud</a></li><li class="api-ref"><a class="rounded" href="gradientlinear.html">GradientLinear</a></li><li class="api-ref"><a class="rounded" href="gradientmesh.html">GradientMesh</a></li><li class="api-ref"><a class="rounded" href="gradientradial.html">GradientRadial</a></li><li class="api-ref"><a class="rounded" href="gradientvoronoi.html">GradientVoronoi</a></li><li class="api-ref"><a class="rounded" href="vector.html">Vector</a></li><li class="api-ref"><a class="rounded" href="vectorclip.html">VectorClip</a></li><li class="api-ref"><a class="rounded" href="vectorcolour.html">VectorColour</a></li><li class="api-ref"><a class="rounded" href="vectorellipse.html">VectorEllipse</a></li><li class="api-ref"><a class="rounded" href="vectorfilter.html">VectorFilter</a></li><li class="api-ref"><a class="rounded" href="vectorgroup.html">VectorGroup</a></li><li class="api-ref"><a class="rounded" href="vectorimage.html">VectorImage</a></li><li class="api-ref"><a class="rounded" href="vectorpath.html">VectorPath</a></li><li class="api-ref"><a class="rounded" href="vectorpattern.html">VectorPattern</a></li><li class="api-ref"><a class="rounded" href="vectorpolygon.html">VectorPolygon</a></li><li class="api-ref"><a class="rounded" href="vectorrectangle.html">VectorRectangle</a></li><li class="api-ref"><a class="rounded" href="vectorscene.html">VectorScene</a></li><li class="api-ref"><a class="rounded" href="vectorshape.html">VectorShape</a></li><li class="api-ref"><a class="rounded" href="vectorspiral.html">VectorSpiral</a></li><li class="api-ref"><a class="rounded" href="vectortext.html">VectorText</a></li><li class="api-ref"><a class="rounded" href="vectortransition.html">VectorTransition</a></li><li class="api-ref"><a class="rounded" href="vectorviewport.html">VectorViewport</a></li><li class="api-ref"><a class="rounded" href="vectorwave.html">VectorWave</a></li></ul></div></li></ul></div></div>
+<div class="col-sm-9" style="max-width: 1200px;"><div class="docs-content" style="display:none;" id="default-page"><div class="page-header"><h1>Gradient Class</h1></div><p class="lead">Base class for colour gradient paint servers.</p>
+<p>Gradient stores the common state shared by all gradient paint servers.  Concrete gradient classes such as <a href="gradientlinear.html">GradientLinear</a>, <a href="gradientradial.html">GradientRadial</a> and <a href="gradientgouraud.html">GradientGouraud</a> provide the fields that describe a specific gradient shape.</p>
+<p>Gradient objects are definition objects and should normally be registered with a <a href="vectorscene.html">VectorScene</a> via <a href="vectorscene.html#tm-AddDef">VectorScene⇒AddDef()</a> before being referenced by vector fill or stroke attributes.</p>
+<h3>Structure</h3><p>The Gradient class consists of the following fields:</p><table class="table"><thead><th class="col-md-1"><div data-bs-toggle="tooltip" title="Read/Write access indicators are listed below">Access</div></th><th class="col-md-1">Name</th><th class="col-md-1">Type</th><th>Comment</th></thead><tbody><tr data-bs-toggle="collapse" data-bs-target="#fl-Colour" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Colour"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Colour</th><td class="col-md-1"><span class="text-nowrap">struct FRGB</span></td><td>The default background colour to use when clipping is enabled.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Colour" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>The colour value in this field is applicable only when a gradient is in clip-mode by specifying the <code>VSPREAD::CLIP</code> flag in <a data-bs-toggle="tooltip" title="Determines the rendering behaviour to use when gradient colours are cycled." href="#tf-SpreadMethod">SpreadMethod</a>.  By default, this field has an alpha value of zero to ensure that nothing is drawn outside the initial bounds of the gradient.  Setting any other colour value will otherwise fill in those areas.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-ColourMap" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ColourMap"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">ColourMap</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Assigns a pre-defined colourmap to the gradient.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ColourMap" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>An alternative to defining colour <a data-bs-toggle="tooltip" title="Defines the colours to use for the gradient." href="#tf-Stops">Stops</a> in a gradient is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the gradient with the colours defined in the map.</p>
+<p>We currently support the following established colourmaps from the matplotlib and seaborn projects: <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
+<p>The use of colourmaps and custom stops are mutually exclusive.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-ColourSpace" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ColourSpace"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">ColourSpace</th><td class="col-md-1"><span class="text-nowrap">VCS</span></td><td>Defines the colour space to use when interpolating gradient colours.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ColourSpace" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>By default, gradients are rendered using the standard RGB colour space and alpha blending rules.  Changing the colour space to <code>LINEAR_RGB</code> will force the renderer to automatically convert sRGB values to linear RGB when blending.</p>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VCS::INHERIT</th><td>Inherit the colour space option from the parent vector.</td></tr>
+<tr><th class="col-md-1">VCS::LINEAR_RGB</th><td>Linear RGB is the default colour space for SVG and produces the best results.</td></tr>
+<tr><th class="col-md-1">VCS::SRGB</th><td>The default colour-space is sRGB, recommended for its speed.</td></tr>
+</tbody></table>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Easing" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Easing"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Easing</th><td class="col-md-1"><span class="text-nowrap">GEZ</span></td><td>Selects the easing function for interpolation between gradient stops.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Easing" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Easing modifies the interpolation position between each adjacent pair of <a data-bs-toggle="tooltip" title="Defines the colours to use for the gradient." href="#tf-Stops">Stops</a>.  For gradients sourced from <a data-bs-toggle="tooltip" title="Assigns a pre-defined colourmap to the gradient." href="#tf-ColourMap">ColourMap</a>, it remaps the lookup position through the selected easing function before <a data-bs-toggle="tooltip" title="Applies a gamma curve to the gradient ramp." href="#tf-Gamma">Gamma</a> and <a data-bs-toggle="tooltip" title="Affects the rate of change for colours in the gradient." href="#tf-Resolution">Resolution</a> are applied.  The default <code>GEZ::LINEAR</code> mode leaves the gradient unchanged.</p>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">GEZ::CUBIC_IN</th><td>Cubic ease-in.</td></tr>
+<tr><th class="col-md-1">GEZ::CUBIC_IN_OUT</th><td>Cubic ease-in and ease-out.</td></tr>
+<tr><th class="col-md-1">GEZ::CUBIC_OUT</th><td>Cubic ease-out.</td></tr>
+<tr><th class="col-md-1">GEZ::IN</th><td>Ease-in (slow start).</td></tr>
+<tr><th class="col-md-1">GEZ::IN_OUT</th><td>Smoothstep-style ease-in and ease-out.</td></tr>
+<tr><th class="col-md-1">GEZ::LINEAR</th><td>Linear interpolation (no easing) - the default.</td></tr>
+<tr><th class="col-md-1">GEZ::OUT</th><td>Ease-out (slow end).</td></tr>
+</tbody></table>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Gamma" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Gamma"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Gamma</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>Applies a gamma curve to the gradient ramp.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Gamma" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Gamma remaps the completed colour ramp before <a data-bs-toggle="tooltip" title="Affects the rate of change for colours in the gradient." href="#tf-Resolution">Resolution</a> is applied.  Values greater than <code>1.0</code> bias the ramp toward the first colour, while values between <code>0.0</code> and <code>1.0</code> bias it toward the last colour.  A value of <code>1.0</code> leaves the gradient unchanged.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Matrices" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Matrices"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Matrices</th><td class="col-md-1"><span class="text-nowrap">kt::vector&lt;VectorMatrix&gt;</span></td><td>Applies one or more transforms to a gradient.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Matrices" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>A transform can be applied to a gradient via one or more matrices.  These will influence how gradient fills are rendered within their vector space.  Each matrix is represented by a <a data-bs-toggle="tooltip" title="" href="?page=struct-VectorMatrix">VectorMatrix</a> structure, and the matrices are linked in the order in which they should be applied.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-NumericID" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-NumericID"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">NumericID</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Numeric identifier for a vector.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-NumericID" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>The NumericID field is provided for internal use by the SVG and vector modules.  If NumericID is set by the client, then any value in <a data-bs-toggle="tooltip" title="String identifier for a gradient." href="#tf-SID">SID</a> will be immediately cleared.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Resolution" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Resolution"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Resolution</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>Affects the rate of change for colours in the gradient.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Resolution" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>By default, the colours generated for a gradient will be spaced for a smooth transition between stops that maximise resolution.  The resolution can be reduced by setting the Resolution value to a fraction between 0 and 1.0.</p>
+<p>This results in the colour values being averaged to a single value for every block of n colours, where n is the value <code>1 / (1 - Resolution)</code>.</p>
+<p>Resolution is at its maximum when this value is set to 1 (the default).</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-SID" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-SID"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">SID</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>String identifier for a gradient.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-SID" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>The SID field is provided for the purpose of SVG support.  Where possible, we recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-SpreadMethod" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-SpreadMethod"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">SpreadMethod</th><td class="col-md-1"><span class="text-nowrap">VSPREAD</span></td><td>Determines the rendering behaviour to use when gradient colours are cycled.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-SpreadMethod" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>SpreadMethod determines what happens when the first cycle of gradient colours is exhausted and needs to begin again. The default setting is <code>VSPREAD::PAD</code>.</p>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VSPREAD::CLIP</th><td>Do not scale the graphic.  Clip it if it extends past imposed boundaries.</td></tr>
+<tr><th class="col-md-1">VSPREAD::PAD</th><td>Scale the graphic to the object bounds.</td></tr>
+<tr><th class="col-md-1">VSPREAD::REFLECT</th><td>Tile the graphic, reflecting the image alternately on the X and Y axis.</td></tr>
+<tr><th class="col-md-1">VSPREAD::REFLECT_X</th><td>Tile the graphic, reflecting the image alternately on the X axis only.</td></tr>
+<tr><th class="col-md-1">VSPREAD::REFLECT_Y</th><td>Tile the graphic, reflecting the image alternately on the Y axis only.</td></tr>
+<tr><th class="col-md-1">VSPREAD::REPEAT</th><td>Tile the graphic repeatedly.</td></tr>
+<tr><th class="col-md-1">VSPREAD::UNDEFINED</th><td>Either the default setting will be applied or the setting will be inherited from a parent object.</td></tr>
+</tbody></table>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Stops" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Stops"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Stops</th><td class="col-md-1"><span class="text-nowrap">kt::vector&lt;GradientStop&gt;</span></td><td>Defines the colours to use for the gradient.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Stops" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>The colours that will be used for drawing a gradient are defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Transform" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Transform"><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Transform</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Applies a transform to the gradient.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Transform" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>A transform can be applied to the gradient by setting this field with an SVG compliant transform string.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Units" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Units"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Units</th><td class="col-md-1"><span class="text-nowrap">VUNIT</span></td><td>Defines the coordinate system for gradient coordinates.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Units" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>The default coordinate system for gradients is <code>BOUNDING_BOX</code>, which positions the gradient around the vector that references it.  The alternative is <code>USERSPACE</code>, which positions the gradient scaled to the current viewport.</p>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VUNIT::BOUNDING_BOX</th><td>Coordinates are scaled to the object's bounding box.</td></tr>
+<tr><th class="col-md-1">VUNIT::UNDEFINED</th><td>Either the default setting will be applied or the setting will be inherited from a parent object.</td></tr>
+<tr><th class="col-md-1">VUNIT::USERSPACE</th><td>Coordinates are scaled to the current viewport.</td></tr>
+</tbody></table>
+      
+</div></div></td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="GEZ"><h1>GEZ Type</h1><p class="lead">Gradient easing functions.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>GEZ::CUBIC_IN</th><td>Cubic ease-in.</td></tr>
+<tr><th>GEZ::CUBIC_IN_OUT</th><td>Cubic ease-in and ease-out.</td></tr>
+<tr><th>GEZ::CUBIC_OUT</th><td>Cubic ease-out.</td></tr>
+<tr><th>GEZ::IN</th><td>Ease-in (slow start).</td></tr>
+<tr><th>GEZ::IN_OUT</th><td>Smoothstep-style ease-in and ease-out.</td></tr>
+<tr><th>GEZ::LINEAR</th><td>Linear interpolation (no easing) - the default.</td></tr>
+<tr><th>GEZ::OUT</th><td>Ease-out (slow end).</td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="VCS"><h1>VCS Type</h1><p class="lead">Colour space options.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VCS::INHERIT</th><td>Inherit the colour space option from the parent vector.</td></tr>
+<tr><th>VCS::LINEAR_RGB</th><td>Linear RGB is the default colour space for SVG and produces the best results.</td></tr>
+<tr><th>VCS::SRGB</th><td>The default colour-space is sRGB, recommended for its speed.</td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="VSPREAD"><h1>VSPREAD Type</h1><p class="lead">Spread method options define the method to use for tiling filled graphics.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VSPREAD::CLIP</th><td>Do not scale the graphic.  Clip it if it extends past imposed boundaries.</td></tr>
+<tr><th>VSPREAD::PAD</th><td>Scale the graphic to the object bounds.</td></tr>
+<tr><th>VSPREAD::REFLECT</th><td>Tile the graphic, reflecting the image alternately on the X and Y axis.</td></tr>
+<tr><th>VSPREAD::REFLECT_X</th><td>Tile the graphic, reflecting the image alternately on the X axis only.</td></tr>
+<tr><th>VSPREAD::REFLECT_Y</th><td>Tile the graphic, reflecting the image alternately on the Y axis only.</td></tr>
+<tr><th>VSPREAD::REPEAT</th><td>Tile the graphic repeatedly.</td></tr>
+<tr><th>VSPREAD::UNDEFINED</th><td>Either the default setting will be applied or the setting will be inherited from a parent object.</td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="VUNIT"><h1>VUNIT Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VUNIT::BOUNDING_BOX</th><td>Coordinates are scaled to the object's bounding box.</td></tr>
+<tr><th>VUNIT::UNDEFINED</th><td>Either the default setting will be applied or the setting will be inherited from a parent object.</td></tr>
+<tr><th>VUNIT::USERSPACE</th><td>Coordinates are scaled to the current viewport.</td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-GradientStop"><h1>GradientStop Structure</h1><p class="lead">Describes a colour stop for the Gradient Stops field.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Offset</th><td><span class="text-nowrap">DOUBLE</span></td><td>An offset in the range of 0 - 1.0</td></tr>
+<tr><th>RGB</th><td><span class="text-nowrap">struct FRGB</span></td><td>A floating point RGB value.</td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient class documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-VectorMatrix"><h1>VectorMatrix Structure</h1><p class="lead">Vector transformation matrix.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">struct VectorMatrix *</span></td><td>The next transform in the list.</td></tr>
+<tr><th>Vector</th><td><span class="text-nowrap">objVector *</span></td><td>The vector associated with the transform.</td></tr>
+<tr><th>ScaleX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value A</td></tr>
+<tr><th>ShearY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value B</td></tr>
+<tr><th>ShearX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value C</td></tr>
+<tr><th>ScaleY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value D</td></tr>
+<tr><th>TranslateX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value E</td></tr>
+<tr><th>TranslateY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value F</td></tr>
+<tr><th>Tag</th><td><span class="text-nowrap">INT</span></td><td>An optional tag value defined by the client for matrix identification.</td></tr>
+</tbody></table><div class="footer copyright text-right">Gradient class documentation © Paul Manias © 2010-2026</div></div>
+</div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
+const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
+
+   var xslt = false;
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   if (filename.endsWith(".xml")) { // XSLT is being used to view this document
+      filename = filename.substr(0, filename.length-3) + 'html';
+      xslt = true;
+   }
+
+   // Auto-open the relevant sidebar branch
+
+   var nl = document.querySelectorAll('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (nl.length > 0) {
+      // Target the last matching element to avoid confusion with matching module names (e.g. Audio module == Audio class)
+      var el = nl.item(nl.length-1)
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   var page = glParameters["page"];
+   if (isEmpty(page)) page = glParameters["function"];
+   var div = document.getElementById(page);
+   if (!div) div = document.getElementById("default-page");
+   if (div) div.style.display = "block";
+
+   cancelAnimations();
+
+ready(function(){
+   // Initialise tooltips
+   var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+   var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+     return new bootstrap.Tooltip(tooltipTriggerEl)
+   })
+
+   // In XSLT mode, changing all HTML links to XML is helpful for navigation (if heavy handed)
+   if (xslt) {
+      var nl = document.querySelectorAll('a[href*=".html"]');
+      nl.forEach((el) => {
+         el.href = el.href.substr(0, el.href.length-5) + '.xml'
+      })
+   }
+});
+
+         </script></body></html>

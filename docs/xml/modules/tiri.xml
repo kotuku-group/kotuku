@@ -7,8 +7,8 @@
     <type>module</type>
     <comment>Tiri is a customised scripting language for the Script class.</comment>
     <version>1</version>
-    <status>beta</status>
-    <prefix>fl</prefix>
+    <status>stable</status>
+    <prefix>ti</prefix>
     <copyright>Paul Manias © 2006-2026</copyright>
     <description>
 <p>Tiri is a custom scripting language for Kotuku developers.  It is implemented on the backbone of LuaJIT, a high performance version of the Lua scripting language.  It supports garbage collection, dynamic typing and a 64-bit byte-code interpreter for compiled code.</p>
@@ -17,16 +17,19 @@
     <source>
       <file path="src/tiri/">tiri.cpp</file>
     </source>
+    <classes>
+      <class>Tiri</class>
+    </classes>
   </info>
 
   <function>
     <name>SetVariable</name>
     <comment>Sets any variable in a loaded Tiri script.</comment>
-    <prototype>ERR fl::SetVariable(objScript * Script, STRVIEW Name, INT Type, ...)</prototype>
+    <prototype>ERR ti::SetVariable(objTiri * Script, STRVIEW Name, INT Type, ...)</prototype>
     <tiriPrototype>err = SetVariable(Script:obj, Name:str, Type:num, ...)</tiriPrototype>
     <tags>mutates-object, copies-input</tags>
     <input>
-      <param type="objScript *" name="Script">Pointer to a Tiri script.</param>
+      <param type="objTiri *" name="Script">Pointer to a Tiri script.</param>
       <param type="STRVIEW" name="Name">The name of the variable to set.</param>
       <param type="INT" name="Type">A valid field type must be indicated, e.g. <code>FD_STRING</code>, <code>FD_POINTER</code>, <code>FD_INT</code>, <code>FD_DOUBLE</code>, <code>FD_INT64</code>.</param>
       <param type="..." name="Variable">A variable that matches the indicated <code>Type</code>.</param>

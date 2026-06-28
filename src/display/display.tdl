@@ -536,6 +536,7 @@ module({
   ]],
   [[
    FUNCTION RequestHandler;
+   ~objClipboard();
   ]])
 
   klass('Controller', { src='class_controller.cpp', output='class_controller_def.c', extended=false }, [[
@@ -547,9 +548,13 @@ module({
     double RightStickY  # Right analog stick value for Y axis, between -1.0 and 1.0
     int(CON) Buttons    # The state of available controller buttons.
     int    Port         # The port number assigned to the controller.
+  ]],
+  nil,
+  [[
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
   ]])
 
-  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC', 'PF' }, extended=true }, [[
+  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC' }, extended=true }, [[
     double Speed           # Speed multiplier (%)
     double Acceleration    # Acceleration level - keep between 0.0 and 3.0
     double DoubleClick     # Double click speed
@@ -584,18 +589,23 @@ module({
     { id=5, name='SetOpacity' },
     { id=6, name='AddCallback' },
     { id=7, name='Minimise' },
-    { id=8, name='ResetDimensions' },
-    { id=9, name='RemoveCallback' },
-    { id=10, name='ScheduleRedraw' }
+    { id=8, name='RemoveCallback' },
+    { id=9, name='ScheduleRedraw' }
   })
 
-  klass('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, extended=true, src={
+  klass('Surface', { references={ 'JTYPE', 'JET', 'SWIN', 'InputEvent' }, extended=true, src={
       'class_surface/class_surface.cpp',
       'class_surface/surface_dimensions.cpp',
       'class_surface/surface_drawing.cpp',
       'class_surface/surface_fields.cpp',
       'class_surface/surface_resize.cpp'
     }, output='class_surface/surface_def.c' }, [[
+    unit X                # Horizontal coordinate
+    unit Y                # Vertical coordinate
+    unit Width            # Width
+    unit Height           # Height
+    unit XOffset
+    unit YOffset
     oid Drag              # Drag the object that this field points to
     oid Buffer            # Buffer bitmap (backing store)
     oid Parent            # Graphical container of the Surface object, if any
@@ -606,21 +616,15 @@ module({
     int MaxHeight         # Maximum height setting
     oid Display           # Refers to the Display object that is managing the surface's graphics.
     int(RNF) Flags        # Special flags
-    int X                 # Fixed horizontal coordinate
-    int Y                 # Fixed vertical coordinate
-    int Width             # Fixed width
-    int Height            # Fixed height
     oid Root              # Surface that is acting as a root for many surface children (useful when applying translucency)
-    int(ALIGN) Align      # Alignment flags
-    int(DMF) Dimensions   # Dimension flags
     int(DRAG) DragStatus  # Indicates the draggable state when dragging is enabled.
     int(PTC) Cursor       # The preferred cursor image to use when the pointer is over the surface
     struct(RGB8) Colour   # Background colour specification
     int(RT) Type          # Internal surface type flags
     int Modal             # Set to 1 to enable modal mode
+    ~int(SWIN) WindowType
   ]],
-  [[
-  ]],
+  nil,
   [[
    inline bool visible() const { return (Flags & RNF::VISIBLE) != RNF::NIL; }
    inline bool invisible() const { return (Flags & RNF::VISIBLE) IS RNF::NIL; }

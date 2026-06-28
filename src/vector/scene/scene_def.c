@@ -5,6 +5,7 @@ static const struct FieldDef clVectorSceneFlags[] = {
    { "RenderTime", 0x00000002 },
    { "Resize", 0x00000004 },
    { "OutlineViewports", 0x00000008 },
+   { "StableRender", 0x00000010 },
    { nullptr, 0 }
 };
 
@@ -26,19 +27,17 @@ static const struct FieldDef clVectorSceneSampleMethod[] = {
 };
 
 FDEF maAddDef[] = { { "Name", FDF_CPPSTRING }, { "Def", FD_OBJECTPTR }, { 0, 0 } };
-FDEF maSearchByID[] = { { "ID", FD_INT }, { "Result", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF maFindDef[] = { { "Name", FDF_CPPSTRING }, { "Def", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 
 static const struct MethodEntry clVectorSceneMethods[] = {
    { AC(-1), (APTR)VECTORSCENE_AddDef, "AddDef", maAddDef, sizeof(struct sc::AddDef) },
-   { AC(-2), (APTR)VECTORSCENE_SearchByID, "SearchByID", maSearchByID, sizeof(struct sc::SearchByID) },
-   { AC(-3), (APTR)VECTORSCENE_FindDef, "FindDef", maFindDef, sizeof(struct sc::FindDef) },
-   { AC(-4), (APTR)VECTORSCENE_Debug, "Debug", 0, 0 },
+   { AC(-2), (APTR)VECTORSCENE_FindDef, "FindDef", maFindDef, sizeof(struct sc::FindDef) },
+   { AC(-3), (APTR)VECTORSCENE_Debug, "Debug", 0, 0 },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
 static ERR VECTORSCENE_NewPlacement(extVectorScene *Self) {
-   new (Self) extVectorScene;
+   new (Self) extVectorScene(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
@@ -50,10 +49,8 @@ static ERR VECTORSCENE_FreePlacement(extVectorScene *Self) {
 static const struct ActionArray clVectorSceneActions[] = {
    { AC::Draw, VECTORSCENE_Draw },
    { AC::Flush, VECTORSCENE_Flush },
-   { AC::Free, VECTORSCENE_Free },
    { AC::FreePlacement, VECTORSCENE_FreePlacement },
    { AC::Init, VECTORSCENE_Init },
-   { AC::NewObject, VECTORSCENE_NewObject },
    { AC::NewPlacement, VECTORSCENE_NewPlacement },
    { AC::Redimension, VECTORSCENE_Redimension },
    { AC::Reset, VECTORSCENE_Reset },

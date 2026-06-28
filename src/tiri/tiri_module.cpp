@@ -40,12 +40,12 @@ struct CaseInsensitiveCompare {
 
 static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Stores the names of modules that have loaded constants (system wide)
 
-[[nodiscard]] static CSTRING load_include_struct(objScript *, CSTRING, std::string_view);
+[[nodiscard]] static CSTRING load_include_struct(extTiri *, CSTRING, std::string_view);
 [[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
 
 static int module_call(lua_State *);
 static ERR module_call_inner(lua_State *, std::string &, int &);
-static int process_results(prvTiri *, APTR, const FunctionField *);
+static int process_results(extTiri *, APTR, const FunctionField *);
 
 //********************************************************************************************************************
 // Support for mutable array results
@@ -98,6 +98,8 @@ template <class T> static ERR make_cpp_array_result(cpp_array_result *Result)
    Result->Delete = delete_cpp_array_result<T>;
    return ERR::Okay;
 }
+
+// Create an empty kt::vector<T> suitable for passing to a module API function.
 
 static ERR make_cpp_array_result(int Type, cpp_array_result *Result)
 {
@@ -238,17 +240,13 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 
 //********************************************************************************************************************
 
-static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Name)
+static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 {
    OBJECTPTR root;
    if (auto error = module->get(FID_Root, root); !error) {
       struct ModHeader *header;
       if ((error = root->get(FID_Header, header)) != ERR::Okay) return error;
       if (not header) return ERR::NoData;
-
-      if (auto structs = header->StructDefs) {
-         for (auto &s : structs[0]) glStructSizes[s.first] = s.second;
-      }
 
       if (auto idl = header->Definitions) {
          while ((idl) and (*idl)) {
@@ -266,7 +264,7 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
 // For the 'include' keyword.  Creates a temporary module object to process the definitions without formally opening
 // an interface.
 
-[[nodiscard]] ERR load_include(objScript *Script, CSTRING Module)
+[[nodiscard]] ERR load_include(extTiri *Script, CSTRING Module)
 {
    ERR error = ERR::Okay;
 
@@ -301,7 +299,7 @@ static ERR process_module_defs(objScript *Script, objModule *module, CSTRING Nam
 // Format: s.Name:typeField,...
 // TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
-[[nodiscard]] static CSTRING load_include_struct(objScript *Script, CSTRING Line, std::string_view Source)
+[[nodiscard]] static CSTRING load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source)
 {
    int i;
    for (i=0; (Line[i] >= 0x20) and (Line[i] != ':'); i++);
@@ -632,8 +630,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
    };
 
-   auto prv = (prvTiri *)Lua->script->DerivedPtr;
-   if (not prv) return ERR::ObjectCorrupt;
+   auto tiri = Lua->script;
+   if (not tiri) return ERR::ObjectCorrupt;
 
    auto value_string = [](lua_State *Lua, int Index) -> CSTRING {
       if (auto string = lua_tostring(Lua, Index)) return string;
@@ -1285,7 +1283,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    }
    else lua_pushnil(Lua);
 
-   Results = process_results(prv, buffer, args) + result;
+   Results = process_results(tiri, buffer, args) + result;
    return ERR::Okay;
 }
 
@@ -1293,10 +1291,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 // Convert FD_RESULT parameters to the equivalent Tiri result value.
 // Also takes care of any cleanup code for dynamically allocated values.
 
-static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *args)
+static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *args)
 {
    kt::Log log(__FUNCTION__);
 
+   auto lua = Tiri->Lua;
    auto scan = (uint8_t *)resultsidx;
    int results = 0;
    for (int i=1; args[i].Name; i++) {
@@ -1309,9 +1308,9 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
             if (var) {
                std::string_view argname(args[i].Name);
                if (argtype & FD_CPP) {
-                  if (not push_cpp_array_result(prv->Lua, argtype, argname, var)) {
+                  if (not push_cpp_array_result(lua, argtype, argname, var)) {
                      log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
-                     lua_pushnil(prv->Lua);
+                     lua_pushnil(lua);
                   }
                }
                else {
@@ -1326,13 +1325,13 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                   }
 
                   if (values) {
-                     make_any_array(prv->Lua, argtype, argname, total_elements, values);
+                     make_any_array(lua, argtype, argname, total_elements, values);
                      if (argtype & FD_ALLOC) FreeResource(values);
                   }
-                  else lua_pushnil(prv->Lua);
+                  else lua_pushnil(lua);
                }
             }
-            else lua_pushnil(prv->Lua);
+            else lua_pushnil(lua);
             results++;
          }
          else scan += sizeof(APTR);
@@ -1342,18 +1341,18 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
             if (auto var = ((APTR *)scan)[0]) {
                if (argtype & FD_CPP) {
                   if (argtype & FD_MUTABLE) { // std::string variant
-                     lua_pushstring(prv->Lua, *((std::string *)var));
+                     lua_pushstring(lua, *((std::string *)var));
                   }
                   else { // std::string_view
-                     lua_pushstring(prv->Lua, *((std::string_view *)var));
+                     lua_pushstring(lua, *((std::string_view *)var));
                   }
                }
                else {
-                  lua_pushstring(prv->Lua, ((STRING *)var)[0]);
+                  lua_pushstring(lua, ((STRING *)var)[0]);
                   if ((argtype & FD_ALLOC) and (((STRING *)var)[0])) FreeResource(((STRING *)var)[0]);
                }
             }
-            else lua_pushnil(prv->Lua);
+            else lua_pushnil(lua);
             results++;
          }
          scan += sizeof(APTR);
@@ -1365,22 +1364,22 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
             if (var) {
                if (argtype & FD_OBJECT) {
                   if (((APTR *)var)[0]) {
-                     push_object(prv->Lua, ((OBJECTPTR *)var)[0], (argtype & FD_ALLOC) ? false : true);
+                     push_object(lua, ((OBJECTPTR *)var)[0], (argtype & FD_ALLOC) ? false : true);
                   }
-                  else lua_pushnil(prv->Lua);
+                  else lua_pushnil(lua);
                }
                else if (argtype & FD_STRUCT) {
                   if (((APTR *)var)[0]) {
                      if (argtype & FD_RESOURCE) {
                         // Resource structures are managed with direct data addresses.
-                        push_struct(prv->Lua->script, ((APTR *)var)[0], args[i].Name, (argtype & FD_ALLOC) ? TRUE : FALSE, TRUE);
+                        push_struct(Tiri, ((APTR *)var)[0], args[i].Name, (argtype & FD_ALLOC) ? TRUE : FALSE, TRUE);
                      }
                      else {
-                        if (named_struct_to_table(prv->Lua, args[i].Name, ((APTR *)var)[0]) != ERR::Okay) lua_pushnil(prv->Lua);
+                        if (named_struct_to_table(lua, args[i].Name, ((APTR *)var)[0]) != ERR::Okay) lua_pushnil(lua);
                         if (argtype & FD_ALLOC) FreeResource(((APTR *)var)[0]);
                      }
                   }
-                  else lua_pushnil(prv->Lua);
+                  else lua_pushnil(lua);
                }
                else if (argtype & FD_ALLOC) { // The result is a memory allocation.  Convert it to a binary 'string' of fixed length
                   int64_t size = 0;
@@ -1395,8 +1394,8 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                      if (!MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo)) size = meminfo.Size;
                   }
 
-                  if (size > 0) lua_pushlstring(prv->Lua, ((CSTRING *)var)[0], size);
-                  else lua_pushnil(prv->Lua);
+                  if (size > 0) lua_pushlstring(lua, ((CSTRING *)var)[0], size);
+                  else lua_pushnil(lua);
 
                   if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
                }
@@ -1407,20 +1406,20 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
                   else if (args[i+1].Type & FD_INT64) size = ((int64_t *)size_var)[0];
                   else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
 
-                  if (size > 0) lua_pushlstring(prv->Lua, ((CSTRING *)var)[0], size);
-                  else lua_pushnil(prv->Lua);
+                  if (size > 0) lua_pushlstring(lua, ((CSTRING *)var)[0], size);
+                  else lua_pushnil(lua);
                }
-               else lua_pushlightuserdata(prv->Lua, ((APTR *)var)[0]);
+               else lua_pushlightuserdata(lua, ((APTR *)var)[0]);
             }
-            else lua_pushnil(prv->Lua);
+            else lua_pushnil(lua);
             results++;
          }
          else scan += sizeof(APTR);
       }
       else if (argtype & FD_INT) {
          if (argtype & FD_RESULT) {
-            if (auto var = ((APTR *)scan)[0]) lua_pushinteger(prv->Lua, ((int *)var)[0]);
-            else lua_pushnil(prv->Lua);
+            if (auto var = ((APTR *)scan)[0]) lua_pushinteger(lua, ((int *)var)[0]);
+            else lua_pushnil(lua);
             scan += sizeof(APTR);
             results++;
          }
@@ -1428,8 +1427,8 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
       }
       else if (argtype & FD_DOUBLE) {
          if (argtype & FD_RESULT) {
-            if (auto var = ((APTR *)scan)[0]) lua_pushnumber(prv->Lua, ((double *)var)[0]);
-            else lua_pushnil(prv->Lua);
+            if (auto var = ((APTR *)scan)[0]) lua_pushnumber(lua, ((double *)var)[0]);
+            else lua_pushnil(lua);
             scan += sizeof(APTR);
             results++;
          }
@@ -1437,8 +1436,8 @@ static int process_results(prvTiri *prv, APTR resultsidx, const FunctionField *a
       }
       else if (argtype & FD_INT64) {
          if (argtype & FD_RESULT) {
-            if (auto var = ((APTR *)scan)[0]) lua_pushnumber(prv->Lua, ((int64_t *)var)[0]);
-            else lua_pushnil(prv->Lua);
+            if (auto var = ((APTR *)scan)[0]) lua_pushnumber(lua, ((int64_t *)var)[0]);
+            else lua_pushnil(lua);
             scan += sizeof(APTR);
             results++;
          }

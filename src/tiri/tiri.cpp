@@ -57,9 +57,9 @@ struct ActionTable *glActions = nullptr;
 bool glPrintMsg = false;
 JOF glJitOptions = JOF::NIL;
 ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
-ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
+ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes = nullptr;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
-ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
+std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 std::shared_mutex glConstantMutex;
 uint64_t glActionsWithResults = 0;
 
@@ -183,7 +183,8 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    }
 
    std::string_view module_name;
-   if (auto error = MetaClass->getModule(module_name); !error) {
+   // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires regeneration
+   if (auto error = MetaClass->get(FID_Module, module_name); !error) {
       if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
@@ -203,9 +204,11 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    glTiriContext = CurrentContext();
    glPrintMsg = GetResource(RES::LOG_LEVEL) >= 4;
 
-   argModule->get(FID_Root, modTiri);
+   modTiri = (OBJECTPTR)((objModule *)argModule)->Root;
 
    ActionList(&glActions, nullptr); // Get the global action table from the Core
+
+   glStructSizes = (ankerl::unordered_dense::map<uint32_t, StructInfo> *)GetResourcePtr(RES::STRUCT_DB);
 
    glDelayedCallMsgID = MSGID(AllocateID(IDTYPE::MESSAGE));
    auto func = C_FUNCTION(delayed_msg_handler);
@@ -233,10 +236,9 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    }
    glActionsWithResults = result_mask;
 
-   kt::vector<std::string> *pargs;
+   std::span<std::string> args;
    auto task = CurrentTask();
-   if ((!task->get(FID_Parameters, &pargs)) and (pargs)) {
-      kt::vector<std::string> &args = *pargs;
+   if (!task->getParameters(args)) {
       for (int i=0; i < std::ssize(args); i++) {
          if (kt::startswith(args[i], "--jit-options")) {
             // Parse --jit-options [csv] parameter
@@ -389,7 +391,7 @@ The SetVariable() function provides a method for setting global variables in a T
 script.  If the script is cached, the variable settings will be available on the next activation.
 
 -INPUT-
-obj(Script) Script: Pointer to a Tiri script.
+obj(Tiri) Script: Pointer to a Tiri script.
 strview Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
@@ -406,33 +408,34 @@ mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
-namespace fl {
-ERR SetVariable(objScript *Script, const std::string_view &Name, int Type, ...)
+
+namespace ti {
+ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);
-   prvTiri *prv;
    va_list list;
 
    if ((not Script) or (Script->classID() != CLASSID::TIRI) or Name.empty()) return log.warning(ERR::Args);
 
    log.branch("Script: %d, Name: %.*s, Type: $%.8x", Script->UID, int(Name.size()), Name.data(), Type);
 
-   if (not (prv = (prvTiri *)Script->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
-   if (not prv->Lua) return log.warning(ERR::InvalidState);
+   auto tiri = (extTiri *)Script;
+   auto lua = tiri->Lua;
+   if (not lua) return log.warning(ERR::InvalidState);
 
    va_start(list, Type);
 
-   if (Type & FD_STRING)       lua_pushstring(prv->Lua, va_arg(list, STRING));
-   else if (Type & FD_POINTER) lua_pushlightuserdata(prv->Lua, va_arg(list, APTR));
-   else if (Type & FD_INT)     lua_pushinteger(prv->Lua, va_arg(list, int));
-   else if (Type & FD_INT64)   lua_pushnumber(prv->Lua, va_arg(list, int64_t));
-   else if (Type & FD_DOUBLE)  lua_pushnumber(prv->Lua, va_arg(list, double));
+   if (Type & FD_STRING)       lua_pushstring(lua, va_arg(list, STRING));
+   else if (Type & FD_POINTER) lua_pushlightuserdata(lua, va_arg(list, APTR));
+   else if (Type & FD_INT)     lua_pushinteger(lua, va_arg(list, int));
+   else if (Type & FD_INT64)   lua_pushnumber(lua, va_arg(list, int64_t));
+   else if (Type & FD_DOUBLE)  lua_pushnumber(lua, va_arg(list, double));
    else {
       va_end(list);
       return log.warning(ERR::FieldTypeMismatch);
    }
 
-   lua_setglobal(prv->Lua, Name.data());
+   lua_setglobal(lua, Name.data());
 
    va_end(list);
    return ERR::Okay;
@@ -605,8 +608,6 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
 
 void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input)
 {
-   kt::Log log(__FUNCTION__);
-
    auto s_name = struct_name(StructName);
    if (not glStructs.contains(s_name)) {
       luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
@@ -621,7 +622,7 @@ void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int E
    int def_size = ALIGN64(sdef.Size);
    char aligned = ((sdef.Size & 0x7) != 0) ? 'N': 'Y';
    if (aligned IS 'N') {
-      log.msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c",
+      kt::Log(__FUNCTION__).msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c",
          int(StructName.size()), StructName.data(), Elements, Input, def_size, aligned);
    }
 
@@ -646,10 +647,10 @@ void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int El
 
 //********************************************************************************************************************
 
-void get_line(objScript *Self, int Line, STRING Buffer, int Size)
+void get_line(extTiri *Self, int Line, STRING Buffer, int Size)
 {
-   if (not Self->String.empty()) {
-      auto str = std::string_view(Self->String);
+   if (not Self->Statement.empty()) {
+      auto str = std::string_view(Self->Statement);
       int i;
       for (i=0; i < Line; i++) {
          str = next_line(str);
@@ -676,15 +677,14 @@ void get_line(objScript *Self, int Line, STRING Buffer, int Size)
 
 int code_writer_id(lua_State *Lua, CPTR Data, size_t Size, void *FileID)
 {
-   kt::Log log("code_writer");
-
    if (Size <= 0) return 0; // Ignore bad size requests
 
    kt::ScopedObjectLock file((MAXINT)FileID);
    if (file.granted()) {
       if (!acWrite(*file, (APTR)Data, Size)) return 0;
    }
-   log.warning("Failed writing %d bytes.", (int)Size);
+
+   kt::Log("code_writer").warning("Failed writing %d bytes.", (int)Size);
    return 1;
 }
 

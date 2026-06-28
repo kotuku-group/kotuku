@@ -496,14 +496,12 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 
 //********************************************************************************************************************
 
-static ERR CLIPBOARD_Free(objClipboard *Self)
+objClipboard::~objClipboard()
 {
-   if (Self->RequestHandler.isScript()) {
-      UnsubscribeAction(Self->RequestHandler.Context, AC::Free);
-      Self->RequestHandler.clear();
+   if (RequestHandler.isScript()) {
+      UnsubscribeAction(RequestHandler.Context, AC::Free);
+      RequestHandler.clear();
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -613,13 +611,6 @@ static ERR CLIPBOARD_Init(objClipboard *Self)
 
    CreateFolder("clipboard:", PERMIT::READ|PERMIT::WRITE);
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR CLIPBOARD_NewObject(objClipboard *Self)
-{
    return ERR::Okay;
 }
 
@@ -935,7 +926,7 @@ ERR create_clipboard_class(void)
       fl::Path(MOD_PATH));
 
    int pid;
-   if (!CurrentTask()->get(FID_ProcessID, pid)) glProcessID = std::to_string(pid);
+   if (!CurrentTask()->getProcess(pid)) glProcessID = std::to_string(pid);
 
    return clClipboard ? ERR::Okay : ERR::AddClass;
 }

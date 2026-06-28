@@ -479,7 +479,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       log.trace("[SAVEPOINTLEFT]");
 
       if (!scintilla->HoldModify) {
-         scintilla->set(FID_Modified, TRUE);
+         scintilla->setModified(TRUE);
       }
       else {
          // 'Hold Modifications' means that we have to tell Scintilla that the document is unmodified.

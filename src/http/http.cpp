@@ -362,7 +362,7 @@ class extHTTP : public objHTTP {
    uint16_t KeepAlive:1;
    uint16_t ProxyDefined:1;   // TRUE if the ProxyServer has been manually set by the user
 
-   extHTTP() {
+   extHTTP(objMetaClass *ClassPtr, OBJECTID ObjectID) : objHTTP(ClassPtr, ObjectID) {
       Error          = ERR::Okay;
       DataTimeout    = 5.0;
       ConnectTimeout = 10.0;
@@ -372,11 +372,12 @@ class extHTTP : public objHTTP {
       AuthAlgorithm  = "md5";
       KeepAlive      = true;
    }
+
+   ~extHTTP();
 };
 
 static ERR HTTP_Activate(extHTTP *);
 static ERR HTTP_Deactivate(extHTTP *);
-static ERR HTTP_Free(extHTTP *);
 static ERR HTTP_GetKey(extHTTP *, struct acGetKey *);
 static ERR HTTP_Init(extHTTP *);
 static ERR HTTP_SetKey(extHTTP *, struct acSetKey *);
@@ -712,7 +713,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                if (Self->flInput) {
                   Self->Index = 0;
                   if (!Self->Size) {
-                     Self->flInput->get(FID_Size, Self->ContentLength); // Use the file's size as ContentLength
+                     Self->flInput->getSize(Self->ContentLength); // Use the file's size as ContentLength
                       // If the file is empty or size is indeterminate then assume nothing is being posted
                       if (!Self->ContentLength) {
                          Self->Error = ERR::NoData;
@@ -818,8 +819,8 @@ static ERR HTTP_Activate(extHTTP *Self)
             kt::BASE64ENCODE state;
 
             cmd << "Authorization: Basic ";
-            auto len = kt::Base64Encode(&state, buffer.c_str(), buffer.size(), output.data(), buffer.length() * 2);
-            cmd.write(output.data(), len);
+            auto len = kt::Base64Encode(&state, std::span((const char *)buffer.data(), buffer.size()), output);
+            cmd.write((const char *)output.data(), len);
             cmd << CRLF;
          }
 
@@ -978,28 +979,22 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 
 //********************************************************************************************************************
 
-static ERR HTTP_Free(extHTTP *Self)
+extHTTP::~extHTTP()
 {
-   if (Self->Socket) {
-      Self->Socket->set(FID_Feedback, (APTR)nullptr);
-      FreeResource(Self->Socket);
-      Self->Socket = nullptr;
+   if (Socket) {
+      Socket->set(FID_Feedback, (APTR)nullptr);
+      FreeResource(Socket);
    }
 
-   if (Self->AuthCallback.isScript()) UnsubscribeAction(Self->AuthCallback.Context, AC::Free);
-   if (Self->Incoming.isScript())     UnsubscribeAction(Self->Incoming.Context, AC::Free);
-   if (Self->StateChanged.isScript()) UnsubscribeAction(Self->StateChanged.Context, AC::Free);
-   if (Self->Outgoing.isScript())     UnsubscribeAction(Self->Outgoing.Context, AC::Free);
+   if (AuthCallback.isScript()) UnsubscribeAction(AuthCallback.Context, AC::Free);
+   if (Incoming.isScript())     UnsubscribeAction(Incoming.Context, AC::Free);
+   if (StateChanged.isScript()) UnsubscribeAction(StateChanged.Context, AC::Free);
+   if (Outgoing.isScript())     UnsubscribeAction(Outgoing.Context, AC::Free);
 
-   if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
-
-   if (Self->flInput)     { FreeResource(Self->flInput);     Self->flInput = nullptr; }
-   if (Self->flOutput)    { FreeResource(Self->flOutput);    Self->flOutput = nullptr; }
-   if (!Self->Password.empty()) {
-      secure_clear_memory(const_cast<char*>(Self->Password.data()), Self->Password.size());
-   }
-
-   return ERR::Okay;
+   if (TimeoutManager) UpdateTimer(TimeoutManager, 0);
+   if (flInput)  FreeResource(flInput);
+   if (flOutput) FreeResource(flOutput);
+   if (!Password.empty()) secure_clear_memory(const_cast<char*>(Password.data()), Password.size());
 }
 
 /*********************************************************************************************************************

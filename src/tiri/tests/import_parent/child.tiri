@@ -1,0 +1,3 @@
+import '../import_parent_helper'
+
+global child_parent_message = parent_import_message .. " from child"
