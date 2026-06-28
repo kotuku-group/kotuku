@@ -255,34 +255,28 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       // If the object wants to be warned when the free process is about to be executed, it will subscribe to the
       // FreeWarning action.  The process can be aborted by returning ERR::InUse.
 
+      bool in_use = false;
       if (mc->ActionTable[int(AC::FreeWarning)].PerformAction) {
-         if (mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
-            if (Object->collecting()) {
-               // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
-               // from locking up the shutdown process).
+         in_use = mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse;
+      }
 
-               log.msg("Object will be destroyed despite being in use.");
-            }
-            else {
-               if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-               return ERR::InUse;
-            }
+      if (not in_use) {
+         // If prior check was for a derived class, call the base class
+         if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction)) {
+            in_use = mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse;
          }
       }
 
-      if (mc->Base) { // Derived class detected, so call the base class
-         if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
-            if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
-               if (Object->collecting()) {
-                  // If the object is marked for deletion then it is not possible to avoid destruction (this prevents
-                  // objects from locking up the shutdown process).
-                  log.msg("Object will be destroyed despite being in use.");
-               }
-               else {
-                  if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-                  return ERR::InUse;
-               }
-            }
+      if (in_use) {
+         if (Object->collecting()) {
+            // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
+            // from locking up the shutdown process).
+
+            log.msg("Object will be destroyed despite being in use.");
+         }
+         else {
+            if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
+            return ERR::InUse;
          }
       }
 
@@ -298,18 +292,12 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 
-      if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
-         mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-      }
-
-      if (mc->Base) { // Derived class detected, so call the base class
-         if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
-            mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-         }
-      }
-
       if (mc->ActionTable[int(AC::FreePlacement)].PerformAction) {
-         mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+         if (mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr) IS ERR::NothingDone) {
+            if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) {
+               mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+            }
+         }
       }
       else if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) { // Fall-back to base class
          mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);

@@ -16,15 +16,15 @@ ArchiveName for reference.  In the C++ example below, take note of the use of `u
 
 <pre>
 objCompression::create::untracked(
-   fl::Path("user:documents/myfile.zip"),
-   fl::ArchiveName("myfiles")
+   fl::Path('user:documents/myfile.zip'),
+   fl::ArchiveName('myfiles')
 );
 </pre>
 
 With the Compression object in place, opening files within the archive only requires the correct path
 reference.  The format is `archive:ArchiveName/path/to/file.ext` and the Tiri example below illustrates:
 
-`obj.new('file', { path='archive:myfiles/readme.txt', flags='!READ' })`
+`obj.new('file', { path='archive:myfiles/readme.txt', flags=FL_READ })`
 
 -END-
 
@@ -37,7 +37,7 @@ constexpr int LEN_ARCHIVE = 8; // "archive:" length
 struct prvFileArchive {
    ZipFile  Info;
    ZStream  Inflate;      // Streaming decompression state for the active archive entry
-   extFile  *FileStream;
+   objFile  *FileStream;
    extCompression *Archive;
    uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
@@ -60,7 +60,7 @@ static ERR test_path(std::string &, RSF, LOC *);
 
 //********************************************************************************************************************
 
-static void reset_state(extFile *Self)
+static void reset_state(objFile *Self)
 {
    auto prv = (prvFileArchive *)Self->DerivedPtr;
 
@@ -73,7 +73,7 @@ static void reset_state(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR seek_to_item(extFile *Self)
+static ERR seek_to_item(objFile *Self)
 {
    auto prv = (prvFileArchive *)Self->DerivedPtr;
    if (prv->InvalidState) return ERR::InvalidState;
@@ -148,7 +148,7 @@ static extCompression * find_archive(std::string_view Path, std::string &FilePat
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Activate(extFile *Self)
+static ERR ARCHIVE_Activate(objFile *Self)
 {
    Log log;
 
@@ -160,7 +160,7 @@ static ERR ARCHIVE_Activate(extFile *Self)
 
    log.msg("Allocating file stream for item %s", prv->Info.Name.c_str());
 
-   if ((prv->FileStream = extFile::create::local(
+   if ((prv->FileStream = objFile::create::local(
       fl::Name("ArchiveFileStream"),
       fl::Path(prv->Archive->Path),
       fl::Flags(FL::READ)))) {
@@ -174,21 +174,19 @@ static ERR ARCHIVE_Activate(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Free(extFile *Self)
+static ERR ARCHIVE_FreePlacement(objFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->DerivedPtr;
-
-   if (prv) {
-      if (prv->FileStream) { FreeResource(prv->FileStream); prv->FileStream = nullptr; }
-      prv->~prvFileArchive();
+   if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
+      if (FileStream) FreeResource(FileStream);
+      // Let Free call FreeResource()
    }
 
-   return ERR::Okay;
+   return ERR::NothingDone;
 }
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Init(extFile *Self)
+static ERR ARCHIVE_Init(objFile *Self)
 {
    Log log;
 
@@ -249,7 +247,7 @@ static ERR ARCHIVE_Init(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Query(extFile *Self)
+static ERR ARCHIVE_Query(objFile *Self)
 {
    auto prv = (prvFileArchive *)(Self->DerivedPtr);
 
@@ -286,7 +284,7 @@ static ERR ARCHIVE_Query(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
+static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 {
    Log log;
 
@@ -383,7 +381,7 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
+static ERR ARCHIVE_Seek(objFile *Self, struct acSeek *Args)
 {
    Log log;
    int64_t pos;
@@ -416,7 +414,7 @@ static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Write(extFile *Self, struct acWrite *Args)
+static ERR ARCHIVE_Write(objFile *Self, struct acWrite *Args)
 {
    Log log;
    return log.warning(ERR::NoSupport);
@@ -424,7 +422,7 @@ static ERR ARCHIVE_Write(extFile *Self, struct acWrite *Args)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
+static ERR ARCHIVE_GET_Size(objFile *Self, int64_t *Value)
 {
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       *Value = prv->Info.OriginalSize;
@@ -435,7 +433,7 @@ static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_GET_Timestamp(extFile *Self, int64_t *Value)
+static ERR ARCHIVE_GET_Timestamp(objFile *Self, int64_t *Value)
 {
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       if (prv->Info.Timestamp) {
@@ -668,7 +666,7 @@ static ERR test_path(std::string &Path, RSF Flags, LOC *Type)
 
 static const ActionArray clArchiveActions[] = {
    { AC::Activate, ARCHIVE_Activate },
-   { AC::Free,     ARCHIVE_Free },
+   { AC::FreePlacement, ARCHIVE_FreePlacement },
    { AC::Init,     ARCHIVE_Init },
    { AC::Query,    ARCHIVE_Query },
    { AC::Read,     ARCHIVE_Read },

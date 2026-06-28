@@ -1393,10 +1393,11 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     large     Position  # The current read/write byte position in a file.
     string    Path      # The file path.
     int(FL)   Flags     # File flags and options.
+    int(PERMIT) Permissions
     array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
+    large     Size      # The size of the file's content.
     ~struct(DateTime) Date
     ~struct(DateTime) Created
-    ~int(PERMIT) Permissions
   ]],
   nil,
   [[
