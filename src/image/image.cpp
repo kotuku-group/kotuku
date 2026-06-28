@@ -1401,6 +1401,7 @@ static ERR create_image_class(void)
       fl::Icon("filetypes/image"),
       fl::Actions(clImageActions),
       fl::Fields(clFields),
+      fl::PublicSize(0),
       fl::Size(sizeof(extImage)),
       fl::Path(MOD_PATH));
 
