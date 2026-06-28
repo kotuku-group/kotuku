@@ -471,6 +471,16 @@ end
    assert(result.success is true, "Valid function definition should succeed")
 end
 
+@Test function ValidateSymbolsOption()
+   code = "function symbolOption(Value: str):str return Value end"
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid symbols option code should succeed")
+   assert(result.symbols != nil, "symbols=true should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol with symbols=true")
+   assert(result.symbols[0].name is "symbolOption", "Expected symbolOption symbol")
+end
+
 @Test function ValidateSymbolsWithDocAnnotation()
    code = [=[
       @Doc(text=[[
@@ -490,7 +500,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid documented function should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -523,7 +533,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid compact documented function should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -561,7 +571,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid compact inferred result docs should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -591,7 +601,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid compact unknown result docs should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -617,7 +627,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Annotated function assignment should parse")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -638,7 +648,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid global function expression should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)

@@ -113,7 +113,7 @@ Function annotations are parsed in the C++ parser and can follow two different p
 - Runtime registration: `src/parser/ir_emitter/emit_function.cpp` and `src/lib/lib_debug.cpp` emit
   `debug.anno.set(func, "...", source, name)` for annotated functions so runtime code can inspect annotations.
 - Parser metadata extraction: `src/parser/parser_symbols.cpp`, `src/parser/parser_symbols.h` and
-  `src/lib/lib_debug.cpp` build the `debug.validate(Source, "symbols").symbols` table for LSP and documentation
+  `src/lib/lib_debug.cpp` build the `debug.validate(Source, { symbols = true }).symbols` table for LSP and documentation
   tooling.
 
 ### Runtime Annotation Registration
@@ -135,10 +135,10 @@ payloads in `debug.anno`.  Tooling paths that need the payload must enable `SCF:
 
 ### Parser Symbol Extraction
 
-`debug.validate(Source, "symbols")` is the public extraction path for parser-provided symbol and documentation metadata.
+`debug.validate(Source, { symbols = true })` is the public extraction path for parser-provided symbol and documentation metadata.
 In `LJLIB_CF(debug_validate)`:
 
-1. The `"symbols"` flag temporarily sets `L->script->Flags |= SCF::PROCESS_DOC`.
+1. The `symbols` option temporarily sets `L->script->Flags |= SCF::PROCESS_DOC`.
 2. `lua_load()` parses the source in diagnose mode.
 3. `collect_parser_symbols()` is called after AST construction from `parser.cpp`.
 4. `push_symbol_metadata()` converts `L->parser_symbols` into a Tiri table named `symbols`.
