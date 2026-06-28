@@ -45,6 +45,13 @@ class objLZMAStream : public objCompressedStream {
       return Action(AC::Read, this, &read);
    }
    inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {
+      struct acSeek args = { Offset, Position };
+      return Action(AC::Seek, this, &args);
+   }
+   inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
+   inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
+   inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
    inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
       struct acWrite write = { (int8_t *)Buffer, Size };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {

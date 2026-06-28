@@ -16,6 +16,7 @@ static const struct ActionArray clLZMAStreamActions[] = {
    { AC::NewPlacement, LZMASTREAM_NewPlacement },
    { AC::Read, LZMASTREAM_Read },
    { AC::Reset, LZMASTREAM_Reset },
+   { AC::Seek, LZMASTREAM_Seek },
    { AC::Write, LZMASTREAM_Write },
    { AC::NIL, nullptr }
 };

@@ -16,8 +16,8 @@
     <description>
 <p>The LZMAStream class extends <class name="CompressedStream">CompressedStream</class> with support for decoding raw LZMA1 streams.  It is provided by the separate <code>LZMA</code> module so that the Core remains free of an LZMA dependency; only builds that require LZMA pull the module in.</p>
 <p>LZMAStream is decode-only and is instantiated directly rather than being selected through a <class name="CompressedStream" field="Format">CompressedStream.Format</class> option on the base class.  To decompress a stream, set the <class name="CompressedStream" field="Input">CompressedStream.Input</class> field with a source object that supports the Read() action (such as a <class name="File">File</class>) and set the required <fl>Size</fl> field to the exact number of decompressed bytes expected.  Repeatedly reading from the LZMAStream then yields the decompressed data:</p>
-<pre>local lz = obj.new('lzmastream', { input=file, uncompressedSize=body_size })
-local err, len = lz.acRead(buffer)
+<pre>lz = obj.new('lzmastream', { input=file, size=body_size })
+err, len = lz.acRead(buffer)
 </pre>
 <p>The class decodes a raw LZMA1 stream consisting of a 5-byte properties header followed by the compressed data.  It does not parse the <code>.lzma</code>/<code>.alone</code> 13-byte header or the <code>.xz</code> container; callers are responsible for any outer framing.  Because raw LZMA1 streams may lack a reliable end marker, <fl>Size</fl> is used to bound the output: decoding completes when exactly that many bytes have been produced, and an end marker or exhausted input encountered before that point is reported as a decompression error.</p>
 <p>The inherited <class name="CompressedStream" field="Format">CompressedStream.Format</class> field has no meaning for this class and is ignored.</p></description>
@@ -50,6 +50,17 @@ local err, len = lz.acRead(buffer)
       <description>
 <p>Resetting an LZMAStream returns it to the same state as when first initialised.  This does not affect the state of the object referenced via <class name="CompressedStream" field="Input">CompressedStream.Input</class>, so the client may need to reset or re-seek that object separately.</p>
       </description>
+    </action>
+
+    <action>
+      <name>Seek</name>
+      <comment>For use in decompressing streams only.  Seeks to a position within the stream.</comment>
+      <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
+        <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
+      </input>
     </action>
 
     <action>

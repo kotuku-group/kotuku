@@ -28,6 +28,9 @@ signal an end to the streaming process.
 
 class extCompressedStream : public objCompressedStream {
    public:
+
+   // Note: As PublicSize is defined, these fields are specific to CompressedStream and will otherwise be
+   // overwritten for derived classes.
    uint8_t *OutputBuffer;
    ZStream Stream;
    gz_header Header;

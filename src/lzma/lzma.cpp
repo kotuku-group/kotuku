@@ -22,8 +22,8 @@ field to the exact number of decompressed bytes expected.  Repeatedly reading fr
 decompressed data:
 
 <pre>
-local lz = obj.new('lzmastream', { input=file, uncompressedSize=body_size })
-local err, len = lz.acRead(buffer)
+lz = obj.new('lzmastream', { input=file, size=body_size })
+err, len = lz.acRead(buffer)
 </pre>
 
 The class decodes a raw LZMA1 stream consisting of a 5-byte properties header followed by the compressed data.  It
@@ -262,7 +262,7 @@ Seek: For use in decompressing streams only.  Seeks to a position within the str
 -END-
 *********************************************************************************************************************/
 
-static ERR COMPRESSEDSTREAM_Seek(extLZMAStream *Self, struct acSeek *Args)
+static ERR LZMASTREAM_Seek(extLZMAStream *Self, struct acSeek *Args)
 {
    return kt::Log().warning(ERR::NoSupport);
 }
