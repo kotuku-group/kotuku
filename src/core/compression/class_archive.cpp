@@ -177,7 +177,8 @@ static ERR ARCHIVE_Activate(objFile *Self)
 static ERR ARCHIVE_FreePlacement(objFile *Self)
 {
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
-      if (FileStream) FreeResource(FileStream);
+      if (prv->FileStream) FreeResource(prv->FileStream);
+      prv->~prvFileArchive()
       // Let Free call FreeResource()
    }
 
