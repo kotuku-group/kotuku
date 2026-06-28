@@ -94,12 +94,13 @@ inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontS
 [[nodiscard]] constexpr FieldValue Owner(OBJECTID Value) { return FieldValue(FID_Owner, Value); }
 [[nodiscard]] constexpr FieldValue Parent(OBJECTID Value) { return FieldValue(FID_Parent, Value); }
 [[nodiscard]] constexpr FieldValue Permissions(PERMIT Value) { return FieldValue(FID_Permissions, int(Value)); }
+[[nodiscard]] constexpr FieldValue PublicSize(int64_t Value) { return FieldValue(FID_PublicSize, Value); }
 [[nodiscard]] constexpr FieldValue Image(OBJECTPTR Value) { return FieldValue(FID_Image, Value); }
 [[nodiscard]] constexpr FieldValue PopOver(OBJECTID Value) { return FieldValue(FID_PopOver, Value); }
 [[nodiscard]] constexpr FieldValue Port(int Value) { return FieldValue(FID_Port, Value); }
 [[nodiscard]] constexpr FieldValue RefreshRate(double Value) { return FieldValue(FID_RefreshRate, Value); }
 [[nodiscard]] constexpr FieldValue Routine(CPTR Value) { return FieldValue(FID_Routine, Value); }
-[[nodiscard]] constexpr FieldValue Size(int Value) { return FieldValue(FID_Size, Value); }
+[[nodiscard]] constexpr FieldValue Size(int64_t Value) { return FieldValue(FID_Size, Value); }
 [[nodiscard]] constexpr FieldValue Speed(double Value) { return FieldValue(FID_Speed, Value); }
 [[nodiscard]] constexpr FieldValue StrokeWidth(double Value) { return FieldValue(FID_StrokeWidth, Value); }
 [[nodiscard]] constexpr FieldValue Surface(OBJECTID Value) { return FieldValue(FID_Surface, Value); }
