@@ -56,7 +56,8 @@ static bool viewport_has_fixed_size(const objVectorViewport *Viewport, double Wi
 static void set_viewport_fixed_size(objVectorViewport *Viewport, double Width, double Height)
 {
    if (not viewport_has_fixed_size(Viewport, Width, Height)) {
-      Viewport->setFields(fl::Width(Width), fl::Height(Height));
+      Viewport->setWidth(Width);
+      Viewport->setHeight(Height);
    }
 }
 

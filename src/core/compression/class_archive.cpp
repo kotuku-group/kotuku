@@ -417,8 +417,7 @@ static ERR ARCHIVE_Seek(objFile *Self, struct acSeek *Args)
 
 static ERR ARCHIVE_Write(objFile *Self, struct acWrite *Args)
 {
-   Log log;
-   return log.warning(ERR::NoSupport);
+   return kt::Log().warning(ERR::NoSupport);
 }
 
 //********************************************************************************************************************

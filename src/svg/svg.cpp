@@ -681,7 +681,7 @@ static uint32_t svg_tag_hash(const XTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-static bool svg_tag_is(const XTag &Tag, uint32_t Hash) noexcept
+inline bool svg_tag_is(const XTag &Tag, uint32_t Hash) noexcept
 {
    return svg_tag_hash(Tag) IS Hash;
 }
