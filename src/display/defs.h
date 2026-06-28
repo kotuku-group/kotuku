@@ -82,7 +82,8 @@
 #include <android/configuration.h>
 #endif
 
-constexpr bool USE_XIMAGE        = true;
+#define USE_XIMAGE 1
+
 constexpr bool REPEAT_BUTTONS    = true;
 constexpr int SIZE_FOCUSLIST     = 30;
 constexpr int DEFAULT_WHEELSPEED = 500;

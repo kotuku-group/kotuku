@@ -551,7 +551,7 @@ module({
   ]],
   nil,
   [[
-   objController() : Object(nullptr, 0), Port(-1) { }
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
   ]])
 
   klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC' }, extended=true }, [[
