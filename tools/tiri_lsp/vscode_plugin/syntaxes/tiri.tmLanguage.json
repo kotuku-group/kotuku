@@ -197,7 +197,11 @@
             },
             {
                "name": "keyword.other.import.tiri",
-               "match": "\\b(require|include|using)\\b"
+               "match": "\\b(import|require|include)\\b"
+            },
+            {
+               "name": "keyword.other.alias.tiri",
+               "match": "\\b(as)\\b"
             },
             {
                "name": "support.function.builtin.tiri",

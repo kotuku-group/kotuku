@@ -69,6 +69,20 @@ end
    assert((function_name.modifiers & 4) != 0, '@FunctionName should be marked readonly.')
 end
 
+@Test function ImportKeywordAndAliasReceiveSemanticTokens()
+   source = "import '../server' as serverLib\n"
+
+   tokens = tokenizeTiri(source)
+
+   import_keyword = findToken(tokens, 0, 0, 'import')
+   alias_keyword = findToken(tokens, 0, 19, 'as')
+   import_path = findToken(tokens, 0, 7, "'../server'")
+
+   assert(import_keyword and import_keyword.type is 0, 'import should be highlighted as a keyword.')
+   assert(alias_keyword and alias_keyword.type is 0, 'import alias keyword should be highlighted as a keyword.')
+   assert(import_path and import_path.type is 4, 'Parent-relative import path should remain a string token.')
+end
+
 @Test function RangeSeparatorsReceiveContextualSemanticTokens()
    source = 'range_value = {0 to 5}\n' ..
       'range_value = {0 into 5}\n' ..

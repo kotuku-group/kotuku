@@ -416,9 +416,18 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
    int slash_count = 0;
 
    bool local = false;
+   std::string parent_prefix;
    if (Library.starts_with("./")) { // Local libraries are permitted if the name starts with "./" and otherwise adheres to path rules
       local = true;
       Library.remove_prefix(2);
+   }
+   else {
+      while (Library.starts_with("../")) {
+         local = true;
+         parent_prefix.append("../");
+         Library.remove_prefix(3);
+         slash_count++;
+      }
    }
 
    size_t i;
@@ -436,7 +445,8 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
       return "";
    }
 
-   std::string result(Library);
+   std::string result(parent_prefix);
+   result.append(Library);
 
    // Prepend the base path
 

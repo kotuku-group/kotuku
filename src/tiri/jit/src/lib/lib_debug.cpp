@@ -1002,7 +1002,7 @@ LJLIB_CF(debug_traceback)
 }
 
 //********************************************************************************************************************
-// debug.validate(statement [, flags]) - Parse code and return diagnostics without execution
+// debug.validate(statement [, options]) - Parse code and return diagnostics without execution
 //
 // Returns a table with:
 //   success     - boolean: true if no errors
@@ -1022,9 +1022,9 @@ LJLIB_CF(debug_traceback)
 //     category  - hint category (e.g., "performance", "code-quality")
 //     message   - human-readable improvement suggestion
 //
-// Optional flags parameter (string, reserved for future use):
-//   "s" - syntax only (default, just parse)
-//   "t" - include type checking (future)
+// The optional second argument may be an options table for richer control:
+//   flags - a string of comma/space separated flags (e.g. "symbols" to include parsed symbol metadata)
+//   path  - the source file path, enabling relative imports ('./lib') to resolve against its directory
 
 static CSTRING diagnostic_code_name(ParserErrorCode Code)
 {
@@ -1188,8 +1188,30 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
 LJLIB_CF(debug_validate)
 {
    CSTRING statement = luaL_checkstring(L, 1);
-   CSTRING flags = luaL_optstring(L, 2, "");
-   bool include_symbols = flags and std::string_view(flags).find("symbols") != std::string_view::npos;
+
+   // The optional second argument may be a flags string (deprecated), or an options table accepting 'flags' and 'path'
+   // values.  A 'path' enables relative import resolution against the source file's directory (used by the LSP).
+
+   std::string flags;
+   std::string source_path;
+   if (lua_istable(L, 2)) {
+      lua_getfield(L, 2, "flags");
+      if (CSTRING f = lua_tostring(L, -1)) flags.assign(f);
+      lua_pop(L, 1);
+
+      lua_getfield(L, 2, "path");
+      if (CSTRING p = lua_tostring(L, -1)) source_path.assign(p);
+      lua_pop(L, 1);
+   }
+   else if (CSTRING f = luaL_optstring(L, 2, "")) flags.assign(f);
+
+   bool include_symbols = flags.find("symbols") != std::string_view::npos;
+
+   // The chunk name carries the source path through to the parser so that relative imports ('./lib') resolve
+   // against the document's directory.  Use a literal chunk name so validation of unsaved or stale LSP buffers does
+   // not register the buffer path as a real FileSource entry.
+
+   std::string chunk_name = source_path.empty() ? std::string("=validate") : (std::string("=") + source_path);
 
    lua_newtable(L); // Create result table
 
@@ -1201,7 +1223,7 @@ LJLIB_CF(debug_validate)
    if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
-   int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), "=validate");
+   int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), chunk_name.c_str());
 
    L->script->JitOptions = old_options;  // Restore options
    L->script->Flags = old_flags;
@@ -1557,7 +1579,7 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num });
    reg_iface_prototype("debug", "getHook", { TiriType::Func, TiriType::Str, TiriType::Num }, {});
    reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Str });
+   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any });
    reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num });
 
    // Register debug.anno interface prototypes
