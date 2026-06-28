@@ -18,10 +18,13 @@ class extRSVG : public extImage {
 public:
    // NB: Private variables aren't permitted for derived image classes
 
-   // Storing the SVG object in DerivedPtr avoids overhead and the Free function will automatically terminate it.
+   // Storing the SVG object in DerivedPtr avoids overhead
    inline objSVG * svg() { return (objSVG *)DerivedPtr; }
 
-   ~extRSVG() {}
+   ~extRSVG() {
+      // Manual termination required because Free's use of FreeResource treats DerivedPtr as a generic memory block.
+      if (DerivedPtr) { FreeResource(((objSVG *)DerivedPtr)->UID); DerivedPtr = nullptr; }
+   }
 
    extRSVG(objMetaClass *pClass, OBJECTID pUID) : extImage(pClass, pUID) { }
 };

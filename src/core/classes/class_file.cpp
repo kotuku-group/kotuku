@@ -2726,15 +2726,15 @@ static const FieldArray FileFields[] = {
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
    { "Src",          FDF_SYNONYM },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
+   { "Permissions",  FDF_INTFLAGS|FDF_RW, GET_Permissions, SET_Permissions, &clFilePERMIT },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
+   { "Size",         FDF_INT64|FDF_RW, GET_Size, SET_Size },
    // Virtual fields
    { "Date",         FDF_VIRTUAL|FDF_STRUCT|FDF_RW,        GET_Date, SET_Date, "DateTime" },
    { "Created",      FDF_VIRTUAL|FDF_STRUCT|FDF_R,         GET_Created, nullptr, "DateTime" },
    { "Handle",       FDF_VIRTUAL|FDF_INT64|FDF_R|FDF_PURE, GET_Handle },
    { "Icon",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_Icon },
-   { "Permissions",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW,      GET_Permissions, SET_Permissions, &clFilePERMIT },
    { "ResolvedPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_ResolvedPath },
-   { "Size",         FDF_VIRTUAL|FDF_INT64|FDF_RW,         GET_Size, SET_Size },
    { "Timestamp",    FDF_VIRTUAL|FDF_INT64|FDF_R,          GET_Timestamp },
    { "Link",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Link, SET_Link },
    { "User",         FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_User, SET_User },
@@ -2755,6 +2755,7 @@ extern ERR add_file_class(void)
       fl::Actions(clFileActions),
       fl::Methods(clFileMethods),
       fl::Fields(FileFields),
+      fl::PublicSize(sizeof(objFile)),
       fl::Size(sizeof(extFile)),
       fl::Path("modules:core"));
 

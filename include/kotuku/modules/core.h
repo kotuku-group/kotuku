@@ -2697,7 +2697,9 @@ class objFile : public Object {
    int64_t  Position;   // The current read/write byte position in a file.
    std::string Path;    // Specifies the location of a file or folder.
    FL       Flags;      // File flags and options.
+   PERMIT   Permissions; // Manages the permissions of a file.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
+   int64_t  Size;       // The byte size of a file.
    public:
    inline std::string readLine() {
       std::string str;
@@ -2825,10 +2827,26 @@ class objFile : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getPermissions(PERMIT &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getBuffer(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
       auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
       return get_field(this, Value);
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getDate(struct DateTime * &Value) noexcept {
@@ -2841,14 +2859,6 @@ class objFile : public Object {
 
    inline ERR getCreated(struct DateTime * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPermissions(PERMIT &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -2874,14 +2884,6 @@ class objFile : public Object {
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getSize(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -2937,11 +2939,6 @@ class objFile : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setDate(const struct DateTime & Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_STRUCT, &Value);
-   }
-
    inline ERR setPermissions(const PERMIT Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
@@ -2950,6 +2947,11 @@ class objFile : public Object {
    inline ERR setSize(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT64, &Value);
+   }
+
+   inline ERR setDate(const struct DateTime & Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setLink(const std::string_view &Value) noexcept {
