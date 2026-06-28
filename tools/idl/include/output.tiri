@@ -544,7 +544,11 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
    output(f'   static constexpr CSTRING CLASS_NAME = "{Class.name}";')
    output('')
    output(f'   using create = kt::Create<obj{Class.name}>;')
-   output(f'   obj{Class.name}(objMetaClass *pClass, OBJECTID pUID) noexcept : {Class.base ?? 'Object'}(pClass, pUID) {{}}')
+
+   has_constructor = string.find((Private ?? '') .. (Custom ?? ''), f'obj{Class.name}(objMetaClass *pClass, OBJECTID pUID')
+   if not has_constructor then
+      output(f'   obj{Class.name}(objMetaClass *pClass, OBJECTID pUID) noexcept : {Class.base ?? 'Object'}(pClass, pUID) {{}}')
+   end
 
    outputVisibleFields(Class, Private, Custom)
    outputActionStubs(Class)

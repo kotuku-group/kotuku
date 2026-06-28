@@ -482,22 +482,21 @@ static ERR VECTORSCENE_Flush(extVectorScene *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTORSCENE_Free(extVectorScene *Self, APTR Args)
+extVectorScene::~extVectorScene()
 {
-   clear_defs(Self);
+   clear_defs(this);
 
-   if (Self->Viewport) Self->Viewport->Parent = nullptr;
-   if (Self->Buffer)   { delete Self->Buffer; Self->Buffer = nullptr; }
-   if (Self->InputHandle) { gfx::UnsubscribeInput(Self->InputHandle); Self->InputHandle = 0; }
+   if (Viewport) Viewport->Parent = nullptr;
+   if (Buffer)   delete Buffer;
+   if (InputHandle) gfx::UnsubscribeInput(InputHandle);
 
-   if (Self->SurfaceID) {
+   if (SurfaceID) {
       OBJECTPTR surface;
-      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
+      if (!AccessObject(SurfaceID, 5000, &surface)) {
          UnsubscribeAction(surface, AC::NIL);
          ReleaseObject(surface);
       }
    }
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************

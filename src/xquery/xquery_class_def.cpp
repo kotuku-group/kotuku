@@ -60,7 +60,6 @@ static ERR XQUERY_FreePlacement(extXQuery *Self) {
 static const struct ActionArray clXQueryActions[] = {
    { AC::Activate, XQUERY_Activate },
    { AC::Clear, XQUERY_Clear },
-   { AC::Free, XQUERY_Free },
    { AC::FreePlacement, XQUERY_FreePlacement },
    { AC::GetKey, XQUERY_GetKey },
    { AC::Init, XQUERY_Init },

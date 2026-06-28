@@ -449,21 +449,21 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
 
 //********************************************************************************************************************
 
-static ERR CLIENTSOCKET_Free(extClientSocket *Self)
+extClientSocket::~extClientSocket()
 {
    kt::Log log;
 
 #ifndef DISABLE_SSL
-   tls_disconnect(Self);
+   tls_disconnect(this);
 #endif
 
-   disconnect(Self);
+   disconnect(this);
 
-   if (Self->Client) { // If undefined, ClientSocket was never initialised
-      auto client = Self->Client;
+   if (Client) { // If undefined, ClientSocket was never initialised
+      auto client = Client;
       kt::ScopedObjectLock lock(client);
       if (lock.granted()) {
-         unlink_client_socket(client, Self);
+         unlink_client_socket(client, this);
 
          if (not client->Connections) {
             log.msg("No more connections for this IP, removing client.");
@@ -471,8 +471,6 @@ static ERR CLIENTSOCKET_Free(extClientSocket *Self)
          }
       }
    }
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************

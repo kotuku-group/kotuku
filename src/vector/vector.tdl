@@ -488,9 +488,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    double Blue
    double Alpha
   ]],
-  nil,
   [[
-   objVectorColour() : Alpha(1.0) {}
+   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
   ]])
 
   klass('VectorTransition', {
@@ -530,7 +529,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
   ]],
   [[
-   objVectorImage() {
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       X            = Unit(0);
       Y            = Unit(0);
       Units        = VUNIT::BOUNDING_BOX;
@@ -554,7 +553,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VUNIT) ContentUnits       # VUNIT constant
   ]],
   [[
-   objVectorPattern() {
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       SpreadMethod = VSPREAD::REPEAT;
       Units        = VUNIT::BOUNDING_BOX;
       ContentUnits = VUNIT::USERSPACE;
@@ -587,16 +586,17 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int   NumericID
   ]],
   [[
-   objGradient() {
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+  ]],
+  [[
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       Gamma        = 1.0;
       Easing       = GEZ::LINEAR;
       SpreadMethod = VSPREAD::PAD;
       Units        = VUNIT::BOUNDING_BOX;
       Resolution   = 1;
    }
-
-   class GradientColours *Colours;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
   ]])
 
   klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })

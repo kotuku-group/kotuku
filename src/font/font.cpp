@@ -102,6 +102,8 @@ class extFont : public objFont {
       GlyphSpacing    = 1.0;
       Style           = "Regular";
    }
+
+   ~extFont();
 };
 
 #include "font_def.c"

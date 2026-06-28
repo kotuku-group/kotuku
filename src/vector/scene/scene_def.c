@@ -49,7 +49,6 @@ static ERR VECTORSCENE_FreePlacement(extVectorScene *Self) {
 static const struct ActionArray clVectorSceneActions[] = {
    { AC::Draw, VECTORSCENE_Draw },
    { AC::Flush, VECTORSCENE_Flush },
-   { AC::Free, VECTORSCENE_Free },
    { AC::FreePlacement, VECTORSCENE_FreePlacement },
    { AC::Init, VECTORSCENE_Init },
    { AC::NewPlacement, VECTORSCENE_NewPlacement },

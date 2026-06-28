@@ -444,21 +444,20 @@ static ERR NETSOCKET_Disable(extNetSocket *Self)
 
 //********************************************************************************************************************
 
-static ERR NETSOCKET_Free(extNetSocket *Self)
+extNetSocket::~extNetSocket()
 {
-   if (Self->TimerHandle)    { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
-   if (Self->NetLookup)      { FreeResource(Self->NetLookup); Self->NetLookup = nullptr; }
+   if (TimerHandle)    UpdateTimer(TimerHandle, 0);
+   if (NetLookup)      FreeResource(NetLookup);
 
-   if (Self->Feedback.isScript()) UnsubscribeAction(Self->Feedback.Context, AC::Free);
-   if (Self->Incoming.isScript()) UnsubscribeAction(Self->Incoming.Context, AC::Free);
-   if (Self->Outgoing.isScript()) UnsubscribeAction(Self->Outgoing.Context, AC::Free);
+   if (Feedback.isScript()) UnsubscribeAction(Feedback.Context, AC::Free);
+   if (Incoming.isScript()) UnsubscribeAction(Incoming.Context, AC::Free);
+   if (Outgoing.isScript()) UnsubscribeAction(Outgoing.Context, AC::Free);
 
 #ifndef DISABLE_SSL
-   tls_disconnect(Self);
+   tls_disconnect(this);
 #endif
 
-   free_socket(Self);
-   return ERR::Okay;
+   free_socket(this);
 }
 
 //********************************************************************************************************************

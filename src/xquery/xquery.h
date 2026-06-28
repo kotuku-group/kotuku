@@ -1024,8 +1024,7 @@ public:
    extXQuery() noexcept : objXQuery(nullptr, 0) { }
    extXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : objXQuery(pClass, pUID) { }
 
-   ~extXQuery() {
-   }
+   ~extXQuery();
 };
 
 // Transparent string hash/equality functors for heterogeneous lookup on ankerl maps
