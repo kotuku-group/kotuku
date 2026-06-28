@@ -2443,6 +2443,11 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getPublicSize(int &Value) noexcept {
+      Value = this->PublicSize;
+      return ERR::Okay;
+   }
+
    inline ERR getActionTable(std::span<struct ActionEntry> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
       auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
@@ -2570,6 +2575,12 @@ class objMetaClass : public Object {
    inline ERR setCategory(const CCF Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
       this->Category = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setPublicSize(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->PublicSize = Value;
       return ERR::Okay;
    }
 
