@@ -178,7 +178,7 @@ static ERR ARCHIVE_FreePlacement(objFile *Self)
 {
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       if (prv->FileStream) FreeResource(prv->FileStream);
-      prv->~prvFileArchive()
+      prv->~prvFileArchive();
       // Let Free call FreeResource()
    }
 
