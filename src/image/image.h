@@ -1,3 +1,4 @@
+// This class is visible to derived classes as they need access to internal fields
 
 class extImage : public objImage {
    public:

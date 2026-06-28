@@ -41,10 +41,6 @@ JUMPTABLE_VECTOR
 static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modImage = nullptr;
 static double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
 
-struct prvSVG { // Private variables for RSVG
-   class objSVG *SVG;
-};
-
 struct svgInherit {
    OBJECTPTR Object;
    std::string ID;

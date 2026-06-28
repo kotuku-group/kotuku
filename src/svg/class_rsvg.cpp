@@ -12,47 +12,54 @@ handling of both standard (.svg) and compressed (.svgz) SVG files.
 
 *********************************************************************************************************************/
 
-// SVG renderer for the Image class
-
 #include "../image/image.h"
+
+class extRSVG : public extImage {
+public:
+   // NB: Private variables aren't permitted for derived image classes
+
+   // Storing the SVG object in DerivedPtr avoids overhead and the Free function will automatically terminate it.
+   inline objSVG * svg() { return (objSVG *)DerivedPtr; }
+
+   ~extRSVG() {}
+
+   extRSVG(objMetaClass *pClass, OBJECTID pUID) : extImage(pClass, pUID) { }
+};
 
 //********************************************************************************************************************
 
-static ERR RSVG_Activate(extImage *Self)
+static ERR RSVG_Activate(extRSVG *Self)
 {
-   prvSVG *prv;
-   if (not (prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
+   kt::Log log;
+   log.branch();
 
-   ERR error;
-   if ((error = acQuery(Self)) != ERR::Okay) return error;
+   if (auto error = acQuery(Self); error != ERR::Okay) return error;
 
    auto bmp = Self->Bitmap;
-   if (!bmp->initialised()) {
+   if (not bmp->initialised()) {
       if (InitObject(bmp) != ERR::Okay) return ERR::Init;
    }
 
    gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0, BAF::FILL); // Black background
-   prv->SVG->render(bmp, 0, 0, bmp->Width, bmp->Height);
+   Self->svg()->render(bmp, 0, 0, bmp->Width, bmp->Height);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR RSVG_Free(extImage *Self)
+static ERR RSVG_FreePlacement(extRSVG *Self)
 {
-   if (auto prv = (prvSVG *)Self->DerivedPtr) {
-      if (prv->SVG) { FreeResource(prv->SVG); prv->SVG = nullptr; }
-   }
+   Self->~extRSVG();
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR RSVG_Init(extImage *Self)
+static ERR RSVG_Init(extRSVG *Self)
 {
    kt::Log log;
-   std::string_view path;
 
+   std::string_view path;
    Self->getPath(path);
 
    if (path.empty() or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
@@ -73,31 +80,34 @@ static ERR RSVG_Init(extImage *Self)
 
    Self->Flags |= PCF::SCALABLE;
 
-   if (!AllocMemory(sizeof(prvSVG), MEM::DATA, &Self->DerivedPtr)) {
-      if ((Self->Flags & PCF::LAZY) != PCF::NIL) return ERR::Okay;
-      return acActivate(Self);
-   }
-   else return ERR::AllocMemory;
+   if ((Self->Flags & PCF::LAZY) != PCF::NIL) return ERR::Okay;
+   return acActivate(Self);
 }
 
 //********************************************************************************************************************
 
-static ERR RSVG_Query(extImage *Self)
+static ERR RSVG_NewPlacement(extRSVG *Self)
+{
+   new (Self) extRSVG(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR RSVG_Query(extRSVG *Self)
 {
    kt::Log log;
-   prvSVG *prv;
    objBitmap *bmp;
 
-   if (not (prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
    if (not (bmp = Self->Bitmap)) return log.warning(ERR::ObjectCorrupt);
 
    if (Self->Queried) return ERR::Okay;
    Self->Queried = TRUE;
 
-   if (not prv->SVG) {
+   if (not Self->svg()) {
       std::string_view path;
       if (!Self->getPath(path)) {
-         if ((prv->SVG = objSVG::create::local(fl::Path(path)))) {
+         if ((Self->DerivedPtr = objSVG::create::local(fl::Path(path)))) {
          }
          else return log.warning(ERR::CreateObject);
       }
@@ -106,7 +116,7 @@ static ERR RSVG_Query(extImage *Self)
 
    objVectorScene *scene;
    ERR error;
-   if ((!(error = prv->SVG->getScene(scene))) and (scene)) {
+   if ((!(error = Self->svg()->getScene(scene))) and (scene)) {
       if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) {
          bmp->Flags |= BMF::ALPHA_CHANNEL;
          bmp->BitsPerPixel  = 32;
@@ -168,26 +178,23 @@ static ERR RSVG_Query(extImage *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
+static ERR RSVG_Resize(extRSVG *Self, struct acResize *Args)
 {
-   prvSVG *prv;
-   if (not (prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
-
    if (not Args) return ERR::NullArgs;
 
-   if (prv->SVG) {
-      if (!Self->Bitmap->initialised()) {
+   if (Self->svg()) {
+      if (not Self->Bitmap->initialised()) {
          if (InitObject(Self->Bitmap) != ERR::Okay) return ERR::Init;
       }
 
       if (!Action(AC::Resize, Self->Bitmap, Args)) {
          objVectorScene *scene;
-         if ((!prv->SVG->getScene(scene)) and (scene)) {
+         if ((!Self->svg()->getScene(scene)) and (scene)) {
             scene->setPageWidth(Self->Bitmap->Width);
             scene->setPageHeight(Self->Bitmap->Height);
 
             gfx::DrawRectangle(Self->Bitmap, 0, 0, Self->Bitmap->Width, Self->Bitmap->Height, 0, BAF::FILL);
-            acDraw(prv->SVG);
+            acDraw(Self->svg());
          }
          else return ERR::GetField;
 
@@ -201,11 +208,12 @@ static ERR RSVG_Resize(extImage *Self, struct acResize *Args)
 //********************************************************************************************************************
 
 static const ActionArray clActions[] = {
-   { AC::Activate, RSVG_Activate },
-   { AC::Free,     RSVG_Free },
-   { AC::Init,     RSVG_Init },
-   { AC::Query,    RSVG_Query },
-   { AC::Resize,   RSVG_Resize },
+   { AC::Activate,      RSVG_Activate },
+   { AC::FreePlacement, RSVG_FreePlacement },
+   { AC::Init,          RSVG_Init },
+   { AC::NewPlacement,  RSVG_NewPlacement },
+   { AC::Query,         RSVG_Query },
+   { AC::Resize,        RSVG_Resize },
    { AC::NIL, nullptr }
 };
 
@@ -221,6 +229,7 @@ static ERR init_rsvg(void)
       fl::FileExtension("svg|svgz"),
       fl::FileDescription("SVG image"),
       fl::Actions(clActions),
+      fl::Size(sizeof(extRSVG)),
       fl::Path(MOD_PATH));
 
    return clRSVG ? ERR::Okay : ERR::AddClass;
