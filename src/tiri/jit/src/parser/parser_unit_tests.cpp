@@ -113,7 +113,7 @@ struct AstHarnessResult {
 
 //********************************************************************************************************************
 
-static AstHarnessResult build_ast_from_source(std::string_view source)
+static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false)
 {
    AstHarnessResult result;
    result.state = std::make_unique<LuaStateHolder>();
@@ -124,6 +124,7 @@ static AstHarnessResult build_ast_from_source(std::string_view source)
    ctx.size = source.size();
 
    LexState lex(L, unit_reader, &ctx, "parser-unit", std::nullopt);
+   lex.diagnose_mode = Diagnose;
    FuncState& fs = lex.fs_init();
 
    ParserAllocator allocator = ParserAllocator::from(L);
@@ -389,6 +390,21 @@ static bool test_expression_list_entry_point(kt::Log &log)
    }
 
    return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_empty_comment_appended_to_variable(kt::Log &log)
+{
+   auto result = build_ast_from_source("value--\n", true);
+
+   for (const ParserDiagnostic &diagnostic : result.diagnostics) {
+      if (diagnostic.message IS "Empty comment appended to variable is not a decrement operation") return true;
+   }
+
+   log.error("expected empty appended comment diagnostic");
+   log_diagnostics(result.diagnostics, log);
+   return false;
 }
 
 //********************************************************************************************************************
@@ -1563,12 +1579,13 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 19> tests = { {
+   constexpr std::array<TestCase, 20> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
+      { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },
       { "loop_ast", test_loop_ast },
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },

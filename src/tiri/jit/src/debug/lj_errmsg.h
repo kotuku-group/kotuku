@@ -143,6 +143,7 @@ ERRDEF(XLUNDEF,    "Undefined label " LUA_QS)
 ERRDEF(XLDUP,      "Duplicate label " LUA_QS)
 ERRDEF(XFSTR_EMPTY, "Empty interpolation in f-string")
 ERRDEF(XFSTR_BRACE, "Unclosed brace in f-string interpolation")
+ERRDEF(XEMPTYCOMMENT, "Empty comment appended to variable is not a decrement operation")
 ERRDEF(XNEST,       "Try blocks nested too deeply")
 ERRDEF(BADLIBRARY,  "Invalid library name; only alpha-numeric names are permitted with max 96 chars.")
 
