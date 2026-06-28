@@ -33,7 +33,7 @@ end
 -- A single Read() large enough to hold the entire output yields the complete, byte-exact plaintext.
 
 @Test(priority=10) function FullDecode()
-   local lz = obj.new('lzmastream', { input=openFixture(), uncompressedSize=glExpectedSize })
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize })
    local buf = array.new(glExpectedSize + 64, 'byte')
 
    local err, len = lz.acRead(buf)
@@ -51,7 +51,7 @@ end
 -- Reading in small chunks exercises the pending-output carry-over: the assembled result must still be byte-exact.
 
 @Test(priority=20) function ChunkedDecode()
-   local lz = obj.new('lzmastream', { input=openFixture(), uncompressedSize=glExpectedSize })
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize })
    local chunk = array.new(64, 'byte')
    local acc = ''
    local total = 0
@@ -68,28 +68,28 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- An UncompressedSize larger than the stream actually provides must be reported as a decompression error, not a
+-- A Size larger than the stream actually provides must be reported as a decompression error, not a
 -- silent short read.
 
 @Test(priority=30) function TruncationRejected()
-   local lz = obj.new('lzmastream', { input=openFixture(), uncompressedSize=glExpectedSize + 10000 })
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize + 10000 })
    local buf = array.new(glExpectedSize + 10000, 'byte')
 
    local err, len = lz.acRead(buf)
-   assert(err is ERR_Decompression, 'Expected ERR_Decompression for an over-sized UncompressedSize, got ' ..
+   assert(err is ERR_Decompression, 'Expected ERR_Decompression for an over-sized Size, got ' ..
       mSys.GetErrorMsg(err))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- An UncompressedSize smaller than the real output must be rejected instead of accepting a prefix as a complete
+-- A Size smaller than the real output must be rejected instead of accepting a prefix as a complete
 -- stream.
 
 @Test(priority=35) function UndersizedOutputRejected()
-   local lz = obj.new('lzmastream', { input=openFixture(), uncompressedSize=glExpectedSize - 1 })
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize - 1 })
    local buf = array.new(glExpectedSize, 'byte')
 
    local err, len = lz.acRead(buf)
-   assert(err is ERR_Decompression, 'Expected ERR_Decompression for an under-sized UncompressedSize, got ' ..
+   assert(err is ERR_Decompression, 'Expected ERR_Decompression for an under-sized Size, got ' ..
       mSys.GetErrorMsg(err))
 end
 
@@ -98,7 +98,7 @@ end
 
 @Test(priority=40) function InitRequiresInput()
    try
-      obj.new('lzmastream', { uncompressedSize=glExpectedSize })
+      obj.new('lzmastream', { size=glExpectedSize })
       assert(false, 'Creation should have failed without an Input field.')
    except e
       success
@@ -106,12 +106,12 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Initialisation must fail when UncompressedSize is not a positive value.
+-- Initialisation must fail when Size is not a positive value.
 
 @Test(priority=50) function InitRequiresSize()
    try
       obj.new('lzmastream', { input=openFixture() })
-      assert(false, 'Creation should have failed without a positive UncompressedSize.')
+      assert(false, 'Creation should have failed without a positive Size.')
    except e
       success
    end
@@ -121,7 +121,7 @@ end
 -- Compression (Write) is not supported and must return ERR_NoSupport.
 
 @Test(priority=60) function WriteUnsupported()
-   local lz = obj.new('lzmastream', { input=openFixture(), uncompressedSize=glExpectedSize })
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize })
    local buf = array.new(16, 'byte')
    local err = lz.acWrite(buf)
    assert(err is ERR_NoSupport, 'Write() should return ERR_NoSupport, got ' .. mSys.GetErrorMsg(err))

@@ -70,8 +70,8 @@ class objLZMAStream : public objCompressedStream {
 
    // Customised field getting
 
-   inline ERR getUncompressedSize(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+   inline ERR getSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -81,8 +81,8 @@ class objLZMAStream : public objCompressedStream {
 
    // Customised field setting
 
-   inline ERR setUncompressedSize(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+   inline ERR setSize(const int64_t Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 

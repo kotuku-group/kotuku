@@ -17,7 +17,7 @@ module in.
 
 LZMAStream is decode-only and is instantiated directly rather than being selected through a
 @CompressedStream.Format option on the base class.  To decompress a stream, set the @CompressedStream.Input field
-with a source object that supports the Read() action (such as a @File) and set the required #UncompressedSize
+with a source object that supports the Read() action (such as a @File) and set the required #Size
 field to the exact number of decompressed bytes expected.  Repeatedly reading from the LZMAStream then yields the
 decompressed data:
 
@@ -28,7 +28,7 @@ local err, len = lz.acRead(buffer)
 
 The class decodes a raw LZMA1 stream consisting of a 5-byte properties header followed by the compressed data.  It
 does not parse the `.lzma`/`.alone` 13-byte header or the `.xz` container; callers are responsible for any outer
-framing.  Because raw LZMA1 streams may lack a reliable end marker, #UncompressedSize is used to bound the output:
+framing.  Because raw LZMA1 streams may lack a reliable end marker, #Size is used to bound the output:
 decoding completes when exactly that many bytes have been produced, and an end marker or exhausted input encountered
 before that point is reported as a decompression error.
 
@@ -63,7 +63,7 @@ static constexpr int PENDING_CHUNK = 32 * 1024; // Size of the internal decode b
 class extLZMAStream : public objLZMAStream {
    public:
 
-   int64_t UncompressedSize = 0;     // Required byte count expected from the raw LZMA stream (virtual field).
+   int64_t Size = 0;     // Required byte count expected from the raw LZMA stream (virtual field).
 
    LZMADecoder Decoder;
    std::vector<uint8_t> InputBuf;    // Holds compressed input read from the Input object.
@@ -98,8 +98,8 @@ static ERR LZMASTREAM_Init(extLZMAStream *Self)
       return ERR::InvalidState;
    }
 
-   if (Self->UncompressedSize <= 0) {
-      log.warning("A positive UncompressedSize value is required for raw LZMA decoding.");
+   if (Self->Size <= 0) {
+      log.warning("A positive Size value is required for raw LZMA decoding.");
       return ERR::FieldNotSet;
    }
 
@@ -111,9 +111,9 @@ static ERR LZMASTREAM_Init(extLZMAStream *Self)
 Read: Decompress data from the input stream and write it to the supplied buffer.
 
 The Read() action decodes the raw LZMA1 stream supplied via @CompressedStream.Input, writing up to `Length`
-decompressed bytes into the caller's buffer.  Decoding is bounded by #UncompressedSize; once that many bytes have
+decompressed bytes into the caller's buffer.  Decoding is bounded by #Size; once that many bytes have
 been produced, subsequent reads return zero bytes.  Truncated input, a premature end marker or output that would
-exceed #UncompressedSize are reported as `ERR::Decompression`.
+exceed #Size are reported as `ERR::Decompression`.
 -END-
 *********************************************************************************************************************/
 
@@ -128,7 +128,7 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
    if (Args->Length <= 0) return ERR::Okay;
 
    // Nothing left to do once the full output has been both decoded and delivered.
-   if ((Self->TotalOutput >= Self->UncompressedSize) and (Self->PendingLength <= 0)) return ERR::Okay;
+   if ((Self->TotalOutput >= Self->Size) and (Self->PendingLength <= 0)) return ERR::Okay;
 
    // The first read consumes the 5-byte LZMA properties header and allocates the decoder.
 
@@ -151,7 +151,7 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
    int  copied   = 0;
    bool no_input = false;
 
-   while ((copied < Args->Length) and ((Self->PendingLength > 0) or (Self->TotalOutput < Self->UncompressedSize))) {
+   while ((copied < Args->Length) and ((Self->PendingLength > 0) or (Self->TotalOutput < Self->Size))) {
       // Deliver any previously decoded bytes that are awaiting collection.
 
       if (Self->PendingLength > 0) {
@@ -181,7 +181,7 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
 
       // Decode the next segment into the pending buffer, bounded by the bytes still owed to the caller.
 
-      int64_t remaining = Self->UncompressedSize - Self->TotalOutput;
+      int64_t remaining = Self->Size - Self->TotalOutput;
       SizeT dest_len = (remaining < PENDING_CHUNK) ? SizeT(remaining) : SizeT(PENDING_CHUNK);
       SizeT src_len  = SizeT(Self->InputLength);
       ELzmaFinishMode finish = (int64_t(dest_len) IS remaining) ? LZMA_FINISH_END : LZMA_FINISH_ANY;
@@ -201,22 +201,22 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
       Self->PendingLength = int(dest_len);
       Self->TotalOutput  += int64_t(dest_len);
 
-      // An end marker before UncompressedSize is reached indicates a truncated or corrupt stream.
+      // An end marker before Size is reached indicates a truncated or corrupt stream.
 
-      if ((status IS LZMA_STATUS_FINISHED_WITH_MARK) and (Self->TotalOutput < Self->UncompressedSize)) {
+      if ((status IS LZMA_STATUS_FINISHED_WITH_MARK) and (Self->TotalOutput < Self->Size)) {
          log.warning("LZMA stream ended after %" PF64 " of %" PF64 " expected bytes.",
-            (long long)Self->TotalOutput, (long long)Self->UncompressedSize);
+            (long long)Self->TotalOutput, (long long)Self->Size);
          return ERR::Decompression;
       }
 
       // Reaching the caller-declared output size is only valid if the SDK also considers the stream finished or
-      // plausibly finished without an end marker.  LZMA_STATUS_NOT_FINISHED here means UncompressedSize was too
+      // plausibly finished without an end marker.  LZMA_STATUS_NOT_FINISHED here means Size was too
       // small.
 
-      if ((Self->TotalOutput IS Self->UncompressedSize) and (status != LZMA_STATUS_FINISHED_WITH_MARK) and
+      if ((Self->TotalOutput IS Self->Size) and (status != LZMA_STATUS_FINISHED_WITH_MARK) and
           (status != LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK)) {
          log.warning("LZMA stream is not finished after declared output size %" PF64 ".",
-            (long long)Self->UncompressedSize);
+            (long long)Self->Size);
          return ERR::Decompression;
       }
 
@@ -225,7 +225,7 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
       if ((dest_len IS 0) and (src_len IS 0)) {
          if ((no_input) or (status IS LZMA_STATUS_NEEDS_MORE_INPUT)) {
             log.warning("Truncated LZMA stream: %" PF64 " of %" PF64 " bytes decoded.",
-               (long long)Self->TotalOutput, (long long)Self->UncompressedSize);
+               (long long)Self->TotalOutput, (long long)Self->Size);
             return ERR::Decompression;
          }
       }
@@ -233,7 +233,7 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
 
    // Reset the decoder once the full uncompressed size has been delivered.
 
-   if ((Self->TotalOutput >= Self->UncompressedSize) and (Self->PendingLength <= 0)) {
+   if ((Self->TotalOutput >= Self->Size) and (Self->PendingLength <= 0)) {
       Self->Decoder.reset();
    }
 
@@ -258,6 +258,17 @@ static ERR LZMASTREAM_Reset(extLZMAStream *Self)
 
 /*********************************************************************************************************************
 -ACTION-
+Seek: For use in decompressing streams only.  Seeks to a position within the stream.
+-END-
+*********************************************************************************************************************/
+
+static ERR COMPRESSEDSTREAM_Seek(extLZMAStream *Self, struct acSeek *Args)
+{
+   return kt::Log().warning(ERR::NoSupport);
+}
+
+/*********************************************************************************************************************
+-ACTION-
 Write: Not supported.  LZMAStream is decode-only.
 -END-
 *********************************************************************************************************************/
@@ -269,7 +280,7 @@ static ERR LZMASTREAM_Write(extLZMAStream *Self, struct acWrite *Args)
 
 /*********************************************************************************************************************
 -FIELD-
-UncompressedSize: The exact number of bytes expected from the decompressed stream.
+Size: The exact number of bytes expected from the decompressed stream.
 
 This field is required prior to initialisation.  Raw LZMA1 streams may not carry a reliable end marker, so the value
 is used to bound decoding: the stream completes when exactly this many bytes have been produced, and an end marker or
@@ -277,15 +288,15 @@ exhausted input encountered beforehand is reported as a decompression error.
 -END-
 *********************************************************************************************************************/
 
-static ERR LZMASTREAM_GET_UncompressedSize(extLZMAStream *Self, int64_t *Value)
+static ERR LZMASTREAM_GET_Size(extLZMAStream *Self, int64_t *Value)
 {
-   *Value = Self->UncompressedSize;
+   *Value = Self->Size;
    return ERR::Okay;
 }
 
-static ERR LZMASTREAM_SET_UncompressedSize(extLZMAStream *Self, int64_t Value)
+static ERR LZMASTREAM_SET_Size(extLZMAStream *Self, int64_t Value)
 {
-   Self->UncompressedSize = Value;
+   Self->Size = Value;
    return ERR::Okay;
 }
 
@@ -294,7 +305,7 @@ static ERR LZMASTREAM_SET_UncompressedSize(extLZMAStream *Self, int64_t Value)
 #include "lzma_def.cpp"
 
 static const FieldArray clFields[] = {
-   { "UncompressedSize", FDF_VIRTUAL|FDF_INT64|FDF_RI, LZMASTREAM_GET_UncompressedSize, LZMASTREAM_SET_UncompressedSize },
+   { "Size", FDF_VIRTUAL|FDF_INT64|FDF_RI, LZMASTREAM_GET_Size, LZMASTREAM_SET_Size },
    END_FIELD
 };
 

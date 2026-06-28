@@ -15,11 +15,11 @@
     <copyright>Paul Manias © 2024-2026</copyright>
     <description>
 <p>The LZMAStream class extends <class name="CompressedStream">CompressedStream</class> with support for decoding raw LZMA1 streams.  It is provided by the separate <code>LZMA</code> module so that the Core remains free of an LZMA dependency; only builds that require LZMA pull the module in.</p>
-<p>LZMAStream is decode-only and is instantiated directly rather than being selected through a <class name="CompressedStream" field="Format">CompressedStream.Format</class> option on the base class.  To decompress a stream, set the <class name="CompressedStream" field="Input">CompressedStream.Input</class> field with a source object that supports the Read() action (such as a <class name="File">File</class>) and set the required <fl>UncompressedSize</fl> field to the exact number of decompressed bytes expected. Repeatedly reading from the LZMAStream then yields the decompressed data:</p>
+<p>LZMAStream is decode-only and is instantiated directly rather than being selected through a <class name="CompressedStream" field="Format">CompressedStream.Format</class> option on the base class.  To decompress a stream, set the <class name="CompressedStream" field="Input">CompressedStream.Input</class> field with a source object that supports the Read() action (such as a <class name="File">File</class>) and set the required <fl>Size</fl> field to the exact number of decompressed bytes expected.  Repeatedly reading from the LZMAStream then yields the decompressed data:</p>
 <pre>local lz = obj.new('lzmastream', { input=file, uncompressedSize=body_size })
 local err, len = lz.acRead(buffer)
 </pre>
-<p>The class decodes a raw LZMA1 stream consisting of a 5-byte properties header followed by the compressed data.  It does not parse the <code>.lzma</code>/<code>.alone</code> 13-byte header or the <code>.xz</code> container; callers are responsible for any outer framing.  Because raw LZMA1 streams may lack a reliable end marker, <fl>UncompressedSize</fl> is used to bound the output: decoding completes when exactly that many bytes have been produced, and an end marker or exhausted input encountered before that point is reported as a decompression error.</p>
+<p>The class decodes a raw LZMA1 stream consisting of a 5-byte properties header followed by the compressed data.  It does not parse the <code>.lzma</code>/<code>.alone</code> 13-byte header or the <code>.xz</code> container; callers are responsible for any outer framing.  Because raw LZMA1 streams may lack a reliable end marker, <fl>Size</fl> is used to bound the output: decoding completes when exactly that many bytes have been produced, and an end marker or exhausted input encountered before that point is reported as a decompression error.</p>
 <p>The inherited <class name="CompressedStream" field="Format">CompressedStream.Format</class> field has no meaning for this class and is ignored.</p></description>
     <source>
       <file>lzma.cpp</file>
@@ -38,7 +38,7 @@ local err, len = lz.acRead(buffer)
         <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
       </input>
       <description>
-<p>The Read() action decodes the raw LZMA1 stream supplied via <class name="CompressedStream" field="Input">CompressedStream.Input</class>, writing up to <code>Length</code> decompressed bytes into the caller's buffer.  Decoding is bounded by <fl>UncompressedSize</fl>; once that many bytes have been produced, subsequent reads return zero bytes.  Truncated input, a premature end marker or output that would exceed <fl>UncompressedSize</fl> are reported as <code>ERR::Decompression</code>.</p>
+<p>The Read() action decodes the raw LZMA1 stream supplied via <class name="CompressedStream" field="Input">CompressedStream.Input</class>, writing up to <code>Length</code> decompressed bytes into the caller's buffer.  Decoding is bounded by <fl>Size</fl>; once that many bytes have been produced, subsequent reads return zero bytes.  Truncated input, a premature end marker or output that would exceed <fl>Size</fl> are reported as <code>ERR::Decompression</code>.</p>
       </description>
     </action>
 
@@ -68,7 +68,7 @@ local err, len = lz.acRead(buffer)
 
   <fields>
     <field>
-      <name>UncompressedSize</name>
+      <name>Size</name>
       <comment>The exact number of bytes expected from the decompressed stream.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT64</type>
