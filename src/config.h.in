@@ -22,6 +22,7 @@
 #cmakedefine INC_MOD_HTTP
 #cmakedefine INC_MOD_JPEG
 #cmakedefine INC_MOD_JSON
+#cmakedefine INC_MOD_LZMA
 #cmakedefine INC_MOD_MP3
 #cmakedefine INC_MOD_NETWORK
 #cmakedefine INC_MOD_IMAGE

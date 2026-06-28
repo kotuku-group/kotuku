@@ -1,0 +1,128 @@
+-- $TIRI
+-- Flute tests for the LZMA module's LZMAStream class.
+--
+-- The fixture sample.lzma is a raw LZMA1 stream (5-byte properties header + compressed data, the SWF ZWS body
+-- layout) that decompresses to the contents of sample.txt.  Both fixtures live alongside this test file.
+
+   include 'lzma'
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+
+   -- Load the expected plaintext so tests can assert byte-exact output.
+   local file = obj.new('file', { path=glFolder .. 'sample.txt', flags='READ' })
+   assert(file, 'Failed to open sample.txt fixture.')
+   local size = file.size
+   global glExpected = array.new(size, 'byte')
+   local err, len = file.acRead(glExpected)
+   assert((err is ERR_Okay) and (len is size), 'Failed to read sample.txt fixture.')
+   global glExpectedSize = size
+   global glExpectedText = glExpected:getString(0, size)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Helper: open the compressed fixture as a fresh File object positioned at the start of the raw LZMA stream.
+
+global function openFixture():obj
+   local file = obj.new('file', { path=glFolder .. 'sample.lzma', flags='READ' })
+   assert(file, 'Failed to open sample.lzma fixture.')
+   return file
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A single Read() large enough to hold the entire output yields the complete, byte-exact plaintext.
+
+@Test(priority=10) function FullDecode()
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize })
+   local buf = array.new(glExpectedSize + 64, 'byte')
+
+   local err, len = lz.acRead(buf)
+   assert(err is ERR_Okay, 'Read() failed: ' .. mSys.GetErrorMsg(err))
+   assert(len is glExpectedSize, 'Decoded ' .. len .. ' bytes, expected ' .. glExpectedSize)
+   assert(buf:getString(0, len) is glExpectedText, 'Decoded content does not match the expected plaintext.')
+
+   -- A subsequent read past the end yields zero bytes without error.
+   local err2, len2 = lz.acRead(buf)
+   assert(err2 is ERR_Okay, 'Trailing Read() failed: ' .. mSys.GetErrorMsg(err2))
+   assert(len2 is 0, 'Trailing Read() returned ' .. len2 .. ' bytes, expected 0.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Reading in small chunks exercises the pending-output carry-over: the assembled result must still be byte-exact.
+
+@Test(priority=20) function ChunkedDecode()
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize })
+   local chunk = array.new(64, 'byte')
+   local acc = ''
+   local total = 0
+   local len = 1
+   while len > 0 do
+      local err
+      err, len = lz.acRead(chunk)
+      assert(err is ERR_Okay, 'Chunked Read() failed: ' .. mSys.GetErrorMsg(err))
+      if len > 0 then acc = acc .. chunk:getString(0, len) total += len end
+   end
+
+   assert(total is glExpectedSize, 'Chunked decode produced ' .. total .. ' bytes, expected ' .. glExpectedSize)
+   assert(acc is glExpectedText, 'Chunked decode content does not match the expected plaintext.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A Size larger than the stream actually provides must be reported as a decompression error, not a
+-- silent short read.
+
+@Test(priority=30) function TruncationRejected()
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize + 10000 })
+   local buf = array.new(glExpectedSize + 10000, 'byte')
+
+   local err, len = lz.acRead(buf)
+   assert(err is ERR_Decompression, 'Expected ERR_Decompression for an over-sized Size, got ' ..
+      mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A Size smaller than the real output must be rejected instead of accepting a prefix as a complete
+-- stream.
+
+@Test(priority=35) function UndersizedOutputRejected()
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize - 1 })
+   local buf = array.new(glExpectedSize, 'byte')
+
+   local err, len = lz.acRead(buf)
+   assert(err is ERR_Decompression, 'Expected ERR_Decompression for an under-sized Size, got ' ..
+      mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Initialisation must fail when the required Input field is missing.
+
+@Test(priority=40) function InitRequiresInput()
+   try
+      obj.new('lzmastream', { size=glExpectedSize })
+      assert(false, 'Creation should have failed without an Input field.')
+   except e
+      success
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Initialisation must fail when Size is not a positive value.
+
+@Test(priority=50) function InitRequiresSize()
+   try
+      obj.new('lzmastream', { input=openFixture() })
+      assert(false, 'Creation should have failed without a positive Size.')
+   except e
+      success
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compression (Write) is not supported and must return ERR_NoSupport.
+
+@Test(priority=60) function WriteUnsupported()
+   local lz = obj.new('lzmastream', { input=openFixture(), size=glExpectedSize })
+   local buf = array.new(16, 'byte')
+   local err = lz.acWrite(buf)
+   assert(err is ERR_NoSupport, 'Write() should return ERR_NoSupport, got ' .. mSys.GetErrorMsg(err))
+end

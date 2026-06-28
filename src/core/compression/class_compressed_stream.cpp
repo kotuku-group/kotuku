@@ -28,6 +28,9 @@ signal an end to the streaming process.
 
 class extCompressedStream : public objCompressedStream {
    public:
+
+   // Note: As PublicSize is defined, these fields are specific to CompressedStream and will otherwise be
+   // overwritten for derived classes.
    uint8_t *OutputBuffer;
    ZStream Stream;
    gz_header Header;
@@ -376,6 +379,7 @@ extern ERR add_compressed_stream_class(void)
       fl::Category(CCF::DATA),
       fl::Actions(clCompressedStreamActions),
       fl::Fields(clStreamFields),
+      fl::PublicSize(sizeof(objCompressedStream)),
       fl::Size(sizeof(extCompressedStream)),
       fl::Path("modules:core"));
 
