@@ -376,6 +376,7 @@ extern ERR add_compressed_stream_class(void)
       fl::Category(CCF::DATA),
       fl::Actions(clCompressedStreamActions),
       fl::Fields(clStreamFields),
+      fl::PublicSize(sizeof(objCompressedStream)),
       fl::Size(sizeof(extCompressedStream)),
       fl::Path("modules:core"));
 
