@@ -185,7 +185,6 @@ static ERR JSON_Init(objXML *Self)
       debug_tree(Self);
       #endif
 
-      FreeResource(statement.data());
       return Self->ParseError;
    }
 

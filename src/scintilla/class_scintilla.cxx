@@ -2091,7 +2091,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
          if (size > 0) {
             if (size < 1024 * 1024 * 10) {
                if (!AllocMemory(size+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&str)) {
-                  if (!acRead(file, str, size, &len)) {
+                  if (!file->read(str, size, &len)) {
                      str[len] = 0;
                      SCICALL(SCI_SETTEXT, str);
                      SCICALL(SCI_EMPTYUNDOBUFFER);
