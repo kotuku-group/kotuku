@@ -111,6 +111,7 @@ LJ_FUNC TValue* lj_tab_set(lua_State* L, GCtab* t, cTValue* key);
 
 LJ_FUNC uint32_t lj_tab_keyindex(GCtab* t, cTValue* key);
 LJ_FUNCA int lj_tab_next(GCtab* t, cTValue* key, TValue* o);
+LJ_FUNCA int lj_tab_empty(GCtab* t);
 LJ_FUNCA MSize lj_tab_len(GCtab* t);
 #if LJ_HASJIT
 LJ_FUNC MSize lj_tab_len_hint(GCtab* t, size_t hint);

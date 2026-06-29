@@ -343,7 +343,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
 }
 
 //********************************************************************************************************************
-// Emit bytecode for an if-empty assignment (??=), assigning only if the target is nil, false, 0, or empty string.
+// Emit bytecode for an if-empty assignment (??=), assigning only if the target is nil, false, 0, empty string, or
+// an empty collection.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment target, const ExprNodeList& values)
 {
@@ -389,8 +390,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    ExpressionValue lhs_value(&this->func_state, working);
    auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
+   FalseyJumpOptions options;
+   options.include_empty_array = true;
    ControlFlowEdge falsey_edge = emit_falsey_jumps(
-      this->func_state, this->lex_state, this->control_flow, lhs_reg, FalseyJumpOptions{});
+      this->func_state, this->lex_state, this->control_flow, lhs_reg, options);
 
    // Safe-nav targets may already carry a skip edge from target preparation. Those jumps bypass this
    // whole conditional-assignment block. The checks below are only for the terminal lvalue once the
@@ -468,7 +471,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
    ExpressionValue lhs_value(&this->func_state, working);
    auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
-   // Only check for nil (simpler and faster than ??= which checks nil, false, 0, and empty string)
+   // Only check for nil (simpler and faster than ??= which checks nil, false, 0, empty strings, and empty
+   // collections).
    FalseyJumpOptions nil_only;
    nil_only.include_false = false;
    nil_only.include_zero = false;
