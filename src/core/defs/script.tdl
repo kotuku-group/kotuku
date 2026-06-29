@@ -1,6 +1,6 @@
 --$TIRI:Include
 
-header({ module="Core", copyright="Paul Manias © 2026", timestamp=20240611 }, function()
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
   c_include('<kotuku/main.h>')
 
   restrict(function()

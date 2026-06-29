@@ -4,6 +4,7 @@
 #include "defs.h"
 #include <kotuku/main.h>
 #include <kotuku/modules/core.h>
+#include <kotuku/modules/compression.h>
 
 #ifdef __unix__
 // In Unix/Linux builds it is assumed that the install location is static.  Dynamic loading is enabled

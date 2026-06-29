@@ -1,0 +1,92 @@
+--$TIRI:Include
+
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
+  c_include('<kotuku/main.h>')
+
+  restrict(function()
+    loadFile('./common.tdl')
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  struct("CompressionFeedback", { }, [[
+    int(FDB) FeedbackID     # Set to one of the FDB event indicators
+    int   Index             # Index of the current file
+    cstr  Path              # Name of the current file/path in the archive
+    cstr  Dest              # Destination file/path during decompression
+    large Progress          # Progress indicator (byte position for the file being de/compressed).
+    large OriginalSize      # Original size of the file
+    large CompressedSize    # Compressed size of the file
+    short Year              # Year of the original file's datestamp.
+    short Month             # Month of the original file's datestamp.
+    short Day               # Day of the original file's datestamp.
+    short Hour              # Hour of the original file's datestamp.
+    short Minute            # Minute of the original file's datestamp.
+    short Second            # Second of the original file's datestamp.
+  ]],
+  [[
+   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+
+   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
+      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+  ]])
+
+  struct("CompressedItem", { }, [[
+    large OriginalSize            # Original size of the file
+    large CompressedSize          # Compressed size of the file
+    struct(*CompressedItem) Next  # Used only if this is a linked-list.
+    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
+    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
+    int  UserID                   # Original user ID
+    int  GroupID                  # Original group ID
+    int  OthersID                 # Original others ID
+    int(FL) Flags                 # `FL` flags
+    struct(DateTime) Created      # Date and time of the file's creation.
+    struct(DateTime) Modified     # Date and time last modified.
+  ]],
+  [[
+    ankerl::unordered_dense::map<std::string, std::string> *Tags;
+  ]])
+
+  methods("Compression", "Cmp", {
+    { id=1, name="CompressBuffer" },
+    { id=2, name="CompressFile" },
+    { id=3, name="DecompressBuffer" },
+    { id=4, name="DecompressFile" },
+    { id=5, name="RemoveFile" },
+    { id=6, name="CompressStream" },
+    { id=7, name="DecompressStream" },
+    { id=8, name="CompressStreamStart" },
+    { id=9, name="CompressStreamEnd" },
+    { id=10, name="DecompressStreamEnd" },
+    { id=11, name="DecompressStreamStart" },
+    { id=12, name="DecompressObject" },
+    { id=13, name="Scan" },
+    { id=14, name="Find" }
+  })
+
+  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
+    output="../compression/class_compression_def.c", extended=true }, [[
+    string Path             # Location of the compressed data
+    string Password
+    large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
+    oid Output              # Reference to output object for user messages
+    int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
+    int(CMF) Flags          # Optional flags
+    int SegmentSize         # Splits the compressed file if it surpasses a set byte limit (e.g. 1.44MB)
+    int(PERMIT) Permissions # Default permissions to use for decompressed files
+    int MinOutputSize       # Minimum recommended output buffer size
+    int WindowBits          # Window bits, currently applicable to the default (zlib) compression
+  ]])
+
+  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp",
+    output="../compression/class_compressed_stream_def.c", extended=true }, [[
+    large TotalOutput  # Count of the total bytes that have been output.
+    obj Input          # The object that is the source of the compressed data.
+    obj Output         # The object that is the destination for the compressed data.
+    int(CF) Format     # CF_GZIP, CF_ZLIB, CF_DEFLATE
+  ]])
+end)

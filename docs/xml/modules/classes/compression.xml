@@ -13,7 +13,7 @@
     <id>2aebea46</id>
     <idstring>COMPRESSION</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression derived classes.</p>
 <p>The following examples demonstrate basic usage of compression objects in Tiri:</p>

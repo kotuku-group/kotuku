@@ -125,14 +125,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
   flags("FDL", { comment="Options for the File Delete() method." },
     "FEEDBACK: Automatically manage user feedback for deleting files by presenting dialog boxes.")
 
-  flags("CMF", { comment="Compression flags" },
-    "PASSWORD: A password has been set on the object.",
-    "NEW: Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.",
-    "CREATE_FILE: Create a new archive only if the source file does not already exist.",
-    "READ_ONLY: Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.",
-    "NO_LINKS: Treat symbolic links as normal files/folders.",
-    "APPLY_SECURITY: When decompressing, apply individual file permissions if they are available in the compression file.")
-
   flags("RSF", { comment="Flags for ResolvePath()"},
     "NO_FILE_CHECK: Do not test for the existence of the targeted file or folder during the resolution process.",
     "CHECK_VIRTUAL: If the volume referenced by Path is traced to another volume that is reserved by a virtual file system driver, `ERR::VirtualVolume` is returned. The volume is still resolved as far as possible and the resulting path will be returned by this function.",
@@ -207,23 +199,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "OPENDIR: Internal option.",
     { READ_ALL = "SIZE|DATE|PERMISSIONS|FILES|FOLDERS" })
 
-  flags("FL", { comment="File flags" },
-    "WRITE: Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.",
-    "NEW: Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.",
-    "READ: Required if the file needs to be opened for read access.",
-    "FOLDER|DIRECTORY: The file object represents a folder.",
-    "APPROXIMATE: Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.",
-    "LINK: Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.",
-    "BUFFER: Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.",
-    "LOOP: In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.",
-    "FILE: Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).",
-    "RESET_DATE: For internal use only",
-    "DEVICE: The file is a system device (must set if opening a device for read/write operations)",
-    "STREAM: File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.",
-    "EXCLUDE_FILES: Exclude files when scanning this folder.",
-    "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
-    "VIRTUAL: Path is to a virtual device.")
-
   enums("LOC", { type="int", start=1, comment="AnalysePath() values" },
     "DIRECTORY|FOLDER: The path refers to a folder.",
     "VOLUME: The path refers to a volume name.",
@@ -261,17 +236,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "READ_LINK: Register the callback used to read a symbolic link target from a virtual path.",
     "CREATE_LINK: Register the callback used to create a symbolic link on a virtual volume.",
     "DRIVER_SIZE: Set the size of the driver-specific data attached to folder scans.")
-
-  enums("FDB", { type="int", start=1, comment="Feedback event indicators." },
-    "DECOMPRESS_FILE: A file is being decompressed to a filesystem path.",
-    "COMPRESS_FILE: A file or folder is being added to a compressed stream.",
-    "REMOVE_FILE: A file is being removed from a compressed stream.",
-    "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
-
-  enums("CF", { type="int", start=1, comment="Compression stream formats" },
-    "GZIP: The 'gzip' format",
-    "ZLIB: The 'zlib' format",
-    "DEFLATE: The 'deflate' format")
 
   flags("NF", { comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word." },
     "UNTRACKED: An object created with this flag will not be tracked back to the object that created it.",
@@ -908,49 +872,6 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     ptr Data          # Pointer to the cached data.
   ]])
 
-  struct("CompressionFeedback", { }, [[
-    int(FDB) FeedbackID     # Set to one of the FDB event indicators
-    int   Index             # Index of the current file
-    cstr  Path              # Name of the current file/path in the archive
-    cstr  Dest              # Destination file/path during decompression
-    large Progress          # Progress indicator (byte position for the file being de/compressed).
-    large OriginalSize      # Original size of the file
-    large CompressedSize    # Compressed size of the file
-    short Year              # Year of the original file's datestamp.
-    short Month             # Month of the original file's datestamp.
-    short Day               # Day of the original file's datestamp.
-    short Hour              # Hour of the original file's datestamp.
-    short Minute            # Minute of the original file's datestamp.
-    short Second            # Second of the original file's datestamp.
-  ]],
-  [[
-   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-
-   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
-      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-  ]])
-
-  struct("CompressedItem", { }, [[
-    large OriginalSize            # Original size of the file
-    large CompressedSize          # Compressed size of the file
-    struct(*CompressedItem) Next  # Used only if this is a linked-list.
-    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
-    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
-    int  UserID                   # Original user ID
-    int  GroupID                  # Original group ID
-    int  OthersID                 # Original others ID
-    int(FL) Flags                 # `FL` flags
-    struct(DateTime) Created      # Date and time of the file's creation.
-    struct(DateTime) Modified     # Date and time last modified.
-  ]],
-  [[
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
-  ]])
-
   struct("FileInfo", { comment="Metadata for describing a file." }, [[
     large Size                 # The size of the file's content.
     large Timestamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
@@ -1296,6 +1217,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
 
   klass("Script")
   klass("Config")
+  klass("Compression")
+  klass("CompressedStream")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1471,45 +1394,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     int DayOfWeek     # Day of week (0 = Sunday ..)
     int MilliSecond   # Millisecond (0 - 999)
     int MicroSecond   # Microsecond  (0 - 999999)
-  ]])
-
-  methods("Compression", "Cmp", {
-    { id=1, name="CompressBuffer" },
-    { id=2, name="CompressFile" },
-    { id=3, name="DecompressBuffer" },
-    { id=4, name="DecompressFile" },
-    { id=5, name="RemoveFile" },
-    { id=6, name="CompressStream" },
-    { id=7, name="DecompressStream" },
-    { id=8, name="CompressStreamStart" },
-    { id=9, name="CompressStreamEnd" },
-    { id=10, name="DecompressStreamEnd" },
-    { id=11, name="DecompressStreamStart" },
-    { id=12, name="DecompressObject" },
-    { id=13, name="Scan" },
-    { id=14, name="Find" }
-  })
-
-  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
-    output="../compression/class_compression_def.c", extended=true }, [[
-    string Path             # Location of the compressed data
-    string Password
-    large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
-    oid Output              # Reference to output object for user messages
-    int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
-    int(CMF) Flags          # Optional flags
-    int SegmentSize         # Splits the compressed file if it surpasses a set byte limit (e.g. 1.44MB)
-    int(PERMIT) Permissions # Default permissions to use for decompressed files
-    int MinOutputSize       # Minimum recommended output buffer size
-    int WindowBits          # Window bits, currently applicable to the default (zlib) compression
-  ]])
-
-  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp",
-    output="../compression/class_compressed_stream_def.c", extended=true }, [[
-    large TotalOutput  # Count of the total bytes that have been output.
-    obj Input          # The object that is the source of the compressed data.
-    obj Output         # The object that is the destination for the compressed data.
-    int(CF) Format     # CF_GZIP, CF_ZLIB, CF_DEFLATE
   ]])
 
   c_insert([==[

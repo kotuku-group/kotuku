@@ -53,6 +53,7 @@ This code is based on the work of Jean-loup Gailly and Mark Adler.
 #define PRV_FILE
 #include "../defs.h"
 #include <kotuku/main.h>
+#include <kotuku/modules/compression.h>
 #include <sstream>
 
 #include "zstream.h"

@@ -2186,32 +2186,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="MOVE_FILE">A file is to be, or has been moved.</const>
     </constants>
 
-    <constants lookup="FDB" comment="Feedback event indicators.">
-      <const name="COMPRESS_FILE">A file or folder is being added to a compressed stream.</const>
-      <const name="DECOMPRESS_FILE">A file is being decompressed to a filesystem path.</const>
-      <const name="DECOMPRESS_OBJECT">A file is being decompressed into an object.</const>
-      <const name="REMOVE_FILE">A file is being removed from a compressed stream.</const>
-    </constants>
-
-    <constants lookup="FL" comment="File flags">
-      <const name="APPROXIMATE">Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
-      <const name="BUFFER">Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</const>
-      <const name="DEVICE">The file is a system device (must set if opening a device for read/write operations)</const>
-      <const name="DIRECTORY">The file object represents a folder.</const>
-      <const name="EXCLUDE_FILES">Exclude files when scanning this folder.</const>
-      <const name="EXCLUDE_FOLDERS">Exclude folders when scanning this folder.</const>
-      <const name="FILE">Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</const>
-      <const name="FOLDER">The file object represents a folder.</const>
-      <const name="LINK">Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</const>
-      <const name="LOOP">In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.</const>
-      <const name="NEW">Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.</const>
-      <const name="READ">Required if the file needs to be opened for read access.</const>
-      <const name="RESET_DATE">For internal use only</const>
-      <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
-      <const name="VIRTUAL">Path is to a virtual device.</const>
-      <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
-    </constants>
-
     <constants lookup="IDTYPE" comment="Types for AllocateID()">
       <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
       <const name="GLOBAL">Global ID's have no specific association with anything.</const>
@@ -2514,36 +2488,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="BluePos" type="UINT8">Left shift/positional value for blue</field>
       <field name="AlphaPos" type="UINT8">Left shift/positional value for alpha</field>
       <field name="BitsPerPixel" type="UINT8">Number of bits per pixel for this format.</field>
-    </struct>
-
-    <struct name="CompressedItem">
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Next" type="struct CompressedItem *">Used only if this is a linked-list.</field>
-      <field name="Path" type="CSTRING">Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.</field>
-      <field name="Permissions" type="PERMIT" lookup="PERMIT">Original permissions - see <code>PERMIT</code> flags.</field>
-      <field name="UserID" type="INT">Original user ID</field>
-      <field name="GroupID" type="INT">Original group ID</field>
-      <field name="OthersID" type="INT">Original others ID</field>
-      <field name="Flags" type="FL" lookup="FL"><code>FL</code> flags</field>
-      <field name="Created" type="struct DateTime">Date and time of the file's creation.</field>
-      <field name="Modified" type="struct DateTime">Date and time last modified.</field>
-    </struct>
-
-    <struct name="CompressionFeedback">
-      <field name="FeedbackID" type="FDB" lookup="FDB">Set to one of the FDB event indicators</field>
-      <field name="Index" type="INT">Index of the current file</field>
-      <field name="Path" type="CSTRING">Name of the current file/path in the archive</field>
-      <field name="Dest" type="CSTRING">Destination file/path during decompression</field>
-      <field name="Progress" type="INT64">Progress indicator (byte position for the file being de/compressed).</field>
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Year" type="INT16">Year of the original file's datestamp.</field>
-      <field name="Month" type="INT16">Month of the original file's datestamp.</field>
-      <field name="Day" type="INT16">Day of the original file's datestamp.</field>
-      <field name="Hour" type="INT16">Hour of the original file's datestamp.</field>
-      <field name="Minute" type="INT16">Minute of the original file's datestamp.</field>
-      <field name="Second" type="INT16">Second of the original file's datestamp.</field>
     </struct>
 
     <struct name="DateTime" comment="Generic structure for date-time management.">

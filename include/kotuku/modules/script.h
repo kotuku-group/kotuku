@@ -1,6 +1,6 @@
 #pragma once
 
-// Copyright: Paul Manias © 2026
+// Copyright: Paul Manias © 1996-2026
 // Generator: idl-c
 
 #include <kotuku/main.h>
