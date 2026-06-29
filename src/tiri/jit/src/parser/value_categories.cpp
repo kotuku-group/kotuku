@@ -12,6 +12,7 @@
 // - false is falsey
 // - 0 (numeric zero) is falsey
 // - "" (empty string) is falsey
+// Empty table and array values are handled by runtime checks.
 // All other values are truthy
 
 bool ExpDesc::is_falsey() const

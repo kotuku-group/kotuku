@@ -75,7 +75,7 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `ISF` | D | Skip next if R(D) is falsey |
 | `ISTYPE` | A D | Assert R(A) is type D (debug) |
 | `ISNUM` | A D | Assert R(A) is number (debug) |
-| `ISEMPTYARR` | A | R(A) is empty array → execute next JMP; else skip JMP |
+| `ISEMPTYARR` | A | R(A) is an empty array or table → execute next JMP; else skip JMP |
 
 #### Unary Ops
 | Opcode | Format | Description |
@@ -405,7 +405,7 @@ AGETV   dest, arr, i     ; Load element at variable index i
 
 ### 6.2 Ternary Operators (`cond ? true_val :> false_val`, `cond ?? true_val :> false_val`)
 - Only one branch executes. The standard `? :>` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
-- The extended `?? :>` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty array.
+- The extended `?? :>` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty collections.
 - `IrEmitter::emit_ternary_expr` places both branches so the selected branch materialises into a single result register. Each branch frees temporaries before convergence, and `freereg` is patched back to guarantee a single-slot result.
 - Example sketch:
   ```
@@ -420,16 +420,16 @@ end:
   ```
 
 ### 6.3 Presence Operator (`x?`) – Extended Falsey Check
-- Falsey set: `nil`, `false`, numeric zero, empty string, empty array. If operand is in this set, result is `false` and RHS (if any) is skipped.
+- Falsey set: `nil`, `false`, numeric zero, empty string, empty arrays, and empty tables. If operand is in this set, result is `false` and RHS (if any) is skipped.
 - Emission: chain `BC_ISEQP`/`BC_ISEQN`/`BC_ISEQS`/`BC_ISEMPTYARR` comparisons, each followed by a `JMP` to the falsey path. A matching equality branches to that path; non-matching comparisons fall through to the next check. If all checks fall through (truthy value), execution continues past the chain.
 - Jump lists patch the falsey exit after the chain; truthy fallthrough sets the result and collapses `freereg`.
-- `BC_ISEMPTYARR` is used to check if the value is a native array with length zero. Semantics: if `R(A)` is an array with `len == 0`, execute the following `JMP` (falsey); otherwise skip the `JMP` (truthy - either not an array or non-empty array).
+- `BC_ISEMPTYARR` is used to check if the value is an empty collection. Semantics: if `R(A)` is a native array with `len == 0` or a table with no entries, execute the following `JMP` (falsey); otherwise skip the `JMP` (truthy).
 
 ### 6.4 If-Empty Operator (`lhs ?? rhs`) – Short-Circuiting with Extended Falsey Semantics
-- Evaluate `lhs`; if it is nil/false/0/""/empty array, evaluate `rhs` and return it; otherwise return `lhs` without touching `rhs`.
+- Evaluate `lhs`; if it is nil/false/0/""/empty array/empty table, evaluate `rhs` and return it; otherwise return `lhs` without touching `rhs`.
 - Implemented in `IrEmitter::emit_if_empty_expr` plus helper routines in `operator_emitter.cpp`. The compare chain mirrors the presence operator: a matching falsey value branches to RHS evaluation; a truthy value falls through all checks and skips RHS entirely.
 - The result register is the original `lhs` slot; RHS evaluation reuses it and collapses `freereg` afterward to avoid leaked arguments or vararg tails.
-- Uses `BC_ISEMPTYARR` to check for empty arrays as part of the extended falsey semantics. If `R(A)` is a native array with `len == 0`, the following `JMP` is executed (falsey path); otherwise the `JMP` is skipped (truthy path).
+- Uses `BC_ISEMPTYARR` to check for empty arrays and tables as part of the extended falsey semantics. If `R(A)` is a native array with `len == 0` or a table with no entries, the following `JMP` is executed (falsey path); otherwise the `JMP` is skipped (truthy path).
 
 ## 7. Register Semantics and Multi-Value Behaviour
 ### 7.1 Register Lifetimes, `freereg`, and `nactvar`
@@ -580,7 +580,7 @@ Enables type inference for untyped functions, allowing the VM to optimize subseq
 - `ExpKind`: parser expression classification (`VNONRELOC`, `VRELOCABLE`, `VCALL`, etc.).
 
 ### Control Flow
-- Extended falsey: `nil`, `false`, numeric zero, empty string, empty array.
+- Extended falsey: `nil`, `false`, numeric zero, empty string, empty arrays, empty tables.
 - Short-circuit: using compare+`JMP` so RHS executes only when needed.
 - Cheat sheet: `ISEQ*`/`ISNE*`/`IS*` comparisons — true skips next, false executes next; `and` skips RHS on falsey, `or` skips RHS on truthy; `x?` and `lhs ?? rhs` use chained equality tests with shared jump lists; ternary writes result back into the condition register with one branch skipped.
 

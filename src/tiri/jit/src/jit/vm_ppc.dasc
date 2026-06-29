@@ -3909,26 +3909,42 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_ISEMPTYARR:
-    // Check if RA is an empty array. Used by ?? operator for extended falsey semantics.
-    // If RA is an array with len==0, execute the following JMP (value is falsey).
-    // Otherwise, skip the following JMP (value is truthy - not an array or non-empty).
+    // Check if RA is an empty array or table. Used by ?? operator for extended falsey semantics.
+    // Empty collections execute the following JMP (value is falsey); all other values skip it.
     |  // RA = src*8, followed by JMP with RD = target
     |  lwzx TMP0, BASE, RA		// Load type tag
     |   ld INS, 0(PC)                      // Load full 64-bit instruction (next JMP)
     |   addi PC, PC, 8			// Advance past following JMP (64-bit)
     |  checkarray TMP0
-    |  bne >1				// Not an array - skip JMP (truthy)
-    |.if GPR64
+    |  beq >2
+    |  checktab TMP0
+    |  bne >1				// Not a collection - skip JMP (truthy)
+    |  mr SAVE0, INS
+|.if GPR64
+    |  ldx CARG1, BASE, RA
+    |  clrldi CARG1, CARG1, 17
+|.else
+    |  add CARG1, BASE, RA
+    |  lwz CARG1, 4(CARG1)
+|.endif
+    |  bl extern lj_tab_empty
+    |  mr INS, SAVE0
+    |  cmpwi CRET1, 0
+    |  beq >1				// Non-empty table - skip JMP (truthy)
+    |  b >3				// Empty table - execute JMP (falsey)
+    |2:
+|.if GPR64
     |  ldx TMP1, BASE, RA		// Load full value for pointer
     |  clrldi TMP1, TMP1, 17		// Clear type tag bits
-    |.else
+|.else
     |  add TMP1, BASE, RA
     |  lwz TMP1, 4(TMP1)		// Load pointer (lo word)
     |.endif
     |  lwz TMP2, ARRAY:TMP1->len
     |  cmpwi TMP2, 0
     |  bne >1				// Non-empty array - skip JMP (truthy)
-    |  // Empty array - execute JMP (falsey)
+    |3:
+    |  // Empty collection - execute JMP (falsey)
     |  decode_RD8 TMP0, INS
     |  addis TMP0, TMP0, -(BCBIAS_J*8 >> 16)
     |  add PC, PC, TMP0

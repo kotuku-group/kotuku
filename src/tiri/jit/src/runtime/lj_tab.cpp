@@ -645,6 +645,18 @@ int lj_tab_next(GCtab* t, cTValue* key, TValue* o)
 }
 
 //********************************************************************************************************************
+// Return true if the table has no array or hash entries.
+
+int lj_tab_empty(GCtab* t)
+{
+   if (lj_tab_len(t) != 0) return 0;
+
+   TValue key, kv[2];
+   setnilV(&key);
+   return lj_tab_next(t, &key, kv) IS 0;
+}
+
+//********************************************************************************************************************
 // Table length calculation
 
 // 0-based: length = last_index + 1 (e.g., last element at index 2 → length 3)

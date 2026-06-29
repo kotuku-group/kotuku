@@ -56,7 +56,7 @@ end
    empty = { }
    named = { name = 'table' }
 
-   assert(describeTable(empty) is 'present', "Empty table should pass the shorthand guard")
+   assert(describeTable(empty) is 'empty', "Empty table should trigger the shorthand return")
    assert(describeTable(named) is 'table', "Non-empty table should pass the shorthand guard")
 end
 

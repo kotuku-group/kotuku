@@ -785,7 +785,7 @@ function is_local_pair_in_range(Seconds:num, Nano:num, StartSeconds:num, StartNa
 end
 
 function resolver_name(Resolver:any):str
-   Resolver ??= tempus.resolve.compatible
+   Resolver ?= tempus.resolve.compatible
    return require_resolver(Resolver).name
 end
 
@@ -2050,7 +2050,7 @@ end
 @result ZonedDateTime value
 ]])
 function tempus.mtLocalDateTime:toZonedDateTime(Zone:table, Resolver:table):table
-   Resolver ??= tempus.resolve.compatible
+   Resolver ?= tempus.resolve.compatible
    return resolve_local_date_time(self, Zone, Resolver)
 end
 
@@ -2363,7 +2363,7 @@ end
 @result ZonedDateTime value
 ]])
 function tempus.mtZonedDateTime:withZoneSameLocal(Zone:table, Resolver:table):table
-   Resolver ??= tempus.resolve.compatible
+   Resolver ?= tempus.resolve.compatible
    return self:localDateTime():toZonedDateTime(Zone, Resolver)
 end
 
@@ -2375,8 +2375,7 @@ end
 zoned_date_time_with_local = function(Self:table, KV:table):table
    tempus._requireTable('fields', KV)
    fields = require_zoned_date_time(Self)
-   resolver = KV.resolver ?? tempus.resolve.compatible
-   return Self:localDateTime():withFields(KV):toZonedDateTime(fields.zone, resolver)
+   return Self:localDateTime():withFields(KV):toZonedDateTime(fields.zone, KV.resolver ? KV.resolver :> tempus.resolve.compatible)
 end
 
 tempus.mtZonedDateTime.withLocal = zoned_date_time_with_local
@@ -2809,7 +2808,7 @@ end
 @result LocalDateTime value
 ]])
 function tempus.mtClock:localDateTime(Zone:table):table
-   Zone ??= tempus.zone.local()
+   Zone ?= tempus.zone.local()
    require_zone(Zone)
 
    instant = self:instant()
@@ -2827,7 +2826,7 @@ end
 @result ZonedDateTime value
 ]])
 function tempus.mtClock:zonedDateTime(Zone:table):table
-   Zone ??= tempus.zone.local()
+   Zone ?= tempus.zone.local()
    return new_zoned_date_time(self:instant(), Zone)
 end
 
@@ -2880,7 +2879,7 @@ tempus.zonedDateTime.from = function(KV:table):table
    tempus._requireTable('zonedDateTime', KV)
    if KV.instant != nil then return new_zoned_date_time(KV.instant, KV.zone) end
    if KV.local_date_time != nil then
-      return KV.local_date_time:toZonedDateTime(KV.zone, KV.resolver ?? tempus.resolve.compatible)
+      return KV.local_date_time:toZonedDateTime(KV.zone, KV.resolver ? KV.resolver :> tempus.resolve.compatible)
    end
    raise ERR_InvalidValue, 'zonedDateTime.from requires instant or local_date_time.'
 end
@@ -2956,7 +2955,7 @@ tempus.resolve = {
 @result Instant value
 ]])
 tempus.now = function(Clock:table):table
-   Clock ??= tempus.clock.system()
+   Clock ?= tempus.clock.system()
    require_clock(Clock)
    return Clock:instant()
 end
@@ -2968,8 +2967,8 @@ end
 @result LocalDate value
 ]])
 tempus.today = function(Zone:table, Clock:table):table
-   Zone ??= tempus.zone.local()
-   Clock ??= tempus.clock.system()
+   Zone ?= tempus.zone.local()
+   Clock ?= tempus.clock.system()
    require_zone(Zone)
    require_clock(Clock)
    return Clock:today(Zone)

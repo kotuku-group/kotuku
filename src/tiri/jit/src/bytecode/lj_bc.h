@@ -281,7 +281,7 @@ typedef enum {
    BC_ISF     = 15,
    BC_ISTYPE  = 16,
    BC_ISNUM   = 17,
-   BC_ISEMPTYARR = 18,  // Check if RA is an empty array (for ?? operator)
+   BC_ISEMPTYARR = 18,  // Check if RA is an empty array or table (for ?? operator)
 
    // Unary ops (19-22)
    BC_MOV     = 19,

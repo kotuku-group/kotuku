@@ -3170,9 +3170,9 @@ void lj_record_ins(jit_State *J)
       break;
 
    case BC_ISEMPTYARR: {
-      // Empty array check for ?? operator.
+      // Empty collection check for ?? operator.
       // If value is an array, we must guard on its length being 0 or non-zero.
-      // For non-array types, type specialisation suffices (they are always truthy for this check).
+      // Table emptiness needs full traversal, so leave that path to the interpreter.
       if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);  // Shrink used slots.
       if (tref_isarray(ra)) {
          // Load array length and compare to 0
@@ -3188,7 +3188,10 @@ void lj_record_ins(jit_State *J)
          emitir(IRTG(is_empty ? IR_EQ : IR_NE, IRT_INT), arrlen, zero);
          rec_comp_fixup(J, J->pc, !is_empty);
       }
-      // For non-arrays, no additional guard needed - type specialisation handles it
+      else if (tref_istab(ra)) {
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      // For other non-arrays, no additional guard needed - type specialisation handles it
       break;
    }
 
