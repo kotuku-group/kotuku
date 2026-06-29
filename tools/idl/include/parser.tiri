@@ -325,6 +325,10 @@ global function parseMethod(Class:table, Extract:str)
          if param then
             cType(param, f'Method:{name}')
             table.insert(method.params, param)
+
+            if param.lookup then
+               Class.references['TYPE:' .. param.lookup] = 'method:' .. name
+            end
          elseif content:trim()?? then
             error("Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'")
          end

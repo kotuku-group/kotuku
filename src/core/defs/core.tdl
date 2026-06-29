@@ -8,7 +8,7 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
   cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<span>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
 
-  privateNames({ "ScriptArg", "CoreBase" })
+  privateNames({ "CoreBase" })
 
   priority([==[
 #ifndef NDEBUG
@@ -57,10 +57,8 @@ constexpr int RESOURCE_ID_OFFSET = -1;
   loadFile(glPath .. 'common.tdl')
   loadFile(glPath .. 'common-graphics.tdl')
 
-  flags("SCF", { comment="Script flags" },
-     "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
-     "PROCESS_DOC: Process any embedded documentation in the script.",
-     "LOG_ALL: Enables execution debugging.  More information will be printed to the console in this mode.")
+  -- Load local definitions for IDL generation
+  loadFile('./common.tdl')
 
   flags("STR", { bits=32 },
      "MATCH_CASE|CASE: Perform a case-sensitive match.",
@@ -358,12 +356,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
   flags("CLF", { comment="Flags for the MetaClass." },
     "INHERIT_LOCAL: Inherit the functionality of local objects defined in the class spec.",
     "NO_OWNERSHIP: Objects created will not be tracked to the creating process, nor any parent object (~Core.SetOwner() will not work either).")
-
-  flags("CNF", { comment="Flags for the Config class." },
-    "STRIP_QUOTES: Removes quotes from key values that are quote-encapsulated.",
-    "AUTO_SAVE: When the configuration object is freed, automatically save the configuration data back to the original file source.",
-    "OPTIONAL_FILES: Files are optional (do not fail if a requested file does not exist).",
-    "NEW: On initialisation, do not load any data from the referenced configuration file.")
 
 -- Please note that when the user is using an international keyboard, the name of the key will not
 -- actually match what the symbol represents for some key types.
@@ -1059,29 +1051,6 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     string Description # File description
   ]])
 
-  c_insert([[
-struct ScriptArg { // For use with sc::Exec
-   CSTRING Name;
-   uint32_t Type;
-   union {
-      APTR    Address;
-      int     Int;
-      int64_t Int64;
-      double  Double;
-   };
-
-   ScriptArg(CSTRING pName, OBJECTPTR pValue, uint32_t pType = FD_OBJECTPTR) : Name(pName), Type(pType), Address((APTR)pValue) { }
-   ScriptArg(CSTRING pName, std::string &pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue.data()) { }
-   ScriptArg(CSTRING pName, const std::string &pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue.data()) { }
-   ScriptArg(CSTRING pName, CSTRING pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue) { }
-   ScriptArg(CSTRING pName, APTR pValue, uint32_t pType = FD_PTR) : Name(pName), Type(pType), Address(pValue) { }
-   ScriptArg(CSTRING pName, int pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
-   ScriptArg(CSTRING pName, uint32_t pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
-   ScriptArg(CSTRING pName, int64_t pValue, uint32_t pType = FD_INT64) : Name(pName), Type(pType), Int64(pValue) { }
-   ScriptArg(CSTRING pName, double pValue, uint32_t pType = FD_DOUBLE) : Name(pName), Type(pType), Double(pValue) { }
-};
-]])
-
   functionNames(nil,
     "Action",
     "ActionList",
@@ -1247,10 +1216,6 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
 }
 #endif
 
-typedef KEYVALUE ConfigKeys;
-typedef std::pair<std::string, ConfigKeys> ConfigGroup;
-typedef std::vector<ConfigGroup> ConfigGroups;
-
 namespace kt {
 
 inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
@@ -1326,6 +1291,11 @@ inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.H
 typedef std::vector<obj_write> WRITE_TABLE;
 
 ]==])
+
+  -- Forward declared classes
+
+  klass("Script")
+  klass("Config")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1408,158 +1378,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
       return str;
    }
   ]])
-
-  methods("config", "Cfg", {
-    { id=1,  name="ReadValue" },
-    { id=2,  name="Set" },
-    { id=3,  name="WriteValue" },
-    { id=4,  name="DeleteKey" },
-    { id=5,  name="DeleteGroup" },
-    { id=6,  name="GetGroupFromIndex" },
-    { id=7,  name="SortByKey" },
-    { id=9,  name="MergeFile" },
-    { id=10, name="Merge" }
-  })
-
-  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c", extended=true }, [[
-    string Path          # The location pointer
-    string KeyFilter     # Enables key filtering, removing any unwanted keys on load.
-    string GroupFilter   # Enables group filtering, removing any unwanted groups on load.
-    int(CNF) Flags       # Optional flags
-  ]],
-  nil,
-  [[
-   ConfigGroups Groups; // Is a std::vector of std::pair and std::map values
-
-   inline ERR getGroups(ConfigGroups * &Groups) {
-      APTR ptr;
-      if (auto error = getData(ptr); error IS ERR::Okay) {
-         Groups = (ConfigGroups *)ptr;
-         return error;
-      }
-      else return error;
-   }
-
-   // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
-      for (auto& [group, keys] : Groups) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = strtod(keys.cbegin()->second.c_str(), nullptr);
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtod(it->second.c_str(), nullptr);
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, int &pValue) {
-      for (auto& [group, keys] : Groups) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = strtol(keys.cbegin()->second.c_str(), nullptr, 0);
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtol(it->second.c_str(), nullptr, 0);
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, std::string &pValue) {
-      for (auto & [group, keys] : Groups) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = keys.cbegin()->second;
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = it->second;
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR write(std::string_view Group, std::string_view Key, std::string_view Value) {
-      for (auto& [group, keys] : Groups) {
-         if (!group.compare(Group)) {
-            if (auto it = keys.find(Key); it != keys.end()) {
-               it->second.assign(Value);
-            }
-            else keys.emplace(Key, Value);
-            return ERR::Okay;
-         }
-      }
-
-      auto &new_group = Groups.emplace_back();
-      new_group.first.assign(Group);
-      new_group.second.emplace(Key, Value);
-      return ERR::Okay;
-   }
-  ]])
-
-  methods("Script", "Sc", {
-    { id=1, name="Exec" },
-    { id=2, name="DerefProcedure" },
-    { id=3, name="Callback" },
-    { id=4, name="GetProcedureID" },
-    { id=5, name="DebugLog" }
-  })
-
-  klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
-    string Procedure    # Specifies a procedure name to be executed
-    string CacheFile
-    string Path         # Location of the script
-    string ErrorMessage # Human readable error string defined on failure
-    string Statement
-    string WorkingPath
-    vector(string) Results
-    oid Target          # The object that script objects must be initialised to, e.g. for obj.new()
-    int(SCF) Flags      # Optional flags
-    error Error         # If an error occurred, this field will indicate the error number
-    int CurrentLine     # Current line being executed, or failed line if script execution terminated
-    int LineOffset      # An optional offset to use when reporting line numbers
-  ]],
-  nil,
-  [[
-   int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars;                 // Global parameters
-   const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   int      ActivationCount;      // Incremented every time the script is activated.
-   int      TotalArgs;            // Total number of ProcArgs
-   OBJECTID ScriptOwnerID;
-
-#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
-   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
-#endif
-  ]])
-
-  c_insert([==[
-namespace sc {
-inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
-}
-
-inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
-}
-
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
-   return Call(Function, std::span<const ScriptArg>(Args));
-}
-
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args, ERR &Result) noexcept {
-   return Call(Function, std::span<const ScriptArg>(Args), Result);
-}
-
-inline ERR Call(const FUNCTION &Function) noexcept {
-   return Call(Function, std::span<const ScriptArg>());
-}
-
-inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
-   return Call(Function, std::span<const ScriptArg>(), Result);
-}
-} // namespace
-  ]==])
 
   struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.

@@ -1,0 +1,11 @@
+
+  flags("CNF", { comment="Flags for the Config class." },
+    "STRIP_QUOTES: Removes quotes from key values that are quote-encapsulated.",
+    "AUTO_SAVE: When the configuration object is freed, automatically save the configuration data back to the original file source.",
+    "OPTIONAL_FILES: Files are optional (do not fail if a requested file does not exist).",
+    "NEW: On initialisation, do not load any data from the referenced configuration file.")
+
+  flags("SCF", { comment="Script flags" },
+     "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
+     "PROCESS_DOC: Process any embedded documentation in the script.",
+     "LOG_ALL: Enables execution debugging.  More information will be printed to the console in this mode.")

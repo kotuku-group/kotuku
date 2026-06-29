@@ -11,6 +11,8 @@ module({
   timestamp=20240611
 },
 function()
+  c_include('<kotuku/modules/script.h>')
+
   restrict(function()
     loadFile(glPath .. 'common.tdl')
   end)

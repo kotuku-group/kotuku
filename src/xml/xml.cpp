@@ -47,6 +47,7 @@ document access.  XQuery support excludes the following:
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/xquery.h>
 #include <kotuku/strings.hpp>
+#include <kotuku/modules/script.h>
 #include <array>
 #include <format>
 #include <functional>

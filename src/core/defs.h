@@ -187,6 +187,8 @@ struct rkWatchPath {
 #include <kotuku/strings.hpp>
 #include <kotuku/system/internals.h>
 #include "prototypes.h"
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/script.h>
 
 using namespace kt;
 

@@ -11,6 +11,7 @@
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
+#include <kotuku/modules/config.h>
 
 #if defined(_WIN32)
    #define INADDR_NONE 0xffffffff

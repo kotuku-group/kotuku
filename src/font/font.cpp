@@ -39,6 +39,7 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/config.h>
 
 #include <sstream>
 #include <kotuku/strings.hpp>

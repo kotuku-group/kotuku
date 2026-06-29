@@ -25,6 +25,7 @@ Terminating the script will not remove objects that are outside its resource hie
 #include "../defs.h"
 #include <kotuku/main.h>
 #include <kotuku/vector.hpp>
+#include <kotuku/modules/script.h>
 
 inline std::string_view check_bom(std::string_view Value)
 {

@@ -12,6 +12,7 @@
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/vector.h>
+#include <kotuku/modules/script.h>
 
 class objDocument;
 
