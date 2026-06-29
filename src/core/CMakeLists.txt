@@ -47,7 +47,6 @@ if (KOTUKU_DEFS_AVAILABLE)
       "${DOCS}/modules/classes/file.xml"
       "${DOCS}/modules/classes/metaclass.xml"
       "${DOCS}/modules/classes/module.xml"
-      "${DOCS}/modules/classes/script.xml"
       "${DOCS}/modules/classes/storagedevice.xml"
       "${DOCS}/modules/classes/task.xml"
       "${DOCS}/modules/classes/thread.xml"
