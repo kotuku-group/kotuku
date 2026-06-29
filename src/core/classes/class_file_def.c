@@ -138,6 +138,7 @@ static ERR FILE_FreePlacement(extFile *Self) {
 static const struct ActionArray clFileActions[] = {
    { AC::Activate, FILE_Activate },
    { AC::DataFeed, FILE_DataFeed },
+   { AC::Flush, FILE_Flush },
    { AC::FreePlacement, FILE_FreePlacement },
    { AC::Init, FILE_Init },
    { AC::NewPlacement, FILE_NewPlacement },

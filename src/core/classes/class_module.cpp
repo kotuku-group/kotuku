@@ -18,7 +18,7 @@ illustrates in C++:
 <pre>
 DisplayBase *DisplayBase;
 auto modDisplay = objModule::create::global(fl::Name("display"));
-if (modDisplay) modDisplay->get(FID_ModBase, DisplayBase);
+if (modDisplay) modDisplay->getModBase(DisplayBase);
 </pre>
 
 To do the same in Tiri:

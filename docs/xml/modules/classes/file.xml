@@ -45,6 +45,13 @@
     </action>
 
     <action>
+      <name>Flush</name>
+      <comment>Flushes all pending write operations.</comment>
+      <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+    </action>
+
+    <action>
       <name>Init</name>
       <comment>Initialises a file.</comment>
       <prototype>ERR InitObject(*Object)</prototype>

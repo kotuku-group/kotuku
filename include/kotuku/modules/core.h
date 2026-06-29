@@ -2715,6 +2715,7 @@ class objFile : public Object {
       struct acDataFeed args = { Object, Datatype, Buffer, Size };
       return Action(AC::DataFeed, this, &args);
    }
+   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
    template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
@@ -3003,7 +3004,7 @@ class objConfig : public Object {
    std::string GroupFilter;  // Set this field to enable group filtering.
    CNF Flags;                // Optional flags may be set here.
    public:
-   ConfigGroups Groups;
+   ConfigGroups Groups; // Is a std::vector of std::pair and std::map values
 
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
 
@@ -3839,7 +3840,7 @@ class objModule : public Object {
             return ERR::Okay;
          #else
             APTR functionbase;
-            if (!module->get(FID_ModBase, functionbase)) {
+            if (!module->getModBase(functionbase)) {
                if (Module) *Module = module;
                if (Functions) ((APTR *)Functions)[0] = functionbase;
                return ERR::Okay;

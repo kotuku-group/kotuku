@@ -304,8 +304,8 @@ READ_TABLE * get_read_table(objMetaClass *Class)
       jmp.push_back(obj_read(hash, glJumpActions[code]));
    }
 
-   std::span<const MethodEntry> methods_span;
-   if (!Class->get(FID_Methods, methods_span)) {
+   std::span<MethodEntry> methods_span;
+   if (!Class->getMethods(methods_span)) {
       for (auto &method : methods_span | std::views::drop(1)) {
          if (method.MethodID != AC::NIL) {
             auto hash = simple_hash(method.Name, simple_hash("mt"));
@@ -314,8 +314,8 @@ READ_TABLE * get_read_table(objMetaClass *Class)
       }
    }
 
-   std::span<const Field> dict_span;
-   if (!Class->get(FID_Dictionary, dict_span)) {
+   std::span<Field> dict_span;
+   if (!Class->getDictionary(dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & FDF_R; })) {
          auto hash = field.FieldID;
          auto field_ptr = (APTR)&field;
@@ -372,8 +372,8 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
    kt::ScopedObjectLock lock(Class);
 
    WRITE_TABLE &jmp = Class->WriteTable;
-   std::span<const Field> dict_span;
-   if (!Class->get(FID_Dictionary, dict_span)) {
+   std::span<Field> dict_span;
+   if (!Class->getDictionary(dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & (FD_W|FD_I); })) {
          char ch[2] = { field.Name[0], 0 };
          if ((ch[0] >= 'A') and (ch[0] <= 'Z')) ch[0] = ch[0] - 'A' + 'a';
@@ -502,7 +502,7 @@ extern int object_newindex(lua_State *Lua)
    if (auto mc = FindClass(ClassID)) {
       std::span<MethodEntry> table;
       ACTIONID action_id;
-      if (!mc->get(FID_Methods, table)) {
+      if (!mc->getMethods(table)) {
          for (unsigned i=1; i < table.size(); i++) {
             if ((table[i].Name) and (iequals(action, table[i].Name))) {
                action_id = table[i].MethodID;

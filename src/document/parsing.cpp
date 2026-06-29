@@ -1472,9 +1472,9 @@ void parser::tag_call(const tag_view &Tag)
 
    // Check for a result and print it
 
-   kt::vector<std::string> *results;
-   if ((!script->get(FID_Results, results)) and (results->size() > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
          fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);

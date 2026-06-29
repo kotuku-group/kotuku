@@ -1429,7 +1429,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   ]],
   nil,
   [[
-   ConfigGroups Groups;
+   ConfigGroups Groups; // Is a std::vector of std::pair and std::map values
 
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
 
@@ -1613,7 +1613,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
             return ERR::Okay;
          #else
             APTR functionbase;
-            if (!module->get(FID_ModBase, functionbase)) {
+            if (!module->getModBase(functionbase)) {
                if (Module) *Module = module;
                if (Functions) ((APTR *)Functions)[0] = functionbase;
                return ERR::Okay;
