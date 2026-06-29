@@ -83,7 +83,7 @@ void bc_combobox::callback(struct doc_menu &Menu, struct dropdown_item &Item)
       }
       else value = Item.content.c_str();
 
-      combo->input->setFields(fl::String(value));
+      combo->input->setString(value);
       if (!combo->name.empty()) Self->Vars[combo->name] = value;
       combo->viewport->draw();
 

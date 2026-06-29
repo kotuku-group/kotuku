@@ -94,7 +94,10 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
          else Widget.viewport.set(vp);
       }
 
-      Widget.viewport->setFields(fl::X(int(X)), fl::Y(int(Y)), fl::Width(width), fl::Height(Widget.final_height));
+      Widget.viewport->setX(X);
+      Widget.viewport->setY(Y);
+      Widget.viewport->setWidth(width);
+      Widget.viewport->setHeight(Widget.final_height);
    }
    else {
       // Using a rectangle with a pattern reference will keep the pattern bitmap cached.
@@ -109,7 +112,10 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
          else Widget.rect = rect;
       }
 
-      Widget.rect->setFields(fl::X(int(X)), fl::Y(int(Y)), fl::Width(width), fl::Height(Widget.final_height));
+      Widget.rect->setX(X);
+      Widget.rect->setY(Y);
+      Widget.rect->setWidth(width);
+      Widget.rect->setHeight(Widget.final_height);
    }
 
    if (!Widget.floating_x()) XAdvance += Widget.final_pad.left + Widget.final_pad.right + width;
@@ -140,7 +146,7 @@ void layout::render_segments(OBJECTID Target, std::vector<doc_segment> &Segments
          fl::Y(Segments[si].area.Y),
          fl::Width(Segments[si].area.Width),
          fl::Height(Segments[si].area.Height),
-         fl::Stroke("rgb(200 255 0)") 
+         fl::Stroke("rgb(200 255 0)")
       });
       Self->UIObjects.push_back(rect->UID);
    }
@@ -181,7 +187,7 @@ ERR layout::gen_scene_init(objVectorViewport *Viewport)
             fl::X(m_clips[i].left), fl::Y(m_clips[i].top),
             fl::Width(m_clips[i].right - m_clips[i].left),
             fl::Height(m_clips[i].bottom - m_clips[i].top),
-            fl::Stroke("rgb(255 200 200)") 
+            fl::Stroke("rgb(255 200 200)")
          });
          Self->UIObjects.push_back(rect->UID);
       }
@@ -386,7 +392,10 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                stack_vp.push(Viewport);
                if (!(Viewport = *table->viewport)) return;
 
-               Viewport->setFields(fl::X(table->x), fl::Y(table->y), fl::Width(table->width), fl::Height(table->height));
+               Viewport->setX(table->x);
+               Viewport->setY(table->y);
+               Viewport->setWidth(table->width);
+               Viewport->setHeight(table->height);
 
                // To build sophisticated table grids, we allocate a single VectorPath that
                // the table, rows and cells contribute to.  This ensures efficiency and consistency
@@ -418,10 +427,10 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                stack_row.push(&segment.stream->lookup<bc_row>(cursor));
                auto row = stack_row.top();
                if (!row->rect_fill.empty()) {
-                  row->rect_fill->setFields(fl::X(0),
-                     fl::Y(row->y - stack_table.top()->y),
-                     fl::Width(stack_table.top()->width),
-                     fl::Height(row->row_height));
+                  row->rect_fill->setX(0);
+                  row->rect_fill->setY(row->y - stack_table.top()->y);
+                  row->rect_fill->setWidth(stack_table.top()->width);
+                  row->rect_fill->setHeight(row->row_height);
                }
                break;
             }
@@ -440,12 +449,14 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                auto table = stack_table.top();
 
                if ((cell.width >= 1) and (cell.height >= 1)) {
-                  cell.viewport->setFields(fl::X(cell.x), fl::Y(cell.y),
-                     fl::Width(cell.width), fl::Height(cell.height));
+                  cell.viewport->setX(cell.x);
+                  cell.viewport->setY(cell.y);
+                  cell.viewport->setWidth(cell.width);
+                  cell.viewport->setHeight(cell.height);
 
                   if (!cell.rect_fill.empty()) {
-                     if (!cell.fill.empty()) cell.rect_fill->setFields(fl::Fill(cell.fill));
-                     else cell.rect_fill->setFields(fl::Fill(nullptr));
+                     if (!cell.fill.empty()) cell.rect_fill->setFill(cell.fill);
+                     else cell.rect_fill->setFill(nullptr);
                   }
 
                   if (!cell.stroke.empty()) {
