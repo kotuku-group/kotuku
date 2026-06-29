@@ -889,6 +889,7 @@ inline extVectorFilter::~extVectorFilter()
 
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
+// Routed through extVector rather than objVectorViewport so that we have visibility of extVector fields.
 
 class extVectorViewport : public extVector {
    public:

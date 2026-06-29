@@ -81,7 +81,7 @@ extern "C" void program(void)
    // Process arguments
 
    STRING *Args;
-   if ((!glTask->get(FID_ArgsList, &Args)) and (Args)) {
+   if ((!glTask->getArgsList(&Args)) and (Args)) {
       for (i=0; Args[i]; i++) {
          if (iequals(Args[i], "--help")) {
             // Print help for the user
@@ -95,7 +95,7 @@ extern "C" void program(void)
             printf("Instance: %d\n", GetResource(RES::INSTANCE));
          }
          else if (iequals(Args[i], "--instance")) {
-            glTask->get(FID_Instance, &j);
+            glTask->getInstance(&j);
             printf("Instance: %d\n", j);
          }
          else if (iequals(Args[i], "--winhandle")) { // Target a desktop window in the host environment
@@ -157,8 +157,8 @@ extern "C" void program(void)
       goto exit;
    }
 
-   STRING path;
-   if (!glTask->get(FID_Path, &path)) log.msg("Path: %s", path);
+   std::string_view path;
+   if (!glTask->getPath(path)) log.msg("Path: %.*s", int(path.size()), path.data());
    else log.error("No working path.");
 
    if (winhandle) {

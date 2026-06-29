@@ -543,7 +543,7 @@ public:
       if (!Config) return ERR::NullArgs;
 
       ConfigGroups *groups;
-      if (!Config->get(FID_Data, groups)) {
+      if (!Config->getGroups(groups)) {
          std::vector<std::string> host_groups;
          for (const auto &[group, keys] : groups[0]) {
             if (keys.contains("Host")) host_groups.push_back(group);

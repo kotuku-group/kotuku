@@ -2113,8 +2113,8 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
                if (list[j].BitmapID != bitmapid) {
                   bitmapid = list[j].BitmapID;
 
-                  extBitmap *picbmp;
-                  img->get(FID_Bitmap, picbmp);
+                  objBitmap *picbmp;
+                  img->getBitmap(picbmp);
                   if (auto error = gfx::CopySurface(list[j].SurfaceID, picbmp, BDF::NIL, 0, 0, list[j].Width,
                         list[j].Height, list[j].Left - list[i].Left, list[j].Top - list[i].Top);
                         error != ERR::Okay) {

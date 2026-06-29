@@ -95,7 +95,7 @@ ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_vie
 
          if ((error = parc->activate())) {
             STRING msg;
-            if (!parc->get(FID_Message, &msg)) {
+            if (!parc->getMessage(&msg)) {
                printf("Failed to execute the archive, error: %s\n", GetErrorMsg(error));
             }
             else printf("Failed to execute the archive, error: %s\n", GetErrorMsg(error));

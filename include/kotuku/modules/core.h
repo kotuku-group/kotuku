@@ -3006,6 +3006,15 @@ class objConfig : public Object {
    public:
    ConfigGroups Groups; // Is a std::vector of std::pair and std::map values
 
+   inline ERR getGroups(ConfigGroups * &Groups) {
+      APTR ptr;
+      if (auto error = getData(ptr); error IS ERR::Okay) {
+         Groups = (ConfigGroups *)ptr;
+         return error;
+      }
+      else return error;
+   }
+
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
@@ -3336,11 +3345,6 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getTotalArgs(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
 
@@ -3365,7 +3369,7 @@ class objScript : public Object {
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[11];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 

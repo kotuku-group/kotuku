@@ -1726,37 +1726,50 @@ ERR InitObject(OBJECTPTR Object)
 
    Object->Class = cl;  // Put back the original to retain integrity
 
-   // If the base class and its loaded derived classes failed, check the object for a Path field and check the data
-   // against derived classes that are not currently in memory.
+   // If the current error code is NoSupport and the object has a Path, check the file against derived classes that
+   // are not currently in memory.
    //
    // This is the only way we can support the automatic loading of derived classes without causing undue load on CPU and
    // memory resources (loading each derived class into memory just to check whether or not the data is supported is overkill).
 
-   std::string_view path;
+   OBJECTPTR target;
    if (use_derived) { // If ERR::UseDerived was set and the derived class was not registered, do not call IdentifyFile()
       log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
-   else if ((error IS ERR::NoSupport) and (!Object->get(FID_Path, path)) and (not path.empty())) {
-      CLASSID class_id, derived_id;
-      if (!IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id)) {
-         if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
-            log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
-            if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
-               if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
-                  if (!(error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr))) {
-                     log.msg("Object class switched to derived class \"%s\".", Object->className());
-                     Object->setFlag(NF::INITIALISED);
-                     Object->ExtClass->OpenCount++;
-                     return ERR::Okay;
+   else if (error IS ERR::NoSupport) {
+      if (auto field = FindField(Object, FID_Path, &target)) {
+         if ((field->readable()) and (field->Flags & FD_STRING) and (target IS Object)) {
+            std::string_view path;
+            if (field->GetValue) { // Virtual std::string_view
+               auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+               get_field(Object, path);
+            }
+            else path = *((std::string *)(((int8_t *)target) + field->Offset)); // Direct std::string
+
+            if (not path.empty()) {
+               CLASSID class_id, derived_id;
+               if (!IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id)) {
+                  if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
+                     log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
+                     if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
+                        if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
+                           if (!(error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr))) {
+                              log.msg("Object class switched to derived class \"%s\".", Object->className());
+                              Object->setFlag(NF::INITIALISED);
+                              Object->ExtClass->OpenCount++;
+                              return ERR::Okay;
+                           }
+                        }
+                        else return ERR::Okay;
+                     }
+                     else log.warning("Failed to load module for class #%d.", uint32_t(derived_id));
                   }
                }
-               else return ERR::Okay;
+               else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
+                  int(path.size()), path.data(), Object->className(), uint32_t(class_id));
             }
-            else log.warning("Failed to load module for class #%d.", uint32_t(derived_id));
          }
       }
-      else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
-         int(path.size()), path.data(), Object->className(), uint32_t(class_id));
 
       Object->Class = cl;  // Put back the original to retain object integrity
    }
