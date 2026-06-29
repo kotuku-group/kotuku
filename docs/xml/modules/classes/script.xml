@@ -306,16 +306,6 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     </field>
 
     <field>
-      <name>TotalArgs</name>
-      <comment>Reflects the total number of parameters used in a script object.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>The total number of parameters that have been set in a script object through the unlisted field mechanism are reflected in the value of this field.</p>
-      </description>
-    </field>
-
-    <field>
       <name>WorkingPath</name>
       <comment>Defines the script's working path (folder).</comment>
       <access read="G" write="W">Get/Write</access>

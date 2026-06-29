@@ -3345,11 +3345,6 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getTotalArgs(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
 
@@ -3374,7 +3369,7 @@ class objScript : public Object {
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[11];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
