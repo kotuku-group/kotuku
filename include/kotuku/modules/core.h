@@ -3006,6 +3006,15 @@ class objConfig : public Object {
    public:
    ConfigGroups Groups; // Is a std::vector of std::pair and std::map values
 
+   inline ERR getGroups(ConfigGroups * &Groups) {
+      APTR ptr;
+      if (auto error = getData(ptr); error IS ERR::Okay) {
+         Groups = (ConfigGroups *)ptr;
+         return error;
+      }
+      else return error;
+   }
+
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {

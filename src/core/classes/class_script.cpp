@@ -580,32 +580,6 @@ This field can refer to the target object that new objects at the root of the sc
 field is not set, the root-level objects in the script will be initialised to the script's owner.
 
 -FIELD-
-TotalArgs: Reflects the total number of parameters used in a script object.
-
-The total number of parameters that have been set in a script object through the unlisted field mechanism are reflected
-in the value of this field.
--END-
-*********************************************************************************************************************/
-
-static ERR GET_TotalArgs(objScript *Self, int &Value)
-{
-   Value = Self->Vars.size();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-PRIVATE: Variables
-*********************************************************************************************************************/
-
-static ERR GET_Variables(objScript *Self, KEYVALUE **Value)
-{
-   *Value = &Self->Vars;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
 WorkingPath: Defines the script's working path (folder).
 
 The working path for a script is defined here.  By default this is defined as the location from which the script was
@@ -686,9 +660,6 @@ static const FieldArray clScriptFields[] = {
    { "Error",        FDF_INT|FDF_R },
    { "CurrentLine",  FDF_INT|FDF_R },
    { "LineOffset",   FDF_INT|FDF_RW },
-   // Virtual Fields
-   { "TotalArgs",    FDF_INT|FDF_R|FDF_PURE,                GET_TotalArgs },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R|FDF_PURE, GET_Variables },
    END_FIELD
 };
 

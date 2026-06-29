@@ -242,10 +242,9 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 
 static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 {
-   OBJECTPTR root;
-   if (auto error = module->get(FID_Root, root); !error) {
+   if (auto root = (OBJECTPTR)module->Root) {
       struct ModHeader *header;
-      if ((error = root->get(FID_Header, header)) != ERR::Okay) return error;
+      if (auto error = root->get(FID_Header, header); error != ERR::Okay) return error;
       if (not header) return ERR::NoData;
 
       if (auto idl = header->Definitions) {
@@ -257,7 +256,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
       }
       return ERR::Okay;
    }
-   else return error;
+   else return ERR::FieldNotSet;
 }
 
 //********************************************************************************************************************

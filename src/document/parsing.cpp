@@ -2696,11 +2696,8 @@ void parser::tag_script(const tag_view &Tag)
 
    // Pass document arguments to the script
 
-   KEYVALUE *vs;
-   if ((!script->get(FID_Variables, vs)) and (vs) and (vs->size() > 0)) {
-      Self->Vars   = *vs;
-      Self->Params = *vs;
-   }
+   script->Vars.insert(Self->Vars.begin(), Self->Vars.end());
+   script->Vars.insert(Self->Params.begin(), Self->Params.end());
 
    if (auto err = acActivate(script); err != ERR::Okay) {
       log_error(&Tag, err, "doc.script-activate-failed", "Failed to activate script '{}'.", name.empty() ? type : name);
