@@ -1155,8 +1155,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    }
 
    // Get file size and read contents
-   int file_size = 0;
-   if (file->get(FID_Size, file_size) != ERR::Okay or file_size <= 0) {
+   int64_t file_size = 0;
+   if (file->getSize(file_size) != ERR::Okay or file_size <= 0) {
       this->ctx.pop_import();
       // Empty file - return an empty block
       return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));

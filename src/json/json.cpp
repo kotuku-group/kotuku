@@ -175,8 +175,8 @@ static ERR JSON_Init(objXML *Self)
 
    // TODO: A back-door to get the Statement string directly from the XML object would be useful
 
-   std::string_view statement;
-   if (!Self->get(FID_Statement, statement)) {
+   std::string statement;
+   if (!Self->getStatement(statement)) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
@@ -190,7 +190,7 @@ static ERR JSON_Init(objXML *Self)
    }
 
    std::string_view location;
-   Self->get(FID_Path, location);
+   Self->getPath(location);
    if (location.empty() or ((Self->Flags & XMF::NEW) != XMF::NIL)) {
       // If no location has been specified, assume that the JSON source is being
       // created from scratch (e.g. to save to disk).

@@ -102,7 +102,7 @@ int lj_object_pairs(lua_State *L)
    auto def = objectV(L->base);
 
    std::span<Field> fields;
-   if (!def->classptr->get(FID_Dictionary, fields)) {
+   if (!def->classptr->getDictionary(fields)) {
       // Create the iterator closure with upvalues
       lua_pushlightuserdata(L, fields.data());
       lua_pushinteger(L, fields.size());
@@ -146,7 +146,7 @@ int lj_object_ipairs(lua_State *L)
    auto def = objectV(L->base);
 
    std::span<Field> fields;
-   if (!def->classptr->get(FID_Dictionary, fields)) {
+   if (!def->classptr->getDictionary(fields)) {
       // Create the iterator closure with upvalues
       lua_pushlightuserdata(L, fields.data());
       lua_pushinteger(L, fields.size());

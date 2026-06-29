@@ -340,7 +340,7 @@ void new_module(lua_State *Lua, objModule *Module)
    lua_setmetatable(Lua, -2);
 
    mod->Module = Module;
-   Module->get(FID_FunctionList, mod->Functions);
+   Module->getFunctionList(mod->Functions);
 
    // Build hash map for O(1) function lookups
    if (mod->Functions) {
@@ -445,7 +445,7 @@ static int module_tostring(lua_State *Lua)
 {
    if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
       std::string_view name;
-      if (!mod->Module->get(FID_Name, name)) {
+      if (!mod->Module->getName(name)) {
          lua_pushstring(Lua, name);
       }
       else lua_pushnil(Lua);
