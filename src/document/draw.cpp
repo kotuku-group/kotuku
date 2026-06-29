@@ -90,11 +90,14 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
             fl::Fill(Widget.alt_state ? Widget.alt_fill : Widget.fill)
          });
 
-         if (!vp) return ERR::CreateObject;
+         if (not vp) return ERR::CreateObject;
          else Widget.viewport.set(vp);
       }
 
-      Widget.viewport->setFields(fl::X(int(X)), fl::Y(int(Y)), fl::Width(width), fl::Height(Widget.final_height));
+      Widget.viewport->setX(X);
+      Widget.viewport->setY(Y);
+      Widget.viewport->setWidth(width);
+      Widget.viewport->setHeight(Widget.final_height);
    }
    else {
       // Using a rectangle with a pattern reference will keep the pattern bitmap cached.
@@ -105,14 +108,17 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
             fl::Fill(Widget.alt_state ? Widget.alt_fill : Widget.fill)
          });
 
-         if (!rect) return ERR::CreateObject;
+         if (not rect) return ERR::CreateObject;
          else Widget.rect = rect;
       }
 
-      Widget.rect->setFields(fl::X(int(X)), fl::Y(int(Y)), fl::Width(width), fl::Height(Widget.final_height));
+      Widget.rect->setX(X);
+      Widget.rect->setY(Y);
+      Widget.rect->setWidth(width);
+      Widget.rect->setHeight(Widget.final_height);
    }
 
-   if (!Widget.floating_x()) XAdvance += Widget.final_pad.left + Widget.final_pad.right + width;
+   if (not Widget.floating_x()) XAdvance += Widget.final_pad.left + Widget.final_pad.right + width;
 
    return ERR::Okay;
 }
@@ -140,7 +146,7 @@ void layout::render_segments(OBJECTID Target, std::vector<doc_segment> &Segments
          fl::Y(Segments[si].area.Y),
          fl::Width(Segments[si].area.Width),
          fl::Height(Segments[si].area.Height),
-         fl::Stroke("rgb(200 255 0)") 
+         fl::Stroke("rgb(200 255 0)")
       });
       Self->UIObjects.push_back(rect->UID);
    }
@@ -181,7 +187,7 @@ ERR layout::gen_scene_init(objVectorViewport *Viewport)
             fl::X(m_clips[i].left), fl::Y(m_clips[i].top),
             fl::Width(m_clips[i].right - m_clips[i].left),
             fl::Height(m_clips[i].bottom - m_clips[i].top),
-            fl::Stroke("rgb(255 200 200)") 
+            fl::Stroke("rgb(255 200 200)")
          });
          Self->UIObjects.push_back(rect->UID);
       }
@@ -189,7 +195,7 @@ ERR layout::gen_scene_init(objVectorViewport *Viewport)
 
    // Body background fill is initialised now, if specified.
 
-   if ((!Self->Background.empty()) and (!iequals("none", Self->Background))) {
+   if ((not Self->Background.empty()) and (not iequals("none", Self->Background))) {
       if ((Self->Bkgd = objVectorRectangle::create::global({
             fl::Name("doc_body_fill"),
             fl::Owner(Self->Page->UID),
@@ -234,7 +240,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
    stream_char select_start, select_end;
    double select_start_x, select_end_x;
 
-   if ((Self->ActiveEditDef) and (!Self->SelectIndex.valid())) {
+   if ((Self->ActiveEditDef) and (not Self->SelectIndex.valid())) {
       select_start   = Self->CursorIndex;
       select_end     = Self->CursorIndex;
       select_start_x = Self->CursorCharX;
@@ -258,7 +264,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
    for (SEGINDEX seg=0; seg < SEGINDEX(Segments.size()); seg++) {
       auto &segment = Segments[seg];
 
-      if (!stack_ui_link.empty()) {
+      if (not stack_ui_link.empty()) {
          stack_ui_link.top().area = segment.area;
       }
 
@@ -289,7 +295,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
          }
       }
       */
-      if ((Self->ActiveEditDef) and (Self->CursorState) and (!m_cursor_drawn)) {
+      if ((Self->ActiveEditDef) and (Self->CursorState) and (not m_cursor_drawn)) {
          if ((Self->CursorIndex >= segment.start) and (Self->CursorIndex <= segment.stop)) {
             if ((Self->CursorIndex IS segment.stop) and
                 (Self->CursorIndex.get_prev_char_or_inline(segment.stream[0]) IS '\n'));
@@ -335,30 +341,28 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                stack_style.push(&segment.stream->lookup<bc_paragraph>(cursor).font);
                auto font = stack_style.top()->get_font();
 
-               double x = segment.x(x_advance, stack_style.top()->options);
-               double y = segment.y(stack_style.top()->valign, font);
+               // Integer alignment produces better text rendering
+               int x = segment.x(x_advance, stack_style.top()->options);
+               int y = segment.y(stack_style.top()->valign, font);
 
-               if ((!stack_list.empty()) and (para.list_item)) {
+               if ((not stack_list.empty()) and (para.list_item)) {
                   // Handling for paragraphs that form part of a list
 
                   if ((stack_list.top()->type IS bc_list::CUSTOM) or
                       (stack_list.top()->type IS bc_list::ORDERED)) {
-                     if (!para.icon.empty()) {
-                        para.icon->setFields(
-                           fl::X(int(x - para.item_indent.px(*this))),
-                           fl::Y(int(y))
-                        );
+                     if (not para.icon.empty()) {
+                        ((objVectorText *)*para.icon)->setX(x - para.item_indent.px(*this));
+                        ((objVectorText *)*para.icon)->setY(y);
                      }
                   }
                   else if (stack_list.top()->type IS bc_list::BULLET) {
-                     if (!para.icon.empty()) {
+                     if (not para.icon.empty()) {
                         const double radius = segment.area.Height * 0.2;
                         const double cy = y - (std::ceil(font->metrics.Ascent) * 0.5);
 
-                        para.icon->setFields(
-                           fl::CX(x - para.item_indent.px(*this) + radius),
-                           fl::CY(cy),
-                           fl::Radius(radius));
+                        ((objVectorEllipse *)*para.icon)->setCX(x - para.item_indent.px(*this) + radius);
+                        ((objVectorEllipse *)*para.icon)->setCY(cy);
+                        ((objVectorEllipse *)*para.icon)->setRadius(radius);
                      }
                   }
                }
@@ -384,15 +388,18 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                }
 
                stack_vp.push(Viewport);
-               if (!(Viewport = *table->viewport)) return;
+               if (not (Viewport = *table->viewport)) return;
 
-               Viewport->setFields(fl::X(table->x), fl::Y(table->y), fl::Width(table->width), fl::Height(table->height));
+               Viewport->setX(table->x);
+               Viewport->setY(table->y);
+               Viewport->setWidth(table->width);
+               Viewport->setHeight(table->height);
 
                // To build sophisticated table grids, we allocate a single VectorPath that
                // the table, rows and cells contribute to.  This ensures efficiency and consistency
                // in the final result.
 
-               if ((!table->fill.empty()) or (!table->stroke.empty())) {
+               if ((not table->fill.empty()) or (not table->stroke.empty())) {
                   table->seq.push_back({ .Type = PE::Move, .X = 0, .Y = 0 });
                   table->seq.push_back({ .Type = PE::HLineRel, .X = table->width, });
                   table->seq.push_back({ .Type = PE::VLineRel, .Y = table->height });
@@ -417,11 +424,11 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
             case SCODE::ROW: {
                stack_row.push(&segment.stream->lookup<bc_row>(cursor));
                auto row = stack_row.top();
-               if (!row->rect_fill.empty()) {
-                  row->rect_fill->setFields(fl::X(0),
-                     fl::Y(row->y - stack_table.top()->y),
-                     fl::Width(stack_table.top()->width),
-                     fl::Height(row->row_height));
+               if (not row->rect_fill.empty()) {
+                  row->rect_fill->setX(0);
+                  row->rect_fill->setY(row->y - stack_table.top()->y);
+                  row->rect_fill->setWidth(stack_table.top()->width);
+                  row->rect_fill->setHeight(row->row_height);
                }
                break;
             }
@@ -440,16 +447,19 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                auto table = stack_table.top();
 
                if ((cell.width >= 1) and (cell.height >= 1)) {
-                  cell.viewport->setFields(fl::X(cell.x), fl::Y(cell.y),
-                     fl::Width(cell.width), fl::Height(cell.height));
+                  cell.viewport->setX(cell.x);
+                  cell.viewport->setY(cell.y);
+                  cell.viewport->setWidth(cell.width);
+                  cell.viewport->setHeight(cell.height);
 
-                  if (!cell.rect_fill.empty()) {
-                     if (!cell.fill.empty()) cell.rect_fill->setFields(fl::Fill(cell.fill));
-                     else cell.rect_fill->setFields(fl::Fill(nullptr));
+                  if (not cell.rect_fill.empty()) {
+                     if (not cell.fill.empty()) cell.rect_fill->setFill(cell.fill);
+                     else cell.rect_fill->setFill("");
                   }
 
-                  if (!cell.stroke.empty()) {
-                     cell.border_path->setFields(fl::Stroke(cell.stroke), fl::StrokeWidth(cell.stroke_width.px(*this)));
+                  if (not cell.stroke.empty()) {
+                     cell.border_path->setStroke(cell.stroke);
+                     cell.border_path->setStrokeWidth(cell.stroke_width.px(*this));
                   }
 
                   if (cell.border != CB::NIL) {
@@ -468,7 +478,10 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
 
                   Self->VPToEntity.emplace(cell.viewport.id, vp_to_entity { &cell });
                }
-               else if (!cell.rect_fill.empty()) cell.rect_fill->setFields(fl::Stroke(nullptr), fl::Fill(nullptr));
+               else if (not cell.rect_fill.empty()) {
+                  cell.rect_fill->setStroke("");
+                  cell.rect_fill->setFill("");
+               }
 
                break;
             }
@@ -540,7 +553,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                auto &checkbox = segment.stream->lookup<bc_checkbox>(cursor);
 
                double wx, wy;
-               if (!checkbox.label.empty()) {
+               if (not checkbox.label.empty()) {
                   if (checkbox.label_pos) {
                      // Right-sided labels can be integrated with the widget so that clicking affects state.
                      if (!position_widget(checkbox, segment, Viewport, stack_style.top(), x_advance, checkbox.label_width + checkbox.label_pad.px(*this), true, wx, wy)) {
@@ -563,8 +576,9 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                            }));
                         }
 
-                        if (!checkbox.label_text.empty()) {
-                           checkbox.label_text->setFields(fl::X(int(x)), fl::Y(int(y)));
+                        if (not checkbox.label_text.empty()) {
+                           checkbox.label_text->setX(trunc(x));
+                           checkbox.label_text->setY(trunc(y));
                         }
                      }
                   }
@@ -590,22 +604,23 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                            }));
                         }
 
-                        if (!checkbox.label_text.empty()) {
-                           checkbox.label_text->setFields(fl::X(int(x_label)), fl::Y(int(y)));
+                        if (not checkbox.label_text.empty()) {
+                           checkbox.label_text->setX(trunc(x_label));
+                           checkbox.label_text->setY(trunc(y));
                         }
                      }
                   }
                }
                else position_widget(checkbox, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
 
-               if (!checkbox.processed) {
+               if (not checkbox.processed) {
                   checkbox.processed = true;
-                  if ((!checkbox.viewport.empty()) and (checkbox.viewport->Scene->SurfaceID)) {
+                  if ((not checkbox.viewport.empty()) and (checkbox.viewport->Scene->SurfaceID)) {
                      checkbox.viewport->subscribeInput(JTYPE::BUTTON|JTYPE::CROSSING, C_FUNCTION(inputevent_checkbox));
                   }
                }
 
-               if (!checkbox.viewport.empty()) Self->VPToEntity.emplace(checkbox.viewport.id, vp_to_entity { &checkbox });
+               if (not checkbox.viewport.empty()) Self->VPToEntity.emplace(checkbox.viewport.id, vp_to_entity { &checkbox });
                break;
             }
 
@@ -616,7 +631,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                double wx, wy;
                const double avail_space = combo.final_height - font->metrics.Descent;
 
-               if (!combo.label.empty()) {
+               if (not combo.label.empty()) {
                   if (combo.label_pos) {
                      position_widget(combo, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
 
@@ -634,7 +649,8 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     combo.label_text->setFields(fl::X(int(x_advance + combo.label_pad.px(*this))), fl::Y(int(y)));
+                     combo.label_text->setX(trunc(x_advance + combo.label_pad.px(*this)));
+                     combo.label_text->setY(trunc(y));
 
                      x_advance += combo.label_width + combo.label_pad.px(*this);
                   }
@@ -658,7 +674,8 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     combo.label_text->setFields(fl::X(int(x_label)), fl::Y(int(y)));
+                     combo.label_text->setX(trunc(x_label));
+                     combo.label_text->setY(trunc(y));
                   }
                }
                else position_widget(combo, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
@@ -687,7 +704,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   combo.input = objVectorText::create::global({
                      fl::Name(combo.name.empty() ? "combo_input" : combo.name), // Required for notify_combo_onchange()
                      fl::Owner(combo.clip_vp->UID),
-                     fl::X(0), fl::Y(int(y)),
+                     fl::X(0), fl::Y(trunc(y)),
                      fl::String(combo.value),
                      fl::Cursor(PTC::TEXT),
                      fl::Face(font->face),
@@ -702,9 +719,11 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   combo.input->CreatorMeta = *combo.viewport; // Required for notify_combo_onchange()
                }
 
-               if (!combo.clip_vp.empty()) {
-                  combo.clip_vp->setFields(fl::X(combo.label_pad.px(*this) * 0.75), fl::Y(0),
-                     fl::XOffset(combo.label_pad.px(*this) + (combo.final_height * 0.75)), fl::YOffset(0));
+               if (not combo.clip_vp.empty()) {
+                  combo.clip_vp->setX(combo.label_pad.px(*this) * 0.75);
+                  combo.clip_vp->setY(0);
+                  combo.clip_vp->setXOffset(combo.label_pad.px(*this) + (combo.final_height * 0.75));
+                  combo.clip_vp->setYOffset(0);
                }
 
                combo.menu.define_font(font);
@@ -729,7 +748,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                double wx, wy;
                const double avail_space = input.final_height - font->metrics.Descent;
 
-               if (!input.label.empty()) {
+               if (not input.label.empty()) {
                   if (input.label_pos) {
                      position_widget(input, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
 
@@ -747,7 +766,8 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     input.label_text->setFields(fl::X(int(x_advance + input.label_pad.px(*this))), fl::Y(int(y)));
+                     input.label_text->setX(trunc(x_advance + input.label_pad.px(*this)));
+                     input.label_text->setY(trunc(y));
 
                      x_advance += input.label_width + input.label_pad.px(*this);
                   }
@@ -771,7 +791,8 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     input.label_text->setFields(fl::X(int(x_label)), fl::Y(int(y)));
+                     input.label_text->setX(trunc(x_label));
+                     input.label_text->setY(trunc(y));
                   }
                }
                else position_widget(input, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
@@ -791,7 +812,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   auto vt = objVectorText::create::global({
                      fl::Name(input.name.empty() ? "input_text" : input.name), // Required for notify_input_onchange()
                      fl::Owner(input.clip_vp->UID),
-                     fl::X(0), fl::Y(int(y)),
+                     fl::X(0), fl::Y(trunc(y)),
                      fl::String(input.value),
                      fl::Cursor(PTC::TEXT),
                      fl::Face(font->face),
@@ -806,8 +827,11 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   vt->CreatorMeta = *input.viewport; // Required for notify_input_onchange()
                }
 
-               if (!input.clip_vp.empty()) {
-                  input.clip_vp->setFields(fl::X(input.label_pad.px(*this)), fl::Y(0), fl::XOffset(input.label_pad.px(*this)), fl::YOffset(0));
+               if (not input.clip_vp.empty()) {
+                  input.clip_vp->setX(input.label_pad.px(*this));
+                  input.clip_vp->setY(0);
+                  input.clip_vp->setXOffset(input.label_pad.px(*this));
+                  input.clip_vp->setYOffset(0);
                }
 
                Self->VPToEntity.emplace(input.viewport.id, vp_to_entity { &input });
@@ -822,14 +846,14 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                if (cursor.index < segment.trim_stop.index) str.append(txt.text, cursor.offset, std::string::npos);
                else str.append(txt.text, cursor.offset, segment.trim_stop.offset - cursor.offset);
 
-               if (!str.empty()) {
+               if (not str.empty()) {
                   double x = segment.x(x_advance, stack_style.top()->options);
                   double y = segment.y(stack_style.top()->valign, font);
 
                   if (auto vt = objVectorText::create::global({
                         fl::Name("doc_text"),
                         fl::Owner(Viewport->UID),
-                        fl::X(int(x)), fl::Y(int(y)),
+                        fl::X(trunc(x)), fl::Y(trunc(y)),
                         fl::String(str),
                         fl::Cursor(PTC::TEXT),
                         fl::Face(font->face),
@@ -853,7 +877,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
          } // switch()
       } // for cursor
 
-      if (!stack_ui_link.empty()) {
+      if (not stack_ui_link.empty()) {
          auto &link = stack_ui_link.top();
          link.area.Width = x_advance - link.area.X;
          if (link.area.Width >= 1) link.append_link();

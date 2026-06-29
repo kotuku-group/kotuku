@@ -599,7 +599,8 @@ ERR svgState::proc_meshgradient(const XTag &Tag) noexcept
 
    if (!NewObject(CLASSID::GRADIENTMESH, &gradient)) {
       SetOwner(gradient, Self->Scene);
-      gradient->setFields(fl::Name("SVGMeshGrad"), fl::Units(VUNIT::BOUNDING_BOX));
+      gradient->setName("SVGMeshGrad");
+      gradient->setUnits(VUNIT::BOUNDING_BOX);
 
       state.parse_meshgradient(Tag, gradient, id);
 
@@ -829,8 +830,11 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
    if (!NewObject(CLASSID::GRADIENTDIAMOND, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGDiamondGrad"), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
+      gradient->setName("SVGDiamondGrad");
+      gradient->setUnits(VUNIT::BOUNDING_BOX);
+      gradient->setCX(Unit(0.5, FD_SCALED));
+      gradient->setCY(Unit(0.5, FD_SCALED));
+      gradient->setRadius(Unit(0.5, FD_SCALED));
 
       state.parse_diamondgradient(Tag, gradient, id);
 
@@ -927,7 +931,8 @@ ERR svgState::proc_distalgradient(const XTag &Tag) noexcept
 
    if (!NewObject(CLASSID::GRADIENTDISTAL, &gradient)) {
       SetOwner(gradient, Self->Scene);
-      gradient->setFields(fl::Name("SVGDistalGrad"), fl::Units(VUNIT::BOUNDING_BOX));
+      gradient->setName("SVGDistalGrad");
+      gradient->setUnits(VUNIT::BOUNDING_BOX);
 
       state.parse_distalgradient(Tag, gradient, id);
 
@@ -988,8 +993,11 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
    if (!NewObject(CLASSID::GRADIENTCONIC, &gradient)) {
       SetOwner(gradient, Self->Scene);
 
-      gradient->setFields(fl::Name("SVGConicGrad"), fl::Units(VUNIT::BOUNDING_BOX),
-         fl::CX(SCALE(0.5)), fl::CY(SCALE(0.5)), fl::Radius(SCALE(0.5)));
+      gradient->setName("SVGConicGrad");
+      gradient->setUnits(VUNIT::BOUNDING_BOX);
+      gradient->setCX(Unit(0.5, FD_SCALED));
+      gradient->setCY(Unit(0.5, FD_SCALED));
+      gradient->setRadius(Unit(0.5, FD_SCALED));
 
       std::string id;
       state.parse_conicgradient(Tag, gradient, id);

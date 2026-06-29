@@ -174,7 +174,7 @@ void doc_menu::refresh()
    else m_surface->setHeight(view_height);
 
    if (doc_height > view_height) {
-      m_view->setFields(fl::Height(view_height));
+      m_view->setHeight(view_height);
 
       objVectorViewport *doc_page, *doc_view;
       if (!m_doc->getPage(doc_page)) {
