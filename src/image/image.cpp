@@ -919,7 +919,6 @@ SaveToObject: Saves the image to a data object.
 static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
-   ERR (**routine)(OBJECTPTR, APTR);
 
    if (!Args) return log.warning(ERR::NullArgs);
 
@@ -927,14 +926,15 @@ static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
       if (!mc) return log.warning(ERR::NoSupport);
 
-      if ((!mc->get(FID_ActionTable, routine)) and (routine)) {
-         if ((routine[int(AC::SaveToObject)]) and (routine[int(AC::SaveToObject)] != (APTR)IMAGE_SaveToObject)) {
-            return routine[int(AC::SaveToObject)](Self, Args);
+      std::span<struct ActionEntry> actions;
+      if ((!mc->getActionTable(actions)) and (not actions.empty())) {
+         if ((actions[int(AC::SaveToObject)].PerformAction) and (actions[int(AC::SaveToObject)].PerformAction != (APTR)IMAGE_SaveToObject)) {
+            return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
-         else if ((routine[int(AC::SaveImage)]) and (routine[int(AC::SaveImage)] != (APTR)IMAGE_SaveImage)) {
+         else if ((actions[int(AC::SaveImage)].PerformAction) and (actions[int(AC::SaveImage)].PerformAction != (APTR)IMAGE_SaveImage)) {
             struct acSaveImage saveimage;
             saveimage.Dest = Args->Dest;
-            return routine[int(AC::SaveImage)](Self, &saveimage);
+            return actions[int(AC::SaveImage)].PerformAction(Self, &saveimage);
          }
          else return log.warning(ERR::NoSupport);
       }

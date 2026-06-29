@@ -491,21 +491,22 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    if ((!error) and (!(error = Vector->getFilter(sv))) and not sv.empty()) xml::NewAttrib(tag, "filter", sv);
 
    VectorMatrix *transform;
-   if ((!error) and (!Vector->get(FID_Transforms, transform)) and (transform)) {
+   if ((!error) and (!Vector->getMatrices(transform)) and (transform)) {
       std::stringstream buffer;
       if ((error = save_svg_transform(transform, buffer)) IS ERR::Okay) {
          xml::NewAttrib(tag, "transform", buffer.str());
       }
    }
 
-   OBJECTPTR shape;
-   if ((!error) and (!Vector->getMorph(shape)) and (shape)) {
+   OBJECTPTR morph_obj;
+   if ((!error) and (!Vector->getMorph(morph_obj)) and (morph_obj)) {
+      auto shape = (objVector *)morph_obj;
       VMF morph_flags;
       XTag *morph_tag;
       error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:morph/>", &morph_tag);
 
       std::string_view shape_id;
-      if ((!error) and (!shape->get(FID_ID, shape_id)) and not shape_id.empty()) {
+      if ((!error) and (!shape->getSID(shape_id)) and not shape_id.empty()) {
          // NB: It is required that the shape has previously been registered as a definition, otherwise the url will refer to a dud tag.
          auto shape_ref = std::format("url(#{})", shape_id);
          xml::NewAttrib(morph_tag, "xlink:href", shape_ref);
