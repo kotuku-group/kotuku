@@ -3,10 +3,12 @@
 
 <book>
   <info>
-    <name>Backstage</name>
+    <name>Config</name>
     <type>module</type>
-    <version>1</version>
-    <copyright>Paul Manias © 2025-2026</copyright>
+    <copyright>Paul Manias © 2026</copyright>
+    <classes>
+      <class>Config</class>
+    </classes>
   </info>
 
   <structs>

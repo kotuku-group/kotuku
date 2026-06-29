@@ -108,6 +108,8 @@ constexpr int BLEND_MIN_THRESHOLD = 1;
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 #include "../link/unicode.h"

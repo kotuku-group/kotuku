@@ -26,6 +26,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/strings.hpp>
 #include "svg_def.c"
 #include <katana.h>

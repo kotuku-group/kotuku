@@ -11,7 +11,7 @@
     <id>d44abc36</id>
     <idstring>SCRIPT</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 2026</copyright>
     <description>
 <p>The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does not include a default parser or execution process of any kind.</p>
 <p>To execute a script file, choose a derived class that matches the language and create the script object.  Set the <fl>Path</fl> field and then <action>Activate</action> the script.  Global input parameters for the script can be defined via the <action>SetKey</action> action.</p>

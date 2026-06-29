@@ -10,6 +10,7 @@
 
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/image.h>
+#include <kotuku/modules/config.h>
 
 class objVectorColour;
 class objVectorTransition;

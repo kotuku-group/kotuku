@@ -427,7 +427,7 @@ global function saveDocuments()
       for _, func in ipairs(glFunctions) do
          out ..= docFunction(func)
       end
-      out ..= docTypes()
+      out ..= docTypes(glReferences)
       out ..= docStructures()
       out ..= '</book>\n'
 
@@ -441,7 +441,7 @@ global function saveDocuments()
    -- Save classes, if any.  Class documentation is only produced if the meta information could be loaded from
    -- a compiled module.
 
-   if glClasses then
+   if glClasses?? then
       for className, cl in pairs(glClasses) do
          verbose(f'Processing documentation for class {className}')
 
@@ -1124,6 +1124,10 @@ global function docFunction(Function)
             ref = ' lookup="' .. fa.lookup .. '"'
          end
 
+         if fa.lookup then
+            glReferences['TYPE:' .. fa.lookup] = f'function:{Function.name}'
+         end
+
          if not fa.type then
             args ..= string.format("      <param type=\"?\" name=\"%s\"" .. ref .. ">%s</param>\n",
                fa.name, substituteReferences(fa.comment:escXML()))
@@ -1175,7 +1179,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Output custom types - flags, enumerators etc
 
-global function docTypes(References)
+global function docTypes(References:table)
    out = ''
    sortedTypes = { }
    for ct in values(glCustomTypes) do
@@ -1194,9 +1198,7 @@ global function docTypes(References)
          else -> error("Unknown grouping for custom type, '" .. ct.grouping .. "'")
       end
 
-      if ct.restrict?? then
-         -- Ignore private types
-      elseif References and (not References['TYPE:' .. ct.prefix]) then
+      if not References or (not References['TYPE:' .. ct.prefix]) then
          -- Type is not referenced
       else
          out ..= "    <constants lookup=\"" .. ct.prefix .. '"' .. comment:escXML() .. '>\n'

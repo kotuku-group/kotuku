@@ -398,6 +398,17 @@
 
   </fields>
   <types>
+    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
+      <const name="BOTTOM">Align to bottom</const>
+      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
+      <const name="HORIZONTAL">Align to horizontal center</const>
+      <const name="LEFT">Align to left</const>
+      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
+      <const name="RIGHT">Align to right</const>
+      <const name="TOP">Align to top</const>
+      <const name="VERTICAL">Align to vertical center</const>
+    </constants>
+
     <constants lookup="VTXF" comment="VectorText flags.">
       <const name="AREA_SELECTED">Automatically set if a region of text has been selected.</const>
       <const name="BLINK">Enable animated blinking (not supported - exists as SVG dummy option).</const>

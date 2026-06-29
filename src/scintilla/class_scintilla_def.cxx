@@ -7,6 +7,7 @@ static const struct FieldDef clScintillaEventFlags[] = {
    { "NewChar", 0x00000008 },
    { nullptr, 0 }
 };
+
 static const struct FieldDef clScintillaFlags[] = {
    { "Disabled", 0x00000001 },
    { "DetectLexer", 0x00000002 },
@@ -96,3 +97,4 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Undo, SCINTILLA_Undo },
    { AC::NIL, nullptr }
 };
+

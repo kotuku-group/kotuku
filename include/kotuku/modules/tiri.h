@@ -8,6 +8,8 @@
 
 #define MODVERSION_TIRI (1)
 
+#include <kotuku/modules/script.h>
+
 class objTiri;
 
 // JIT behaviour options
