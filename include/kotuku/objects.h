@@ -755,43 +755,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
       }
       else return ERR::UnsupportedField;
    }
-
-   template <typename... Args> ERR setFields(Args&&... pFields) {
-      kt::Log log("setFields");
-
-      std::initializer_list<kt::FieldValue> Fields = { std::forward<Args>(pFields)... };
-
-      auto ctx = CurrentContext();
-      for (auto &f : Fields) {
-         OBJECTPTR target;
-         if (auto field = FindField(this, f.FieldID, &target)) {
-            if ((not (field->Flags & (FD_INIT|FD_WRITE))) and (ctx != target)) {
-               log.warning("%s.%s is immutable.", className(), field->Name);
-            }
-            else if ((field->Flags & FD_INIT) and (target->initialised()) and (ctx != target)) {
-               log.warning("%s.%s is init-only.", className(), field->Name);
-            }
-            else {
-               if (target != this) target->lock();
-
-               auto error = kt::write_field_value(target, field, f);
-
-               if (target != this) target->unlock();
-
-               // NB: NoSupport is considered a 'soft' error that does not warrant failure.
-
-               if ((error != ERR::Okay) and (error != ERR::NoSupport)) {
-                  log.warning("%s.%s: %s", target->className(), field->Name, GetErrorMsg(error));
-                  return error;
-               }
-            }
-         }
-         else return log.warning(ERR::UnsupportedField);
-      }
-
-      return ERR::Okay;
-   }
-
 };
 
 namespace kt {

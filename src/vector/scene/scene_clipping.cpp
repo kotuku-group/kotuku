@@ -294,7 +294,8 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
    }
 
    // Defining the viewport's dimensions is important for clip paths that use scaled coordinates
-   //m_clip->Viewport->setFields(fl::X(m_shape->ParentView->vpTargetX), fl::Y(m_shape->ParentView->vpTargetY));
+   //m_clip->Viewport->setX(m_shape->ParentView->vpTargetX);
+   //m_clip->Viewport->setY(m_shape->ParentView->vpTargetY);
    set_viewport_fixed_size(m_clip->Viewport, parent_width, parent_height);
    clip_viewport->vpClipConfiguring = false;
 

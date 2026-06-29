@@ -317,7 +317,9 @@ ERROR exec_script(CSTRING ScriptFile, OBJECTID *CoreObjectID, int ShowTime, STRI
    if (!NewObject(derived_id ? derived_id : class_id, 0, &glScript)) {
       if (!TargetID) TargetID = CurrentTaskID();
 
-      glScript->setFields(fl::Path(ScriptFile), fl::Target(TargetID), fl::Procedure(Procedure));
+      glScript->setPath(ScriptFile);
+      glScript->setTarget(TargetID);
+      glScript->setProcedure(Procedure);
 
       if (glArgs) {
          argname = argbuffer+1; // Skip the first byte... reserved for '+'

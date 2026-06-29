@@ -20,7 +20,7 @@ static ERR slider_drag(objVectorViewport *Viewport, double X, double Y, double O
 
    if ((Y != Scroll->m_vbar.m_slider_pos.offset) or (slider_height != Scroll->m_vbar.m_slider_pos.length)) {
       const double pct_pos = Y / (host_height - slider_height);
-      Scroll->m_page->setFields(fl::Y(-std::trunc((page_height - view_height) * pct_pos)));
+      Scroll->m_page->setY(-std::trunc((page_height - view_height) * pct_pos));
    }
 
    Scroll->m_page->draw();
@@ -35,13 +35,13 @@ static ERR slider_input(objVectorViewport *Viewport, const InputEvent *Events, s
    for (auto msg=Events; msg; msg=msg->Next) {
       if (msg->Type IS JET::CROSSED_IN) {
          if (Viewport IS Scroll->m_vbar.m_slider_vp) {
-            Scroll->m_vbar.m_slider_rect->setFields(fl::Fill(glSliderHighlight));
+            Scroll->m_vbar.m_slider_rect->setFill(glSliderHighlight);
             Scroll->m_vbar.m_slider_vp->draw();
          }
       }
       else if (msg->Type IS JET::CROSSED_OUT) {
          if (Viewport IS Scroll->m_vbar.m_slider_vp) {
-            Scroll->m_vbar.m_slider_rect->setFields(fl::Fill(glSliderColour));
+            Scroll->m_vbar.m_slider_rect->setFill(glSliderColour);
             Scroll->m_vbar.m_slider_vp->draw();
          }
       }
@@ -100,13 +100,13 @@ static ERR view_path_changed(objVectorViewport *Viewport, FM Event, APTR EventOb
       if (nw < view_width) { // Maximise page width in dynamic mode
          if (p_x != 0) {
             p_x = 0;
-            Scroll->m_page->setFields(fl::X(0));
+            Scroll->m_page->setX(0);
          }
          nw = view_width;
       }
 
       if (p_width != nw) {
-         Scroll->m_page->setFields(fl::Width(nw));
+         Scroll->m_page->setWidth(nw);
          p_width = nw;
       }
    }
@@ -114,13 +114,13 @@ static ERR view_path_changed(objVectorViewport *Viewport, FM Event, APTR EventOb
    if (p_x + p_width < view_width) {
       double x = view_width - p_width;
       if (x > 0) x = 0;
-      if (p_x != x) Scroll->m_page->setFields(fl::X(int(x)));
+      if (p_x != x) Scroll->m_page->setX(int(x));
    }
 
    if (p_y + p_height < view_height) {
       double y = view_height - p_height;
       if (y > 0) y = 0;
-      if (p_y != y) Scroll->m_page->setFields(fl::Y(int(y)));
+      if (p_y != y) Scroll->m_page->setY(int(y));
    }
 
    Scroll->recalc_sliders_from_view();
@@ -201,17 +201,18 @@ void scroll_mgr::recalc_sliders_from_view()
          if ((s.offset != m_vbar.m_slider_pos.offset) or
              (s.length != m_vbar.m_slider_pos.length)) {
             m_vbar.m_slider_pos = s;
-            m_vbar.m_slider_vp->setFields(fl::Y(s.offset), fl::Height(s.length));
+            m_vbar.m_slider_vp->setY(s.offset);
+            m_vbar.m_slider_vp->setHeight(s.length);
 
             if (s.length <= 12) {
-               m_vbar.m_bar_vp->setFields(fl::Visibility(VIS::HIDDEN));
-               m_view->setFields(fl::XOffset(0));
-               if (m_hbar.m_bar_vp) m_hbar.m_bar_vp->setFields(fl::XOffset(0));
+               m_vbar.m_bar_vp->setVisibility(VIS::HIDDEN);
+               m_view->setXOffset(0);
+               if (m_hbar.m_bar_vp) m_hbar.m_bar_vp->setXOffset(0);
             }
             else {
-               m_vbar.m_bar_vp->setFields(fl::Visibility(VIS::VISIBLE));
-               if (m_auto_adjust_view_size) m_view->setFields(fl::XOffset(m_vbar.m_slider_vp->get<double>(FID_Width)));
-               if (m_hbar.m_bar_vp) m_hbar.m_bar_vp->setFields(fl::XOffset(m_hbar.m_breadth));
+               m_vbar.m_bar_vp->setVisibility(VIS::VISIBLE);
+               if (m_auto_adjust_view_size) m_view->setXOffset(m_vbar.m_slider_vp->get<double>(FID_Width));
+               if (m_hbar.m_bar_vp) m_hbar.m_bar_vp->setXOffset(m_hbar.m_breadth);
             }
          }
       }
@@ -304,7 +305,7 @@ void scroll_mgr::scroll_page(double DeltaX, double DeltaY)
    else if (y + page_height < view_height) y = -page_height + view_height;
 
    if (y != current_y) {
-      m_page->setFields(fl::Y(std::trunc(y)));
+      m_page->setY(std::trunc(y));
       m_page->draw();
    }
 }
@@ -315,8 +316,8 @@ void scroll_mgr::scroll_page(double DeltaX, double DeltaY)
 void scroll_mgr::fix_page_size(double Width, double Height)
 {
    m_fixed_mode = true;
-   if (Width != m_page->get<double>(FID_Width)) m_page->setFields(fl::Width(Width));
-   if (Height != m_page->get<double>(FID_Height)) m_page->setFields(fl::Height(Height));
+   if (Width != m_page->get<double>(FID_Width)) m_page->setWidth(Width);
+   if (Height != m_page->get<double>(FID_Height)) m_page->setHeight(Height);
 }
 
 //********************************************************************************************************************
@@ -328,7 +329,10 @@ void scroll_mgr::dynamic_page_size(double NominalWidth, double MinWidth, double 
    if (NominalWidth < m_min_width) NominalWidth = m_min_width;
 
    if (NominalWidth >= m_view->get<double>(FID_Width)) acResize(m_page, NominalWidth, Height, 0);
-   else m_page->setFields(fl::Width(SCALE(1.0)), fl::Height(Height));
+   else {
+      m_page->setWidth(Unit(1.0, FD_SCALED));
+      m_page->setHeight(Height);
+   }
 }
 
 //********************************************************************************************************************

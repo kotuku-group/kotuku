@@ -416,7 +416,9 @@ static void error_dialog(const std::string_view Title, const std::string_view Me
    objScript *dialog;
    OBJECTID new_dialog_id = 0;
    if (!NewObject(CLASSID::TIRI, &dialog)) {
-      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
+      dialog->setName("scDialog");
+      dialog->setOwner(CurrentTaskID());
+      dialog->setPath("scripts:gui/dialog.tiri");
 
       acSetKey(dialog, "modal", "1");
       acSetKey(dialog, "title", Title);
