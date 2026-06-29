@@ -13,7 +13,7 @@
     <id>abba1e78</id>
     <idstring>CONFIG</idstring>
     <category>Data</category>
-    <copyright>Paul Manias © 2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Config class is provided for reading text based key-values in a simple structured format.  Although basic and lacking support for trees and types, they are reliable, easy to support and use minimal resources.</p>
 <p>The following segment of a config file illustrates:</p>

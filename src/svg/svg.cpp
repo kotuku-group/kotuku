@@ -23,6 +23,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <variant>
 #include <cfloat>
 #include <kotuku/main.h>
+#include <kotuku/modules/compression.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>

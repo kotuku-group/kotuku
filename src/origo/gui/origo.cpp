@@ -9,7 +9,7 @@ that is distributed with this package.  Please refer to it for further informati
 #include <kotuku/startup.h>
 #include <kotuku/system/task.h>
 #include <kotuku/data/script.h>
-#include <kotuku/data/compression.h>
+#include <kotuku/modules/compression.h>
 #include <kotuku/files/file.h>
 #include <kotuku/functions/strtoint.c>
 

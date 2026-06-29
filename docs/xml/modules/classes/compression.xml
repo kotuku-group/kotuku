@@ -13,7 +13,7 @@
     <id>2aebea46</id>
     <idstring>COMPRESSION</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression derived classes.</p>
 <p>The following examples demonstrate basic usage of compression objects in Tiri:</p>
@@ -613,35 +613,5 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 
   </types>
   <structs>
-    <struct name="CompressedItem">
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Next" type="struct CompressedItem *">Used only if this is a linked-list.</field>
-      <field name="Path" type="CSTRING">Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.</field>
-      <field name="Permissions" type="PERMIT" lookup="PERMIT">Original permissions - see <code>PERMIT</code> flags.</field>
-      <field name="UserID" type="INT">Original user ID</field>
-      <field name="GroupID" type="INT">Original group ID</field>
-      <field name="OthersID" type="INT">Original others ID</field>
-      <field name="Flags" type="FL" lookup="FL"><code>FL</code> flags</field>
-      <field name="Created" type="struct DateTime">Date and time of the file's creation.</field>
-      <field name="Modified" type="struct DateTime">Date and time last modified.</field>
-    </struct>
-
-    <struct name="CompressionFeedback">
-      <field name="FeedbackID" type="FDB" lookup="FDB">Set to one of the FDB event indicators</field>
-      <field name="Index" type="INT">Index of the current file</field>
-      <field name="Path" type="CSTRING">Name of the current file/path in the archive</field>
-      <field name="Dest" type="CSTRING">Destination file/path during decompression</field>
-      <field name="Progress" type="INT64">Progress indicator (byte position for the file being de/compressed).</field>
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Year" type="INT16">Year of the original file's datestamp.</field>
-      <field name="Month" type="INT16">Month of the original file's datestamp.</field>
-      <field name="Day" type="INT16">Day of the original file's datestamp.</field>
-      <field name="Hour" type="INT16">Hour of the original file's datestamp.</field>
-      <field name="Minute" type="INT16">Minute of the original file's datestamp.</field>
-      <field name="Second" type="INT16">Second of the original file's datestamp.</field>
-    </struct>
-
   </structs>
 </book>

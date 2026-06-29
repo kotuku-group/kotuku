@@ -106,6 +106,7 @@ constexpr int BLEND_MIN_THRESHOLD = 1;
 #define SURFACE_READWRITE (SURFACE_READ|SURFACE_WRITE)
 
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/compression.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/regex.h>
 #include <kotuku/modules/config.h>

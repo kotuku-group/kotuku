@@ -1,6 +1,6 @@
 #pragma once
 
-// Copyright: Paul Manias © 2026
+// Copyright: Paul Manias © 1996-2026
 // Generator: idl-c
 
 #include <kotuku/main.h>
@@ -57,7 +57,7 @@ class objConfig : public Object {
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
-      for (auto& [group, keys] : Groups) {
+      for (auto & [group, keys] : Groups) {
          if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
          if (pKey.empty()) pValue = strtod(keys.cbegin()->second.c_str(), nullptr);
          else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtod(it->second.c_str(), nullptr);
@@ -68,7 +68,7 @@ class objConfig : public Object {
    }
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, int &pValue) {
-      for (auto& [group, keys] : Groups) {
+      for (auto & [group, keys] : Groups) {
          if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
          if (pKey.empty()) pValue = strtol(keys.cbegin()->second.c_str(), nullptr, 0);
          else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtol(it->second.c_str(), nullptr, 0);
@@ -90,11 +90,9 @@ class objConfig : public Object {
    }
 
    inline ERR write(std::string_view Group, std::string_view Key, std::string_view Value) {
-      for (auto& [group, keys] : Groups) {
+      for (auto & [group, keys] : Groups) {
          if (!group.compare(Group)) {
-            if (auto it = keys.find(Key); it != keys.end()) {
-               it->second.assign(Value);
-            }
+            if (auto it = keys.find(Key); it != keys.end()) it->second.assign(Value);
             else keys.emplace(Key, Value);
             return ERR::Okay;
          }
