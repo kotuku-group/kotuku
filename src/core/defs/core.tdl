@@ -57,9 +57,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
   loadFile(glPath .. 'common.tdl')
   loadFile(glPath .. 'common-graphics.tdl')
 
-  -- Load local definitions for IDL generation
-  loadFile('./common.tdl')
-
   flags("STR", { bits=32 },
      "MATCH_CASE|CASE: Perform a case-sensitive match.",
      "MATCH_LEN: The strings must be of equal length to be matched.")
@@ -482,6 +479,9 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     -- End marker
     LIST_END    = 150
   })
+
+  -- Load local definitions for IDL generation
+  loadFile('./common.tdl')
 
   c_insert([==[
 

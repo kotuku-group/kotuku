@@ -47,3 +47,46 @@
     "EXCLUDE_FILES: Exclude files when scanning this folder.",
     "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
     "VIRTUAL: Path is to a virtual device.")
+
+  struct("CompressionFeedback", { }, [[
+    int(FDB) FeedbackID     # Set to one of the FDB event indicators
+    int   Index             # Index of the current file
+    cstr  Path              # Name of the current file/path in the archive
+    cstr  Dest              # Destination file/path during decompression
+    large Progress          # Progress indicator (byte position for the file being de/compressed).
+    large OriginalSize      # Original size of the file
+    large CompressedSize    # Compressed size of the file
+    short Year              # Year of the original file's datestamp.
+    short Month             # Month of the original file's datestamp.
+    short Day               # Day of the original file's datestamp.
+    short Hour              # Hour of the original file's datestamp.
+    short Minute            # Minute of the original file's datestamp.
+    short Second            # Second of the original file's datestamp.
+  ]],
+  [[
+   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+
+   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
+      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+  ]])
+
+  struct("CompressedItem", { }, [[
+    large OriginalSize            # Original size of the file
+    large CompressedSize          # Compressed size of the file
+    struct(*CompressedItem) Next  # Used only if this is a linked-list.
+    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
+    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
+    int  UserID                   # Original user ID
+    int  GroupID                  # Original group ID
+    int  OthersID                 # Original others ID
+    int(FL) Flags                 # `FL` flags
+    struct(DateTime) Created      # Date and time of the file's creation.
+    struct(DateTime) Modified     # Date and time last modified.
+  ]],
+  [[
+    ankerl::unordered_dense::map<std::string, std::string> *Tags;
+  ]])

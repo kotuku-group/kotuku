@@ -8,45 +8,6 @@
 class objCompression;
 class objCompressedStream;
 
-struct CompressionFeedback {
-   FDB     FeedbackID;      // Set to one of the FDB event indicators
-   int     Index;           // Index of the current file
-   CSTRING Path;            // Name of the current file/path in the archive
-   CSTRING Dest;            // Destination file/path during decompression
-   int64_t Progress;        // Progress indicator (byte position for the file being de/compressed).
-   int64_t OriginalSize;    // Original size of the file
-   int64_t CompressedSize;  // Compressed size of the file
-   int16_t Year;            // Year of the original file's datestamp.
-   int16_t Month;           // Month of the original file's datestamp.
-   int16_t Day;             // Day of the original file's datestamp.
-   int16_t Hour;            // Hour of the original file's datestamp.
-   int16_t Minute;          // Minute of the original file's datestamp.
-   int16_t Second;          // Second of the original file's datestamp.
-   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-
-   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
-      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-};
-
-struct CompressedItem {
-   int64_t OriginalSize;            // Original size of the file
-   int64_t CompressedSize;          // Compressed size of the file
-   struct CompressedItem * Next;    // Used only if this is a linked-list.
-   CSTRING Path;                    // Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
-   PERMIT  Permissions;             // Original permissions - see PERMIT flags.
-   int     UserID;                  // Original user ID
-   int     GroupID;                 // Original group ID
-   int     OthersID;                // Original others ID
-   FL      Flags;                   // FL flags
-   struct DateTime Created;         // Date and time of the file's creation.
-   struct DateTime Modified;        // Date and time last modified.
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
-};
-
 // Compression class definition
 
 #define VER_COMPRESSION (1.000000)

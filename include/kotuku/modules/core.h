@@ -503,86 +503,6 @@ enum class ALIGN : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(ALIGN)
 
-// Flags for the Config class.
-
-enum class CNF : uint32_t {
-   NIL = 0,
-   STRIP_QUOTES = 0x00000001,
-   AUTO_SAVE = 0x00000002,
-   OPTIONAL_FILES = 0x00000004,
-   NEW = 0x00000008,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CNF)
-
-// Script flags
-
-enum class SCF : uint32_t {
-   NIL = 0,
-   EXIT_ON_ERROR = 0x00000001,
-   PROCESS_DOC = 0x00000002,
-   LOG_ALL = 0x00000004,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(SCF)
-
-// Compression flags
-
-enum class CMF : uint32_t {
-   NIL = 0,
-   PASSWORD = 0x00000001,
-   NEW = 0x00000002,
-   CREATE_FILE = 0x00000004,
-   READ_ONLY = 0x00000008,
-   NO_LINKS = 0x00000010,
-   APPLY_SECURITY = 0x00000020,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CMF)
-
-// Compression stream formats
-
-enum class CF : int {
-   NIL = 0,
-   GZIP = 1,
-   ZLIB = 2,
-   DEFLATE = 3,
-};
-
-// Compression feedback event indicators.
-
-enum class FDB : int {
-   NIL = 0,
-   DECOMPRESS_FILE = 1,
-   COMPRESS_FILE = 2,
-   REMOVE_FILE = 3,
-   DECOMPRESS_OBJECT = 4,
-};
-
-// File flags
-
-enum class FL : uint32_t {
-   NIL = 0,
-   WRITE = 0x00000001,
-   NEW = 0x00000002,
-   READ = 0x00000004,
-   DIRECTORY = 0x00000008,
-   FOLDER = 0x00000008,
-   APPROXIMATE = 0x00000010,
-   LINK = 0x00000020,
-   BUFFER = 0x00000040,
-   LOOP = 0x00000080,
-   FILE = 0x00000100,
-   RESET_DATE = 0x00000200,
-   DEVICE = 0x00000400,
-   STREAM = 0x00000800,
-   EXCLUDE_FILES = 0x00001000,
-   EXCLUDE_FOLDERS = 0x00002000,
-   VIRTUAL = 0x00004000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(FL)
-
 enum class STR : uint32_t {
    NIL = 0,
    MATCH_CASE = 0x00000001,
@@ -1177,6 +1097,86 @@ enum class KEY : int {
    LIST_END = 150,
 };
 
+// Flags for the Config class.
+
+enum class CNF : uint32_t {
+   NIL = 0,
+   STRIP_QUOTES = 0x00000001,
+   AUTO_SAVE = 0x00000002,
+   OPTIONAL_FILES = 0x00000004,
+   NEW = 0x00000008,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CNF)
+
+// Script flags
+
+enum class SCF : uint32_t {
+   NIL = 0,
+   EXIT_ON_ERROR = 0x00000001,
+   PROCESS_DOC = 0x00000002,
+   LOG_ALL = 0x00000004,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(SCF)
+
+// Compression flags
+
+enum class CMF : uint32_t {
+   NIL = 0,
+   PASSWORD = 0x00000001,
+   NEW = 0x00000002,
+   CREATE_FILE = 0x00000004,
+   READ_ONLY = 0x00000008,
+   NO_LINKS = 0x00000010,
+   APPLY_SECURITY = 0x00000020,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CMF)
+
+// Compression stream formats
+
+enum class CF : int {
+   NIL = 0,
+   GZIP = 1,
+   ZLIB = 2,
+   DEFLATE = 3,
+};
+
+// Compression feedback event indicators.
+
+enum class FDB : int {
+   NIL = 0,
+   DECOMPRESS_FILE = 1,
+   COMPRESS_FILE = 2,
+   REMOVE_FILE = 3,
+   DECOMPRESS_OBJECT = 4,
+};
+
+// File flags
+
+enum class FL : uint32_t {
+   NIL = 0,
+   WRITE = 0x00000001,
+   NEW = 0x00000002,
+   READ = 0x00000004,
+   DIRECTORY = 0x00000008,
+   FOLDER = 0x00000008,
+   APPROXIMATE = 0x00000010,
+   LINK = 0x00000020,
+   BUFFER = 0x00000040,
+   LOOP = 0x00000080,
+   FILE = 0x00000100,
+   RESET_DATE = 0x00000200,
+   DEVICE = 0x00000400,
+   STREAM = 0x00000800,
+   EXCLUDE_FILES = 0x00001000,
+   EXCLUDE_FOLDERS = 0x00002000,
+   VIRTUAL = 0x00004000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(FL)
+
 struct InputEvent {
    const struct InputEvent * Next;    // Next event in the chain
    double   Value;                    // The value associated with the Type
@@ -1352,6 +1352,45 @@ struct Edges {
    int Top;     // Top coordinate
    int Right;   // Right-most coordinate
    int Bottom;  // Bottom coordinate
+};
+
+struct CompressionFeedback {
+   FDB     FeedbackID;      // Set to one of the FDB event indicators
+   int     Index;           // Index of the current file
+   CSTRING Path;            // Name of the current file/path in the archive
+   CSTRING Dest;            // Destination file/path during decompression
+   int64_t Progress;        // Progress indicator (byte position for the file being de/compressed).
+   int64_t OriginalSize;    // Original size of the file
+   int64_t CompressedSize;  // Compressed size of the file
+   int16_t Year;            // Year of the original file's datestamp.
+   int16_t Month;           // Month of the original file's datestamp.
+   int16_t Day;             // Day of the original file's datestamp.
+   int16_t Hour;            // Hour of the original file's datestamp.
+   int16_t Minute;          // Minute of the original file's datestamp.
+   int16_t Second;          // Second of the original file's datestamp.
+   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+
+   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
+      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+};
+
+struct CompressedItem {
+   int64_t OriginalSize;            // Original size of the file
+   int64_t CompressedSize;          // Compressed size of the file
+   struct CompressedItem * Next;    // Used only if this is a linked-list.
+   CSTRING Path;                    // Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
+   PERMIT  Permissions;             // Original permissions - see PERMIT flags.
+   int     UserID;                  // Original user ID
+   int     GroupID;                 // Original group ID
+   int     OthersID;                // Original others ID
+   FL      Flags;                   // FL flags
+   struct DateTime Created;         // Date and time of the file's creation.
+   struct DateTime Modified;        // Date and time last modified.
+    ankerl::unordered_dense::map<std::string, std::string> *Tags;
 };
 
 
