@@ -396,7 +396,8 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
       case DATA::FILE: { // File path
          auto file = objFile::create({ fl::Path(CSTRING(Args->Buffer)), fl::Flags(FL::READ) });
          if (file.ok()) {
-            auto size = file->get<size_t>(FID_Size);
+            int64_t size;
+            file->getSize(size);
             std::vector<int8_t> buf(size);
             if (!file->read(buf.data(), size)) {
                return acWrite(Self, buf.data(), size, nullptr);

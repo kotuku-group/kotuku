@@ -660,7 +660,8 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
-   auto path = Self->get<std::string_view>(FID_Path);
+   std::string_view path;
+   Self->getPath(path);
    if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
       // If the sample is new or no path has been specified, create an audio sample from scratch (e.g. to record
       // audio to disk).
@@ -718,7 +719,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // Setup the sound structure
 
-   Self->DataOffset = Self->File->get<int>(FID_Position);
+   int64_t file_position;
+   Self->File->getPosition(file_position);
+   Self->DataOffset = int(file_position);
 
    Self->Format         = WAVE.Format;
    Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
@@ -765,7 +768,8 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
-   auto path = Self->get<std::string_view>(FID_Path);
+   std::string_view path;
+   Self->getPath(path);
 
    if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
       log.msg("Sample created as new (without sample data).");
@@ -816,7 +820,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // TODO Look for the cue chunk for loop information
 
-   pos = Self->File->get<int>(FID_Position);
+   int64_t file_position;
+   Self->File->getPosition(file_position);
+   pos = int(file_position);
 #if 0
    if (!find_chunk(Self->File.get(), "cue ")) {
       data_p += 32;
@@ -844,7 +850,9 @@ static ERR SOUND_Init(extSound *Self)
 
    fl::ReadLE(Self->File.get(), &Self->Length); // Length of audio data in this chunk
 
-   Self->DataOffset = Self->File->get<int>(FID_Position);
+   int64_t file_position;
+   Self->File->getPosition(file_position);
+   Self->DataOffset = int(file_position);
 
    Self->Format         = WAVE.Format;
    Self->BytesPerSecond = WAVE.AvgBytesPerSecond;

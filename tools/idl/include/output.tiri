@@ -630,7 +630,7 @@ function buildFunctionTableOutput():str
       out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
    end
 
-   for k, func in ipairs(glFunctions) do
+   for _, func in ipairs(glFunctions) do
       if func.staticMacro?? and (func.status != 'private') then
          out ..= func.staticMacro() .. '\n'
       end

@@ -948,8 +948,9 @@ ERR LoadFile(const std::string_view &Path, LDF Flags, CacheFile **Cache)
    auto file = objFile::create { fl::Path(path), fl::Flags(FL::READ|FL::FILE) };
 
    if (file.ok()) {
-      auto file_size = file->get<int64_t>(FID_Size);
-      auto timestamp = file->get<int64_t>(FID_Timestamp);
+      int64_t file_size, timestamp;
+      file->getSize(file_size);
+      file->getTimestamp(timestamp);
 
       CacheFileIndex index(path, timestamp, file_size);
       std::shared_ptr<CacheLoadState> loading_state;

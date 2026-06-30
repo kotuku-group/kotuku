@@ -46,15 +46,12 @@ void debug_tree(extVector *Vector, int &Level)
    Level++;
 
    for (auto v=Vector; v; v=(extVector *)v->Next) {
-      int dim = 0;
-      if (FindField(v, FID_Dimensions, nullptr)) v->get(strihash("Dimensions"), dim);
-
       if ((v->Class->BaseClassID IS CLASSID::VECTOR) and (v->Child)) {
          kt::Log blog(__FUNCTION__);
-         blog.branch(" #%d%s %s %s $%.8x", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim);
+         blog.branch(" #%d%s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name);
          debug_tree((extVector *)v->Child, Level);
       }
-      else log.msg(" #%d%s %s %s $%.8x", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim);
+      else log.msg(" #%d%s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name);
    }
 
    Level--;

@@ -200,12 +200,16 @@ void doc_menu::reposition(objVectorViewport *RelativeViewport)
 
    kt::ScopedObjectLock<objSurface> lk_surface(RelativeViewport->Scene->SurfaceID); // Window surface
    if (lk_surface.granted()) {
-      auto w_absx = lk_surface->get<double>(FID_AbsX);
-      auto w_absy = lk_surface->get<double>(FID_AbsY);
+      int w_absx, w_absy;
+      lk_surface->getAbsX(w_absx);
+      lk_surface->getAbsY(w_absy);
 
-      auto vp_absx = RelativeViewport->get<double>(FID_AbsX);
-      auto vp_absy = RelativeViewport->get<double>(FID_AbsY);
-      auto vp_height = RelativeViewport->get<double>(FID_Height);
+      int vp_absx, vp_absy;
+      RelativeViewport->getAbsX(vp_absx);
+      RelativeViewport->getAbsY(vp_absy);
+
+      Unit vp_height;
+      RelativeViewport->getHeight(vp_height);
 
       // Invert the menu position if it will drop off the display
 
