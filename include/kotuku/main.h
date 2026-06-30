@@ -92,7 +92,7 @@ template<typename T>
 constexpr bool defined(T flags, T test_flag) noexcept {
    static_assert(std::is_enum_v<T>, "Type must be an enum");
    using underlying = std::underlying_type_t<T>;
-   return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
+   return (underlying(flags) & underlying(test_flag)) != 0;
 }
 
 constexpr int RESOURCE_ID_OFFSET = -1;

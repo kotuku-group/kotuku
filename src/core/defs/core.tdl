@@ -445,23 +445,6 @@ class objStorageDevice;
 class objThread;
 class objTask;
 
-//********************************************************************************************************************
-
-namespace kt {
-
-class FloatRect {
-   public:
-   double X, Y, Width, Height;
-   constexpr FloatRect() noexcept = default;
-   constexpr FloatRect(double Value) noexcept : X(Value), Y(Value), Width(Value), Height(Value) { }
-   constexpr FloatRect(double pX, double pY, double pWidth, double pHeight) noexcept : X(pX), Y(pY), Width(pWidth), Height(pHeight) { }
-   constexpr double left() const noexcept { return X; }
-   constexpr double top() const noexcept { return Y; }
-   constexpr double right() const noexcept { return X + Width; }
-   constexpr double bottom() const noexcept { return Y + Height; }
-};
-
-} // namespace
 ]==])
 
   struct('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
@@ -1012,6 +995,7 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
 inline OBJECTID CurrentTaskID() { return ((OBJECTPTR)CurrentTask())->UID; }
 inline APTR SetResourcePtr(RES Res, APTR Value) { return (APTR)(MAXINT)(SetResource(Res, (MAXINT)Value)); }
 
+#ifdef PRV_METACLASS
 // obj_read is used to build efficient customised jump tables for object calls.
 
 struct obj_read {
@@ -1059,6 +1043,7 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
+#endif
 ]==])
 
   -- Declare classes for their inclusion in outgoing Core documentation
