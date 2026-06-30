@@ -633,7 +633,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
       // Register the mapping from object ID to thread ID so that AsyncCancel() can target this thread.
       {
          std::lock_guard<std::mutex> lock(glmActionQueue);
-         glAsyncObjectThreads[object_uid] = int(get_thread_id());
+         glAsyncObjectThreads[object_uid] = GetThreadID();
       }
 
       auto is_stopping = [&stop_token, &thread_rec]() {

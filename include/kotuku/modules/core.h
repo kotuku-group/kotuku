@@ -871,17 +871,16 @@ enum class RES : int {
    TOTAL_SHARED_MEMORY = 9,
    LOG_DEPTH = 10,
    JNI_ENV = 11,
-   THREAD_ID = 12,
-   PROCESS_STATE = 13,
-   TOTAL_MEMORY = 14,
-   TOTAL_SWAP = 15,
-   CPU_SPEED = 16,
-   FREE_MEMORY = 17,
-   MEMORY_USAGE = 18,
-   MAIN_THREAD = 19,
-   MAIN_THREAD_ID = 20,
-   WINDOWS_ICON = 21,
-   STRUCT_DB = 22,
+   PROCESS_STATE = 12,
+   TOTAL_MEMORY = 13,
+   TOTAL_SWAP = 14,
+   CPU_SPEED = 15,
+   FREE_MEMORY = 16,
+   MEMORY_USAGE = 17,
+   MAIN_THREAD = 18,
+   MAIN_THREAD_ID = 19,
+   WINDOWS_ICON = 20,
+   STRUCT_DB = 21,
 };
 
 // Path types for SetResourcePath()
@@ -1941,6 +1940,7 @@ struct CoreBase {
    int (*_AsyncPending)(OBJECTID Object);
    ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
+   int (*_GetThreadID)(void);
 #endif // KOTUKU_STATIC
 };
 
@@ -2037,6 +2037,7 @@ inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncC
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
 inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
+inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
@@ -2128,6 +2129,7 @@ extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
+extern "C" int GetThreadID(void);
 #endif // KOTUKU_STATIC
 
 
@@ -2200,26 +2202,6 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
    return QueueAction(Action, ObjectID, nullptr);
 }
 #endif
-
-namespace kt {
-
-inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
-   memmove(Dest, Src, Length);
-}
-
-inline void clearmem(APTR Memory, std::size_t Length) {
-   if (Memory) memset(Memory, 0, Length);
-}
-
-static thread_local int _tlUniqueThreadID = 0;
-
-[[nodiscard]] inline int _get_thread_id(void) {
-   if (_tlUniqueThreadID) return _tlUniqueThreadID;
-   _tlUniqueThreadID = GetResource(RES::THREAD_ID);
-   return _tlUniqueThreadID;
-}
-
-} // namespace
 
 #include <kotuku/log.h>
 #include <kotuku/objects.h>
@@ -3310,7 +3292,7 @@ struct evHotplug {
 {
    char *newstr;
    if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
-      copymem(String.data(), newstr, String.size());
+      memmove(newstr, String.data(), String.size());
       newstr[String.size()] = 0;
       return newstr;
    }

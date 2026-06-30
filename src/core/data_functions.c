@@ -44,6 +44,7 @@ FDEF argsGetObjectPtr[] = { { "Object", FD_OBJECTPTR }, { "Object", FD_OBJECTID 
 FDEF argsGetOwnerID[] = { { "Result", FD_OBJECTID }, { "Object", FD_OBJECTID }, { 0, 0 } };
 FDEF argsGetResource[] = { { "Result", FD_INT64 }, { "Resource", FD_INT }, { 0, 0 } };
 FDEF argsGetSystemState[] = { { "SystemState", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsGetThreadID[] = { { "Result", FD_INT }, { 0, 0 } };
 FDEF argsIdentifyFile[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Filter", FD_INT|FD_UNSIGNED }, { "Class", FD_RESULT|FD_INT|FD_UNSIGNED }, { "SubClass", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsInitObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsListChildren[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { "List", FD_PTR }, { 0, 0 } };
@@ -188,6 +189,7 @@ const struct Function glFunctions[] = {
    { (APTR)AsyncPending, "AsyncPending", argsAsyncPending },
    { (APTR)AsyncWait, "AsyncWait", argsAsyncWait },
    { (APTR)ClassDatabase, "ClassDatabase", argsClassDatabase },
+   { (APTR)GetThreadID, "GetThreadID", argsGetThreadID },
    { nullptr, nullptr, nullptr }
 };
 

@@ -144,7 +144,7 @@ ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
 std::condition_variable_any cvObjects;
 
 std::mutex glmThreadRegistry;
-std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
+std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry; // IDs are obtained from GetThreadID()
 
 std::list<CoreTimer> glTimers; // Locked with glmTimer.  std::list maintains stable pointers to elements.
 std::list<FDRecord> glFDTable;
