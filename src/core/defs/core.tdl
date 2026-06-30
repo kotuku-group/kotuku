@@ -107,12 +107,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
   flags("THF", { comment="Thread flags" },
     "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
 
-  enums("FDT", { type="int", start=0, comment="Flags for the SetDate() file method." },
-    "MODIFIED: The date on which the file was last modified.",
-    "CREATED: The date on which the file was created.  On some host platforms this datestamp may be read-only.",
-    "ACCESSED: The date on which the file was last accessed by a user or application.",
-    "ARCHIVED: The date on which the file was most recently archived.  Not supported by most filesystems.")
-
   flags("VOLUME", { comment="Options for SetVolume()" },
     "REPLACE: If the volume already exists, all paths that are attached to it will be replaced with the new path setting.",
     "PRIORITY: If the volume already exists, the path will be inserted at the beginning of the path list so that it has priority over the others.",
@@ -129,23 +123,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "NO_DEEP_SCAN: Do not perform more than one iteration when resolving the source file path.",
     "PATH: Use the `PATH` environment variable to resolve the file name in the `Path` parameter.",
     "CASE_SENSITIVE: For use on host systems that use case-insensitive file systems such as Windows; this option checks that the discovered file is a case-sensitive match to the Path.")
-
-  -- NB: The MFF flags are duplicated in the FileSystem's Win32 code if you're going to change these
-
-  flags("MFF", { comment="Flags for the File Watch() method." },
-    "READ: File was accessed (read).",
-    "MODIFY|WRITE: File modified via write or truncation.",
-    "CREATE: New file/link created or renamed in folder.",
-    "DELETE: Existing file deleted",
-    "MOVED|RENAME: Existing file moved or renamed.",
-    "ATTRIB: File permissions or datestamp changed.",
-    "OPENED: Existing file was opened.",
-    "CLOSED: An opened file has been closed.",
-    "UNMOUNT: Host filesystem was unmounted.",
-    "FOLDER: Folder identifier; if passed to @File.Watch() then indicates a preference for folder events only.",
-    "FILE: File identifier; if passed to @File.Watch() then indicates a preference for file events only.",
-    "SELF: Event applies to the monitored folder and not a contained item",
-    "DEEP: Receive notifications from sub-folders (Windows only).")
 
   enums("STT", { type="int", start=1, comment="Types for StrDatatype()." },
     "NUMBER: The string represents a whole number.",
@@ -593,8 +570,7 @@ class FloatRect {
    constexpr double bottom() const noexcept { return Y + Height; }
 };
 
-}
-
+} // namespace
 ]==])
 
   struct('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
@@ -1219,6 +1195,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
   klass("Config")
   klass("Compression")
   klass("CompressedStream")
+  klass("File")
+  klass("StorageDevice")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1255,52 +1233,6 @@ inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
-
-  klass("StorageDevice", { src="../classes/class_storagedevice.cpp", output="../classes/class_storagedevice_def.cpp" }, [[
-    large(DEVICE) DeviceFlags  # Flags identifying the type of media
-    large DeviceSize           # Size of the device
-    large BytesFree            # Bytes available to the user
-    large BytesUsed            # Bytes already used
-    string DeviceID            # A unique ID for the mounted device
-    string Volume              # The volume name of the device to query
-  ]])
-
-  methods("File", "Fl", {
-    { id=1,  name="StartStream" },
-    { id=2,  name="StopStream" },
-    { id=3,  name="Delete" },
-    { id=4,  name="Move" },
-    { id=5,  name="Copy" },
-    { id=6,  name="SetDate" },
-    { id=7,  name="ReadLine" },
-    { id=8,  name="BufferContent" },
-    { id=9,  name="Next" },
-    { id=10, name="Watch" }
-  })
-
-  klass("File", { version=1.2,
-    src="../classes/class_file.cpp",
-    output="../classes/class_file_def.c",
-    extended=true, references={ 'PERMIT' }
-  }, [[
-    large     Position  # The current read/write byte position in a file.
-    string    Path      # The file path.
-    int(FL)   Flags     # File flags and options.
-    int(PERMIT) Permissions
-    array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
-    large     Size      # The size of the file's content.
-    ~struct(DateTime) Date
-    ~struct(DateTime) Created
-  ]],
-  nil,
-  [[
-   inline std::string readLine() {
-      std::string str;
-      struct fl::ReadLine args { &str };
-      Action(fl::ReadLine::id, this, &args);
-      return str;
-   }
-  ]])
 
   struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
@@ -1496,60 +1428,6 @@ struct evHotplug {
 }
 
 } // pf namespace
-
-namespace fl {
-
-// Read endian values from files and objects.
-
-template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
-{
-   uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (!Action(AC::Read, Object, &read)) {
-      if (read.Result IS sizeof(T)) {
-         if constexpr (std::endian::native == std::endian::little) {
-            *Result = ((T *)data)[0];
-         }
-         else {
-            switch(sizeof(T)) {
-               case 2:  *Result = (data[1]<<8) | data[0]; break;
-               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
-               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
-               default: *Result = ((T *)data)[0];
-            }
-         }
-         return ERR::Okay;
-      }
-      else return ERR::Read;
-   }
-   else return ERR::Read;
-}
-
-template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
-{
-   uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (!Action(AC::Read, Object, &read)) {
-      if (read.Result IS sizeof(T)) {
-         if constexpr (std::endian::native == std::endian::little) {
-            switch(sizeof(T)) {
-               case 2:  *Result = (data[1]<<8) | data[0]; break;
-               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
-               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
-               default: *Result = ((T *)data)[0];
-            }
-         }
-         else {
-            *Result = ((T *)data)[0];
-         }
-         return ERR::Okay;
-      }
-      else return ERR::Read;
-   }
-   else return ERR::Read;
-}
-
-} // fl namespace
 
 // Function construction (refer types.h)
 

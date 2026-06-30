@@ -1,0 +1,113 @@
+--$TIRI:Include
+
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
+  c_include('<kotuku/main.h>')
+
+  restrict(function()
+    loadFile('./common.tdl')
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  klass("StorageDevice", { src="../classes/class_storagedevice.cpp", output="../classes/class_storagedevice_def.cpp" }, [[
+    large(DEVICE) DeviceFlags  # Flags identifying the type of media
+    large DeviceSize           # Size of the device
+    large BytesFree            # Bytes available to the user
+    large BytesUsed            # Bytes already used
+    string DeviceID            # A unique ID for the mounted device
+    string Volume              # The volume name of the device to query
+  ]])
+
+  methods("File", "Fl", {
+    { id=1,  name="StartStream" },
+    { id=2,  name="StopStream" },
+    { id=3,  name="Delete" },
+    { id=4,  name="Move" },
+    { id=5,  name="Copy" },
+    { id=6,  name="SetDate" },
+    { id=7,  name="ReadLine" },
+    { id=8,  name="BufferContent" },
+    { id=9,  name="Next" },
+    { id=10, name="Watch" }
+  })
+
+  klass("File", { version=1.2,
+    src="../classes/class_file.cpp",
+    output="../classes/class_file_def.c",
+    extended=true, references={ 'PERMIT' }
+  }, [[
+    large     Position  # The current read/write byte position in a file.
+    string    Path      # The file path.
+    int(FL)   Flags     # File flags and options.
+    int(PERMIT) Permissions
+    array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
+    large     Size      # The size of the file's content.
+    ~struct(DateTime) Date
+    ~struct(DateTime) Created
+  ]],
+  nil,
+  [[
+   inline std::string readLine() {
+      std::string str;
+      struct fl::ReadLine args { &str };
+      Action(fl::ReadLine::id, this, &args);
+      return str;
+   }
+  ]])
+
+  c_insert([[
+namespace fl {
+
+// Read endian values from files and objects.
+
+template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
+{
+   uint8_t data[sizeof(T)];
+   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
+   if (!Action(AC::Read, Object, &read)) {
+      if (read.Result IS sizeof(T)) {
+         if constexpr (std::endian::native IS std::endian::little) {
+            *Result = ((T *)data)[0];
+         }
+         else {
+            switch(sizeof(T)) {
+               case 2:  *Result = (data[1]<<8) | data[0]; break;
+               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
+               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
+               default: *Result = ((T *)data)[0];
+            }
+         }
+         return ERR::Okay;
+      }
+      else return ERR::Read;
+   }
+   else return ERR::Read;
+}
+
+template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
+{
+   uint8_t data[sizeof(T)];
+   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
+   if (!Action(AC::Read, Object, &read)) {
+      if (read.Result IS sizeof(T)) {
+         if constexpr (std::endian::native IS std::endian::little) {
+            switch(sizeof(T)) {
+               case 2:  *Result = (data[1]<<8) | data[0]; break;
+               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
+               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
+               default: *Result = ((T *)data)[0];
+            }
+         }
+         else {
+            *Result = ((T *)data)[0];
+         }
+         return ERR::Okay;
+      }
+      else return ERR::Read;
+   }
+   else return ERR::Read;
+}
+
+} // fl namespace
+]])
+
+end)

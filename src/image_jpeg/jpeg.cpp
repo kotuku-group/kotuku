@@ -14,6 +14,7 @@ related to this Package.  The original libjpeg source code can be obtained from 
 #include <kotuku/main.h>
 #include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/filesystem.h>
 
 #include "../image/image.h"
 
