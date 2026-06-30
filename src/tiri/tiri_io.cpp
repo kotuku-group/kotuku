@@ -6,6 +6,7 @@
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
+#include <kotuku/modules/filesystem.h>
 #include <inttypes.h>
 
 #include "lauxlib.h"

@@ -12,6 +12,7 @@ MP3: Sound class extension
 #define PRV_MP3
 #include <kotuku/main.h>
 #include <kotuku/modules/audio.h>
+#include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/mp3.h>
 #include <kotuku/strings.hpp>
 

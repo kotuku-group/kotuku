@@ -12,6 +12,7 @@ constexpr int SIZE_READ = 1024;
 #include <kotuku/strings.hpp>
 #include <kotuku/modules/regex.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/filesystem.h>
 #include <thread>
 #include <string_view>
 #include <span>

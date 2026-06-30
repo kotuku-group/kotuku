@@ -48,6 +48,29 @@
     "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
     "VIRTUAL: Path is to a virtual device.")
 
+  enums("FDT", { type="int", start=0, comment="Flags for the SetDate() file method." },
+    "MODIFIED: The date on which the file was last modified.",
+    "CREATED: The date on which the file was created.  On some host platforms this datestamp may be read-only.",
+    "ACCESSED: The date on which the file was last accessed by a user or application.",
+    "ARCHIVED: The date on which the file was most recently archived.  Not supported by most filesystems.")
+
+  -- NB: The MFF flags are duplicated in the FileSystem's Win32 code if you're going to change these
+
+  flags("MFF", { comment="Flags for the File Watch() method." },
+    "READ: File was accessed (read).",
+    "MODIFY|WRITE: File modified via write or truncation.",
+    "CREATE: New file/link created or renamed in folder.",
+    "DELETE: Existing file deleted",
+    "MOVED|RENAME: Existing file moved or renamed.",
+    "ATTRIB: File permissions or datestamp changed.",
+    "OPENED: Existing file was opened.",
+    "CLOSED: An opened file has been closed.",
+    "UNMOUNT: Host filesystem was unmounted.",
+    "FOLDER: Folder identifier; if passed to @File.Watch() then indicates a preference for folder events only.",
+    "FILE: File identifier; if passed to @File.Watch() then indicates a preference for file events only.",
+    "SELF: Event applies to the monitored folder and not a contained item",
+    "DEEP: Receive notifications from sub-folders (Windows only).")
+
   struct("CompressionFeedback", { }, [[
     int(FDB) FeedbackID     # Set to one of the FDB event indicators
     int   Index             # Index of the current file

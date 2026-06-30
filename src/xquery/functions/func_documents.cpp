@@ -3,6 +3,7 @@
 
 #include "accessor_support.h"
 #include <filesystem>
+#include <kotuku/modules/filesystem.h>
 
 namespace fs = std::filesystem;
 
