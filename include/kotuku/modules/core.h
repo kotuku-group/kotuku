@@ -29,46 +29,6 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#ifndef NDEBUG
- #ifndef _MSC_VER
-  #include <signal.h>
- #endif
-#endif
-
-// For use in requires statements
-template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcComplete = requires { sizeof(T); };
-template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
-template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
-   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
-   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
-
-#ifndef DEFINE_ENUM_FLAG_OPERATORS
-template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<1> { typedef int8_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<2> { typedef int16_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<4> { typedef int type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<8> { typedef int64_t type; };
-// used as an approximation of std::underlying_type<T>
-template <class T> struct _ENUM_FLAG_SIZED_INTEGER { typedef typename _ENUM_FLAG_INTEGER_FOR_SIZE<sizeof(T)>::type type; };
-
-#define DEFINE_ENUM_FLAG_OPERATORS(ENUMTYPE) \
-constexpr ENUMTYPE operator | (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) | ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator & (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) & ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator ~ (ENUMTYPE a) noexcept { return ENUMTYPE(~((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a)); } \
-constexpr ENUMTYPE operator ^ (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ^ ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator |= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) |= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator &= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) &= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }
-#endif
-
-template<typename T>
-constexpr bool defined(T flags, T test_flag) noexcept {
-   static_assert(std::is_enum_v<T>, "Type must be an enum");
-   using underlying = std::underlying_type_t<T>;
-   return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
-}
-
-constexpr int RESOURCE_ID_OFFSET = -1;
 class objMetaClass;
 class objModule;
 class objTime;
@@ -498,15 +458,6 @@ enum class ALIGN : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(ALIGN)
-
-enum class STR : uint32_t {
-   NIL = 0,
-   MATCH_CASE = 0x00000001,
-   CASE = 0x00000001,
-   MATCH_LEN = 0x00000002,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(STR)
 
 // Message flags.
 
@@ -1400,16 +1351,7 @@ struct StructInfo {
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
 };
 
-typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
-
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
-
-#ifndef STRINGIFY
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#endif
-
-#define MOD_IDL nullptr
 
 #ifdef KOTUKU_STATIC
 __export void CloseCore(void);
@@ -1429,42 +1371,6 @@ __export struct ModHeader ModHeader;
 #define MOD_NAME nullptr
 #endif
 
-namespace kt {
-
-#ifdef PRINTF64I
-  #define PF64 "I64d"
-#elif PRINTF64_PRID
-  #define PF64 PRId64
-#else
-  #define PF64 "lld"
-#endif
-
-// Use DEBUG_BREAK in critical areas where you would want to break in gdb.  This feature will only be compiled
-// in to debug builds.
-
-#ifndef NDEBUG
- #ifdef _MSC_VER
-  #define DEBUG_BREAK __debugbreak();
- #elif __linux__
-  #define DEBUG_BREAK raise(SIGTRAP);
- #else
-  #define DEBUG_BREAK
- #endif
-#else
- #define DEBUG_BREAK
-#endif
-
-template <class T>
-constexpr T roundup(T Num, T Alignment) {
-   return ((Num + Alignment - 1) / Alignment) * Alignment;
-}
-
-[[deprecated]] inline int F2I(double val) noexcept {
-   return std::lrint(val);
-}
-
-} // namespace
-
 constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 
 #ifdef _LP64
@@ -1472,13 +1378,6 @@ constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 #else
 #define FD_PTR64 0
 #endif
-
-template <class T>
-inline void nextutf8(T *&Str) noexcept {
-   if (*Str) {
-      for (++Str; (((unsigned char)*Str) & 0xc0) IS 0x80; ++Str);
-   }
-}
 
 // Forward declared classes
 
