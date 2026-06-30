@@ -1,6 +1,8 @@
 
 -- Class constants are stored in a common include because the Core needs to access them for generating the IDL string
 
+  loadFile(glPath .. 'common.tdl')
+
   flags("CNF", { comment="Flags for the Config class." },
     "STRIP_QUOTES: Removes quotes from key values that are quote-encapsulated.",
     "AUTO_SAVE: When the configuration object is freed, automatically save the configuration data back to the original file source.",
@@ -87,6 +89,35 @@
 
   struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
+  ]])
+
+  struct("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
+     large Instant        # Unix epoch microseconds at which the transition occurs.
+     string Abbreviation  # Short name where available, e.g. GMT, BST, PST.
+     int OffsetBefore     # UTC offset in seconds before the transition.
+     int OffsetAfter      # UTC offset in seconds after the transition.
+     int DaylightSaving   # 1 if the resulting period observes daylight-saving time.
+  ]],
+  [[
+   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
+  ]])
+
+  struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
+     string ZoneID      # Preferred public ID, e.g. Europe/London or UTC.
+     string NativeID    # Host-native ID, e.g. GMT Standard Time on Windows.
+     string Source      # "tzif", "win32", or "utc".
+     string DataPath    # TZif path on Linux, otherwise empty.
+     string Version     # TZDB/source version if available, otherwise empty.
+     vector(struct(TimeZoneTransition)) Transitions # Transitions available for the requested range.
+     int BaseOffset     # Standard UTC offset in seconds.
+     short StartYear    # Inclusive requested start year.
+     short EndYear      # Inclusive requested end year.
+     char IsLocal       # 1 if ZoneID requested the local system zone.
+     char IsFallback    # 1 if UTC fallback was used.
+  ]],
+  [[
+   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
+   TimeZoneInfo(int) : TimeZoneInfo() { }
   ]])
 
   struct("CompressionFeedback", { }, [[

@@ -1,0 +1,31 @@
+--$TIRI:Include
+
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
+  c_include('<kotuku/main.h>')
+
+  restrict(function()
+    loadFile('./common.tdl')
+  end)
+
+  -- Note that the fields following SystemTime are identical to struct DateTime
+
+  methods("Time", "Pt", {
+    { id=1, name="SetTime" },
+    { id=2, name="GetTimeZoneInfo" }
+  })
+
+  klass("Time", { src="../classes/class_time.cpp", output="../classes/class_time_def.c" }, [[
+    large SystemTime  # Total number of microseconds passed since the system base time
+    int Year          # Year   (-ve for BC, +ve for AD)
+    int Month         # Month  (1 - 12)
+    int Day           # Day    (1 - 31)
+    int Hour          # Hour   (0 - 23)
+    int Minute        # Minute (0 - 59)
+    int Second        # Second (0 - 59)
+    int TimeZone      # 0 is GMT, range is +1300 or -1300
+    int DayOfWeek     # Day of week (0 = Sunday ..)
+    int MilliSecond   # Millisecond (0 - 999)
+    int MicroSecond   # Microsecond  (0 - 999999)
+  ]])
+
+end)
