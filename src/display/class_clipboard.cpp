@@ -112,7 +112,9 @@ void clean_clipboard(void)
    if (not time.ok()) return;
 
    time->query();
-   int64_t now = time->get<int64_t>(FID_Timestamp) / 1000000LL;
+   int64_t timestamp;
+   time->getTimestamp(timestamp);
+   int64_t now = timestamp / 1000000LL;
    int64_t yesterday = now - (24 * 60LL * 60LL);
 
    DirInfo *dir;

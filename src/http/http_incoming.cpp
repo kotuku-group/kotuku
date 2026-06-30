@@ -251,7 +251,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                   log.msg("MovedPermanently to %s", location.c_str());
 
                   if (auto active_socket = Self->Socket) {
-                     Self->Socket->set(FID_Feedback, (APTR)nullptr);
+                     Self->Socket->setFeedback(FUNCTION{});
                      Self->Socket = nullptr;
                      FreeResource(active_socket);
                   }

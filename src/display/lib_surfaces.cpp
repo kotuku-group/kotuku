@@ -746,8 +746,8 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
             return log.warning(ERR::Redimension);
          }
 
-         Width = display->get<int>(FID_Width);
-         Height = display->get<int>(FID_Height);
+         display->getWidth(Width);
+         display->getHeight(Height);
       }
       else return log.warning(ERR::AccessObject);
    }

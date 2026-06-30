@@ -164,7 +164,7 @@ static ERR MODExpunge(void)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 

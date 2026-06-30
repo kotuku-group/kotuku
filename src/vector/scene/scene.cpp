@@ -518,8 +518,11 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
 
          if ((!Self->PageWidth) or (!Self->PageHeight)) {
             Self->Flags |= VPF::RESIZE;
-            Self->PageWidth = surface->get<int>(FID_Width);
-            Self->PageHeight = surface->get<int>(FID_Height);
+            Unit surface_width, surface_height;
+            surface->getWidth(surface_width);
+            surface->getHeight(surface_height);
+            Self->PageWidth = int(surface_width);
+            Self->PageHeight = int(surface_height);
          }
 
          SubscribeAction(*surface, AC::Redimension, C_FUNCTION(notify_redimension));
