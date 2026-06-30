@@ -162,7 +162,7 @@ static void set_log_recording_error(BackstageResponse &Response, std::string_vie
 
 static void backstage_log_callback(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel)
 {
-   auto thread_id = kt::_get_thread_id();
+   auto thread_id = GetThreadID();
 
    std::lock_guard<std::mutex> lock(glLogRecordingLock);
 
@@ -172,11 +172,11 @@ static void backstage_log_callback(CSTRING Header, CSTRING Message, int Depth, i
    if (MsgLevel > glLogMaxLevel) return;
 
    glLogMessages.emplace_back(LogMessage {
-      .Header = Header ? Header : "",
-      .Message = Message ? Message : "",
+      .Header   = Header ? Header : "",
+      .Message  = Message ? Message : "",
       .ThreadID = thread_id,
-      .Depth = Depth,
-      .Level = MsgLevel
+      .Depth    = Depth,
+      .Level    = MsgLevel
    });
 }
 

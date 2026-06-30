@@ -258,7 +258,7 @@ extern ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes;
 
 extern std::condition_variable_any cvObjects;
 
-// Per-thread record for the global thread registry.  Threads are registered on first use of get_thread_id() and
+// Per-thread record for the global thread registry.  Threads are registered on first use of GetThreadID() and
 // deregistered on thread destruction.  The condition variable allows other threads to interrupt a sleeping thread
 // via WakeThread().
 
@@ -1091,7 +1091,6 @@ class objRootModule : public Object {
    ~objRootModule();
 };
 
-THREADID get_thread_id(void);
 void deregister_thread(void);
 [[nodiscard]] std::shared_ptr<ThreadRecord> get_thread_record(void);
 ERR WakeThread(int Thread, int Stop = false);

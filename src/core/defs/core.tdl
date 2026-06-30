@@ -273,7 +273,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "TOTAL_SHARED_MEMORY: The total amount of shared memory in use (system wide).",
     "LOG_DEPTH: The current depth of log messages.",
     "JNI_ENV: Return the current JNI environment string.",
-    "THREAD_ID: Return the ID of the current thread.",
     "PROCESS_STATE: Life-cycle stage of the running process",
     "TOTAL_MEMORY: The total amount of installed memory.",
     "TOTAL_SWAP: The total amount of available swap space.",
@@ -1039,7 +1038,8 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     "AsyncCancel",
     "AsyncPending",
     "AsyncWait",
-    "ClassDatabase")
+    "ClassDatabase",
+    "GetThreadID")
 
   c_insert([==[
 
@@ -1112,26 +1112,6 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
    return QueueAction(Action, ObjectID, nullptr);
 }
 #endif
-
-namespace kt {
-
-inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
-   memmove(Dest, Src, Length);
-}
-
-inline void clearmem(APTR Memory, std::size_t Length) {
-   if (Memory) memset(Memory, 0, Length);
-}
-
-static thread_local int _tlUniqueThreadID = 0;
-
-[[nodiscard]] inline int _get_thread_id(void) {
-   if (_tlUniqueThreadID) return _tlUniqueThreadID;
-   _tlUniqueThreadID = GetResource(RES::THREAD_ID);
-   return _tlUniqueThreadID;
-}
-
-} // namespace
 
 #include <kotuku/log.h>
 #include <kotuku/objects.h>
@@ -1420,7 +1400,7 @@ struct evHotplug {
 {
    char *newstr;
    if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
-      copymem(String.data(), newstr, String.size());
+      memmove(newstr, String.data(), String.size());
       newstr[String.size()] = 0;
       return newstr;
    }

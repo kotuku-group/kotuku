@@ -36,6 +36,14 @@ inline constexpr int64_t TAGEND = 0;
 
 namespace kt {
 
+inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
+   memmove(Dest, Src, Length);
+}
+
+inline void clearmem(APTR Memory, std::size_t Length) {
+   if (Memory) memset(Memory, 0, Length);
+}
+
 //********************************************************************************************************************
 
 // Concept for types that support lock(timeout)/unlock() interface

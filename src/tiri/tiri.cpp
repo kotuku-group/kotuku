@@ -160,7 +160,7 @@ void release_object(GCobject *Object)
             #ifndef NDEBUG
             if (Object->ptr->Queue.load() <= 0) {
                kt::Log("release_object").warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
-                  Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), kt::_get_thread_id());
+                  Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), GetThreadID());
                DEBUG_BREAK
             }
             #endif

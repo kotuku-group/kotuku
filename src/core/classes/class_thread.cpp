@@ -52,29 +52,6 @@ struct ThreadEntryCleanupGuard {
 };
 
 //********************************************************************************************************************
-// Returns a unique ID for the active thread.  The ID has no relationship with the host operating system.
-
-static thread_local THREADID tlUniqueThreadID(0);
-static std::atomic_int glThreadIDCount = 1;
-
-THREADID get_thread_id(void)
-{
-   if ((tlUniqueThreadID.defined()) and (tlThreadRecord)) return tlUniqueThreadID;
-   if (not tlUniqueThreadID.defined()) tlUniqueThreadID = THREADID(glThreadIDCount++);
-
-   // Register or repair the global record once, then use the thread-local record as the fast-path proof.
-
-   std::lock_guard lock(glmThreadRegistry);
-   if (auto it = glThreadRegistry.find(int(tlUniqueThreadID)); it IS glThreadRegistry.end()) {
-      tlThreadRecord = std::make_shared<ThreadRecord>();
-      glThreadRegistry[int(tlUniqueThreadID)] = tlThreadRecord;
-   }
-   else tlThreadRecord = it->second;
-
-   return tlUniqueThreadID;
-}
-
-//********************************************************************************************************************
 // Called whenever a MSGID::THREAD_CALLBACK message is caught by ProcessMessages().  See thread_entry() for usage.
 
 ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
@@ -164,7 +141,7 @@ static ERR THREAD_Activate(extThread *Self)
       tlThreadCrashed = true;
       tlThreadRef     = Self;
       ThreadEntryCleanupGuard cleanup_guard;
-      Self->InterruptThreadID.store(int(get_thread_id()), std::memory_order_release);
+      Self->InterruptThreadID.store(GetThreadID(), std::memory_order_release);
 
       ThreadMessage msg = { .ThreadID = uid, .Callback = Self->Callback };
 
