@@ -1349,6 +1349,10 @@ struct Edges {
    int Bottom;  // Bottom coordinate
 };
 
+struct ActionEntry {
+   ERR (*PerformAction)(OBJECTPTR, APTR);     // Pointer to a custom action hook.
+};
+
 struct CompressionFeedback {
    FDB     FeedbackID;      // Set to one of the FDB event indicators
    int     Index;           // Index of the current file
@@ -2554,10 +2558,6 @@ class objMetaClass : public Object {
 inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
-
-struct ActionEntry {
-   ERR (*PerformAction)(OBJECTPTR, APTR);     // Pointer to a custom action hook.
-};
 
 // Module class definition
 

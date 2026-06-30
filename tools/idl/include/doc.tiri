@@ -454,7 +454,7 @@ global function saveDocuments()
             except ex
                print('Failed to produce documentation for class ' .. className .. ': ' .. ex.message)
             end
-         else
+         elseif not cl.forwardDeclared then
             print('No meta information for class ' .. className)
          end
       end

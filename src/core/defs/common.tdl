@@ -85,6 +85,10 @@
     "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
     "PIPE: Enable the output pipe to the launched process so that it can read data.")
 
+  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
+     fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
+  ]])
+
   struct("CompressionFeedback", { }, [[
     int(FDB) FeedbackID     # Set to one of the FDB event indicators
     int   Index             # Index of the current file

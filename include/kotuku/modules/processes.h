@@ -155,9 +155,10 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getActions(APTR &Value) noexcept {
+   inline ERR getActions(std::span<struct ActionEntry> &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      return field->GetValue(this, &Value);
+      auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getAffinityMask(int64_t &Value) noexcept {

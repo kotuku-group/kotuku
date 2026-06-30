@@ -1208,10 +1208,6 @@ inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
 
-  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
-     fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
-  ]])
-
   methods("Module", "Mod", {
     { id=1, name="ResolveSymbol" },
     { id=2, name="Test" }

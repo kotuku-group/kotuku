@@ -27,6 +27,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     int(TSF) Flags
     int ReturnCode
     int ProcessID    # Native process ID of the activated task
+    ~array(struct(ActionEntry)) Actions
   ]])
 
   methods("Thread", "Th", {
