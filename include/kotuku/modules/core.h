@@ -72,14 +72,10 @@ constexpr int RESOURCE_ID_OFFSET = -1;
 class objMetaClass;
 class objStorageDevice;
 class objFile;
-class objConfig;
-class objScript;
 class objTask;
 class objThread;
 class objModule;
 class objTime;
-class objCompression;
-class objCompressedStream;
 
 // Clipboard modes
 
@@ -507,17 +503,6 @@ enum class ALIGN : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(ALIGN)
 
-// Script flags
-
-enum class SCF : uint32_t {
-   NIL = 0,
-   EXIT_ON_ERROR = 0x00000001,
-   PROCESS_DOC = 0x00000002,
-   LOG_ALL = 0x00000004,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(SCF)
-
 enum class STR : uint32_t {
    NIL = 0,
    MATCH_CASE = 0x00000001,
@@ -673,20 +658,6 @@ enum class FDL : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(FDL)
 
-// Compression flags
-
-enum class CMF : uint32_t {
-   NIL = 0,
-   PASSWORD = 0x00000001,
-   NEW = 0x00000002,
-   CREATE_FILE = 0x00000004,
-   READ_ONLY = 0x00000008,
-   NO_LINKS = 0x00000010,
-   APPLY_SECURITY = 0x00000020,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CMF)
-
 // Flags for ResolvePath()
 
 enum class RSF : uint32_t {
@@ -797,30 +768,6 @@ enum class RDF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(RDF)
 
-// File flags
-
-enum class FL : uint32_t {
-   NIL = 0,
-   WRITE = 0x00000001,
-   NEW = 0x00000002,
-   READ = 0x00000004,
-   DIRECTORY = 0x00000008,
-   FOLDER = 0x00000008,
-   APPROXIMATE = 0x00000010,
-   LINK = 0x00000020,
-   BUFFER = 0x00000040,
-   LOOP = 0x00000080,
-   FILE = 0x00000100,
-   RESET_DATE = 0x00000200,
-   DEVICE = 0x00000400,
-   STREAM = 0x00000800,
-   EXCLUDE_FILES = 0x00001000,
-   EXCLUDE_FOLDERS = 0x00002000,
-   VIRTUAL = 0x00004000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(FL)
-
 // AnalysePath() values
 
 enum class LOC : int {
@@ -881,25 +828,6 @@ enum class VAS : int {
    READ_LINK = 16,
    CREATE_LINK = 17,
    DRIVER_SIZE = 18,
-};
-
-// Feedback event indicators.
-
-enum class FDB : int {
-   NIL = 0,
-   DECOMPRESS_FILE = 1,
-   COMPRESS_FILE = 2,
-   REMOVE_FILE = 3,
-   DECOMPRESS_OBJECT = 4,
-};
-
-// Compression stream formats
-
-enum class CF : int {
-   NIL = 0,
-   GZIP = 1,
-   ZLIB = 2,
-   DEFLATE = 3,
 };
 
 // Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.
@@ -1009,18 +937,6 @@ enum class CLF : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(CLF)
-
-// Flags for the Config class.
-
-enum class CNF : uint32_t {
-   NIL = 0,
-   STRIP_QUOTES = 0x00000001,
-   AUTO_SAVE = 0x00000002,
-   OPTIONAL_FILES = 0x00000004,
-   NEW = 0x00000008,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CNF)
 
 // Raw key codes
 
@@ -1180,6 +1096,86 @@ enum class KEY : int {
    PLAY = 149,
    LIST_END = 150,
 };
+
+// Flags for the Config class.
+
+enum class CNF : uint32_t {
+   NIL = 0,
+   STRIP_QUOTES = 0x00000001,
+   AUTO_SAVE = 0x00000002,
+   OPTIONAL_FILES = 0x00000004,
+   NEW = 0x00000008,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CNF)
+
+// Script flags
+
+enum class SCF : uint32_t {
+   NIL = 0,
+   EXIT_ON_ERROR = 0x00000001,
+   PROCESS_DOC = 0x00000002,
+   LOG_ALL = 0x00000004,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(SCF)
+
+// Compression flags
+
+enum class CMF : uint32_t {
+   NIL = 0,
+   PASSWORD = 0x00000001,
+   NEW = 0x00000002,
+   CREATE_FILE = 0x00000004,
+   READ_ONLY = 0x00000008,
+   NO_LINKS = 0x00000010,
+   APPLY_SECURITY = 0x00000020,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CMF)
+
+// Compression stream formats
+
+enum class CF : int {
+   NIL = 0,
+   GZIP = 1,
+   ZLIB = 2,
+   DEFLATE = 3,
+};
+
+// Compression feedback event indicators.
+
+enum class FDB : int {
+   NIL = 0,
+   DECOMPRESS_FILE = 1,
+   COMPRESS_FILE = 2,
+   REMOVE_FILE = 3,
+   DECOMPRESS_OBJECT = 4,
+};
+
+// File flags
+
+enum class FL : uint32_t {
+   NIL = 0,
+   WRITE = 0x00000001,
+   NEW = 0x00000002,
+   READ = 0x00000004,
+   DIRECTORY = 0x00000008,
+   FOLDER = 0x00000008,
+   APPROXIMATE = 0x00000010,
+   LINK = 0x00000020,
+   BUFFER = 0x00000040,
+   LOOP = 0x00000080,
+   FILE = 0x00000100,
+   RESET_DATE = 0x00000200,
+   DEVICE = 0x00000400,
+   STREAM = 0x00000800,
+   EXCLUDE_FILES = 0x00001000,
+   EXCLUDE_FOLDERS = 0x00002000,
+   VIRTUAL = 0x00004000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(FL)
 
 struct InputEvent {
    const struct InputEvent * Next;    // Next event in the chain
@@ -1356,6 +1352,45 @@ struct Edges {
    int Top;     // Top coordinate
    int Right;   // Right-most coordinate
    int Bottom;  // Bottom coordinate
+};
+
+struct CompressionFeedback {
+   FDB     FeedbackID;      // Set to one of the FDB event indicators
+   int     Index;           // Index of the current file
+   CSTRING Path;            // Name of the current file/path in the archive
+   CSTRING Dest;            // Destination file/path during decompression
+   int64_t Progress;        // Progress indicator (byte position for the file being de/compressed).
+   int64_t OriginalSize;    // Original size of the file
+   int64_t CompressedSize;  // Compressed size of the file
+   int16_t Year;            // Year of the original file's datestamp.
+   int16_t Month;           // Month of the original file's datestamp.
+   int16_t Day;             // Day of the original file's datestamp.
+   int16_t Hour;            // Hour of the original file's datestamp.
+   int16_t Minute;          // Minute of the original file's datestamp.
+   int16_t Second;          // Second of the original file's datestamp.
+   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+
+   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
+      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+};
+
+struct CompressedItem {
+   int64_t OriginalSize;            // Original size of the file
+   int64_t CompressedSize;          // Compressed size of the file
+   struct CompressedItem * Next;    // Used only if this is a linked-list.
+   CSTRING Path;                    // Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
+   PERMIT  Permissions;             // Original permissions - see PERMIT flags.
+   int     UserID;                  // Original user ID
+   int     GroupID;                 // Original group ID
+   int     OthersID;                // Original others ID
+   FL      Flags;                   // FL flags
+   struct DateTime Created;         // Date and time of the file's creation.
+   struct DateTime Modified;        // Date and time last modified.
+    ankerl::unordered_dense::map<std::string, std::string> *Tags;
 };
 
 
@@ -1719,45 +1754,6 @@ struct CacheFile {
    APTR    Data;         // Pointer to the cached data.
 };
 
-struct CompressionFeedback {
-   FDB     FeedbackID;      // Set to one of the FDB event indicators
-   int     Index;           // Index of the current file
-   CSTRING Path;            // Name of the current file/path in the archive
-   CSTRING Dest;            // Destination file/path during decompression
-   int64_t Progress;        // Progress indicator (byte position for the file being de/compressed).
-   int64_t OriginalSize;    // Original size of the file
-   int64_t CompressedSize;  // Compressed size of the file
-   int16_t Year;            // Year of the original file's datestamp.
-   int16_t Month;           // Month of the original file's datestamp.
-   int16_t Day;             // Day of the original file's datestamp.
-   int16_t Hour;            // Hour of the original file's datestamp.
-   int16_t Minute;          // Minute of the original file's datestamp.
-   int16_t Second;          // Second of the original file's datestamp.
-   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-
-   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
-      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-};
-
-struct CompressedItem {
-   int64_t OriginalSize;            // Original size of the file
-   int64_t CompressedSize;          // Compressed size of the file
-   struct CompressedItem * Next;    // Used only if this is a linked-list.
-   CSTRING Path;                    // Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
-   PERMIT  Permissions;             // Original permissions - see PERMIT flags.
-   int     UserID;                  // Original user ID
-   int     GroupID;                 // Original group ID
-   int     OthersID;                // Original others ID
-   FL      Flags;                   // FL flags
-   struct DateTime Created;         // Date and time of the file's creation.
-   struct DateTime Modified;        // Date and time last modified.
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
-};
-
 struct FileInfo {
    int64_t Size;              // The size of the file's content.
    int64_t Timestamp;         // 64-bit time stamp - usable only for comparison (e.g. sorting).
@@ -1847,27 +1843,6 @@ struct ClassRecord {
    std::string Header;       // File identification instruction, e.g. [0:$89504e470d0a1a0a]
    std::string Icon;         // Icon reference in group/name format
    std::string Description;  // File description
-};
-
-struct ScriptArg { // For use with sc::Exec
-   CSTRING Name;
-   uint32_t Type;
-   union {
-      APTR    Address;
-      int     Int;
-      int64_t Int64;
-      double  Double;
-   };
-
-   ScriptArg(CSTRING pName, OBJECTPTR pValue, uint32_t pType = FD_OBJECTPTR) : Name(pName), Type(pType), Address((APTR)pValue) { }
-   ScriptArg(CSTRING pName, std::string &pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue.data()) { }
-   ScriptArg(CSTRING pName, const std::string &pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue.data()) { }
-   ScriptArg(CSTRING pName, CSTRING pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue) { }
-   ScriptArg(CSTRING pName, APTR pValue, uint32_t pType = FD_PTR) : Name(pName), Type(pType), Address(pValue) { }
-   ScriptArg(CSTRING pName, int pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
-   ScriptArg(CSTRING pName, uint32_t pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
-   ScriptArg(CSTRING pName, int64_t pValue, uint32_t pType = FD_INT64) : Name(pName), Type(pType), Int64(pValue) { }
-   ScriptArg(CSTRING pName, double pValue, uint32_t pType = FD_DOUBLE) : Name(pName), Type(pType), Double(pValue) { }
 };
 
 #ifdef KOTUKU_STATIC
@@ -2229,10 +2204,6 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
 }
 #endif
 
-typedef KEYVALUE ConfigKeys;
-typedef std::pair<std::string, ConfigKeys> ConfigGroup;
-typedef std::vector<ConfigGroup> ConfigGroups;
-
 namespace kt {
 
 inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
@@ -2443,6 +2414,11 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getPublicSize(int &Value) noexcept {
+      Value = this->PublicSize;
+      return ERR::Okay;
+   }
+
    inline ERR getActionTable(std::span<struct ActionEntry> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
       auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
@@ -2573,6 +2549,12 @@ class objMetaClass : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setPublicSize(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->PublicSize = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setMethods(std::span<const struct MethodEntry> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00101510, &Value);
@@ -2686,7 +2668,9 @@ class objFile : public Object {
    int64_t  Position;   // The current read/write byte position in a file.
    std::string Path;    // Specifies the location of a file or folder.
    FL       Flags;      // File flags and options.
+   PERMIT   Permissions; // Manages the permissions of a file.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
+   int64_t  Size;       // The byte size of a file.
    public:
    inline std::string readLine() {
       std::string str;
@@ -2702,6 +2686,7 @@ class objFile : public Object {
       struct acDataFeed args = { Object, Datatype, Buffer, Size };
       return Action(AC::DataFeed, this, &args);
    }
+   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
    template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
@@ -2710,7 +2695,7 @@ class objFile : public Object {
       const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
       struct acRead read = { (int8_t *)Buffer, bytes };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = U(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
@@ -2814,10 +2799,26 @@ class objFile : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getPermissions(PERMIT &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getBuffer(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
       auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
       return get_field(this, Value);
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getDate(struct DateTime * &Value) noexcept {
@@ -2830,14 +2831,6 @@ class objFile : public Object {
 
    inline ERR getCreated(struct DateTime * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getPermissions(PERMIT &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -2863,14 +2856,6 @@ class objFile : public Object {
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getSize(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -2926,11 +2911,6 @@ class objFile : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setDate(const struct DateTime & Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_STRUCT, &Value);
-   }
-
    inline ERR setPermissions(const PERMIT Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
@@ -2939,6 +2919,11 @@ class objFile : public Object {
    inline ERR setSize(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT64, &Value);
+   }
+
+   inline ERR setDate(const struct DateTime & Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setLink(const std::string_view &Value) noexcept {
@@ -2958,460 +2943,6 @@ class objFile : public Object {
 
 };
 
-// Config class definition
-
-#define VER_CONFIG (1.000000)
-
-// Config methods
-
-namespace cfg {
-struct ReadValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Set { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct WriteValue { std::string_view Group; std::string_view Key; std::string_view Data; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DeleteKey { std::string_view Group; std::string_view Key; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DeleteGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetGroupFromIndex { int Index; std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SortByKey { std::string_view Key; int Descending; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct MergeFile { std::string_view Path; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Merge { OBJECTPTR Source; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-
-} // namespace
-
-class objConfig : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::CONFIG;
-   static constexpr CSTRING CLASS_NAME = "Config";
-
-   using create = kt::Create<objConfig>;
-   objConfig(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   std::string Path;         // Set this field to the location of the source configuration file.
-   std::string KeyFilter;    // Set this field to enable key filtering.
-   std::string GroupFilter;  // Set this field to enable group filtering.
-   CNF Flags;                // Optional flags may be set here.
-   public:
-   ConfigGroups Groups;
-
-   // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
-      for (auto& [group, keys] : Groups) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = strtod(keys.cbegin()->second.c_str(), nullptr);
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtod(it->second.c_str(), nullptr);
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, int &pValue) {
-      for (auto& [group, keys] : Groups) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = strtol(keys.cbegin()->second.c_str(), nullptr, 0);
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtol(it->second.c_str(), nullptr, 0);
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, std::string &pValue) {
-      for (auto & [group, keys] : Groups) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = keys.cbegin()->second;
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = it->second;
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR write(std::string_view Group, std::string_view Key, std::string_view Value) {
-      for (auto& [group, keys] : Groups) {
-         if (!group.compare(Group)) {
-            if (auto it = keys.find(Key); it != keys.end()) {
-               it->second.assign(Value);
-            }
-            else keys.emplace(Key, Value);
-            return ERR::Okay;
-         }
-      }
-
-      auto &new_group = Groups.emplace_back();
-      new_group.first.assign(Group);
-      new_group.second.emplace(Key, Value);
-      return ERR::Okay;
-   }
-
-   // Action stubs
-
-   inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
-      return Action(AC::DataFeed, this, &args);
-   }
-   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
-   inline ERR init() noexcept { return InitObject(this); }
-   inline ERR saveSettings() noexcept { return Action(AC::SaveSettings, this, nullptr); }
-   inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
-      struct acSaveToObject args = { Dest, { ClassID } };
-      return Action(AC::SaveToObject, this, &args);
-   }
-   inline ERR readValue(const std::string_view &Group, const std::string_view &Key, std::string_view * Data) noexcept {
-      struct cfg::ReadValue args = { Group, Key };
-      ERR error = Action(AC(-1), this, &args);
-      if (Data) *Data = args.Data;
-      return error;
-   }
-   inline ERR set(const std::string_view &Group, const std::string_view &Key, const std::string_view &Data) noexcept {
-      struct cfg::Set args = { Group, Key, Data };
-      return Action(AC(-2), this, &args);
-   }
-   inline ERR writeValue(const std::string_view &Group, const std::string_view &Key, const std::string_view &Data) noexcept {
-      struct cfg::WriteValue args = { Group, Key, Data };
-      return Action(AC(-3), this, &args);
-   }
-   inline ERR deleteKey(const std::string_view &Group, const std::string_view &Key) noexcept {
-      struct cfg::DeleteKey args = { Group, Key };
-      return Action(AC(-4), this, &args);
-   }
-   inline ERR deleteGroup(const std::string_view &Group) noexcept {
-      struct cfg::DeleteGroup args = { Group };
-      return Action(AC(-5), this, &args);
-   }
-   inline ERR getGroupFromIndex(int Index, std::string_view * Group) noexcept {
-      struct cfg::GetGroupFromIndex args = { Index };
-      ERR error = Action(AC(-6), this, &args);
-      if (Group) *Group = args.Group;
-      return error;
-   }
-   inline ERR sortByKey(const std::string_view &Key, int Descending) noexcept {
-      struct cfg::SortByKey args = { Key, Descending };
-      return Action(AC(-7), this, &args);
-   }
-   inline ERR mergeFile(const std::string_view &Path) noexcept {
-      struct cfg::MergeFile args = { Path };
-      return Action(AC(-9), this, &args);
-   }
-   inline ERR merge(OBJECTPTR Source) noexcept {
-      struct cfg::Merge args = { Source };
-      return Action(AC(-10), this, &args);
-   }
-
-   // Customised field getting
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      Value = this->Path;
-      return ERR::Okay;
-   }
-
-   inline ERR getKeyFilter(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getGroupFilter(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getFlags(CNF &Value) noexcept {
-      Value = this->Flags;
-      return ERR::Okay;
-   }
-
-   inline ERR getData(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getTotalGroups(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getTotalKeys(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      return field->GetValue(this, &Value);
-   }
-
-
-   // Customised field setting
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
-   inline ERR setKeyFilter(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00904300, &Value);
-   }
-
-   inline ERR setGroupFilter(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, 0x00904300, &Value);
-   }
-
-   inline ERR setFlags(const CNF Value) noexcept {
-      this->Flags = Value;
-      return ERR::Okay;
-   }
-
-};
-
-// Script class definition
-
-#define VER_SCRIPT (1.000000)
-
-// Script methods
-
-namespace sc {
-struct Exec { std::string_view Procedure; const struct ScriptArg *Args; int TotalArgs; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DerefProcedure { FUNCTION *Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Callback { int64_t ProcedureID; const struct ScriptArg *Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetProcedureID { std::string_view Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DebugLog { std::string_view Options; std::string *Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-
-} // namespace
-
-class objScript : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::SCRIPT;
-   static constexpr CSTRING CLASS_NAME = "Script";
-
-   using create = kt::Create<objScript>;
-   objScript(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   std::string Procedure;              // Specifies a procedure name to be executed.
-   std::string CacheFile;              // Compilable script languages can be compiled to a cache file.
-   std::string Path;                   // The location of a script file to be loaded.
-   std::string ErrorMessage;           // A human readable error string may be declared here following a script execution failure.
-   std::string Statement;              // Scripts can be executed from any string passed into this field.
-   std::string WorkingPath;            // Defines the script's working path (folder).
-   kt::vector<std::string> Results;    // Stores multiple string results for languages that support this feature.
-   OBJECTID TargetID;                  // Reference to the default container that new script objects will be initialised to.
-   SCF      Flags;                     // Optional flags.
-   ERR      Error;                     // If a script fails during execution, an error code may be readable here.
-   int      CurrentLine;               // Indicates the current line being executed when in debug mode.
-   int      LineOffset;                // For debugging purposes, this value is added to any message referencing a line number.
-   public:
-   int64_t  ProcedureID;          // For callbacks
-   KEYVALUE Vars;                 // Global parameters
-   const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   int      ActivationCount;      // Incremented every time the script is activated.
-   int      TotalArgs;            // Total number of ProcArgs
-   OBJECTID ScriptOwnerID;
-
-#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
-   uint8_t TailPadding[alignof(APTR) - sizeof(OBJECTID)];
-#endif
-
-   // Action stubs
-
-   inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
-      return Action(AC::DataFeed, this, &args);
-   }
-   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
-      struct acGetKey args = { Key, &Value };
-      auto error = Action(AC::GetKey, this, &args);
-      if (error != ERR::Okay) Value.clear();
-      return error;
-   }
-   inline ERR init() noexcept { return InitObject(this); }
-   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
-   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
-      struct acSetKey args = { FieldName, Value };
-      return Action(AC::SetKey, this, &args);
-   }
-   inline ERR exec(const std::string_view &Procedure, const struct ScriptArg * Args, int TotalArgs) noexcept {
-      struct sc::Exec args = { Procedure, Args, TotalArgs };
-      return Action(AC(-1), this, &args);
-   }
-   inline ERR derefProcedure(FUNCTION Procedure) noexcept {
-      struct sc::DerefProcedure args = { &Procedure };
-      return Action(AC(-2), this, &args);
-   }
-   inline ERR callback(int64_t ProcedureID, const struct ScriptArg * Args, int TotalArgs, ERR * Error) noexcept {
-      struct sc::Callback args = { ProcedureID, Args, TotalArgs, (ERR)0 };
-      ERR error = Action(AC(-3), this, &args);
-      if (Error) *Error = args.Error;
-      return error;
-   }
-   inline ERR getProcedureID(const std::string_view &Procedure, int64_t * ProcedureID) noexcept {
-      struct sc::GetProcedureID args = { Procedure, (int64_t)0 };
-      ERR error = Action(AC(-4), this, &args);
-      if (ProcedureID) *ProcedureID = args.ProcedureID;
-      return error;
-   }
-   inline ERR debugLog(const std::string_view &Options, std::string &Result) noexcept {
-      struct sc::DebugLog args = { Options, &Result };
-      ERR error = Action(AC(-5), this, &args);
-      return error;
-   }
-
-   // Customised field getting
-
-   inline ERR getProcedure(std::string_view &Value) noexcept {
-      Value = this->Procedure;
-      return ERR::Okay;
-   }
-
-   inline ERR getCacheFile(std::string_view &Value) noexcept {
-      Value = this->CacheFile;
-      return ERR::Okay;
-   }
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      Value = this->Path;
-      return ERR::Okay;
-   }
-
-   inline ERR getErrorMessage(std::string_view &Value) noexcept {
-      Value = this->ErrorMessage;
-      return ERR::Okay;
-   }
-
-   inline ERR getStatement(std::string_view &Value) noexcept {
-      Value = this->Statement;
-      return ERR::Okay;
-   }
-
-   inline ERR getWorkingPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getResults(std::span<std::string> &Value) noexcept {
-      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 280);
-      Value = std::span<std::string>(ktv->data(), ktv->size());
-      return ERR::Okay;
-   }
-
-   inline ERR getTarget(OBJECTID &Value) noexcept {
-      Value = this->TargetID;
-      return ERR::Okay;
-   }
-
-   inline ERR getFlags(SCF &Value) noexcept {
-      Value = this->Flags;
-      return ERR::Okay;
-   }
-
-   inline ERR getError(ERR &Value) noexcept {
-      Value = this->Error;
-      return ERR::Okay;
-   }
-
-   inline ERR getCurrentLine(int &Value) noexcept {
-      Value = this->CurrentLine;
-      return ERR::Okay;
-   }
-
-   inline ERR getLineOffset(int &Value) noexcept {
-      Value = this->LineOffset;
-      return ERR::Okay;
-   }
-
-   inline ERR getTotalArgs(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->GetValue(this, &Value);
-   }
-
-
-   // Customised field setting
-
-   inline ERR setProcedure(const std::string_view &Value) noexcept {
-      this->Procedure = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      this->CacheFile = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x00804500, &Value);
-   }
-
-   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
-      this->ErrorMessage = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
-   inline ERR setWorkingPath(const std::string_view &Value) noexcept {
-      this->WorkingPath = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setResults(const kt::vector<std::string> &Value) noexcept {
-      this->Results = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setTarget(OBJECTID Value) noexcept {
-      this->TargetID = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setFlags(const SCF Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->Flags = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setLineOffset(const int Value) noexcept {
-      this->LineOffset = Value;
-      return ERR::Okay;
-   }
-
-};
-
-namespace sc {
-inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
-}
-
-inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
-}
-
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
-   return Call(Function, std::span<const ScriptArg>(Args));
-}
-
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args, ERR &Result) noexcept {
-   return Call(Function, std::span<const ScriptArg>(Args), Result);
-}
-
-inline ERR Call(const FUNCTION &Function) noexcept {
-   return Call(Function, std::span<const ScriptArg>());
-}
-
-inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
-   return Call(Function, std::span<const ScriptArg>(), Result);
-}
-} // namespace
 struct ActionEntry {
    ERR (*PerformAction)(OBJECTPTR, APTR);     // Pointer to a custom action hook.
 };
@@ -3826,7 +3357,7 @@ class objModule : public Object {
             return ERR::Okay;
          #else
             APTR functionbase;
-            if (!module->get(FID_ModBase, functionbase)) {
+            if (!module->getModBase(functionbase)) {
                if (Module) *Module = module;
                if (Functions) ((APTR *)Functions)[0] = functionbase;
                return ERR::Okay;
@@ -4057,355 +3588,6 @@ class objTime : public Object {
 
    inline ERR setMicroSecond(const int Value) noexcept {
       this->MicroSecond = Value;
-      return ERR::Okay;
-   }
-
-};
-
-// Compression class definition
-
-#define VER_COMPRESSION (1.000000)
-
-// Compression methods
-
-namespace cmp {
-struct CompressBuffer { APTR Input; int InputSize; APTR Output; int OutputSize; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressFile { std::string_view Location; std::string_view Path; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressBuffer { APTR Input; APTR Output; int OutputSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressFile { std::string_view Path; std::string_view Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveFile { std::string_view Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStream { APTR Input; int Length; FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStream { APTR Input; int Length; FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStreamStart { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStreamEnd { FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStreamEnd { FUNCTION *Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStreamStart { static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressObject { std::string_view Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Scan { std::string_view Folder; std::string_view Filter; FUNCTION *Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Find { std::string_view Path; int CaseSensitive; int Wildcard; struct CompressedItem *Item; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-
-} // namespace
-
-class objCompression : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::COMPRESSION;
-   static constexpr CSTRING CLASS_NAME = "Compression";
-
-   using create = kt::Create<objCompression>;
-   objCompression(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   std::string Path;        // Set if the compressed data originates from, or is to be saved to a file source.
-   std::string Password;    // Required if an archive needs an encryption password for access.
-   int64_t  TotalOutput;    // The total number of bytes that have been output during the compression or decompression of streamed data.
-   OBJECTID OutputID;       // Resulting messages will be sent to the object referred to in this field.
-   int      CompressionLevel; // The compression level to use when compressing data.
-   CMF      Flags;          // Optional flags.
-   int      SegmentSize;    // Private. Splits the compressed file if it surpasses a set byte limit.
-   PERMIT   Permissions;    // Default permissions for decompressed files are defined here.
-   int      MinOutputSize;  // Indicates the minimum output buffer size that will be needed during de/compression.
-   int      WindowBits;     // Special option for certain compression formats.
-
-   // Action stubs
-
-   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
-   inline ERR init() noexcept { return InitObject(this); }
-   inline ERR compressBuffer(APTR Input, int InputSize, APTR Output, int OutputSize, int * Result) noexcept {
-      struct cmp::CompressBuffer args = { Input, InputSize, Output, OutputSize, (int)0 };
-      ERR error = Action(AC(-1), this, &args);
-      if (Result) *Result = args.Result;
-      return error;
-   }
-   inline ERR compressFile(const std::string_view &Location, const std::string_view &Path) noexcept {
-      struct cmp::CompressFile args = { Location, Path };
-      return Action(AC(-2), this, &args);
-   }
-   inline ERR decompressBuffer(APTR Input, APTR Output, int OutputSize, int * Result) noexcept {
-      struct cmp::DecompressBuffer args = { Input, Output, OutputSize, (int)0 };
-      ERR error = Action(AC(-3), this, &args);
-      if (Result) *Result = args.Result;
-      return error;
-   }
-   inline ERR decompressFile(const std::string_view &Path, const std::string_view &Dest, int Flags) noexcept {
-      struct cmp::DecompressFile args = { Path, Dest, Flags };
-      return Action(AC(-4), this, &args);
-   }
-   inline ERR removeFile(const std::string_view &Path) noexcept {
-      struct cmp::RemoveFile args = { Path };
-      return Action(AC(-5), this, &args);
-   }
-   inline ERR compressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::CompressStream args = { Input, Length, &Callback, Output, OutputSize };
-      return Action(AC(-6), this, &args);
-   }
-   inline ERR decompressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::DecompressStream args = { Input, Length, &Callback, Output, OutputSize };
-      return Action(AC(-7), this, &args);
-   }
-   inline ERR compressStreamStart() noexcept {
-      return Action(AC(-8), this, nullptr);
-   }
-   inline ERR compressStreamEnd(FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::CompressStreamEnd args = { &Callback, Output, OutputSize };
-      return Action(AC(-9), this, &args);
-   }
-   inline ERR decompressStreamEnd(FUNCTION Callback) noexcept {
-      struct cmp::DecompressStreamEnd args = { &Callback };
-      return Action(AC(-10), this, &args);
-   }
-   inline ERR decompressStreamStart() noexcept {
-      return Action(AC(-11), this, nullptr);
-   }
-   inline ERR decompressObject(const std::string_view &Path, OBJECTPTR Object) noexcept {
-      struct cmp::DecompressObject args = { Path, Object };
-      return Action(AC(-12), this, &args);
-   }
-   inline ERR scan(const std::string_view &Folder, const std::string_view &Filter, FUNCTION Callback) noexcept {
-      struct cmp::Scan args = { Folder, Filter, &Callback };
-      return Action(AC(-13), this, &args);
-   }
-   inline ERR find(const std::string_view &Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {
-      struct cmp::Find args = { Path, CaseSensitive, Wildcard, (struct CompressedItem *)0 };
-      ERR error = Action(AC(-14), this, &args);
-      if (Item) *Item = args.Item;
-      return error;
-   }
-
-   // Customised field getting
-
-   inline ERR getPath(std::string_view &Value) noexcept {
-      Value = this->Path;
-      return ERR::Okay;
-   }
-
-   inline ERR getPassword(std::string_view &Value) noexcept {
-      Value = this->Password;
-      return ERR::Okay;
-   }
-
-   inline ERR getTotalOutput(int64_t &Value) noexcept {
-      Value = this->TotalOutput;
-      return ERR::Okay;
-   }
-
-   inline ERR getOutput(OBJECTID &Value) noexcept {
-      Value = this->OutputID;
-      return ERR::Okay;
-   }
-
-   inline ERR getCompressionLevel(int &Value) noexcept {
-      Value = this->CompressionLevel;
-      return ERR::Okay;
-   }
-
-   inline ERR getFlags(CMF &Value) noexcept {
-      Value = this->Flags;
-      return ERR::Okay;
-   }
-
-   inline ERR getPermissions(PERMIT &Value) noexcept {
-      Value = this->Permissions;
-      return ERR::Okay;
-   }
-
-   inline ERR getMinOutputSize(int &Value) noexcept {
-      Value = this->MinOutputSize;
-      return ERR::Okay;
-   }
-
-   inline ERR getWindowBits(int &Value) noexcept {
-      Value = this->WindowBits;
-      return ERR::Okay;
-   }
-
-   inline ERR getFeedback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getSize(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getUncompressedSize(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-
-   // Customised field setting
-
-   inline ERR setPath(const std::string_view &Value) noexcept {
-      this->Path = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setPassword(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(this, field, 0x00804300, &Value);
-   }
-
-   inline ERR setOutput(OBJECTID Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->OutputID = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setCompressionLevel(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setFlags(const CMF Value) noexcept {
-      this->Flags = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setPermissions(const PERMIT Value) noexcept {
-      this->Permissions = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setWindowBits(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setArchiveName(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, 0x00804200, &Value);
-   }
-
-   inline ERR setFeedback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, FD_FUNCTION, &Value);
-   }
-
-};
-
-// CompressedStream class definition
-
-#define VER_COMPRESSEDSTREAM (1.000000)
-
-class objCompressedStream : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::COMPRESSEDSTREAM;
-   static constexpr CSTRING CLASS_NAME = "CompressedStream";
-
-   using create = kt::Create<objCompressedStream>;
-   objCompressedStream(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   int64_t   TotalOutput;  // A live counter of total bytes that have been output by the stream.
-   OBJECTPTR Input;        // An input object that will supply data for decompression.
-   OBJECTPTR Output;       // A target object that will receive data compressed by the stream.
-   CF        Format;       // The format of the compressed stream.  The default is GZIP.
-
-   // Action stubs
-
-   inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
-      if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
-         return ERR::Okay;
-      }
-      else { *Result = 0; return error; }
-   }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
-      return Action(AC::Read, this, &read);
-   }
-   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
-   inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {
-      struct acSeek args = { Offset, Position };
-      return Action(AC::Seek, this, &args);
-   }
-   inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
-   inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
-   inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
-         if (Result) *Result = write.Result;
-         return ERR::Okay;
-      }
-      else {
-         if (Result) *Result = 0;
-         return error;
-      }
-   }
-   inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
-      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
-         if (Result) *Result = write.Result;
-         return ERR::Okay;
-      }
-      else {
-         if (Result) *Result = 0;
-         return error;
-      }
-   }
-
-   // Customised field getting
-
-   inline ERR getTotalOutput(int64_t &Value) noexcept {
-      Value = this->TotalOutput;
-      return ERR::Okay;
-   }
-
-   inline ERR getInput(OBJECTPTR &Value) noexcept {
-      Value = this->Input;
-      return ERR::Okay;
-   }
-
-   inline ERR getOutput(OBJECTPTR &Value) noexcept {
-      Value = this->Output;
-      return ERR::Okay;
-   }
-
-   inline ERR getFormat(CF &Value) noexcept {
-      Value = this->Format;
-      return ERR::Okay;
-   }
-
-   inline ERR getSize(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->GetValue(this, &Value);
-   }
-
-
-   // Customised field setting
-
-   inline ERR setInput(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->Input = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setOutput(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->Output = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setFormat(const CF Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->Format = Value;
       return ERR::Okay;
    }
 

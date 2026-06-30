@@ -86,8 +86,12 @@ static ERR drag_callback(extVectorViewport *Viewport, const InputEvent *Events)
             glAnchorX = event->AbsX;
             glAnchorY = event->AbsY;
 
-            Viewport->get(FID_X, glDragOriginX);
-            Viewport->get(FID_Y, glDragOriginY);
+            Unit unit;
+            ((objVectorViewport *)Viewport)->getX(unit);
+            glDragOriginX = unit;
+
+            ((objVectorViewport *)Viewport)->getY(unit);
+            glDragOriginY = unit;
          }
          else Viewport->vpDragging = 0; // Released
       }
@@ -160,8 +164,8 @@ static ERR VECTORVIEWPORT_Move(extVectorViewport *Self, struct acMove *Args)
    if (!Args) return ERR::NullArgs;
 
    Unit x, y;
-   Self->get(FID_X, x);
-   Self->get(FID_Y, y);
+   ((objVectorViewport *)Self)->getX(x);
+   ((objVectorViewport *)Self)->getY(y);
 
    Self->vpTargetX = Unit(x + Args->DeltaX);
    Self->vpTargetY = Unit(y + Args->DeltaY);
@@ -758,7 +762,6 @@ static ERR VIEW_SET_YOffset(extVectorViewport *Self, Unit &Value)
 #include "viewport_def.cpp"
 
 static const FieldArray clViewFields[] = {
-   // Concrete (direct-access) fields first, in the same order as their members in extVectorViewport.
    { "Buffer",       FDF_OBJECT|FDF_R, nullptr },
    { "ViewX",        FDF_DOUBLE|FDF_RW, nullptr, VIEW_SET_ViewX },
    { "ViewY",        FDF_DOUBLE|FDF_RW, nullptr, VIEW_SET_ViewY },
@@ -767,7 +770,7 @@ static const FieldArray clViewFields[] = {
    { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, VIEW_SET_AspectRatio, &clAspectRatio },
    { "OverflowX",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VIEW_SET_OverflowX, &clVectorViewportVOF },
    { "OverflowY",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VIEW_SET_OverflowY, &clVectorViewportVOF },
-   // Virtual fields (computed, composite or bitfield-backed).
+   // Virtual fields
    { "AbsX",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsX },
    { "AbsY",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsY },
    { "Buffered",     FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE, VIEW_GET_Buffered, VIEW_SET_Buffered },

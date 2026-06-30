@@ -1977,7 +1977,8 @@ extend_page:
                if (!table->fill.empty()) table->path->setFill(table->fill);
 
                if (!table->stroke.empty()) {
-                  table->path->setFields(fl::Stroke(table->stroke), fl::StrokeWidth(table_values.stroke_width));
+                  table->path->setStroke(table->stroke);
+                  table->path->setStrokeWidth(table_values.stroke_width);
                }
             }
 

@@ -23,9 +23,11 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <variant>
 #include <cfloat>
 #include <kotuku/main.h>
+#include <kotuku/modules/compression.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/strings.hpp>
 #include "svg_def.c"
 #include <katana.h>
@@ -40,10 +42,6 @@ JUMPTABLE_VECTOR
 
 static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modImage = nullptr;
 static double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
-
-struct prvSVG { // Private variables for RSVG
-   class objSVG *SVG;
-};
 
 struct svgInherit {
    OBJECTPTR Object;
@@ -685,7 +683,7 @@ static uint32_t svg_tag_hash(const XTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-static bool svg_tag_is(const XTag &Tag, uint32_t Hash) noexcept
+inline bool svg_tag_is(const XTag &Tag, uint32_t Hash) noexcept
 {
    return svg_tag_hash(Tag) IS Hash;
 }

@@ -1,4 +1,4 @@
--- Flute tests for the ?? operator (if-empty: nil, false, 0, "")
+-- Flute tests for the ?? operator (if-empty: nil, false, 0, "", empty collections)
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
@@ -93,6 +93,10 @@ end
    t = { a=1, b=2, c=3}
    v = t ?? 'Nothing'
    assert(v['a'] is 1, "Failed table case: expected table, got '" .. tostring(v) .. "'")
+
+   empty = { }
+   v = empty ?? 'Nothing'
+   assert(v is 'Nothing', "Failed empty table case: expected fallback, got '" .. tostring(v) .. "'")
 
    v = 'x' ?? { 'Nothing' }
    assert(v is 'x', "Failed table case: expected table, got '" .. tostring(v) .. "'")
@@ -406,6 +410,28 @@ end
    single = array<int, 1>
    v = single ?? 'default'
    assert(v is single, "Array with one element should be truthy")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Table falsey tests: empty tables are considered falsey
+
+@Test function EmptyTable()
+   empty = { }
+   v = empty ?? 'default'
+   assert(v is 'default', "Empty table should be falsey: expected 'default', got '" .. tostring(v) .. "'")
+end
+
+@Test function NonEmptyTable()
+   filled = { value = 1 }
+   v = filled ?? 'default'
+   assert(v is filled, "Non-empty table should be truthy: expected table, got '" .. tostring(v) .. "'")
+end
+
+@Test function ClearedTable()
+   cleared = { value = 1 }
+   cleared.value = nil
+   v = cleared ?? 'default'
+   assert(v is 'default', "Cleared table should be falsey: expected 'default', got '" .. tostring(v) .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

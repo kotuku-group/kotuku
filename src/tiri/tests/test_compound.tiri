@@ -44,6 +44,10 @@ end
    empty ??= 'fallback'
    assert(empty is 'fallback', 'empty string should trigger ??= assignment')
 
+   local empty_table: any = { }
+   empty_table ??= 'fallback table'
+   assert(empty_table is 'fallback table', 'empty table should trigger ??= assignment')
+
    store = { retries = 0, label = 'ready', slots = { '' } }
    store.retries ??= 3
    assert(store.retries is 3, 'table field ??= should assign when falsey')
@@ -77,7 +81,7 @@ end
 end
 
 -- Tests for the ?= (if-nil) operator - only assigns when LHS is nil
--- Unlike ??= which checks for all falsey values (nil, false, 0, ""),
+-- Unlike ??= which checks for all falsey values (nil, false, 0, "", empty collections),
 -- ?= only checks for nil, making it simpler and faster.
 
 @Test function IfNilAssignment()
@@ -399,6 +403,11 @@ end
    global gEmptyVar = ''
    global gEmptyVar ??= 'from empty'
    assert(gEmptyVar is 'from empty', 'global ??= should assign when value is empty string')
+
+   -- Test global ??= assigns when value is an empty table
+   global gEmptyTableVar = { }
+   global gEmptyTableVar ??= 'from empty table'
+   assert(gEmptyTableVar is 'from empty table', 'global ??= should assign when value is an empty table')
 end
 
 @Test function GlobalIfEmptyWithFunctionCall()

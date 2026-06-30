@@ -271,7 +271,7 @@
     <field>
       <name>PublicSize</name>
       <comment>The size of the class in bytes, as seen by the client.</comment>
-      <access>-/-</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>The public size reflects the size of the class before any private variables are taken into account.</p>

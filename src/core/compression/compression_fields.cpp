@@ -160,7 +160,7 @@ Size: Indicates the size of the source archive, in bytes.
 static ERR GET_Size(extCompression *Self, int64_t *Value)
 {
    *Value = 0;
-   if (Self->FileIO) return Self->FileIO->get(FID_Size, *Value);
+   if (Self->FileIO) return Self->FileIO->getSize(*Value);
    else return ERR::Okay;
 }
 

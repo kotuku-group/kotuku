@@ -187,6 +187,8 @@ struct rkWatchPath {
 #include <kotuku/strings.hpp>
 #include <kotuku/system/internals.h>
 #include "prototypes.h"
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/script.h>
 
 using namespace kt;
 
@@ -438,23 +440,25 @@ class extMetaClass : public objMetaClass {
 class extFile : public objFile {
    public:
    using create = kt::Create<extFile>;
+
    struct DateTime prvModified;
    struct DateTime prvCreated;
    std::string prvIcon;
    std::string prvLine;
    std::string prvResolvedPath;
+
    #ifdef __unix__
       std::string prvLink;
    #endif
-   int64_t Size;
+
    #ifdef _WIN32
       int  Stream;
    #else
       APTR  Stream;
    #endif
+
    struct rkWatchPath *prvWatch;
    struct DirInfo *prvList;
-   PERMIT Permissions;
    bool   isFolder;
    int    Handle;         // Native system file handle
 

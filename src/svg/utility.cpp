@@ -552,7 +552,10 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
             auto view = Self->Scene->Viewport;
             while ((view) and (view->classID() != CLASSID::VECTORVIEWPORT)) view = (objVectorViewport *)view->Next;
-            if (view) view->setFields(fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)));
+            if (view) {
+               view->setWidth(Unit(1.0, FD_SCALED));
+               view->setHeight(Unit(1.0, FD_SCALED));
+            }
          }
       }
       else error = ERR::Init;

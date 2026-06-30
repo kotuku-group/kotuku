@@ -3285,20 +3285,31 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_ISEMPTYARR:
-    // Check if RA is an empty array. Used by ?? operator for extended falsey semantics.
-    // If RA is an array with len==0, execute the following JMP (value is falsey).
-    // Otherwise, skip the following JMP (value is truthy - not an array or non-empty).
+    // Check if RA is an empty array or table. Used by ?? operator for extended falsey semantics.
+    // Empty collections execute the following JMP (value is falsey); all other values skip it.
     |  ins_AD  // RA = src, followed by JMP with RD = target
     |  mov RB, [BASE+RA*8]
     |  mov ITYPE, RB
     |  add PC, 8        // Advance past following JMP
     |  sar ITYPE, 47
     |  cmp ITYPEd, LJ_TARRAY
-    |  jne >1        // Not an array - skip JMP (truthy)
+    |  je >2
+    |  cmp ITYPEd, LJ_TTAB
+    |  jne >1        // Not a collection - skip JMP (truthy)
+    |  mov CARG1, RB
+    |  cleartp CARG1
+    |  mov RB, BASE
+    |  call extern lj_tab_empty
+    |  mov BASE, RB
+    |  test RDd, RDd
+    |  jz >1         // Non-empty table - skip JMP (truthy)
+    |  jmp >3        // Empty table - execute JMP (falsey)
+    |2:
     |  cleartp RB
     |  cmp dword ARRAY:RB->len, 0
     |  jne >1        // Non-empty array - skip JMP (truthy)
-    |  // Empty array - execute JMP (falsey)
+    |3:
+    |  // Empty collection - execute JMP (falsey)
     |  movzx RDd, PC_RD
     |  branchPC RD
     |1:           // Fallthrough - skip the JMP

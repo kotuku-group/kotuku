@@ -94,6 +94,7 @@ extern "C" {
    KOTUKU_WINIMPORT WINHANDLE KOTUKU_WINAPI GetCurrentProcess(void);
    KOTUKU_WINIMPORT int KOTUKU_WINAPI DuplicateHandle(WINHANDLE, WINHANDLE, WINHANDLE, WINHANDLE *, unsigned long, int, unsigned long);
    KOTUKU_WINIMPORT int KOTUKU_WINAPI CloseHandle(WINHANDLE);
+   KOTUKU_WINIMPORT int KOTUKU_WINAPI FlushFileBuffers(WINHANDLE);
 }
 
 static int duplicate_std_handle(FILE *Stream, unsigned long StdHandle, int OpenFlags)
@@ -399,7 +400,10 @@ static ERR FILE_DataFeed(extFile *Self, struct acDataFeed *Args)
    if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
 
    if (Args->Size) return acWrite(Self, Args->Buffer, Args->Size, nullptr);
-   else return acWrite(Self, Args->Buffer, strlen((CSTRING)Args->Buffer), nullptr);
+   else {
+      auto input = std::string_view((const char *)Args->Buffer);
+      return acWrite(Self, Args->Buffer, int(input.size()), nullptr);
+   }
 }
 
 /*********************************************************************************************************************
@@ -543,6 +547,39 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
       }
       else return log.warning(ERR::ResolvePath);
    }
+}
+
+/*********************************************************************************************************************
+
+-ACTION-
+Flush: Flushes all pending write operations.
+
+*********************************************************************************************************************/
+
+static ERR FILE_Flush(extFile *Self)
+{
+   kt::Log log;
+
+   if ((Self->Flags & FL::WRITE) IS FL::NIL) return ERR::Okay;
+   if (Self->Buffer) return ERR::Okay;
+   if ((Self->isFolder) or ((Self->Flags & FL::FOLDER) != FL::NIL)) return log.warning(ERR::ExpectedFile);
+   if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
+
+   struct stat64 info;
+   if (fstat64(Self->Handle, &info) IS -1) return log.warning(convert_errno(errno, ERR::SystemCall));
+   if (not S_ISREG(info.st_mode)) return ERR::Okay;
+
+#ifdef _WIN32
+   auto handle = (WINHANDLE)_get_osfhandle(Self->Handle);
+   if ((handle) and (handle != (WINHANDLE)(intptr_t)-1)) {
+      if (FlushFileBuffers(handle)) return ERR::Okay;
+   }
+
+   return log.warning(ERR::SystemCall);
+#else
+   if (fsync(Self->Handle) IS 0) return ERR::Okay;
+   else return log.warning(convert_errno(errno, ERR::SystemCall));
+#endif
 }
 
 /*********************************************************************************************************************
@@ -1154,14 +1191,18 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
 
       output.resize(4096); // We'll shrink it later
       int result;
-      const int CHUNK = 256;
+      constexpr int chunk = 256;
       std::size_t line_offset = 0;
-      while ((result = read(Self->Handle, output.data()+line_offset, CHUNK)) > 0) {
-         int i;
-         for (i=0; (i < result) and (output[line_offset] != '\n'); i++, line_offset++);
-         if (i < result) break;
+      while ((result = read(Self->Handle, output.data() + line_offset, chunk)) > 0) {
+         auto block = std::string_view(output.data() + line_offset, result);
+         if (auto line_feed = block.find('\n'); line_feed != std::string_view::npos) {
+            line_offset += line_feed;
+            break;
+         }
 
-         if (line_offset + CHUNK >= output.size()) {
+         line_offset += result;
+
+         if (line_offset + chunk >= output.size()) {
             lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset the file position back to normal
             output.clear();
             return log.warning(ERR::BufferOverflow);
@@ -1609,7 +1650,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
          // In loop mode, we must make the file buffer appear to be of infinite length in terms of the read/write
          // position marker.
 
-         CSTRING src = (CSTRING)Args->Buffer;
+         auto src = (const int8_t *)Args->Buffer;
          int len;
          for (int writelen=Args->Length; writelen > 0; writelen -= len) {
             len = Self->Size - (Self->Position % Self->Size); // Calculate amount of space ahead of us.
@@ -1741,12 +1782,11 @@ static ERR GET_Created(extFile *Self, DateTime **Value)
       std::string_view path;
       ERR error;
       if (!GET_ResolvedPath(Self, path)) {
-         char buffer[512];
-         int len = strcopy(path.data(), buffer, std::min(sizeof(buffer), path.length()));
-         if ((buffer[len-1] IS '/') or (buffer[len-1] IS '\\')) buffer[len-1] = 0;
+         std::string path_buffer(path);
+         if (path_buffer.ends_with('/') or path_buffer.ends_with('\\')) path_buffer.pop_back();
 
          struct stat64 stats;
-         if (not stat64(buffer, &stats)) {
+         if (not stat64(path_buffer.c_str(), &stats)) {
             // Timestamp has to match that produced by fs_getinfo()
 
             if (auto local = localtime(&stats.st_mtime)) {
@@ -1788,7 +1828,7 @@ static ERR GET_Date(extFile *Self, DateTime **Value)
 {
    kt::Log log;
 
-   *Value = 0;
+   *Value = nullptr;
 
    if (Self->Handle != -1) {
       struct stat64 stats;
@@ -1819,12 +1859,11 @@ static ERR GET_Date(extFile *Self, DateTime **Value)
       std::string_view path;
       ERR error;
       if (!GET_ResolvedPath(Self, path)) {
-         char buffer[512];
-         int len = strcopy(path.data(), buffer, std::min(sizeof(buffer), path.length()));
-         if ((buffer[len-1] IS '/') or (buffer[len-1] IS '\\')) buffer[len-1] = 0;
+         std::string path_buffer(path);
+         if (path_buffer.ends_with('/') or path_buffer.ends_with('\\')) path_buffer.pop_back();
 
          struct stat64 stats;
-         if (not stat64(buffer, &stats)) {
+         if (not stat64(path_buffer.c_str(), &stats)) {
             // Timestamp has to match that produced by fs_getinfo()
 
             if (auto local = localtime(&stats.st_mtime)) {
@@ -2195,7 +2234,7 @@ static ERR SET_Path(extFile *Self, std::string_view &Value)
 
    if (not Value.empty()) {
       if (Value.starts_with("string:")) {
-         int len = Value.find('|', 7);
+         auto len = Value.find('|', 7);
          Self->Path.assign(Value, 0, len);
       }
       else {
@@ -2691,8 +2730,8 @@ extFile::~extFile() {
    }
 #endif
 
-   if (prvList) { FreeResource(prvList); prvList = nullptr; }
-   if (Buffer)  { FreeResource(Buffer); Buffer = nullptr; }
+   if (prvList) FreeResource(prvList);
+   if (Buffer)  FreeResource(Buffer);
 
    if (Handle != -1) {
       if (close(Handle) IS -1) {
@@ -2703,12 +2742,9 @@ extFile::~extFile() {
       Handle = -1;
    }
 
-   if (Stream) {
-      #ifdef __unix__
-         closedir((DIR *)Stream);
-      #endif
-      Stream = 0;
-   }
+#ifdef __unix__
+   if (Stream) closedir((DIR *)Stream);
+#endif
 
 #ifdef _WIN32
    if (((Flags & FL::RESET_DATE) != FL::NIL) and (not path.empty())) {
@@ -2726,15 +2762,15 @@ static const FieldArray FileFields[] = {
    { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
    { "Src",          FDF_SYNONYM },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
+   { "Permissions",  FDF_INTFLAGS|FDF_RW, GET_Permissions, SET_Permissions, &clFilePERMIT },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
+   { "Size",         FDF_INT64|FDF_RW, GET_Size, SET_Size },
    // Virtual fields
    { "Date",         FDF_VIRTUAL|FDF_STRUCT|FDF_RW,        GET_Date, SET_Date, "DateTime" },
    { "Created",      FDF_VIRTUAL|FDF_STRUCT|FDF_R,         GET_Created, nullptr, "DateTime" },
    { "Handle",       FDF_VIRTUAL|FDF_INT64|FDF_R|FDF_PURE, GET_Handle },
    { "Icon",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_Icon },
-   { "Permissions",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW,      GET_Permissions, SET_Permissions, &clFilePERMIT },
    { "ResolvedPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_ResolvedPath },
-   { "Size",         FDF_VIRTUAL|FDF_INT64|FDF_RW,         GET_Size, SET_Size },
    { "Timestamp",    FDF_VIRTUAL|FDF_INT64|FDF_R,          GET_Timestamp },
    { "Link",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Link, SET_Link },
    { "User",         FDF_VIRTUAL|FDF_INT|FDF_RW,           GET_User, SET_User },
@@ -2755,6 +2791,7 @@ extern ERR add_file_class(void)
       fl::Actions(clFileActions),
       fl::Methods(clFileMethods),
       fl::Fields(FileFields),
+      fl::PublicSize(sizeof(objFile)),
       fl::Size(sizeof(extFile)),
       fl::Path("modules:core"));
 

@@ -160,6 +160,7 @@ static const FieldArray glMetaFields[] = {
    { "BaseClassID",     FDF_INT|FDF_UNSIGNED|FDF_RI },
    { "OpenCount",       FDF_INT|FDF_R },
    { "Category",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &CategoryTable },
+   { "PublicSize",      FDF_INT|FDF_RI },
    // Virtual fields
    { "Methods",         FDF_ARRAY|FD_STRUCT|FDF_RI|FDF_PURE, GET_Methods, SET_Methods, "MethodEntry" },
    { "Actions",         FDF_POINTER|FDF_I },
@@ -176,7 +177,7 @@ static const FieldArray glMetaFields[] = {
 };
 
 extern "C" ERR CLASS_FindField(extMetaClass *, struct mc::FindField *);
-extern "C" ERR CLASS_Free(extMetaClass *);
+extern "C" ERR CLASS_FreePlacement(extMetaClass *);
 extern "C" ERR CLASS_Init(extMetaClass *);
 extern "C" ERR CLASS_NewPlacement(extMetaClass *);
 
@@ -204,6 +205,7 @@ void init_metaclass(void)
    glMetaClass.ClassVersion       = 1;
    glMetaClass.Fields             = glMetaFields;
    glMetaClass.ClassName          = "MetaClass";
+   glMetaClass.PublicSize         = 0;
    glMetaClass.Size               = sizeof(extMetaClass);
    glMetaClass.ClassID            = CLASSID::METACLASS;
    glMetaClass.BaseClassID        = CLASSID::METACLASS;
@@ -215,7 +217,7 @@ void init_metaclass(void)
    glMetaClass.Methods.resize(2);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
 
-   glMetaClass.ActionTable[int(AC::Free)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Free;
+   glMetaClass.ActionTable[int(AC::FreePlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_FreePlacement;
    glMetaClass.ActionTable[int(AC::Init)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Init;
    glMetaClass.ActionTable[int(AC::NewPlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_NewPlacement;
    glMetaClass.ActionTable[int(AC::Signal)].PerformAction = &DEFAULT_Signal;
@@ -270,7 +272,7 @@ ERR CLASS_FindField(extMetaClass *Self, struct mc::FindField *Args)
 
 //********************************************************************************************************************
 
-ERR CLASS_Free(extMetaClass *Self)
+ERR CLASS_FreePlacement(extMetaClass *Self)
 {
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
 
@@ -887,7 +889,16 @@ static void field_setup(extMetaClass *Class)
 
       if (Class->SubFields) {
          std::vector<Field> subFields;
-         uint16_t offset = Class->Base->Size; // Offset starts from sizeof(extClassName)
+         // Offset normally starts from sizeof(extClassName), but if the base class sets PublicSize then it starts
+         // from sizeof(objClassName).  This distinction is very important - setting PublicSize means that base
+         // classes can store private variables in the ext* area efficiently, because if a derived class is instanced,
+         // the ext* area is ignored and the derived class can store variables starting from sizeof(objClassName).
+         // It is therefore also critical that if the ext* variables must be visible to derived classes, PublicSize
+         // is either zero or matches sizeof(extClassName) in order to prevent the variables being overwritten.
+         //
+         // In more complex cases, use DerivedPtr as an escape hatch for overcoming variable storage headaches.
+
+         uint16_t offset = Class->Base->PublicSize ? Class->Base->PublicSize : Class->Base->Size;
          uint16_t last_offset = offset;
          Field previous_field = {};
          bool have_previous_field = false;

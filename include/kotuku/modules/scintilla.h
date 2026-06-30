@@ -108,7 +108,7 @@ class objScintilla : public Object {
    static constexpr CSTRING CLASS_NAME = "Scintilla";
 
    using create = kt::Create<objScintilla>;
-   objScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : Object(ClassPtr, ObjectID) { }
+   objScintilla(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    objFont * Font;               // Refers to the font that is used for drawing text in the document.
    std::string Path;             // Identifies the location of a text file to load.
@@ -557,7 +557,7 @@ class objScintillaSearch : public Object {
    static constexpr CSTRING CLASS_NAME = "ScintillaSearch";
 
    using create = kt::Create<objScintillaSearch>;
-   objScintillaSearch(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : Object(ClassPtr, ObjectID) { }
+   objScintillaSearch(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    objScintilla * Scintilla;    // Targets a Scintilla object for searching.
    std::string Text;            // The string sequence to search for.
@@ -624,3 +624,4 @@ class objScintillaSearch : public Object {
    }
 
 };
+

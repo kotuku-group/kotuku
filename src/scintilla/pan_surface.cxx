@@ -322,7 +322,7 @@ void SurfacePan::DrawTextBase(Scintilla::PRectangle rc, Scintilla::Font &font_, 
    if (auto font = (objFont *)GetFont(font_)) { //static_cast<OBJECTPTR>(font_.GetID());
       BitmapClipper clipper(bitmap, cliprect);
 
-      font->setFields(fl::String(nstr));
+      font->setString(nstr);
       font->Bitmap = bitmap;
       font->X = rc.left;
       font->Y = rc.top + font->Leading;

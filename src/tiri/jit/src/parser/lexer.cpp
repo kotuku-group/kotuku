@@ -67,6 +67,34 @@ namespace {
    constexpr bool is_sync_char(LexChar c) noexcept {
       return c IS ',' or c IS ';' or c IS '}' or c IS ')' or c IS ']';
    }
+
+   constexpr bool is_comment_blank(LexChar c) noexcept {
+      return c IS ' ' or c IS '\t' or c IS '\v' or c IS '\f';
+   }
+
+   [[nodiscard]] bool is_empty_short_comment(const LexState *State) noexcept {
+      if (State->c IS LEX_EOF) return true;
+
+      size_t offset = State->current_offset;
+      while (offset < State->source.size()) {
+         LexChar c = LexChar(uint8_t(State->source[offset]));
+         if (lex_iseol(c)) return true;
+         if (not is_comment_blank(c)) return false;
+         ++offset;
+      }
+
+      return true;
+   }
+
+   [[nodiscard]] bool is_empty_comment_appended_to_name(const LexState *State) noexcept {
+      if (State->tok != TK_name) return false;
+
+      size_t token_offset = State->pending_token_offset;
+      if (token_offset IS 0 or token_offset > State->source.size()) return false;
+
+      LexChar previous = LexChar(uint8_t(State->source[token_offset - 1]));
+      return lj_char_isident(previous) and is_empty_short_comment(State);
+   }
 } // anonymous namespace
 
 //********************************************************************************************************************
@@ -1189,6 +1217,11 @@ static LexToken lex_scan(LexState *State, TValue *tv)
                   lj_buf_reset(&State->sb);
                   continue;
                }
+            }
+
+            if (is_empty_comment_appended_to_name(State)) {
+               lj_lex_error(State, 0, ErrMsg::XEMPTYCOMMENT);
+               if (State->had_lex_error) continue;
             }
 
             // Short comment "--.*\n"

@@ -1,0 +1,97 @@
+--$TIRI:Include
+
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
+  c_include('<kotuku/main.h>')
+
+  restrict(function()
+    loadFile('./common.tdl')
+  end)
+
+  c_insert([[
+typedef KEYVALUE ConfigKeys;
+typedef std::pair<std::string, ConfigKeys> ConfigGroup;
+typedef std::vector<ConfigGroup> ConfigGroups;
+]])
+
+  methods("config", "Cfg", {
+    { id=1,  name="ReadValue" },
+    { id=2,  name="Set" },
+    { id=3,  name="WriteValue" },
+    { id=4,  name="DeleteKey" },
+    { id=5,  name="DeleteGroup" },
+    { id=6,  name="GetGroupFromIndex" },
+    { id=7,  name="SortByKey" },
+    { id=9,  name="MergeFile" },
+    { id=10, name="Merge" }
+  })
+
+  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c", extended=true }, [[
+    string Path          # The location pointer
+    string KeyFilter     # Enables key filtering, removing any unwanted keys on load.
+    string GroupFilter   # Enables group filtering, removing any unwanted groups on load.
+    int(CNF) Flags       # Optional flags
+  ]],
+  nil,
+  [[
+   ConfigGroups Groups; // Is a std::vector of std::pair and std::map values
+
+   inline ERR getGroups(ConfigGroups * &Groups) {
+      APTR ptr;
+      if (auto error = getData(ptr); error IS ERR::Okay) {
+         Groups = (ConfigGroups *)ptr;
+         return error;
+      }
+      else return error;
+   }
+
+   // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
+
+   inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
+      for (auto & [group, keys] : Groups) {
+         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
+         if (pKey.empty()) pValue = strtod(keys.cbegin()->second.c_str(), nullptr);
+         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtod(it->second.c_str(), nullptr);
+         else return ERR::Search;
+         return ERR::Okay;
+      }
+      return ERR::Search;
+   }
+
+   inline ERR read(std::string_view pGroup, std::string_view pKey, int &pValue) {
+      for (auto & [group, keys] : Groups) {
+         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
+         if (pKey.empty()) pValue = strtol(keys.cbegin()->second.c_str(), nullptr, 0);
+         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtol(it->second.c_str(), nullptr, 0);
+         else return ERR::Search;
+         return ERR::Okay;
+      }
+      return ERR::Search;
+   }
+
+   inline ERR read(std::string_view pGroup, std::string_view pKey, std::string &pValue) {
+      for (auto & [group, keys] : Groups) {
+         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
+         if (pKey.empty()) pValue = keys.cbegin()->second;
+         else if (auto it = keys.find(pKey); it != keys.end()) pValue = it->second;
+         else return ERR::Search;
+         return ERR::Okay;
+      }
+      return ERR::Search;
+   }
+
+   inline ERR write(std::string_view Group, std::string_view Key, std::string_view Value) {
+      for (auto & [group, keys] : Groups) {
+         if (!group.compare(Group)) {
+            if (auto it = keys.find(Key); it != keys.end()) it->second.assign(Value);
+            else keys.emplace(Key, Value);
+            return ERR::Okay;
+         }
+      }
+
+      auto &new_group = Groups.emplace_back();
+      new_group.first.assign(Group);
+      new_group.second.emplace(Key, Value);
+      return ERR::Okay;
+   }
+  ]])
+end)

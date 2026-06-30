@@ -10,8 +10,10 @@ This version of the launcher is intended for use from the command-line only.
 *********************************************************************************************************************/
 
 #include <kotuku/main.h>
+#include <kotuku/modules/compression.h>
 #include <kotuku/modules/core.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/startup.h>
 #include <kotuku/strings.hpp>
 #include <string.h>

@@ -749,6 +749,50 @@ Z: Close Path
       <const name="PATH_CHANGED">The vector path has been modified or affected by a transform.</const>
     </constants>
 
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+      <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
+      <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
+      <const name="BUTTON">Input is a physical button or switch</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
+      <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
+    </constants>
+
+    <constants lookup="PTC" comment="Predefined cursor styles">
+      <const name="CROSSHAIR">The cross hair is used for targeting specific pixel points (common in paint programs).</const>
+      <const name="CUSTOM">Works in conjunction with the SetCustomCursor() function to represent a program defined bitmap.</const>
+      <const name="DEFAULT">The default cursor (usually an arrow pointing to the upper left).</const>
+      <const name="DRAGGABLE">Used to indicate that a surface or object can be dragged by the user.</const>
+      <const name="END"/>
+      <const name="HAND">The hand cursor is often used for indicating click-able content (hyper-links, icons etc).</const>
+      <const name="HAND_LEFT">Similar to the standard hand cursor, but points to the left.</const>
+      <const name="HAND_RIGHT">Similar to the standard hand cursor, but points to the right.</const>
+      <const name="INVISIBLE">The cursor graphic is invisible (but will continue to operate as normal in all other respects).</const>
+      <const name="MAGNIFIER">Represents a magnifying glass.</const>
+      <const name="NO_CHANGE"/>
+      <const name="PAINTBRUSH">The paintbrush cursor is typically employed by paint programs.</const>
+      <const name="SIZE_BOTTOM">Sizing cursor - for resizing the bottom edge of any rectangular area.</const>
+      <const name="SIZE_BOTTOM_LEFT">Sizing cursor - for resizing the bottom left corner of any rectangular area.</const>
+      <const name="SIZE_BOTTOM_RIGHT">Sizing cursor - for resizing the bottom right corner of any rectangular area.</const>
+      <const name="SIZE_LEFT">Sizing cursor - for resizing the left edge of any rectangular area.</const>
+      <const name="SIZE_RIGHT">Sizing cursor - for resizing the right edge of any rectangular area.</const>
+      <const name="SIZE_TOP">Sizing cursor - for resizing the top edge of any rectangular area.</const>
+      <const name="SIZE_TOP_LEFT">Sizing cursor - for resizing the top left corner of any rectangular area.</const>
+      <const name="SIZE_TOP_RIGHT">Sizing cursor - for resizing the top right corner of any rectangular area.</const>
+      <const name="SIZING">Multi-directional sizing cursor - for resizing in any direction.</const>
+      <const name="SLEEP">The sleep cursor is used to inform the user that the computer is busy.</const>
+      <const name="SPLIT_HORIZONTAL">The horizontal split cursor is typically used for splitting rectangles in half, or dragging a horizontal split within a large rectangular space.</const>
+      <const name="SPLIT_VERTICAL">The vertical split cursor is typically used for splitting rectangles in half, or dragging a vertical split within a large rectangular space.</const>
+      <const name="STOP">The stop cursor is used to inform the user that an operation is not possible (e.g. drag and drop to an unsupported object area).</const>
+      <const name="TEXT">The text cursor is popular for the precise positioning of text cursors.</const>
+    </constants>
+
     <constants lookup="RQ">
       <const name="AUTO">The default option is chosen by the system.</const>
       <const name="BEST">Use the best quality renderer available and without concerns for computational time taken.</const>

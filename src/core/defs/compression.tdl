@@ -1,0 +1,49 @@
+--$TIRI:Include
+
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
+  c_include('<kotuku/main.h>')
+
+  restrict(function()
+    loadFile('./common.tdl')
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  methods("Compression", "Cmp", {
+    { id=1, name="CompressBuffer" },
+    { id=2, name="CompressFile" },
+    { id=3, name="DecompressBuffer" },
+    { id=4, name="DecompressFile" },
+    { id=5, name="RemoveFile" },
+    { id=6, name="CompressStream" },
+    { id=7, name="DecompressStream" },
+    { id=8, name="CompressStreamStart" },
+    { id=9, name="CompressStreamEnd" },
+    { id=10, name="DecompressStreamEnd" },
+    { id=11, name="DecompressStreamStart" },
+    { id=12, name="DecompressObject" },
+    { id=13, name="Scan" },
+    { id=14, name="Find" }
+  })
+
+  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" },
+    output="../compression/class_compression_def.c", extended=true }, [[
+    string Path             # Location of the compressed data
+    string Password
+    large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
+    oid Output              # Reference to output object for user messages
+    int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
+    int(CMF) Flags          # Optional flags
+    int SegmentSize         # Splits the compressed file if it surpasses a set byte limit (e.g. 1.44MB)
+    int(PERMIT) Permissions # Default permissions to use for decompressed files
+    int MinOutputSize       # Minimum recommended output buffer size
+    int WindowBits          # Window bits, currently applicable to the default (zlib) compression
+  ]])
+
+  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp",
+    output="../compression/class_compressed_stream_def.c", extended=true }, [[
+    large TotalOutput  # Count of the total bytes that have been output.
+    obj Input          # The object that is the source of the compressed data.
+    obj Output         # The object that is the destination for the compressed data.
+    int(CF) Format     # CF_GZIP, CF_ZLIB, CF_DEFLATE
+  ]])
+end)

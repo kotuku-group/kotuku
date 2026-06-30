@@ -11,7 +11,7 @@
     <id>d44abc36</id>
     <idstring>SCRIPT</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does not include a default parser or execution process of any kind.</p>
 <p>To execute a script file, choose a derived class that matches the language and create the script object.  Set the <fl>Path</fl> field and then <action>Activate</action> the script.  Global input parameters for the script can be defined via the <action>SetKey</action> action.</p>
@@ -302,16 +302,6 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <type>OBJECTID</type>
       <description>
 <p>This field can refer to the target object that new objects at the root of the script will be initialised to.  If this field is not set, the root-level objects in the script will be initialised to the script's owner.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>TotalArgs</name>
-      <comment>Reflects the total number of parameters used in a script object.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>The total number of parameters that have been set in a script object through the unlisted field mechanism are reflected in the value of this field.</p>
       </description>
     </field>
 

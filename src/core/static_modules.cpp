@@ -10,6 +10,7 @@ extern "C" ModHeader * register_font_module();
 extern "C" ModHeader * register_http_module();
 extern "C" ModHeader * register_jpeg_module();
 extern "C" ModHeader * register_json_module();
+extern "C" ModHeader * register_lzma_module();
 extern "C" ModHeader * register_mp3_module();
 extern "C" ModHeader * register_network_module();
 extern "C" ModHeader * register_image_module();
@@ -59,6 +60,10 @@ static void register_static_modules(void)
 
    #ifdef INC_MOD_JSON
    glStaticModules["json"] = register_json_module();
+   #endif
+
+   #ifdef INC_MOD_LZMA
+   glStaticModules["lzma"] = register_lzma_module();
    #endif
 
    #ifdef INC_MOD_MP3

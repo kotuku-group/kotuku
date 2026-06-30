@@ -19,7 +19,7 @@
 <p>To load a module and interact with its API, create a module object and initialise it.  The following code segment illustrates in C++:</p>
 <pre>DisplayBase *DisplayBase;
 auto modDisplay = objModule::create::global(fl::Name(&quot;display&quot;));
-if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
+if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 </pre>
 <p>To do the same in Tiri:</p>
 <pre>mGfx = mod.load('display')

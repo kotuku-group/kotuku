@@ -255,34 +255,28 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       // If the object wants to be warned when the free process is about to be executed, it will subscribe to the
       // FreeWarning action.  The process can be aborted by returning ERR::InUse.
 
+      bool in_use = false;
       if (mc->ActionTable[int(AC::FreeWarning)].PerformAction) {
-         if (mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
-            if (Object->collecting()) {
-               // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
-               // from locking up the shutdown process).
+         in_use = mc->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse;
+      }
 
-               log.msg("Object will be destroyed despite being in use.");
-            }
-            else {
-               if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-               return ERR::InUse;
-            }
+      if (not in_use) {
+         // If prior check was for a derived class, call the base class
+         if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction)) {
+            in_use = mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse;
          }
       }
 
-      if (mc->Base) { // Derived class detected, so call the base class
-         if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
-            if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
-               if (Object->collecting()) {
-                  // If the object is marked for deletion then it is not possible to avoid destruction (this prevents
-                  // objects from locking up the shutdown process).
-                  log.msg("Object will be destroyed despite being in use.");
-               }
-               else {
-                  if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
-                  return ERR::InUse;
-               }
-            }
+      if (in_use) {
+         if (Object->collecting()) {
+            // If the object is marked for deletion then it is not possible to avoid destruction (this prevents objects
+            // from locking up the shutdown process).
+
+            log.msg("Object will be destroyed despite being in use.");
+         }
+         else {
+            if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr;
+            return ERR::InUse;
          }
       }
 
@@ -298,18 +292,12 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 
-      if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
-         mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-      }
-
-      if (mc->Base) { // Derived class detected, so call the base class
-         if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
-            mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
-         }
-      }
-
       if (mc->ActionTable[int(AC::FreePlacement)].PerformAction) {
-         mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+         if (mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr) IS ERR::NothingDone) {
+            if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) {
+               mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+            }
+         }
       }
       else if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) { // Fall-back to base class
          mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
@@ -1738,37 +1726,50 @@ ERR InitObject(OBJECTPTR Object)
 
    Object->Class = cl;  // Put back the original to retain integrity
 
-   // If the base class and its loaded derived classes failed, check the object for a Path field and check the data
-   // against derived classes that are not currently in memory.
+   // If the current error code is NoSupport and the object has a Path, check the file against derived classes that
+   // are not currently in memory.
    //
    // This is the only way we can support the automatic loading of derived classes without causing undue load on CPU and
    // memory resources (loading each derived class into memory just to check whether or not the data is supported is overkill).
 
-   std::string_view path;
+   OBJECTPTR target;
    if (use_derived) { // If ERR::UseDerived was set and the derived class was not registered, do not call IdentifyFile()
       log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
-   else if ((error IS ERR::NoSupport) and (!Object->get(FID_Path, path)) and (not path.empty())) {
-      CLASSID class_id, derived_id;
-      if (!IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id)) {
-         if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
-            log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
-            if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
-               if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
-                  if (!(error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr))) {
-                     log.msg("Object class switched to derived class \"%s\".", Object->className());
-                     Object->setFlag(NF::INITIALISED);
-                     Object->ExtClass->OpenCount++;
-                     return ERR::Okay;
+   else if (error IS ERR::NoSupport) {
+      if (auto field = FindField(Object, FID_Path, &target)) {
+         if ((field->readable()) and (field->Flags & FD_STRING) and (target IS Object)) {
+            std::string_view path;
+            if (field->GetValue) { // Virtual std::string_view
+               auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+               get_field(Object, path);
+            }
+            else path = *((std::string *)(((int8_t *)target) + field->Offset)); // Direct std::string
+
+            if (not path.empty()) {
+               CLASSID class_id, derived_id;
+               if (!IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id)) {
+                  if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
+                     log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
+                     if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
+                        if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
+                           if (!(error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr))) {
+                              log.msg("Object class switched to derived class \"%s\".", Object->className());
+                              Object->setFlag(NF::INITIALISED);
+                              Object->ExtClass->OpenCount++;
+                              return ERR::Okay;
+                           }
+                        }
+                        else return ERR::Okay;
+                     }
+                     else log.warning("Failed to load module for class #%d.", uint32_t(derived_id));
                   }
                }
-               else return ERR::Okay;
+               else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
+                  int(path.size()), path.data(), Object->className(), uint32_t(class_id));
             }
-            else log.warning("Failed to load module for class #%d.", uint32_t(derived_id));
          }
       }
-      else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
-         int(path.size()), path.data(), Object->className(), uint32_t(class_id));
 
       Object->Class = cl;  // Put back the original to retain object integrity
    }

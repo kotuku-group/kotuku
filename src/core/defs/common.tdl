@@ -1,0 +1,92 @@
+
+-- Class constants are stored in a common include because the Core needs to access them for generating the IDL string
+
+  flags("CNF", { comment="Flags for the Config class." },
+    "STRIP_QUOTES: Removes quotes from key values that are quote-encapsulated.",
+    "AUTO_SAVE: When the configuration object is freed, automatically save the configuration data back to the original file source.",
+    "OPTIONAL_FILES: Files are optional (do not fail if a requested file does not exist).",
+    "NEW: On initialisation, do not load any data from the referenced configuration file.")
+
+  flags("SCF", { comment="Script flags" },
+     "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
+     "PROCESS_DOC: Process any embedded documentation in the script.",
+     "LOG_ALL: Enables execution debugging.  More information will be printed to the console in this mode.")
+
+  flags("CMF", { comment="Compression flags" },
+    "PASSWORD: A password has been set on the object.",
+    "NEW: Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.",
+    "CREATE_FILE: Create a new archive only if the source file does not already exist.",
+    "READ_ONLY: Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.",
+    "NO_LINKS: Treat symbolic links as normal files/folders.",
+    "APPLY_SECURITY: When decompressing, apply individual file permissions if they are available in the compression file.")
+
+  enums("CF", { type="int", start=1, comment="Compression stream formats" },
+    "GZIP: The 'gzip' format",
+    "ZLIB: The 'zlib' format",
+    "DEFLATE: The 'deflate' format")
+
+  enums("FDB", { type="int", start=1, comment="Compression feedback event indicators." },
+    "DECOMPRESS_FILE: A file is being decompressed to a filesystem path.",
+    "COMPRESS_FILE: A file or folder is being added to a compressed stream.",
+    "REMOVE_FILE: A file is being removed from a compressed stream.",
+    "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
+
+  flags("FL", { comment="File flags" },
+    "WRITE: Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.",
+    "NEW: Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.",
+    "READ: Required if the file needs to be opened for read access.",
+    "FOLDER|DIRECTORY: The file object represents a folder.",
+    "APPROXIMATE: Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.",
+    "LINK: Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.",
+    "BUFFER: Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.",
+    "LOOP: In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.",
+    "FILE: Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).",
+    "RESET_DATE: For internal use only",
+    "DEVICE: The file is a system device (must set if opening a device for read/write operations)",
+    "STREAM: File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.",
+    "EXCLUDE_FILES: Exclude files when scanning this folder.",
+    "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
+    "VIRTUAL: Path is to a virtual device.")
+
+  struct("CompressionFeedback", { }, [[
+    int(FDB) FeedbackID     # Set to one of the FDB event indicators
+    int   Index             # Index of the current file
+    cstr  Path              # Name of the current file/path in the archive
+    cstr  Dest              # Destination file/path during decompression
+    large Progress          # Progress indicator (byte position for the file being de/compressed).
+    large OriginalSize      # Original size of the file
+    large CompressedSize    # Compressed size of the file
+    short Year              # Year of the original file's datestamp.
+    short Month             # Month of the original file's datestamp.
+    short Day               # Day of the original file's datestamp.
+    short Hour              # Hour of the original file's datestamp.
+    short Minute            # Minute of the original file's datestamp.
+    short Second            # Second of the original file's datestamp.
+  ]],
+  [[
+   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+
+   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
+      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+  ]])
+
+  struct("CompressedItem", { }, [[
+    large OriginalSize            # Original size of the file
+    large CompressedSize          # Compressed size of the file
+    struct(*CompressedItem) Next  # Used only if this is a linked-list.
+    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
+    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
+    int  UserID                   # Original user ID
+    int  GroupID                  # Original group ID
+    int  OthersID                 # Original others ID
+    int(FL) Flags                 # `FL` flags
+    struct(DateTime) Created      # Date and time of the file's creation.
+    struct(DateTime) Modified     # Date and time last modified.
+  ]],
+  [[
+    ankerl::unordered_dense::map<std::string, std::string> *Tags;
+  ]])

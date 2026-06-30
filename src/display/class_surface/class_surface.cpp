@@ -966,7 +966,7 @@ extSurface::~extSurface()
    // Give the focus to the parent if our object has the primary focus.  Do not apply this technique to surface objects
    // acting as windows, as the window class has its own focus management code.
 
-   if (hasFocus() and (Owner) and (Owner->classID() != CLASSID::WINDOW)) {
+   if (hasFocus() and Owner) {
       if (ParentID) {
          kt::ScopedObjectLock focus(ParentID);
          if (focus.granted()) acFocus(*focus);
@@ -974,8 +974,7 @@ extSurface::~extSurface()
    }
 
    if ((Flags & RNF::AUTO_QUIT) != RNF::NIL) {
-      kt::Log log;
-      log.msg("Posting a quit message due to use of AUTOQUIT.");
+      kt::Log().msg("Posting a quit message due to use of AUTOQUIT.");
       SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
    }
 
@@ -2113,8 +2112,8 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
                if (list[j].BitmapID != bitmapid) {
                   bitmapid = list[j].BitmapID;
 
-                  extBitmap *picbmp;
-                  img->get(FID_Bitmap, picbmp);
+                  objBitmap *picbmp;
+                  img->getBitmap(picbmp);
                   if (auto error = gfx::CopySurface(list[j].SurfaceID, picbmp, BDF::NIL, 0, 0, list[j].Width,
                         list[j].Height, list[j].Left - list[i].Left, list[j].Top - list[i].Top);
                         error != ERR::Okay) {

@@ -53,6 +53,7 @@ This code is based on the work of Jean-loup Gailly and Mark Adler.
 #define PRV_FILE
 #include "../defs.h"
 #include <kotuku/main.h>
+#include <kotuku/modules/compression.h>
 #include <sstream>
 
 #include "zstream.h"
@@ -187,7 +188,7 @@ static void write_eof(extCompression *);
 
 class extCompression : public objCompression {
    public:
-   OBJECTPTR   FileIO;           // File input/output
+   objFile    *FileIO;           // File input/output
    uint8_t     Header[32];       // The first 32 bytes of data from the compressed file (for derived classes only)
    FUNCTION    Feedback;         // Set a function here to get de/compression feedack
    uint32_t    ArchiveHash;      // Archive reference, used for the 'archive:' volume
@@ -347,14 +348,14 @@ static ERR seek_zip_entry(extCompression *Self, const ZipFile &Entry)
 {
    kt::Log log(__FUNCTION__);
 
-   if (acSeek(Self->FileIO, Entry.Offset + HEAD_NAMELEN, SEEK::START) != ERR::Okay) {
+   if (Self->FileIO->seekStart(Entry.Offset + HEAD_NAMELEN) != ERR::Okay) {
       return log.warning(ERR::Seek);
    }
 
    uint16_t namelen, extralen;
    if (fl::ReadLE(Self->FileIO, &namelen) != ERR::Okay) return ERR::Read;
    if (fl::ReadLE(Self->FileIO, &extralen) != ERR::Okay) return ERR::Read;
-   if (acSeek(Self->FileIO, namelen + extralen, SEEK::CURRENT) != ERR::Okay) return log.warning(ERR::Seek);
+   if (Self->FileIO->seekCurrent(namelen + extralen) != ERR::Okay) return log.warning(ERR::Seek);
 
    return ERR::Okay;
 }
@@ -373,12 +374,13 @@ static ERR decompress_zip_link_to_path(extCompression *Self, const ZipFile &Entr
    if (Entry.CompressedSize <= 0) return ERR::Okay;
 
    if (Entry.DeflateMethod IS 0) {
-      struct acRead read = { .Buffer = Self->Input.data(), .Length = SIZE_COMPRESSION_BUFFER-1 };
-      ERR error = Action(AC::Read, Self->FileIO, &read);
+      size_t result;
+      ERR error = Self->FileIO->read(Self->Input.data(), SIZE_COMPRESSION_BUFFER-1, &result);
       if (!error) {
-         Self->Input[read.Result] = 0;
+         Self->Input[result] = 0;
          DeleteFile(DestPath, nullptr);
-         error = CreateLink(DestPath, (CSTRING)Self->Input.data());
+         std::string_view sv((CSTRING)Self->Input.data(), result);
+         error = CreateLink(DestPath, sv);
          if (error IS ERR::NoSupport) error = ERR::Okay;
       }
 
@@ -1526,8 +1528,8 @@ static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::Decomp
    kt::Log log;
 
    if ((not Args) or Args->Path.empty()) return log.warning(ERR::NullArgs);
-   if (!Args->Object) return log.warning(ERR::NullArgs);
-   if (!Self->FileIO) return log.warning(ERR::MissingPath);
+   if (not Args->Object) return log.warning(ERR::NullArgs);
+   if (not Self->FileIO) return log.warning(ERR::MissingPath);
    if (Self->isDerived()) return ERR::NoSupport; // Object belongs to a Compression derived class
 
    log.branch("%.*s TO %p, Permissions: $%.8x", int(Args->Path.size()), Args->Path.data(), Args->Object,
@@ -1661,8 +1663,7 @@ static ERR COMPRESSION_Flush(extCompression *Self)
 
       int length, zerror;
       if ((length = SIZE_COMPRESSION_BUFFER - Self->Zip.avail_out) > 0) {
-         struct acWrite write = { Self->Output.data(), length };
-         if (Action(AC::Write, Self->FileIO, &write) != ERR::Okay) return ERR::Write;
+         if (Self->FileIO->write(Self->Output.data(), length) != ERR::Okay) return ERR::Write;
          Self->Zip.next_out  = Self->Output.data();
          Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
       }
@@ -1680,7 +1681,7 @@ static ERR COMPRESSION_Flush(extCompression *Self)
       if ((zerror != Z_OK) and (zerror != Z_STREAM_END)) break;
    }
 
-   acFlush(Self->FileIO);
+   Self->FileIO->flush();
 
    return ERR::Okay;
 }

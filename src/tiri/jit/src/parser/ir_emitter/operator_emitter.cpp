@@ -1112,7 +1112,7 @@ void OperatorEmitter::prepare_if_empty(ExprValue left)
    ExpDesc* left_desc = left.raw();
 
    // IF_EMPTY short-circuit: if left is truthy, skip RHS and return left
-   // Extended falsey: nil, false, 0, "" (all trigger RHS evaluation)
+   // Extended falsey: nil, false, 0, "", empty collections (all trigger RHS evaluation)
 
    // Discharge left operand
    ExpressionValue left_val(this->func_state, *left_desc);
@@ -1315,7 +1315,7 @@ void OperatorEmitter::complete_concat(ExprValue left, ExpDesc right)
 
 //********************************************************************************************************************
 // Presence check operator (x?)
-// Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "")
+// Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "", empty collections)
 
 void OperatorEmitter::emit_presence_check(ExprValue operand)
 {

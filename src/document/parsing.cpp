@@ -1472,9 +1472,9 @@ void parser::tag_call(const tag_view &Tag)
 
    // Check for a result and print it
 
-   kt::vector<std::string> *results;
-   if ((!script->get(FID_Results, results)) and (results->size() > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
          fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);
@@ -1671,8 +1671,11 @@ void parser::tag_checkbox(const tag_view &Tag)
             fl::Fill("white")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-8), fl::ViewY(-8), fl::ViewWidth(54), fl::ViewHeight(54));
+         vp->setAspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-8);
+         vp->setViewY(-8);
+         vp->setViewWidth(54);
+         vp->setViewHeight(54);
 
          Self->Viewport->Scene->addDef("/widget/checkbox/on", pattern_on);
       }
@@ -1697,8 +1700,11 @@ void parser::tag_checkbox(const tag_view &Tag)
             fl::Fill("rgb(255 255 255 / .5)")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-8), fl::ViewY(-8), fl::ViewWidth(54), fl::ViewHeight(54));
+         vp->setAspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-8);
+         vp->setViewY(-8);
+         vp->setViewWidth(54);
+         vp->setViewHeight(54);
 
          Self->Viewport->Scene->addDef("/widget/checkbox/off", pattern_off);
       }
@@ -1808,9 +1814,11 @@ void parser::tag_combobox(const tag_view &Tag)
             fl::Fill("rgb(255 255 255 / .86)")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MAX|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-PAD), fl::ViewY(-PAD),
-            fl::ViewWidth(29+(PAD*2)), fl::ViewHeight(29+(PAD*2)));
+         vp->setAspectRatio(ARF::X_MAX|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-PAD);
+         vp->setViewY(-PAD);
+         vp->setViewWidth(29+(PAD*2));
+         vp->setViewHeight(29+(PAD*2));
 
          Self->Viewport->Scene->addDef("/widget/combobox", pattern_cb);
       }
@@ -2688,11 +2696,8 @@ void parser::tag_script(const tag_view &Tag)
 
    // Pass document arguments to the script
 
-   KEYVALUE *vs;
-   if ((!script->get(FID_Variables, vs)) and (vs) and (vs->size() > 0)) {
-      Self->Vars   = *vs;
-      Self->Params = *vs;
-   }
+   script->Vars.insert(Self->Vars.begin(), Self->Vars.end());
+   script->Vars.insert(Self->Params.begin(), Self->Params.end());
 
    if (auto err = acActivate(script); err != ERR::Okay) {
       log_error(&Tag, err, "doc.script-activate-failed", "Failed to activate script '{}'.", name.empty() ? type : name);

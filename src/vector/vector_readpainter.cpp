@@ -201,16 +201,15 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
       // Referencing a pre-defined colour map results in it being added to the Scene's definitions as a linear gradient.
       // It is then accessible permanently under that name.
 
-      extGradient *gradient;
+      extGradientLinear *gradient;
       if (!NewObject(CLASSID::GRADIENTLINEAR, &gradient)) {
          SetOwner(gradient, Scene);
-         gradient->setFields(
-            fl::Name(lookup),
-            fl::Units(VUNIT::BOUNDING_BOX),
-            fl::X1(0.0),
-            fl::Y1(0.0),
-            fl::X2(SCALE(1.0)),
-            fl::Y2(0.0));
+         gradient->setName(lookup);
+         gradient->setUnits(VUNIT::BOUNDING_BOX);
+         gradient->X1 = Unit(0.0);
+         gradient->Y1 = Unit(0.0);
+         gradient->X2 = Unit(1.0, FD_SCALED);
+         gradient->Y2 = Unit(0.0);
 
          if (gradient->Colours) delete gradient->Colours;
          gradient->Colours = new (std::nothrow) GradientColours(map_lookup->second, 0);

@@ -921,10 +921,10 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SOUND)) {
       auto mclass = (objMetaClass *)FindClass(Args->ClassID);
 
-      ERR (**routine)(OBJECTPTR, APTR);
-      if ((!mclass->get(FID_ActionTable, routine)) and (routine)) {
-         if (routine[int(AC::SaveToObject)]) {
-            return routine[int(AC::SaveToObject)](Self, Args);
+      std::span<ActionEntry> actions;
+      if ((!mclass->getActionTable(actions)) and (not actions.empty())) {
+         if (actions[int(AC::SaveToObject)].PerformAction) {
+            return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
          else return log.warning(ERR::NoSupport);
       }

@@ -2688,19 +2688,26 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_ISEMPTYARR:
-    // Check if RA is an empty array. Used by ?? operator for extended falsey semantics.
-    // If RA is an array with len==0, execute the following JMP (value is falsey).
-    // Otherwise, skip the following JMP (value is truthy - not an array or non-empty).
+    // Check if RA is an empty array or table. Used by ?? operator for extended falsey semantics.
+    // Empty collections execute the following JMP (value is falsey); all other values skip it.
     |  // RA = src, followed by JMP with RC = target
     |  ldr CARG1, [BASE, RA, lsl #3]
     |  add PC, PC, #8			// Advance past following JMP (64-bit BCIns)
     |  asr ITYPE, CARG1, #47
     |  cmn ITYPE, #-LJ_TARRAY
-    |  bne >1				// Not an array - skip JMP (truthy)
+    |  beq >2
+    |  cmn ITYPE, #-LJ_TTAB
+    |  bne >1				// Not a collection - skip JMP (truthy)
+    |  and CARG1, CARG1, #LJ_GCVMASK
+    |  bl extern lj_tab_empty
+    |  cbz CRET1w, >1			// Non-empty table - skip JMP (truthy)
+    |  b >3				// Empty table - execute JMP (falsey)
+    |2:
     |  and CARG1, CARG1, #LJ_GCVMASK
     |  ldr TMP0w, ARRAY:CARG1->len
     |  cbnz TMP0w, >1			// Non-empty array - skip JMP (truthy)
-    |  // Empty array - execute JMP (falsey)
+    |3:
+    |  // Empty collection - execute JMP (falsey)
     |  ldrh RCw, [PC, #-6]		// Load RD from JMP at [PC-8+OFS_RD]
     |  add PC, PC, RC, lsl #3		// Branch target: PC + RD*8
     |  sub PC, PC, #0x40000		// Subtract BCBIAS_J*8

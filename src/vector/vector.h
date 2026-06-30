@@ -27,6 +27,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/strings.hpp>
 
 using namespace kt;
@@ -889,6 +890,7 @@ inline extVectorFilter::~extVectorFilter()
 
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
+// Routed through extVector rather than objVectorViewport so that we have visibility of extVector fields.
 
 class extVectorViewport : public extVector {
    public:

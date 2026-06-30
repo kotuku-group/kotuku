@@ -143,17 +143,6 @@
   </function>
 
   <types>
-    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
-      <const name="BOTTOM">Align to bottom</const>
-      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="HORIZONTAL">Align to horizontal center</const>
-      <const name="LEFT">Align to left</const>
-      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="RIGHT">Align to right</const>
-      <const name="TOP">Align to top</const>
-      <const name="VERTICAL">Align to vertical center</const>
-    </constants>
-
     <constants lookup="FMETA" comment="Result flags for the SelectFont() function.">
       <const name="HIDDEN">The font should not appear in any named list shown to the user.</const>
       <const name="HINT_INTERNAL">The Freetype hinter should be used.</const>
@@ -161,18 +150,6 @@
       <const name="HINT_NORMAL">The hinting information provided by the font should be given preference.</const>
       <const name="SCALED">The font is scalable (assume fixed otherwise).</const>
       <const name="VARIABLE">This is a scalable font featuring variable metrics.</const>
-    </constants>
-
-    <constants lookup="FSS" comment="Options for the StringSize() function.">
-      <const name="ALL">Process all characters.</const>
-      <const name="LINE">Terminate operation at the first line feed or word-wrap.</const>
-    </constants>
-
-    <constants lookup="FTF" comment="Font flags">
-      <const name="BASE_LINE">The Font's <fl>Y</fl> coordinate is the base line.</const>
-      <const name="BOLD">Font is described as having a bold weight (read only).</const>
-      <const name="HEAVY_LINE">Underline the font with a double-sized line, using the colour defined in <fl>Underline</fl>.</const>
-      <const name="ITALIC">Font is described as using italics (read only).</const>
     </constants>
 
     <constants lookup="HINT" comment="Force hinting options for a font.">

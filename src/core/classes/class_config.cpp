@@ -48,6 +48,7 @@ is recommended as the default naming format.
 
 #include "../defs.h"
 #include <kotuku/main.h>
+#include <kotuku/modules/config.h>
 
 class extConfig;
 static uint32_t calc_crc(extConfig *Self);

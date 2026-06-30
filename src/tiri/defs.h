@@ -320,8 +320,8 @@ struct finput {
 };
 
 struct module {
-   struct Function *Functions = nullptr;
-   OBJECTPTR Module = nullptr;
+   const struct Function *Functions = nullptr;
+   objModule *Module = nullptr;
    ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
 
    ~module() {

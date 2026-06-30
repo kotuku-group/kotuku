@@ -30,6 +30,14 @@ end
    assert(diag.message != nil, "Diagnostic should have message")
 end
 
+@Test function ValidateEmptyCommentAppendedToVariableDiagnostic()
+   result = debug.validate("value--\n")
+   assert(result.success is false, "Appended empty comment should fail validation")
+   assert(#result.diagnostics > 0, "Should have diagnostics")
+   assert(result.diagnostics[0].message is 'Empty comment appended to variable is not a decrement operation',
+      'Should report the appended empty comment diagnostic')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Malformed type declarations and annotations
 

@@ -205,7 +205,17 @@ Y: Primitive Y coordinate for the effect.
 The (X,Y) field values define the offset of the effect within the target clipping area.
 -END-
 
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+
 *********************************************************************************************************************/
+
+static ERR FILTEREFFECT_GET_XMLDef(extFilterEffect *Self, std::string_view &Value)
+{
+   // Derived classes are expected to override this field
+   return ERR::NoSupport;
+}
 
 #include "filter_effect_def.c"
 
@@ -221,6 +231,7 @@ static const FieldArray clFilterEffectFields[] = {
    { "Height",     FDF_UNIT|FDF_RW },
    { "SourceType", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectSourceType },
    { "MixType",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectMixType },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

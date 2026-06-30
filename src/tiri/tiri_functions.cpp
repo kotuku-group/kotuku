@@ -21,8 +21,8 @@
 
 static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 {
-   int filesize = 0;
-   if (File->get(FID_Size, filesize) != ERR::Okay) return 1;
+   int64_t filesize = 0;
+   if (File->getSize(filesize) != ERR::Okay) return 1;
 
    std::string buffer;
    buffer.resize(filesize);
@@ -370,8 +370,8 @@ int fcmd_loadfile(lua_State *Lua)
          objFile::create src_file = { fl::Path(src) };
          if (src_file.ok()) {
             int64_t tbc_ts, src_ts;
-            tbc_file->get(FID_Timestamp, &tbc_ts);
-            src_file->get(FID_Timestamp, &src_ts);
+            tbc_file->getTimestamp(tbc_ts);
+            src_file->getTimestamp(src_ts);
 
             if (tbc_ts != src_ts) {
                log.msg("Timestamp mismatch, will recompile the cached version.");
