@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-10
+// UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
 
 [[ch-types-and-values]]
 == Types & Values
@@ -149,7 +150,7 @@ Standard falsiness::
 The values `nil` and `false` are falsey.  All other values -- including `0`, `""`, and empty tables -- are truthy.  The `and`, `or`, `not` operators, `if`, and `while` all use standard falsiness.
 
 Extended falsiness::
-The `??` operator and its postfix form `??` use a broader definition.  The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty arrays (length 0) are falsey under extended semantics.  All other values are truthy.  See <<ch-operators>> for the `??` operator.
+The `??` operator and its postfix form `??` use a broader definition.  The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey under extended semantics.  All other values are truthy.  See <<ch-operators>> for the `??` operator.
 
 [[sec-type-inspection]]
 === Type Inspection

@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-10
+// UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
 // UPDATED: 2026-04-03 -- Documented `is not` as an inequality operator equivalent to `!=`.
 // UPDATED: 2026-03-31 — Added 'has' flag testing operator section and updated precedence table.
 // UPDATED: 2026-05-23 — Added comparison chaining section for ordering operators.
@@ -375,7 +376,7 @@ NOTE: There is no `--` decrement operator.  The `--` character sequence begins a
 
 [[sec-conditional-operators]]
 === Conditional Operators
-indexterm:[operators, conditional] Conditional operators use extended falsiness: `nil`, `false`, `0` (integer and floating-point zero), `""` (the empty string), and empty arrays (length 0) are all falsey.  All other values are truthy.  See <<sec-truthiness>> for the full definition.
+indexterm:[operators, conditional] Conditional operators use extended falsiness: `nil`, `false`, `0` (integer and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are all falsey.  All other values are truthy.  See <<sec-truthiness>> for the full definition.
 
 ==== If-Empty Binary Operator (??)
 
@@ -383,14 +384,15 @@ indexterm:[operators, conditional] Conditional operators use extended falsiness:
 
 Returns `a` if `a` is truthy under extended falsiness; otherwise returns `b`.  The operator does not evaluate the right operand if `a` is truthy (short-circuit evaluation).
 
-The `??` operator differs from `or` in that `or` uses standard falsiness (only `nil` and `false` are falsey), while `??` also treats `0` and `""` as falsey.
+The `??` operator differs from `or` in that `or` uses standard falsiness (only `nil` and `false` are falsey), while `??` also treats `0`, `""`, and empty collections as falsey.
 
 [source,tiri]
 ----
-a = 0 or 'default'     -- 0 (zero is truthy under standard rules)
-b = 0 ?? 'default'     -- 'default' (zero is falsey under extended rules)
-c = '' ?? 'fallback'   -- 'fallback'
-d = '' ?? 0 ?? 'final' -- 'final' (both '' and 0 are falsey)
+a = 0 or 'default'      -- 0 (zero is truthy under standard rules)
+b = 0 ?? 'default'      -- 'default' (zero is falsey under extended rules)
+c = '' ?? 'fallback'    -- 'fallback'
+d = '' ?? 0 ?? 'final'  -- 'final' (both '' and 0 are falsey)
+e = {} ?? 'empty'       -- 'empty' (an empty table is falsey under extended rules)
 ----
 
 ==== If-Empty Guard Operator (?!)

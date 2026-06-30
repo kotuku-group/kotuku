@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-12
+// UPDATED: 2026-06-30 — `?!` guard falsey set now includes empty tables; described as empty collections.
 
 [[ch-error-handling]]
 == Error Handling
@@ -561,7 +562,7 @@ end
 [discrete]
 ==== Conditional Raising
 
-The `?!` operator can be used as a guard to conditionally raise exceptions.  The right-hand side executes only when the left-hand side is falsey (`nil`, `false`, `0`, `""` or empty array):
+The `?!` operator can be used as a guard to conditionally raise exceptions.  The right-hand side executes only when the left-hand side is falsey (`nil`, `false`, `0`, `""` or an empty collection):
 
 [source,tiri]
 ----

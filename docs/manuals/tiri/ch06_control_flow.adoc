@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-10
+// UPDATED: 2026-06-30 — Shorthand guard falsey set now includes empty tables; described as empty collections.
 
 [[ch-control-flow]]
 == Control Flow
@@ -270,7 +271,7 @@ value ?! continue
 value ?! raise ERR_Failed
 ----
 
-The shorthand executes the statement when `value` is falsey under the extended definition: `nil`, `false`, `0`, `""`, or an empty array.  The `return` form accepts optional return values on the same line:
+The shorthand executes the statement when `value` is falsey under the extended definition: `nil`, `false`, `0`, `""`, or an empty collection.  The `return` form accepts optional return values on the same line:
 
 [source,tiri]
 ----

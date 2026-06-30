@@ -38,6 +38,9 @@ A local variable declared with the `<close>` attribute.  The `local` keyword is 
 Closure::
 A function value combined with its captured upvalues from enclosing scopes.  The upvalues remain accessible for the lifetime of the closure, even after the enclosing scope exits.  See <<sec-closures>>.
 
+Collection::
+A value that holds a variable number of elements: an array or a table.  A collection is empty when it contains no elements.  Empty collections are falsey under extended falsiness.  See <<ch-tables>> and <<ch-arrays>>.
+
 Compound assignment::
 An operator that combines an arithmetic, string, or conditional operation with assignment.  Includes `+=`, `-=`, `*=`, `/=`, `%=`, `..=`, `?=`, and `??=`.  Compound assignments are statements, not expressions.  See <<sec-compound-assignment>>.
 
@@ -60,7 +63,7 @@ Exception threshold::
 The error code value that divides safe codes from exception codes.  Error codes at or above this threshold trigger exceptions when evaluated by `check`.  See <<sec-exception-threshold>>.
 
 Extended falsiness::
-The broader falsiness rules used by the `??` and `??=` operators.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty arrays evaluate as falsey.  See <<sec-conditional-operators>>.
+The broader falsiness rules used by the `??` and `??=` operators.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  See <<sec-conditional-operators>>.
 
 Field::
 A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower snake_case names via dot notation.  See <<sec-field-access>>.
