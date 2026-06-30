@@ -1473,7 +1473,28 @@ static ERR VECTOR_SET_InnerJoin(extVector *Self, VIJ Value)
 /*********************************************************************************************************************
 
 -FIELD-
-InnerMiterLimit: Private. No internal documentation exists for this feature.
+InnerMiterLimit: Controls how far an inner stroke miter can extend at concave joins.
+
+InnerMiterLimit is a stroker tuning value used with #InnerJoin when the inner side of a stroked path turns back
+on itself.  It limits the inner miter generated for `MITER`, and for the miter phase of `ROUND` and `JAG`, before
+the renderer falls back to the bevelled inner join shape.  This is separate from #MiterLimit, which applies to the
+outer #LineJoin.
+
+Leave this field at zero unless the selected #InnerJoin is visibly truncating an inner corner too early.  If adjustment
+is needed, use the smallest value that preserves the intended corner shape: values just above `1` keep joins
+conservative, while larger values allow longer and sharper inner miters.  Reduce the value, or return it to zero, if
+the stroke develops spikes or unwanted self-overlap at tight corners.
+
+*********************************************************************************************************************/
+
+static ERR VECTOR_SET_InnerMiterLimit(extVector *Self, double Value)
+{
+   Self->InnerMiterLimit = Value;
+   mark_buffers_for_refresh(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 LineCap: The shape to be used at the start and end of a stroked path.
@@ -2302,7 +2323,7 @@ static const FieldArray clVectorFields[] = {
    { "FillOpacity",     FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_FillOpacity },
    { "Opacity",         FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_Opacity },
    { "MiterLimit",      FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_MiterLimit },
-   { "InnerMiterLimit", FDF_DOUBLE|FD_RW },
+   { "InnerMiterLimit", FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_InnerMiterLimit },
    { "DashOffset",      FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_DashOffset },
    { "Visibility",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_Visibility, &clVectorVisibility },
    { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clVectorFlags },

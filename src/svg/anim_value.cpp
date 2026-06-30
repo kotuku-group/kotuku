@@ -39,50 +39,144 @@ void anim_value::set_value(objVector &Vector)
    auto hash = strhash(target_attrib);
 
    switch(Vector.Class->ClassID) {
-      case CLASSID::VECTORWAVE:
-      {
-         auto wave = (objVectorWave *)&Vector;
+      case CLASSID::VECTORPOLYGON: {
+         auto &poly = (objVectorPolygon &)Vector;
          switch (hash) {
-            case SVF_close:     Vector.set(FID_Close, get_string()); return;
-            case SVF_envelope:  Vector.set(FID_Envelope, get_string()); return;
-            case SVF_amplitude: wave->setAmplitude(get_numeric_value(Vector, FID_Amplitude)); return;
-            case SVF_decay:     wave->setDecay(get_numeric_value(Vector, FID_Decay)); return;
-            case SVF_frequency: wave->setFrequency(get_numeric_value(Vector, FID_Frequency)); return;
-            case SVF_phase:     wave->setPhase(get_numeric_value(Vector, FID_Phase)); return;
-            case SVF_thickness: wave->setThickness(get_numeric_value(Vector, FID_Thickness)); return;
+            case SVF_x1: poly.setX1(Unit(get_dimension(Vector, strhash("x1")))); return;
+            case SVF_y1: poly.setY1(Unit(get_dimension(Vector, strhash("y1")))); return;
+            case SVF_x2: poly.setX2(Unit(get_dimension(Vector, strhash("x2")))); return;
+            case SVF_y2: poly.setY2(Unit(get_dimension(Vector, strhash("y2")))); return;
          }
          break;
       }
 
-      case CLASSID::VECTORTEXT:
-      {
-         auto text = (objVectorText *)&Vector;
+      case CLASSID::VECTORWAVE: {
+         auto &wave = (objVectorWave &)Vector;
          switch (hash) {
-            case SVF_dx: Vector.set(FID_DX, get_string()); return;
-            case SVF_dy: Vector.set(FID_DY, get_string()); return;
+            case SVF_x:  wave.setX(Unit(get_dimension(Vector, FID_X))); return;
+            case SVF_y:  wave.setY(Unit(get_dimension(Vector, FID_Y))); return;
+            case SVF_close:
+               switch(strhash(get_string())) {
+                  case SVF_bottom: wave.setClose(WVC::BOTTOM); return;
+                  case SVF_top:    wave.setClose(WVC::TOP); return;
+                  default:         wave.setClose(WVC::NIL); return;
+               }
+
+            case SVF_envelope:
+               switch(strhash(get_string())) {
+                  case SVF_linear:      wave.setEnvelope(WVE::LINEAR); return;
+                  case SVF_quadratic:   wave.setEnvelope(WVE::QUADRATIC); return;
+                  case SVF_smoothstep:  wave.setEnvelope(WVE::SMOOTHSTEP); return;
+                  case SVF_exponential: wave.setEnvelope(WVE::EXPONENTIAL); return;
+                  default:              wave.setEnvelope(WVE::NIL); return;
+               }
+
+            case SVF_amplitude: wave.setAmplitude(get_numeric_value(Vector, FID_Amplitude)); return;
+            case SVF_decay:     wave.setDecay(get_numeric_value(Vector, FID_Decay)); return;
+            case SVF_frequency: wave.setFrequency(get_numeric_value(Vector, FID_Frequency)); return;
+            case SVF_phase:     wave.setPhase(get_numeric_value(Vector, FID_Phase)); return;
+            case SVF_thickness: wave.setThickness(get_numeric_value(Vector, FID_Thickness)); return;
+         }
+         break;
+      }
+
+      case CLASSID::VECTORTEXT: {
+         auto &text = (objVectorText &)Vector;
+         switch (hash) {
+            case SVF_x:  text.setX(Unit(get_dimension(Vector, FID_X))); return;
+            case SVF_y:  text.setY(Unit(get_dimension(Vector, FID_Y))); return;
+            case SVF_dx: text.set(FID_DX, get_string()); return;
+            case SVF_dy: text.set(FID_DY, get_string()); return;
 
             case SVF_text_anchor:
                switch(strhash(get_string())) {
-                  case SVF_start:   text->setAlign(ALIGN::LEFT); return;
-                  case SVF_middle:  text->setAlign(ALIGN::HORIZONTAL); return;
-                  case SVF_end:     text->setAlign(ALIGN::RIGHT); return;
-                  case SVF_inherit: text->setAlign(ALIGN::NIL); return;
+                  case SVF_start:   text.setAlign(ALIGN::LEFT); return;
+                  case SVF_middle:  text.setAlign(ALIGN::HORIZONTAL); return;
+                  case SVF_end:     text.setAlign(ALIGN::RIGHT); return;
+                  case SVF_inherit: text.setAlign(ALIGN::NIL); return;
                }
                break;
 
-            case SVF_rotate: Vector.set(FID_Rotate, get_string()); return;
-            case SVF_string: text->setString(get_string()); return;
-
-            case SVF_kerning:        Vector.set(FID_Kerning, get_string()); return; // Spacing between letters, default=1.0
-            case SVF_letter_spacing: Vector.set(FID_LetterSpacing, get_string()); return;
-            case SVF_pathLength:     Vector.set(FID_PathLength, get_string()); return;
-            case SVF_word_spacing:   Vector.set(FID_WordSpacing, get_string()); return;
-
-            case SVF_font_family: text->setFace(get_string()); return;
-
-            case SVF_font_size: Vector.set(FID_FontSize, get_numeric_value(Vector, FID_FontSize)); return;
+            case SVF_rotate:         text.set(FID_Rotate, get_string()); return;
+            case SVF_string:         text.setString(get_string()); return;
+            case SVF_kerning:        text.set(FID_Kerning, get_string()); return; // Spacing between letters, default=1.0
+            case SVF_letter_spacing: text.set(FID_LetterSpacing, get_string()); return;
+            case SVF_pathLength:     text.set(FID_PathLength, get_string()); return;
+            case SVF_word_spacing:   text.set(FID_WordSpacing, get_string()); return;
+            case SVF_font_family:    text.setFace(get_string()); return;
+            case SVF_font_size:      text.set(FID_FontSize, get_numeric_value(Vector, FID_FontSize)); return;
          }
          break;
+      }
+
+      case CLASSID::VECTORELLIPSE: {
+         auto &ellipse = (objVectorEllipse &)Vector;
+         switch (hash) {
+            case SVF_rx:     ellipse.setRadiusX(Unit(get_dimension(Vector, FID_RadiusX))); return;
+            case SVF_ry:     ellipse.setRadiusY(Unit(get_dimension(Vector, FID_RadiusY))); return;
+            case SVF_r:      ellipse.setRadius(Unit(get_dimension(Vector, FID_Radius))); return;
+            case SVF_cx:     ellipse.setCX(Unit(get_dimension(Vector, FID_CX))); return;
+            case SVF_cy:     ellipse.setCY(Unit(get_dimension(Vector, FID_CY))); return;
+            case SVF_width:  ellipse.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
+            case SVF_height: ellipse.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+         }
+         break;
+      }
+
+      case CLASSID::VECTORSHAPE: {
+         auto &shape = (objVectorShape &)Vector;
+         switch (hash) {
+            case SVF_r:  shape.setRadius(Unit(get_dimension(Vector, FID_Radius))); return;
+            case SVF_cx: shape.setCX(Unit(get_dimension(Vector, FID_CX))); return;
+            case SVF_cy: shape.setCY(Unit(get_dimension(Vector, FID_CY))); return;
+         }
+         break;
+      }
+
+      case CLASSID::VECTORSPIRAL: {
+         auto &spiral = (objVectorSpiral &)Vector;
+         switch (hash) {
+            case SVF_r:      spiral.setRadius(Unit(get_dimension(Vector, FID_Radius))); return;
+            case SVF_cx:     spiral.setCX(Unit(get_dimension(Vector, FID_CX))); return;
+            case SVF_cy:     spiral.setCY(Unit(get_dimension(Vector, FID_CY))); return;
+            case SVF_width:  spiral.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
+            case SVF_height: spiral.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+         }
+         break;
+      }
+
+      case CLASSID::VECTORRECTANGLE: {
+         auto &rect = (objVectorRectangle &)Vector;
+         switch (hash) {
+            case SVF_xOffset: rect.setXOffset(Unit(get_dimension(Vector, FID_XOffset))); return;
+            case SVF_yOffset: rect.setYOffset(Unit(get_dimension(Vector, FID_YOffset))); return;
+            case SVF_x:       rect.setX(Unit(get_dimension(Vector, FID_X))); return;
+            case SVF_y:       rect.setY(Unit(get_dimension(Vector, FID_Y))); return;
+            case SVF_width:   rect.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
+            case SVF_height:  rect.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+         }
+         break;
+      }
+
+      case CLASSID::VECTORVIEWPORT: {
+         auto &vp = (objVectorViewport &)Vector;
+         switch (hash) {
+            case SVF_x:       vp.setX(Unit(get_dimension(Vector, FID_X))); return;
+            case SVF_y:       vp.setY(Unit(get_dimension(Vector, FID_Y))); return;
+            case SVF_xOffset: vp.setXOffset(Unit(get_dimension(Vector, FID_XOffset))); return;
+            case SVF_yOffset: vp.setYOffset(Unit(get_dimension(Vector, FID_YOffset))); return;
+            case SVF_width:   vp.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
+            case SVF_height:  vp.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+         }
+         break;
+      }
+
+      case CLASSID::VECTORPATH: {
+         auto &path = (objVectorPath &)Vector;
+         switch (hash) {
+            case SVF_x:       path.setX(Unit(get_dimension(Vector, FID_X))); return;
+            case SVF_y:       path.setY(Unit(get_dimension(Vector, FID_Y))); return;
+         }
       }
 
       default: break;
@@ -140,11 +234,11 @@ void anim_value::set_value(objVector &Vector)
 
       case SVF_stroke_linejoin:
          switch(strhash(get_string())) {
-            case SVF_miter: Vector.setLineJoin(VLJ::MITER); return;
-            case SVF_round: Vector.setLineJoin(VLJ::ROUND); return;
-            case SVF_bevel: Vector.setLineJoin(VLJ::BEVEL); return;
-            case SVF_inherit: Vector.setLineJoin(VLJ::INHERIT); return;
-            case SVF_miter_clip: Vector.setLineJoin(VLJ::MITER_SMART); return; // Special AGG only join type
+            case SVF_miter:       Vector.setLineJoin(VLJ::MITER); return;
+            case SVF_round:       Vector.setLineJoin(VLJ::ROUND); return;
+            case SVF_bevel:       Vector.setLineJoin(VLJ::BEVEL); return;
+            case SVF_inherit:     Vector.setLineJoin(VLJ::INHERIT); return;
+            case SVF_miter_clip:  Vector.setLineJoin(VLJ::MITER_SMART); return; // Special AGG only join type
             case SVF_miter_round: Vector.setLineJoin(VLJ::MITER_ROUND); return; // Special AGG only join type
          }
          return;
@@ -169,11 +263,10 @@ void anim_value::set_value(objVector &Vector)
          return;
 
       case SVF_stroke_opacity:          Vector.setStrokeOpacity(get_numeric_value(Vector, FID_StrokeOpacity)); break;
-      case SVF_stroke_miterlimit:       Vector.set(FID_MiterLimit, get_string()); break;
-      case SVF_stroke_miterlimit_theta: Vector.set(FID_MiterLimitTheta, get_string()); break;
-      case SVF_stroke_inner_miterlimit: Vector.set(FID_InnerMiterLimit, get_string()); break;
+      case SVF_stroke_miterlimit:       Vector.setMiterLimit(get_numeric_value(Vector, FID_MiterLimit)); break;
+      case SVF_stroke_inner_miterlimit: Vector.setInnerMiterLimit(get_numeric_value(Vector, FID_InnerMiterLimit)); break;
       case SVF_stroke_dasharray:        Vector.set(FID_DashArray, get_string()); return;
-      case SVF_stroke_dashoffset:       Vector.set(FID_DashOffset, get_string()); return;
+      case SVF_stroke_dashoffset:       Vector.setDashOffset(get_numeric_value(Vector, FID_DashOffset)); return;
       case SVF_opacity:                 Vector.setOpacity(get_numeric_value(Vector, FID_Opacity)); return;
 
       case SVF_display: {
@@ -184,55 +277,14 @@ void anim_value::set_value(objVector &Vector)
          return;
       }
 
-      case SVF_visibility: {
-         auto val = get_string();
-         Vector.set(FID_Visibility, val);
-         return;
-      }
-
-      case SVF_r:
-         Vector.set(FID_Radius, get_dimension(Vector, FID_Radius));
-         return;
-
-      case SVF_rx:
-         Vector.set(FID_RadiusX, get_dimension(Vector, FID_RadiusX));
-         return;
-
-      case SVF_ry:
-         Vector.set(FID_RadiusY, get_dimension(Vector, FID_RadiusY));
-         return;
-
-      case SVF_cx:
-         Vector.set(FID_CX, get_dimension(Vector, FID_CX));
-         return;
-
-      case SVF_cy:
-         Vector.set(FID_CY, get_dimension(Vector, FID_CY));
-         return;
-
-      case SVF_xOffset:
-         Vector.set(FID_XOffset, get_dimension(Vector, FID_XOffset));
-         return;
-
-      case SVF_yOffset:
-         Vector.set(FID_YOffset, get_dimension(Vector, FID_YOffset));
-         return;
-
-      case SVF_x1:
-         Vector.set(FID_X1, get_dimension(Vector, FID_X1));
-         return;
-
-      case SVF_y1:
-         Vector.set(FID_Y1, get_dimension(Vector, FID_Y1));
-         return;
-
-      case SVF_x2:
-         Vector.set(FID_X2, get_dimension(Vector, FID_X2));
-         return;
-
-      case SVF_y2:
-         Vector.set(FID_Y2, get_dimension(Vector, FID_Y2));
-         return;
+      case SVF_visibility:
+         switch (strhash(get_string())) {
+            case SVF_hidden:   Vector.setVisibility(VIS::HIDDEN); return;
+            case SVF_visible:  Vector.setVisibility(VIS::VISIBLE); return;
+            case SVF_collapse: Vector.setVisibility(VIS::COLLAPSE); return;
+            case SVF_inherit:  Vector.setVisibility(VIS::INHERIT); return;
+            default: return;
+         }
 
       case SVF_x: {
          if (Vector.Class->ClassID IS CLASSID::VECTORGROUP) {
@@ -240,7 +292,7 @@ void anim_value::set_value(objVector &Vector)
             // transform.  Refer to xtag_use() for a working example as to why.
 
             VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and ((unsigned int)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            for (m=Vector.Matrices; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);
@@ -248,18 +300,17 @@ void anim_value::set_value(objVector &Vector)
             }
 
             if (m) {
-               m->TranslateX = get_dimension(Vector, FID_X);
+               m->TranslateX = get_dimension(Vector, 0);
                vec::FlushMatrix(m);
             }
          }
-         else Vector.set(FID_X, get_dimension(Vector, FID_X));
          return;
       }
 
       case SVF_y: {
          if (Vector.Class->ClassID IS CLASSID::VECTORGROUP) {
             VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and ((unsigned int)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            for (m=Vector.Matrices; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);
@@ -267,20 +318,11 @@ void anim_value::set_value(objVector &Vector)
             }
 
             if (m) {
-               m->TranslateY = get_dimension(Vector, FID_Y);
+               m->TranslateY = get_dimension(Vector, 0);
                vec::FlushMatrix(m);
             }
          }
-         else Vector.set(FID_Y, get_dimension(Vector, FID_Y));
          return;
       }
-
-      case SVF_width:
-         Vector.set(FID_Width, get_dimension(Vector, FID_Width));
-         return;
-
-      case SVF_height:
-         Vector.set(FID_Height, get_dimension(Vector, FID_Height));
-         return;
    }
 }

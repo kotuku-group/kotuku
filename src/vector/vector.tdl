@@ -768,7 +768,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     double FillOpacity      # The opacity to use when filling the vector.
     double Opacity          # An overall opacity value for the vector.
     double MiterLimit       # Imposes a limit on the ratio of the miter length to the `StrokeWidth`.
-    double InnerMiterLimit  # A special limit to apply when the `MITER_ROUND` line-join effect is in use.
+    double InnerMiterLimit  # Controls how far inner stroke miters can extend at concave joins.
     double DashOffset       # For the `DashArray`, applies an initial dash offset.
     int(VIS) Visibility     # Controls the visibility of a vector and its children.
     int(VF)  Flags          # Optional flags.

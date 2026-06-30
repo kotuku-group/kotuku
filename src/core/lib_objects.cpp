@@ -1737,7 +1737,7 @@ ERR InitObject(OBJECTPTR Object)
       log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
    else if (error IS ERR::NoSupport) {
-      if (auto field = FindField(Object, FID_Path, &target)) {
+      if (auto field = FindField(Object, strhash("path"), &target)) {
          if ((field->readable()) and (field->Flags & FD_STRING) and (target IS Object)) {
             std::string_view path;
             if (field->GetValue) { // Virtual std::string_view

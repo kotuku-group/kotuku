@@ -734,7 +734,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                if (!Self->Size) {
                   kt::ScopedObjectLock<Object> input(Self->InputObjectID, 3000);
                   if (input.granted()) {
-                     Self->ContentLength = input->get<int64_t>(FID_Size);
+                     Self->ContentLength = input->get<int64_t>(kt::strhash("size"));
                   }
                   else {
                      Self->Error = ERR::Lock;
