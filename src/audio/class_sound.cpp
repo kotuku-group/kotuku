@@ -719,9 +719,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // Setup the sound structure
 
-   int64_t file_position;
-   Self->File->getPosition(file_position);
-   Self->DataOffset = int(file_position);
+   int64_t file_pos;
+   Self->File->getPosition(file_pos);
+   Self->DataOffset = int(file_pos);
 
    Self->Format         = WAVE.Format;
    Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
@@ -820,9 +820,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // TODO Look for the cue chunk for loop information
 
-   int64_t file_position;
-   Self->File->getPosition(file_position);
-   pos = int(file_position);
+   int64_t file_pos;
+   Self->File->getPosition(file_pos);
+   pos = int(file_pos);
 #if 0
    if (!find_chunk(Self->File.get(), "cue ")) {
       data_p += 32;
@@ -850,9 +850,8 @@ static ERR SOUND_Init(extSound *Self)
 
    fl::ReadLE(Self->File.get(), &Self->Length); // Length of audio data in this chunk
 
-   int64_t file_position;
-   Self->File->getPosition(file_position);
-   Self->DataOffset = int(file_position);
+   Self->File->getPosition(file_pos);
+   Self->DataOffset = int(file_pos);
 
    Self->Format         = WAVE.Format;
    Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
