@@ -291,15 +291,7 @@ static ERR SET_PopOver(extSurface *Self, OBJECTID Value)
    if (Self->initialised()) return log.warning(ERR::Immutable);
 
    if (Value) {
-      CLASSID class_id = GetClassID(Value);
-      if (class_id != CLASSID::SURFACE) {
-         if (ScopedObjectLock obj(Value, 3000); obj.granted()) {
-            Value = obj->get<OBJECTID>(FID_Surface);
-         }
-         else return ERR::AccessObject;
-
-         if (class_id != CLASSID::SURFACE) return log.warning(ERR::InvalidObject);
-      }
+      if (GetClassID(Value) != CLASSID::SURFACE) return log.warning(ERR::InvalidObject);
    }
 
    Self->PopOverID = Value;

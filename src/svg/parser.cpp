@@ -3128,6 +3128,7 @@ ERR svgState::proc_set(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
 
    anim.set_orig_value(*this);
    anim.calc_mode = CMODE::DISCRETE; // Disables interpolation
+   anim.non_interpolating = true;
 
    if (!anim.is_valid()) {
       remove_animation_triggers(anim);

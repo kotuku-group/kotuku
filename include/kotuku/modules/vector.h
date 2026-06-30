@@ -3760,7 +3760,7 @@ class objVector : public Object {
    double    FillOpacity;             // The opacity to use when filling the vector.
    double    Opacity;                 // Defines an overall opacity for the vector's graphics.
    double    MiterLimit;              // Imposes a limit on the ratio of the miter length to the StrokeWidth.
-   double    InnerMiterLimit;         // Private. No internal documentation exists for this feature.
+   double    InnerMiterLimit;         // Controls how far an inner stroke miter can extend at concave joins.
    double    DashOffset;              // The distance into the dash pattern to start the dash.  Can be a negative number.
    VIS       Visibility;              // Controls the visibility of a vector and its children.
    VF        Flags;                   // Optional flags.
@@ -3879,6 +3879,11 @@ class objVector : public Object {
 
    inline ERR getMiterLimit(double &Value) noexcept {
       Value = this->MiterLimit;
+      return ERR::Okay;
+   }
+
+   inline ERR getInnerMiterLimit(double &Value) noexcept {
+      Value = this->InnerMiterLimit;
       return ERR::Okay;
    }
 
@@ -4065,6 +4070,11 @@ class objVector : public Object {
 
    inline ERR setMiterLimit(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setInnerMiterLimit(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

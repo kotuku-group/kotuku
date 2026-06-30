@@ -762,7 +762,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
    for (int i=first; i < last; i++) avg_frame_len += fsizes[i];
    avg_frame_len /= (last - first);
 
-   log.detail("File Size: %d, %d frames, Average frame length: %.2f bytes, VBR: %c", filesize, (int)fsizes.size(), avg_frame_len, prv->VBR ? 'Y' : 'N');
+   log.detail("File Size: %d, %d frames, Average frame length: %.2f bytes, VBR: %c", int(filesize), (int)fsizes.size(), avg_frame_len, prv->VBR ? 'Y' : 'N');
 
    if (filesize > buffer_size) {
       if (prv->VBR) {

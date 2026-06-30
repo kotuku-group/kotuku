@@ -106,7 +106,7 @@ The FindField() function checks if an object supports a specified field by scann
 If a matching field is declared, its descriptor is returned.  For example:
 
 <pre>
-if (auto field = FindField(Display, FID_Width, NULL)) {
+if (auto field = FindField(Display, strhash("width"), nullptr)) {
    log.msg("The field name is \"%s\".", field-&gt;Name);
 }
 </pre>
@@ -117,7 +117,7 @@ Note: To lookup the field definition of a @MetaClass, use the @MetaClass.FindFie
 
 -INPUT-
 obj Object:   The target object.
-uint FieldID: The 'FID' number to lookup.
+uint FieldID: The hash of the field name to lookup.
 &obj Target:  (Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object).
 
 -RESULT-
