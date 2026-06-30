@@ -128,6 +128,21 @@ idl_gen ("defs/filesystem.tdl"
       "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice.cpp")
 
+# Process classes
+
+idl_gen ("defs/processes.tdl"
+   NAME process_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/processes.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
+      "${DOCS}/modules/classes/thread.xml"
+      "${DOCS}/modules/classes/task.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp")
+
 if (NOT MSVC)
    # A bug in (MinGW?) GCC requires the following flag is applied to ensure that __packed__ works correctly.
    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mno-ms-bitfields")

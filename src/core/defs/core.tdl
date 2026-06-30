@@ -80,17 +80,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
      "RECALL: Set if the subscriber needs to manually check for incoming/outgoing data.  This is supported as a one-off check, so the flag will be disabled automatically when the subscriber is called.",
      "ALWAYS_CALL: Always call this FD's handler prior to the process going to sleep.")
 
-  flags("TSF", { comment="Task flags" },
-    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
-    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
-    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
-    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
-    "VERBOSE: Enable verbose logging.",
-    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
-    "DETACHED: Forces the new process to be detached from the parent.",
-    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
-    "PIPE: Enable the output pipe to the launched process so that it can read data.")
-
   flags("MHF", { comment="Internal options for requesting function tables from modules." },
     "STATIC: Keep the module code in memory",
     "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
@@ -103,9 +92,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
     "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
     "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
-
-  flags("THF", { comment="Thread flags" },
-    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
 
   flags("VOLUME", { comment="Options for SetVolume()" },
     "REPLACE: If the volume already exists, all paths that are attached to it will be replaced with the new path setting.",
@@ -463,16 +449,11 @@ constexpr int RESOURCE_ID_OFFSET = -1;
 
 typedef AC ACTIONID;
 
-#ifndef __GNUC__
-#define __attribute__(a)
-#endif
-
 struct StructInfo {
    uint16_t Size;       // Byte size of the structure (sizeof)
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
 };
 
-typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
 typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
@@ -552,6 +533,17 @@ inline void nextutf8(T *&Str) noexcept {
       for (++Str; (((unsigned char)*Str) & 0xc0) IS 0x80; ++Str);
    }
 }
+
+// Forward declared classes
+
+class objScript;
+class objConfig;
+class objCompression;
+class objCompressedStream;
+class objFile;
+class objStorageDevice;
+class objThread;
+class objTask;
 
 //********************************************************************************************************************
 
@@ -660,6 +652,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     cstr Namespace                 # A reserved system-wide namespace for function names.
   ]],
   [[
+   typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
    STRUCTS *StructDefs;
    class objRootModule *Root;
 
@@ -1166,10 +1159,9 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-
 ]==])
 
-  -- Forward declared classes
+  -- Declare classes for their inclusion in outgoing Core documentation
 
   klass("Script")
   klass("Config")
@@ -1177,6 +1169,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
   klass("CompressedStream")
   klass("File")
   klass("StorageDevice")
+  klass("Thread")
+  klass("Task")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1216,40 +1210,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 
   struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
-  ]])
-
-  methods("Task", "Task", {
-    { id=1, name="Expunge" },
-    { id=2, name="AddArgument" },
-    { id=3, name="Quit" },
-    { id=4, name="GetEnv" },
-    { id=5, name="SetEnv" }
-  })
-
-  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c", extended=true }, [[
-    string LaunchPath
-    string Name
-    string Location
-    string Path
-    string ProcessPath
-    double TimeOut
-    vector(string) Parameters
-    int(TSF) Flags
-    int ReturnCode
-    int ProcessID    # Native process ID of the activated task
-  ]])
-
-  methods("Thread", "Th", {
-    { id=1, name="SetData" }
-  })
-
-  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
-    func  Callback     # This function will be called when the thread finishes
-    func  Routine      # This function will be called when the thread starts
-    ptr   Data         # User data pointer
-    int   DataSize     # Size of user data
-    error Error        # Error code returned by the thread on completion
-    int(THF) Flags     # Optional flags
   ]])
 
   methods("Module", "Mod", {

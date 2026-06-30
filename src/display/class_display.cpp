@@ -91,8 +91,7 @@ static const CSTRING names[] = {
   "EGL_CONFORMANT"
 };
 
-static void printConfig(EGLDisplay display, EGLConfig config) __attribute__ ((unused));
-static void printConfig(EGLDisplay display, EGLConfig config) {
+[[maybe_unused]] static void printConfig(EGLDisplay display, EGLConfig config) {
    kt::Log log(__FUNCTION__);
    int value[1];
 

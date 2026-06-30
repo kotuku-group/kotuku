@@ -107,6 +107,7 @@ constexpr int BLEND_MIN_THRESHOLD = 1;
 
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 #include <kotuku/modules/compression.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/regex.h>

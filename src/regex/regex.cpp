@@ -661,7 +661,7 @@ ERR Split(Regex *Regex, const std::string_view &Text, kt::vector<std::string> *O
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "Regex", { sizeof(struct Regex), alignof(struct Regex) } }
 };
 

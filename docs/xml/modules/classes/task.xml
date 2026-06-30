@@ -13,11 +13,11 @@
     <id>56332d91</id>
     <idstring>TASK</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>Tasks, also known as processes, form the basis of process execution in an operating system.  By creating a task object, it is possible to execute a program from within the host system.</p>
 <p>To execute a compiled program, set the <fl>Location</fl> field to point to the executable file before initialising the task.  Arguments can be passed to the executable by setting the <fl>Parameters</fl> field.  After initialising the task, use the <action>Activate</action> action to run the executable.  If the program executes successfully, the task object can be removed and this will not impact the running program.</p>
-<p>The task object that represents the active process can be acquired from <function>CurrentTask</function>.</p></description>
+<p>The task object that represents the active process can be acquired from ~CurrentTask().</p></description>
     <source>
       <file path="../classes/">class_task.cpp</file>
     </source>
@@ -221,8 +221,8 @@
       <access read="G">Get</access>
       <type>APTR</type>
       <description>
-<p>This field provides direct access to the actions of a task, and is intended for use with the active task object returned from <function>CurrentTask</function>.  Hooking into the action table allows the running executable to 'blend-in' with Kotuku's object oriented design.</p>
-<p>The Actions field points to a lookup table of ActionEntry items.  To create an action hook, set its <code>AC</code> table index with a pointer to the action routine.  For example:</p>
+<p>This field provides direct access to the actions of a task, and is intended for use with the active task object returned from ~CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with Kotuku's object oriented design.</p>
+<p>The Actions field points to a lookup table of !ActionEntry items.  To create an action hook, set its <code>AC</code> table index with a pointer to the action routine.  For example:</p>
 <pre>if (!AccessObject(CurrentTask(), 5000, &amp;task)) {
    task-&gt;getActions(actions);
    actions[AC::Seek] = PROGRAM_Seek;

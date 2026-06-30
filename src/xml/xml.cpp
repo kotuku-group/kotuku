@@ -338,7 +338,7 @@ ERR XValueToString(const XPathValue *Value, std::string *Result)
 
 #include "xml_class.cpp"
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "XTag", { sizeof(XTag), alignof(XTag) } },
    { "XPathValue", { sizeof(XPathValue), alignof(XPathValue) } }
 };
