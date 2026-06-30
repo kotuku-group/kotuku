@@ -233,11 +233,11 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
 
    if (non_interpolating) {
       auto value = get_string();
-      return svtonum<double>(value, nullptr);
+      return svtonum<double>(value);
    }
 
    if ((seek >= 1.0) and (!freeze)) {
-      return svtonum<double>(target_attrib_orig, nullptr);
+      return svtonum<double>(target_attrib_orig);
    }
 
    if (not values.empty()) {
