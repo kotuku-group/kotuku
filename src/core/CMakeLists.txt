@@ -26,7 +26,6 @@ if (KOTUKU_DEFS_AVAILABLE)
       "${DOCS}/modules/core.xml"
       "${DOCS}/modules/classes/metaclass.xml"
       "${DOCS}/modules/classes/module.xml"
-      "${DOCS}/modules/classes/time.xml"
       "${INCLUDE_OUTPUT}/modules/core.h"
       "${INCLUDE_OUTPUT}/system/errors.h"
       "${INCLUDE_OUTPUT}/system/registry.h"
@@ -53,7 +52,6 @@ if (KOTUKU_DEFS_AVAILABLE)
          ${FUNCTIONS}
          "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp"
-         "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Producing definition files for the Core library"
       VERBATIM)
@@ -131,6 +129,12 @@ idl_gen ("defs/processes.tdl"
       "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
       "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp")
+
+# Time class
+
+idl_gen ("defs/time.tdl" NAME time_defs OUTPUT "${INCLUDE_OUTPUT}/modules/time.h"
+   BYPRODUCTS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time_def.c" "${DOCS}/modules/classes/time.xml"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp")
 
 if (NOT MSVC)
    # A bug in (MinGW?) GCC requires the following flag is applied to ensure that __packed__ works correctly.

@@ -31,385 +31,6 @@
 
 class objMetaClass;
 class objModule;
-class objTime;
-
-// Clipboard modes
-
-enum class CLIPMODE : uint32_t {
-   NIL = 0,
-   CUT = 0x00000001,
-   COPY = 0x00000002,
-   PASTE = 0x00000004,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CLIPMODE)
-
-// Seek positions
-
-enum class SEEK : int {
-   NIL = 0,
-   START = 0,
-   CURRENT = 1,
-   END = 2,
-   RELATIVE = 3,
-};
-
-enum class DEVICE : int64_t {
-   NIL = 0,
-   COMPACT_DISC = 0x00000001,
-   HARD_DISK = 0x00000002,
-   FLOPPY_DISK = 0x00000004,
-   READ = 0x00000008,
-   WRITE = 0x00000010,
-   REMOVABLE = 0x00000020,
-   REMOVEABLE = 0x00000020,
-   SOFTWARE = 0x00000040,
-   NETWORK = 0x00000080,
-   TAPE = 0x00000100,
-   PRINTER = 0x00000200,
-   SCANNER = 0x00000400,
-   TEMPORARY = 0x00000800,
-   MEMORY = 0x00001000,
-   MODEM = 0x00002000,
-   USB = 0x00004000,
-   FIXED = 0x00008000,
-   PRINTER_3D = 0x00010000,
-   SCANNER_3D = 0x00020000,
-   BOOKMARK = 0x00040000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(DEVICE)
-
-// Class categories
-
-enum class CCF : uint32_t {
-   NIL = 0,
-   COMMAND = 0x00000001,
-   FILESYSTEM = 0x00000002,
-   GRAPHICS = 0x00000004,
-   GUI = 0x00000008,
-   IO = 0x00000010,
-   SYSTEM = 0x00000020,
-   TOOL = 0x00000040,
-   AUDIO = 0x00000080,
-   DATA = 0x00000100,
-   MISC = 0x00000200,
-   NETWORK = 0x00000400,
-   MULTIMEDIA = 0x00000800,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CCF)
-
-// Action identifiers.
-
-enum class AC : int {
-   NIL = 0,
-   Signal = 1,
-   Activate = 2,
-   Redimension = 3,
-   Clear = 4,
-   FreeWarning = 5,
-   Enable = 6,
-   CopyData = 7,
-   DataFeed = 8,
-   Deactivate = 9,
-   Draw = 10,
-   Flush = 11,
-   Focus = 12,
-   Free = 13,
-   SaveSettings = 14,
-   GetKey = 15,
-   DragDrop = 16,
-   Hide = 17,
-   Init = 18,
-   Lock = 19,
-   LostFocus = 20,
-   Move = 21,
-   MoveToBack = 22,
-   MoveToFront = 23,
-   NewChild = 24,
-   NewOwner = 25,
-   NewObject = 26,
-   Redo = 27,
-   Query = 28,
-   Read = 29,
-   Rename = 30,
-   Reset = 31,
-   Resize = 32,
-   SaveImage = 33,
-   SaveToObject = 34,
-   MoveToPoint = 35,
-   Seek = 36,
-   SetKey = 37,
-   Show = 38,
-   Undo = 39,
-   Unlock = 40,
-   Next = 41,
-   Prev = 42,
-   Write = 43,
-   SetField = 44,
-   Clipboard = 45,
-   Refresh = 46,
-   Disable = 47,
-   NewPlacement = 48,
-   FreePlacement = 49,
-   END = 50,
-};
-
-// Permission flags
-
-enum class PERMIT : uint32_t {
-   NIL = 0,
-   READ = 0x00000001,
-   USER_READ = 0x00000001,
-   WRITE = 0x00000002,
-   USER_WRITE = 0x00000002,
-   EXEC = 0x00000004,
-   USER_EXEC = 0x00000004,
-   DELETE = 0x00000008,
-   USER = 0x0000000f,
-   GROUP_READ = 0x00000010,
-   GROUP_WRITE = 0x00000020,
-   GROUP_EXEC = 0x00000040,
-   GROUP_DELETE = 0x00000080,
-   GROUP = 0x000000f0,
-   OTHERS_READ = 0x00000100,
-   EVERYONE_READ = 0x00000111,
-   ALL_READ = 0x00000111,
-   OTHERS_WRITE = 0x00000200,
-   EVERYONE_WRITE = 0x00000222,
-   ALL_WRITE = 0x00000222,
-   EVERYONE_READWRITE = 0x00000333,
-   OTHERS_EXEC = 0x00000400,
-   ALL_EXEC = 0x00000444,
-   EVERYONE_EXEC = 0x00000444,
-   OTHERS_DELETE = 0x00000800,
-   ALL_DELETE = 0x00000888,
-   EVERYONE_DELETE = 0x00000888,
-   OTHERS = 0x00000f00,
-   EVERYONE_ACCESS = 0x00000fff,
-   HIDDEN = 0x00001000,
-   ARCHIVE = 0x00002000,
-   PASSWORD = 0x00004000,
-   USERID = 0x00008000,
-   GROUPID = 0x00010000,
-   INHERIT = 0x00020000,
-   OFFLINE = 0x00040000,
-   NETWORK = 0x00080000,
-   META = 0x000c5000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(PERMIT)
-
-// Special qualifier flags
-
-enum class KQ : uint32_t {
-   NIL = 0,
-   L_SHIFT = 0x00000001,
-   R_SHIFT = 0x00000002,
-   SHIFT = 0x00000003,
-   CAPS_LOCK = 0x00000004,
-   L_CONTROL = 0x00000008,
-   L_CTRL = 0x00000008,
-   R_CTRL = 0x00000010,
-   R_CONTROL = 0x00000010,
-   CTRL = 0x00000018,
-   CONTROL = 0x00000018,
-   L_ALT = 0x00000020,
-   ALTGR = 0x00000040,
-   R_ALT = 0x00000040,
-   ALT = 0x00000060,
-   INSTRUCTION_KEYS = 0x00000078,
-   L_COMMAND = 0x00000080,
-   R_COMMAND = 0x00000100,
-   COMMAND = 0x00000180,
-   QUALIFIERS = 0x000001fb,
-   NUM_PAD = 0x00000200,
-   REPEAT = 0x00000400,
-   RELEASED = 0x00000800,
-   PRESSED = 0x00001000,
-   NOT_PRINTABLE = 0x00002000,
-   INFO = 0x00003c04,
-   SCR_LOCK = 0x00004000,
-   NUM_LOCK = 0x00008000,
-   DEAD_KEY = 0x00010000,
-   WIN_CONTROL = 0x00020000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(KQ)
-
-// Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.
-
-enum class MEM : uint32_t {
-   NIL = 0,
-   DATA = 0x00000000,
-   VIDEO = 0x00000001,
-   TEXTURE = 0x00000002,
-   AUDIO = 0x00000004,
-   CODE = 0x00000008,
-   UNTRACKED = 0x00000010,
-   STRING = 0x00000020,
-   COLLECT = 0x00000040,
-   PROTECTED = 0x00000080,
-   READ = 0x00010000,
-   WRITE = 0x00020000,
-   READ_WRITE = 0x00030000,
-   NO_CLEAR = 0x00040000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(MEM)
-
-// Event categories.
-
-enum class EVG : int {
-   NIL = 0,
-   FILESYSTEM = 1,
-   NETWORK = 2,
-   SYSTEM = 3,
-   GUI = 4,
-   DISPLAY = 5,
-   IO = 6,
-   HARDWARE = 7,
-   AUDIO = 8,
-   USER = 9,
-   POWER = 10,
-   CLASS = 11,
-   APP = 12,
-   ANDROID = 13,
-   END = 14,
-};
-
-// Data codes
-
-enum class DATA : int {
-   NIL = 0,
-   TEXT = 1,
-   RAW = 2,
-   DEVICE_INPUT = 3,
-   XML = 4,
-   AUDIO = 5,
-   RECORD = 6,
-   IMAGE = 7,
-   REQUEST = 8,
-   RECEIPT = 9,
-   FILE = 10,
-   CONTENT = 11,
-   INPUT_READY = 12,
-};
-
-// JTYPE flags are used to categorise input types.
-
-enum class JTYPE : uint32_t {
-   NIL = 0,
-   SECONDARY = 0x00000001,
-   ANCHORED = 0x00000002,
-   DRAGGED = 0x00000004,
-   CROSSING = 0x00000008,
-   DIGITAL = 0x00000010,
-   ANALOG = 0x00000020,
-   EXT_MOVEMENT = 0x00000040,
-   BUTTON = 0x00000080,
-   MOVEMENT = 0x00000100,
-   DBL_CLICK = 0x00000200,
-   REPEATED = 0x00000400,
-   DRAG_ITEM = 0x00000800,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(JTYPE)
-
-// JET constants are documented in GetInputEvent()
-
-enum class JET : int {
-   NIL = 0,
-   BUTTON_1 = 1,
-   LMB = 1,
-   BUTTON_2 = 2,
-   RMB = 2,
-   BUTTON_3 = 3,
-   MMB = 3,
-   BUTTON_4 = 4,
-   BUTTON_5 = 5,
-   BUTTON_6 = 6,
-   BUTTON_7 = 7,
-   BUTTON_8 = 8,
-   BUTTON_9 = 9,
-   BUTTON_10 = 10,
-   WHEEL = 11,
-   WHEEL_TILT = 12,
-   PEN_TILT_XY = 13,
-   ABS_XY = 14,
-   CROSSED_IN = 15,
-   CROSSED_OUT = 16,
-   PRESSURE = 17,
-   DEVICE_TILT_XY = 18,
-   DEVICE_TILT_Z = 19,
-   DISPLAY_EDGE = 20,
-   END = 21,
-};
-
-// Field descriptors.
-
-#define FD_DOUBLERESULT 0x80000100
-#define FD_PTR_DOUBLERESULT 0x88000100
-#define FD_CLASS_TYPES 0xffc05001
-#define FD_VOID 0x00000000
-#define FD_OBJECT 0x00000001
-#define FD_LOCAL 0x00000002
-#define FD_VIRTUAL 0x00000008
-#define FD_MUTABLE 0x00000008
-#define FD_STRUCT 0x00000010
-#define FD_ALLOC 0x00000020
-#define FD_FLAGS 0x00000040
-#define FD_VARTAGS 0x00000040
-#define FD_PTRSIZE 0x00000080
-#define FD_ARRAYSIZE 0x00000080
-#define FD_LOOKUP 0x00000080
-#define FD_BUFSIZE 0x00000080
-#define FD_R 0x00000100
-#define FD_READ 0x00000100
-#define FD_RESULT 0x00000100
-#define FD_WRITE 0x00000200
-#define FD_W 0x00000200
-#define FD_BUFFER 0x00000200
-#define FD_RW 0x00000300
-#define FD_I 0x00000400
-#define FD_TAGS 0x00000400
-#define FD_INIT 0x00000400
-#define FD_RI 0x00000500
-#define FD_ERROR 0x00000800
-#define FD_ARRAY 0x00001000
-#define FD_RESOURCE 0x00002000
-#define FD_CPP 0x00004000
-#define FD_CUSTOM 0x00008000
-#define FD_SYSTEM 0x00010000
-#define FD_PRIVATE 0x00010000
-#define FD_SYNONYM 0x00020000
-#define FD_UNSIGNED 0x00040000
-#define FD_PURE 0x00100000
-#define FD_SCALED 0x00200000
-#define FD_NORMALISED 0x00200000
-#define FD_WORD 0x00400000
-#define FD_STRING 0x00800000
-#define FD_STR 0x00800000
-#define FD_STRRESULT 0x00800100
-#define FD_BYTE 0x01000000
-#define FD_FUNCTION 0x02000000
-#define FD_INT64 0x04000000
-#define FD_INT64RESULT 0x04000100
-#define FD_POINTER 0x08000000
-#define FD_PTR 0x08000000
-#define FD_OBJECTPTR 0x08000001
-#define FD_PTRRESULT 0x08000100
-#define FD_PTRBUFFER 0x08000200
-#define FD_FUNCTIONPTR 0x0a000000
-#define FD_PTR_INT64RESULT 0x0c000100
-#define FD_FLOAT 0x10000000
-#define FD_UNIT 0x20000000
-#define FD_INT 0x40000000
-#define FD_OBJECTID 0x40000001
-#define FD_INTRESULT 0x40000100
-#define FD_PTR_INTRESULT 0x48000100
-#define FD_DOUBLE 0x80000000
 
 // Predefined cursor styles
 
@@ -984,6 +605,384 @@ enum class KEY : int {
    LIST_END = 150,
 };
 
+// Clipboard modes
+
+enum class CLIPMODE : uint32_t {
+   NIL = 0,
+   CUT = 0x00000001,
+   COPY = 0x00000002,
+   PASTE = 0x00000004,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CLIPMODE)
+
+// Seek positions
+
+enum class SEEK : int {
+   NIL = 0,
+   START = 0,
+   CURRENT = 1,
+   END = 2,
+   RELATIVE = 3,
+};
+
+enum class DEVICE : int64_t {
+   NIL = 0,
+   COMPACT_DISC = 0x00000001,
+   HARD_DISK = 0x00000002,
+   FLOPPY_DISK = 0x00000004,
+   READ = 0x00000008,
+   WRITE = 0x00000010,
+   REMOVABLE = 0x00000020,
+   REMOVEABLE = 0x00000020,
+   SOFTWARE = 0x00000040,
+   NETWORK = 0x00000080,
+   TAPE = 0x00000100,
+   PRINTER = 0x00000200,
+   SCANNER = 0x00000400,
+   TEMPORARY = 0x00000800,
+   MEMORY = 0x00001000,
+   MODEM = 0x00002000,
+   USB = 0x00004000,
+   FIXED = 0x00008000,
+   PRINTER_3D = 0x00010000,
+   SCANNER_3D = 0x00020000,
+   BOOKMARK = 0x00040000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(DEVICE)
+
+// Class categories
+
+enum class CCF : uint32_t {
+   NIL = 0,
+   COMMAND = 0x00000001,
+   FILESYSTEM = 0x00000002,
+   GRAPHICS = 0x00000004,
+   GUI = 0x00000008,
+   IO = 0x00000010,
+   SYSTEM = 0x00000020,
+   TOOL = 0x00000040,
+   AUDIO = 0x00000080,
+   DATA = 0x00000100,
+   MISC = 0x00000200,
+   NETWORK = 0x00000400,
+   MULTIMEDIA = 0x00000800,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CCF)
+
+// Action identifiers.
+
+enum class AC : int {
+   NIL = 0,
+   Signal = 1,
+   Activate = 2,
+   Redimension = 3,
+   Clear = 4,
+   FreeWarning = 5,
+   Enable = 6,
+   CopyData = 7,
+   DataFeed = 8,
+   Deactivate = 9,
+   Draw = 10,
+   Flush = 11,
+   Focus = 12,
+   Free = 13,
+   SaveSettings = 14,
+   GetKey = 15,
+   DragDrop = 16,
+   Hide = 17,
+   Init = 18,
+   Lock = 19,
+   LostFocus = 20,
+   Move = 21,
+   MoveToBack = 22,
+   MoveToFront = 23,
+   NewChild = 24,
+   NewOwner = 25,
+   NewObject = 26,
+   Redo = 27,
+   Query = 28,
+   Read = 29,
+   Rename = 30,
+   Reset = 31,
+   Resize = 32,
+   SaveImage = 33,
+   SaveToObject = 34,
+   MoveToPoint = 35,
+   Seek = 36,
+   SetKey = 37,
+   Show = 38,
+   Undo = 39,
+   Unlock = 40,
+   Next = 41,
+   Prev = 42,
+   Write = 43,
+   SetField = 44,
+   Clipboard = 45,
+   Refresh = 46,
+   Disable = 47,
+   NewPlacement = 48,
+   FreePlacement = 49,
+   END = 50,
+};
+
+// Permission flags
+
+enum class PERMIT : uint32_t {
+   NIL = 0,
+   READ = 0x00000001,
+   USER_READ = 0x00000001,
+   WRITE = 0x00000002,
+   USER_WRITE = 0x00000002,
+   EXEC = 0x00000004,
+   USER_EXEC = 0x00000004,
+   DELETE = 0x00000008,
+   USER = 0x0000000f,
+   GROUP_READ = 0x00000010,
+   GROUP_WRITE = 0x00000020,
+   GROUP_EXEC = 0x00000040,
+   GROUP_DELETE = 0x00000080,
+   GROUP = 0x000000f0,
+   OTHERS_READ = 0x00000100,
+   EVERYONE_READ = 0x00000111,
+   ALL_READ = 0x00000111,
+   OTHERS_WRITE = 0x00000200,
+   EVERYONE_WRITE = 0x00000222,
+   ALL_WRITE = 0x00000222,
+   EVERYONE_READWRITE = 0x00000333,
+   OTHERS_EXEC = 0x00000400,
+   ALL_EXEC = 0x00000444,
+   EVERYONE_EXEC = 0x00000444,
+   OTHERS_DELETE = 0x00000800,
+   ALL_DELETE = 0x00000888,
+   EVERYONE_DELETE = 0x00000888,
+   OTHERS = 0x00000f00,
+   EVERYONE_ACCESS = 0x00000fff,
+   HIDDEN = 0x00001000,
+   ARCHIVE = 0x00002000,
+   PASSWORD = 0x00004000,
+   USERID = 0x00008000,
+   GROUPID = 0x00010000,
+   INHERIT = 0x00020000,
+   OFFLINE = 0x00040000,
+   NETWORK = 0x00080000,
+   META = 0x000c5000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(PERMIT)
+
+// Special qualifier flags
+
+enum class KQ : uint32_t {
+   NIL = 0,
+   L_SHIFT = 0x00000001,
+   R_SHIFT = 0x00000002,
+   SHIFT = 0x00000003,
+   CAPS_LOCK = 0x00000004,
+   L_CONTROL = 0x00000008,
+   L_CTRL = 0x00000008,
+   R_CTRL = 0x00000010,
+   R_CONTROL = 0x00000010,
+   CTRL = 0x00000018,
+   CONTROL = 0x00000018,
+   L_ALT = 0x00000020,
+   ALTGR = 0x00000040,
+   R_ALT = 0x00000040,
+   ALT = 0x00000060,
+   INSTRUCTION_KEYS = 0x00000078,
+   L_COMMAND = 0x00000080,
+   R_COMMAND = 0x00000100,
+   COMMAND = 0x00000180,
+   QUALIFIERS = 0x000001fb,
+   NUM_PAD = 0x00000200,
+   REPEAT = 0x00000400,
+   RELEASED = 0x00000800,
+   PRESSED = 0x00001000,
+   NOT_PRINTABLE = 0x00002000,
+   INFO = 0x00003c04,
+   SCR_LOCK = 0x00004000,
+   NUM_LOCK = 0x00008000,
+   DEAD_KEY = 0x00010000,
+   WIN_CONTROL = 0x00020000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(KQ)
+
+// Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.
+
+enum class MEM : uint32_t {
+   NIL = 0,
+   DATA = 0x00000000,
+   VIDEO = 0x00000001,
+   TEXTURE = 0x00000002,
+   AUDIO = 0x00000004,
+   CODE = 0x00000008,
+   UNTRACKED = 0x00000010,
+   STRING = 0x00000020,
+   COLLECT = 0x00000040,
+   PROTECTED = 0x00000080,
+   READ = 0x00010000,
+   WRITE = 0x00020000,
+   READ_WRITE = 0x00030000,
+   NO_CLEAR = 0x00040000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(MEM)
+
+// Event categories.
+
+enum class EVG : int {
+   NIL = 0,
+   FILESYSTEM = 1,
+   NETWORK = 2,
+   SYSTEM = 3,
+   GUI = 4,
+   DISPLAY = 5,
+   IO = 6,
+   HARDWARE = 7,
+   AUDIO = 8,
+   USER = 9,
+   POWER = 10,
+   CLASS = 11,
+   APP = 12,
+   ANDROID = 13,
+   END = 14,
+};
+
+// Data codes
+
+enum class DATA : int {
+   NIL = 0,
+   TEXT = 1,
+   RAW = 2,
+   DEVICE_INPUT = 3,
+   XML = 4,
+   AUDIO = 5,
+   RECORD = 6,
+   IMAGE = 7,
+   REQUEST = 8,
+   RECEIPT = 9,
+   FILE = 10,
+   CONTENT = 11,
+   INPUT_READY = 12,
+};
+
+// JTYPE flags are used to categorise input types.
+
+enum class JTYPE : uint32_t {
+   NIL = 0,
+   SECONDARY = 0x00000001,
+   ANCHORED = 0x00000002,
+   DRAGGED = 0x00000004,
+   CROSSING = 0x00000008,
+   DIGITAL = 0x00000010,
+   ANALOG = 0x00000020,
+   EXT_MOVEMENT = 0x00000040,
+   BUTTON = 0x00000080,
+   MOVEMENT = 0x00000100,
+   DBL_CLICK = 0x00000200,
+   REPEATED = 0x00000400,
+   DRAG_ITEM = 0x00000800,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(JTYPE)
+
+// JET constants are documented in GetInputEvent()
+
+enum class JET : int {
+   NIL = 0,
+   BUTTON_1 = 1,
+   LMB = 1,
+   BUTTON_2 = 2,
+   RMB = 2,
+   BUTTON_3 = 3,
+   MMB = 3,
+   BUTTON_4 = 4,
+   BUTTON_5 = 5,
+   BUTTON_6 = 6,
+   BUTTON_7 = 7,
+   BUTTON_8 = 8,
+   BUTTON_9 = 9,
+   BUTTON_10 = 10,
+   WHEEL = 11,
+   WHEEL_TILT = 12,
+   PEN_TILT_XY = 13,
+   ABS_XY = 14,
+   CROSSED_IN = 15,
+   CROSSED_OUT = 16,
+   PRESSURE = 17,
+   DEVICE_TILT_XY = 18,
+   DEVICE_TILT_Z = 19,
+   DISPLAY_EDGE = 20,
+   END = 21,
+};
+
+// Field descriptors.
+
+#define FD_DOUBLERESULT 0x80000100
+#define FD_PTR_DOUBLERESULT 0x88000100
+#define FD_CLASS_TYPES 0xffc05001
+#define FD_VOID 0x00000000
+#define FD_OBJECT 0x00000001
+#define FD_LOCAL 0x00000002
+#define FD_VIRTUAL 0x00000008
+#define FD_MUTABLE 0x00000008
+#define FD_STRUCT 0x00000010
+#define FD_ALLOC 0x00000020
+#define FD_FLAGS 0x00000040
+#define FD_VARTAGS 0x00000040
+#define FD_PTRSIZE 0x00000080
+#define FD_ARRAYSIZE 0x00000080
+#define FD_LOOKUP 0x00000080
+#define FD_BUFSIZE 0x00000080
+#define FD_R 0x00000100
+#define FD_READ 0x00000100
+#define FD_RESULT 0x00000100
+#define FD_WRITE 0x00000200
+#define FD_W 0x00000200
+#define FD_BUFFER 0x00000200
+#define FD_RW 0x00000300
+#define FD_I 0x00000400
+#define FD_TAGS 0x00000400
+#define FD_INIT 0x00000400
+#define FD_RI 0x00000500
+#define FD_ERROR 0x00000800
+#define FD_ARRAY 0x00001000
+#define FD_RESOURCE 0x00002000
+#define FD_CPP 0x00004000
+#define FD_CUSTOM 0x00008000
+#define FD_SYSTEM 0x00010000
+#define FD_PRIVATE 0x00010000
+#define FD_SYNONYM 0x00020000
+#define FD_UNSIGNED 0x00040000
+#define FD_PURE 0x00100000
+#define FD_SCALED 0x00200000
+#define FD_NORMALISED 0x00200000
+#define FD_WORD 0x00400000
+#define FD_STRING 0x00800000
+#define FD_STR 0x00800000
+#define FD_STRRESULT 0x00800100
+#define FD_BYTE 0x01000000
+#define FD_FUNCTION 0x02000000
+#define FD_INT64 0x04000000
+#define FD_INT64RESULT 0x04000100
+#define FD_POINTER 0x08000000
+#define FD_PTR 0x08000000
+#define FD_OBJECTPTR 0x08000001
+#define FD_PTRRESULT 0x08000100
+#define FD_PTRBUFFER 0x08000200
+#define FD_FUNCTIONPTR 0x0a000000
+#define FD_PTR_INT64RESULT 0x0c000100
+#define FD_FLOAT 0x10000000
+#define FD_UNIT 0x20000000
+#define FD_INT 0x40000000
+#define FD_OBJECTID 0x40000001
+#define FD_INTRESULT 0x40000100
+#define FD_PTR_INTRESULT 0x48000100
+#define FD_DOUBLE 0x80000000
+
 // Flags for the Config class.
 
 enum class CNF : uint32_t {
@@ -1123,66 +1122,6 @@ enum class TSF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(TSF)
 
-struct InputEvent {
-   const struct InputEvent * Next;    // Next event in the chain
-   double   Value;                    // The value associated with the Type
-   int64_t  Timestamp;                // PreciseTime() of the recorded input
-   OBJECTID RecipientID;              // Surface that the input message is being conveyed to
-   OBJECTID OverID;                   // Surface that is directly under the mouse pointer at the time of the event
-   double   AbsX;                     // Absolute horizontal position of mouse cursor (relative to the top left of the display)
-   double   AbsY;                     // Absolute vertical position of mouse cursor (relative to the top left of the display)
-   double   X;                        // Horizontal position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface
-   double   Y;                        // Vertical position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface
-   OBJECTID DeviceID;                 // The hardware device that this event originated from
-   JET      Type;                     // JET constant that describes the event
-   JTYPE    Flags;                    // Broad descriptors for the given Type (see JTYPE flags).  Automatically defined when delivered to the pointer object
-   JTYPE    Mask;                     // Mask to use for checking against subscribers
-};
-
-struct dcRequest {
-   int  Item;             // Identifier for retrieval from the source
-   char Preference[4];    // Data preferences for the returned item(s)
-};
-
-struct dcAudio {
-   int Size;    // Byte size of this structure
-   int Format;  // Format of the audio data
-};
-
-struct dcKeyEntry {
-   int     Flags;        // Shift/Control/CapsLock...
-   int     Value;        // ASCII value of the key A/B/C/D...
-   int64_t Timestamp;    // ~Core.PreciseTime() at which the keypress was recorded
-   int     Unicode;      // Unicode value for pre-calculated key translations
-};
-
-struct dcDeviceInput {
-   double   Values[2];  // The value(s) associated with the Type
-   int64_t  Timestamp;  // ~Core.PreciseTime() of the recorded input
-   OBJECTID DeviceID;   // The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)
-   JTYPE    Flags;      // Broad descriptors for the given Type.  Automatically defined when delivered to the pointer object
-   JET      Type;       // JET constant
-};
-
-struct DateTime {
-   int16_t Year;       // Year
-   int8_t  Month;      // Month 1 to 12
-   int8_t  Day;        // Day 1 to 31
-   int8_t  Hour;       // Hour 0 to 23
-   int8_t  Minute;     // Minute 0 to 59
-   int8_t  Second;     // Second 0 to 59
-   int8_t  TimeZone;   // TimeZone -13 to +13
-   inline void clear() {
-      Year      = 0;
-      Month     = 0;
-      Day       = 0;
-      Hour      = 0;
-      Minute    = 0;
-      Second    = 0;
-      TimeZone  = 0;
-   }
-};
-
 struct HSV {
    double Hue;           // Between 0 and 359.999
    double Saturation;    // Between 0 and 1.0
@@ -1300,8 +1239,93 @@ struct Edges {
    int Bottom;  // Bottom coordinate
 };
 
+struct InputEvent {
+   const struct InputEvent * Next;    // Next event in the chain
+   double   Value;                    // The value associated with the Type
+   int64_t  Timestamp;                // PreciseTime() of the recorded input
+   OBJECTID RecipientID;              // Surface that the input message is being conveyed to
+   OBJECTID OverID;                   // Surface that is directly under the mouse pointer at the time of the event
+   double   AbsX;                     // Absolute horizontal position of mouse cursor (relative to the top left of the display)
+   double   AbsY;                     // Absolute vertical position of mouse cursor (relative to the top left of the display)
+   double   X;                        // Horizontal position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface
+   double   Y;                        // Vertical position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface
+   OBJECTID DeviceID;                 // The hardware device that this event originated from
+   JET      Type;                     // JET constant that describes the event
+   JTYPE    Flags;                    // Broad descriptors for the given Type (see JTYPE flags).  Automatically defined when delivered to the pointer object
+   JTYPE    Mask;                     // Mask to use for checking against subscribers
+};
+
+struct dcRequest {
+   int  Item;             // Identifier for retrieval from the source
+   char Preference[4];    // Data preferences for the returned item(s)
+};
+
+struct dcAudio {
+   int Size;    // Byte size of this structure
+   int Format;  // Format of the audio data
+};
+
+struct dcKeyEntry {
+   int     Flags;        // Shift/Control/CapsLock...
+   int     Value;        // ASCII value of the key A/B/C/D...
+   int64_t Timestamp;    // ~Core.PreciseTime() at which the keypress was recorded
+   int     Unicode;      // Unicode value for pre-calculated key translations
+};
+
+struct dcDeviceInput {
+   double   Values[2];  // The value(s) associated with the Type
+   int64_t  Timestamp;  // ~Core.PreciseTime() of the recorded input
+   OBJECTID DeviceID;   // The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)
+   JTYPE    Flags;      // Broad descriptors for the given Type.  Automatically defined when delivered to the pointer object
+   JET      Type;       // JET constant
+};
+
+struct DateTime {
+   int16_t Year;       // Year
+   int8_t  Month;      // Month 1 to 12
+   int8_t  Day;        // Day 1 to 31
+   int8_t  Hour;       // Hour 0 to 23
+   int8_t  Minute;     // Minute 0 to 59
+   int8_t  Second;     // Second 0 to 59
+   int8_t  TimeZone;   // TimeZone -13 to +13
+   inline void clear() {
+      Year      = 0;
+      Month     = 0;
+      Day       = 0;
+      Hour      = 0;
+      Minute    = 0;
+      Second    = 0;
+      TimeZone  = 0;
+   }
+};
+
 struct ActionEntry {
    ERR (*PerformAction)(OBJECTPTR, APTR);     // Pointer to a custom action hook.
+};
+
+struct TimeZoneTransition {
+   int64_t Instant;             // Unix epoch microseconds at which the transition occurs.
+   std::string Abbreviation;    // Short name where available, e.g. GMT, BST, PST.
+   int     OffsetBefore;        // UTC offset in seconds before the transition.
+   int     OffsetAfter;         // UTC offset in seconds after the transition.
+   int     DaylightSaving;      // 1 if the resulting period observes daylight-saving time.
+   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
+};
+
+struct TimeZoneInfo {
+   std::string ZoneID;                            // Preferred public ID, e.g. Europe/London or UTC.
+   std::string NativeID;                          // Host-native ID, e.g. GMT Standard Time on Windows.
+   std::string Source;                            // "tzif", "win32", or "utc".
+   std::string DataPath;                          // TZif path on Linux, otherwise empty.
+   std::string Version;                           // TZDB/source version if available, otherwise empty.
+   kt::vector<TimeZoneTransition> Transitions;    // Transitions available for the requested range.
+   int     BaseOffset;                            // Standard UTC offset in seconds.
+   int16_t StartYear;                             // Inclusive requested start year.
+   int16_t EndYear;                               // Inclusive requested end year.
+   int8_t  IsLocal;                               // 1 if ZoneID requested the local system zone.
+   int8_t  IsFallback;                            // 1 if UTC fallback was used.
+   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
+   TimeZoneInfo(int) : TimeZoneInfo() { }
 };
 
 struct CompressionFeedback {
@@ -1504,31 +1528,6 @@ struct FieldDef {
    CSTRING Name;    // The name of the constant.
    int     Value;   // The value of the constant.
    template <class T> FieldDef(CSTRING pName, T pValue) : Name(pName), Value(int(pValue)) { }
-};
-
-struct TimeZoneTransition {
-   int64_t Instant;             // Unix epoch microseconds at which the transition occurs.
-   std::string Abbreviation;    // Short name where available, e.g. GMT, BST, PST.
-   int     OffsetBefore;        // UTC offset in seconds before the transition.
-   int     OffsetAfter;         // UTC offset in seconds after the transition.
-   int     DaylightSaving;      // 1 if the resulting period observes daylight-saving time.
-   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
-};
-
-struct TimeZoneInfo {
-   std::string ZoneID;                            // Preferred public ID, e.g. Europe/London or UTC.
-   std::string NativeID;                          // Host-native ID, e.g. GMT Standard Time on Windows.
-   std::string Source;                            // "tzif", "win32", or "utc".
-   std::string DataPath;                          // TZif path on Linux, otherwise empty.
-   std::string Version;                           // TZDB/source version if available, otherwise empty.
-   kt::vector<TimeZoneTransition> Transitions;    // Transitions available for the requested range.
-   int     BaseOffset;                            // Standard UTC offset in seconds.
-   int16_t StartYear;                             // Inclusive requested start year.
-   int16_t EndYear;                               // Inclusive requested end year.
-   int8_t  IsLocal;                               // 1 if ZoneID requested the local system zone.
-   int8_t  IsFallback;                            // 1 if UTC fallback was used.
-   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
-   TimeZoneInfo(int) : TimeZoneInfo() { }
 };
 
 struct SystemState {
@@ -2550,165 +2549,6 @@ class objModule : public Object {
    inline ERR setFlags(const MOF Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
-      return ERR::Okay;
-   }
-
-};
-
-// Time class definition
-
-#define VER_TIME (1.000000)
-
-// Time methods
-
-namespace pt {
-struct SetTime { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetTimeZoneInfo { std::string_view ZoneID; int StartYear; int EndYear; struct TimeZoneInfo *Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-
-} // namespace
-
-class objTime : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::TIME;
-   static constexpr CSTRING CLASS_NAME = "Time";
-
-   using create = kt::Create<objTime>;
-   objTime(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   int64_t SystemTime;    // Represents the system time when the time object was last queried.
-   int     Year;          // Year (-ve for BC, +ve for AD).
-   int     Month;         // Month (1 - 12)
-   int     Day;           // Day (1 - 31)
-   int     Hour;          // Hour (0 - 23)
-   int     Minute;        // Minute (0 - 59)
-   int     Second;        // Second (0 - 59)
-   int     TimeZone;      // No information.
-   int     DayOfWeek;     // Day of week (0 - 6) starting from Sunday.
-   int     MilliSecond;   // A millisecond is one thousandth of a second (0 - 999)
-   int     MicroSecond;   // A microsecond is one millionth of a second (0 - 999999)
-
-   // Action stubs
-
-   inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
-   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
-   inline ERR init() noexcept { return InitObject(this); }
-   inline ERR setTime() noexcept {
-      return Action(AC(-1), this, nullptr);
-   }
-   inline ERR getTimeZoneInfo(const std::string_view &ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
-      struct pt::GetTimeZoneInfo args = { ZoneID, StartYear, EndYear, (struct TimeZoneInfo *)0 };
-      ERR error = Action(AC(-2), this, &args);
-      if (Info) *Info = args.Info;
-      return error;
-   }
-
-   // Customised field getting
-
-   inline ERR getSystemTime(int64_t &Value) noexcept {
-      Value = this->SystemTime;
-      return ERR::Okay;
-   }
-
-   inline ERR getYear(int &Value) noexcept {
-      Value = this->Year;
-      return ERR::Okay;
-   }
-
-   inline ERR getMonth(int &Value) noexcept {
-      Value = this->Month;
-      return ERR::Okay;
-   }
-
-   inline ERR getDay(int &Value) noexcept {
-      Value = this->Day;
-      return ERR::Okay;
-   }
-
-   inline ERR getHour(int &Value) noexcept {
-      Value = this->Hour;
-      return ERR::Okay;
-   }
-
-   inline ERR getMinute(int &Value) noexcept {
-      Value = this->Minute;
-      return ERR::Okay;
-   }
-
-   inline ERR getSecond(int &Value) noexcept {
-      Value = this->Second;
-      return ERR::Okay;
-   }
-
-   inline ERR getDayOfWeek(int &Value) noexcept {
-      Value = this->DayOfWeek;
-      return ERR::Okay;
-   }
-
-   inline ERR getMilliSecond(int &Value) noexcept {
-      Value = this->MilliSecond;
-      return ERR::Okay;
-   }
-
-   inline ERR getMicroSecond(int &Value) noexcept {
-      Value = this->MicroSecond;
-      return ERR::Okay;
-   }
-
-   inline ERR getTimestamp(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->GetValue(this, &Value);
-   }
-
-
-   // Customised field setting
-
-   inline ERR setSystemTime(const int64_t Value) noexcept {
-      this->SystemTime = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setYear(const int Value) noexcept {
-      this->Year = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setMonth(const int Value) noexcept {
-      this->Month = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setDay(const int Value) noexcept {
-      this->Day = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setHour(const int Value) noexcept {
-      this->Hour = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setMinute(const int Value) noexcept {
-      this->Minute = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setSecond(const int Value) noexcept {
-      this->Second = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setDayOfWeek(const int Value) noexcept {
-      this->DayOfWeek = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setMilliSecond(const int Value) noexcept {
-      this->MilliSecond = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setMicroSecond(const int Value) noexcept {
-      this->MicroSecond = Value;
       return ERR::Okay;
    }
 

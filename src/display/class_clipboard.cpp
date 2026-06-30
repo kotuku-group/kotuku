@@ -32,6 +32,7 @@ display initialisation.
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/time.h>
 
 #ifdef _WIN32
 using namespace display;
