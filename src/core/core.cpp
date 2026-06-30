@@ -136,15 +136,13 @@ static std::string glHomeFolderName;
 
 //********************************************************************************************************************
 
-static void print_class_list(void) __attribute__ ((unused));
-static void print_class_list(void)
+[[maybe_unused]] static void print_class_list(void)
 {
-   kt::Log log("Class List");
    std::ostringstream out;
    for (auto & [ cid, v ] : glClassDB) {
       out << v.Name << " ";
    }
-   log.msg("Total: %d, %s", (int)glClassDB.size(), out.str().c_str());
+   kt::Log("Class List").msg("Total: %d, %s", (int)glClassDB.size(), out.str().c_str());
 }
 
 //********************************************************************************************************************

@@ -33,6 +33,7 @@ that is distributed with this package.  Please refer to it for further informati
 #include "defs/hashes.h"
 #include "../link/unicode.h"
 #include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 #include <kotuku/modules/script.h>
 #include <kotuku/modules/xquery.h>
 #include <atomic>

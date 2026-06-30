@@ -1241,7 +1241,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "FontList", { sizeof(FontList), alignof(FontList) } }
 };
 

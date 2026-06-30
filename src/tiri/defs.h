@@ -13,6 +13,7 @@ constexpr int SIZE_READ = 1024;
 #include <kotuku/modules/regex.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 #include <thread>
 #include <string_view>
 #include <span>
@@ -385,7 +386,7 @@ const char * code_reader(lua_State *, void *, size_t *);
 ERR create_tiri(void);
 void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
-void hook_debug(lua_State *, lua_Debug *) __attribute__ ((unused));
+[[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
 ERR load_include(extTiri *, CSTRING);
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR);

@@ -1074,7 +1074,7 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "DNSEntry",  { sizeof(DNSEntry),  alignof(DNSEntry)  } },
    { "IPAddress", { sizeof(IPAddress), alignof(IPAddress) } },
    { "NetQueue",  { sizeof(NetQueue),  alignof(NetQueue)  } }

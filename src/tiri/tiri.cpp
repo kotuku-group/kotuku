@@ -725,10 +725,7 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 //********************************************************************************************************************
 
 #ifndef NDEBUG
-
-static void stack_dump(lua_State *L) __attribute__ ((unused));
-
-static void stack_dump(lua_State *L)
+[[maybe_unused]] static void stack_dump(lua_State *L)
 {
    int i;
    int top = lua_gettop(L);
@@ -744,7 +741,6 @@ static void stack_dump(lua_State *L)
    }
    printf("\n");  // end the listing
 }
-
 #endif
 
 //********************************************************************************************************************

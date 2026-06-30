@@ -3,10 +3,7 @@
 [[maybe_unused]] static FRGB hsl_to_rgb(HSV Colour);
 
 #if defined(DEBUG)
-static void debug_tree(CSTRING Header, OBJECTPTR) __attribute__ ((unused));
-static void debug_branch(CSTRING Header, OBJECTPTR, int &Level) __attribute__ ((unused));
-
-static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
+[[maybe_unused]] static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
 {
    kt::Log log(Header);
 

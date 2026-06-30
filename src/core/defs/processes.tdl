@@ -1,0 +1,46 @@
+--$TIRI:Include
+
+header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611 }, function()
+  c_include('<kotuku/main.h>')
+
+  restrict(function()
+    loadFile('./common.tdl')
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  methods("Task", "Task", {
+    { id=1, name="Expunge" },
+    { id=2, name="AddArgument" },
+    { id=3, name="Quit" },
+    { id=4, name="GetEnv" },
+    { id=5, name="SetEnv" }
+  })
+
+  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c", extended=true }, [[
+    string LaunchPath
+    string Name
+    string Location
+    string Path
+    string ProcessPath
+    double TimeOut
+    vector(string) Parameters
+    int(TSF) Flags
+    int ReturnCode
+    int ProcessID    # Native process ID of the activated task
+    ~array(struct(ActionEntry)) Actions
+  ]])
+
+  methods("Thread", "Th", {
+    { id=1, name="SetData" }
+  })
+
+  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
+    func  Callback     # This function will be called when the thread finishes
+    func  Routine      # This function will be called when the thread starts
+    ptr   Data         # User data pointer
+    int   DataSize     # Size of user data
+    error Error        # Error code returned by the thread on completion
+    int(THF) Flags     # Optional flags
+  ]])
+
+end)

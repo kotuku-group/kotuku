@@ -190,6 +190,7 @@ struct rkWatchPath {
 #include <kotuku/modules/config.h>
 #include <kotuku/modules/script.h>
 #include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 
 using namespace kt;
 
@@ -515,7 +516,7 @@ class extTask : public objTask {
       std::string Env;
       APTR Platform;
    #endif
-   struct ActionEntry Actions[int(AC::END)]; // Action routines to be intercepted by the program
+   std::array<ActionEntry, int(AC::END)> Actions; // Action routines to be intercepted by the program
 
    extTask(objMetaClass *pClass, OBJECTID pUID) : objTask(pClass, pUID) {
       TimeOut = 60 * 60 * 24;

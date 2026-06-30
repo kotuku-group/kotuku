@@ -19,26 +19,13 @@ set (FUNCTIONS  # Full paths are required for add_custom_command() dependencies 
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_resolution.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_volumes.cpp")
 
-set (CORE_CLASSES
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp")
-
-SET (CORE_DEFS
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c")
-
 if (KOTUKU_DEFS_AVAILABLE)
    set (CORE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/core_defs.stamp")
+
    set (CORE_OUTPUTS
-      ${CORE_DEFS}
       "${DOCS}/modules/core.xml"
       "${DOCS}/modules/classes/metaclass.xml"
       "${DOCS}/modules/classes/module.xml"
-      "${DOCS}/modules/classes/task.xml"
-      "${DOCS}/modules/classes/thread.xml"
       "${DOCS}/modules/classes/time.xml"
       "${INCLUDE_OUTPUT}/modules/core.h"
       "${INCLUDE_OUTPUT}/system/errors.h"
@@ -64,7 +51,9 @@ if (KOTUKU_DEFS_AVAILABLE)
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl"
          ${FUNCTIONS}
-         ${CORE_CLASSES}
+         "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Producing definition files for the Core library"
       VERBATIM)
@@ -127,6 +116,21 @@ idl_gen ("defs/filesystem.tdl"
       "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
       "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice.cpp")
+
+# Process classes
+
+idl_gen ("defs/processes.tdl"
+   NAME process_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/processes.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
+      "${DOCS}/modules/classes/thread.xml"
+      "${DOCS}/modules/classes/task.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp")
 
 if (NOT MSVC)
    # A bug in (MinGW?) GCC requires the following flag is applied to ensure that __packed__ works correctly.

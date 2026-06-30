@@ -71,6 +71,24 @@
     "SELF: Event applies to the monitored folder and not a contained item",
     "DEEP: Receive notifications from sub-folders (Windows only).")
 
+  flags("THF", { comment="Thread flags" },
+    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
+
+  flags("TSF", { comment="Task flags" },
+    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
+    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
+    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
+    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
+    "VERBOSE: Enable verbose logging.",
+    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
+    "DETACHED: Forces the new process to be detached from the parent.",
+    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
+    "PIPE: Enable the output pipe to the launched process so that it can read data.")
+
+  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
+     fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
+  ]])
+
   struct("CompressionFeedback", { }, [[
     int(FDB) FeedbackID     # Set to one of the FDB event indicators
     int   Index             # Index of the current file

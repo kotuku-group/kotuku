@@ -87,7 +87,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
 
 #include "xquery_class.cpp"
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)

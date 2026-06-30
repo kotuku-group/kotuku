@@ -8,58 +8,10 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
   cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<span>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
 
-  privateNames({ "CoreBase" })
-
-  priority([==[
-#ifndef NDEBUG
- #ifndef _MSC_VER
-  #include <signal.h>
- #endif
-#endif
-
-// For use in requires statements
-template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcComplete = requires { sizeof(T); };
-template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
-template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
-   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
-   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
-
-#ifndef DEFINE_ENUM_FLAG_OPERATORS
-template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<1> { typedef int8_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<2> { typedef int16_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<4> { typedef int type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<8> { typedef int64_t type; };
-// used as an approximation of std::underlying_type<T>
-template <class T> struct _ENUM_FLAG_SIZED_INTEGER { typedef typename _ENUM_FLAG_INTEGER_FOR_SIZE<sizeof(T)>::type type; };
-
-#define DEFINE_ENUM_FLAG_OPERATORS(ENUMTYPE) \
-constexpr ENUMTYPE operator | (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) | ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator & (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) & ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator ~ (ENUMTYPE a) noexcept { return ENUMTYPE(~((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a)); } \
-constexpr ENUMTYPE operator ^ (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ^ ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator |= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) |= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator &= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) &= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }
-#endif
-
-template<typename T>
-constexpr bool defined(T flags, T test_flag) noexcept {
-   static_assert(std::is_enum_v<T>, "Type must be an enum");
-   using underlying = std::underlying_type_t<T>;
-   return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
-}
-
-constexpr int RESOURCE_ID_OFFSET = -1;
-
-  ]==])
+  privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
   loadFile(glPath .. 'common.tdl')
   loadFile(glPath .. 'common-graphics.tdl')
-
-  flags("STR", { bits=32 },
-     "MATCH_CASE|CASE: Perform a case-sensitive match.",
-     "MATCH_LEN: The strings must be of equal length to be matched.")
 
   flags("MSF", { comment="Message flags." },
      "UPDATE: If `Type` matches a queued message, update that message's data in place.",
@@ -80,17 +32,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
      "RECALL: Set if the subscriber needs to manually check for incoming/outgoing data.  This is supported as a one-off check, so the flag will be disabled automatically when the subscriber is called.",
      "ALWAYS_CALL: Always call this FD's handler prior to the process going to sleep.")
 
-  flags("TSF", { comment="Task flags" },
-    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
-    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
-    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
-    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
-    "VERBOSE: Enable verbose logging.",
-    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
-    "DETACHED: Forces the new process to be detached from the parent.",
-    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
-    "PIPE: Enable the output pipe to the launched process so that it can read data.")
-
   flags("MHF", { comment="Internal options for requesting function tables from modules." },
     "STATIC: Keep the module code in memory",
     "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
@@ -103,9 +44,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
     "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
     "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
-
-  flags("THF", { comment="Thread flags" },
-    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
 
   flags("VOLUME", { comment="Options for SetVolume()" },
     "REPLACE: If the volume already exists, all paths that are attached to it will be replaced with the new path setting.",
@@ -463,26 +401,12 @@ constexpr int RESOURCE_ID_OFFSET = -1;
 
 typedef AC ACTIONID;
 
-#ifndef __GNUC__
-#define __attribute__(a)
-#endif
-
 struct StructInfo {
    uint16_t Size;       // Byte size of the structure (sizeof)
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
 };
 
-typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
-typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
-
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
-
-#ifndef STRINGIFY
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#endif
-
-#define MOD_IDL nullptr
 
 #ifdef KOTUKU_STATIC
 __export void CloseCore(void);
@@ -502,42 +426,6 @@ __export struct ModHeader ModHeader;
 #define MOD_NAME nullptr
 #endif
 
-namespace kt {
-
-#ifdef PRINTF64I
-  #define PF64 "I64d"
-#elif PRINTF64_PRID
-  #define PF64 PRId64
-#else
-  #define PF64 "lld"
-#endif
-
-// Use DEBUG_BREAK in critical areas where you would want to break in gdb.  This feature will only be compiled
-// in to debug builds.
-
-#ifndef NDEBUG
- #ifdef _MSC_VER
-  #define DEBUG_BREAK __debugbreak();
- #elif __linux__
-  #define DEBUG_BREAK raise(SIGTRAP);
- #else
-  #define DEBUG_BREAK
- #endif
-#else
- #define DEBUG_BREAK
-#endif
-
-template <class T>
-constexpr T roundup(T Num, T Alignment) {
-   return ((Num + Alignment - 1) / Alignment) * Alignment;
-}
-
-[[deprecated]] inline int F2I(double val) noexcept {
-   return std::lrint(val);
-}
-
-} // namespace
-
 constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 
 #ifdef _LP64
@@ -546,30 +434,17 @@ constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 #define FD_PTR64 0
 #endif
 
-template <class T>
-inline void nextutf8(T *&Str) noexcept {
-   if (*Str) {
-      for (++Str; (((unsigned char)*Str) & 0xc0) IS 0x80; ++Str);
-   }
-}
+// Forward declared classes
 
-//********************************************************************************************************************
+class objScript;
+class objConfig;
+class objCompression;
+class objCompressedStream;
+class objFile;
+class objStorageDevice;
+class objThread;
+class objTask;
 
-namespace kt {
-
-class FloatRect {
-   public:
-   double X, Y, Width, Height;
-   constexpr FloatRect() noexcept = default;
-   constexpr FloatRect(double Value) noexcept : X(Value), Y(Value), Width(Value), Height(Value) { }
-   constexpr FloatRect(double pX, double pY, double pWidth, double pHeight) noexcept : X(pX), Y(pY), Width(pWidth), Height(pHeight) { }
-   constexpr double left() const noexcept { return X; }
-   constexpr double top() const noexcept { return Y; }
-   constexpr double right() const noexcept { return X + Width; }
-   constexpr double bottom() const noexcept { return Y + Height; }
-};
-
-} // namespace
 ]==])
 
   struct('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
@@ -660,6 +535,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     cstr Namespace                 # A reserved system-wide namespace for function names.
   ]],
   [[
+   typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
    STRUCTS *StructDefs;
    class objRootModule *Root;
 
@@ -1119,6 +995,7 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
 inline OBJECTID CurrentTaskID() { return ((OBJECTPTR)CurrentTask())->UID; }
 inline APTR SetResourcePtr(RES Res, APTR Value) { return (APTR)(MAXINT)(SetResource(Res, (MAXINT)Value)); }
 
+#ifdef PRV_METACLASS
 // obj_read is used to build efficient customised jump tables for object calls.
 
 struct obj_read {
@@ -1166,10 +1043,10 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-
+#endif
 ]==])
 
-  -- Forward declared classes
+  -- Declare classes for their inclusion in outgoing Core documentation
 
   klass("Script")
   klass("Config")
@@ -1177,6 +1054,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
   klass("CompressedStream")
   klass("File")
   klass("StorageDevice")
+  klass("Thread")
+  klass("Task")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1213,44 +1092,6 @@ inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
-
-  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
-     fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
-  ]])
-
-  methods("Task", "Task", {
-    { id=1, name="Expunge" },
-    { id=2, name="AddArgument" },
-    { id=3, name="Quit" },
-    { id=4, name="GetEnv" },
-    { id=5, name="SetEnv" }
-  })
-
-  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c", extended=true }, [[
-    string LaunchPath
-    string Name
-    string Location
-    string Path
-    string ProcessPath
-    double TimeOut
-    vector(string) Parameters
-    int(TSF) Flags
-    int ReturnCode
-    int ProcessID    # Native process ID of the activated task
-  ]])
-
-  methods("Thread", "Th", {
-    { id=1, name="SetData" }
-  })
-
-  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
-    func  Callback     # This function will be called when the thread finishes
-    func  Routine      # This function will be called when the thread starts
-    ptr   Data         # User data pointer
-    int   DataSize     # Size of user data
-    error Error        # Error code returned by the thread on completion
-    int(THF) Flags     # Optional flags
-  ]])
 
   methods("Module", "Mod", {
     { id=1, name="ResolveSymbol" },
