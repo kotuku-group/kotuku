@@ -139,6 +139,7 @@ public:
    ADD    additive     = ADD::REPLACE;
    bool   freeze       = false; // True if the animation freezes on the last frame
    bool   accumulate   = false;
+   bool   non_interpolating = false; // True for <set>, which applies target values directly.
    bool   begin_on_key = false; // Animation starts if the user hits a key
    bool   begin_on_click = false; // Animation starts if the user clicks anywhere in the scene graph
 

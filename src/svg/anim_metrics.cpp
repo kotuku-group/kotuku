@@ -224,15 +224,20 @@ double anim_base::get_paired_dist()
 }
 
 //********************************************************************************************************************
-// Return an interpolated value based on the values or from/to/by settings.
+// Return a value based on the values or from/to/by settings; interpolates if necessary.
 
 double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
 {
    double from_val, to_val;
    double seek_to = seek;
 
+   if (non_interpolating) {
+      auto value = get_string();
+      return svtonum<double>(value, nullptr);
+   }
+
    if ((seek >= 1.0) and (!freeze)) {
-      return strtod(target_attrib_orig.c_str(), nullptr);
+      return svtonum<double>(target_attrib_orig, nullptr);
    }
 
    if (not values.empty()) {
