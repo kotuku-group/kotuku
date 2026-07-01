@@ -811,21 +811,16 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <const name="UPDATE_ONLY">SetAttrib will find the target attribute and update it.  It is not possible to rename the attribute when using this technique.  <code>ERR::Search</code> is returned if the attribute cannot be found.</const>
     </constants>
 
-    <constants lookup="XPVT" comment="Type descriptors for XPathValue">
-      <const name="Array"/>
-      <const name="Boolean"/>
-      <const name="Date"/>
-      <const name="DateTime"/>
-      <const name="Map"/>
-      <const name="NodeSet"/>
-      <const name="Number"/>
-      <const name="String"/>
-      <const name="Time"/>
-    </constants>
-
     <constants lookup="XSF" comment="Options for the Sort method.">
       <const name="CHECK_SORT">Tells the algorithm to check for a 'sort' attribute in each analysed tag and if found, the algorithm will use that as the sort value instead of that indicated in the <code>Attrib</code> field.</const>
       <const name="DESC">Sort in descending order.</const>
+    </constants>
+
+    <constants lookup="XTF" comment="Standard flags for XTag.">
+      <const name="CDATA">Tag represents <code>CDATA</code>.</const>
+      <const name="COMMENT">Tag represents a comment of the format <code>&lt;!-- Comment --&gt;</code>.</const>
+      <const name="INSTRUCTION">Tag represents an instruction of the format <code>&lt;?xml?&gt;</code>.</const>
+      <const name="NOTATION">Tag represents a notation of the format <code>&lt;!XML&gt;</code>.</const>
     </constants>
 
   </types>
@@ -833,12 +828,6 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <struct name="XMLAttrib" typeName="XMLATTRIB">
       <field name="Name" type="STRING">Name of the attribute</field>
       <field name="Value" type="STRING">Value of the attribute</field>
-    </struct>
-
-    <struct name="XPathValue" typeName="XPATHVALUE">
-      <field name="Type" type="XPVT" lookup="XPVT">Identifies the type of value stored</field>
-      <field name="NumberValue" type="DOUBLE">Defined if the type is Number or Boolean</field>
-      <field name="StringValue" type="STRING">Defined if the type is String</field>
     </struct>
 
     <struct name="XTag" typeName="XTAG">

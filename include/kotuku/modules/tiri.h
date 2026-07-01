@@ -111,4 +111,3 @@ namespace ti {
 extern ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...);
 } // namespace
 #endif // KOTUKU_STATIC
-

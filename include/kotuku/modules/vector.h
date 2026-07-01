@@ -5921,4 +5921,3 @@ template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(s
 template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(strhash("roundY"), Value); }
 
 }
-

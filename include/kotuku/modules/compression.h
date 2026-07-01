@@ -356,4 +356,3 @@ class objCompressedStream : public Object {
    }
 
 };
-

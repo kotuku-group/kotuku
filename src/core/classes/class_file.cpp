@@ -2450,7 +2450,7 @@ static ERR SET_Position(extFile *Self, int64_t Value)
 ResolvedPath: Returns a resolved copy of the Path string.
 
 The ResolvedPath will return a resolved copy of the #Path string.  The resolved path will be in a format that is native
-to the host platform.  Please refer to the ~ResolvePath() function for further information.
+to the host platform.  Please refer to the ~Core.ResolvePath() function for further information.
 
 *********************************************************************************************************************/
 

@@ -762,48 +762,10 @@ the surface area first).</li>
 
   </fields>
   <types>
-    <constants lookup="BAF" comment="Instructions for basic graphics operations.">
-      <const name="BLEND">Enable alpha blending to the destination if the source supports an alpha channel.</const>
-      <const name="COPY">Special <function module="Display">CopyArea</function> option that avoids blending when the destination pixel is empty.</const>
-      <const name="DITHER">Perform dithering if the colour formats differ between the source and destination.</const>
-      <const name="FILL">For primitive operations such as <function module="Display">DrawRectangle</function>, this will fill the shape with a solid colour or texture.</const>
-      <const name="LINEAR">Use linear interpolation to improve the quality of alpha blending.</const>
-    </constants>
-
-    <constants lookup="BDF" comment="CopySurface() flags">
-      <const name="DITHER">Allow the use of dithering to improve image quality at a cost of speed.</const>
-      <const name="REDRAW">Redraw the surface before performing the copy operation.</const>
-    </constants>
-
-    <constants lookup="CRF" comment="Flags for the SetCursor() function.">
-      <const name="BUFFER">Use of the <code>BUFFER</code> option allows the cursor request to be buffered in the event that the cursor is locked at the time of calling the <function module="Display">SetCursor</function> function.  Use of this flag is highly recommended in most circumstances, but may not be used in conjunction with the <code>ANCHOR</code> option.</const>
-      <const name="LMB">Release the cursor after the left mouse button is held and released.</const>
-      <const name="MMB">Release the cursor after the middle mouse button is held and released.</const>
-      <const name="NO_BUTTONS">Set the cursor only on the condition that the user is not holding down any buttons.  <code>ERR::NothingDone</code> is returned if the user has a button held down.</const>
-      <const name="RESTRICT">Similar to the anchor option, but allows the pointer to move within the surface referred to by ObjectID.</const>
-      <const name="RMB">Release the cursor after the right mouse button is held and released.</const>
-    </constants>
-
-    <constants lookup="CSRF" comment="Flags for CopySurface().">
-      <const name="ALPHA">Enable alpha blending if the source is in 32-bit colour format with an alpha channel.</const>
-      <const name="CLIP">Enable clipping of the source coordinates.</const>
-      <const name="DEFAULT_FORMAT">Ignore the colour format defined in the source surface (if any) and generate a default format based on the <code>BitsPerPixel</code> value.</const>
-      <const name="OFFSET">Adjust X and Y coordinates by the offset values defined in the <class name="Surface" field="XOffset">Surface.XOffset</class> and <class name="Surface" field="YOffset">Surface.YOffset</class> fields.</const>
-      <const name="TRANSLUCENT">Perform a translucent copy operation, using the strength value specified in the <class name="Surface" field="Opacity">Surface.Opacity</class> field.</const>
-      <const name="TRANSPARENT">Enable transparent copying, whereby colours matching the source's <code>Colour</code> field will be ignored.</const>
-    </constants>
-
     <constants lookup="DRAG">
       <const name="ANCHOR">The surface is being dragged and the mouse pointer is anchored to the surface.</const>
       <const name="NONE">The surface is not being dragged.</const>
       <const name="NORMAL">The surface is being dragged.</const>
-    </constants>
-
-    <constants lookup="DT" comment="Flags for GetDisplayType().">
-      <const name="GLES">The display is driven by OpenGLES.</const>
-      <const name="NATIVE">The display is native (supported by internal drivers).</const>
-      <const name="WINGDI">The display is driven by Microsoft Windows drivers.</const>
-      <const name="X11">The display is driven by the X Window System (X11, X.Org, XFree86)</const>
     </constants>
 
     <constants lookup="EXF" comment="Optional flags for the ExposeSurface() function.">
@@ -812,14 +774,6 @@ the surface area first).</li>
       <const name="CHILDREN">If set, all child surfaces that intersect with exposed region will be included in the expose operation.</const>
       <const name="REDRAW_VOLATILE">Redraw every volatile object that intersects with the expose region, including internal volatile children.</const>
       <const name="REDRAW_VOLATILE_OVERLAP">Only redraw volatile objects that obscure the expose region from a position outside of the target surface and its children.  Useful if no redrawing has occurred in the surface, but the surface has moved to a new position and the parents need to be redrawn.</const>
-    </constants>
-
-    <constants lookup="HOST">
-      <const name="STICK_TO_FRONT">The hosted display sticks to the front.</const>
-      <const name="TASKBAR">The hosted display is given a taskbar button.</const>
-      <const name="TRANSLUCENCE">Change the alpha channel level for the entire window.</const>
-      <const name="TRANSPARENT">Defines an RGB colour that is to be used as transparent.</const>
-      <const name="TRAY_ICON">All new displays are represented in the system tray when this option is active.</const>
     </constants>
 
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
@@ -933,81 +887,8 @@ the surface area first).</li>
       <const name="TASKBAR">Create a borderless (custom) window with taskbar representation.</const>
     </constants>
 
-    <constants lookup="WH" comment="Events for WindowHook()">
-      <const name="CLOSE"/>
-    </constants>
-
   </types>
   <structs>
-    <struct name="BitmapSurface" typeName="BITMAPSURFACE">
-      <field name="Data" type="APTR">Pointer to the bitmap graphics data.</field>
-      <field name="Width" type="INT16">Pixel width of the bitmap.</field>
-      <field name="Height" type="INT16">Pixel height of the bitmap.</field>
-      <field name="LineWidth" type="INT">The distance between bitmap lines, measured in bytes.</field>
-      <field name="BitsPerPixel" type="UINT8">The number of bits per pixel (8, 15, 16, 24, 32).</field>
-      <field name="BytesPerPixel" type="UINT8">The number of bytes per pixel (1, 2, 3, 4).</field>
-      <field name="Opacity" type="UINT8">Opacity level of the source if <code>CSRF::TRANSLUCENT</code> is used.</field>
-      <field name="Version" type="UINT8">Version of this structure.</field>
-      <field name="Colour" type="INT">Colour index to use if <code>CSRF::TRANSPARENT</code> is used.</field>
-      <field name="Clip" type="struct ClipRectangle">A clipping rectangle will restrict drawing operations to this region if <code>CSRF::CLIP</code> is used.</field>
-      <field name="XOffset" type="INT16">Offset all X coordinate references by the given value.</field>
-      <field name="YOffset" type="INT16">Offset all Y coordinate references by the given value.</field>
-      <field name="Format" type="struct ColourFormat">The colour format of this bitmap's pixels, or alternatively use <code>CSRF::DEFAULT_FORMAT</code>.</field>
-    </struct>
-
-    <struct name="ColourFormat" typeName="COLOURFORMAT">
-      <field name="RedShift" type="UINT8">Right shift value for red (15/16 bit formats only)</field>
-      <field name="GreenShift" type="UINT8">Right shift value for green</field>
-      <field name="BlueShift" type="UINT8">Right shift value for blue</field>
-      <field name="AlphaShift" type="UINT8">Right shift value for alpha</field>
-      <field name="RedMask" type="UINT8">Unshifted mask value for red (ranges from 0x00 to 0xff)</field>
-      <field name="GreenMask" type="UINT8">Unshifted mask value for green</field>
-      <field name="BlueMask" type="UINT8">Unshifted mask value for blue</field>
-      <field name="AlphaMask" type="UINT8">Unshifted mask value for alpha</field>
-      <field name="RedPos" type="UINT8">Left shift/positional value for red</field>
-      <field name="GreenPos" type="UINT8">Left shift/positional value for green</field>
-      <field name="BluePos" type="UINT8">Left shift/positional value for blue</field>
-      <field name="AlphaPos" type="UINT8">Left shift/positional value for alpha</field>
-      <field name="BitsPerPixel" type="UINT8">Number of bits per pixel for this format.</field>
-    </struct>
-
-    <struct name="CursorInfo">
-      <field name="Width" type="INT">Maximum cursor width for custom cursors</field>
-      <field name="Height" type="INT">Maximum cursor height for custom cursors</field>
-      <field name="Flags" type="INT">Currently unused</field>
-      <field name="BitsPerPixel" type="INT16">Preferred bits-per-pixel setting for custom cursors</field>
-    </struct>
-
-    <struct name="DisplayInfo">
-      <field name="PixelFormat" type="struct PixelFormat">The colour format to use for each pixel.</field>
-      <field name="MinRefresh" type="FLOAT">Minimum refresh rate</field>
-      <field name="MaxRefresh" type="FLOAT">Maximum refresh rate</field>
-      <field name="RefreshRate" type="FLOAT">Recommended refresh rate</field>
-      <field name="Display" type="OBJECTID">Object ID related to the display</field>
-      <field name="AccelFlags" type="ACF" lookup="ACF">Flags describing supported hardware features.</field>
-      <field name="Flags" type="SCR" lookup="SCR">Display flags</field>
-      <field name="AmtColours" type="INT">Total number of supported colours.</field>
-      <field name="Index" type="INT">Display mode ID (internal)</field>
-      <field name="HDensity" type="INT">Horizontal pixel density per inch.</field>
-      <field name="VDensity" type="INT">Vertical pixel density per inch.</field>
-      <field name="HostedX" type="INT">Horizontal display position in virtual desktop coordinates</field>
-      <field name="HostedY" type="INT">Vertical display position in virtual desktop coordinates</field>
-      <field name="MonitorX" type="INT">Horizontal position of the monitor, relative to the primary monitor</field>
-      <field name="MonitorY" type="INT">Vertical position of the monitor, relative to the primary monitor</field>
-      <field name="MonitorWidth" type="INT">Pixel width of the monitor</field>
-      <field name="MonitorHeight" type="INT">Pixel height of the monitor</field>
-      <field name="VirtualX" type="INT">Horizontal position of the complete desktop spanning all monitors</field>
-      <field name="VirtualY" type="INT">Vertical position of the complete desktop spanning all monitors</field>
-      <field name="VirtualWidth" type="INT">Width of the complete desktop spanning all monitors</field>
-      <field name="VirtualHeight" type="INT">Height of the complete desktop spanning all monitors</field>
-      <field name="PhysicalWidth" type="INT">Width in millimeters, 0 if unknown</field>
-      <field name="PhysicalHeight" type="INT">Height in millimeters, 0 if unknown</field>
-      <field name="Width" type="INT16">Pixel width of the display bitmap</field>
-      <field name="Height" type="INT16">Pixel height of the display bitmap</field>
-      <field name="BitsPerPixel" type="INT16">Bits per pixel</field>
-      <field name="BytesPerPixel" type="INT16">Bytes per pixel</field>
-    </struct>
-
     <struct name="InputEvent">
       <field name="Next" type="const struct InputEvent *">Next event in the chain</field>
       <field name="Value" type="DOUBLE">The value associated with the Type</field>
@@ -1022,24 +903,6 @@ the surface area first).</li>
       <field name="Type" type="JET" lookup="JET">JET constant that describes the event</field>
       <field name="Flags" type="JTYPE" lookup="JTYPE">Broad descriptors for the given <code>Type</code> (see <code>JTYPE</code> flags).  Automatically defined when delivered to the pointer object</field>
       <field name="Mask" type="JTYPE" lookup="JTYPE">Mask to use for checking against subscribers</field>
-    </struct>
-
-    <struct name="SurfaceInfo" typeName="SURFACEINFO">
-      <field name="Data" type="APTR">Bitmap data memory ID</field>
-      <field name="ParentID" type="OBJECTID">Object that contains the surface area</field>
-      <field name="BitmapID" type="OBJECTID">Surface bitmap buffer</field>
-      <field name="DisplayID" type="OBJECTID">Refers to the display if this object is at root level</field>
-      <field name="Flags" type="RNF" lookup="RNF">Surface flags</field>
-      <field name="X" type="INT">Horizontal coordinate</field>
-      <field name="Y" type="INT">Vertical coordinate</field>
-      <field name="Width" type="INT">Width of the surface area</field>
-      <field name="Height" type="INT">Height of the surface area</field>
-      <field name="AbsX" type="INT">Absolute X coordinate</field>
-      <field name="AbsY" type="INT">Absolute Y coordinate</field>
-      <field name="Level" type="INT16">Branch level within the tree</field>
-      <field name="BitsPerPixel" type="INT8">Bits per pixel of the bitmap</field>
-      <field name="BytesPerPixel" type="INT8">Bytes per pixel of the bitmap</field>
-      <field name="LineWidth" type="INT">Line width of the bitmap, in bytes</field>
     </struct>
 
   </structs>

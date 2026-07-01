@@ -432,4 +432,3 @@ template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
 }
 
 } // fl namespace
-

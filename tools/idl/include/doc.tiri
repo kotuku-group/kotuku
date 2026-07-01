@@ -415,6 +415,26 @@ setAction('Write', {
 })
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Structures can reference custom lookup tables through their fields.  Record those lookups before <types> output is
+-- produced so struct documentation does not contain dangling lookup attributes.
+
+function collectStructureTypeReferences(References:table, IncludeAll:bool)
+   References ?! return
+
+   for struct in values(glStructures) do
+      if struct.restrict?? then
+         -- Don't publish restricted structures or their support types.
+      elseif IncludeAll or References['STRUCT:' .. struct.name] then
+         for f in values(struct.fields) do
+            if f.lookup and glCustomTypes[f.lookup] then
+               References['TYPE:' .. f.lookup] ?= 'struct:' .. struct.name
+            end
+         end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 global function saveDocuments()
    -- Save module functions, if any
@@ -423,6 +443,7 @@ global function saveDocuments()
    if not outPath:endsWith('/') then outPath ..= '/' end
 
    if glFunctions?? then
+      collectStructureTypeReferences(glReferences, true)
       out = docModuleHeader()
       for _, func in ipairs(glFunctions) do
          out ..= docFunction(func)
@@ -447,6 +468,7 @@ global function saveDocuments()
 
          if cl.meta then
             try
+               collectStructureTypeReferences(cl.references, false)
                out = docClass(cl) .. docTypes(cl.references) .. docStructures(cl.references) .. '</book>\n'
                fl = obj.new('file', { flags = FL_WRITE|FL_NEW, path = f'{outPath}classes/{className:lower()}.xml' } )
                print(f'Saving XML class documentation to "{fl.path}"')
@@ -613,11 +635,11 @@ global function substituteReferences(String:str, Class:table):str
          if glStructures[lookup].restrict is 'c' then
             return lookup .. whitespace
          else
-            Class?.references['STRUCT:' .. lookup] = 1
+            Class?.references['STRUCT:' .. lookup] = 'doc-ref'
             return f'<st>{lookup}</st>{whitespace}'
          end
       elseif glCustomTypes[lookup] then
-         Class?.references['TYPE:' .. lookup] = 1
+         Class?.references['TYPE:' .. lookup] = 'doc-ref'
          return f'<lk>{lookup}</lk>{whitespace}'
       else
          print('Unrecognised struct or constant "!' .. lookup .. '"')
@@ -1177,7 +1199,7 @@ global function docFunction(Function)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Output custom types - flags, enumerators etc
+-- Output custom types - flags, enumerators etc, used for both module and class output.
 
 global function docTypes(References:table)
    out = ''

@@ -676,5 +676,7 @@ global function saveOutput()
       end
    end
 
+   if content:endsWith('\n\n') then content = content:sub(0, -3) end
+
    saveIfModified(outPath, content, 'C header output')
 end

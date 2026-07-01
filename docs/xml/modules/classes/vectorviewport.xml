@@ -291,11 +291,6 @@
 
   </fields>
   <types>
-    <constants lookup="ARC" comment="Options for drawing arcs.">
-      <const name="LARGE">The arc will take the longest available drawing path rather than the shortest.</const>
-      <const name="SWEEP">Inverts the default behaviour in generating the arc path (go clockwise).</const>
-    </constants>
-
     <constants lookup="ARF" comment="Aspect ratios control alignment, scaling and clipping.">
       <const name="MEET">Aspect ratio is preserved. The entire viewbox will be visible in the viewport.  The viewbox is scaled up as much as possible.</const>
       <const name="NONE">Scale the viewbox to match the size of the viewport.  Aspect ratio is not preserved.</const>
@@ -317,31 +312,5 @@
 
   </types>
   <structs>
-    <struct name="FontMetrics" comment="Font metrics, measured in pixels relative to the display">
-      <field name="Height" type="INT">Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</field>
-      <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>
-      <field name="Ascent" type="INT">Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</field>
-      <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
-    </struct>
-
-    <struct name="VectorMatrix" comment="Vector transformation matrix.">
-      <field name="Next" type="struct VectorMatrix *">The next transform in the list.</field>
-      <field name="Vector" type="objVector *">The vector associated with the transform.</field>
-      <field name="ScaleX" type="DOUBLE">Matrix value A</field>
-      <field name="ShearY" type="DOUBLE">Matrix value B</field>
-      <field name="ShearX" type="DOUBLE">Matrix value C</field>
-      <field name="ScaleY" type="DOUBLE">Matrix value D</field>
-      <field name="TranslateX" type="DOUBLE">Matrix value E</field>
-      <field name="TranslateY" type="DOUBLE">Matrix value F</field>
-      <field name="Tag" type="INT">An optional tag value defined by the client for matrix identification.</field>
-    </struct>
-
-    <struct name="VectorPainter" comment="Deserialised painter information; compliant with SVG painter definitions.">
-      <field name="Pattern" type="objVectorPattern *">A <class name="VectorPattern">VectorPattern</class> object, suitable for pattern based fills.</field>
-      <field name="Image" type="objVectorImage *">A <class name="VectorImage">VectorImage</class> object, suitable for image fills.</field>
-      <field name="Gradient" type="objGradient *">A <class name="Gradient">Gradient</class> object, suitable for gradient fills.</field>
-      <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</field>
-    </struct>
-
   </structs>
 </book>

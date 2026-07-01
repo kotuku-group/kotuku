@@ -685,4 +685,3 @@ extern ERR XValueToString(const struct XPathValue *Value, std::string *Result);
 extern ERR XValueNodes(struct XPathValue *Value, kt::vector<XTag *> *Result);
 } // namespace
 #endif // KOTUKU_STATIC
-

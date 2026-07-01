@@ -550,7 +550,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The ResolvedPath will return a resolved copy of the <fl>Path</fl> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the ~ResolvePath() function for further information.</p>
+<p>The ResolvedPath will return a resolved copy of the <fl>Path</fl> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <function module="Core">ResolvePath</function> function for further information.</p>
       </description>
     </field>
 
