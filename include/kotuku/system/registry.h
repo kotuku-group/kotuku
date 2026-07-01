@@ -117,4 +117,3 @@ enum class CLASSID : uint32_t {
    XQUERY = 0x58128f50UL,
    LZMASTREAM = 0xea1b1936UL,
 };
-

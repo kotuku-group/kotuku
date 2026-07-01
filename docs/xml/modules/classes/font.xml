@@ -412,15 +412,6 @@ external leading or descent.</li>
       <const name="VERTICAL">Align to vertical center</const>
     </constants>
 
-    <constants lookup="FMETA" comment="Result flags for the SelectFont() function.">
-      <const name="HIDDEN">The font should not appear in any named list shown to the user.</const>
-      <const name="HINT_INTERNAL">The Freetype hinter should be used.</const>
-      <const name="HINT_LIGHT">The light version of the Freetype hinter should be used.</const>
-      <const name="HINT_NORMAL">The hinting information provided by the font should be given preference.</const>
-      <const name="SCALED">The font is scalable (assume fixed otherwise).</const>
-      <const name="VARIABLE">This is a scalable font featuring variable metrics.</const>
-    </constants>
-
     <constants lookup="FTF" comment="Font flags">
       <const name="BASE_LINE">The Font's <fl>Y</fl> coordinate is the base line.</const>
       <const name="BOLD">Font is described as having a bold weight (read only).</const>
@@ -430,19 +421,6 @@ external leading or descent.</li>
 
   </types>
   <structs>
-    <struct name="FontList" comment="For GetList(), describes a system font.">
-      <field name="Next" type="struct FontList *">Pointer to the next entry in the list.</field>
-      <field name="Name" type="STRING">The name of the font face.</field>
-      <field name="Alias" type="STRING">Reference to another font Name if this is an alias.</field>
-      <field name="Points" type="INT" size="0">Pointer to an array of fixed point sizes supported by the font.</field>
-      <field name="Styles" type="STRING">Supported styles are listed here in CSV format.</field>
-      <field name="Axes" type="STRING">For variable fonts, lists all supported axis codes in CSV format</field>
-      <field name="Scalable" type="INT8"><code>TRUE</code> if the font is scalable.</field>
-      <field name="Variable" type="INT8"><code>TRUE</code> if the font has variable metrics.</field>
-      <field name="Hinting" type="HINT" lookup="HINT">Hinting options</field>
-      <field name="Hidden" type="INT8"><code>TRUE</code> if the font should be hidden from user font lists.</field>
-    </struct>
-
     <struct name="RGB8" comment="8-bit RGB colour value." typeName="RGB8">
       <field name="Red" type="UINT8">Red component value</field>
       <field name="Green" type="UINT8">Green component value</field>

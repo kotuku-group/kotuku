@@ -730,4 +730,3 @@ extern ERR MixStartSequence(objAudio *Audio, int Handle);
 extern ERR MixEndSequence(objAudio *Audio, int Handle);
 } // namespace
 #endif // KOTUKU_STATIC
-

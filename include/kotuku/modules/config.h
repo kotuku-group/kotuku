@@ -222,4 +222,3 @@ class objConfig : public Object {
    }
 
 };
-

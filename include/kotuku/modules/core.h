@@ -1987,22 +1987,22 @@ inline ERR DeregisterFD(HOSTHANDLE Handle) {
 
 inline APTR GetResourcePtr(RES ID) { return (APTR)(MAXINT)GetResource(ID); }
 
-[[nodiscard]] constexpr inline const char* to_cstring(const char* A) { return A; }
-[[nodiscard]] inline const char* to_cstring(const std::string &A) { return A.c_str(); }
+[[nodiscard]] constexpr inline CSTRING to_cstring(CSTRING A) { return A; }
+[[nodiscard]] inline CSTRING to_cstring(const std::string &A) { return A.c_str(); }
 
 #ifndef PRV_CORE_DATA
 // These overloaded functions can't be used in the Core as they will confuse the compiler in key areas.
 
 inline ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION Callback) {
-   return SubscribeAction(Object,Action,&Callback);
+   return SubscribeAction(Object, Action, &Callback);
 }
 
 inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
-   return SubscribeEvent(Event,&Callback,Handle);
+   return SubscribeEvent(Event, &Callback, Handle);
 }
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
-   return SubscribeTimer(Interval,&Callback,Subscription);
+   return SubscribeTimer(Interval, &Callback, Subscription);
 }
 
 // This template leverages pcObject to be the preferred entry point for any Object type or derivation.

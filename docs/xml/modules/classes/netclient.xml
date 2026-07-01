@@ -64,6 +64,13 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="IPADDR" comment="Address types for the IPAddress structure.">
+      <const name="V4"/>
+      <const name="V6"/>
+    </constants>
+
+  </types>
   <structs>
     <struct name="IPAddress">
       <field name="Data" type="INT" size="4">128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</field>

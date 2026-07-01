@@ -420,6 +420,11 @@ initially fill the internal write buffer, thereafter it will be called whenever 
 
   </fields>
   <types>
+    <constants lookup="IPADDR" comment="Address types for the IPAddress structure.">
+      <const name="V4"/>
+      <const name="V6"/>
+    </constants>
+
     <constants lookup="NSF" comment="NetSocket options">
       <const name="BROADCAST">Enable broadcast (UDP only).</const>
       <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification for client sockets (testing only).</const>

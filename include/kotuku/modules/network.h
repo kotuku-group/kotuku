@@ -993,4 +993,3 @@ extern uint32_t LongToHost(uint32_t Value);
 extern ERR SetSSL(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value);
 } // namespace
 #endif // KOTUKU_STATIC
-

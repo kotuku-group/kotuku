@@ -383,4 +383,3 @@ class objThread : public Object {
    }
 
 };
-

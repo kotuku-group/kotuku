@@ -57,6 +57,20 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="VSF" comment="Filter source types - these are used internally">
+      <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
+      <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>
+      <const name="BKGD_ALPHA">As for <code>BKGD</code> but only the alpha channel is used.</const>
+      <const name="FILL">The value of the fill property on the target element for the filter effect.</const>
+      <const name="GRAPHIC">Represents the graphics elements that were the original input into the filter element.</const>
+      <const name="IGNORE">The filter does not require an input source.</const>
+      <const name="PREVIOUS">Use the previous effect as input, or source graphic if no previous effect.</const>
+      <const name="REFERENCE">This value is an assigned name for the filter primitive in the form of a custom-ident. If supplied, then graphics that result from processing this filter primitive can be referenced by an in attribute on a subsequent filter primitive within the same filter element. If no value is provided, the output will only be available for re-use as the implicit input into the next filter primitive if that filter primitive provides no value for its in attribute.</const>
+      <const name="STROKE">The value of the stroke property on the target element for the filter effect.</const>
+    </constants>
+
+  </types>
   <structs>
     <struct name="MergeSource" comment="Input source declaration for MergeFX">
       <field name="SourceType" type="VSF" lookup="VSF">The type of the required source.</field>

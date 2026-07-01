@@ -481,4 +481,3 @@ extern ERR SelectFont(const std::string_view &Name, const std::string_view &Styl
 extern ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result);
 } // namespace
 #endif // KOTUKU_STATIC
-

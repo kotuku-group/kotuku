@@ -60,6 +60,7 @@ struct ModHeader {
       Root          = nullptr;
    }
 };
+
 // Module class definition
 
 #define VER_MODULE (1.000000)

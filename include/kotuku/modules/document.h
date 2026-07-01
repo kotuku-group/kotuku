@@ -413,4 +413,3 @@ constexpr FieldValue EventMask(DEF Value) { return FieldValue(strhash("eventMask
 constexpr FieldValue Flags(DCF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
 }
-

@@ -96,4 +96,3 @@ class objLZMAStream : public objCompressedStream {
    }
 
 };
-
