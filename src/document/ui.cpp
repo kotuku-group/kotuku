@@ -978,7 +978,7 @@ static void set_focus(extDocument *Self, INDEX Index, CSTRING Caller)
             kt::ScopedObjectLock focus(std::get<OBJECTID>(Self->Tabs[Index].ref));
             if (focus.granted()) {
                acFocus(*focus);
-               //if ((!input->get(FID_UserInput, text)) and (text)) {
+               //if ((!input->get(strhash("userInput"), text)) and (text)) {
                //   txtSelectArea(text, 0,0, 200000, 200000);
                //}
             }

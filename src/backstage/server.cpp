@@ -91,7 +91,7 @@ static ERR init_backstage(int Port)
    if (auto error = compile_backstage_routes(); error != ERR::Okay) return error;
 
    glServer = objNetServer::create::global({
-      FieldValue(FID_Address, std::string_view("127.0.0.1")),
+      FieldValue(strhash("address"), std::string_view("127.0.0.1")),
       fl::Port(Port),
       fl::Flags(int(NSF::MULTI_CONNECT|NSF::KEEP_ALIVE)),
       fl::Feedback((CPTR)server_feedback),

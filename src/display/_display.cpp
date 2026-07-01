@@ -265,7 +265,7 @@ static ERROR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERROR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, JumpTable);
+   Module->setFunctionList(JumpTable);
    return ERR_Okay;
 }
 

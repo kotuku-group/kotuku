@@ -731,12 +731,12 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <tags>object-owns-result, nullable-result, pure-query</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
-      <param type="UINT" name="FieldID">The 'FID' number to lookup.</param>
+      <param type="UINT" name="FieldID">The hash of the field name to lookup.</param>
       <param type="OBJECTPTR *" name="Target">(Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object).</param>
     </input>
     <description>
 <p>The FindField() function checks if an object supports a specified field by scanning its class descriptor for a <code>FieldID</code>. If a matching field is declared, its descriptor is returned.  For example:</p>
-<pre>if (auto field = FindField(Display, FID_Width, NULL)) {
+<pre>if (auto field = FindField(Display, strhash(&quot;width&quot;), nullptr)) {
    log.msg(&quot;The field name is \&quot;%s\&quot;.&quot;, field-&gt;Name);
 }
 </pre>

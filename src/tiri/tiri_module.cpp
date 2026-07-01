@@ -244,7 +244,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 {
    if (auto root = (OBJECTPTR)module->Root) {
       struct ModHeader *header;
-      if (auto error = root->get(FID_Header, header); error != ERR::Okay) return error;
+      if (auto error = root->get(strhash("header"), header); error != ERR::Okay) return error;
       if (not header) return ERR::NoData;
 
       if (auto idl = header->Definitions) {

@@ -1414,7 +1414,15 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
             break;
          }
 
-         case SVF_operator: fx->set(FID_Operator, val); break;
+         case SVF_operator:
+            switch(strhash(val)) {
+               case SVF_erode:  fx->setOperator(MOP::ERODE); break;
+               case SVF_dilate: fx->setOperator(MOP::DILATE); break;
+               default: log.warning("Invalid morphology operator '%s'", val.c_str()); break;
+            }
+
+            break;
+
          case SVF_x:      fx->setX(SVGUnit(val)); break;
          case SVF_y:      fx->setY(SVGUnit(val)); break;
          case SVF_width:  fx->setWidth(SVGUnit(val)); break;

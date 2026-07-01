@@ -149,7 +149,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
    kt::Log log(__FUNCTION__);
    ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
 
-   if (!Scene->get(FID_Defs, defs)) {
+   if (!Scene->get(strhash("defs"), defs)) {
       ERR error = ERR::Okay;
       int def_index = 0;
       for (auto & [ key, def ] : *defs) {
