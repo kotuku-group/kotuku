@@ -72,22 +72,22 @@ static constexpr uint16_t meta_align_offset(size_t Offset, size_t Alignment)
    return uint16_t(Offset + Alignment - remainder);
 }
 
-static constexpr uint16_t glMetaClassVersionOffset = meta_align_offset(sizeof(Object), alignof(double));
-static constexpr uint16_t glMetaFieldsOffset = meta_align_offset(glMetaClassVersionOffset + sizeof(double), alignof(APTR));
-static constexpr uint16_t glMetaDictionaryOffset = meta_align_offset(glMetaFieldsOffset + sizeof(APTR), alignof(APTR));
-static constexpr uint16_t glMetaClassNameOffset = meta_align_offset(glMetaDictionaryOffset + sizeof(APTR), alignof(std::string));
-static constexpr uint16_t glMetaFileExtensionOffset = meta_align_offset(glMetaClassNameOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaClassVersionOffset    = meta_align_offset(sizeof(Object), alignof(double));
+static constexpr uint16_t glMetaFieldsOffset          = meta_align_offset(glMetaClassVersionOffset + sizeof(double), alignof(APTR));
+static constexpr uint16_t glMetaDictionaryOffset      = meta_align_offset(glMetaFieldsOffset + sizeof(APTR), alignof(APTR));
+static constexpr uint16_t glMetaClassNameOffset       = meta_align_offset(glMetaDictionaryOffset + sizeof(APTR), alignof(std::string));
+static constexpr uint16_t glMetaFileExtensionOffset   = meta_align_offset(glMetaClassNameOffset + sizeof(std::string), alignof(std::string));
 static constexpr uint16_t glMetaFileDescriptionOffset = meta_align_offset(glMetaFileExtensionOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaFileHeaderOffset = meta_align_offset(glMetaFileDescriptionOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaPathOffset = meta_align_offset(glMetaFileHeaderOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaIconOffset = meta_align_offset(glMetaPathOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaSizeOffset = meta_align_offset(glMetaIconOffset + sizeof(std::string), alignof(int));
-static constexpr uint16_t glMetaFlagsOffset = meta_align_offset(glMetaSizeOffset + sizeof(int), alignof(CLF));
-static constexpr uint16_t glMetaClassIDOffset = meta_align_offset(glMetaFlagsOffset + sizeof(CLF), alignof(CLASSID));
-static constexpr uint16_t glMetaBaseClassIDOffset = meta_align_offset(glMetaClassIDOffset + sizeof(CLASSID), alignof(CLASSID));
-static constexpr uint16_t glMetaOpenCountOffset = meta_align_offset(glMetaBaseClassIDOffset + sizeof(CLASSID), alignof(int));
-static constexpr uint16_t glMetaCategoryOffset = meta_align_offset(glMetaOpenCountOffset + sizeof(int), alignof(CCF));
-static constexpr uint16_t glMetaPublicSizeOffset = meta_align_offset(glMetaCategoryOffset + sizeof(int), alignof(int));
+static constexpr uint16_t glMetaFileHeaderOffset      = meta_align_offset(glMetaFileDescriptionOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaPathOffset            = meta_align_offset(glMetaFileHeaderOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaIconOffset            = meta_align_offset(glMetaPathOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaSizeOffset            = meta_align_offset(glMetaIconOffset + sizeof(std::string), alignof(int));
+static constexpr uint16_t glMetaFlagsOffset           = meta_align_offset(glMetaSizeOffset + sizeof(int), alignof(CLF));
+static constexpr uint16_t glMetaClassIDOffset         = meta_align_offset(glMetaFlagsOffset + sizeof(CLF), alignof(CLASSID));
+static constexpr uint16_t glMetaBaseClassIDOffset     = meta_align_offset(glMetaClassIDOffset + sizeof(CLASSID), alignof(CLASSID));
+static constexpr uint16_t glMetaOpenCountOffset       = meta_align_offset(glMetaBaseClassIDOffset + sizeof(CLASSID), alignof(int));
+static constexpr uint16_t glMetaCategoryOffset        = meta_align_offset(glMetaOpenCountOffset + sizeof(int), alignof(CCF));
+static constexpr uint16_t glMetaPublicSizeOffset      = meta_align_offset(glMetaCategoryOffset + sizeof(int), alignof(int));
 
 static ERR GET_ClassName(extMetaClass *Self, std::string_view &Value)
 {

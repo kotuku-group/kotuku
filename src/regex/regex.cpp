@@ -33,6 +33,7 @@ module.
 
 #include <kotuku/main.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "srell/srell.hpp"
 

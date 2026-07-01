@@ -14,6 +14,7 @@ MP3: Sound class extension
 #include <kotuku/modules/audio.h>
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/mp3.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 extern "C" {

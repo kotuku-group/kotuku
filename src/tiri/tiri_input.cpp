@@ -31,6 +31,7 @@ For drag and drop operations, data can be requested from a source as follows:
 #include <kotuku/main.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <inttypes.h>
 #include <string_view>

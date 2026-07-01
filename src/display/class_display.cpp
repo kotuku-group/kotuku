@@ -2912,7 +2912,7 @@ ERR create_display_class(void)
       fl::Methods(clDisplayMethods),
       fl::Fields(DisplayFields),
       fl::Size(sizeof(extDisplay)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clDisplay ? ERR::Okay : ERR::AddClass;
 }

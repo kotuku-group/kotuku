@@ -192,6 +192,7 @@ struct rkWatchPath {
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/processes.h>
 #include <kotuku/modules/time.h>
+#include <kotuku/modules/module.h>
 
 using namespace kt;
 

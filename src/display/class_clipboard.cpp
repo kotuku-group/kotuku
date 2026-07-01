@@ -926,7 +926,7 @@ ERR create_clipboard_class(void)
       fl::Methods(clClipboardMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(objClipboard)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    int pid;
    if (!CurrentTask()->getProcess(pid)) glProcessID = std::to_string(pid);

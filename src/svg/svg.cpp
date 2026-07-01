@@ -30,6 +30,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "svg_def.c"
 #include <katana.h>

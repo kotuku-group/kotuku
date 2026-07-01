@@ -15,6 +15,7 @@ This version of the launcher is intended for use from the command-line only.
 #include <kotuku/modules/processes.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/startup.h>
 #include <kotuku/strings.hpp>
 #include <string.h>

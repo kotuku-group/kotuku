@@ -107,6 +107,7 @@ For information about the HTTP protocol, please refer to the official protocol w
 #include <kotuku/modules/network.h>
 #include <kotuku/modules/script.h>
 #include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "../link/base64.h"
 

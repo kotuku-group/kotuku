@@ -40,6 +40,7 @@ rendered image size.
 #include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 

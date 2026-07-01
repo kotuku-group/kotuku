@@ -31,18 +31,9 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
      "RECALL: Set if the subscriber needs to manually check for incoming/outgoing data.  This is supported as a one-off check, so the flag will be disabled automatically when the subscriber is called.",
      "ALWAYS_CALL: Always call this FD's handler prior to the process going to sleep.")
 
-  flags("MHF", { comment="Internal options for requesting function tables from modules." },
-    "STATIC: Keep the module code in memory",
-    "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
-
   flags("MTF", { comment="MoveToPoint flags" }, "X", "Y", "Z", "ANIM", "RELATIVE")
 
   flags("VLF", { comment="VlogF flags" }, "BRANCH", "ERROR", "WARNING", "CRITICAL", "INFO", "API", "DETAIL", "TRACE", "FUNCTION")
-
-  flags("MOF", { comment="Module flags" },
-    "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
-    "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
-    "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
 
   flags("VOLUME", { comment="Options for SetVolume()" },
     "REPLACE: If the volume already exists, all paths that are attached to it will be replaced with the new path setting.",
@@ -407,24 +398,6 @@ struct StructInfo {
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
 
-#ifdef KOTUKU_STATIC
-__export void CloseCore(void);
-__export ERR OpenCore(struct OpenInfo *, struct CoreBase **);
-#else
-__export struct ModHeader ModHeader;
-#endif
-
-#ifdef MOD_NAME
-#ifdef KOTUKU_STATIC
-#define KOTUKU_MOD(init,close,open,expunge,test,IDL,Structures) static struct ModHeader ModHeader(init, close, open, expunge, test, IDL, Structures, TOSTRING(MOD_NAME), TOSTRING(MOD_NAMESPACE));
-#else
-#define KOTUKU_MOD(init,close,open,expunge,test,IDL,Structures) struct ModHeader ModHeader(init, close, open, expunge, test, IDL, Structures, TOSTRING(MOD_NAME), TOSTRING(MOD_NAMESPACE));
-#endif
-#define MOD_PATH ("modules:" TOSTRING(MOD_NAME))
-#else
-#define MOD_NAME nullptr
-#endif
-
 constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 
 #ifdef _LP64
@@ -440,6 +413,7 @@ class objConfig;
 class objCompression;
 class objCompressedStream;
 class objFile;
+class objModule;
 class objStorageDevice;
 class objThread;
 class objTask;
@@ -500,58 +474,6 @@ class objTask;
      fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) AddChild # Optional function for tracking child resources
      fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) RemoveChild # Optional function to remove tracking of child resources
      bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
-  ]])
-
-  struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
-    cstr Name   # Name of the field
-    uint Type   # Type of the field
-  ]])
-
-  struct("Function", { comment="Function list array structure" }, [[
-    ptr Address     # Pointer to the function entry point
-    cstr Name       # Name of the function
-    cstruct(*FunctionField) Args  # A list of parameters accepted by the function
-  ]])
-
-  c_insert([[
-using ModClose   = void (*)(OBJECTPTR);
-using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
-using ModOpen    = ERR (*)(OBJECTPTR);
-using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(std::string_view, int *, int *);
-
-  ]])
-
-  struct("ModHeader", { comment="Module file header", restrict="c" }, [[
-    int(MHF) Flags                 # Special flags, type of function table wanted from the Core
-    cstr Definitions               # Module definition string, usable by run-time languages such as Tiri
-    fptr(error obj struct(*CoreBase)) Init # A one-off initialisation routine for when the module is first opened.
-    fptr(void obj) Close           # A function that will be called each time the module is closed.
-    fptr(error obj) Open           # A function that will be called each time the module is opened.
-    fptr(error) Expunge            # Reference to an expunge function to terminate the module.
-    fptr(void strview &int &int) Test # A function that can run embedded unit tests in development builds.
-    cstr Name                      # Name of the module
-    cstr Namespace                 # A reserved system-wide namespace for function names.
-  ]],
-  [[
-   typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
-   STRUCTS *StructDefs;
-   class objRootModule *Root;
-
-   ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
-      CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
-      Flags         = MHF::DEFAULT;
-      Definitions   = pDef;
-      StructDefs    = pStructs;
-      Init          = pInit;
-      Close         = pClose;
-      Open          = pOpen;
-      Expunge       = pExpunge;
-      Test          = pTest;
-      Name          = pName;
-      Namespace     = pNamespace;
-      Root          = nullptr;
-   }
   ]])
 
   struct("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
@@ -1027,6 +949,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
   klass("Thread")
   klass("Task")
   klass("Time")
+  klass("Module")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1063,41 +986,6 @@ inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
-
-  methods("Module", "Mod", {
-    { id=1, name="ResolveSymbol" },
-    { id=2, name="Test" }
-  })
-
-  klass("Module", { src="../classes/class_module.cpp", extended=true }, [[
-    cstruct(*Function) FunctionList # Array of functions
-    ptr ModBase                     # Ptr to function jump table
-    obj(RootModule) Root            # Shared details on the module
-    struct(*ModHeader) Header       # For creating in-memory modules only.
-    string Name                     # Name of the module
-    int(MOF) Flags                  # Optional flags
-  ]],
-  nil,
-  [[
-   static ERR load(std::string Name, OBJECTPTR *Module = nullptr, APTR Functions = nullptr) {
-      if (auto module = objModule::create::global(kt::FieldValue(kt::strhash("name"), std::string_view(Name)))) {
-         #ifdef KOTUKU_STATIC
-            if (Module) *Module = module;
-            if (Functions) ((APTR *)Functions)[0] = nullptr;
-            return ERR::Okay;
-         #else
-            APTR functionbase;
-            if (!module->getModBase(functionbase)) {
-               if (Module) *Module = module;
-               if (Functions) ((APTR *)Functions)[0] = functionbase;
-               return ERR::Okay;
-            }
-            else return ERR::GetField;
-         #endif
-      }
-      else return ERR::CreateObject;
-   }
-  ]])
 
   c_insert([==[
 #ifdef __unix__

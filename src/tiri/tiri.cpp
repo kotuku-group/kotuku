@@ -30,6 +30,7 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include <kotuku/main.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include <format>

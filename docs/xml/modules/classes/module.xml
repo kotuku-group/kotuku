@@ -13,7 +13,7 @@
     <id>cd79e511</id>
     <idstring>MODULE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Module class is used to load and maintain the modules that are installed on the user's system.  A number of modules are available in the core platform as standard, which you can use in the development of your programs.  Examples of existing modules can be found in both the <code>modules:</code> folder.</p>
 <p>To load a module and interact with its API, create a module object and initialise it.  The following code segment illustrates in C++:</p>
@@ -140,11 +140,5 @@ if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 
   </types>
   <structs>
-    <struct name="Function" comment="Function list array structure">
-      <field name="Address" type="APTR">Pointer to the function entry point</field>
-      <field name="Name" type="CSTRING">Name of the function</field>
-      <field name="Args" type="const struct FunctionField *">A list of parameters accepted by the function</field>
-    </struct>
-
   </structs>
 </book>

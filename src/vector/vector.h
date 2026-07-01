@@ -28,6 +28,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 using namespace kt;

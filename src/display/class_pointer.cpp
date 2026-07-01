@@ -1268,7 +1268,7 @@ ERR create_pointer_class(void)
       fl::Methods(clPointerMethods),
       fl::Fields(clPointerFields),
       fl::Size(sizeof(extPointer)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clPointer ? ERR::Okay : ERR::AddClass;
 }
