@@ -3,6 +3,7 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include "lua.h"
@@ -20,6 +21,16 @@
 #include <set>
 #include <mutex>
 #include <new>
+
+struct module {
+   const struct Function *Functions = nullptr;
+   objModule *Module = nullptr;
+   ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
+
+   ~module() {
+      if (Module) FreeResource(Module);
+   }
+};
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)

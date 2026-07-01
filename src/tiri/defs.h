@@ -321,16 +321,6 @@ struct finput {
    int8_t Mode;
 };
 
-struct module {
-   const struct Function *Functions = nullptr;
-   objModule *Module = nullptr;
-   ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
-
-   ~module() {
-      if (Module) FreeResource(Module);
-   }
-};
-
 constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
    auto crc = kt::detail::crc32c_finalise(Hash);
    while (auto c = *String++) crc = kt::detail::crc32c_byte(crc, uint8_t(c));

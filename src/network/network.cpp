@@ -30,6 +30,7 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 #include <kotuku/modules/network.h>
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include "net_platform.h"

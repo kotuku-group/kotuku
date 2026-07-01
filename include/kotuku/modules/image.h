@@ -250,6 +250,6 @@ class objImage : public Object {
 
 namespace fl {
    using namespace kt;
-constexpr FieldValue DisplayWidth(int Value) { return FieldValue(FID_DisplayWidth, Value); }
-constexpr FieldValue DisplayHeight(int Value) { return FieldValue(FID_DisplayHeight, Value); }
+constexpr FieldValue DisplayWidth(int Value) { return FieldValue(strhash("displayWidth"), Value); }
+constexpr FieldValue DisplayHeight(int Value) { return FieldValue(strhash("displayHeight"), Value); }
 }

@@ -2977,7 +2977,7 @@ ERR create_bitmap_class(void)
       fl::Methods(clBitmapMethods),
       fl::Fields(clBitmapFields),
       fl::Size(sizeof(extBitmap)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clBitmap ? ERR::Okay : ERR::AddClass;
 }

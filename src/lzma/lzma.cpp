@@ -41,6 +41,7 @@ The inherited @CompressedStream.Format field has no meaning for this class and i
 #include <kotuku/main.h>
 #include <kotuku/modules/core.h>
 #include <kotuku/modules/lzma.h>
+#include <kotuku/modules/module.h>
 
 #include <vector>
 

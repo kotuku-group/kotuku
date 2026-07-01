@@ -53,6 +53,7 @@ It will be translated to the following when loaded into an XML object:
 #define PRV_XML
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <sstream>

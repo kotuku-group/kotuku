@@ -99,6 +99,7 @@ For optimal results, choose the appropriate interface based on application requi
 #include <kotuku/modules/processes.h>
 #include <kotuku/modules/config.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <sstream>
 #include <algorithm>

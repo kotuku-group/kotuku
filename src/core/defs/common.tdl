@@ -9,6 +9,15 @@
     "OPTIONAL_FILES: Files are optional (do not fail if a requested file does not exist).",
     "NEW: On initialisation, do not load any data from the referenced configuration file.")
 
+  flags("MOF", { comment="Module flags" },
+    "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
+    "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
+    "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
+
+  flags("MHF", { comment="Internal options for requesting function tables from modules." },
+    "STATIC: Keep the module code in memory",
+    "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
+
   flags("SCF", { comment="Script flags" },
      "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
      "PROCESS_DOC: Process any embedded documentation in the script.",
@@ -87,6 +96,17 @@
     "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
     "PIPE: Enable the output pipe to the launched process so that it can read data.")
 
+  struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
+    cstr Name   # Name of the field
+    uint Type   # Type of the field
+  ]])
+
+  struct("Function", { comment="Function list array structure" }, [[
+    ptr Address     # Pointer to the function entry point
+    cstr Name       # Name of the function
+    cstruct(*FunctionField) Args  # A list of parameters accepted by the function
+  ]])
+
   struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
   ]])
@@ -160,5 +180,5 @@
     struct(DateTime) Modified     # Date and time last modified.
   ]],
   [[
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
+   ankerl::unordered_dense::map<std::string, std::string> *Tags;
   ]])

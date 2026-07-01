@@ -6,6 +6,7 @@ that is distributed with this package.  Please refer to it for further informati
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/module.h>
 
 JUMPTABLE_REGEX
 

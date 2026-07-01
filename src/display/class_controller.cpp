@@ -146,7 +146,7 @@ ERR create_controller_class(void)
       fl::Actions(clControllerActions),
       fl::Fields(clFields),
       fl::Size(sizeof(objController)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clController ? ERR::Okay : ERR::AddClass;
 }

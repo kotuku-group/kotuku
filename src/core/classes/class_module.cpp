@@ -579,7 +579,8 @@ If the module is unloaded at any time then the jump table becomes invalid.
 Name: The name of the module.
 
 This string specifies the name of the module, which doubles as its location when loaded from the `system:modules/`
-folder.  It is permissible to specify sub-directories before the module name itself - this could become more common in module loading in future.
+folder.  It is permissible to specify sub-directories before the module name itself - this could become more common
+in module loading in future.
 
 It is critical that file extensions do not appear in the Name string, e.g. `display.dll` as not all systems
 may use a `.dll` extension.

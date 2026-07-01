@@ -128,7 +128,6 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
    "${PROJECT_SOURCE_DIR}/include/kotuku/system/types.h"
    "${INCLUDE_OUTPUT}/modules/core.h"
    "${INCLUDE_OUTPUT}/system/errors.h"
-   "${INCLUDE_OUTPUT}/system/fields.h"
    "${INCLUDE_OUTPUT}/system/registry.h"
 )
 

@@ -2294,12 +2294,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>
 
-    <constants lookup="MHF" comment="Internal options for requesting function tables from modules.">
-      <const name="DEFAULT">Use structures to group exported functions (Linux, C/C++ standard)</const>
-      <const name="STATIC">Keep the module code in memory</const>
-      <const name="STRUCTURE">Use structures to group exported functions (Linux, C/C++ standard)</const>
-    </constants>
-
     <constants lookup="MSF" comment="Message flags.">
       <const name="NO_DUPLICATE">If the <code>Type</code> parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with <code>ERR::Okay</code>.</const>
       <const name="UPDATE">If <code>Type</code> matches a queued message, update that message's data in place.</const>
@@ -2592,7 +2586,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash()</field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>

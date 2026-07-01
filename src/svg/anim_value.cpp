@@ -53,8 +53,8 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORWAVE: {
          auto &wave = (objVectorWave &)Vector;
          switch (hash) {
-            case SVF_x:  wave.setX(Unit(get_dimension(Vector, FID_X))); return;
-            case SVF_y:  wave.setY(Unit(get_dimension(Vector, FID_Y))); return;
+            case SVF_x:  wave.setX(Unit(get_dimension(Vector, strhash("x")))); return;
+            case SVF_y:  wave.setY(Unit(get_dimension(Vector, strhash("y")))); return;
             case SVF_close:
                switch(strhash(get_string())) {
                   case SVF_bottom: wave.setClose(WVC::BOTTOM); return;
@@ -71,11 +71,11 @@ void anim_value::set_value(objVector &Vector)
                   default:              wave.setEnvelope(WVE::NIL); return;
                }
 
-            case SVF_amplitude: wave.setAmplitude(get_numeric_value(Vector, FID_Amplitude)); return;
-            case SVF_decay:     wave.setDecay(get_numeric_value(Vector, FID_Decay)); return;
-            case SVF_frequency: wave.setFrequency(get_numeric_value(Vector, FID_Frequency)); return;
-            case SVF_phase:     wave.setPhase(get_numeric_value(Vector, FID_Phase)); return;
-            case SVF_thickness: wave.setThickness(get_numeric_value(Vector, FID_Thickness)); return;
+            case SVF_amplitude: wave.setAmplitude(get_numeric_value(Vector, strhash("amplitude"))); return;
+            case SVF_decay:     wave.setDecay(get_numeric_value(Vector, strhash("decay"))); return;
+            case SVF_frequency: wave.setFrequency(get_numeric_value(Vector, strhash("frequency"))); return;
+            case SVF_phase:     wave.setPhase(get_numeric_value(Vector, strhash("phase"))); return;
+            case SVF_thickness: wave.setThickness(get_numeric_value(Vector, strhash("thickness"))); return;
          }
          break;
       }
@@ -83,10 +83,10 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORTEXT: {
          auto &text = (objVectorText &)Vector;
          switch (hash) {
-            case SVF_x:  text.setX(Unit(get_dimension(Vector, FID_X))); return;
-            case SVF_y:  text.setY(Unit(get_dimension(Vector, FID_Y))); return;
-            case SVF_dx: text.set(FID_DX, get_string()); return;
-            case SVF_dy: text.set(FID_DY, get_string()); return;
+            case SVF_x:  text.setX(Unit(get_dimension(Vector, strhash("x")))); return;
+            case SVF_y:  text.setY(Unit(get_dimension(Vector, strhash("y")))); return;
+            case SVF_dx: text.set(strhash("dx"), get_string()); return;
+            case SVF_dy: text.set(strhash("dy"), get_string()); return;
 
             case SVF_text_anchor:
                switch(strhash(get_string())) {
@@ -97,14 +97,14 @@ void anim_value::set_value(objVector &Vector)
                }
                break;
 
-            case SVF_rotate:         text.set(FID_Rotate, get_string()); return;
+            case SVF_rotate:         text.set(strhash("rotate"), get_string()); return;
             case SVF_string:         text.setString(get_string()); return;
-            case SVF_kerning:        text.set(FID_Kerning, get_string()); return; // Spacing between letters, default=1.0
-            case SVF_letter_spacing: text.set(FID_LetterSpacing, get_string()); return;
-            case SVF_pathLength:     text.set(FID_PathLength, get_string()); return;
-            case SVF_word_spacing:   text.set(FID_WordSpacing, get_string()); return;
+            case SVF_kerning:        text.set(strhash("kerning"), get_string()); return; // Spacing between letters, default=1.0
+            case SVF_letter_spacing: text.set(strhash("letterSpacing"), get_string()); return;
+            case SVF_pathLength:     text.set(strhash("pathLength"), get_string()); return;
+            case SVF_word_spacing:   text.set(strhash("wordSpacing"), get_string()); return;
             case SVF_font_family:    text.setFace(get_string()); return;
-            case SVF_font_size:      text.set(FID_FontSize, get_numeric_value(Vector, FID_FontSize)); return;
+            case SVF_font_size:      text.set(strhash("fontSize"), get_numeric_value(Vector, strhash("fontSize"))); return;
          }
          break;
       }
@@ -112,13 +112,13 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORELLIPSE: {
          auto &ellipse = (objVectorEllipse &)Vector;
          switch (hash) {
-            case SVF_rx:     ellipse.setRadiusX(Unit(get_dimension(Vector, FID_RadiusX))); return;
-            case SVF_ry:     ellipse.setRadiusY(Unit(get_dimension(Vector, FID_RadiusY))); return;
-            case SVF_r:      ellipse.setRadius(Unit(get_dimension(Vector, FID_Radius))); return;
-            case SVF_cx:     ellipse.setCX(Unit(get_dimension(Vector, FID_CX))); return;
-            case SVF_cy:     ellipse.setCY(Unit(get_dimension(Vector, FID_CY))); return;
-            case SVF_width:  ellipse.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
-            case SVF_height: ellipse.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+            case SVF_rx:     ellipse.setRadiusX(Unit(get_dimension(Vector, strhash("radiusX")))); return;
+            case SVF_ry:     ellipse.setRadiusY(Unit(get_dimension(Vector, strhash("radiusY")))); return;
+            case SVF_r:      ellipse.setRadius(Unit(get_dimension(Vector, strhash("radius")))); return;
+            case SVF_cx:     ellipse.setCX(Unit(get_dimension(Vector, strhash("cx")))); return;
+            case SVF_cy:     ellipse.setCY(Unit(get_dimension(Vector, strhash("cy")))); return;
+            case SVF_width:  ellipse.setWidth(Unit(get_dimension(Vector, strhash("width")))); return;
+            case SVF_height: ellipse.setHeight(Unit(get_dimension(Vector, strhash("height")))); return;
          }
          break;
       }
@@ -126,9 +126,9 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORSHAPE: {
          auto &shape = (objVectorShape &)Vector;
          switch (hash) {
-            case SVF_r:  shape.setRadius(Unit(get_dimension(Vector, FID_Radius))); return;
-            case SVF_cx: shape.setCX(Unit(get_dimension(Vector, FID_CX))); return;
-            case SVF_cy: shape.setCY(Unit(get_dimension(Vector, FID_CY))); return;
+            case SVF_r:  shape.setRadius(Unit(get_dimension(Vector, strhash("radius")))); return;
+            case SVF_cx: shape.setCX(Unit(get_dimension(Vector, strhash("cx")))); return;
+            case SVF_cy: shape.setCY(Unit(get_dimension(Vector, strhash("cy")))); return;
          }
          break;
       }
@@ -136,11 +136,11 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORSPIRAL: {
          auto &spiral = (objVectorSpiral &)Vector;
          switch (hash) {
-            case SVF_r:      spiral.setRadius(Unit(get_dimension(Vector, FID_Radius))); return;
-            case SVF_cx:     spiral.setCX(Unit(get_dimension(Vector, FID_CX))); return;
-            case SVF_cy:     spiral.setCY(Unit(get_dimension(Vector, FID_CY))); return;
-            case SVF_width:  spiral.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
-            case SVF_height: spiral.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+            case SVF_r:      spiral.setRadius(Unit(get_dimension(Vector, strhash("radius")))); return;
+            case SVF_cx:     spiral.setCX(Unit(get_dimension(Vector, strhash("cx")))); return;
+            case SVF_cy:     spiral.setCY(Unit(get_dimension(Vector, strhash("cy")))); return;
+            case SVF_width:  spiral.setWidth(Unit(get_dimension(Vector, strhash("width")))); return;
+            case SVF_height: spiral.setHeight(Unit(get_dimension(Vector, strhash("height")))); return;
          }
          break;
       }
@@ -148,12 +148,12 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORRECTANGLE: {
          auto &rect = (objVectorRectangle &)Vector;
          switch (hash) {
-            case SVF_xOffset: rect.setXOffset(Unit(get_dimension(Vector, FID_XOffset))); return;
-            case SVF_yOffset: rect.setYOffset(Unit(get_dimension(Vector, FID_YOffset))); return;
-            case SVF_x:       rect.setX(Unit(get_dimension(Vector, FID_X))); return;
-            case SVF_y:       rect.setY(Unit(get_dimension(Vector, FID_Y))); return;
-            case SVF_width:   rect.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
-            case SVF_height:  rect.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+            case SVF_xOffset: rect.setXOffset(Unit(get_dimension(Vector, strhash("xOffset")))); return;
+            case SVF_yOffset: rect.setYOffset(Unit(get_dimension(Vector, strhash("yOffset")))); return;
+            case SVF_x:       rect.setX(Unit(get_dimension(Vector, strhash("x")))); return;
+            case SVF_y:       rect.setY(Unit(get_dimension(Vector, strhash("y")))); return;
+            case SVF_width:   rect.setWidth(Unit(get_dimension(Vector, strhash("width")))); return;
+            case SVF_height:  rect.setHeight(Unit(get_dimension(Vector, strhash("height")))); return;
          }
          break;
       }
@@ -161,12 +161,12 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORVIEWPORT: {
          auto &vp = (objVectorViewport &)Vector;
          switch (hash) {
-            case SVF_x:       vp.setX(Unit(get_dimension(Vector, FID_X))); return;
-            case SVF_y:       vp.setY(Unit(get_dimension(Vector, FID_Y))); return;
-            case SVF_xOffset: vp.setXOffset(Unit(get_dimension(Vector, FID_XOffset))); return;
-            case SVF_yOffset: vp.setYOffset(Unit(get_dimension(Vector, FID_YOffset))); return;
-            case SVF_width:   vp.setWidth(Unit(get_dimension(Vector, FID_Width))); return;
-            case SVF_height:  vp.setHeight(Unit(get_dimension(Vector, FID_Height))); return;
+            case SVF_x:       vp.setX(Unit(get_dimension(Vector, strhash("x")))); return;
+            case SVF_y:       vp.setY(Unit(get_dimension(Vector, strhash("y")))); return;
+            case SVF_xOffset: vp.setXOffset(Unit(get_dimension(Vector, strhash("xOffset")))); return;
+            case SVF_yOffset: vp.setYOffset(Unit(get_dimension(Vector, strhash("yOffset")))); return;
+            case SVF_width:   vp.setWidth(Unit(get_dimension(Vector, strhash("width")))); return;
+            case SVF_height:  vp.setHeight(Unit(get_dimension(Vector, strhash("height")))); return;
          }
          break;
       }
@@ -174,8 +174,8 @@ void anim_value::set_value(objVector &Vector)
       case CLASSID::VECTORPATH: {
          auto &path = (objVectorPath &)Vector;
          switch (hash) {
-            case SVF_x:       path.setX(Unit(get_dimension(Vector, FID_X))); return;
-            case SVF_y:       path.setY(Unit(get_dimension(Vector, FID_Y))); return;
+            case SVF_x:       path.setX(Unit(get_dimension(Vector, strhash("x")))); return;
+            case SVF_y:       path.setY(Unit(get_dimension(Vector, strhash("y")))); return;
          }
       }
 
@@ -190,13 +190,13 @@ void anim_value::set_value(objVector &Vector)
          //
          // TODO: Correct implementation requires inspection of the XML tags.  If the parent Vector is a group, its
          // children will need to be checked for currentColor references.
-         const FRGB val = get_colour_value(Vector, FID_FillColour);
+         const FRGB val = get_colour_value(Vector, strhash("fillColour"));
          Vector.setFillColour(val);
          return;
       }
 
       case SVF_fill: {
-         const auto val = get_colour_value(Vector, FID_FillColour);
+         const auto val = get_colour_value(Vector, strhash("fillColour"));
          Vector.setFillColour(val);
          return;
       }
@@ -217,19 +217,19 @@ void anim_value::set_value(objVector &Vector)
          return;
       }
       case SVF_fill_opacity: {
-         auto val = get_numeric_value(Vector, FID_FillOpacity);
+         auto val = get_numeric_value(Vector, strhash("fillOpacity"));
          Vector.setFillOpacity(val);
          return;
       }
 
       case SVF_stroke: {
-         FRGB val = get_colour_value(Vector, FID_StrokeColour);
+         FRGB val = get_colour_value(Vector, strhash("strokeColour"));
          Vector.setStrokeColour(val);
          return;
       }
 
       case SVF_stroke_width:
-         Vector.setStrokeWidth(Unit(get_numeric_value(Vector, FID_StrokeWidth)));
+         Vector.setStrokeWidth(Unit(get_numeric_value(Vector, strhash("strokeWidth"))));
          return;
 
       case SVF_stroke_linejoin:
@@ -262,12 +262,12 @@ void anim_value::set_value(objVector &Vector)
          }
          return;
 
-      case SVF_stroke_opacity:          Vector.setStrokeOpacity(get_numeric_value(Vector, FID_StrokeOpacity)); break;
-      case SVF_stroke_miterlimit:       Vector.setMiterLimit(get_numeric_value(Vector, FID_MiterLimit)); break;
-      case SVF_stroke_inner_miterlimit: Vector.setInnerMiterLimit(get_numeric_value(Vector, FID_InnerMiterLimit)); break;
-      case SVF_stroke_dasharray:        Vector.set(FID_DashArray, get_string()); return;
-      case SVF_stroke_dashoffset:       Vector.setDashOffset(get_numeric_value(Vector, FID_DashOffset)); return;
-      case SVF_opacity:                 Vector.setOpacity(get_numeric_value(Vector, FID_Opacity)); return;
+      case SVF_stroke_opacity:          Vector.setStrokeOpacity(get_numeric_value(Vector, strhash("strokeOpacity"))); break;
+      case SVF_stroke_miterlimit:       Vector.setMiterLimit(get_numeric_value(Vector, strhash("miterLimit"))); break;
+      case SVF_stroke_inner_miterlimit: Vector.setInnerMiterLimit(get_numeric_value(Vector, strhash("innerMiterLimit"))); break;
+      case SVF_stroke_dasharray:        Vector.set(strhash("dashArray"), get_string()); return;
+      case SVF_stroke_dashoffset:       Vector.setDashOffset(get_numeric_value(Vector, strhash("dashOffset"))); return;
+      case SVF_opacity:                 Vector.setOpacity(get_numeric_value(Vector, strhash("opacity"))); return;
 
       case SVF_display: {
          auto val = get_string();

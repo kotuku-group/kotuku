@@ -13,6 +13,7 @@ Examples:
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <string>
 #include <string_view>
