@@ -407,10 +407,10 @@ class objDocument : public Object {
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(FID_EventCallback, &Value); }
-constexpr FieldValue EventCallback(APTR Value) { return FieldValue(FID_EventCallback, Value); }
-constexpr FieldValue EventMask(DEF Value) { return FieldValue(FID_EventMask, int(Value)); }
-constexpr FieldValue Flags(DCF Value) { return FieldValue(FID_Flags, int(Value)); }
+constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(strhash("eventCallback"), &Value); }
+constexpr FieldValue EventCallback(APTR Value) { return FieldValue(strhash("eventCallback"), Value); }
+constexpr FieldValue EventMask(DEF Value) { return FieldValue(strhash("eventMask"), int(Value)); }
+constexpr FieldValue Flags(DCF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
 }
 

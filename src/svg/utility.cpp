@@ -539,7 +539,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
          for (auto &inherit : Self->Inherit) {
             OBJECTPTR ref;
             if (!Self->Scene->findDef(inherit.ID, &ref)) {
-               inherit.Object->set(FID_Inherit, ref);
+               inherit.Object->set(strhash("inherit"), ref);
             }
             else log.warning("Failed to resolve ID %s for inheritance.", inherit.ID.c_str());
          }

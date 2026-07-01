@@ -731,7 +731,7 @@ static ERR SOUND_Init(extSound *Self)
    if (Self->Playback <= 0)  Self->Playback  = Self->Frequency;
 
    if ((Self->Flags & SDF::NOTE) != SDF::NIL) {
-      Self->set(FID_Note, Self->Note);
+      Self->set(strhash("note"), Self->Note);
       Self->Flags &= ~SDF::NOTE;
    }
 
@@ -1404,7 +1404,7 @@ static ERR SOUND_SET_Octave(extSound *Self, int Value)
 {
    if ((Value < -10) or (Value > 10))
    Self->Octave = Value;
-   return Self->set(FID_Note, Self->Note);
+   return Self->set(strhash("note"), Self->Note);
 }
 
 /*********************************************************************************************************************

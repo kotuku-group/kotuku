@@ -2451,6 +2451,6 @@ extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue WindowType(SWIN Value) { return FieldValue(FID_WindowType, int(Value)); }
+constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
 
 } // namespace
