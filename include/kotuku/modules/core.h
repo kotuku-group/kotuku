@@ -1710,7 +1710,7 @@ struct Field {
    APTR     SetValue;                                                         // A virtual function that will set the value for this field
    ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *);     // An internal function for writing to this field
    CSTRING  Name;                                                             // The English name for the field, e.g. Width
-   uint32_t FieldID;                                                          // 32-bit hash from fieldhash(). Represented by FID constants, e.g. FID_Width
+   uint32_t FieldID;                                                          // 32-bit hash from fieldhash()
    uint16_t Offset;                                                           // Field offset within the object
    uint16_t Index;                                                            // Field array index
    uint32_t Flags;                                                            // Special flags that describe the field

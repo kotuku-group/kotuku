@@ -114,7 +114,6 @@ constexpr T roundup(T Num, T Alignment) {
 #include <kotuku/vector.hpp>
 #include <kotuku/system/registry.h>
 #include <kotuku/system/errors.h>
-#include <kotuku/system/fields.h>
 #include <kotuku/modules/core.h>
 
 #include <type_traits>

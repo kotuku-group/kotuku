@@ -770,7 +770,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     ptr SetValue       # A virtual function that will set the value for this field
     fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
-    uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
+    uint FieldID       # 32-bit hash from fieldhash()
     ushort Offset      # Field offset within the object
     ushort Index       # Field array index
     uint Flags         # Special flags that describe the field

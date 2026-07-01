@@ -520,6 +520,7 @@ static constexpr auto SVF_scale               = strhash("scale");
 static constexpr auto SVF_screen              = strhash("screen");
 static constexpr auto SVF_distalGradient      = strhash("distalGradient");
 static constexpr auto SVF_padding             = strhash("padding");
+static constexpr auto SVF_scroll              = strhash("scroll");
 static constexpr auto SVF_seed                = strhash("seed");
 static constexpr auto SVF_semi_condensed      = strhash("semi_condensed");
 static constexpr auto SVF_semi_expanded       = strhash("semi_expanded");
@@ -728,7 +729,7 @@ static ERR MODExpunge(void)
 {
    if (modDisplay) { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modVector)  { FreeResource(modVector);  modVector = nullptr; }
-   if (modImage) { FreeResource(modImage); modImage = nullptr; }
+   if (modImage)   { FreeResource(modImage); modImage = nullptr; }
 
    if (clSVG)  { FreeResource(clSVG);  clSVG = nullptr; }
    if (clRSVG) { FreeResource(clRSVG); clRSVG = nullptr; }

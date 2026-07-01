@@ -184,7 +184,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    std::string_view module_name;
    // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires regeneration
-   if (auto error = MetaClass->get(FID_Module, module_name); !error) {
+   if (auto error = MetaClass->get(strhash("module"), module_name); !error) {
       if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));

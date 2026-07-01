@@ -29,7 +29,6 @@ if (KOTUKU_DEFS_AVAILABLE)
       "${INCLUDE_OUTPUT}/modules/core.h"
       "${INCLUDE_OUTPUT}/system/errors.h"
       "${INCLUDE_OUTPUT}/system/registry.h"
-      "${INCLUDE_OUTPUT}/system/fields.h"
       "${CMAKE_CURRENT_SOURCE_DIR}/data_functions.c"
       "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
       "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
@@ -39,7 +38,6 @@ if (KOTUKU_DEFS_AVAILABLE)
       BYPRODUCTS ${CORE_OUTPUTS}
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/errors.tdl" "output=${INCLUDE_OUTPUT}/system/errors.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/registry.tdl" "output=${INCLUDE_OUTPUT}/system/registry.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/fields.tdl" "output=${INCLUDE_OUTPUT}/system/fields.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.tdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c"
       COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "sdk=${PROJECT_SOURCE_DIR}" "format=c"
       COMMAND ${CMAKE_COMMAND} -E touch "${CORE_STAMP}"
@@ -47,7 +45,6 @@ if (KOTUKU_DEFS_AVAILABLE)
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl"
          ${FUNCTIONS}
          "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
