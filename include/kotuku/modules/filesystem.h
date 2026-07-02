@@ -8,6 +8,39 @@
 class objStorageDevice;
 class objFile;
 
+// Flags for the File Watch() method.
+
+enum class MFF : uint32_t {
+   NIL = 0,
+   READ = 0x00000001,
+   MODIFY = 0x00000002,
+   WRITE = 0x00000002,
+   CREATE = 0x00000004,
+   DELETE = 0x00000008,
+   MOVED = 0x00000010,
+   RENAME = 0x00000010,
+   ATTRIB = 0x00000020,
+   OPENED = 0x00000040,
+   CLOSED = 0x00000080,
+   UNMOUNT = 0x00000100,
+   FOLDER = 0x00000200,
+   FILE = 0x00000400,
+   SELF = 0x00000800,
+   DEEP = 0x00001000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(MFF)
+
+// Flags for the SetDate() file method.
+
+enum class FDT : int {
+   NIL = 0,
+   MODIFIED = 0,
+   CREATED = 1,
+   ACCESSED = 2,
+   ARCHIVED = 3,
+};
+
 // StorageDevice class definition
 
 #define VER_STORAGEDEVICE (1.000000)

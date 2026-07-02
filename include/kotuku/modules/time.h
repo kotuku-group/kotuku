@@ -7,6 +7,31 @@
 
 class objTime;
 
+struct TimeZoneTransition {
+   int64_t Instant;             // Unix epoch microseconds at which the transition occurs.
+   std::string Abbreviation;    // Short name where available, e.g. GMT, BST, PST.
+   int     OffsetBefore;        // UTC offset in seconds before the transition.
+   int     OffsetAfter;         // UTC offset in seconds after the transition.
+   int     DaylightSaving;      // 1 if the resulting period observes daylight-saving time.
+   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
+};
+
+struct TimeZoneInfo {
+   std::string ZoneID;                            // Preferred public ID, e.g. Europe/London or UTC.
+   std::string NativeID;                          // Host-native ID, e.g. GMT Standard Time on Windows.
+   std::string Source;                            // "tzif", "win32", or "utc".
+   std::string DataPath;                          // TZif path on Linux, otherwise empty.
+   std::string Version;                           // TZDB/source version if available, otherwise empty.
+   kt::vector<TimeZoneTransition> Transitions;    // Transitions available for the requested range.
+   int     BaseOffset;                            // Standard UTC offset in seconds.
+   int16_t StartYear;                             // Inclusive requested start year.
+   int16_t EndYear;                               // Inclusive requested end year.
+   int8_t  IsLocal;                               // 1 if ZoneID requested the local system zone.
+   int8_t  IsFallback;                            // 1 if UTC fallback was used.
+   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
+   TimeZoneInfo(int) : TimeZoneInfo() { }
+};
+
 // Time class definition
 
 #define VER_TIME (1.000000)

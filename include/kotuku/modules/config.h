@@ -7,6 +7,18 @@
 
 class objConfig;
 
+// Flags for the Config class.
+
+enum class CNF : uint32_t {
+   NIL = 0,
+   STRIP_QUOTES = 0x00000001,
+   AUTO_SAVE = 0x00000002,
+   OPTIONAL_FILES = 0x00000004,
+   NEW = 0x00000008,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CNF)
+
 typedef KEYVALUE ConfigKeys;
 typedef std::pair<std::string, ConfigKeys> ConfigGroup;
 typedef std::vector<ConfigGroup> ConfigGroups;

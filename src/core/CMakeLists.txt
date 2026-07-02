@@ -23,22 +23,20 @@ if (KOTUKU_DEFS_AVAILABLE)
    set (CORE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/core_defs.stamp")
 
    set (CORE_OUTPUTS
-      "${DOCS}/modules/core.xml"
-      "${DOCS}/modules/classes/metaclass.xml"
-      "${INCLUDE_OUTPUT}/modules/core.h"
-      "${INCLUDE_OUTPUT}/system/errors.h"
-      "${INCLUDE_OUTPUT}/system/registry.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/data_functions.c"
-      "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
+      "${DOCS}/modules/core.xml" "${DOCS}/modules/classes/metaclass.xml"
+      "${INCLUDE_OUTPUT}/modules/core.h" "${INCLUDE_OUTPUT}/system/errors.h" "${INCLUDE_OUTPUT}/system/registry.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/data_functions.c" "${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
 
-   add_custom_command (
+      add_custom_command (
       OUTPUT "${CORE_STAMP}"
       BYPRODUCTS ${CORE_OUTPUTS}
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/errors.tdl" "output=${INCLUDE_OUTPUT}/system/errors.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/registry.tdl" "output=${INCLUDE_OUTPUT}/system/registry.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.tdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c"
-      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "sdk=${PROJECT_SOURCE_DIR}" "format=c"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "header=#undef MOD_IDL[LF]#define MOD_IDL [DQ]" "format=serial" > "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/time.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/compression.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/config.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "footer=[DQ][LF]" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
       COMMAND ${CMAKE_COMMAND} -E touch "${CORE_STAMP}"
       DEPENDS
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"

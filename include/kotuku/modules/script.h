@@ -7,6 +7,17 @@
 
 class objScript;
 
+// Script flags
+
+enum class SCF : uint32_t {
+   NIL = 0,
+   EXIT_ON_ERROR = 0x00000001,
+   PROCESS_DOC = 0x00000002,
+   LOG_ALL = 0x00000004,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(SCF)
+
 struct ScriptArg { // For use with sc::Exec
    CSTRING Name;
    uint32_t Type;

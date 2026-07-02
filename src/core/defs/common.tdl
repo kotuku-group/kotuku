@@ -3,45 +3,6 @@
 
   loadFile(glPath .. 'common.tdl')
 
-  flags("CNF", { comment="Flags for the Config class." },
-    "STRIP_QUOTES: Removes quotes from key values that are quote-encapsulated.",
-    "AUTO_SAVE: When the configuration object is freed, automatically save the configuration data back to the original file source.",
-    "OPTIONAL_FILES: Files are optional (do not fail if a requested file does not exist).",
-    "NEW: On initialisation, do not load any data from the referenced configuration file.")
-
-  flags("MOF", { comment="Module flags" },
-    "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
-    "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
-    "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
-
-  flags("MHF", { comment="Internal options for requesting function tables from modules." },
-    "STATIC: Keep the module code in memory",
-    "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
-
-  flags("SCF", { comment="Script flags" },
-     "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
-     "PROCESS_DOC: Process any embedded documentation in the script.",
-     "LOG_ALL: Enables execution debugging.  More information will be printed to the console in this mode.")
-
-  flags("CMF", { comment="Compression flags" },
-    "PASSWORD: A password has been set on the object.",
-    "NEW: Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.",
-    "CREATE_FILE: Create a new archive only if the source file does not already exist.",
-    "READ_ONLY: Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.",
-    "NO_LINKS: Treat symbolic links as normal files/folders.",
-    "APPLY_SECURITY: When decompressing, apply individual file permissions if they are available in the compression file.")
-
-  enums("CF", { type="int", start=1, comment="Compression stream formats" },
-    "GZIP: The 'gzip' format",
-    "ZLIB: The 'zlib' format",
-    "DEFLATE: The 'deflate' format")
-
-  enums("FDB", { type="int", start=1, comment="Compression feedback event indicators." },
-    "DECOMPRESS_FILE: A file is being decompressed to a filesystem path.",
-    "COMPRESS_FILE: A file or folder is being added to a compressed stream.",
-    "REMOVE_FILE: A file is being removed from a compressed stream.",
-    "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
-
   flags("FL", { comment="File flags" },
     "WRITE: Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.",
     "NEW: Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.",
@@ -59,126 +20,11 @@
     "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
     "VIRTUAL: Path is to a virtual device.")
 
-  enums("FDT", { type="int", start=0, comment="Flags for the SetDate() file method." },
-    "MODIFIED: The date on which the file was last modified.",
-    "CREATED: The date on which the file was created.  On some host platforms this datestamp may be read-only.",
-    "ACCESSED: The date on which the file was last accessed by a user or application.",
-    "ARCHIVED: The date on which the file was most recently archived.  Not supported by most filesystems.")
-
-  -- NB: The MFF flags are duplicated in the FileSystem's Win32 code if you're going to change these
-
-  flags("MFF", { comment="Flags for the File Watch() method." },
-    "READ: File was accessed (read).",
-    "MODIFY|WRITE: File modified via write or truncation.",
-    "CREATE: New file/link created or renamed in folder.",
-    "DELETE: Existing file deleted",
-    "MOVED|RENAME: Existing file moved or renamed.",
-    "ATTRIB: File permissions or datestamp changed.",
-    "OPENED: Existing file was opened.",
-    "CLOSED: An opened file has been closed.",
-    "UNMOUNT: Host filesystem was unmounted.",
-    "FOLDER: Folder identifier; if passed to @File.Watch() then indicates a preference for folder events only.",
-    "FILE: File identifier; if passed to @File.Watch() then indicates a preference for file events only.",
-    "SELF: Event applies to the monitored folder and not a contained item",
-    "DEEP: Receive notifications from sub-folders (Windows only).")
-
-  flags("THF", { comment="Thread flags" },
-    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
-
-  flags("TSF", { comment="Task flags" },
-    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
-    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
-    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
-    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
-    "VERBOSE: Enable verbose logging.",
-    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
-    "DETACHED: Forces the new process to be detached from the parent.",
-    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
-    "PIPE: Enable the output pipe to the launched process so that it can read data.")
-
   struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
     cstr Name   # Name of the field
     uint Type   # Type of the field
   ]])
 
-  struct("Function", { comment="Function list array structure" }, [[
-    ptr Address     # Pointer to the function entry point
-    cstr Name       # Name of the function
-    cstruct(*FunctionField) Args  # A list of parameters accepted by the function
-  ]])
-
-  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
+  struct("ActionEntry", { restrict='c', comment="Function typedef for calling actions." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
-  ]])
-
-  struct("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
-     large Instant        # Unix epoch microseconds at which the transition occurs.
-     string Abbreviation  # Short name where available, e.g. GMT, BST, PST.
-     int OffsetBefore     # UTC offset in seconds before the transition.
-     int OffsetAfter      # UTC offset in seconds after the transition.
-     int DaylightSaving   # 1 if the resulting period observes daylight-saving time.
-  ]],
-  [[
-   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
-  ]])
-
-  struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
-     string ZoneID      # Preferred public ID, e.g. Europe/London or UTC.
-     string NativeID    # Host-native ID, e.g. GMT Standard Time on Windows.
-     string Source      # "tzif", "win32", or "utc".
-     string DataPath    # TZif path on Linux, otherwise empty.
-     string Version     # TZDB/source version if available, otherwise empty.
-     vector(struct(TimeZoneTransition)) Transitions # Transitions available for the requested range.
-     int BaseOffset     # Standard UTC offset in seconds.
-     short StartYear    # Inclusive requested start year.
-     short EndYear      # Inclusive requested end year.
-     char IsLocal       # 1 if ZoneID requested the local system zone.
-     char IsFallback    # 1 if UTC fallback was used.
-  ]],
-  [[
-   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
-   TimeZoneInfo(int) : TimeZoneInfo() { }
-  ]])
-
-  struct("CompressionFeedback", { }, [[
-    int(FDB) FeedbackID     # Set to one of the FDB event indicators
-    int   Index             # Index of the current file
-    cstr  Path              # Name of the current file/path in the archive
-    cstr  Dest              # Destination file/path during decompression
-    large Progress          # Progress indicator (byte position for the file being de/compressed).
-    large OriginalSize      # Original size of the file
-    large CompressedSize    # Compressed size of the file
-    short Year              # Year of the original file's datestamp.
-    short Month             # Month of the original file's datestamp.
-    short Day               # Day of the original file's datestamp.
-    short Hour              # Hour of the original file's datestamp.
-    short Minute            # Minute of the original file's datestamp.
-    short Second            # Second of the original file's datestamp.
-  ]],
-  [[
-   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-
-   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
-      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-  ]])
-
-  struct("CompressedItem", { }, [[
-    large OriginalSize            # Original size of the file
-    large CompressedSize          # Compressed size of the file
-    struct(*CompressedItem) Next  # Used only if this is a linked-list.
-    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
-    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
-    int  UserID                   # Original user ID
-    int  GroupID                  # Original group ID
-    int  OthersID                 # Original others ID
-    int(FL) Flags                 # `FL` flags
-    struct(DateTime) Created      # Date and time of the file's creation.
-    struct(DateTime) Modified     # Date and time last modified.
-  ]],
-  [[
-   ankerl::unordered_dense::map<std::string, std::string> *Tags;
   ]])
