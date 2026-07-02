@@ -34,6 +34,29 @@ function folded_boundary_append_call_shape(Value)
    return result
 end
 
+function folded_tostring_append_call_shape(Value: num)
+   local result = array<byte>
+   result ..= 'Value: ' .. tostring(Value) .. ', Next: ' .. tostring(Value + 1)
+   return result
+end
+
+function shadowed_tostring_append_call_shape()
+   local mt = {
+      __concat = function(A, B)
+         if type(A) is 'table' then return A.val .. B end
+         return A .. B.val
+      end
+   }
+   local tostring = function(Value)
+      return setmetatable({ val = Value }, mt)
+   end
+   local result = array<byte>
+
+   result ..= 'Value: ' .. tostring('local')
+
+   return result
+end
+
 @Test function CompoundAssignment()
    value = 5
    value += 3
@@ -422,8 +445,26 @@ end
    result = folded_boundary_append_call_shape('X')
 
    assert(result:getString() is 'abXc12d', 'literal runs should fold across dynamic operand boundaries')
-   assert(max_call_c_operand(folded_boundary_append_call_shape) is 5,
-      'dynamic boundaries should leave one receiver plus three append pieces in the call C operand')
+   assert(max_call_c_operand(folded_boundary_append_call_shape) is 3,
+      'unknown dynamic concat pieces should emit one concatenated RHS for the append helper')
+end
+
+@Test function ArrayConcatAssignmentFlattensRegisteredStringCalls()
+   result = folded_tostring_append_call_shape(4)
+
+   assert(result:getString() is 'Value: 4, Next: 5',
+      'registered string-returning calls should append through concat-flattened byte array pieces')
+   assert(max_call_c_operand(folded_tostring_append_call_shape) is 6,
+      'registered string-returning calls should remain flattened in the append helper call')
+end
+
+@Test function ArrayConcatAssignmentHonoursShadowedStringCalls()
+   result = shadowed_tostring_append_call_shape()
+
+   assert(result:getString() is 'Value: local',
+      'shadowed string-returning builtin names should preserve RHS __concat semantics')
+   assert(max_call_c_operand(shadowed_tostring_append_call_shape) is 3,
+      'shadowed string-returning builtin names should emit one concatenated RHS for the append helper')
 end
 
 @Test function ArrayConcatAssignmentFormatsNumbersAsTextOverFlattenCap()
@@ -473,6 +514,21 @@ end
    result ..= 'A' .. source .. 'D'
 
    assert(result:getString() is 'ABCD', 'flattened byte array concat should accept byte-array RHS operands')
+end
+
+@Test function ArrayConcatAssignmentPreservesRhsMetamethodConcat()
+   mt = {
+      __concat = function(A, B)
+         if type(A) is 'table' then return A.val .. B end
+         return A .. B.val
+      end
+   }
+   obj = setmetatable({ val = 'data' }, mt)
+   result = array<byte>
+
+   result ..= 'prefix_' .. obj
+
+   assert(result:getString() is 'prefix_data', 'byte array concat assignment should preserve RHS __concat semantics')
 end
 
 @Test function ArrayConcatAssignmentSelfAppendUsesOriginalBytes()

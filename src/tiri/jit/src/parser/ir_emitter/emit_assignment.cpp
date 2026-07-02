@@ -140,6 +140,87 @@ static void fold_adjacent_concat_literals(LexState *State, const std::vector<con
    flush_folded_concat_literal_run(State, FoldedOperands, FoldedNodes, run, run_text);
 }
 
+static const VarInfo * array_append_find_local(const FuncState &State, GCstr *Name)
+{
+   if (not Name) return nullptr;
+
+   for (int32_t slot = int32_t(State.varmap.size()) - 1; slot >= 0; --slot) {
+      const VarInfo &info = State.var_get(slot);
+      GCstr *name = strref(info.name);
+      if (name IS Name) return &info;
+   }
+
+   return nullptr;
+}
+
+static TiriType array_append_identifier_type(const FuncState &State, const NameRef &Reference)
+{
+   if (const VarInfo *info = array_append_find_local(State, Reference.identifier.symbol)) return info->fixed_type;
+   return Reference.identifier.type;
+}
+
+static TiriType array_append_call_result_type(const FuncState &State, const CallExprPayload &Call)
+{
+   if (Call.result_type != TiriType::Unknown) return Call.result_type;
+
+   const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+   if (not direct or not direct->callable) return TiriType::Unknown;
+
+   if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+      const auto *name_ref = std::get_if<NameRef>(&direct->callable->data);
+      if (name_ref and name_ref->identifier.symbol) {
+         if (const VarInfo *info = array_append_find_local(State, name_ref->identifier.symbol)) {
+            return info->result_types[0];
+         }
+         if (auto proto = get_func_prototype_by_hash(name_ref->identifier.symbol->hash)) return proto->first_result();
+      }
+   }
+   else if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+      const auto *member = std::get_if<MemberExprPayload>(&direct->callable->data);
+      if (member and member->table and member->table->kind IS AstNodeKind::IdentifierExpr and member->member.symbol) {
+         const auto *iface = std::get_if<NameRef>(&member->table->data);
+         if (iface and iface->identifier.symbol) {
+            if (array_append_find_local(State, iface->identifier.symbol)) return TiriType::Unknown;
+            if (auto proto = get_prototype_by_hash(iface->identifier.symbol->hash, member->member.symbol->hash)) {
+               return proto->first_result();
+            }
+         }
+      }
+   }
+
+   return TiriType::Unknown;
+}
+
+static bool array_append_piece_can_skip_concat(const FuncState &State, const ExprNode &Expr)
+{
+   if (Expr.kind IS AstNodeKind::LiteralExpr) {
+      const auto &literal = std::get<LiteralValue>(Expr.data);
+      return literal.kind IS LiteralKind::String or literal.kind IS LiteralKind::Number;
+   }
+
+   TiriType type = TiriType::Unknown;
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      type = array_append_identifier_type(State, std::get<NameRef>(Expr.data));
+   }
+   else if (Expr.kind IS AstNodeKind::CallExpr) {
+      type = array_append_call_result_type(State, std::get<CallExprPayload>(Expr.data));
+   }
+   else {
+      type = infer_expression_type(Expr);
+   }
+
+   return type IS TiriType::Str or type IS TiriType::Num or type IS TiriType::Array;
+}
+
+static bool array_append_pieces_can_skip_concat(const FuncState &State, const std::vector<const ExprNode *> &Pieces)
+{
+   for (const ExprNode *piece : Pieces) {
+      if (not piece or not array_append_piece_can_skip_concat(State, *piece)) return false;
+   }
+
+   return true;
+}
+
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
@@ -428,7 +509,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       std::vector<const ExprNode *> folded_append_pieces;
       fold_adjacent_concat_literals(this->func_state.ls, append_pieces, folded_append_pieces, folded_append_nodes);
 
-      if (folded_append_pieces.size() > max_flattened_append_pieces) {
+      if (folded_append_pieces.size() > max_flattened_append_pieces or
+         not array_append_pieces_can_skip_concat(this->func_state, folded_append_pieces)) {
          auto list = this->emit_expression_list(values, count);
          if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
 
