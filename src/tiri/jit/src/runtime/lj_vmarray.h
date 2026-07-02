@@ -23,6 +23,22 @@ extern "C" void lj_arr_setidx(lua_State *, GCarray *, int32_t idx, cTValue *);
 
 extern "C" void lj_arr_push1(lua_State *, GCarray *, cTValue *);
 
+// Clear an array from JIT traces.
+
+extern "C" void lj_arr_clear(lua_State *, GCarray *);
+
+// Resize an array from JIT traces.
+
+extern "C" int32_t lj_arr_resize(lua_State *, GCarray *, int32_t);
+
+// Extract a string from a byte array in JIT traces.
+
+extern "C" GCstr * lj_arr_getstring(lua_State *, GCarray *, int32_t, int32_t);
+
+// Create an array from JIT traces.
+
+extern "C" GCarray * lj_arr_new_jit(lua_State *, uint32_t, uint32_t);
+
 // Safe array get - returns nil for out-of-bounds instead of throwing error
 // Used by safe navigation operator (?[]) on arrays
 

@@ -22,6 +22,7 @@
 #define LUA_CORE
 
 #include <bit>
+#include <cstring>
 
 #include "lj_obj.h"
 #include "lj_err.h"
@@ -558,6 +559,188 @@ static bool array_elem_irtype(AET ElemType, IRType &ResultType)
 }
 
 //********************************************************************************************************************
+
+static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
+{
+   CSTRING type_name = strdata(TypeStr);
+
+   if (TypeStr->len IS 3 and memcmp(type_name, "int", 3) IS 0) *Result = AET::INT32;
+   else if (TypeStr->len IS 4 and memcmp(type_name, "byte", 4) IS 0) *Result = AET::BYTE;
+   else if (TypeStr->len IS 4 and memcmp(type_name, "char", 4) IS 0) *Result = AET::BYTE;
+   else if (TypeStr->len IS 5 and memcmp(type_name, "int16", 5) IS 0) *Result = AET::INT16;
+   else if (TypeStr->len IS 5 and memcmp(type_name, "int64", 5) IS 0) *Result = AET::INT64;
+   else if (TypeStr->len IS 5 and memcmp(type_name, "float", 5) IS 0) *Result = AET::FLOAT;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "double", 6) IS 0) *Result = AET::DOUBLE;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "string", 6) IS 0) *Result = AET::STR_GC;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "struct", 6) IS 0) *Result = AET::STRUCT;
+   else if (TypeStr->len IS 7 and memcmp(type_name, "pointer", 7) IS 0) *Result = AET::PTR;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "object", 6) IS 0) *Result = AET::OBJECT;
+   else if (TypeStr->len IS 5 and memcmp(type_name, "table", 5) IS 0) *Result = AET::TABLE;
+   else if (TypeStr->len IS 5 and memcmp(type_name, "array", 5) IS 0) *Result = AET::ARRAY;
+   else if (TypeStr->len IS 3 and memcmp(type_name, "any", 3) IS 0) *Result = AET::ANY;
+   else return false;
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Record array.new(size, literal_type).  String-initialised byte arrays are left for the interpreter for now.
+
+static void recff_array_new(jit_State* J, RecordFFData* rd)
+{
+   TRef size_ref = J->base[0];
+   TRef type_ref = size_ref ? J->base[1] : 0;
+
+   if (!type_ref) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   if (not tvisnumber(&rd->argv[0])) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   if (not tvisstr(&rd->argv[1]) or not tref_isk(type_ref)) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   AET elem_type;
+   if (not array_elemtype_from_string(strV(&rd->argv[1]), &elem_type) or elem_type IS AET::PTR or
+       elem_type IS AET::STRUCT) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   size_ref = lj_opt_narrow_toint(J, size_ref);
+   emitir(IRTGI(IR_GE), size_ref, lj_ir_kint(J, 0));
+
+   J->base[0] = recff_ir_call_fixed(J, IRCALL_lj_arr_new_jit, size_ref, lj_ir_kint(J, int32_t(elem_type)),
+      TREF_NIL, TREF_NIL);
+}
+
+//********************************************************************************************************************
+// Record array.clear(receiver).
+
+static void recff_array_clear(jit_State* J, RecordFFData* rd)
+{
+   TRef array_ref = J->base[0];
+   if (tref_isarray(array_ref)) {
+      recff_ir_call_fixed(J, IRCALL_lj_arr_clear, array_ref, TREF_NIL, TREF_NIL, TREF_NIL);
+      J->base[0] = 0;
+      rd->nres = 0;
+   }  // else: Interpreter will throw.
+}
+
+//********************************************************************************************************************
+// Record array.resize(receiver, new_size).
+
+static void recff_array_resize(jit_State* J, RecordFFData* rd)
+{
+   TRef array_ref = J->base[0];
+   TRef size_ref = array_ref ? J->base[1] : 0;
+
+   if (tref_isarray(array_ref) and size_ref) {
+      if (not tvisnumber(&rd->argv[1])) {
+         recff_nyi(J, rd);
+         return;
+      }
+
+      size_ref = lj_opt_narrow_toint(J, size_ref);
+      J->base[0] = recff_ir_call_fixed(J, IRCALL_lj_arr_resize, array_ref, size_ref, TREF_NIL, TREF_NIL);
+   }  // else: Interpreter will throw.
+}
+
+//********************************************************************************************************************
+// Record array.getString(receiver, start, len).
+
+static void recff_array_getString(jit_State* J, RecordFFData* rd)
+{
+   TRef array_ref = J->base[0];
+   if (not tref_isarray(array_ref)) return;  // Interpreter will throw.
+
+   GCarray *arr = arrayV(&rd->argv[0]);
+   if (not (arr->elemtype IS AET::BYTE)) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   TRef elem_type_ref = emitir(IRT(IR_FLOAD, IRT_U8), array_ref, IRFL_ARRAY_ELEMTYPE);
+   emitir(IRTGI(IR_EQ), elem_type_ref, lj_ir_kint(J, int32_t(AET::BYTE)));
+
+   TRef start_ref = lj_ir_kint(J, 0);
+   if (J->base[1] and not tref_isnil(J->base[1])) {
+      if (not tvisnumber(&rd->argv[1])) {
+         recff_nyi(J, rd);
+         return;
+      }
+      start_ref = lj_opt_narrow_toint(J, J->base[1]);
+   }
+
+   TRef len_ref = lj_ir_kint(J, -1);
+   if (J->base[2] and not tref_isnil(J->base[2])) {
+      if (not tvisnumber(&rd->argv[2])) {
+         recff_nyi(J, rd);
+         return;
+      }
+      len_ref = lj_opt_narrow_toint(J, J->base[2]);
+      emitir(IRTGI(IR_GE), len_ref, lj_ir_kint(J, 0));
+   }
+
+   J->base[0] = recff_ir_call_fixed(J, IRCALL_lj_arr_getstring, array_ref, start_ref, len_ref, TREF_NIL);
+}
+
+//********************************************************************************************************************
+
+static bool array_push_recordable(GCarray *Array, cTValue *Val)
+{
+   switch (Array->elemtype) {
+      case AET::BYTE:
+         return tvisstr(Val) or tvisnumber(Val);
+      case AET::INT16:
+      case AET::INT32:
+      case AET::INT64:
+      case AET::FLOAT:
+      case AET::DOUBLE:
+         return tvisnumber(Val);
+      case AET::STR_GC:
+         return tvisstr(Val);
+      case AET::ANY:
+         return true;
+      default:
+         return false;
+   }
+}
+
+//********************************************************************************************************************
+// Record array.push(receiver, value).  Multi-value push falls back to the interpreter.
+
+static void recff_array_push(jit_State* J, RecordFFData* rd)
+{
+   TRef array_ref = J->base[0];
+   TRef val_ref = array_ref ? J->base[1] : 0;
+   if (not tref_isarray(array_ref) or not val_ref or J->base[2]) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   GCarray *arr = arrayV(&rd->argv[0]);
+   cTValue *val = &rd->argv[1];
+   if (not array_push_recordable(arr, val)) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   TRef elem_type_ref = emitir(IRT(IR_FLOAD, IRT_U8), array_ref, IRFL_ARRAY_ELEMTYPE);
+   emitir(IRTGI(IR_EQ), elem_type_ref, lj_ir_kint(J, int32_t(arr->elemtype)));
+
+   TRef tmp_ref = recff_tmpref(J, val_ref, IRTMPREF_IN1);
+   recff_ir_call_fixed(J, IRCALL_lj_arr_push1, array_ref, tmp_ref, TREF_NIL, TREF_NIL);
+   J->base[0] = emitir(IRTI(IR_FLOAD), array_ref, IRFL_ARRAY_LEN);
+}
+
+//********************************************************************************************************************
 // Record array.append(receiver, value) - the helper behind compound concatenation (..=).  Array receivers append in
 // place via lj_arr_push1(); string and number receivers concatenate to a string, mirroring BC_CAT recording.
 
@@ -574,31 +757,7 @@ static void recff_array_append(jit_State* J, RecordFFData* rd)
       GCarray *arr = arrayV(&rd->argv[0]);
       cTValue *val = &rd->argv[1];
 
-      // Only record combinations that lj_arr_push1() implements with array.push() semantics.
-      bool supported;
-      switch (arr->elemtype) {
-         case AET::BYTE:
-            supported = tvisstr(val) or tvisnumber(val);
-            break;
-         case AET::INT16:
-         case AET::INT32:
-         case AET::INT64:
-         case AET::FLOAT:
-         case AET::DOUBLE:
-            supported = tvisnumber(val);
-            break;
-         case AET::STR_GC:
-            supported = tvisstr(val);
-            break;
-         case AET::ANY:
-            supported = true;
-            break;
-         default:
-            supported = false;
-            break;
-      }
-
-      if (not supported) {
+      if (not array_push_recordable(arr, val)) {
          recff_nyi(J, rd);
          return;
       }

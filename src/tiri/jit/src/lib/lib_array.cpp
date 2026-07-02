@@ -227,7 +227,7 @@ static void append_integer(std::string &Result, int64_t Value)
 //   size: number of elements (must be non-negative)
 //   type: element type string ("char", "int16", "int", "int64", "float", "double", "string", "StructName")
 
-LJLIB_CF(array_new)
+LJLIB_CF(array_new)      LJLIB_REC(.)
 {
    GCarray *arr;
 
@@ -883,7 +883,7 @@ LJLIB_CF(array_last)
 //
 // Note: For string arrays with GC references, this also nullifies the references to allow garbage collection.
 
-LJLIB_CF(array_clear)
+LJLIB_CF(array_clear)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
@@ -905,7 +905,7 @@ LJLIB_CF(array_clear)
 //
 // Note: External arrays and cached string arrays cannot grow and will raise an error.
 
-LJLIB_CF(array_resize)
+LJLIB_CF(array_resize)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
@@ -955,7 +955,7 @@ LJLIB_CF(array_resize)
 //
 // Note: External arrays and cached string arrays cannot grow and will raise an error.
 
-LJLIB_CF(array_push)
+LJLIB_CF(array_push)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
@@ -1393,7 +1393,7 @@ LJLIB_CF(array_copy)
 //   start: starting index (0-based, default 0)
 //   len: number of bytes to extract (default: remaining bytes from start)
 
-LJLIB_CF(array_getString)
+LJLIB_CF(array_getString)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 

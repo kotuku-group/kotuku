@@ -208,9 +208,13 @@ typedef struct CCallInfo {
   _(FFI,        memset,            3,   S, PTR, 0) \
   _(FFI,        lj_vm_errno,       0,   S, INT, CCI_NOFPRCLOBBER) \
   /* Native array helpers */ \
+  _(ANY,        lj_arr_new_jit,    3,   A, ARRAY, CCI_L|CCI_T) \
   _(ANY,        lj_arr_getidx,     4,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_setidx,     4,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_push1,      3,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_clear,      2,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_resize,     3,   S, INT, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_getstring,  4,   S, STR, CCI_L|CCI_T) \
   /* Try-except exception handling */ \
   _(ANY,        lj_try_enter,      4,  FS, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_try_leave,      1,  FS, NIL, CCI_L) \

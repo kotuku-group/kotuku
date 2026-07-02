@@ -571,6 +571,12 @@ static AliasRet aa_fref(jit_State* J, IRIns* refa, IRIns* refb)
       return ALIAS_MAY;  //  Same field, possibly different object.
 }
 
+// True for C helpers that change an array's length or may reallocate its storage.
+static bool ircall_mutates_array(uint32_t CallId)
+{
+   return CallId IS IRCALL_lj_arr_push1 or CallId IS IRCALL_lj_arr_clear or CallId IS IRCALL_lj_arr_resize;
+}
+
 // Only the loads for mutable fields end up here (see FOLD).
 TRef lj_opt_fwd_fload(jit_State* J)
 {
@@ -579,13 +585,13 @@ TRef lj_opt_fwd_fload(jit_State* J)
    IRRef lim = oref;  //  Search limit.
    IRRef ref;
 
-   // Array-mutating C calls (array.append) update the length and may reallocate the storage.
+   // Array-mutating C calls update the length or may reallocate the storage.
    // Limit forwarding of these fields to below the most recent call (conservative across all arrays).
    if (fid IS IRFL_ARRAY_LEN or fid IS IRFL_ARRAY_STORAGE) {
       ref = J->chain[IR_CALLS];
       while (ref > lim) {
          IRIns* calls = IR(ref);
-         if (calls->op2 IS IRCALL_lj_arr_push1) {
+         if (ircall_mutates_array(calls->op2)) {
             lim = ref;
             break;
          }
