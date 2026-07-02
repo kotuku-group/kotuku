@@ -74,6 +74,30 @@ function count_trace_opcode(TraceNo, Info, Opcode)
    return count
 end
 
+function count_jit_traces(MaxTraceNo)
+   local count = 0
+   for trace_no = 1, MaxTraceNo do
+      if jit.util.traceInfo(trace_no) != nil then count++ end
+   end
+   return count
+end
+
+function run_array_method_trace(Workload, Count)
+   jit.off()
+   local expected = Workload(Count)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local result = nil
+   for i = 1, 80 do
+      result = Workload(Count)
+   end
+
+   return expected, result, count_jit_traces(30)
+end
+
 function traced_clamp_sum(Count)
    local total = 0
    for i = 1, Count do
@@ -100,6 +124,56 @@ function constant_target(Value)
       return Value + offset, label
    end
    return offset, label
+end
+
+function array_method_clear_workload(Count)
+   local result = array.new("")
+
+   for i = 1, Count do
+      result:clear()
+      array.push(result, "clear")
+   end
+
+   return array.getString(result)
+end
+
+function array_method_resize_workload(Count)
+   local result = array.new("abcdef")
+
+   for i = 1, Count do
+      result:resize(0)
+      array.push(result, "resize")
+   end
+
+   return array.getString(result)
+end
+
+function array_method_push_workload(Count)
+   local result = array.new("")
+
+   for i = 1, Count do
+      result:push("push")
+   end
+
+   return array.getString(result)
+end
+
+function array_unknown_method_workload(Count)
+   local arr = array<int> { 1, 2, 3 }
+   local total = 0
+
+   for i = 1, Count do
+      total += arr[0]
+      if i is Count then arr:missingPhaseOneMethod() end
+   end
+
+   return total
+end
+
+function array_clear_then_push(Array)
+   Array:clear()
+   array.push(Array, "base")
+   return array.getString(Array)
 end
 
 function jit_regex_failure_convert(Value:any, Param:table):any
@@ -634,6 +708,94 @@ end
    assert(ensure_trace(pairs) is true, "Expected array pairs to produce a JIT trace")
 end
 
+@Test(hotpath=80) function ArrayMethodClearLookupTraces()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   local expected, result, trace_count = run_array_method_trace(array_method_clear_workload, 12)
+
+   assert(result is expected, f"Expected traced array:clear() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array:clear() method lookup to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayMethodResizeLookupTraces()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   local expected, result, trace_count = run_array_method_trace(array_method_resize_workload, 12)
+
+   assert(result is expected, f"Expected traced array:resize() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array:resize() method lookup to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayMethodPushLookupTraces()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   local expected, result, trace_count = run_array_method_trace(array_method_push_workload, 12)
+
+   assert(result is expected, f"Expected traced array:push() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array:push() method lookup to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayUnknownMethodStillRaises()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local saw_error = false
+   local message = ""
+
+   for i = 1, 80 do
+      try
+         array_unknown_method_workload(6)
+      except e
+         saw_error = true
+         message = e.message ?? tostring(e)
+      end
+   end
+
+   assert(saw_error is true, "Unknown array method should still raise an error")
+   assert(message:find("call") != nil or message:find("index") != nil,
+      f"Unknown array method should raise a call/index error, got '{message}'")
+end
+
+@Test(hotpath=80) function ArrayMethodMetatableOverrideExitsTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local arr = array.new("")
+   local result = ""
+
+   for i = 1, 80 do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected base array method result before override, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected base-metatable array method call to produce a JIT trace")
+
+   debug.setMetatable(arr, {
+      clear = function(Self)
+         array.resize(Self, 0)
+         array.push(Self, "override")
+      end
+   })
+
+   result = array_clear_then_push(arr)
+   assert(result is "overridebase", f"Expected overridden clear method to be honoured, got '{result}'")
+
+   debug.setMetatable(arr, nil)
+   jit.flush()
+
+   for i = 1, 80 do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected nil array metatable to fall back to base methods, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected nil array metatable fallback to produce a JIT trace")
+end
+
 @Test(hotpath=80) function ArrayNewLiteralTypeTraces()
    cached_trace_no = nil
    cached_trace_info = nil
@@ -844,6 +1006,46 @@ end
    end
 
    assert(trace_found is true, "Expected single-value array.push() to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayAppendFlattenedConcatChainTraces()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_append_concat(Count)
+      local arr = array<byte>
+
+      for i = 1, Count do
+         arr ..= "a" .. 65 .. "b" .. 6.5
+      end
+
+      return arr:getString(), #arr
+   end
+
+   local final = ""
+   local len = 0
+   for i = 1, 80 do
+      final, len = traced_array_append_concat(10)
+   end
+
+   assert(final is "a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5",
+      f"Expected flattened append result repeated 10 times, got {final}")
+   assert(len is 70, f"Expected flattened append result length 70, got {len}")
+
+   local trace_found = false
+   for trace_no = 1, 20 do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected flattened array append chain to produce a JIT trace")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

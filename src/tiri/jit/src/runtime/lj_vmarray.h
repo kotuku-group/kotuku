@@ -23,6 +23,14 @@ extern "C" void lj_arr_setidx(lua_State *, GCarray *, int32_t idx, cTValue *);
 
 extern "C" void lj_arr_push1(lua_State *, GCarray *, cTValue *);
 
+extern "C" void lj_arr_putstr(lua_State *, GCarray *, GCstr *);
+
+extern "C" void lj_arr_putint(lua_State *, GCarray *, int32_t);
+
+extern "C" void lj_arr_putnum(lua_State *, GCarray *, double);
+
+extern "C" void lj_arr_putnumtv(lua_State *, GCarray *, cTValue *);
+
 // Clear an array from JIT traces.
 
 extern "C" void lj_arr_clear(lua_State *, GCarray *);

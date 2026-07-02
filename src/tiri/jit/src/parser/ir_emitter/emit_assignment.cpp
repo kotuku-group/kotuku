@@ -55,6 +55,91 @@ static GCstr * array_append_helper_key(LexState *State)
    return State->keepstr(key);
 }
 
+static void collect_concat_operands(const ExprNode &Expr, std::vector<const ExprNode *> &Operands)
+{
+   if (not Expr.is_grouped and Expr.kind IS AstNodeKind::BinaryExpr) {
+      const auto &payload = std::get<BinaryExprPayload>(Expr.data);
+      if (payload.op IS AstBinaryOperator::Concat and payload.left and payload.right) {
+         collect_concat_operands(*payload.left, Operands);
+         collect_concat_operands(*payload.right, Operands);
+         return;
+      }
+   }
+
+   Operands.push_back(&Expr);
+}
+
+static SourceSpan concat_literal_run_span(const ExprNode &Start, const ExprNode &End)
+{
+   SourceSpan span = Start.span;
+   span.offset = End.span.offset;
+   span.line = End.span.line;
+   span.column = End.span.column;
+   return span;
+}
+
+static bool append_concat_literal_piece(LexState *State, const ExprNode &Expr, std::string &Text)
+{
+   if (not (Expr.kind IS AstNodeKind::LiteralExpr)) return false;
+
+   const auto &literal = std::get<LiteralValue>(Expr.data);
+   switch (literal.kind) {
+      case LiteralKind::String:
+         if (not literal.string_value) return false;
+         Text.append(strdata(literal.string_value), literal.string_value->len);
+         return true;
+
+      case LiteralKind::Number: {
+         TValue value;
+         setnumV(&value, literal.number_value);
+         GCstr *number_text = lj_strfmt_number(State->L, &value);
+         Text.append(strdata(number_text), number_text->len);
+         return true;
+      }
+
+      default:
+         return false;
+   }
+}
+
+static void flush_folded_concat_literal_run(LexState *State, std::vector<const ExprNode *> &FoldedOperands,
+   std::vector<ExprNodePtr> &FoldedNodes, std::vector<const ExprNode *> &Run, std::string &RunText)
+{
+   if (Run.empty()) return;
+
+   if (Run.size() IS 1) {
+      FoldedOperands.push_back(Run.front());
+   }
+   else {
+      SourceSpan span = concat_literal_run_span(*Run.front(), *Run.back());
+      GCstr *folded = State->keepstr(std::string_view(RunText.data(), RunText.size()));
+      FoldedNodes.push_back(make_literal_expr(span, LiteralValue::string(folded)));
+      FoldedOperands.push_back(FoldedNodes.back().get());
+   }
+
+   Run.clear();
+   RunText.clear();
+}
+
+static void fold_adjacent_concat_literals(LexState *State, const std::vector<const ExprNode *> &Operands,
+   std::vector<const ExprNode *> &FoldedOperands, std::vector<ExprNodePtr> &FoldedNodes)
+{
+   std::vector<const ExprNode *> run;
+   std::string run_text;
+
+   for (const ExprNode *operand : Operands) {
+      if (append_concat_literal_piece(State, *operand, run_text)) {
+         run.push_back(operand);
+         continue;
+      }
+
+      flush_folded_concat_literal_run(State, FoldedOperands, FoldedNodes, run, run_text);
+      FoldedOperands.push_back(operand);
+   }
+
+   flush_folded_concat_literal_run(State, FoldedOperands, FoldedNodes, run, run_text);
+}
+
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
@@ -320,6 +405,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
    const bool use_append_helper = mapped.value() IS BinOpr::Concat and not direct_known_non_array;
 
    if (use_append_helper) {
+      if (values.size() != 1) {
+         return assignment_value_count_error(this, values,
+            "compound assignment expects exactly one RHS value");
+      }
+
       ExpDesc append_func;
       append_func.init(ExpKind::Global, 0);
       append_func.u.sval = array_append_helper_key(this->func_state.ls);
@@ -331,16 +421,28 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
 
       this->materialise_to_next_reg(working, "array append compound receiver");
 
-      auto list = this->emit_expression_list(values, count);
-      if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+      static constexpr size_t max_flattened_append_pieces = 16;
+      std::vector<const ExprNode *> append_pieces;
+      collect_concat_operands(*values.front(), append_pieces);
+      std::vector<ExprNodePtr> folded_append_nodes;
+      std::vector<const ExprNode *> folded_append_pieces;
+      fold_adjacent_concat_literals(this->func_state.ls, append_pieces, folded_append_pieces, folded_append_nodes);
 
-      if (count != 1) {
-         return assignment_value_count_error(this, values,
-            "compound assignment expects exactly one RHS value");
+      if (folded_append_pieces.size() > max_flattened_append_pieces) {
+         auto list = this->emit_expression_list(values, count);
+         if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+
+         rhs = list.value_ref();
+         this->materialise_to_next_reg(rhs, "array compound append argument");
       }
-
-      rhs = list.value_ref();
-      this->materialise_to_next_reg(rhs, "array compound append argument");
+      else {
+         for (const ExprNode *piece : folded_append_pieces) {
+            auto piece_result = this->emit_expression(*piece);
+            if (not piece_result.ok()) return ParserResult<IrEmitUnit>::failure(piece_result.error_ref());
+            ExpDesc piece_expr = piece_result.value_ref();
+            this->materialise_to_next_reg(piece_expr, "array compound append piece");
+         }
+      }
 
       ExpDesc result;
       result.init(ExpKind::Call, bcemit_ABC(&this->func_state, BC_CALL, call_base, 2,

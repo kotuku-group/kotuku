@@ -1657,6 +1657,37 @@ static int nommstr(jit_State *J, TRef key)
 }
 
 //********************************************************************************************************************
+// Record array method lookup for method-form calls.
+
+static TRef rec_array_method_lookup(jit_State *J, RecordIndex* ix)
+{
+   if (ix->val or not tref_isarray(ix->tab) or not tref_isstr(ix->key) or not tref_isk(ix->key)) return 0;
+
+   IRBuilder ir(J);
+   GCarray *arr = arrayV(&ix->tabv);
+   GCtab *mt = tabref(arr->metatable);
+   bool using_base_mt = false;
+   if (not mt) {
+      mt = tabref(basemt_it(J2G(J), LJ_TARRAY));
+      using_base_mt = true;
+   }
+   if (not mt) return 0;
+
+   GCstr *key = ir_kstr(IR(tref_ref(ix->key)));
+   cTValue *method = lj_tab_getstr(mt, key);
+   if (not method or not tvisfunc(method)) return 0;
+
+   TRef mtref = ir.fload_tab(ix->tab, IRFL_ARRAY_META);
+   if (using_base_mt) {
+      int basemt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
+      ir.guard_eq(mtref, ir.knull(IRT_TAB), IRT_TAB);
+      ir.guard_eq(lj_ir_ggfload(J, IRT_TAB, basemt_offset), lj_ir_ktab(J, mt), IRT_TAB);
+   }
+   else ir.guard_eq(mtref, lj_ir_ktab(J, mt), IRT_TAB);
+   return lj_ir_kgc(J, gcV(method), IRT_FUNC);
+}
+
+//********************************************************************************************************************
 // Record indexed load/store.
 
 TRef lj_record_idx(jit_State *J, RecordIndex* ix)
@@ -1669,6 +1700,7 @@ TRef lj_record_idx(jit_State *J, RecordIndex* ix)
    while (not tref_istab(ix->tab)) {  // Handle non-table lookup.
       // Never call raw lj_record_idx() on non-table.
       lj_assertJ(ix->idxchain != 0, "bad usage");
+      if (TRef method = rec_array_method_lookup(J, ix)) return method;
       if (not lj_record_mm_lookup(J, ix, ix->val ? MM_newindex : MM_index)) lj_trace_err(J, LJ_TRERR_NOMM);
 
 handlemm:
