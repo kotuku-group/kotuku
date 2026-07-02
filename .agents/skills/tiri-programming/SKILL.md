@@ -89,7 +89,7 @@ search tools, and mixed editor environments.
 - Use `error(Message)` for generic script exceptions and `error(e)` to rethrow an exception table.
 - There is no `finally`; use `defer`, `<close>`, or object lifetime management for cleanup.
 - `defer` executes on normal scope exit, `return`, `break`, and `continue`. `<close>` handlers run before defers.
-- `??` treats `nil`, `false`, `0`, and `""` as empty. Standard `or` only treats `nil` and `false` as falsey.
+- `??` treats `nil`, `false`, `0`, `{}` and `""` as empty. Tables and arrays are tested for empty. Standard `or` only treats `nil` and `false` as falsey.
 - `?!` guards control flow, for example `value ?! return ERR_InvalidInput`.
 
 ## Ranges And Collections
