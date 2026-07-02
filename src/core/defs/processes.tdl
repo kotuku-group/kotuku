@@ -7,6 +7,20 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     loadFile('./common.tdl')
   end)
 
+  flags("THF", { comment="Thread flags" },
+    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
+
+  flags("TSF", { comment="Task flags" },
+    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
+    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
+    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
+    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
+    "VERBOSE: Enable verbose logging.",
+    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
+    "DETACHED: Forces the new process to be detached from the parent.",
+    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
+    "PIPE: Enable the output pipe to the launched process so that it can read data.")
+
   methods("Task", "Task", {
     { id=1, name="Expunge" },
     { id=2, name="AddArgument" },

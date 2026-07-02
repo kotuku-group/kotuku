@@ -33,6 +33,21 @@ using ModExpunge = ERR (*)(void);
 using ModTest    = void (*)(std::string_view, int *, int *);
 ]])
 
+  flags("MOF", { comment="Module flags" },
+    "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
+    "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
+    "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
+
+  flags("MHF", { comment="Internal options for requesting function tables from modules." },
+    "STATIC: Keep the module code in memory",
+    "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
+
+  struct("Function", { comment="Function list array structure" }, [[
+    ptr Address     # Pointer to the function entry point
+    cstr Name       # Name of the function
+    cstruct(*FunctionField) Args  # A list of parameters accepted by the function
+  ]])
+
   struct("ModHeader", { comment="Module file header", restrict="c" }, [[
     int(MHF) Flags                 # Special flags, type of function table wanted from the Core
     cstr Definitions               # Module definition string, usable by run-time languages such as Tiri

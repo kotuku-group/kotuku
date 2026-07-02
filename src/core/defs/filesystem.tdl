@@ -7,6 +7,29 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     loadFile('./common.tdl')
   end)
 
+  -- NB: The MFF flags are duplicated in the FileSystem's Win32 code if you're going to change these
+
+  flags("MFF", { comment="Flags for the File Watch() method." },
+    "READ: File was accessed (read).",
+    "MODIFY|WRITE: File modified via write or truncation.",
+    "CREATE: New file/link created or renamed in folder.",
+    "DELETE: Existing file deleted",
+    "MOVED|RENAME: Existing file moved or renamed.",
+    "ATTRIB: File permissions or datestamp changed.",
+    "OPENED: Existing file was opened.",
+    "CLOSED: An opened file has been closed.",
+    "UNMOUNT: Host filesystem was unmounted.",
+    "FOLDER: Folder identifier; if passed to @File.Watch() then indicates a preference for folder events only.",
+    "FILE: File identifier; if passed to @File.Watch() then indicates a preference for file events only.",
+    "SELF: Event applies to the monitored folder and not a contained item",
+    "DEEP: Receive notifications from sub-folders (Windows only).")
+
+  enums("FDT", { type="int", start=0, comment="Flags for the SetDate() file method." },
+    "MODIFIED: The date on which the file was last modified.",
+    "CREATED: The date on which the file was created.  On some host platforms this datestamp may be read-only.",
+    "ACCESSED: The date on which the file was last accessed by a user or application.",
+    "ARCHIVED: The date on which the file was most recently archived.  Not supported by most filesystems.")
+
   klass("StorageDevice", { src="../classes/class_storagedevice.cpp", output="../classes/class_storagedevice_def.cpp" }, [[
     large(DEVICE) DeviceFlags  # Flags identifying the type of media
     large DeviceSize           # Size of the device

@@ -960,84 +960,6 @@ enum class JET : int {
 #define FD_PTR_INTRESULT 0x48000100
 #define FD_DOUBLE 0x80000000
 
-// Flags for the Config class.
-
-enum class CNF : uint32_t {
-   NIL = 0,
-   STRIP_QUOTES = 0x00000001,
-   AUTO_SAVE = 0x00000002,
-   OPTIONAL_FILES = 0x00000004,
-   NEW = 0x00000008,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CNF)
-
-// Module flags
-
-enum class MOF : uint32_t {
-   NIL = 0,
-   LINK_LIBRARY = 0x00000001,
-   STATIC = 0x00000002,
-   SYSTEM_PROBE = 0x00000004,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(MOF)
-
-// Internal options for requesting function tables from modules.
-
-enum class MHF : uint32_t {
-   NIL = 0,
-   STATIC = 0x00000001,
-   STRUCTURE = 0x00000002,
-   DEFAULT = 0x00000002,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(MHF)
-
-// Script flags
-
-enum class SCF : uint32_t {
-   NIL = 0,
-   EXIT_ON_ERROR = 0x00000001,
-   PROCESS_DOC = 0x00000002,
-   LOG_ALL = 0x00000004,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(SCF)
-
-// Compression flags
-
-enum class CMF : uint32_t {
-   NIL = 0,
-   PASSWORD = 0x00000001,
-   NEW = 0x00000002,
-   CREATE_FILE = 0x00000004,
-   READ_ONLY = 0x00000008,
-   NO_LINKS = 0x00000010,
-   APPLY_SECURITY = 0x00000020,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CMF)
-
-// Compression stream formats
-
-enum class CF : int {
-   NIL = 0,
-   GZIP = 1,
-   ZLIB = 2,
-   DEFLATE = 3,
-};
-
-// Compression feedback event indicators.
-
-enum class FDB : int {
-   NIL = 0,
-   DECOMPRESS_FILE = 1,
-   COMPRESS_FILE = 2,
-   REMOVE_FILE = 3,
-   DECOMPRESS_OBJECT = 4,
-};
-
 // File flags
 
 enum class FL : uint32_t {
@@ -1061,65 +983,6 @@ enum class FL : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(FL)
-
-// Flags for the SetDate() file method.
-
-enum class FDT : int {
-   NIL = 0,
-   MODIFIED = 0,
-   CREATED = 1,
-   ACCESSED = 2,
-   ARCHIVED = 3,
-};
-
-// Flags for the File Watch() method.
-
-enum class MFF : uint32_t {
-   NIL = 0,
-   READ = 0x00000001,
-   MODIFY = 0x00000002,
-   WRITE = 0x00000002,
-   CREATE = 0x00000004,
-   DELETE = 0x00000008,
-   MOVED = 0x00000010,
-   RENAME = 0x00000010,
-   ATTRIB = 0x00000020,
-   OPENED = 0x00000040,
-   CLOSED = 0x00000080,
-   UNMOUNT = 0x00000100,
-   FOLDER = 0x00000200,
-   FILE = 0x00000400,
-   SELF = 0x00000800,
-   DEEP = 0x00001000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(MFF)
-
-// Thread flags
-
-enum class THF : uint32_t {
-   NIL = 0,
-   AUTO_FREE = 0x00000001,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(THF)
-
-// Task flags
-
-enum class TSF : uint32_t {
-   NIL = 0,
-   WAIT = 0x00000001,
-   RESET_PATH = 0x00000002,
-   PRIVILEGED = 0x00000004,
-   SHELL = 0x00000008,
-   VERBOSE = 0x00000010,
-   QUIET = 0x00000020,
-   DETACHED = 0x00000040,
-   ATTACHED = 0x00000080,
-   PIPE = 0x00000100,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(TSF)
 
 struct HSV {
    double Hue;           // Between 0 and 359.999
@@ -1303,78 +1166,8 @@ struct FunctionField {
    uint32_t Type;   // Type of the field
 };
 
-struct Function {
-   APTR    Address;                      // Pointer to the function entry point
-   CSTRING Name;                         // Name of the function
-   const struct FunctionField * Args;    // A list of parameters accepted by the function
-};
-
 struct ActionEntry {
    ERR (*PerformAction)(OBJECTPTR, APTR);     // Pointer to a custom action hook.
-};
-
-struct TimeZoneTransition {
-   int64_t Instant;             // Unix epoch microseconds at which the transition occurs.
-   std::string Abbreviation;    // Short name where available, e.g. GMT, BST, PST.
-   int     OffsetBefore;        // UTC offset in seconds before the transition.
-   int     OffsetAfter;         // UTC offset in seconds after the transition.
-   int     DaylightSaving;      // 1 if the resulting period observes daylight-saving time.
-   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
-};
-
-struct TimeZoneInfo {
-   std::string ZoneID;                            // Preferred public ID, e.g. Europe/London or UTC.
-   std::string NativeID;                          // Host-native ID, e.g. GMT Standard Time on Windows.
-   std::string Source;                            // "tzif", "win32", or "utc".
-   std::string DataPath;                          // TZif path on Linux, otherwise empty.
-   std::string Version;                           // TZDB/source version if available, otherwise empty.
-   kt::vector<TimeZoneTransition> Transitions;    // Transitions available for the requested range.
-   int     BaseOffset;                            // Standard UTC offset in seconds.
-   int16_t StartYear;                             // Inclusive requested start year.
-   int16_t EndYear;                               // Inclusive requested end year.
-   int8_t  IsLocal;                               // 1 if ZoneID requested the local system zone.
-   int8_t  IsFallback;                            // 1 if UTC fallback was used.
-   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
-   TimeZoneInfo(int) : TimeZoneInfo() { }
-};
-
-struct CompressionFeedback {
-   FDB     FeedbackID;      // Set to one of the FDB event indicators
-   int     Index;           // Index of the current file
-   CSTRING Path;            // Name of the current file/path in the archive
-   CSTRING Dest;            // Destination file/path during decompression
-   int64_t Progress;        // Progress indicator (byte position for the file being de/compressed).
-   int64_t OriginalSize;    // Original size of the file
-   int64_t CompressedSize;  // Compressed size of the file
-   int16_t Year;            // Year of the original file's datestamp.
-   int16_t Month;           // Month of the original file's datestamp.
-   int16_t Day;             // Day of the original file's datestamp.
-   int16_t Hour;            // Hour of the original file's datestamp.
-   int16_t Minute;          // Minute of the original file's datestamp.
-   int16_t Second;          // Second of the original file's datestamp.
-   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-
-   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
-      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-};
-
-struct CompressedItem {
-   int64_t OriginalSize;            // Original size of the file
-   int64_t CompressedSize;          // Compressed size of the file
-   struct CompressedItem * Next;    // Used only if this is a linked-list.
-   CSTRING Path;                    // Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
-   PERMIT  Permissions;             // Original permissions - see PERMIT flags.
-   int     UserID;                  // Original user ID
-   int     GroupID;                 // Original group ID
-   int     OthersID;                // Original others ID
-   FL      Flags;                   // FL flags
-   struct DateTime Created;         // Date and time of the file's creation.
-   struct DateTime Modified;        // Date and time last modified.
-   ankerl::unordered_dense::map<std::string, std::string> *Tags;
 };
 
 

@@ -8,6 +8,32 @@
 class objTask;
 class objThread;
 
+// Thread flags
+
+enum class THF : uint32_t {
+   NIL = 0,
+   AUTO_FREE = 0x00000001,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(THF)
+
+// Task flags
+
+enum class TSF : uint32_t {
+   NIL = 0,
+   WAIT = 0x00000001,
+   RESET_PATH = 0x00000002,
+   PRIVILEGED = 0x00000004,
+   SHELL = 0x00000008,
+   VERBOSE = 0x00000010,
+   QUIET = 0x00000020,
+   DETACHED = 0x00000040,
+   ATTACHED = 0x00000080,
+   PIPE = 0x00000100,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(TSF)
+
 // Task class definition
 
 #define VER_TASK (1.000000)

@@ -140,5 +140,11 @@ if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 
   </types>
   <structs>
+    <struct name="Function" comment="Function list array structure">
+      <field name="Address" type="APTR">Pointer to the function entry point</field>
+      <field name="Name" type="CSTRING">Name of the function</field>
+      <field name="Args" type="const struct FunctionField *">A list of parameters accepted by the function</field>
+    </struct>
+
   </structs>
 </book>

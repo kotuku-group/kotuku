@@ -7,6 +7,28 @@
 
 class objModule;
 
+// Module flags
+
+enum class MOF : uint32_t {
+   NIL = 0,
+   LINK_LIBRARY = 0x00000001,
+   STATIC = 0x00000002,
+   SYSTEM_PROBE = 0x00000004,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(MOF)
+
+// Internal options for requesting function tables from modules.
+
+enum class MHF : uint32_t {
+   NIL = 0,
+   STATIC = 0x00000001,
+   STRUCTURE = 0x00000002,
+   DEFAULT = 0x00000002,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(MHF)
+
 #ifdef KOTUKU_STATIC
 __export void CloseCore(void);
 __export ERR OpenCore(struct OpenInfo *, struct CoreBase **);
@@ -30,6 +52,12 @@ using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
 using ModOpen    = ERR (*)(OBJECTPTR);
 using ModExpunge = ERR (*)(void);
 using ModTest    = void (*)(std::string_view, int *, int *);
+
+struct Function {
+   APTR    Address;                      // Pointer to the function entry point
+   CSTRING Name;                         // Name of the function
+   const struct FunctionField * Args;    // A list of parameters accepted by the function
+};
 
 struct ModHeader {
    MHF     Flags;                                    // Special flags, type of function table wanted from the Core
