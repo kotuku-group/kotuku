@@ -352,3 +352,77 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Val)
    arr_store_elem(L, Array, idx, Val);
    Array->len = idx + 1;
 }
+
+//********************************************************************************************************************
+// Clear an array from a recorded trace.
+
+extern "C" void lj_arr_clear(lua_State *L, GCarray *Array)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+
+   lj_array_clear_range(Array, 0, Array->len);
+   Array->len = 0;
+}
+
+//********************************************************************************************************************
+// Resize an array from a recorded trace.
+
+extern "C" int32_t lj_arr_resize(lua_State *L, GCarray *Array, int32_t NewSize)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (NewSize < 0) lj_err_msgv(L, ErrMsg::NUMRNG, "non-negative", "negative");
+
+   MSize target_len = MSize(NewSize);
+   MSize old_len = Array->len;
+
+   if (target_len > old_len) {
+      if (target_len > Array->capacity and not lj_array_grow(L, Array, target_len)) lj_err_msg(L, ErrMsg::ARREXT);
+
+      if (Array->elemtype IS AET::STR_GC or Array->elemtype IS AET::TABLE or
+          Array->elemtype IS AET::ARRAY or Array->elemtype IS AET::OBJECT or Array->elemtype IS AET::ANY) {
+         lj_array_clear_range(Array, old_len, target_len - old_len);
+      }
+      else {
+         void *start = (char*)Array->arraydata() + (old_len * Array->elemsize);
+         size_t bytes = (target_len - old_len) * Array->elemsize;
+         memset(start, 0, bytes);
+      }
+   }
+   else if (target_len < old_len) {
+      lj_array_clear_range(Array, target_len, old_len - target_len);
+   }
+
+   Array->len = target_len;
+   return int32_t(Array->len);
+}
+
+//********************************************************************************************************************
+// Extract a string from a byte array in a recorded trace.  Len -1 means "remaining from Start".
+
+extern "C" GCstr * lj_arr_getstring(lua_State *L, GCarray *Array, int32_t Start, int32_t Len)
+{
+   if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
+
+   int32_t count = Len;
+   if (Len IS -1) {
+      if (Start < 0 or MSize(Start) > Array->len) count = 0;
+      else count = int32_t(Array->len - MSize(Start));
+   }
+
+   if (Start < 0 or count < 0 or MSize(Start) > Array->len) lj_err_msg(L, ErrMsg::IDXRNG);
+
+   MSize start = MSize(Start);
+   MSize byte_count = MSize(count);
+   if (byte_count > Array->len - start) lj_err_msg(L, ErrMsg::IDXRNG);
+
+   CSTRING data = byte_count > 0 ? Array->get<const char>() + start : "";
+   return lj_str_new(L, data, byte_count);
+}
+
+//********************************************************************************************************************
+// Create an array from a recorded trace.  The recorder resolves and validates ElemType from a constant type literal.
+
+extern "C" GCarray * lj_arr_new_jit(lua_State *L, uint32_t Length, uint32_t ElemType)
+{
+   return lj_array_new(L, Length, AET(ElemType));
+}

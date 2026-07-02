@@ -23,14 +23,15 @@ global glStringBenchmarkSink = 0
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Goal: Build a string by concatenating multiple parts
+-- Goal: Build a string by concatenating multiple parts - big buffer version
 
-@Test function StringConcatenateMultiple()
+@Test function StringConcatBigBuffer()
    local a, b, c = "foo", "bar", "baz"
    local checksum = 0
-   for i in {0 to 10000} do
+   local result = ""
+   for i in {0 to 1000} do
       -- Concatenate literals
-      local result = "Hello" .. " " .. "World" .. "!"
+      result ..= "Hello" .. " " .. "World" .. "!"
 
       -- Concatenate with variables
       result ..= a .. b .. c
@@ -39,7 +40,7 @@ end
       result ..= "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4"
 
       -- Concatenate numbers converted to strings
-      result = "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1)
+      result ..= "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1)
 
       -- Perform a real-work operation so that the result is used and not optimised away.
       checksum += #result
@@ -48,13 +49,63 @@ end
    glStringBenchmarkSink += checksum
 end
 
-@Test function StringConcatenateMultipleByteArray()
+@Test function StringConcatBigArray()
    local a, b, c = "foo", "bar", "baz"
-   local result = array<byte>
    local checksum = 0
-   for i in {0 to 10000} do
+   local result = array<byte>
+   for i in {0 to 1000} do
       -- Concatenate literals
-      result:clear()
+      result ..= "Hello" .. " " .. "World" .. "!"
+
+      -- Concatenate with variables
+      result ..= a .. b .. c
+
+      -- Build a longer string from parts
+      result ..= "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4"
+
+      -- Concatenate numbers converted to strings
+      result ..= "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1)
+      checksum += #result
+   end
+
+   glStringBenchmarkSink += checksum
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Build a string by concatenating multiple parts - small buffer version
+
+@Test function StringConcatSmallBuffer()
+   local a, b, c = "foo", "bar", "baz"
+   local checksum = 0
+   for i in {0 to 1000} do
+      -- Concatenate literals
+      local result = ""
+      result ..= "Hello" .. " " .. "World" .. "!"
+
+      -- Concatenate with variables
+      result ..= a .. b .. c
+
+      -- Build a longer string from parts - parser could concat the RHS to a single string in advance
+      result ..= "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4"
+
+      -- Concatenate numbers converted to strings
+      result ..= "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1)
+
+      -- Perform a real-work operation so that the result is used and not optimised away.
+      checksum += #result
+   end
+
+   glStringBenchmarkSink += checksum
+end
+
+@Test function StringConcatSmallArray()
+   local a, b, c = "foo", "bar", "baz"
+   local checksum = 0
+   local result = array<byte>
+   for i in {0 to 1000} do
+      result:clear() -- Maintains the array capacity
+
+      -- Concatenate literals
       result ..= "Hello" .. " " .. "World" .. "!"
 
       -- Concatenate with variables
