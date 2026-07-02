@@ -29,10 +29,13 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <string_view>
 #include <kotuku/strings.hpp>
 #include <kotuku/main.h>
 
 #define LJLIB_MODULE_array
+
+static constexpr std::string_view glArrayAppendHelperKey("\x1f" "array.append", 13);
 
 constexpr auto HASH_INT     = kt::strhash("int");
 constexpr auto HASH_BYTE    = kt::strhash("byte");
@@ -963,12 +966,54 @@ LJLIB_CF(array_push)
       return 1;
    }
 
+   MSize append_count = MSize(num_values);
+
+   if (arr->elemtype IS AET::BYTE) {
+      append_count = 0;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+         MSize value_count;
+         if (tvisstr(tv)) value_count = strV(tv)->len;
+         else {
+            luaL_checkinteger(L, arg_idx);
+            value_count = 1;
+         }
+
+         if (value_count > (~MSize(0) - append_count)) lj_err_caller(L, ErrMsg::ARREXT);
+         append_count += value_count;
+      }
+   }
+
    // Ensure we have capacity for the new elements
-   MSize new_len = arr->len + MSize(num_values);
+   if (append_count > (~MSize(0) - arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   MSize new_len = arr->len + append_count;
    if (new_len > arr->capacity) {
       if (not lj_array_grow(L, arr, new_len)) {
          lj_err_caller(L, ErrMsg::ARREXT);
       }
+   }
+
+   if (arr->elemtype IS AET::BYTE) {
+      MSize idx = arr->len;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+
+         if (tvisstr(tv)) {
+            GCstr *str = strV(tv);
+            if (str->len > 0) memcpy(arr->get<uint8_t>() + idx, strdata(str), str->len);
+            idx += str->len;
+         }
+         else {
+            arr->get<uint8_t>()[idx] = uint8_t(luaL_checkinteger(L, arg_idx));
+            idx++;
+         }
+      }
+
+      arr->len = new_len;
+      setintV(L->top++, int32_t(arr->len));
+      return 1;
    }
 
    // Push each value
@@ -2626,6 +2671,27 @@ LJLIB_CF(array_clone)
 }
 
 //********************************************************************************************************************
+// Created exclusively for implementing array<byte> concatenation operations
+
+LJLIB_CF(array_append)      LJLIB_REC(.)
+{
+   TValue *left = lj_lib_checkany(L, 1);
+   lj_lib_checkany(L, 2);
+
+   if (tvisarray(left)) {
+      GCarray *arr = arrayV(left);
+      lj_cf_array_push(L);
+      setarrayV(L, L->base, arr);
+      L->top = L->base + 1;
+      return 1;
+   }
+
+   L->top = L->base + 2;
+   lua_concat(L, 2);
+   return 1;
+}
+
+//********************************************************************************************************************
 // __tostring metamethod.
 
 static int array_tostring(lua_State *L)
@@ -2644,7 +2710,7 @@ static int array_tostring(lua_State *L)
 }
 
 //********************************************************************************************************************
-// __concat metamethod.
+// __concat metamethod.  Produces a new string value from the combination of the LHS and RHS
 
 static GCstr * array_concat_value(lua_State *L, cTValue *Value)
 {
@@ -2766,6 +2832,13 @@ extern "C" int luaopen_array(lua_State *L)
    LJ_LIB_REG(L, "array", array);
    // Stack: [..., array_lib_table]
 
+   // Compound concatenation lowers through this hidden key so rebinding the public array global cannot shadow it.
+   lua_getfield(L, -1, "append");
+   lua_pushlstring(L, glArrayAppendHelperKey.data(), glArrayAppendHelperKey.size());
+   lua_pushvalue(L, -2);
+   lua_rawset(L, LUA_GLOBALSINDEX);
+   lua_pop(L, 1);
+
    // Use the library table directly as the base metatable for arrays.
    // This allows lj_arr_get to find methods like concat, sort, etc. via direct table lookup.
    GCtab *lib = tabV(L->top - 1);
@@ -2793,14 +2866,15 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str }, FProtoFlags::Variadic);
    // Methods
    reg_iface_prototype("array", "table", { TiriType::Table }, { TiriType::Array });
-   reg_iface_prototype("array", "concat", { TiriType::Str },
-      { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_prototype("array", "concat", { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "contains", { TiriType::Bool }, { TiriType::Array, TiriType::Any });
    reg_iface_prototype("array", "first", { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_prototype("array", "last", { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_prototype("array", "clear", {}, { TiriType::Array });
    reg_iface_prototype("array", "resize", {}, { TiriType::Array, TiriType::Num });
    reg_iface_prototype("array", "push", {}, { TiriType::Array, TiriType::Any });
+   // Private
+   // reg_iface_prototype("array", "append", { TiriType::Any }, { TiriType::Any, TiriType::Any });
    reg_iface_prototype("array", "pop", { TiriType::Any }, { TiriType::Array });
    reg_iface_prototype("array", "copy", {}, { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "getString", { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });

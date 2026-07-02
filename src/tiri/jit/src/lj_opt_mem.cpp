@@ -579,6 +579,20 @@ TRef lj_opt_fwd_fload(jit_State* J)
    IRRef lim = oref;  //  Search limit.
    IRRef ref;
 
+   // Array-mutating C calls (array.append) update the length and may reallocate the storage.
+   // Limit forwarding of these fields to below the most recent call (conservative across all arrays).
+   if (fid IS IRFL_ARRAY_LEN or fid IS IRFL_ARRAY_STORAGE) {
+      ref = J->chain[IR_CALLS];
+      while (ref > lim) {
+         IRIns* calls = IR(ref);
+         if (calls->op2 IS IRCALL_lj_arr_push1) {
+            lim = ref;
+            break;
+         }
+         ref = calls->prev;
+      }
+   }
+
    // Search for conflicting stores.
    ref = J->chain[IR_FSTORE];
    while (ref > oref) {

@@ -49,6 +49,12 @@ static ParserResult<IrEmitUnit> assignment_value_count_error(
       ParserError(ParserErrorCode::InternalInvariant, Token::from_span(span, TokenKind::Unknown), Message));
 }
 
+static GCstr * array_append_helper_key(LexState *State)
+{
+   static constexpr std::string_view key("\x1f" "array.append", 13);
+   return State->keepstr(key);
+}
+
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
@@ -298,8 +304,53 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
    TableOperandCopies copies = allocator.duplicate_table_operands(target.storage);
    ExpDesc working = copies.duplicated;
 
+   auto finish_compound_assignment = [&]() {
+      register_guard.release_to(register_guard.saved());
+      allocator.release(copies.reserved);
+      release_prepared_assignment(allocator, this->func_state, target);
+      this->func_state.reset_freereg();
+      register_guard.adopt_saved(BCReg(this->func_state.freereg));
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   };
+
    ExpDesc rhs;
-      if (mapped.value() IS BinOpr::Concat) {
+   const bool direct_known_non_array = (target.storage.k IS ExpKind::Local or target.storage.k IS ExpKind::Upval) and
+      not (target.storage.result_type IS TiriType::Array or target.storage.result_type IS TiriType::Unknown or
+         target.storage.result_type IS TiriType::Any);
+   const bool use_append_helper = mapped.value() IS BinOpr::Concat and not direct_known_non_array;
+
+   if (use_append_helper) {
+      ExpDesc append_func;
+      append_func.init(ExpKind::Global, 0);
+      append_func.u.sval = array_append_helper_key(this->func_state.ls);
+      this->materialise_to_next_reg(append_func, "array append helper");
+
+      RegisterAllocator call_allocator(&this->func_state);
+      call_allocator.reserve(BCReg(1));
+      auto call_base = BCReg(append_func.u.s.info);
+
+      this->materialise_to_next_reg(working, "array append compound receiver");
+
+      auto list = this->emit_expression_list(values, count);
+      if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+
+      if (count != 1) {
+         return assignment_value_count_error(this, values,
+            "compound assignment expects exactly one RHS value");
+      }
+
+      rhs = list.value_ref();
+      this->materialise_to_next_reg(rhs, "array compound append argument");
+
+      ExpDesc result;
+      result.init(ExpKind::Call, bcemit_ABC(&this->func_state, BC_CALL, call_base, 2,
+         this->func_state.freereg - call_base - 1));
+      result.u.s.aux = call_base;
+      if (target.storage.result_type IS TiriType::Array) result.result_type = TiriType::Array;
+
+      bcemit_store(&this->func_state, &target.storage, &result);
+   }
+   else if (mapped.value() IS BinOpr::Concat) {
       ExpDesc infix = working;
       // CONCAT compound assignment: use OperatorEmitter for BC_CAT chaining
       this->operator_emitter.prepare_concat(ExprValue(&infix));
@@ -334,12 +385,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       bcemit_store(&this->func_state, &target.storage, &infix);
    }
 
-   register_guard.release_to(register_guard.saved());
-   allocator.release(copies.reserved);
-   release_prepared_assignment(allocator, this->func_state, target);
-   this->func_state.reset_freereg();
-   register_guard.adopt_saved(BCReg(this->func_state.freereg));
-   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   return finish_compound_assignment();
 }
 
 //********************************************************************************************************************

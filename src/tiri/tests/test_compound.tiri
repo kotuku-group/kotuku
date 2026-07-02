@@ -300,6 +300,88 @@ end
    assert(text is 'abc', '..= should concatenate with function result')
 end
 
+@Test function ArrayConcatAssignmentMutates()
+   arr = array<byte>
+   arr ..= 'AB'
+   arr ..= 67
+
+   assert(#arr is 3, 'array byte ..= should append to the array')
+   assert(arr:getString() is 'ABC', 'array byte ..= should append string bytes and numeric bytes')
+
+   source = array<byte> { 0, 68 }
+   arr ..= source:getString()
+   expected = 'ABC' .. source:getString()
+
+   assert(#arr is 5, 'array byte ..= should preserve embedded NUL bytes')
+   assert(arr:getString() is expected, 'array byte ..= should preserve the full appended byte string')
+
+   result = arr .. '!'
+   assert(result is expected .. '!', 'plain array concat should still return a string')
+   assert(arr:getString() is expected, 'plain array concat should not mutate the array')
+end
+
+@Test function ArrayConcatAssignmentOnFields()
+   store = { buf = array<byte>, label = 'x' }
+   store.buf ..= 'Hi'
+   store.buf ..= 33
+   store.label ..= 'y'
+
+   assert(store.buf:getString() is 'Hi!', 'field byte array ..= should mutate the stored array')
+   assert(store.label is 'xy', 'field string ..= should still concatenate and store a string')
+end
+
+@Test function ArrayConcatAssignmentIgnoresShadowedArrayGlobal()
+   saved_array = array
+   store = { buf = array<byte>, label = 'x' }
+
+   global array = {}
+
+   try
+      store.label ..= 'y'
+      store.buf ..= 'Hi'
+      store.buf ..= 33
+
+      assert(store.label is 'xy', 'field string ..= should not call the shadowed array global')
+      assert(store.buf:getString() is 'Hi!', 'field byte array ..= should still use the internal append helper')
+   except e
+      global array = saved_array
+      error(e)
+   success
+      global array = saved_array
+   end
+end
+
+@Test function ArrayConcatAssignmentOnTypedLocals()
+   local buf = array<byte>
+   buf ..= 'Hi'
+   buf ..= 33
+
+   assert(#buf is 3, 'typed local byte array ..= should append to the array')
+   assert(buf:getString() is 'Hi!', 'typed local byte array ..= should append string bytes and numeric bytes')
+
+   local text = 'x'
+   text ..= 42
+
+   assert(text is 'x42', 'typed local string ..= should accept a numeric RHS')
+end
+
+@Test function ArrayConcatAssignmentUsesFirstReturn()
+   function byte_tail()
+      return 'Z', 'ignored'
+   end
+
+   arr = array<byte>
+   arr ..= byte_tail()
+
+   assert(arr:getString() is 'Z', 'array byte ..= should use only the first function result')
+
+   nums = array<int> { 1, 2 }
+   nums ..= 3
+
+   assert(#nums is 3, 'array int ..= should push one value')
+   assert(nums[2] is 3, 'array int ..= should append the numeric value')
+end
+
 @Test function RegisterIndexPreservedAcrossRHS()
    t = { 10, 20, 30 }
    i = 0

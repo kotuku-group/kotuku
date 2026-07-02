@@ -327,3 +327,28 @@ extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
    arr_store_elem(L, Array, uint32_t(Idx), Val);
 }
+
+//********************************************************************************************************************
+// Append a single value to an array.  Called from JIT traces when recording array.append(), mirroring the semantics
+// of array.push() for one value.  Byte arrays accept strings, appending their bytes verbatim.
+
+extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Val)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+
+   if (Array->elemtype IS AET::BYTE and tvisstr(Val)) {
+      GCstr *str = strV(Val);
+      if (str->len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+      MSize new_len = Array->len + str->len;
+      if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (str->len > 0) memcpy((uint8_t*)Array->arraydata() + Array->len, strdata(str), str->len);
+      Array->len = new_len;
+      return;
+   }
+
+   MSize idx = Array->len;
+   if (idx IS ~MSize(0)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (idx + 1 > Array->capacity and not lj_array_grow(L, Array, idx + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+   arr_store_elem(L, Array, idx, Val);
+   Array->len = idx + 1;
+}
