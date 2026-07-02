@@ -15,6 +15,7 @@
 #include "lj_debug.h"
 #include "lj_tab.h"
 #include "lj_proto_registry.h"
+#include "lj_strfmt.h"
 #include "../parse_internal.h"
 #include "../parse_value.h"
 #include "../token_types.h"
@@ -1291,6 +1292,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
       FuncScope visible_scope;
       ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
       this->lex_state.var_add(1);
+      fs->var_get(base.raw() + FORL_EXT).fixed_type = TiriType::Num;
       RegisterAllocator allocator(fs);
       allocator.reserve(BCReg(1));
       std::array<BlockBinding, 1> loop_bindings{};

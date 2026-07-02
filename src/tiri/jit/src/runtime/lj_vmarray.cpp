@@ -11,10 +11,13 @@
 #include "lj_meta.h"
 #include "lj_array.h"
 #include "lj_str.h"
+#include "lj_strfmt.h"
+#include "lj_buf.h"
 #include "lj_vmarray.h"
 #include "lj_vm.h"
 #include "lj_frame.h"
 
+#include <cstring>
 #include <string>
 
 //********************************************************************************************************************
@@ -326,4 +329,145 @@ extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue
    if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
    arr_store_elem(L, Array, uint32_t(Idx), Val);
+}
+
+//********************************************************************************************************************
+// Append a single value to an array.  Called from JIT traces when recording array.append(), mirroring the semantics
+// of array.push() for one value.  Byte arrays accept strings, appending their bytes verbatim.
+
+extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Val)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+
+   if (Array->elemtype IS AET::BYTE and tvisstr(Val)) {
+      GCstr *str = strV(Val);
+      if (str->len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+      MSize new_len = Array->len + str->len;
+      if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (str->len > 0) memcpy((uint8_t*)Array->arraydata() + Array->len, strdata(str), str->len);
+      Array->len = new_len;
+      return;
+   }
+
+   MSize idx = Array->len;
+   if (idx IS ~MSize(0)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (idx + 1 > Array->capacity and not lj_array_grow(L, Array, idx + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+   arr_store_elem(L, Array, idx, Val);
+   Array->len = idx + 1;
+}
+
+//********************************************************************************************************************
+
+static void lj_arr_append_bytes(lua_State *L, GCarray *Array, const char *Data, MSize Len)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
+   if (Len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+
+   MSize new_len = Array->len + Len;
+   if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (Len > 0) memcpy((uint8_t*)Array->arraydata() + Array->len, Data, Len);
+   Array->len = new_len;
+}
+
+//********************************************************************************************************************
+// Append string bytes to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putstr(lua_State *L, GCarray *Array, GCstr *Str)
+{
+   lj_arr_append_bytes(L, Array, strdata(Str), Str->len);
+}
+
+//********************************************************************************************************************
+// Append the bytes currently held by a string buffer to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putsbuf(lua_State *L, GCarray *Array, SBuf *Buf)
+{
+   lj_arr_append_bytes(L, Array, Buf->b, sbuflen(Buf));
+}
+
+//********************************************************************************************************************
+// Append a number TValue formatted with concat/tostring semantics to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putnumtv(lua_State *L, GCarray *Array, cTValue *Value)
+{
+   SBuf *sb;
+   if (tvisint(Value)) sb = lj_strfmt_putint(lj_buf_tmp_(L), intV(Value));
+   else if (tvisnum(Value)) sb = lj_strfmt_putfnum(lj_buf_tmp_(L), STRFMT_G14, numV(Value));
+   else lj_err_msg(L, ErrMsg::BADVAL);
+   lj_arr_append_bytes(L, Array, sb->b, sbuflen(sb));
+}
+
+//********************************************************************************************************************
+// Clear an array from a recorded trace.
+
+extern "C" void lj_arr_clear(lua_State *L, GCarray *Array)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+
+   lj_array_clear_range(Array, 0, Array->len);
+   Array->len = 0;
+}
+
+//********************************************************************************************************************
+// Resize an array from a recorded trace.
+
+extern "C" int32_t lj_arr_resize(lua_State *L, GCarray *Array, int32_t NewSize)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (NewSize < 0) lj_err_msgv(L, ErrMsg::NUMRNG, "non-negative", "negative");
+
+   MSize target_len = MSize(NewSize);
+   MSize old_len = Array->len;
+
+   if (target_len > old_len) {
+      if (target_len > Array->capacity and not lj_array_grow(L, Array, target_len)) lj_err_msg(L, ErrMsg::ARREXT);
+
+      if (Array->elemtype IS AET::STR_GC or Array->elemtype IS AET::TABLE or
+          Array->elemtype IS AET::ARRAY or Array->elemtype IS AET::OBJECT or Array->elemtype IS AET::ANY) {
+         lj_array_clear_range(Array, old_len, target_len - old_len);
+      }
+      else {
+         void *start = (char*)Array->arraydata() + (old_len * Array->elemsize);
+         size_t bytes = (target_len - old_len) * Array->elemsize;
+         memset(start, 0, bytes);
+      }
+   }
+   else if (target_len < old_len) {
+      lj_array_clear_range(Array, target_len, old_len - target_len);
+   }
+
+   Array->len = target_len;
+   return int32_t(Array->len);
+}
+
+//********************************************************************************************************************
+// Extract a string from a byte array in a recorded trace.  Len -1 means "remaining from Start".
+
+extern "C" GCstr * lj_arr_getstring(lua_State *L, GCarray *Array, int32_t Start, int32_t Len)
+{
+   if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
+
+   int32_t count = Len;
+   if (Len IS -1) {
+      if (Start < 0 or MSize(Start) > Array->len) count = 0;
+      else count = int32_t(Array->len - MSize(Start));
+   }
+
+   if (Start < 0 or count < 0 or MSize(Start) > Array->len) lj_err_msg(L, ErrMsg::IDXRNG);
+
+   MSize start = MSize(Start);
+   MSize byte_count = MSize(count);
+   if (byte_count > Array->len - start) lj_err_msg(L, ErrMsg::IDXRNG);
+
+   CSTRING data = byte_count > 0 ? Array->get<const char>() + start : "";
+   return lj_str_new(L, data, byte_count);
+}
+
+//********************************************************************************************************************
+// Create an array from a recorded trace.  The recorder resolves and validates ElemType from a constant type literal.
+
+extern "C" GCarray * lj_arr_new_jit(lua_State *L, uint32_t Length, uint32_t ElemType)
+{
+   return lj_array_new(L, Length, AET(ElemType));
 }

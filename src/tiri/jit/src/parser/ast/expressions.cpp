@@ -589,6 +589,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
 
          node = std::move(expressions.front());
+         node->is_grouped = true;
          break;
       }
 

@@ -3,6 +3,60 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+function max_call_c_operand(Func)
+   local info = jit.util.funcInfo(Func, 0)
+   local largest: any = nil
+
+   for pc = 0, info.byteCodes - 1 do
+      local ins = jit.util.funcBC(Func, pc)
+      if ins != nil and (ins & 255) is 76 then
+         local operand_count = (ins >> 16) & 255
+         if largest is nil then
+            largest = operand_count
+         elseif operand_count > largest then
+            largest = operand_count
+         end
+      end
+   end
+
+   return largest
+end
+
+function folded_constant_append_call_shape()
+   local result = array<byte>
+   result ..= 'Part1' .. '-' .. 'Part2' .. '-' .. 'Part3' .. '-' .. 'Part4'
+   return result
+end
+
+function folded_boundary_append_call_shape(Value)
+   local result = array<byte>
+   result ..= 'a' .. 'b' .. Value .. 'c' .. 12 .. 'd'
+   return result
+end
+
+function folded_tostring_append_call_shape(Value: num)
+   local result = array<byte>
+   result ..= 'Value: ' .. tostring(Value) .. ', Next: ' .. tostring(Value + 1)
+   return result
+end
+
+function shadowed_tostring_append_call_shape()
+   local mt = {
+      __concat = function(A, B)
+         if type(A) is 'table' then return A.val .. B end
+         return A .. B.val
+      end
+   }
+   local tostring = function(Value)
+      return setmetatable({ val = Value }, mt)
+   end
+   local result = array<byte>
+
+   result ..= 'Value: ' .. tostring('local')
+
+   return result
+end
+
 @Test function CompoundAssignment()
    value = 5
    value += 3
@@ -298,6 +352,225 @@ end
    end
    text ..= tail()
    assert(text is 'abc', '..= should concatenate with function result')
+end
+
+@Test function ArrayConcatAssignmentMutates()
+   arr = array<byte>
+   arr ..= 'AB'
+   arr ..= 67
+
+   assert(#arr is 4, 'array byte ..= should append numeric RHS using concat formatting')
+   assert(arr:getString() is 'AB67', 'array byte ..= should append numbers as text')
+
+   source = array<byte> { 0, 68 }
+   arr ..= source:getString()
+   expected = 'AB67' .. source:getString()
+
+   assert(#arr is 6, 'array byte ..= should preserve embedded NUL bytes')
+   assert(arr:getString() is expected, 'array byte ..= should preserve the full appended byte string')
+
+   result = arr .. '!'
+   assert(result is expected .. '!', 'plain array concat should still return a string')
+   assert(arr:getString() is expected, 'plain array concat should not mutate the array')
+end
+
+@Test function ArrayConcatAssignmentOnFields()
+   store = { buf = array<byte>, label = 'x' }
+   store.buf ..= 'Hi'
+   store.buf ..= 33
+   store.label ..= 'y'
+
+   assert(store.buf:getString() is 'Hi33', 'field byte array ..= should mutate the stored array with concat semantics')
+   assert(store.label is 'xy', 'field string ..= should still concatenate and store a string')
+end
+
+@Test function ArrayConcatAssignmentIgnoresShadowedArrayGlobal()
+   saved_array = array
+   store = { buf = array<byte>, label = 'x' }
+
+   global array = {}
+
+   try
+      store.label ..= 'y'
+      store.buf ..= 'Hi'
+      store.buf ..= 33
+
+      assert(store.label is 'xy', 'field string ..= should not call the shadowed array global')
+      assert(store.buf:getString() is 'Hi33', 'field byte array ..= should still use the internal append helper')
+   except e
+      global array = saved_array
+      error(e)
+   success
+      global array = saved_array
+   end
+end
+
+@Test function ArrayConcatAssignmentOnTypedLocals()
+   local buf = array<byte>
+   buf ..= 'Hi'
+   buf ..= 33
+
+   assert(#buf is 4, 'typed local byte array ..= should append to the array')
+   assert(buf:getString() is 'Hi33', 'typed local byte array ..= should append numeric RHS as text')
+
+   local text = 'x'
+   text ..= 42
+
+   assert(text is 'x42', 'typed local string ..= should accept a numeric RHS')
+end
+
+@Test function ArrayConcatAssignmentFlattensConstantChain()
+   result = array<byte>
+   result ..= 'a' .. 'b' .. 'c'
+
+   assert(result:getString() is 'abc', 'flattened constant concat chain should append all pieces')
+end
+
+@Test function ArrayConcatAssignmentFormatsNumbersAsText()
+   result = array<byte>
+   result ..= 'a' .. 65 .. 6.5
+
+   assert(result:getString() is 'a656.5', 'flattened byte array concat should format numbers as text')
+end
+
+@Test function ArrayConcatAssignmentFoldsAdjacentConstantsBeforeAppend()
+   result = folded_constant_append_call_shape()
+
+   assert(result:getString() is 'Part1-Part2-Part3-Part4', 'constant concat pieces should fold before byte append')
+   assert(max_call_c_operand(folded_constant_append_call_shape) is 3,
+      'folded constant concat should emit one receiver and one RHS piece in the call C operand')
+end
+
+@Test function ArrayConcatAssignmentFoldsLiteralRunsAcrossDynamicBoundary()
+   result = folded_boundary_append_call_shape('X')
+
+   assert(result:getString() is 'abXc12d', 'literal runs should fold across dynamic operand boundaries')
+   assert(max_call_c_operand(folded_boundary_append_call_shape) is 3,
+      'unknown dynamic concat pieces should emit one concatenated RHS for the append helper')
+end
+
+@Test function ArrayConcatAssignmentFlattensRegisteredStringCalls()
+   result = folded_tostring_append_call_shape(4)
+
+   assert(result:getString() is 'Value: 4, Next: 5',
+      'registered string-returning calls should append through concat-flattened byte array pieces')
+   assert(max_call_c_operand(folded_tostring_append_call_shape) is 6,
+      'registered string-returning calls should remain flattened in the append helper call')
+end
+
+@Test function ArrayConcatAssignmentHonoursShadowedStringCalls()
+   result = shadowed_tostring_append_call_shape()
+
+   assert(result:getString() is 'Value: local',
+      'shadowed string-returning builtin names should preserve RHS __concat semantics')
+   assert(max_call_c_operand(shadowed_tostring_append_call_shape) is 3,
+      'shadowed string-returning builtin names should emit one concatenated RHS for the append helper')
+end
+
+@Test function ArrayConcatAssignmentFormatsNumbersAsTextOverFlattenCap()
+   result = array<byte>
+   result ..= 'a' .. 65 .. 'b' .. 'c' .. 'd' .. 'e' .. 'f' .. 'g' .. 'h' ..
+      'i' .. 'j' .. 'k' .. 'l' .. 'm' .. 'n' .. 'o' .. 6.5
+
+   assert(result:getString() is 'a65bcdefghijklmno6.5', 'over-cap concat fallback should still format numbers as text')
+end
+
+@Test function ArrayAppendDirectOverflowAcceptsByteArrayPieces()
+   result = array<byte>
+   source = array<byte> { 88, 89 }
+
+   array.append(result, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+      source, 12, 'q')
+
+   assert(result:getString() is 'abcdefghijklmnopXY12q',
+      'direct byte array append overflow should reduce RHS and append the resulting bytes')
+end
+
+@Test function ArrayAppendDirectOverflowSnapshotsSelfOperand()
+   result = array.new('xy')
+
+   array.append(result, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+      result, 'q')
+
+   assert(result:getString() is 'xyabcdefghijklmnopxyq',
+      'direct byte array append overflow should snapshot self operands before mutation')
+end
+
+@Test function ArrayConcatAssignmentPreservesParenthesisedGroup()
+   a = 'a'
+   b = 'b'
+   c = 'c'
+   result = array<byte>
+
+   result ..= (a .. b) .. c
+
+   assert(result:getString() is 'abc', 'parenthesised concat group should remain one operand and preserve result')
+end
+
+@Test function ArrayConcatAssignmentAcceptsByteArrayOperand()
+   result = array<byte>
+   source = array<byte> { 66, 67 }
+
+   result ..= 'A' .. source .. 'D'
+
+   assert(result:getString() is 'ABCD', 'flattened byte array concat should accept byte-array RHS operands')
+end
+
+@Test function ArrayConcatAssignmentPreservesRhsMetamethodConcat()
+   mt = {
+      __concat = function(A, B)
+         if type(A) is 'table' then return A.val .. B end
+         return A .. B.val
+      end
+   }
+   obj = setmetatable({ val = 'data' }, mt)
+   result = array<byte>
+
+   result ..= 'prefix_' .. obj
+
+   assert(result:getString() is 'prefix_data', 'byte array concat assignment should preserve RHS __concat semantics')
+end
+
+@Test function ArrayConcatAssignmentSelfAppendUsesOriginalBytes()
+   result = array.new('ab')
+
+   result ..= result
+
+   assert(result:getString() is 'abab', 'byte array self append should copy the original RHS bytes')
+end
+
+@Test function ArrayConcatAssignmentDynamicStringReceiver()
+   local receiver: any = 'start'
+
+   receiver ..= '-' .. 'end'
+
+   assert(receiver is 'start-end', 'dynamic string receiver should keep string concat semantics')
+end
+
+@Test function ArrayConcatAssignmentNonByteArrayPushesSingleConcatResult()
+   result = array<string>
+
+   result ..= 'a' .. 'b'
+
+   assert(#result is 1, 'non-byte array concat assignment should push one concatenated value')
+   assert(result[0] is 'ab', 'non-byte array concat assignment should preserve CAT-then-push behaviour')
+end
+
+@Test function ArrayConcatAssignmentUsesFirstReturn()
+   function byte_tail()
+      return 'Z', 'ignored'
+   end
+
+   arr = array<byte>
+   arr ..= byte_tail()
+
+   assert(arr:getString() is 'Z', 'array byte ..= should use only the first function result')
+
+   nums = array<int> { 1, 2 }
+   nums ..= 3
+
+   assert(#nums is 3, 'array int ..= should push one value')
+   assert(nums[2] is 3, 'array int ..= should append the numeric value')
 end
 
 @Test function RegisterIndexPreservedAcrossRHS()
