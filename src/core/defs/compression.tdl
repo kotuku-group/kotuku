@@ -26,7 +26,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     "REMOVE_FILE: A file is being removed from a compressed stream.",
     "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
 
-  struct("CompressionFeedback", { }, [[
+  structdef("CompressionFeedback", { }, [[
     int(FDB) FeedbackID     # Set to one of the FDB event indicators
     int   Index             # Index of the current file
     cstr  Path              # Name of the current file/path in the archive
@@ -52,7 +52,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
       Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
   ]])
 
-  struct("CompressedItem", { }, [[
+  structdef("CompressedItem", { }, [[
     large OriginalSize            # Original size of the file
     large CompressedSize          # Compressed size of the file
     struct(*CompressedItem) Next  # Used only if this is a linked-list.

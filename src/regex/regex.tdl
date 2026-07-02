@@ -18,7 +18,7 @@ module({ name="Regex", copyright="Paul Manias © 2025-2026", version=1.0, timest
     "REPLACE_FIRST_ONLY: In Replace(), replaces only the first match and leaves subsequent matches unchanged.",
     "WHOLE:              Implicit `^...$` around the pattern.")
 
-  struct("Regex", { comment="Compiled regex structure." }, [[
+  structdef("Regex", { comment="Compiled regex structure." }, [[
    string   Pattern   # Original pattern string
    int(REGEX) Flags   # Compilation flags
   ]])

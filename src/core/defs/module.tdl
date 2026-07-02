@@ -42,13 +42,13 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     "STATIC: Keep the module code in memory",
     "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
 
-  struct("Function", { comment="Function list array structure" }, [[
+  structdef("Function", { comment="Function list array structure" }, [[
     ptr Address     # Pointer to the function entry point
     cstr Name       # Name of the function
     cstruct(*FunctionField) Args  # A list of parameters accepted by the function
   ]])
 
-  struct("ModHeader", { comment="Module file header", restrict="c" }, [[
+  structdef("ModHeader", { comment="Module file header", restrict="c" }, [[
     int(MHF) Flags                 # Special flags, type of function table wanted from the Core
     cstr Definitions               # Module definition string, usable by run-time languages such as Tiri
     fptr(error obj struct(*CoreBase)) Init # A one-off initialisation routine for when the module is first opened.

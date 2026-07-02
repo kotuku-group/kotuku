@@ -41,6 +41,13 @@
     </field>
 
     <field>
+      <name>XMLDef</name>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
+    <field>
       <name>Y1</name>
       <comment>Initial Y coordinate for the gradient.</comment>
       <access read="R" write="S">Read/Set</access>

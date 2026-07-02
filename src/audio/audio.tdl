@@ -75,7 +75,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
    "RELEASED: Sample playing and note has been released.",
    "FADE_OUT: Playback is fading out.")
 
-  struct("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
+  structdef("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
     short(LOOP) LoopMode    # Loop mode (single, double)
     char(LTYPE) Loop1Type   # First loop type (unidirectional, bidirectional)
     char(LTYPE) Loop2Type   # Second loop type (unidirectional, bidirectional)

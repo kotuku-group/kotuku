@@ -7,25 +7,25 @@ static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attri
 {
    switch (Attrib) {
       case SVF_resolution:
-         Gradient->setResolution(svtonum<double>(Value));
+         Gradient->set(kt::fieldhash("Resolution"), svtonum<double>(Value));
          return ERR::Okay;
 
       case SVF_color_interpolation:
-         if (iequals("auto", Value)) Gradient->setColourSpace(VCS::LINEAR_RGB);
-         else if (iequals("sRGB", Value)) Gradient->setColourSpace(VCS::SRGB);
-         else if (iequals("linearRGB", Value)) Gradient->setColourSpace(VCS::LINEAR_RGB);
-         else if (iequals("inherit", Value)) Gradient->setColourSpace(VCS::INHERIT);
+         if (iequals("auto", Value)) Gradient->ColourSpace = VCS::LINEAR_RGB;
+         else if (iequals("sRGB", Value)) Gradient->ColourSpace = VCS::SRGB;
+         else if (iequals("linearRGB", Value)) Gradient->ColourSpace = VCS::LINEAR_RGB;
+         else if (iequals("inherit", Value)) Gradient->ColourSpace = VCS::INHERIT;
          return ERR::Okay;
 
       case SVF_easing:
          switch (strhash(Value)) {
-            case SVF_linear: Gradient->setEasing(GEZ::LINEAR); break;
-            case SVF_in: Gradient->setEasing(GEZ::IN); break;
-            case SVF_out: Gradient->setEasing(GEZ::OUT); break;
-            case SVF_inOut: Gradient->setEasing(GEZ::IN_OUT); break;
-            case SVF_cubicIn: Gradient->setEasing(GEZ::CUBIC_IN); break;
-            case SVF_cubicOut: Gradient->setEasing(GEZ::CUBIC_OUT); break;
-            case SVF_cubicInOut: Gradient->setEasing(GEZ::CUBIC_IN_OUT); break;
+            case SVF_linear: Gradient->set(kt::fieldhash("Easing"), int(GEZ::LINEAR)); break;
+            case SVF_in: Gradient->set(kt::fieldhash("Easing"), int(GEZ::IN)); break;
+            case SVF_out: Gradient->set(kt::fieldhash("Easing"), int(GEZ::OUT)); break;
+            case SVF_inOut: Gradient->set(kt::fieldhash("Easing"), int(GEZ::IN_OUT)); break;
+            case SVF_cubicIn: Gradient->set(kt::fieldhash("Easing"), int(GEZ::CUBIC_IN)); break;
+            case SVF_cubicOut: Gradient->set(kt::fieldhash("Easing"), int(GEZ::CUBIC_OUT)); break;
+            case SVF_cubicInOut: Gradient->set(kt::fieldhash("Easing"), int(GEZ::CUBIC_IN_OUT)); break;
             default: kt::Log().warning("Unrecognised gradient easing '%s'", Value.c_str());
          }
          return ERR::Okay;
@@ -57,9 +57,9 @@ static void set_gradient_units(const XTag &Tag, objGradient *Gradient) noexcept
 
 static void set_gradient_spread_method(objGradient *Gradient, const std::string &Value) noexcept
 {
-   if (iequals("pad", Value))          Gradient->setSpreadMethod(VSPREAD::PAD);
-   else if (iequals("reflect", Value)) Gradient->setSpreadMethod(VSPREAD::REFLECT);
-   else if (iequals("repeat", Value))  Gradient->setSpreadMethod(VSPREAD::REPEAT);
+   if (iequals("pad", Value))          Gradient->set(kt::fieldhash("SpreadMethod"), int(VSPREAD::PAD));
+   else if (iequals("reflect", Value)) Gradient->set(kt::fieldhash("SpreadMethod"), int(VSPREAD::REFLECT));
+   else if (iequals("repeat", Value))  Gradient->set(kt::fieldhash("SpreadMethod"), int(VSPREAD::REPEAT));
 }
 
 //********************************************************************************************************************
@@ -163,7 +163,7 @@ bool svgState::parse_gradient_href(const std::string &Value, objGradient *Gradie
       auto end = Value.find(')');
       if (end != std::string::npos) {
          auto cmap = Value.substr(5, end - 5);
-         if (!Gradient->setColourMap(cmap)) return false;
+         if (Gradient->set(kt::fieldhash("ColourMap"), cmap) IS ERR::Okay) return false;
       }
    }
    else if (auto other = find_href_tag(Self, Value)) {
@@ -220,7 +220,7 @@ void svgState::parse_gradient_defaults(kt::Log &Log, const XTag &Tag, objGradien
          break; // Already processed before interpreting coordinate values.
 
       case SVF_gradientTransform:
-         Gradient->setTransform(Value);
+         Gradient->set(kt::fieldhash("Transform"), Value);
          break;
 
       case SVF_spreadMethod:
@@ -251,7 +251,7 @@ void svgState::set_gradient_stops(const XTag &Tag, objGradient *Gradient, bool P
       auto stops = process_gradient_stops(Tag);
       if (stops.size() >= 2) {
          std::span<GradientStop> span(stops.data(), stops.size());
-         Gradient->setStops(span);
+         Gradient->set(kt::fieldhash("Stops"), span);
       }
    }
 }
@@ -582,7 +582,7 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
 
    if (not records.empty()) {
       std::span<MeshPatchRecord> span(records.data(), records.size());
-      Gradient->setPatches(span);
+      Gradient->set(kt::fieldhash("Patches"), span);
 
    }
 }
@@ -633,10 +633,10 @@ void svgState::parse_lineargradient(const XTag &Tag, objGradientLinear *Gradient
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_x1: Gradient->setX1(parse_units(val, Gradient->Units)); break;
-         case SVF_y1: Gradient->setY1(parse_units(val, Gradient->Units)); break;
-         case SVF_x2: Gradient->setX2(parse_units(val, Gradient->Units)); break;
-         case SVF_y2: Gradient->setY2(parse_units(val, Gradient->Units)); break;
+         case SVF_x1: Gradient->set(kt::fieldhash("X1"), parse_units(val, Gradient->Units)); break;
+         case SVF_y1: Gradient->set(kt::fieldhash("Y1"), parse_units(val, Gradient->Units)); break;
+         case SVF_x2: Gradient->set(kt::fieldhash("X2"), parse_units(val, Gradient->Units)); break;
+         case SVF_y2: Gradient->set(kt::fieldhash("Y2"), parse_units(val, Gradient->Units)); break;
 
          default:
             parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
@@ -664,11 +664,11 @@ void svgState::parse_radialgradient(const XTag &Tag, objGradientRadial *Gradient
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_cx: Gradient->setCX(parse_units(val, Gradient->Units)); break;
-         case SVF_cy: Gradient->setCY(parse_units(val, Gradient->Units)); break;
-         case SVF_fx: Gradient->setFX(parse_units(val, Gradient->Units)); break;
-         case SVF_fy: Gradient->setFY(parse_units(val, Gradient->Units)); break;
-         case SVF_r:  Gradient->setRadius(parse_units(val, Gradient->Units)); break;
+         case SVF_cx: Gradient->set(kt::fieldhash("CX"), parse_units(val, Gradient->Units)); break;
+         case SVF_cy: Gradient->set(kt::fieldhash("CY"), parse_units(val, Gradient->Units)); break;
+         case SVF_fx: Gradient->set(kt::fieldhash("FX"), parse_units(val, Gradient->Units)); break;
+         case SVF_fy: Gradient->set(kt::fieldhash("FY"), parse_units(val, Gradient->Units)); break;
+         case SVF_r:  Gradient->set(kt::fieldhash("Radius"), parse_units(val, Gradient->Units)); break;
 
          case SVF_focalPoint: {
             if (iequals("unbound", val)) Gradient->set(kt::fieldhash("ContainFocal"), 0);
@@ -702,9 +702,9 @@ void svgState::parse_diamondgradient(const XTag &Tag, objGradientDiamond *Gradie
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_cx: Gradient->setCX(parse_units(val, Gradient->Units)); break;
-         case SVF_cy: Gradient->setCY(parse_units(val, Gradient->Units)); break;
-         case SVF_r:  Gradient->setRadius(parse_units(val, Gradient->Units)); break;
+         case SVF_cx: Gradient->set(kt::fieldhash("CX"), parse_units(val, Gradient->Units)); break;
+         case SVF_cy: Gradient->set(kt::fieldhash("CY"), parse_units(val, Gradient->Units)); break;
+         case SVF_r:  Gradient->set(kt::fieldhash("Radius"), parse_units(val, Gradient->Units)); break;
 
          default:
             parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
@@ -735,9 +735,9 @@ void svgState::parse_contourgradient(const XTag &Tag, objGradientContour *Gradie
       switch(attrib) {
          // Floor and Multiplier adjust the colour ramp bias and scale.
          case SVF_floor:
-         case SVF_x1: Gradient->setFloor(svtonum<double>(val)); break;
+         case SVF_x1: Gradient->set(kt::fieldhash("Floor"), svtonum<double>(val)); break;
          case SVF_multiplier:
-         case SVF_x2: Gradient->setMultiplier(svtonum<double>(val)); break;
+         case SVF_x2: Gradient->set(kt::fieldhash("Multiplier"), svtonum<double>(val)); break;
 
          default:
             parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
@@ -763,10 +763,10 @@ ERR svgState::proc_lineargradient(const XTag &Tag) noexcept
       SetOwner(gradient, Self->Scene);
       gradient->setName("SVGLinearGrad");
       gradient->setUnits(VUNIT::BOUNDING_BOX);
-      gradient->setX1(0);
-      gradient->setY1(0);
-      gradient->setX2(Unit(1.0, FD_SCALED));
-      gradient->setY2(0);
+      gradient->set(kt::fieldhash("X1"), Unit(0));
+      gradient->set(kt::fieldhash("Y1"), Unit(0));
+      gradient->set(kt::fieldhash("X2"), Unit(1.0, FD_SCALED));
+      gradient->set(kt::fieldhash("Y2"), Unit(0));
 
       state.parse_lineargradient(Tag, gradient, id);
 
@@ -796,10 +796,10 @@ ERR svgState::proc_radialgradient(const XTag &Tag) noexcept
       SetOwner(gradient, Self->Scene);
       gradient->setName("SVGRadialGrad");
       gradient->setUnits(VUNIT::BOUNDING_BOX);
-      gradient->setCX(Unit(0.5, FD_SCALED));
-      gradient->setCY(Unit(0.5, FD_SCALED));
-      gradient->setRadius(Unit(0.5, FD_SCALED));
-      gradient->setContainFocal(1); // Enforce SVG limits on focal point, can be overridden with focal="unbound"
+      gradient->set(kt::fieldhash("CX"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("CY"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("Radius"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("ContainFocal"), 1); // Enforce SVG limits on focal point, can be overridden with focal="unbound"
 
       std::string id;
       state.parse_radialgradient(Tag, gradient, id);
@@ -832,9 +832,9 @@ ERR svgState::proc_diamondgradient(const XTag &Tag) noexcept
 
       gradient->setName("SVGDiamondGrad");
       gradient->setUnits(VUNIT::BOUNDING_BOX);
-      gradient->setCX(Unit(0.5, FD_SCALED));
-      gradient->setCY(Unit(0.5, FD_SCALED));
-      gradient->setRadius(Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("CX"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("CY"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("Radius"), Unit(0.5, FD_SCALED));
 
       state.parse_diamondgradient(Tag, gradient, id);
 
@@ -903,11 +903,11 @@ void svgState::parse_distalgradient(const XTag &Tag, objGradientDistal *Gradient
       switch(attrib) {
          // Floor and Multiplier adjust the colour ramp bias and scale, as with contour gradients.
          case SVF_floor:
-         case SVF_x1: Gradient->setFloor(svtonum<double>(val)); break;
+         case SVF_x1: Gradient->set(kt::fieldhash("Floor"), svtonum<double>(val)); break;
          case SVF_multiplier:
-         case SVF_x2: Gradient->setMultiplier(svtonum<double>(val)); break;
+         case SVF_x2: Gradient->set(kt::fieldhash("Multiplier"), svtonum<double>(val)); break;
          // Radius controls the exterior margin (in path units) around the path bounds.
-         case SVF_radius: Gradient->setRadius(Unit(svtonum<double>(val))); break;
+         case SVF_radius: Gradient->set(kt::fieldhash("Radius"), Unit(svtonum<double>(val))); break;
 
          default:
             parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
@@ -967,10 +967,10 @@ void svgState::parse_conicgradient(const XTag &Tag, objGradientConic *Gradient, 
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_cx: Gradient->setCX(parse_units(val, Gradient->Units)); break;
-         case SVF_cy: Gradient->setCY(parse_units(val, Gradient->Units)); break;
-         case SVF_r:  Gradient->setRadius(parse_units(val, Gradient->Units)); break;
-         case SVF_span: Gradient->setSpan(svtonum<double>(val)); break;
+         case SVF_cx: Gradient->set(kt::fieldhash("CX"), parse_units(val, Gradient->Units)); break;
+         case SVF_cy: Gradient->set(kt::fieldhash("CY"), parse_units(val, Gradient->Units)); break;
+         case SVF_r:  Gradient->set(kt::fieldhash("Radius"), parse_units(val, Gradient->Units)); break;
+         case SVF_span: Gradient->set(kt::fieldhash("Span"), svtonum<double>(val)); break;
 
          default:
             parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
@@ -995,9 +995,9 @@ ERR svgState::proc_conicgradient(const XTag &Tag) noexcept
 
       gradient->setName("SVGConicGrad");
       gradient->setUnits(VUNIT::BOUNDING_BOX);
-      gradient->setCX(Unit(0.5, FD_SCALED));
-      gradient->setCY(Unit(0.5, FD_SCALED));
-      gradient->setRadius(Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("CX"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("CY"), Unit(0.5, FD_SCALED));
+      gradient->set(kt::fieldhash("Radius"), Unit(0.5, FD_SCALED));
 
       std::string id;
       state.parse_conicgradient(Tag, gradient, id);

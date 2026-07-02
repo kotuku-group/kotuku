@@ -1351,16 +1351,30 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
@@ -1370,7 +1384,7 @@ class objGradient : public Object {
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -1385,12 +1399,12 @@ class objGradient : public Object {
    }
 
    inline ERR setGamma(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[12];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1417,7 +1431,7 @@ class objGradient : public Object {
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
@@ -1461,26 +1475,40 @@ class objGradientLinear : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setX1(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY1(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setX2(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY2(const Unit Value) noexcept {
+   inline ERR setX2(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setY2(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -1539,41 +1567,55 @@ class objGradientRadial : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setFX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setFY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+   inline ERR setCY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setFocalRadius(const Unit Value) noexcept {
+   inline ERR setFX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setContainFocal(const int Value) noexcept {
+   inline ERR setFY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setFocalRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setContainFocal(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1617,26 +1659,40 @@ class objGradientConic : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRadius(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setSpan(const double Value) noexcept {
+   inline ERR setCY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setSpan(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -1675,21 +1731,35 @@ class objGradientDiamond : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -1723,16 +1793,30 @@ class objGradientContour : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setFloor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMultiplier(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -1757,13 +1841,13 @@ class objGradientGouraud : public objGradient {
    // Customised field getting
 
    inline ERR getVertices(std::span<GouraudVertex> &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::span<GouraudVertex> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getIndices(std::span<int> &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
       return get_field(this, Value);
    }
@@ -1772,12 +1856,12 @@ class objGradientGouraud : public objGradient {
    // Customised field setting
 
    inline ERR setVertices(const std::span<const GouraudVertex> Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
    inline ERR setIndices(const std::span<const int> Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x40105308, &Value);
    }
 
@@ -1802,16 +1886,30 @@ class objGradientMesh : public objGradient {
    // Customised field getting
 
    inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       auto get_field = (ERR (*)(APTR, std::span<MeshPatchRecord> &))field->GetValue;
       return get_field(this, Value);
+   }
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
    }
 
 
    // Customised field setting
 
    inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
@@ -1865,36 +1963,50 @@ class objGradientDistal : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setFloor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setInnerRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setInnerFall(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOuterFall(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1973,52 +2085,52 @@ class objGradientVoronoi : public objGradient {
    // Customised field setting
 
    inline ERR setPoints(const std::span<const VoronoiPoint> Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setWorleyMode(const WLF Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWorleyMetric(const WLM Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFloor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setHeightMin(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setHeightMax(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setJitter(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setSeed(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setPointCount(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

@@ -329,18 +329,18 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "CHILD_HAS_FOCUS: A child of the vector has gained the user focus.",
      "LOST_FOCUS: The vector has lost the user focus.")
 
-  struct('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
+  structdef('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
     double Offset     # An offset in the range of 0 - 1.0
     struct(FRGB) RGB  # A floating point RGB value.
   ]])
 
-  struct('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
+  structdef('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
     double X             # The X coordinate of the vertex.
     double Y             # The Y coordinate of the vertex.
     struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
   ]])
 
-  struct('MeshPatchRecord', { comment='Describes one bilinear Coons patch for the GradientMesh Patches field.' }, [[
+  structdef('MeshPatchRecord', { comment='Describes one bilinear Coons patch for the GradientMesh Patches field.' }, [[
     double TopP0X             # Top edge starting X coordinate.
     double TopP0Y             # Top edge starting Y coordinate.
     double TopC0X             # Top edge first control point X coordinate.
@@ -379,19 +379,19 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     struct(FRGB) BottomLeft   # Colour assigned to the bottom-left patch corner.
   ]])
 
-  struct('Transition', { comment='For VectorTransition definitions' }, [[
+  structdef('Transition', { comment='For VectorTransition definitions' }, [[
     double Offset     # An offset from 0.0 to 1.0 at which to apply the transform.
     string Transform  # A transform string, as per SVG guidelines.
   ]])
 
-  struct("VectorPoint", { comment="Structure for the VectorPolygon PointsArray field." }, [[
+  structdef("VectorPoint", { comment="Structure for the VectorPolygon PointsArray field." }, [[
     double X   # The X coordinate of this point.
     double Y   # The Y coordinate of this point.
     bit(uchar) XScaled # `TRUE` if the `X` value is scaled to its viewport (between 0 and 1.0).
     bit(uchar) YScaled # `TRUE` if the `Y` value is scaled to its viewport (between 0 and 1.0).
   ]])
 
-  struct("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
+  structdef("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
     obj(VectorPattern) Pattern   # A @VectorPattern object, suitable for pattern based fills.
     obj(VectorImage)   Image     # A @VectorImage object, suitable for image fills.
     obj(Gradient)      Gradient  # A @Gradient object, suitable for gradient fills.
@@ -406,7 +406,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    }
   ]])
 
-  struct("PathCommand", { comment="Base structure for path commands." }, [[
+  structdef("PathCommand", { comment="Base structure for path commands." }, [[
     int(PE) Type         # The command type
     uchar   LargeArc     # Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when `TRUE`.
     uchar   Sweep        # Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.
@@ -422,7 +422,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     double  Angle        # Arc angle
   ]])
 
-  struct("VectorMatrix", { comment="Vector transformation matrix." }, [[
+  structdef("VectorMatrix", { comment="Vector transformation matrix." }, [[
     struct(*VectorMatrix) Next  # The next transform in the list.
     obj(Vector) Vector          # The vector associated with the transform.
     double ScaleX               # Matrix value A
@@ -470,7 +470,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "USE-TRANSFORM",
      "SVG-TRANSFORM")
 
-  struct("FontMetrics", { comment="Font metrics, measured in pixels relative to the display" }, [[
+  structdef("FontMetrics", { comment="Font metrics, measured in pixels relative to the display" }, [[
     int Height       # Full font height equivalent to `Ascent (cap-height) + Descent (gutter)`.  Does NOT include accents.
     int LineSpacing  # Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.
     int Ascent       # Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.
@@ -563,7 +563,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    }
   ]])
 
-  struct('VoronoiPoint', {
+  structdef('VoronoiPoint', {
    comment='Describes a feature point for the GradientVoronoi Points field.'
   }, [[
     double X       # The X coordinate of the feature point.
@@ -639,7 +639,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(VSF) MixType        # Optional input for mixing.
   ]])
 
-  struct('MergeSource', { comment='Input source declaration for MergeFX' }, [[
+  structdef('MergeSource', { comment='Input source declaration for MergeFX' }, [[
    int(VSF) SourceType        # The type of the required source.
    obj(FilterEffect) Effect   # Effect pointer if the `SourceType` is `REFERENCE`.
   ]],

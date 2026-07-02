@@ -687,7 +687,7 @@ end
 @input TDL field definition block
 @input Optional raw text to append inside the generated structure
 ]])
-global function struct(Name:str, Options:table, Def, Append)
+global function structdef(Name:str, Options:table, Def, Append)
    verbose(f'Processing struct {Name}')
 
    prevStruct = glCurrentStructure
