@@ -7,7 +7,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     loadFile('./common.tdl')
   end)
 
-  struct("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
+  structdef("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
      large Instant        # Unix epoch microseconds at which the transition occurs.
      string Abbreviation  # Short name where available, e.g. GMT, BST, PST.
      int OffsetBefore     # UTC offset in seconds before the transition.
@@ -18,7 +18,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
    TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
   ]])
 
-  struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
+  structdef("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
      string ZoneID      # Preferred public ID, e.g. Europe/London or UTC.
      string NativeID    # Host-native ID, e.g. GMT Standard Time on Windows.
      string Source      # "tzif", "win32", or "utc".

@@ -159,6 +159,17 @@
       </description>
     </field>
 
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML element string that describes the gradient type.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>Derived gradient classes override this field to return the SVG element name and any shape-specific attributes. The returned string does not include angle brackets, common gradient attributes, stops or child elements.</p>
+      </description>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
   <types>
     <constants lookup="GEZ" comment="Gradient easing functions.">

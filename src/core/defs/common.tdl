@@ -20,11 +20,11 @@
     "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
     "VIRTUAL: Path is to a virtual device.")
 
-  struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
+  structdef("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
     cstr Name   # Name of the field
     uint Type   # Type of the field
   ]])
 
-  struct("ActionEntry", { restrict='c', comment="Function typedef for calling actions." }, [[
+  structdef("ActionEntry", { restrict='c', comment="Function typedef for calling actions." }, [[
      fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
   ]])

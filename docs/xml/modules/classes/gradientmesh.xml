@@ -14,8 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.</p>
-<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p>
-<p>TODO: - Add tensor-product bicubic mesh patches, including the four internal control points from the SVG proposal. - Replace the current uniform tessellation with adaptive subdivision driven by patch flatness and screen size. - Preserve mesh row and column metadata through the public authoring API so SVG round-tripping can retain compact shared-edge syntax for multi-row meshes. - Add a richer structured authoring API once mesh patch editing needs per-edge or per-corner mutation without replacing the full <fl>Patches</fl> array. - Extend SVG conformance tests to cover multi-row shared top-edge inheritance, malformed patch path recovery and colour-space interpolation through <code>linearRGB</code>.</p></description>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p></description>
     <source>
       <file path="painters/">gradient_mesh.cpp</file>
     </source>
@@ -31,6 +30,13 @@
 <p>The Patches array defines one or more bilinear Coons patches.  Each <st>MeshPatchRecord</st> contains four cubic Bezier edges in clockwise order (<code>Top</code>, <code>Right</code>, <code>Bottom</code>, <code>Left</code>) plus the top-left, top-right, bottom-right and bottom-left corner colours.</p>
 <p>The coordinate system for patch positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, normalised patch coordinates in the range <code>0 - 1.0</code> are scaled into the target path's bounds.  Under <code>USERSPACE</code>, positions are taken directly in the viewport's coordinate system.</p>
       </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

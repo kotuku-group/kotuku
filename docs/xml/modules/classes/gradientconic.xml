@@ -62,6 +62,13 @@
       </description>
     </field>
 
+    <field>
+      <name>XMLDef</name>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
   <structs>
   </structs>

@@ -95,6 +95,13 @@ from zero before fading again, repeating until the parent area is filled.</li>
       </description>
     </field>
 
+    <field>
+      <name>XMLDef</name>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
   <types>
     <constants lookup="GFALL" comment="Gradient fall-off options.">

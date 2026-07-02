@@ -61,6 +61,16 @@ static ERR GRADIENTDIAMOND_SET_Radius(extGradientDiamond *Self, Unit &Value)
    else return ERR::OutOfRange;
 }
 
+static ERR GRADIENTDIAMOND_GET_XMLDef(extGradientDiamond *Self, std::string_view &Value)
+{
+   std::stringstream stream;
+   stream << "diamondGradient";
+   gradient_xml_attr(stream, "cx", Self->CX);
+   gradient_xml_attr(stream, "cy", Self->CY);
+   gradient_xml_attr(stream, "r", Self->Radius);
+   return gradient_xml_result(stream.str(), Value);
+}
+
 //********************************************************************************************************************
 
 #include "gradient_diamond_def.cpp"
@@ -69,6 +79,7 @@ static const FieldArray clGradientDiamondFields[] = {
    { "CX",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_CX },
    { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_CY },
    { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_Radius },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTDIAMOND_GET_XMLDef },
    END_FIELD
 };
 

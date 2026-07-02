@@ -10,6 +10,8 @@ the patch geometry rather than a one-dimensional colour ramp.
 The inherited colour-ramp fields `Stops`, `ColourMap`, `SpreadMethod` and `Colour` are not supported by this class.
 Patch geometry and corner colours are supplied through #Patches.
 
+-END-
+
 TODO:
 - Add tensor-product bicubic mesh patches, including the four internal control points from the SVG proposal.
 - Replace the current uniform tessellation with adaptive subdivision driven by patch flatness and screen size.
@@ -19,8 +21,6 @@ TODO:
   replacing the full #Patches array.
 - Extend SVG conformance tests to cover multi-row shared top-edge inheritance, malformed patch path recovery and
   colour-space interpolation through `linearRGB`.
-
--END-
 
 *********************************************************************************************************************/
 
@@ -152,6 +152,11 @@ static ERR GRADIENTMESH_SET_Patches(extGradientMesh *Self, std::span<const MeshP
    return ERR::Okay;
 }
 
+static ERR GRADIENTMESH_GET_XMLDef(extGradientMesh *, std::string_view &Value)
+{
+   return gradient_xml_result("meshgradient", Value);
+}
+
 //********************************************************************************************************************
 
 #include "gradient_mesh_def.cpp"
@@ -163,6 +168,7 @@ static const FieldArray clGradientMeshFields[] = {
    { "Stops",        FDF_SYSTEM|FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, nullptr, GRADIENTMESH_SET_Stops, "GradientStop" },
    { "Patches",      FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Patches,
       GRADIENTMESH_SET_Patches, "MeshPatchRecord" },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTMESH_GET_XMLDef },
    END_FIELD
 };
 

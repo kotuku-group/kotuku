@@ -161,23 +161,14 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
          if (def->baseClassID() IS CLASSID::GRADIENT) {
             auto gradient = (objGradient *)def;
-            std::string gradient_type;
-            switch(def->classID()) {
-               case CLASSID::GRADIENTRADIAL:  gradient_type = "<radialGradient/>"; break;
-               case CLASSID::GRADIENTCONIC:   gradient_type = "<conicGradient/>"; break;
-               case CLASSID::GRADIENTDIAMOND: gradient_type = "<diamondGradient/>"; break;
-               case CLASSID::GRADIENTCONTOUR: gradient_type = "<contourGradient/>"; break;
-               case CLASSID::GRADIENTDISTAL:  gradient_type = "<distalGradient/>"; break;
-               case CLASSID::GRADIENTLINEAR:  gradient_type = "<linearGradient/>"; break;
-               case CLASSID::GRADIENTMESH:    gradient_type = "<meshgradient/>"; break;
-               case CLASSID::GRADIENTGOURAUD:
-                  log.warning("GradientGouraud not supported.");
-                  continue;
-               default:
-                  log.warning("%s not supported.", def->Class->ClassName.c_str());
-                  continue;
+            std::string gradient_def;
+            if (gradient->get(kt::fieldhash("XMLDef"), gradient_def) != ERR::Okay) {
+               log.warning("%s not supported.", def->Class->ClassName.c_str());
+               continue;
             }
+
             XTag *tag = nullptr;
+            auto gradient_type = "<" + gradient_def + "/>";
             error = XML->insertStatement(def_index, XMI::CHILD_END, gradient_type, &tag);
 
             if (!error) xml::NewAttrib(tag, "id", key);
@@ -208,66 +199,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                xml::NewAttrib(tag, "resolution", resolution);
             }
 
-            if (def->classID() IS CLASSID::GRADIENTLINEAR) {
-               auto linear = (objGradientLinear *)gradient;
-               Unit val;
-               if ((!error) and (!linear->getX1(val))) set_dimension(tag, "x1", val);
-               if ((!error) and (!linear->getY1(val))) set_dimension(tag, "y1", val);
-               if ((!error) and (!linear->getX2(val))) set_dimension(tag, "x2", val);
-               if ((!error) and (!linear->getY2(val))) set_dimension(tag, "y2", val);
-            }
-            else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
-               auto contour = (objGradientContour *)gradient;
-               double val;
-               if ((!error) and (!contour->getFloor(val))) xml::NewAttrib(tag, "floor", fmt_num(val));
-               if ((!error) and (!contour->getMultiplier(val))) xml::NewAttrib(tag, "multiplier", fmt_num(val));
-            }
-            else if (def->classID() IS CLASSID::GRADIENTDISTAL) {
-               auto distal = (objGradientDistal *)gradient;
-               double val;
-               Unit unit;
-               if ((!error) and (!distal->getFloor(val))) xml::NewAttrib(tag, "floor", fmt_num(val));
-               if ((!error) and (!distal->getMultiplier(val))) xml::NewAttrib(tag, "multiplier", fmt_num(val));
-               if ((!error) and (!distal->getRadius(unit)) and (unit.defined()) and (unit > 0.0)) {
-                  set_dimension(tag, "radius", unit);
-               }
-            }
-            else if (def->classID() IS CLASSID::GRADIENTRADIAL) {
-               auto radial = (objGradientRadial *)gradient;
-               Unit val;
-               if ((!error) and (!radial->getCX(val))) set_dimension(tag, "cx", val);
-               if ((!error) and (!radial->getCY(val))) set_dimension(tag, "cy", val);
-               if ((!error) and (!radial->getFX(val))) set_dimension(tag, "fx", val);
-               if ((!error) and (!radial->getFY(val))) set_dimension(tag, "fy", val);
-               if ((!error) and (!radial->getRadius(val))) set_dimension(tag, "r", val);
-
-               int contain_focal;
-               if ((!error) and (!radial->getContainFocal(contain_focal)) and (!contain_focal)) {
-                  xml::NewAttrib(tag, "focal", "unbound");
-               }
-            }
-            else if ((def->classID() IS CLASSID::GRADIENTDIAMOND) or (def->classID() IS CLASSID::GRADIENTCONIC)) {
-               Unit val;
-
-               if (def->classID() IS CLASSID::GRADIENTCONIC) {
-                  auto conic = (objGradientConic *)gradient;
-                  if ((!error) and (!conic->getCX(val))) set_dimension(tag, "cx", val);
-                  if ((!error) and (!conic->getCY(val))) set_dimension(tag, "cy", val);
-                  if ((!error) and (!conic->getRadius(val))) set_dimension(tag, "r", val);
-
-                  double span;
-                  if ((!error) and (!conic->getSpan(span)) and (span != 1.0)) {
-                     xml::NewAttrib(tag, "span", span);
-                  }
-               }
-               else {
-                  auto diamond = (objGradientDiamond *)gradient;
-                  if ((!error) and (!diamond->getCX(val))) set_dimension(tag, "cx", val);
-                  if ((!error) and (!diamond->getCY(val))) set_dimension(tag, "cy", val);
-                  if ((!error) and (!diamond->getRadius(val))) set_dimension(tag, "r", val);
-               }
-            }
-            else if (def->classID() IS CLASSID::GRADIENTMESH) {
+            if (def->classID() IS CLASSID::GRADIENTMESH) {
                save_mesh_gradient(XML, tag, (objGradientMesh *)gradient);
             }
 
