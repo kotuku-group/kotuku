@@ -963,12 +963,54 @@ LJLIB_CF(array_push)
       return 1;
    }
 
+   MSize append_count = MSize(num_values);
+
+   if (arr->elemtype IS AET::BYTE) {
+      append_count = 0;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+         MSize value_count;
+         if (tvisstr(tv)) value_count = strV(tv)->len;
+         else {
+            luaL_checkinteger(L, arg_idx);
+            value_count = 1;
+         }
+
+         if (value_count > (~MSize(0) - append_count)) lj_err_caller(L, ErrMsg::ARREXT);
+         append_count += value_count;
+      }
+   }
+
    // Ensure we have capacity for the new elements
-   MSize new_len = arr->len + MSize(num_values);
+   if (append_count > (~MSize(0) - arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   MSize new_len = arr->len + append_count;
    if (new_len > arr->capacity) {
       if (not lj_array_grow(L, arr, new_len)) {
          lj_err_caller(L, ErrMsg::ARREXT);
       }
+   }
+
+   if (arr->elemtype IS AET::BYTE) {
+      MSize idx = arr->len;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+
+         if (tvisstr(tv)) {
+            GCstr *str = strV(tv);
+            if (str->len > 0) memcpy(arr->get<uint8_t>() + idx, strdata(str), str->len);
+            idx += str->len;
+         }
+         else {
+            arr->get<uint8_t>()[idx] = uint8_t(luaL_checkinteger(L, arg_idx));
+            idx++;
+         }
+      }
+
+      arr->len = new_len;
+      setintV(L->top++, int32_t(arr->len));
+      return 1;
    }
 
    // Push each value
@@ -2644,7 +2686,7 @@ static int array_tostring(lua_State *L)
 }
 
 //********************************************************************************************************************
-// __concat metamethod.
+// __concat metamethod.  Produces a new string value from the combination of the LHS and RHS
 
 static GCstr * array_concat_value(lua_State *L, cTValue *Value)
 {
