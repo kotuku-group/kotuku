@@ -731,12 +731,12 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <tags>object-owns-result, nullable-result, pure-query</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
-      <param type="UINT" name="FieldID">The 'FID' number to lookup.</param>
+      <param type="UINT" name="FieldID">The hash of the field name to lookup.</param>
       <param type="OBJECTPTR *" name="Target">(Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object).</param>
     </input>
     <description>
 <p>The FindField() function checks if an object supports a specified field by scanning its class descriptor for a <code>FieldID</code>. If a matching field is declared, its descriptor is returned.  For example:</p>
-<pre>if (auto field = FindField(Display, FID_Width, NULL)) {
+<pre>if (auto field = FindField(Display, strhash(&quot;width&quot;), nullptr)) {
    log.msg(&quot;The field name is \&quot;%s\&quot;.&quot;, field-&gt;Name);
 }
 </pre>
@@ -949,6 +949,19 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
 <p>The state values in the structure are static and will not change during runtime.</p>
     </description>
     <result type="const struct SystemState *">A read-only <st>SystemState</st> structure is returned.</result>
+  </function>
+
+  <function>
+    <name>GetThreadID</name>
+    <category>System</category>
+    <comment>Returns the UID of the current thread.</comment>
+    <prototype>INT GetThreadID()</prototype>
+    <tiriPrototype>num = GetThreadID()</tiriPrototype>
+    <tags>pure-query</tags>
+    <description>
+<p>Returns a unique ID for the active thread.  The ID has no relationship with the host operating system and is not re-used.</p>
+    </description>
+    <result type="INT">A unique ID for the active thread is returned.</result>
   </function>
 
   <function>
@@ -2075,7 +2088,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <tiriPrototype>err = WakeThread(Thread:num, Stop:num)</tiriPrototype>
     <tags>blocking</tags>
     <input>
-      <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetResource(RES::THREAD_ID)</code>.</param>
+      <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetThreadID()</code>.</param>
       <param type="INT" name="Stop">If <code>true</code>, the target thread will be put into a stopping state.</param>
     </input>
     <description>
@@ -2186,32 +2199,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="MOVE_FILE">A file is to be, or has been moved.</const>
     </constants>
 
-    <constants lookup="FDB" comment="Compression feedback event indicators.">
-      <const name="COMPRESS_FILE">A file or folder is being added to a compressed stream.</const>
-      <const name="DECOMPRESS_FILE">A file is being decompressed to a filesystem path.</const>
-      <const name="DECOMPRESS_OBJECT">A file is being decompressed into an object.</const>
-      <const name="REMOVE_FILE">A file is being removed from a compressed stream.</const>
-    </constants>
-
-    <constants lookup="FL" comment="File flags">
-      <const name="APPROXIMATE">Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
-      <const name="BUFFER">Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</const>
-      <const name="DEVICE">The file is a system device (must set if opening a device for read/write operations)</const>
-      <const name="DIRECTORY">The file object represents a folder.</const>
-      <const name="EXCLUDE_FILES">Exclude files when scanning this folder.</const>
-      <const name="EXCLUDE_FOLDERS">Exclude folders when scanning this folder.</const>
-      <const name="FILE">Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</const>
-      <const name="FOLDER">The file object represents a folder.</const>
-      <const name="LINK">Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</const>
-      <const name="LOOP">In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.</const>
-      <const name="NEW">Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.</const>
-      <const name="READ">Required if the file needs to be opened for read access.</const>
-      <const name="RESET_DATE">For internal use only</const>
-      <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
-      <const name="VIRTUAL">Path is to a virtual device.</const>
-      <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
-    </constants>
-
     <constants lookup="IDTYPE" comment="Types for AllocateID()">
       <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
       <const name="GLOBAL">Global ID's have no specific association with anything.</const>
@@ -2279,12 +2266,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
       <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
-    </constants>
-
-    <constants lookup="MHF" comment="Internal options for requesting function tables from modules.">
-      <const name="DEFAULT">Use structures to group exported functions (Linux, C/C++ standard)</const>
-      <const name="STATIC">Keep the module code in memory</const>
-      <const name="STRUCTURE">Use structures to group exported functions (Linux, C/C++ standard)</const>
     </constants>
 
     <constants lookup="MSF" comment="Message flags.">
@@ -2415,7 +2396,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
       <const name="STRUCT_DB">Returns a map of hashed struct names and corresponding struct sizes.</const>
-      <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
       <const name="TOTAL_SHARED_MEMORY">The total amount of shared memory in use (system wide).</const>
       <const name="TOTAL_SWAP">The total amount of available swap space.</const>
@@ -2516,36 +2496,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="BitsPerPixel" type="UINT8">Number of bits per pixel for this format.</field>
     </struct>
 
-    <struct name="CompressedItem">
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Next" type="struct CompressedItem *">Used only if this is a linked-list.</field>
-      <field name="Path" type="CSTRING">Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.</field>
-      <field name="Permissions" type="PERMIT" lookup="PERMIT">Original permissions - see <code>PERMIT</code> flags.</field>
-      <field name="UserID" type="INT">Original user ID</field>
-      <field name="GroupID" type="INT">Original group ID</field>
-      <field name="OthersID" type="INT">Original others ID</field>
-      <field name="Flags" type="FL" lookup="FL"><code>FL</code> flags</field>
-      <field name="Created" type="struct DateTime">Date and time of the file's creation.</field>
-      <field name="Modified" type="struct DateTime">Date and time last modified.</field>
-    </struct>
-
-    <struct name="CompressionFeedback">
-      <field name="FeedbackID" type="FDB" lookup="FDB">Set to one of the FDB event indicators</field>
-      <field name="Index" type="INT">Index of the current file</field>
-      <field name="Path" type="CSTRING">Name of the current file/path in the archive</field>
-      <field name="Dest" type="CSTRING">Destination file/path during decompression</field>
-      <field name="Progress" type="INT64">Progress indicator (byte position for the file being de/compressed).</field>
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Year" type="INT16">Year of the original file's datestamp.</field>
-      <field name="Month" type="INT16">Month of the original file's datestamp.</field>
-      <field name="Day" type="INT16">Day of the original file's datestamp.</field>
-      <field name="Hour" type="INT16">Hour of the original file's datestamp.</field>
-      <field name="Minute" type="INT16">Minute of the original file's datestamp.</field>
-      <field name="Second" type="INT16">Second of the original file's datestamp.</field>
-    </struct>
-
     <struct name="DateTime" comment="Generic structure for date-time management.">
       <field name="Year" type="INT16">Year</field>
       <field name="Month" type="INT8">Month 1 to 12</field>
@@ -2580,7 +2530,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash()</field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
@@ -2619,12 +2569,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="GroupID" type="INT">Group ID (Unix systems only).</field>
       <field name="Created" type="struct DateTime">The date/time of the file's creation.</field>
       <field name="Modified" type="struct DateTime">The date/time of the last file modification.</field>
-    </struct>
-
-    <struct name="Function" comment="Function list array structure">
-      <field name="Address" type="APTR">Pointer to the function entry point</field>
-      <field name="Name" type="CSTRING">Name of the function</field>
-      <field name="Args" type="const struct FunctionField *">A list of parameters accepted by the function</field>
     </struct>
 
     <struct name="FunctionField" comment="Used by ActionTable and Function structures to declare lists of parameters.">
@@ -2735,28 +2679,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Stage" type="INT16">The current operating stage.  <code>-1</code> = Initialising, <code>0</code> indicates normal operating status; <code>1</code> means that the program is shutting down; <code>2</code> indicates a program restart; <code>3</code> is for mode switches.</field>
       <field name="ReleaseBuild" type="UINT8"><code>1</code> = Release build, <code>0</code> = Debug build</field>
       <field name="StaticBuild" type="UINT8"><code>1</code> = Static build, <code>0</code> = Dynamic build</field>
-    </struct>
-
-    <struct name="TimeZoneInfo" comment="Time zone information returned from GetTimeZoneInfo()">
-      <field name="ZoneID" type="STRING">Preferred public ID, e.g. Europe/London or UTC.</field>
-      <field name="NativeID" type="STRING">Host-native ID, e.g. GMT Standard Time on Windows.</field>
-      <field name="Source" type="STRING">"tzif", "win32", or "utc".</field>
-      <field name="DataPath" type="STRING">TZif path on Linux, otherwise empty.</field>
-      <field name="Version" type="STRING">TZDB/source version if available, otherwise empty.</field>
-      <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>
-      <field name="BaseOffset" type="INT">Standard UTC offset in seconds.</field>
-      <field name="StartYear" type="INT16">Inclusive requested start year.</field>
-      <field name="EndYear" type="INT16">Inclusive requested end year.</field>
-      <field name="IsLocal" type="INT8">1 if ZoneID requested the local system zone.</field>
-      <field name="IsFallback" type="INT8">1 if UTC fallback was used.</field>
-    </struct>
-
-    <struct name="TimeZoneTransition" comment="Time zone transition information for GetTimeZoneInfo()">
-      <field name="Instant" type="INT64">Unix epoch microseconds at which the transition occurs.</field>
-      <field name="Abbreviation" type="STRING">Short name where available, e.g. GMT, BST, PST.</field>
-      <field name="OffsetBefore" type="INT">UTC offset in seconds before the transition.</field>
-      <field name="OffsetAfter" type="INT">UTC offset in seconds after the transition.</field>
-      <field name="DaylightSaving" type="INT">1 if the resulting period observes daylight-saving time.</field>
     </struct>
 
     <struct name="Unit">

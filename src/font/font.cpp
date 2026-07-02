@@ -38,8 +38,10 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/config.h>
+#include <kotuku/modules/module.h>
 
 #include <sstream>
 #include <kotuku/strings.hpp>
@@ -417,7 +419,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -1240,7 +1242,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "FontList", { sizeof(FontList), alignof(FontList) } }
 };
 

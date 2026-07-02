@@ -30,6 +30,7 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include <kotuku/main.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include <format>
@@ -160,7 +161,7 @@ void release_object(GCobject *Object)
             #ifndef NDEBUG
             if (Object->ptr->Queue.load() <= 0) {
                kt::Log("release_object").warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
-                  Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), kt::_get_thread_id());
+                  Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), GetThreadID());
                DEBUG_BREAK
             }
             #endif
@@ -184,7 +185,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    std::string_view module_name;
    // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires regeneration
-   if (auto error = MetaClass->get(FID_Module, module_name); !error) {
+   if (auto error = MetaClass->get(strhash("module"), module_name); !error) {
       if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
@@ -314,7 +315,7 @@ static ERR MODExpunge(void)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -725,10 +726,7 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 //********************************************************************************************************************
 
 #ifndef NDEBUG
-
-static void stack_dump(lua_State *L) __attribute__ ((unused));
-
-static void stack_dump(lua_State *L)
+[[maybe_unused]] static void stack_dump(lua_State *L)
 {
    int i;
    int top = lua_gettop(L);
@@ -744,7 +742,6 @@ static void stack_dump(lua_State *L)
    }
    printf("\n");  // end the listing
 }
-
 #endif
 
 //********************************************************************************************************************

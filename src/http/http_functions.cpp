@@ -137,7 +137,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
             // The HTTP socket was closed because the user is taking too long to authenticate with the dialog
             // window.  We will close the socket and create a new one once the user responds to the dialog.
 
-            Self->Socket->set(FID_Feedback, (APTR)nullptr);
+            Self->Socket->setFeedback(FUNCTION{});
             FreeResource(Socket);
             Self->Socket = nullptr;
             Self->SecurePath = true;
@@ -219,7 +219,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
          log.warning("Input file read error: %s", GetErrorMsg(error));
       }
 
-      int64_t size = Self->flInput->get<int64_t>(FID_Size);
+      int64_t size = 0;
+      Self->flInput->getSize(size);
 
       if ((Self->flInput->Position IS size) or (client_bytes_written IS 0)) {
          log.trace("All file content read (%d bytes) - freeing file.", (int)size);

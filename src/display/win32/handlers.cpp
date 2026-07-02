@@ -237,10 +237,11 @@ void CheckWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWid
    if ((Width IS CurrentWidth) and (Height IS CurrentHeight)) return;
 
    if (ScopedObjectLock<objSurface> surface(SurfaceID, 3000); surface.granted()) {
-      auto min_width  = surface->get<int>(FID_MinWidth);
-      auto min_height = surface->get<int>(FID_MinHeight);
-      auto max_width  = surface->get<int>(FID_MaxWidth);
-      auto max_height = surface->get<int>(FID_MaxHeight);
+      int min_width, min_height, max_width, max_height;
+      surface->getMinWidth(min_width);
+      surface->getMinHeight(min_height);
+      surface->getMaxWidth(max_width);
+      surface->getMaxHeight(max_height);
 
       if ((min_width > 0) and (Width < min_width))    Width  = min_width;
       if ((min_height > 0) and (Height < min_height)) Height = min_height;

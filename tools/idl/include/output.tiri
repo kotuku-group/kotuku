@@ -630,7 +630,7 @@ function buildFunctionTableOutput():str
       out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
    end
 
-   for k, func in ipairs(glFunctions) do
+   for _, func in ipairs(glFunctions) do
       if func.staticMacro?? and (func.status != 'private') then
          out ..= func.staticMacro() .. '\n'
       end
@@ -658,7 +658,7 @@ global function saveOutput()
       end
    end
 
-   verbose("Saving C header to \"" .. outPath .. "\"")
+   verbose(f"Saving C header to '{outPath}'")
 
    content = ''
 
@@ -675,6 +675,8 @@ global function saveOutput()
          content, blank = appendOutputLine(content, blank, glOutput[a])
       end
    end
+
+   if content:endsWith('\n\n') then content = content:sub(0, -3) end
 
    saveIfModified(outPath, content, 'C header output')
 end

@@ -190,7 +190,9 @@ static ERR parse_file(extConfig *Self, std::string_view Path)
       objFile::create file = { fl::Path(current_path), fl::Flags(FL::READ|FL::APPROXIMATE) };
 
       if (file.ok()) {
-         auto filesize = file->get<int>(FID_Size);
+         int64_t file_size;
+         file->getSize(file_size);
+         int filesize = int(file_size);
 
          if (filesize > 0) {
             std::string data(filesize + 1, '\0');

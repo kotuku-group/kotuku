@@ -287,16 +287,16 @@ struct alignas(8) Object { // Must be 64-bit aligned
       auto prev_queue = Queue.load(std::memory_order_relaxed);
       if (prev_queue < 0) {
          kt::Log("lock").warning("Queue already negative on #%d (%s), Queue: %d, ThreadID: %d, OurThread: %d",
-            UID, className(), prev_queue, ThreadID.load(), kt::_get_thread_id());
+            UID, className(), prev_queue, ThreadID.load(), GetThreadID());
          DEBUG_BREAK
       }
       #endif
       if (++Queue IS 1) {
-         ThreadID = kt::_get_thread_id();
+         ThreadID = GetThreadID();
          return ERR::Okay;
       }
       else {
-         if (ThreadID IS kt::_get_thread_id()) return ERR::Okay; // If this is for the same thread then it's a nested lock, so there's no issue.
+         if (ThreadID IS GetThreadID()) return ERR::Okay; // If this is for the same thread then it's a nested lock, so there's no issue.
          --Queue; // Restore the lock count
          return LockObject(this, Timeout); // Can fail if object is marked for collection.
       }
@@ -304,14 +304,14 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    // Transfer ownership of the lock to the current thread.
    inline void transferLock() {
-      ThreadID = kt::_get_thread_id();
+      ThreadID = GetThreadID();
    }
 
    inline void unlock() {
       #ifndef NDEBUG
       if (Queue.load() <= 0) {
          kt::Log("unlock").warning("Queue underflow on #%d (%s), Queue: %d, ThreadID: %d, OurThread: %d",
-            UID, className(), Queue.load(), ThreadID.load(), kt::_get_thread_id());
+            UID, className(), Queue.load(), ThreadID.load(), GetThreadID());
          DEBUG_BREAK
       }
       #endif

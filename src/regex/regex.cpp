@@ -33,6 +33,7 @@ module.
 
 #include <kotuku/main.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "srell/srell.hpp"
 
@@ -156,7 +157,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -661,7 +662,7 @@ ERR Split(Regex *Regex, const std::string_view &Text, kt::vector<std::string> *O
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "Regex", { sizeof(struct Regex), alignof(struct Regex) } }
 };
 

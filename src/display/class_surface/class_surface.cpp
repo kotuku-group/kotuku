@@ -2481,7 +2481,7 @@ ERR create_surface_class(void)
       fl::Methods(clSurfaceMethods),
       fl::Fields(clSurfaceFields),
       fl::Size(sizeof(extSurface)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clSurface ? ERR::Okay : ERR::AddClass;
 }

@@ -24,10 +24,13 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <cfloat>
 #include <kotuku/main.h>
 #include <kotuku/modules/compression.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "svg_def.c"
 #include <katana.h>
@@ -279,6 +282,7 @@ static constexpr auto SVF_clip_rule           = strhash("clip-rule");
 static constexpr auto SVF_clipPath            = strhash("clipPath");
 static constexpr auto SVF_clipPathUnits       = strhash("clipPathUnits");
 static constexpr auto SVF_close               = strhash("close");
+static constexpr auto SVF_collapse            = strhash("collapse");
 static constexpr auto SVF_color               = strhash("color");
 static constexpr auto SVF_color_interpolation = strhash("color-interpolation");
 static constexpr auto SVF_color_interpolation_filters = strhash("color-interpolation-filters");
@@ -306,6 +310,7 @@ static constexpr auto SVF_deuteranopia        = strhash("deuteranopia");
 static constexpr auto SVF_diamondGradient     = strhash("diamondGradient");
 static constexpr auto SVF_difference          = strhash("difference");
 static constexpr auto SVF_diffuseConstant     = strhash("diffuseConstant");
+static constexpr auto SVF_dilate              = strhash("dilate");
 static constexpr auto SVF_discrete            = strhash("discrete");
 static constexpr auto SVF_display             = strhash("display");
 static constexpr auto SVF_divisor             = strhash("divisor");
@@ -319,6 +324,7 @@ static constexpr auto SVF_ellipse             = strhash("ellipse");
 static constexpr auto SVF_enable_background   = strhash("enable-background");
 static constexpr auto SVF_end                 = strhash("end");
 static constexpr auto SVF_envelope            = strhash("envelope");
+static constexpr auto SVF_erode               = strhash("erode");
 static constexpr auto SVF_exclusion           = strhash("exclusion");
 static constexpr auto SVF_expanded            = strhash("expanded");
 static constexpr auto SVF_exponent            = strhash("exponent");
@@ -379,6 +385,7 @@ static constexpr auto SVF_gradientTransform   = strhash("gradientTransform");
 static constexpr auto SVF_gradientUnits       = strhash("gradientUnits");
 static constexpr auto SVF_hardLight           = strhash("hardLight");
 static constexpr auto SVF_height              = strhash("height");
+static constexpr auto SVF_hidden              = strhash("hidden");
 static constexpr auto SVF_href                = strhash("href");
 static constexpr auto SVF_hue                 = strhash("hue");
 static constexpr auto SVF_hueRotate           = strhash("hueRotate");
@@ -514,6 +521,7 @@ static constexpr auto SVF_scale               = strhash("scale");
 static constexpr auto SVF_screen              = strhash("screen");
 static constexpr auto SVF_distalGradient      = strhash("distalGradient");
 static constexpr auto SVF_padding             = strhash("padding");
+static constexpr auto SVF_scroll              = strhash("scroll");
 static constexpr auto SVF_seed                = strhash("seed");
 static constexpr auto SVF_semi_condensed      = strhash("semi_condensed");
 static constexpr auto SVF_semi_expanded       = strhash("semi_expanded");
@@ -587,6 +595,7 @@ static constexpr auto SVF_view_width       = strhash("view-width");
 static constexpr auto SVF_view_x           = strhash("view-x");
 static constexpr auto SVF_view_y           = strhash("view-y");
 static constexpr auto SVF_viewBox          = strhash("viewBox");
+static constexpr auto SVF_visible          = strhash("visible");
 static constexpr auto SVF_visibility       = strhash("visibility");
 static constexpr auto SVF_wider            = strhash("wider");
 static constexpr auto SVF_width            = strhash("width");
@@ -616,9 +625,11 @@ static constexpr auto SVF_cubicIn          = strhash("cubicIn");
 static constexpr auto SVF_cubicOut         = strhash("cubicOut");
 static constexpr auto SVF_cubicInOut       = strhash("cubicInOut");
 static constexpr auto SVF_easing           = strhash("easing");
-
-static constexpr auto glSVGNamespace = strhash("http://www.w3.org/2000/svg");
-static constexpr auto glKotukuNamespace = strhash("http://www.kotuku.dev/namespaces/kotuku");
+static constexpr auto SVF_quadratic        = strhash("quadratic");
+static constexpr auto SVF_smoothstep       = strhash("smoothstep");
+static constexpr auto SVF_exponential      = strhash("exponential");
+static constexpr auto glSVGNamespace       = strhash("http://www.w3.org/2000/svg");
+static constexpr auto glKotukuNamespace    = strhash("http://www.kotuku.dev/namespaces/kotuku");
 static constexpr auto glKotukuSVGNamespace = strhash("http://www.kotuku.dev/xmlns/svg");
 
 //********************************************************************************************************************
@@ -719,7 +730,7 @@ static ERR MODExpunge(void)
 {
    if (modDisplay) { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modVector)  { FreeResource(modVector);  modVector = nullptr; }
-   if (modImage) { FreeResource(modImage); modImage = nullptr; }
+   if (modImage)   { FreeResource(modImage); modImage = nullptr; }
 
    if (clSVG)  { FreeResource(clSVG);  clSVG = nullptr; }
    if (clRSVG) { FreeResource(clRSVG); clRSVG = nullptr; }

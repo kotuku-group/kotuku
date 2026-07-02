@@ -3,6 +3,7 @@
 
 #include "accessor_support.h"
 #include <filesystem>
+#include <kotuku/modules/filesystem.h>
 
 namespace fs = std::filesystem;
 
@@ -27,7 +28,9 @@ namespace fs = std::filesystem;
    objFile::create file { fl::Path(URI), fl::Flags(FL::READ) };
    if (file.ok()) {
       std::string buffer;
-      buffer.resize(file->get<size_t>(FID_Size));
+      int64_t file_size;
+      file->getSize(file_size);
+      buffer.resize(file_size);
       if (not buffer.empty()) {
          size_t bytes_read = 0;
          if ((file->read(buffer.data(), buffer.size(), &bytes_read) != ERR::Okay) or

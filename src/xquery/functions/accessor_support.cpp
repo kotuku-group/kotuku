@@ -7,6 +7,7 @@
 
 #include "accessor_support.h"
 #include <filesystem>
+#include <kotuku/modules/processes.h>
 
 namespace xpath::accessor {
 

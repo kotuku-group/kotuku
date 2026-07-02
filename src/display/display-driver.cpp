@@ -6,6 +6,7 @@ that is distributed with this package.  Please refer to it for further informati
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/module.h>
 
 JUMPTABLE_REGEX
 
@@ -501,9 +502,7 @@ static int nearestPower(int value)
    return i;
 }
 
-int pthread_mutex_timedlock (pthread_mutex_t *mutex, int Timeout) __attribute__ ((unused));
-
-int pthread_mutex_timedlock (pthread_mutex_t *mutex, int Timeout)
+[[maybe_unused]] int pthread_mutex_timedlock (pthread_mutex_t *mutex, int Timeout)
 {
    struct timespec sleepytime;
    int retcode;
@@ -1396,7 +1395,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -1795,7 +1794,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "BitmapSurface", { sizeof(BitmapSurface), alignof(BitmapSurface) } },
    { "CursorInfo",    { sizeof(CursorInfo),    alignof(CursorInfo)    } },
    { "DisplayInfo",   { sizeof(DisplayInfo),   alignof(DisplayInfo)   } },

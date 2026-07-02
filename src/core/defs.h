@@ -189,6 +189,10 @@ struct rkWatchPath {
 #include "prototypes.h"
 #include <kotuku/modules/config.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
+#include <kotuku/modules/time.h>
+#include <kotuku/modules/module.h>
 
 using namespace kt;
 
@@ -257,7 +261,7 @@ extern ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes;
 
 extern std::condition_variable_any cvObjects;
 
-// Per-thread record for the global thread registry.  Threads are registered on first use of get_thread_id() and
+// Per-thread record for the global thread registry.  Threads are registered on first use of GetThreadID() and
 // deregistered on thread destruction.  The condition variable allows other threads to interrupt a sleeping thread
 // via WakeThread().
 
@@ -514,7 +518,7 @@ class extTask : public objTask {
       std::string Env;
       APTR Platform;
    #endif
-   struct ActionEntry Actions[int(AC::END)]; // Action routines to be intercepted by the program
+   std::array<ActionEntry, int(AC::END)> Actions; // Action routines to be intercepted by the program
 
    extTask(objMetaClass *pClass, OBJECTID pUID) : objTask(pClass, pUID) {
       TimeOut = 60 * 60 * 24;
@@ -1090,7 +1094,6 @@ class objRootModule : public Object {
    ~objRootModule();
 };
 
-THREADID get_thread_id(void);
 void deregister_thread(void);
 [[nodiscard]] std::shared_ptr<ThreadRecord> get_thread_record(void);
 ERR WakeThread(int Thread, int Stop = false);

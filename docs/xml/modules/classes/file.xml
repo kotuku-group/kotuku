@@ -11,7 +11,7 @@
     <id>4ca5c5b3</id>
     <idstring>FILE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The File class provides extensive support for file management and I/O.  The class supports the notion of individual file compression and file finding capabilities.  Since all File objects are tracked, there is no chance of the system leaving locked files behind after a program exits.  Folder management is also integrated into this class to ease the management of both file types.</p>
 <p>To read or write to a file, set the <fl>Path</fl> of the file as well as the correct I/O file flags before initialisation. See the <fl>Flags</fl> field for information on the available I/O flags.  Functionality for read and write operations is provided through the <action>Read</action> and <action>Write</action> actions.  The <action>Seek</action> action can be used to change the read/write position in a file.</p></description>
@@ -550,7 +550,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The ResolvedPath will return a resolved copy of the <fl>Path</fl> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <function>ResolvePath</function> function for further information.</p>
+<p>The ResolvedPath will return a resolved copy of the <fl>Path</fl> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <function module="Core">ResolvePath</function> function for further information.</p>
       </description>
     </field>
 
@@ -674,15 +674,5 @@
 
   </types>
   <structs>
-    <struct name="DateTime" comment="Generic structure for date-time management.">
-      <field name="Year" type="INT16">Year</field>
-      <field name="Month" type="INT8">Month 1 to 12</field>
-      <field name="Day" type="INT8">Day 1 to 31</field>
-      <field name="Hour" type="INT8">Hour 0 to 23</field>
-      <field name="Minute" type="INT8">Minute 0 to 59</field>
-      <field name="Second" type="INT8">Second 0 to 59</field>
-      <field name="TimeZone" type="INT8">TimeZone -13 to +13</field>
-    </struct>
-
   </structs>
 </book>

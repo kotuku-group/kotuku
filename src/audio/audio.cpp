@@ -95,8 +95,11 @@ For optimal results, choose the appropriate interface based on application requi
 
 #include <kotuku/main.h>
 #include <kotuku/modules/audio.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 #include <kotuku/modules/config.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <sstream>
 #include <algorithm>
@@ -159,12 +162,9 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    CoreBase = argCoreBase;
 
 #ifdef _WIN32
-   {
-      CSTRING errstr;
-      if ((errstr = dsInitDevice(44100))) {
-         log.warning("DirectSound Failed: %s", errstr);
-         return ERR::NoSupport;
-      }
+   if (auto errstr = dsInitDevice(44100)) {
+      log.warning("DirectSound Failed: %s", errstr);
+      return ERR::NoSupport;
    }
 #elif ALSA_ENABLED
    // Nothing required for ALSA
@@ -180,13 +180,13 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
 static ERR MODExpunge(void)
 {
-   for (auto& [id, handle] : glSoundChannels) {
+   for (auto & [id, handle] : glSoundChannels) {
       // NB: Most Audio objects will be disposed of prior to this module being expunged.
       if (handle) {
          kt::ScopedObjectLock<extAudio> audio(id, 3000);
@@ -212,7 +212,7 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "AudioLoop", { sizeof(AudioLoop), alignof(AudioLoop) } }
 };
 

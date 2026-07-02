@@ -222,6 +222,30 @@ Z: Close Path
     </field>
 
   </fields>
+  <types>
+    <constants lookup="PE">
+      <const name="Arc"/>
+      <const name="ArcRel"/>
+      <const name="ClosePath"/>
+      <const name="Curve"/>
+      <const name="CurveRel"/>
+      <const name="HLine"/>
+      <const name="HLineRel"/>
+      <const name="Line"/>
+      <const name="LineRel"/>
+      <const name="Move"/>
+      <const name="MoveRel"/>
+      <const name="QuadCurve"/>
+      <const name="QuadCurveRel"/>
+      <const name="QuadSmooth"/>
+      <const name="QuadSmoothRel"/>
+      <const name="Smooth"/>
+      <const name="SmoothRel"/>
+      <const name="VLine"/>
+      <const name="VLineRel"/>
+    </constants>
+
+  </types>
   <structs>
     <struct name="PathCommand" comment="Base structure for path commands.">
       <field name="Type" type="PE" lookup="PE">The command type</field>

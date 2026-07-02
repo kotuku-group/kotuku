@@ -5,8 +5,69 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
 
   restrict(function()
     loadFile('./common.tdl')
-    loadFile(glPath .. 'common.tdl')
   end)
+
+  flags("CMF", { comment="Compression flags" },
+    "PASSWORD: A password has been set on the object.",
+    "NEW: Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.",
+    "CREATE_FILE: Create a new archive only if the source file does not already exist.",
+    "READ_ONLY: Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.",
+    "NO_LINKS: Treat symbolic links as normal files/folders.",
+    "APPLY_SECURITY: When decompressing, apply individual file permissions if they are available in the compression file.")
+
+  enums("CF", { type="int", start=1, comment="Compression stream formats" },
+    "GZIP: The 'gzip' format",
+    "ZLIB: The 'zlib' format",
+    "DEFLATE: The 'deflate' format")
+
+  enums("FDB", { type="int", start=1, comment="Compression feedback event indicators." },
+    "DECOMPRESS_FILE: A file is being decompressed to a filesystem path.",
+    "COMPRESS_FILE: A file or folder is being added to a compressed stream.",
+    "REMOVE_FILE: A file is being removed from a compressed stream.",
+    "DECOMPRESS_OBJECT: A file is being decompressed into an object.")
+
+  struct("CompressionFeedback", { }, [[
+    int(FDB) FeedbackID     # Set to one of the FDB event indicators
+    int   Index             # Index of the current file
+    cstr  Path              # Name of the current file/path in the archive
+    cstr  Dest              # Destination file/path during decompression
+    large Progress          # Progress indicator (byte position for the file being de/compressed).
+    large OriginalSize      # Original size of the file
+    large CompressedSize    # Compressed size of the file
+    short Year              # Year of the original file's datestamp.
+    short Month             # Month of the original file's datestamp.
+    short Day               # Day of the original file's datestamp.
+    short Hour              # Hour of the original file's datestamp.
+    short Minute            # Minute of the original file's datestamp.
+    short Second            # Second of the original file's datestamp.
+  ]],
+  [[
+   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+
+   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
+      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
+      Progress(0), OriginalSize(0), CompressedSize(0),
+      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
+  ]])
+
+  struct("CompressedItem", { }, [[
+    large OriginalSize            # Original size of the file
+    large CompressedSize          # Compressed size of the file
+    struct(*CompressedItem) Next  # Used only if this is a linked-list.
+    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
+    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
+    int  UserID                   # Original user ID
+    int  GroupID                  # Original group ID
+    int  OthersID                 # Original others ID
+    int(FL) Flags                 # `FL` flags
+    struct(DateTime) Created      # Date and time of the file's creation.
+    struct(DateTime) Modified     # Date and time last modified.
+  ]],
+  [[
+   ankerl::unordered_dense::map<std::string, std::string> *Tags;
+  ]])
 
   methods("Compression", "Cmp", {
     { id=1, name="CompressBuffer" },

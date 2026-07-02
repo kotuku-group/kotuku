@@ -867,7 +867,9 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
 
                      txt.vector_text.push_back(vt);
 
-                     x_advance += vt->get<double>(FID_TextWidth);
+                     int text_width;
+                     vt->getTextWidth(text_width);
+                     x_advance += text_width;
                   }
                }
                break;

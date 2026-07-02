@@ -70,7 +70,9 @@ objXQuery::create query { statement="/bookstore/book[@price &lt; 10]/title" };
 if (query.ok()) {
    XPathValue *result;
    if (!query-&gt;evaluate(xml)) {
-      log.msg("Got: %s", query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
+      std::string_view str;
+      query-&gt;getResultString(str);
+      log.msg("Got: %s", str.data());
    }
 }
 </pre>

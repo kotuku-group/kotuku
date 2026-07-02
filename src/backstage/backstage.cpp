@@ -25,6 +25,7 @@ See interface.tiri for the REST interface.
 #include <kotuku/modules/backstage.h>
 #include <kotuku/modules/network.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include <algorithm>

@@ -39,6 +39,8 @@ rendered image size.
 #include <kotuku/main.h>
 #include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 
@@ -261,7 +263,7 @@ static ERR IMAGE_Activate(extImage *Self)
                bmp->TransIndex = trans_index;
                rgb = bmp->Palette->Col[bmp->TransIndex];
                rgb.Alpha = 255;
-               bmp->set(FID_Transparence, &rgb);
+               bmp->setTransColour(rgb);
             }
          }
          else if ((info_ptr->color_type IS PNG_COLOR_TYPE_GRAY) or
@@ -271,7 +273,7 @@ static ERR IMAGE_Activate(extImage *Self)
                rgb.Green = trans_colour->gray;
                rgb.Blue  = trans_colour->gray;
                rgb.Alpha = 255;
-               bmp->set(FID_Transparence, &rgb);
+               bmp->setTransColour(rgb);
             }
          }
          else if (trans_colour) {
@@ -279,7 +281,7 @@ static ERR IMAGE_Activate(extImage *Self)
             rgb.Green = trans_colour->green;
             rgb.Blue  = trans_colour->blue;
             rgb.Alpha = 255;
-            bmp->set(FID_Transparence, &rgb);
+            bmp->setTransColour(rgb);
          }
       }
    }

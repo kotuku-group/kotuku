@@ -633,7 +633,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
       // Register the mapping from object ID to thread ID so that AsyncCancel() can target this thread.
       {
          std::lock_guard<std::mutex> lock(glmActionQueue);
-         glAsyncObjectThreads[object_uid] = int(get_thread_id());
+         glAsyncObjectThreads[object_uid] = GetThreadID();
       }
 
       auto is_stopping = [&stop_token, &thread_rec]() {
@@ -1737,7 +1737,7 @@ ERR InitObject(OBJECTPTR Object)
       log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
    else if (error IS ERR::NoSupport) {
-      if (auto field = FindField(Object, FID_Path, &target)) {
+      if (auto field = FindField(Object, strhash("path"), &target)) {
          if ((field->readable()) and (field->Flags & FD_STRING) and (target IS Object)) {
             std::string_view path;
             if (field->GetValue) { // Virtual std::string_view

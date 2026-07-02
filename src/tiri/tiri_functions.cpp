@@ -433,7 +433,7 @@ int fcmd_loadfile(lua_State *Lua)
                struct DateTime *date;
                f = clvalue(Lua->top + (-1))->l.p;
                luaU_dump(Lua, f, &code_writer, cachefile, (Self->Flags & SCF_DEBUG) ? 0 : 1);
-               if (not file.obj->getPtr(FID_Date, &date)) {
+               if (not file.obj->getPtr(strhash("date"), &date)) {
                   cachefile->setDate(date);
                }
             }

@@ -15,6 +15,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <array>

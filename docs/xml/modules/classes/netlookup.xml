@@ -165,6 +165,11 @@
 
   </fields>
   <types>
+    <constants lookup="IPADDR" comment="Address types for the IPAddress structure.">
+      <const name="V4"/>
+      <const name="V6"/>
+    </constants>
+
     <constants lookup="NLF" comment="Options for NetLookup">
       <const name="NO_CACHE">Contact the name service and do not use the local DNS cache.</const>
     </constants>

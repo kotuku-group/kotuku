@@ -848,7 +848,11 @@ global function klass(Name, Options:table, Spec, Private, Custom)
    end
    cl.references = { }
 
+   restore_refs = glActiveRefs
    global glActiveRefs = cl.references
+   defer
+      glActiveRefs = restore_refs
+   end
 
    if type(cl.src) is 'string' then cl.src = { cl.src } end -- Convert string to an array of strings
 
@@ -881,6 +885,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          for v in values(Options.references) do
             if glCustomTypes[v]?? then
                cdef = cdef .. outputLookup(cl.name .. v, glCustomTypes[v].list)
+               cl.references['TYPE:' .. v] = true
                glCustomTypes[v].restrict = nil
             elseif glStructures[v]?? then
                cl.references['STRUCT:' .. v] = true

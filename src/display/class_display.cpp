@@ -91,8 +91,7 @@ static const CSTRING names[] = {
   "EGL_CONFORMANT"
 };
 
-static void printConfig(EGLDisplay display, EGLConfig config) __attribute__ ((unused));
-static void printConfig(EGLDisplay display, EGLConfig config) {
+[[maybe_unused]] static void printConfig(EGLDisplay display, EGLConfig config) {
    kt::Log log(__FUNCTION__);
    int value[1];
 
@@ -2913,7 +2912,7 @@ ERR create_display_class(void)
       fl::Methods(clDisplayMethods),
       fl::Fields(DisplayFields),
       fl::Size(sizeof(extDisplay)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clDisplay ? ERR::Okay : ERR::AddClass;
 }

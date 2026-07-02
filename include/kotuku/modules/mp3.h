@@ -62,4 +62,3 @@ class objMP3 : public objSound {
    // Customised field setting
 
 };
-

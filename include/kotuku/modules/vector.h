@@ -3760,7 +3760,7 @@ class objVector : public Object {
    double    FillOpacity;             // The opacity to use when filling the vector.
    double    Opacity;                 // Defines an overall opacity for the vector's graphics.
    double    MiterLimit;              // Imposes a limit on the ratio of the miter length to the StrokeWidth.
-   double    InnerMiterLimit;         // Private. No internal documentation exists for this feature.
+   double    InnerMiterLimit;         // Controls how far an inner stroke miter can extend at concave joins.
    double    DashOffset;              // The distance into the dash pattern to start the dash.  Can be a negative number.
    VIS       Visibility;              // Controls the visibility of a vector and its children.
    VF        Flags;                   // Optional flags.
@@ -3879,6 +3879,11 @@ class objVector : public Object {
 
    inline ERR getMiterLimit(double &Value) noexcept {
       Value = this->MiterLimit;
+      return ERR::Okay;
+   }
+
+   inline ERR getInnerMiterLimit(double &Value) noexcept {
+      Value = this->InnerMiterLimit;
       return ERR::Okay;
    }
 
@@ -4065,6 +4070,11 @@ class objVector : public Object {
 
    inline ERR setMiterLimit(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setInnerMiterLimit(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5888,27 +5898,26 @@ inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue Flags(VCLF Value) { return FieldValue(FID_Flags, int(Value)); }
+constexpr FieldValue Flags(VCLF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
-constexpr FieldValue AppendPath(OBJECTPTR Value) { return FieldValue(FID_AppendPath, Value); }
+constexpr FieldValue AppendPath(OBJECTPTR Value) { return FieldValue(strhash("appendPath"), Value); }
 
-constexpr FieldValue DragCallback(const FUNCTION &Value) { return FieldValue(FID_DragCallback, &Value); }
-constexpr FieldValue DragCallback(const FUNCTION *Value) { return FieldValue(FID_DragCallback, Value); }
+constexpr FieldValue DragCallback(const FUNCTION &Value) { return FieldValue(strhash("dragCallback"), &Value); }
+constexpr FieldValue DragCallback(const FUNCTION *Value) { return FieldValue(strhash("dragCallback"), Value); }
 
-constexpr FieldValue OnChange(const FUNCTION &Value) { return FieldValue(FID_OnChange, &Value); }
-constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(FID_OnChange, Value); }
+constexpr FieldValue OnChange(const FUNCTION &Value) { return FieldValue(strhash("onChange"), &Value); }
+constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(strhash("onChange"), Value); }
 
-constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(FID_TextFlags, int(Value)); }
-constexpr FieldValue Overflow(VOF Value) { return FieldValue(FID_Overflow, int(Value)); }
+constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(strhash("textFlags"), int(Value)); }
+constexpr FieldValue Overflow(VOF Value) { return FieldValue(strhash("overflow"), int(Value)); }
 
-[[nodiscard]] inline FieldValue Sequence(std::string_view Value) { return FieldValue(FID_Sequence, Value); }
-[[nodiscard]] constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(FID_Sequence, Value ? std::string_view(Value) : std::string_view{}); }
+[[nodiscard]] inline FieldValue Sequence(std::string_view Value) { return FieldValue(strhash("sequence"), Value); }
+[[nodiscard]] constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(strhash("sequence"), Value ? std::string_view(Value) : std::string_view{}); }
 
-[[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(FID_FontStyle, Value); }
-[[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(FID_FontStyle, Value ? std::string_view(Value) : std::string_view{}); }
+[[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(strhash("fontStyle"), Value); }
+[[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(strhash("fontStyle"), Value ? std::string_view(Value) : std::string_view{}); }
 
-template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(FID_RoundX, Value); }
-template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
+template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(strhash("roundX"), Value); }
+template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(strhash("roundY"), Value); }
 
 }
-

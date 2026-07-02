@@ -11,7 +11,7 @@
     <id>b2355092</id>
     <idstring>STORAGEDEVICE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The StorageDevice class returns metadata for mounted file system volumes.  Set <fl>Volume</fl> before initialisation to identify the volume to query.  If the volume name cannot be resolved, initialisation will fail.</p>
 <p>After initialisation, the read-only fields describe the resolved volume.  Values that depend on host or device support can remain unavailable; unknown byte counts are reported as <code>-1</code>, and <fl>DeviceID</fl> is empty if no identifier is available.</p></description>

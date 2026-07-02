@@ -1,7 +1,7 @@
 
-static const char *glSliderBkgd = "rgb(225 225 225)";
-static const char *glSliderColour = "rgb(185 195 215)";
-static const char *glSliderHighlight = "rgb(245 175 155)";
+static CSTRING glSliderBkgd = "rgb(225 225 225)";
+static CSTRING glSliderColour = "rgb(185 195 215)";
+static CSTRING glSliderHighlight = "rgb(245 175 155)";
 
 //********************************************************************************************************************
 // Subscription to the slider's drag events.  Moving the page is all that is necessary; this
@@ -9,14 +9,18 @@ static const char *glSliderHighlight = "rgb(245 175 155)";
 
 static ERR slider_drag(objVectorViewport *Viewport, double X, double Y, double OriginX, double OriginY, scroll_mgr *Scroll)
 {
-   auto slider_height = Viewport->get<double>(FID_Height);
-   auto host_height = Scroll->m_vbar.m_slider_host->get<double>(FID_Height);
-   auto page_height = Scroll->m_page->get<double>(FID_Height);
-   auto view_height = Scroll->m_view->get<double>(FID_Height);
+   Unit slider_height, host_height, page_height, view_height, viewport_y;
+
+   Viewport->getHeight(slider_height);
+   Scroll->m_vbar.m_slider_host->getHeight(host_height);
+   Scroll->m_page->getHeight(page_height);
+   Scroll->m_view->getHeight(view_height);
 
    if (Y < 0) Y = 0;
    if (Y + slider_height > host_height) Y = host_height - slider_height;
-   if (Viewport->get<double>(FID_Y) IS Y) return ERR::Okay;
+
+   Viewport->getY(viewport_y);
+   if (viewport_y IS Y) return ERR::Okay;
 
    if ((Y != Scroll->m_vbar.m_slider_pos.offset) or (slider_height != Scroll->m_vbar.m_slider_pos.length)) {
       const double pct_pos = Y / (host_height - slider_height);
@@ -57,23 +61,31 @@ static ERR bkgd_input(objVectorViewport *Viewport, const InputEvent *Events, scr
    for (auto msg=Events; msg; msg=msg->Next) {
       if ((msg->Type IS JET::LMB) and (msg->Value > 0)) {
          if (Scroll->m_vbar.m_slider_host IS Viewport) {
-            auto slider_y = Scroll->m_vbar.m_slider_vp->get<double>(FID_Y);
-            auto slider_height = Scroll->m_vbar.m_slider_vp->get<double>(FID_Height);
+            Unit slider_y, slider_height, view_height;
+
+            Scroll->m_vbar.m_slider_vp->getY(slider_y);
+            Scroll->m_vbar.m_slider_vp->getHeight(slider_height);
+            Scroll->m_view->getHeight(view_height);
+
             if (msg->Y < slider_y) { // Scroll up?
-               Scroll->scroll_page(0, Scroll->m_view->get<double>(FID_Height) * 0.9);
+               Scroll->scroll_page(0, view_height * 0.9);
             }
             else if (msg->Y > slider_y + slider_height) { // Scroll down?
-               Scroll->scroll_page(0, -Scroll->m_view->get<double>(FID_Height) * 0.9);
+               Scroll->scroll_page(0, -view_height * 0.9);
             }
          }
          else if (Scroll->m_hbar.m_slider_host IS Viewport) {
-            auto slider_x = Scroll->m_vbar.m_slider_vp->get<double>(FID_X);
-            auto slider_width = Scroll->m_vbar.m_slider_vp->get<double>(FID_Width);
+            Unit slider_x, slider_width, view_width;
+
+            Scroll->m_vbar.m_slider_vp->getX(slider_x);
+            Scroll->m_vbar.m_slider_vp->getWidth(slider_width);
+            Scroll->m_view->getWidth(view_width);
+
             if (msg->X < slider_x) {
-               Scroll->scroll_page(Scroll->m_view->get<double>(FID_Width) * 0.9, 0);
+               Scroll->scroll_page(view_width * 0.9, 0);
             }
             else if (msg->X > slider_x + slider_width) {
-               Scroll->scroll_page(-Scroll->m_view->get<double>(FID_Width) * 0.9, 0);
+               Scroll->scroll_page(-view_width * 0.9, 0);
             }
          }
       }
@@ -87,13 +99,17 @@ static ERR bkgd_input(objVectorViewport *Viewport, const InputEvent *Events, scr
 
 static ERR view_path_changed(objVectorViewport *Viewport, FM Event, APTR EventObject, scroll_mgr *Scroll)
 {
-   auto p_x = Scroll->m_page->get<double>(FID_X);
-   auto p_y = Scroll->m_page->get<double>(FID_Y);
-   auto p_width  = Scroll->m_page->get<double>(FID_Width);
-   auto p_height = Scroll->m_page->get<double>(FID_Height);
+   Unit u_p_x, u_p_y, u_p_width, u_p_height, u_view_width, u_view_height;
 
-   auto view_width  = Scroll->m_view->get<double>(FID_Width);
-   auto view_height = Scroll->m_view->get<double>(FID_Height);
+   Scroll->m_page->getX(u_p_x);
+   Scroll->m_page->getY(u_p_y);
+   Scroll->m_page->getWidth(u_p_width);
+   Scroll->m_page->getHeight(u_p_height);
+   Scroll->m_view->getWidth(u_view_width);
+   Scroll->m_view->getHeight(u_view_height);
+
+   double p_x = u_p_x, p_y = u_p_y, p_width = u_p_width, p_height = u_p_height;
+   const double view_width = u_view_width, view_height = u_view_height;
 
    if (!Scroll->m_fixed_mode) {
       auto nw = Scroll->m_min_width;
@@ -142,9 +158,10 @@ static ERR page_movement(objVectorViewport *Viewport, const InputEvent *Events, 
 {
    for (auto ev = Events; ev; ev = ev->Next) {
       if (ev->Type IS JET::WHEEL) {
-         auto view_height = Scroll->m_view->get<double>(FID_Height);
-         auto page_height = Scroll->m_page->get<double>(FID_Height);
-         auto length = page_height - view_height;
+         Unit view_height, page_height;
+         Scroll->m_view->getHeight(view_height);
+         Scroll->m_page->getHeight(page_height);
+         double length = page_height - view_height;
          if (length > 0) {
             if (length > view_height) length = view_height;
             Scroll->scroll_page(0, -ev->Value * length * 0.06);
@@ -180,11 +197,12 @@ scroll_mgr::scroll_slider scroll_mgr::scroll_bar::calc_slider(double ViewLen, do
 
 void scroll_mgr::recalc_sliders_from_view()
 {
-   auto v_width  = m_view->get<double>(FID_Width);
-   auto v_height = m_view->get<double>(FID_Height);
+   Unit v_width, v_height, p_width, p_height;
 
-   auto p_width  = m_page->get<double>(FID_Width);
-   auto p_height = m_page->get<double>(FID_Height);
+   m_view->getWidth(v_width);
+   m_view->getHeight(v_height);
+   m_page->getWidth(p_width);
+   m_page->getHeight(p_height);
 
    if ((p_width > v_width) or (p_height > v_height)) {
       // Page exceeds the available view space, scrollbar is required.
@@ -194,9 +212,11 @@ void scroll_mgr::recalc_sliders_from_view()
 
          acMoveToFront(m_vbar.m_bar_vp);
 
-         auto s = m_vbar.calc_slider(v_height, p_height,
-            m_vbar.m_slider_host->get<double>(FID_Height),
-            -m_page->get<double>(FID_Y));
+         Unit host_height, page_y;
+         m_vbar.m_slider_host->getHeight(host_height);
+         m_page->getY(page_y);
+
+         auto s = m_vbar.calc_slider(v_height, p_height, host_height, -page_y);
 
          if ((s.offset != m_vbar.m_slider_pos.offset) or
              (s.length != m_vbar.m_slider_pos.length)) {
@@ -211,7 +231,11 @@ void scroll_mgr::recalc_sliders_from_view()
             }
             else {
                m_vbar.m_bar_vp->setVisibility(VIS::VISIBLE);
-               if (m_auto_adjust_view_size) m_view->setXOffset(m_vbar.m_slider_vp->get<double>(FID_Width));
+               if (m_auto_adjust_view_size) {
+                  Unit slider_width;
+                  m_vbar.m_slider_vp->getWidth(slider_width);
+                  m_view->setXOffset(slider_width);
+               }
                if (m_hbar.m_bar_vp) m_hbar.m_bar_vp->setXOffset(m_hbar.m_breadth);
             }
          }
@@ -296,10 +320,13 @@ void scroll_mgr::scroll_bar::clear()
 
 void scroll_mgr::scroll_page(double DeltaX, double DeltaY)
 {
-   const double current_y = m_page->get<double>(FID_Y);
+   Unit current_y, page_height, view_height;
+
+   m_page->getY(current_y);
+   m_page->getHeight(page_height);
+   m_view->getHeight(view_height);
+
    double y = current_y + DeltaY;
-   const double page_height = m_page->get<double>(FID_Height);
-   const double view_height = m_view->get<double>(FID_Height);
 
    if ((y > 0) or (page_height < view_height)) y = 0;
    else if (y + page_height < view_height) y = -page_height + view_height;
@@ -316,8 +343,14 @@ void scroll_mgr::scroll_page(double DeltaX, double DeltaY)
 void scroll_mgr::fix_page_size(double Width, double Height)
 {
    m_fixed_mode = true;
-   if (Width != m_page->get<double>(FID_Width)) m_page->setWidth(Width);
-   if (Height != m_page->get<double>(FID_Height)) m_page->setHeight(Height);
+
+   Unit page_width, page_height;
+
+   m_page->getWidth(page_width);
+   m_page->getHeight(page_height);
+
+   if (Width != page_width) m_page->setWidth(Width);
+   if (Height != page_height) m_page->setHeight(Height);
 }
 
 //********************************************************************************************************************
@@ -328,7 +361,9 @@ void scroll_mgr::dynamic_page_size(double NominalWidth, double MinWidth, double 
 
    if (NominalWidth < m_min_width) NominalWidth = m_min_width;
 
-   if (NominalWidth >= m_view->get<double>(FID_Width)) acResize(m_page, NominalWidth, Height, 0);
+   Unit view_width;
+   m_view->getWidth(view_width);
+   if (NominalWidth >= view_width) acResize(m_page, NominalWidth, Height, 0);
    else {
       m_page->setWidth(Unit(1.0, FD_SCALED));
       m_page->setHeight(Height);

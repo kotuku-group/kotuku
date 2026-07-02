@@ -46,8 +46,9 @@ document access.  XQuery support excludes the following:
 
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/xquery.h>
-#include <kotuku/strings.hpp>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
+#include <kotuku/strings.hpp>
 #include <array>
 #include <format>
 #include <functional>
@@ -164,7 +165,7 @@ static ERR MODExpunge(void)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -338,7 +339,7 @@ ERR XValueToString(const XPathValue *Value, std::string *Result)
 
 #include "xml_class.cpp"
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "XTag", { sizeof(XTag), alignof(XTag) } },
    { "XPathValue", { sizeof(XPathValue), alignof(XPathValue) } }
 };

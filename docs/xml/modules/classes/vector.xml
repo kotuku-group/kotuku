@@ -471,6 +471,17 @@
     </field>
 
     <field>
+      <name>InnerMiterLimit</name>
+      <comment>Controls how far an inner stroke miter can extend at concave joins.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>InnerMiterLimit is a stroker tuning value used with <fl>InnerJoin</fl> when the inner side of a stroked path turns back on itself.  It limits the inner miter generated for <code>MITER</code>, and for the miter phase of <code>ROUND</code> and <code>JAG</code>, before the renderer falls back to the bevelled inner join shape.  This is separate from <fl>MiterLimit</fl>, which applies to the outer <fl>LineJoin</fl>.</p>
+<p>Leave this field at zero unless the selected <fl>InnerJoin</fl> is visibly truncating an inner corner too early.  If adjustment is needed, use the smallest value that preserves the intended corner shape: values just above <code>1</code> keep joins conservative, while larger values allow longer and sharper inner miters.  Reduce the value, or return it to zero, if the stroke develops spikes or unwanted self-overlap at tight corners.</p>
+      </description>
+    </field>
+
+    <field>
       <name>LineCap</name>
       <comment>The shape to be used at the start and end of a stroked path.</comment>
       <access read="R" write="S">Read/Set</access>

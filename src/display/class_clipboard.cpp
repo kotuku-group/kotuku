@@ -32,6 +32,7 @@ display initialisation.
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/time.h>
 
 #ifdef _WIN32
 using namespace display;
@@ -111,7 +112,9 @@ void clean_clipboard(void)
    if (not time.ok()) return;
 
    time->query();
-   int64_t now = time->get<int64_t>(FID_Timestamp) / 1000000LL;
+   int64_t timestamp;
+   time->getTimestamp(timestamp);
+   int64_t now = timestamp / 1000000LL;
    int64_t yesterday = now - (24 * 60LL * 60LL);
 
    DirInfo *dir;
@@ -923,7 +926,7 @@ ERR create_clipboard_class(void)
       fl::Methods(clClipboardMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(objClipboard)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    int pid;
    if (!CurrentTask()->getProcess(pid)) glProcessID = std::to_string(pid);

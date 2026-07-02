@@ -24,7 +24,7 @@ end
 function reportFeedback(self:table)
    self.events.activate ?! return
    text = self.text.string
-   hash = string.hash(text)
+   hash = text ? string.hash(text) :> 0
    if hash != self.hash then
       self.hash = hash
       self.events.activate(self, text)

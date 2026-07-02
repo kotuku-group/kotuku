@@ -8,58 +8,9 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
   cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<span>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
 
-  privateNames({ "CoreBase" })
+  privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
-  priority([==[
-#ifndef NDEBUG
- #ifndef _MSC_VER
-  #include <signal.h>
- #endif
-#endif
-
-// For use in requires statements
-template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcComplete = requires { sizeof(T); };
-template <typename T> concept pcObject = pcComplete<T> and std::is_base_of_v<Object, T>;
-template <typename T> concept pcObjectPointer = std::is_pointer_v<std::remove_reference_t<T>> and
-   pcComplete<std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>> and
-   std::is_base_of_v<Object, std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>>;
-
-#ifndef DEFINE_ENUM_FLAG_OPERATORS
-template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<1> { typedef int8_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<2> { typedef int16_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<4> { typedef int type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<8> { typedef int64_t type; };
-// used as an approximation of std::underlying_type<T>
-template <class T> struct _ENUM_FLAG_SIZED_INTEGER { typedef typename _ENUM_FLAG_INTEGER_FOR_SIZE<sizeof(T)>::type type; };
-
-#define DEFINE_ENUM_FLAG_OPERATORS(ENUMTYPE) \
-constexpr ENUMTYPE operator | (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) | ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator & (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) & ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator ~ (ENUMTYPE a) noexcept { return ENUMTYPE(~((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a)); } \
-constexpr ENUMTYPE operator ^ (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ^ ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator |= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) |= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator &= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) &= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }
-#endif
-
-template<typename T>
-constexpr bool defined(T flags, T test_flag) noexcept {
-   static_assert(std::is_enum_v<T>, "Type must be an enum");
-   using underlying = std::underlying_type_t<T>;
-   return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
-}
-
-constexpr int RESOURCE_ID_OFFSET = -1;
-
-  ]==])
-
-  loadFile(glPath .. 'common.tdl')
   loadFile(glPath .. 'common-graphics.tdl')
-
-  flags("STR", { bits=32 },
-     "MATCH_CASE|CASE: Perform a case-sensitive match.",
-     "MATCH_LEN: The strings must be of equal length to be matched.")
 
   flags("MSF", { comment="Message flags." },
      "UPDATE: If `Type` matches a queued message, update that message's data in place.",
@@ -80,38 +31,9 @@ constexpr int RESOURCE_ID_OFFSET = -1;
      "RECALL: Set if the subscriber needs to manually check for incoming/outgoing data.  This is supported as a one-off check, so the flag will be disabled automatically when the subscriber is called.",
      "ALWAYS_CALL: Always call this FD's handler prior to the process going to sleep.")
 
-  flags("TSF", { comment="Task flags" },
-    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
-    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
-    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
-    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
-    "VERBOSE: Enable verbose logging.",
-    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
-    "DETACHED: Forces the new process to be detached from the parent.",
-    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
-    "PIPE: Enable the output pipe to the launched process so that it can read data.")
-
-  flags("MHF", { comment="Internal options for requesting function tables from modules." },
-    "STATIC: Keep the module code in memory",
-    "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
-
   flags("MTF", { comment="MoveToPoint flags" }, "X", "Y", "Z", "ANIM", "RELATIVE")
 
   flags("VLF", { comment="VlogF flags" }, "BRANCH", "ERROR", "WARNING", "CRITICAL", "INFO", "API", "DETAIL", "TRACE", "FUNCTION")
-
-  flags("MOF", { comment="Module flags" },
-    "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
-    "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
-    "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
-
-  flags("THF", { comment="Thread flags" },
-    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
-
-  enums("FDT", { type="int", start=0, comment="Flags for the SetDate() file method." },
-    "MODIFIED: The date on which the file was last modified.",
-    "CREATED: The date on which the file was created.  On some host platforms this datestamp may be read-only.",
-    "ACCESSED: The date on which the file was last accessed by a user or application.",
-    "ARCHIVED: The date on which the file was most recently archived.  Not supported by most filesystems.")
 
   flags("VOLUME", { comment="Options for SetVolume()" },
     "REPLACE: If the volume already exists, all paths that are attached to it will be replaced with the new path setting.",
@@ -129,23 +51,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "NO_DEEP_SCAN: Do not perform more than one iteration when resolving the source file path.",
     "PATH: Use the `PATH` environment variable to resolve the file name in the `Path` parameter.",
     "CASE_SENSITIVE: For use on host systems that use case-insensitive file systems such as Windows; this option checks that the discovered file is a case-sensitive match to the Path.")
-
-  -- NB: The MFF flags are duplicated in the FileSystem's Win32 code if you're going to change these
-
-  flags("MFF", { comment="Flags for the File Watch() method." },
-    "READ: File was accessed (read).",
-    "MODIFY|WRITE: File modified via write or truncation.",
-    "CREATE: New file/link created or renamed in folder.",
-    "DELETE: Existing file deleted",
-    "MOVED|RENAME: Existing file moved or renamed.",
-    "ATTRIB: File permissions or datestamp changed.",
-    "OPENED: Existing file was opened.",
-    "CLOSED: An opened file has been closed.",
-    "UNMOUNT: Host filesystem was unmounted.",
-    "FOLDER: Folder identifier; if passed to @File.Watch() then indicates a preference for folder events only.",
-    "FILE: File identifier; if passed to @File.Watch() then indicates a preference for file events only.",
-    "SELF: Event applies to the monitored folder and not a contained item",
-    "DEEP: Receive notifications from sub-folders (Windows only).")
 
   enums("STT", { type="int", start=1, comment="Types for StrDatatype()." },
     "NUMBER: The string represents a whole number.",
@@ -296,7 +201,6 @@ constexpr int RESOURCE_ID_OFFSET = -1;
     "TOTAL_SHARED_MEMORY: The total amount of shared memory in use (system wide).",
     "LOG_DEPTH: The current depth of log messages.",
     "JNI_ENV: Return the current JNI environment string.",
-    "THREAD_ID: Return the ID of the current thread.",
     "PROCESS_STATE: Life-cycle stage of the running process",
     "TOTAL_MEMORY: The total amount of installed memory.",
     "TOTAL_SWAP: The total amount of available swap space.",
@@ -487,80 +391,12 @@ constexpr int RESOURCE_ID_OFFSET = -1;
 
 typedef AC ACTIONID;
 
-#ifndef __GNUC__
-#define __attribute__(a)
-#endif
-
 struct StructInfo {
    uint16_t Size;       // Byte size of the structure (sizeof)
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
 };
 
-typedef const std::vector<std::pair<std::string, StructInfo>> STRUCTS;
-typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
-
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
-
-#ifndef STRINGIFY
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#endif
-
-#define MOD_IDL nullptr
-
-#ifdef KOTUKU_STATIC
-__export void CloseCore(void);
-__export ERR OpenCore(struct OpenInfo *, struct CoreBase **);
-#else
-__export struct ModHeader ModHeader;
-#endif
-
-#ifdef MOD_NAME
-#ifdef KOTUKU_STATIC
-#define KOTUKU_MOD(init,close,open,expunge,test,IDL,Structures) static struct ModHeader ModHeader(init, close, open, expunge, test, IDL, Structures, TOSTRING(MOD_NAME), TOSTRING(MOD_NAMESPACE));
-#else
-#define KOTUKU_MOD(init,close,open,expunge,test,IDL,Structures) struct ModHeader ModHeader(init, close, open, expunge, test, IDL, Structures, TOSTRING(MOD_NAME), TOSTRING(MOD_NAMESPACE));
-#endif
-#define MOD_PATH ("modules:" TOSTRING(MOD_NAME))
-#else
-#define MOD_NAME nullptr
-#endif
-
-namespace kt {
-
-#ifdef PRINTF64I
-  #define PF64 "I64d"
-#elif PRINTF64_PRID
-  #define PF64 PRId64
-#else
-  #define PF64 "lld"
-#endif
-
-// Use DEBUG_BREAK in critical areas where you would want to break in gdb.  This feature will only be compiled
-// in to debug builds.
-
-#ifndef NDEBUG
- #ifdef _MSC_VER
-  #define DEBUG_BREAK __debugbreak();
- #elif __linux__
-  #define DEBUG_BREAK raise(SIGTRAP);
- #else
-  #define DEBUG_BREAK
- #endif
-#else
- #define DEBUG_BREAK
-#endif
-
-template <class T>
-constexpr T roundup(T Num, T Alignment) {
-   return ((Num + Alignment - 1) / Alignment) * Alignment;
-}
-
-[[deprecated]] inline int F2I(double val) noexcept {
-   return std::lrint(val);
-}
-
-} // namespace
 
 constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 
@@ -570,30 +406,17 @@ constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 #define FD_PTR64 0
 #endif
 
-template <class T>
-inline void nextutf8(T *&Str) noexcept {
-   if (*Str) {
-      for (++Str; (((unsigned char)*Str) & 0xc0) IS 0x80; ++Str);
-   }
-}
+// Forward declared classes
 
-//********************************************************************************************************************
-
-namespace kt {
-
-class FloatRect {
-   public:
-   double X, Y, Width, Height;
-   constexpr FloatRect() noexcept = default;
-   constexpr FloatRect(double Value) noexcept : X(Value), Y(Value), Width(Value), Height(Value) { }
-   constexpr FloatRect(double pX, double pY, double pWidth, double pHeight) noexcept : X(pX), Y(pY), Width(pWidth), Height(pHeight) { }
-   constexpr double left() const noexcept { return X; }
-   constexpr double top() const noexcept { return Y; }
-   constexpr double right() const noexcept { return X + Width; }
-   constexpr double bottom() const noexcept { return Y + Height; }
-};
-
-}
+class objScript;
+class objConfig;
+class objCompression;
+class objCompressedStream;
+class objFile;
+class objModule;
+class objStorageDevice;
+class objThread;
+class objTask;
 
 ]==])
 
@@ -653,57 +476,6 @@ class FloatRect {
      bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
-  struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
-    cstr Name   # Name of the field
-    uint Type   # Type of the field
-  ]])
-
-  struct("Function", { comment="Function list array structure" }, [[
-    ptr Address     # Pointer to the function entry point
-    cstr Name       # Name of the function
-    cstruct(*FunctionField) Args  # A list of parameters accepted by the function
-  ]])
-
-  c_insert([[
-using ModClose   = void (*)(OBJECTPTR);
-using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
-using ModOpen    = ERR (*)(OBJECTPTR);
-using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(std::string_view, int *, int *);
-
-  ]])
-
-  struct("ModHeader", { comment="Module file header", restrict="c" }, [[
-    int(MHF) Flags                 # Special flags, type of function table wanted from the Core
-    cstr Definitions               # Module definition string, usable by run-time languages such as Tiri
-    fptr(error obj struct(*CoreBase)) Init # A one-off initialisation routine for when the module is first opened.
-    fptr(void obj) Close           # A function that will be called each time the module is closed.
-    fptr(error obj) Open           # A function that will be called each time the module is opened.
-    fptr(error) Expunge            # Reference to an expunge function to terminate the module.
-    fptr(void strview &int &int) Test # A function that can run embedded unit tests in development builds.
-    cstr Name                      # Name of the module
-    cstr Namespace                 # A reserved system-wide namespace for function names.
-  ]],
-  [[
-   STRUCTS *StructDefs;
-   class objRootModule *Root;
-
-   ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
-      CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
-      Flags         = MHF::DEFAULT;
-      Definitions   = pDef;
-      StructDefs    = pStructs;
-      Init          = pInit;
-      Close         = pClose;
-      Open          = pOpen;
-      Expunge       = pExpunge;
-      Test          = pTest;
-      Name          = pName;
-      Namespace     = pNamespace;
-      Root          = nullptr;
-   }
-  ]])
-
   struct("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
     cstr  Name      # The name of the field, e.g. `Width`
     ptr   GetField  # `void GetField(*Object, APTR Result);`
@@ -723,35 +495,6 @@ using ModTest    = void (*)(std::string_view, int *, int *);
   ]],
   [[
    template <class T> FieldDef(CSTRING pName, T pValue) : Name(pName), Value(int(pValue)) { }
-  ]])
-
-  struct("TimeZoneTransition", { comment="Time zone transition information for GetTimeZoneInfo()" }, [[
-     large Instant        # Unix epoch microseconds at which the transition occurs.
-     string Abbreviation  # Short name where available, e.g. GMT, BST, PST.
-     int OffsetBefore     # UTC offset in seconds before the transition.
-     int OffsetAfter      # UTC offset in seconds after the transition.
-     int DaylightSaving   # 1 if the resulting period observes daylight-saving time.
-  ]],
-  [[
-   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
-  ]])
-
-  struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
-     string ZoneID      # Preferred public ID, e.g. Europe/London or UTC.
-     string NativeID    # Host-native ID, e.g. GMT Standard Time on Windows.
-     string Source      # "tzif", "win32", or "utc".
-     string DataPath    # TZif path on Linux, otherwise empty.
-     string Version     # TZDB/source version if available, otherwise empty.
-     vector(struct(TimeZoneTransition)) Transitions # Transitions available for the requested range.
-     int BaseOffset     # Standard UTC offset in seconds.
-     short StartYear    # Inclusive requested start year.
-     short EndYear      # Inclusive requested end year.
-     char IsLocal       # 1 if ZoneID requested the local system zone.
-     char IsFallback    # 1 if UTC fallback was used.
-  ]],
-  [[
-   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
-   TimeZoneInfo(int) : TimeZoneInfo() { }
   ]])
 
   struct("SystemState", { comment="Returned by the GetSystemState() function." }, [[
@@ -949,7 +692,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     ptr SetValue       # A virtual function that will set the value for this field
     fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
-    uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
+    uint FieldID       # 32-bit hash from fieldhash()
     ushort Offset      # Field offset within the object
     ushort Index       # Field array index
     uint Flags         # Special flags that describe the field
@@ -1063,7 +806,8 @@ using ModTest    = void (*)(std::string_view, int *, int *);
     "AsyncCancel",
     "AsyncPending",
     "AsyncWait",
-    "ClassDatabase")
+    "ClassDatabase",
+    "GetThreadID")
 
   c_insert([==[
 
@@ -1084,22 +828,22 @@ inline ERR DeregisterFD(HOSTHANDLE Handle) {
 
 inline APTR GetResourcePtr(RES ID) { return (APTR)(MAXINT)GetResource(ID); }
 
-[[nodiscard]] constexpr inline const char* to_cstring(const char* A) { return A; }
-[[nodiscard]] inline const char* to_cstring(const std::string &A) { return A.c_str(); }
+[[nodiscard]] constexpr inline CSTRING to_cstring(CSTRING A) { return A; }
+[[nodiscard]] inline CSTRING to_cstring(const std::string &A) { return A.c_str(); }
 
 #ifndef PRV_CORE_DATA
 // These overloaded functions can't be used in the Core as they will confuse the compiler in key areas.
 
 inline ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION Callback) {
-   return SubscribeAction(Object,Action,&Callback);
+   return SubscribeAction(Object, Action, &Callback);
 }
 
 inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
-   return SubscribeEvent(Event,&Callback,Handle);
+   return SubscribeEvent(Event, &Callback, Handle);
 }
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
-   return SubscribeTimer(Interval,&Callback,Subscription);
+   return SubscribeTimer(Interval, &Callback, Subscription);
 }
 
 // This template leverages pcObject to be the preferred entry point for any Object type or derivation.
@@ -1137,32 +881,13 @@ inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
 }
 #endif
 
-namespace kt {
-
-inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
-   memmove(Dest, Src, Length);
-}
-
-inline void clearmem(APTR Memory, std::size_t Length) {
-   if (Memory) memset(Memory, 0, Length);
-}
-
-static thread_local int _tlUniqueThreadID = 0;
-
-[[nodiscard]] inline int _get_thread_id(void) {
-   if (_tlUniqueThreadID) return _tlUniqueThreadID;
-   _tlUniqueThreadID = GetResource(RES::THREAD_ID);
-   return _tlUniqueThreadID;
-}
-
-} // namespace
-
 #include <kotuku/log.h>
 #include <kotuku/objects.h>
 
 inline OBJECTID CurrentTaskID() { return ((OBJECTPTR)CurrentTask())->UID; }
 inline APTR SetResourcePtr(RES Res, APTR Value) { return (APTR)(MAXINT)(SetResource(Res, (MAXINT)Value)); }
 
+#ifdef PRV_METACLASS
 // obj_read is used to build efficient customised jump tables for object calls.
 
 struct obj_read {
@@ -1210,15 +935,21 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-
+#endif
 ]==])
 
-  -- Forward declared classes
+  -- Declare classes for their inclusion in outgoing Core documentation
 
   klass("Script")
   klass("Config")
   klass("Compression")
   klass("CompressedStream")
+  klass("File")
+  klass("StorageDevice")
+  klass("Thread")
+  klass("Task")
+  klass("Time")
+  klass("Module")
 
   methods("MetaClass", "mc", {
     { id=1, name="FindField" }
@@ -1255,146 +986,6 @@ inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
-
-  klass("StorageDevice", { src="../classes/class_storagedevice.cpp", output="../classes/class_storagedevice_def.cpp" }, [[
-    large(DEVICE) DeviceFlags  # Flags identifying the type of media
-    large DeviceSize           # Size of the device
-    large BytesFree            # Bytes available to the user
-    large BytesUsed            # Bytes already used
-    string DeviceID            # A unique ID for the mounted device
-    string Volume              # The volume name of the device to query
-  ]])
-
-  methods("File", "Fl", {
-    { id=1,  name="StartStream" },
-    { id=2,  name="StopStream" },
-    { id=3,  name="Delete" },
-    { id=4,  name="Move" },
-    { id=5,  name="Copy" },
-    { id=6,  name="SetDate" },
-    { id=7,  name="ReadLine" },
-    { id=8,  name="BufferContent" },
-    { id=9,  name="Next" },
-    { id=10, name="Watch" }
-  })
-
-  klass("File", { version=1.2,
-    src="../classes/class_file.cpp",
-    output="../classes/class_file_def.c",
-    extended=true, references={ 'PERMIT' }
-  }, [[
-    large     Position  # The current read/write byte position in a file.
-    string    Path      # The file path.
-    int(FL)   Flags     # File flags and options.
-    int(PERMIT) Permissions
-    array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
-    large     Size      # The size of the file's content.
-    ~struct(DateTime) Date
-    ~struct(DateTime) Created
-  ]],
-  nil,
-  [[
-   inline std::string readLine() {
-      std::string str;
-      struct fl::ReadLine args { &str };
-      Action(fl::ReadLine::id, this, &args);
-      return str;
-   }
-  ]])
-
-  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
-     fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
-  ]])
-
-  methods("Task", "Task", {
-    { id=1, name="Expunge" },
-    { id=2, name="AddArgument" },
-    { id=3, name="Quit" },
-    { id=4, name="GetEnv" },
-    { id=5, name="SetEnv" }
-  })
-
-  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c", extended=true }, [[
-    string LaunchPath
-    string Name
-    string Location
-    string Path
-    string ProcessPath
-    double TimeOut
-    vector(string) Parameters
-    int(TSF) Flags
-    int ReturnCode
-    int ProcessID    # Native process ID of the activated task
-  ]])
-
-  methods("Thread", "Th", {
-    { id=1, name="SetData" }
-  })
-
-  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c", extended=true }, [[
-    func  Callback     # This function will be called when the thread finishes
-    func  Routine      # This function will be called when the thread starts
-    ptr   Data         # User data pointer
-    int   DataSize     # Size of user data
-    error Error        # Error code returned by the thread on completion
-    int(THF) Flags     # Optional flags
-  ]])
-
-  methods("Module", "Mod", {
-    { id=1, name="ResolveSymbol" },
-    { id=2, name="Test" }
-  })
-
-  klass("Module", { src="../classes/class_module.cpp", extended=true }, [[
-    cstruct(*Function) FunctionList # Array of functions
-    ptr ModBase                     # Ptr to function jump table
-    obj(RootModule) Root            # Shared details on the module
-    struct(*ModHeader) Header       # For creating in-memory modules only.
-    string Name                     # Name of the module
-    int(MOF) Flags                  # Optional flags
-  ]],
-  nil,
-  [[
-   static ERR load(std::string Name, OBJECTPTR *Module = nullptr, APTR Functions = nullptr) {
-      if (auto module = objModule::create::global(kt::FieldValue(FID_Name, std::string_view(Name)))) {
-         #ifdef KOTUKU_STATIC
-            if (Module) *Module = module;
-            if (Functions) ((APTR *)Functions)[0] = nullptr;
-            return ERR::Okay;
-         #else
-            APTR functionbase;
-            if (!module->getModBase(functionbase)) {
-               if (Module) *Module = module;
-               if (Functions) ((APTR *)Functions)[0] = functionbase;
-               return ERR::Okay;
-            }
-            else return ERR::GetField;
-         #endif
-      }
-      else return ERR::CreateObject;
-   }
-  ]])
-
-  -- Note that the fields following SystemTime are identical to struct DateTime
-
-  methods("Time", "Pt", {
-    { id=1, name="SetTime" },
-    { id=2, name="GetTimeZoneInfo" }
-  })
-
-  klass("Time", { src="../classes/class_time.cpp", output="../classes/class_time_def.c" }, [[
-    large SystemTime  # Total number of microseconds passed since the system base time
-    int Year          # Year   (-ve for BC, +ve for AD)
-    int Month         # Month  (1 - 12)
-    int Day           # Day    (1 - 31)
-    int Hour          # Hour   (0 - 23)
-    int Minute        # Minute (0 - 59)
-    int Second        # Second (0 - 59)
-    int TimeZone      # 0 is GMT, range is +1300 or -1300
-    int DayOfWeek     # Day of week (0 = Sunday ..)
-    int MilliSecond   # Millisecond (0 - 999)
-    int MicroSecond   # Microsecond  (0 - 999999)
-  ]])
 
   c_insert([==[
 #ifdef __unix__
@@ -1488,7 +1079,7 @@ struct evHotplug {
 {
    char *newstr;
    if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
-      copymem(String.data(), newstr, String.size());
+      memmove(newstr, String.data(), String.size());
       newstr[String.size()] = 0;
       return newstr;
    }
@@ -1496,60 +1087,6 @@ struct evHotplug {
 }
 
 } // pf namespace
-
-namespace fl {
-
-// Read endian values from files and objects.
-
-template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
-{
-   uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (!Action(AC::Read, Object, &read)) {
-      if (read.Result IS sizeof(T)) {
-         if constexpr (std::endian::native == std::endian::little) {
-            *Result = ((T *)data)[0];
-         }
-         else {
-            switch(sizeof(T)) {
-               case 2:  *Result = (data[1]<<8) | data[0]; break;
-               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
-               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
-               default: *Result = ((T *)data)[0];
-            }
-         }
-         return ERR::Okay;
-      }
-      else return ERR::Read;
-   }
-   else return ERR::Read;
-}
-
-template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
-{
-   uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (!Action(AC::Read, Object, &read)) {
-      if (read.Result IS sizeof(T)) {
-         if constexpr (std::endian::native == std::endian::little) {
-            switch(sizeof(T)) {
-               case 2:  *Result = (data[1]<<8) | data[0]; break;
-               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
-               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
-               default: *Result = ((T *)data)[0];
-            }
-         }
-         else {
-            *Result = ((T *)data)[0];
-         }
-         return ERR::Okay;
-      }
-      else return ERR::Read;
-   }
-   else return ERR::Read;
-}
-
-} // fl namespace
 
 // Function construction (refer types.h)
 

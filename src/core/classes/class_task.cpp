@@ -16,7 +16,7 @@ task.  Arguments can be passed to the executable by setting the #Parameters fiel
 use the #Activate() action to run the executable.  If the program executes successfully, the task object can be
 removed and this will not impact the running program.
 
-The task object that represents the active process can be acquired from ~CurrentTask().
+The task object that represents the active process can be acquired from ~Core.CurrentTask().
 
 -END-
 
@@ -1814,7 +1814,7 @@ static ERR TASK_Write(extTask *Task, struct acWrite *Args)
 Actions: Used to gain direct access to a task's actions.
 
 This field provides direct access to the actions of a task, and is intended for use with the active task object
-returned from ~CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
+returned from ~Core.CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
 Kotuku's object oriented design.
 
 The Actions field points to a lookup table of !ActionEntry items.  To create an action hook, set its `AC`
@@ -1830,9 +1830,9 @@ if (!AccessObject(CurrentTask(), 5000, &task)) {
 
 *********************************************************************************************************************/
 
-static ERR GET_Actions(extTask *Self, struct ActionEntry **Value)
+static ERR GET_Actions(extTask *Self, std::span<ActionEntry> &Value)
 {
-   *Value = Self->Actions;
+   Value = std::span<ActionEntry>(Self->Actions.data(), Self->Actions.size());
    return ERR::Okay;
 }
 
@@ -2447,7 +2447,7 @@ static const FieldArray clFields[] = {
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },
    { "ProcessID",       FDF_INT|FDF_RI },
    // Virtual fields
-   { "Actions",         FDF_VIRTUAL|FDF_POINTER|FDF_R|FDF_PURE,      GET_Actions },
+   { "Actions",         FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Actions, nullptr, "ActionEntry" },
    { "AffinityMask",    FDF_VIRTUAL|FDF_INT64|FDF_RW|FDF_PURE,       GET_AffinityMask, SET_AffinityMask },
    { "Args",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,             nullptr, SET_Args },
    { "Keys",            FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R,  GET_Keys },
