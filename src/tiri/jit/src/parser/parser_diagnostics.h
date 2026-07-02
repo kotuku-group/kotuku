@@ -37,6 +37,7 @@ enum class ParserErrorCode : uint16_t {
    RecoverySkippedTokens,   // Info: tokens skipped during error recovery
    AssignToConstant,        // Cannot assign to a registered constant
    ConstRequiresInitialiser, // Const variable requires an initialiser
+   OverrideProtectedGlobal, // Cannot override a host pre-registered global
    InvalidAssignment        // Assignment form is syntactically valid but semantically forbidden
 };
 

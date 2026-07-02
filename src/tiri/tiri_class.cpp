@@ -612,6 +612,7 @@ static ERR TIRI_Query(extTiri *Self)
          SetName(core, "mSys");
          new_module(Self->Lua, core);
          lua_setglobal(Self->Lua, "mSys");
+         lua_protect_globals(Self->Lua);
       }
       else {
          log.warning("Failed to create module object.");
