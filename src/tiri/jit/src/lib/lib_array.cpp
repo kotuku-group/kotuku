@@ -2701,6 +2701,24 @@ static GCstr * array_concat_value(lua_State *L, cTValue *Value)
    return nullptr;
 }
 
+LJLIB_CF(array_append)
+{
+   TValue *left = lj_lib_checkany(L, 1);
+   lj_lib_checkany(L, 2);
+
+   if (tvisarray(left)) {
+      GCarray *arr = arrayV(left);
+      lj_cf_array_push(L);
+      setarrayV(L, L->base, arr);
+      L->top = L->base + 1;
+      return 1;
+   }
+
+   L->top = L->base + 2;
+   lua_concat(L, 2);
+   return 1;
+}
+
 static int array_concat_meta(lua_State *L)
 {
    cTValue *left = L->base;
@@ -2843,6 +2861,7 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_prototype("array", "clear", {}, { TiriType::Array });
    reg_iface_prototype("array", "resize", {}, { TiriType::Array, TiriType::Num });
    reg_iface_prototype("array", "push", {}, { TiriType::Array, TiriType::Any });
+   reg_iface_prototype("array", "append", { TiriType::Any }, { TiriType::Any, TiriType::Any });
    reg_iface_prototype("array", "pop", { TiriType::Any }, { TiriType::Array });
    reg_iface_prototype("array", "copy", {}, { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "getString", { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });
