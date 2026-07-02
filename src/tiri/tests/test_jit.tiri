@@ -806,6 +806,77 @@ end
    assert(count_jit_traces(30) > 0, "Expected nil array metatable fallback to produce a JIT trace")
 end
 
+@Test(hotpath=80) function ArrayMethodInstanceSlotMutationExitsTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local arr = array.new("")
+   local mt = {
+      clear = function(Self)
+         array.resize(Self, 0)
+         array.push(Self, "first")
+      end
+   }
+   debug.setMetatable(arr, mt)
+
+   local result = ""
+   for i = 1, 80 do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "firstbase", f"Expected first instance method result before mutation, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected per-instance array method call to produce a JIT trace")
+
+   mt.clear = function(Self)
+      array.resize(Self, 0)
+      array.push(Self, "second")
+   end
+
+   try
+      result = array_clear_then_push(arr)
+      assert(result is "secondbase", f"Expected mutated instance method to be honoured, got '{result}'")
+   except e
+      debug.setMetatable(arr, nil)
+      error(e)
+   end
+
+   debug.setMetatable(arr, nil)
+end
+
+@Test(hotpath=80) function ArrayMethodBaseSlotMutationExitsTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local arr = array.new("")
+   local base_mt = debug.getMetatable(arr)
+   local original_clear = base_mt.clear
+   local result = ""
+
+   for i = 1, 80 do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected base method result before mutation, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected base array method call to produce a JIT trace")
+
+   base_mt.clear = function(Self)
+      array.resize(Self, 0)
+      array.push(Self, "patched")
+   end
+
+   try
+      result = array_clear_then_push(arr)
+      assert(result is "patchedbase", f"Expected mutated base method to be honoured, got '{result}'")
+   except e
+      base_mt.clear = original_clear
+      error(e)
+   end
+
+   base_mt.clear = original_clear
+end
+
 @Test(hotpath=80) function ArrayNewLiteralTypeTraces()
    cached_trace_no = nil
    cached_trace_info = nil

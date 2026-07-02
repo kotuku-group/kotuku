@@ -1677,14 +1677,27 @@ static TRef rec_array_method_lookup(jit_State *J, RecordIndex* ix)
    cTValue *method = lj_tab_getstr(mt, key);
    if (not method or not tvisfunc(method)) return 0;
 
+   RecordIndex mix;
    TRef mtref = ir.fload_tab(ix->tab, IRFL_ARRAY_META);
    if (using_base_mt) {
       int basemt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
       ir.guard_eq(mtref, ir.knull(IRT_TAB), IRT_TAB);
-      ir.guard_eq(lj_ir_ggfload(J, IRT_TAB, basemt_offset), lj_ir_ktab(J, mt), IRT_TAB);
+      mix.tab = lj_ir_ggfload(J, IRT_TAB, basemt_offset);
+      ir.guard_eq(mix.tab, lj_ir_ktab(J, mt), IRT_TAB);
    }
-   else ir.guard_eq(mtref, lj_ir_ktab(J, mt), IRT_TAB);
-   return lj_ir_kgc(J, gcV(method), IRT_FUNC);
+   else {
+      mix.tab = mtref;
+      ir.guard_eq(mix.tab, lj_ir_ktab(J, mt), IRT_TAB);
+   }
+
+   settabV(J->L, &mix.tabv, mt);
+   setstrV(J->L, &mix.keyv, key);
+   mix.key = ix->key;
+   mix.val = 0;
+   mix.idxchain = 0;
+   TRef method_ref = lj_record_idx(J, &mix);
+   ir.guard_eq(method_ref, lj_ir_kfunc(J, funcV(method)), IRT_FUNC);
+   return method_ref;
 }
 
 //********************************************************************************************************************
