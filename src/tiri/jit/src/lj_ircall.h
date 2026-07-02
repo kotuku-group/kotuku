@@ -210,6 +210,7 @@ typedef struct CCallInfo {
   /* Native array helpers */ \
   _(ANY,        lj_arr_getidx,     4,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_setidx,     4,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_push1,      3,   S, NIL, CCI_L|CCI_T) \
   /* Try-except exception handling */ \
   _(ANY,        lj_try_enter,      4,  FS, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_try_leave,      1,  FS, NIL, CCI_L) \

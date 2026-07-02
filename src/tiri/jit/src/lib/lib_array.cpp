@@ -2701,7 +2701,7 @@ static GCstr * array_concat_value(lua_State *L, cTValue *Value)
    return nullptr;
 }
 
-LJLIB_CF(array_append)
+LJLIB_CF(array_append)      LJLIB_REC(.)
 {
    TValue *left = lj_lib_checkany(L, 1);
    lj_lib_checkany(L, 2);

@@ -692,6 +692,14 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             if (existing->primary IS TiriType::Any) continue; // 'any' accepts everything including nil
             if (value_type.primary IS TiriType::Nil) continue;  // Nil is always allowed as a "clear" operation
 
+            if (Payload.op IS AssignmentOperator::Concat) {
+               // Compound concatenation (..=) on an array target appends in place via array.append(),
+               // preserving the array type; the RHS is validated by push() at runtime.
+               if (existing->primary IS TiriType::Array) continue;
+               // Concatenating a number onto a string target still yields a string.
+               if (existing->primary IS TiriType::Str and value_type.primary IS TiriType::Num) continue;
+            }
+
             if (value_type.primary != TiriType::Any and value_type.primary != existing->primary) {
                // Type mismatch
                TypeDiagnostic diag;

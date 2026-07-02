@@ -330,6 +330,20 @@ end
    assert(store.label is 'xy', 'field string ..= should still concatenate and store a string')
 end
 
+@Test function ArrayConcatAssignmentOnTypedLocals()
+   local buf = array<byte>
+   buf ..= 'Hi'
+   buf ..= 33
+
+   assert(#buf is 3, 'typed local byte array ..= should append to the array')
+   assert(buf:getString() is 'Hi!', 'typed local byte array ..= should append string bytes and numeric bytes')
+
+   local text = 'x'
+   text ..= 42
+
+   assert(text is 'x42', 'typed local string ..= should accept a numeric RHS')
+end
+
 @Test function ArrayConcatAssignmentUsesFirstReturn()
    function byte_tail()
       return 'Z', 'ignored'

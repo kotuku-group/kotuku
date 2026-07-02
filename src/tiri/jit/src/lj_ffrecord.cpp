@@ -558,6 +558,77 @@ static bool array_elem_irtype(AET ElemType, IRType &ResultType)
 }
 
 //********************************************************************************************************************
+// Record array.append(receiver, value) - the helper behind compound concatenation (..=).  Array receivers append in
+// place via lj_arr_push1(); string and number receivers concatenate to a string, mirroring BC_CAT recording.
+
+static void recff_array_append(jit_State* J, RecordFFData* rd)
+{
+   TRef left = J->base[0];
+   TRef right = left ? J->base[1] : 0;
+   if (!right) {
+      recff_nyi(J, rd);
+      return;
+   }
+
+   if (tref_isarray(left)) {
+      GCarray *arr = arrayV(&rd->argv[0]);
+      cTValue *val = &rd->argv[1];
+
+      // Only record combinations that lj_arr_push1() implements with array.push() semantics.
+      bool supported;
+      switch (arr->elemtype) {
+         case AET::BYTE:
+            supported = tvisstr(val) or tvisnumber(val);
+            break;
+         case AET::INT16:
+         case AET::INT32:
+         case AET::INT64:
+         case AET::FLOAT:
+         case AET::DOUBLE:
+            supported = tvisnumber(val);
+            break;
+         case AET::STR_GC:
+            supported = tvisstr(val);
+            break;
+         case AET::ANY:
+            supported = true;
+            break;
+         default:
+            supported = false;
+            break;
+      }
+
+      if (not supported) {
+         recff_nyi(J, rd);
+         return;
+      }
+
+      // Guard the element type so the trace only runs for arrays matching the recorded semantics.
+      TRef et_ref = emitir(IRT(IR_FLOAD, IRT_U8), left, IRFL_ARRAY_ELEMTYPE);
+      emitir(IRTGI(IR_EQ), et_ref, lj_ir_kint(J, int32_t(arr->elemtype)));
+
+      TRef tmp_ref = recff_tmpref(J, right, IRTMPREF_IN1);
+      recff_ir_call_fixed(J, IRCALL_lj_arr_push1, left, tmp_ref, TREF_NIL, TREF_NIL);
+      J->base[0] = left;  // append() returns the receiver array.
+   }
+   else if (tref_isnumber_str(left) and tref_isnumber_str(right)) {
+      if (tref_isnumber(left)) {
+         left = emitir(IRT(IR_TOSTR, IRT_STR), left, tref_isnum(left) ? IRTOSTR_NUM : IRTOSTR_INT);
+      }
+      if (tref_isnumber(right)) {
+         right = emitir(IRT(IR_TOSTR, IRT_STR), right, tref_isnum(right) ? IRTOSTR_NUM : IRTOSTR_INT);
+      }
+      TRef hdr = recff_bufhdr(J);
+      TRef tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), hdr, left);
+      tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, right);
+      J->base[0] = emitir(IRTG(IR_BUFSTR, IRT_STR), tr, hdr);
+   }
+   else {
+      recff_nyi(J, rd);  // Tables and objects with __concat metamethods fall back to the interpreter.
+   }
+}
+
+//********************************************************************************************************************
 
 static void recff_ipairs_aux(jit_State* J, RecordFFData* rd)
 {

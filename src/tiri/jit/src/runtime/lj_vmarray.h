@@ -19,6 +19,10 @@ extern "C" [[nodiscard]] int lj_arr_set(lua_State *, cTValue *, cTValue *, cTVal
 extern "C" void lj_arr_getidx(lua_State *, GCarray *, int32_t idx, TValue *);
 extern "C" void lj_arr_setidx(lua_State *, GCarray *, int32_t idx, cTValue *);
 
+// Append a single value to an array (array.append() semantics), called from JIT traces
+
+extern "C" void lj_arr_push1(lua_State *, GCarray *, cTValue *);
+
 // Safe array get - returns nil for out-of-bounds instead of throwing error
 // Used by safe navigation operator (?[]) on arrays
 
