@@ -44,6 +44,13 @@ if (KOTUKU_DEFS_AVAILABLE)
       COMMAND ${CMAKE_COMMAND} -E touch "${CORE_STAMP}"
       DEPENDS
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/time.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/compression.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/filesystem.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/module.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/config.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/time.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/processes.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
