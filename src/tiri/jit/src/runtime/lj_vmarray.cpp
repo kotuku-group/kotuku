@@ -379,6 +379,14 @@ extern "C" void lj_arr_putstr(lua_State *L, GCarray *Array, GCstr *Str)
 }
 
 //********************************************************************************************************************
+// Append the bytes currently held by a string buffer to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putsbuf(lua_State *L, GCarray *Array, SBuf *Buf)
+{
+   lj_arr_append_bytes(L, Array, Buf->b, sbuflen(Buf));
+}
+
+//********************************************************************************************************************
 // Append an integer formatted with concat/tostring semantics to a byte array from a recorded trace.
 
 extern "C" void lj_arr_putint(lua_State *L, GCarray *Array, int32_t Value)

@@ -434,6 +434,27 @@ end
    assert(result:getString() is 'a65bcdefghijklmno6.5', 'over-cap concat fallback should still format numbers as text')
 end
 
+@Test function ArrayAppendDirectOverflowAcceptsByteArrayPieces()
+   result = array<byte>
+   source = array<byte> { 88, 89 }
+
+   array.append(result, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+      source, 12, 'q')
+
+   assert(result:getString() is 'abcdefghijklmnopXY12q',
+      'direct byte array append overflow should reduce RHS and append the resulting bytes')
+end
+
+@Test function ArrayAppendDirectOverflowSnapshotsSelfOperand()
+   result = array.new('xy')
+
+   array.append(result, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+      result, 'q')
+
+   assert(result:getString() is 'xyabcdefghijklmnopxyq',
+      'direct byte array append overflow should snapshot self operands before mutation')
+end
+
 @Test function ArrayConcatAssignmentPreservesParenthesisedGroup()
    a = 'a'
    b = 'b'

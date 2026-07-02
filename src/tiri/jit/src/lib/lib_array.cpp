@@ -29,7 +29,6 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
-#include <vector>
 #include <string_view>
 #include <kotuku/strings.hpp>
 #include <kotuku/main.h>
@@ -2694,37 +2693,48 @@ static void array_append_add_len(lua_State *L, MSize &Total, MSize Len)
    Total += Len;
 }
 
-static void array_append_push_number(lua_State *L, SBuf *Scratch, cTValue *Value, std::vector<ArrayAppendPiece> &Pieces,
-   MSize &Total)
+static constexpr int max_array_append_stack_pieces = 16;
+
+static void array_append_store_piece(ArrayAppendPiece *Pieces, int &PieceCount, const ArrayAppendPiece &Piece)
+{
+   lj_assertX(PieceCount < max_array_append_stack_pieces, "array append stack piece overflow");
+   Pieces[PieceCount] = Piece;
+   PieceCount++;
+}
+
+static void array_append_push_number(lua_State *L, SBuf *Scratch, cTValue *Value, ArrayAppendPiece *Pieces,
+   int &PieceCount, MSize &Total)
 {
    MSize offset = sbuflen(Scratch);
    if (tvisint(Value)) lj_strfmt_putint(Scratch, intV(Value));
    else lj_strfmt_putnum(Scratch, Value);
 
    MSize len = sbuflen(Scratch) - offset;
-   Pieces.push_back({ ArrayAppendPiece::Kind::Scratch, nullptr, nullptr, offset, len });
+   array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::Scratch, nullptr, nullptr, offset, len });
    array_append_add_len(L, Total, len);
 }
 
-static void array_append_push_piece(lua_State *L, cTValue *Value, std::vector<ArrayAppendPiece> &Pieces,
+static void array_append_push_piece(lua_State *L, cTValue *Value, ArrayAppendPiece *Pieces, int &PieceCount,
    SBuf *Scratch, MSize &Total)
 {
    if (tvisstr(Value)) {
       GCstr *str = strV(Value);
-      Pieces.push_back({ ArrayAppendPiece::Kind::String, strdata(str), nullptr, 0, str->len });
+      array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::String, strdata(str), nullptr, 0,
+         str->len });
       array_append_add_len(L, Total, str->len);
       return;
    }
 
    if (tvisnumber(Value)) {
-      array_append_push_number(L, Scratch, Value, Pieces, Total);
+      array_append_push_number(L, Scratch, Value, Pieces, PieceCount, Total);
       return;
    }
 
    if (tvisarray(Value)) {
       GCarray *source = arrayV(Value);
       if (source->elemtype IS AET::BYTE) {
-         Pieces.push_back({ ArrayAppendPiece::Kind::ByteArray, nullptr, source, 0, source->len });
+         array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::ByteArray, nullptr, source, 0,
+            source->len });
          array_append_add_len(L, Total, source->len);
          return;
       }
@@ -2737,13 +2747,19 @@ static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
 {
    if (Arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
 
+   if (PieceCount > max_array_append_stack_pieces) {
+      L->top = L->base + 1 + PieceCount;
+      lua_concat(L, PieceCount);
+      PieceCount = 1;
+   }
+
    SBuf *scratch = lj_buf_tmp_(L);
-   std::vector<ArrayAppendPiece> pieces;
-   pieces.reserve(size_t(PieceCount));
+   ArrayAppendPiece pieces[max_array_append_stack_pieces];
+   int piece_count = 0;
 
    MSize append_len = 0;
    for (int i = 0; i < PieceCount; i++) {
-      array_append_push_piece(L, L->base + i + 1, pieces, scratch, append_len);
+      array_append_push_piece(L, L->base + i + 1, pieces, piece_count, scratch, append_len);
    }
 
    if (append_len > (~MSize(0) - Arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
@@ -2753,7 +2769,8 @@ static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
 
    uint8_t *dest_base = Arr->get<uint8_t>();
    MSize write_pos = old_len;
-   for (const ArrayAppendPiece &piece : pieces) {
+   for (int i = 0; i < piece_count; i++) {
+      const ArrayAppendPiece &piece = pieces[i];
       if (piece.len IS 0) continue;
 
       const char *source = nullptr;

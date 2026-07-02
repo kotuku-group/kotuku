@@ -25,6 +25,8 @@ extern "C" void lj_arr_push1(lua_State *, GCarray *, cTValue *);
 
 extern "C" void lj_arr_putstr(lua_State *, GCarray *, GCstr *);
 
+extern "C" void lj_arr_putsbuf(lua_State *, GCarray *, SBuf *);
+
 extern "C" void lj_arr_putint(lua_State *, GCarray *, int32_t);
 
 extern "C" void lj_arr_putnum(lua_State *, GCarray *, double);

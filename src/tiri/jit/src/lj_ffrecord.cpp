@@ -766,7 +766,18 @@ static void recff_array_push(jit_State* J, RecordFFData* rd)
 
 static bool recff_byte_array_append_piece_recordable(cTValue *Value, TRef Piece)
 {
-   return (tvisstr(Value) and tref_isstr(Piece)) or tvisnumber(Value);
+   return (tvisstr(Value) and tref_isstr(Piece)) or (tvisnumber(Value) and tref_isnumber(Piece));
+}
+
+static void recff_byte_array_append_piece(jit_State *J, TRef ArrayRef, cTValue *Value, TRef Piece)
+{
+   if (tvisstr(Value) and tref_isstr(Piece)) {
+      recff_ir_call_fixed(J, IRCALL_lj_arr_putstr, ArrayRef, Piece, TREF_NIL, TREF_NIL);
+   }
+   else {
+      TRef tmp_ref = recff_tmpref(J, Piece, IRTMPREF_IN1);
+      recff_ir_call_fixed(J, IRCALL_lj_arr_putnumtv, ArrayRef, tmp_ref, TREF_NIL, TREF_NIL);
+   }
 }
 
 static void recff_array_append(jit_State* J, RecordFFData* rd)
@@ -795,16 +806,17 @@ static void recff_array_append(jit_State* J, RecordFFData* rd)
             }
          }
 
-         for (int i = 1; i < arg_count; i++) {
-            cTValue *val = &rd->argv[i];
-            TRef piece = J->base[i];
-            if (tvisstr(val) and tref_isstr(piece)) {
-               recff_ir_call_fixed(J, IRCALL_lj_arr_putstr, left, piece, TREF_NIL, TREF_NIL);
+         if (arg_count IS 2) {
+            cTValue *val = &rd->argv[1];
+            TRef piece = J->base[1];
+            recff_byte_array_append_piece(J, left, val, piece);
+         }
+         else {
+            TRef buf_ref = recff_bufhdr(J);
+            for (int i = 1; i < arg_count; i++) {
+               buf_ref = emitir(IRTG(IR_BUFPUT, IRT_PGC), buf_ref, recff_concat_tostr(J, J->base[i]));
             }
-            else if (tvisnumber(val)) {
-               TRef tmp_ref = recff_tmpref(J, piece, IRTMPREF_IN1);
-               recff_ir_call_fixed(J, IRCALL_lj_arr_putnumtv, left, tmp_ref, TREF_NIL, TREF_NIL);
-            }
+            recff_ir_call_fixed(J, IRCALL_lj_arr_putsbuf, left, buf_ref, TREF_NIL, TREF_NIL);
          }
       }
       else {
