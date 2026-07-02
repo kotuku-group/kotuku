@@ -114,7 +114,9 @@ private:
    void analyse_call_expr(const CallExprPayload &);
    [[nodiscard]] bool is_global_environment_reference(const ExprNode &) const;
    [[nodiscard]] GCstr * protected_global_store_key(const ExprNode &) const;
+   [[nodiscard]] bool computed_global_environment_store(const ExprNode &) const;
    void report_protected_global_override(GCstr *, SourceSpan);
+   void report_computed_global_environment_store(SourceSpan);
 
    // Argument type checking for function calls
    void check_arguments(const FunctionExprPayload &, const CallExprPayload &);
@@ -664,6 +666,11 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
       if (not target_ptr) continue;
       const auto &target = *target_ptr;
 
+      if (this->computed_global_environment_store(target)) {
+         this->report_computed_global_environment_store(target.span);
+         continue;
+      }
+
       if (GCstr *protected_name = this->protected_global_store_key(target)) {
          this->report_protected_global_override(protected_name, target.span);
          continue;
@@ -1070,6 +1077,17 @@ GCstr * TypeAnalyser::protected_global_store_key(const ExprNode &Expr) const
    return nullptr;
 }
 
+bool TypeAnalyser::computed_global_environment_store(const ExprNode &Expr) const
+{
+   if (Expr.kind != AstNodeKind::IndexExpr) return false;
+
+   const auto &payload = std::get<IndexExprPayload>(Expr.data);
+   if (not payload.table or not payload.index or
+      not this->is_global_environment_reference(*payload.table)) return false;
+
+   return type_literal_string_key(*payload.index) IS nullptr;
+}
+
 void TypeAnalyser::report_protected_global_override(GCstr *Name, SourceSpan Location)
 {
    if (not Name) return;
@@ -1078,6 +1096,15 @@ void TypeAnalyser::report_protected_global_override(GCstr *Name, SourceSpan Loca
    diag.location = Location;
    diag.code = ParserErrorCode::OverrideProtectedGlobal;
    diag.message = std::format("cannot override built-in '{}'", std::string_view(strdata(Name), Name->len));
+   this->diagnostics_.push_back(std::move(diag));
+}
+
+void TypeAnalyser::report_computed_global_environment_store(SourceSpan Location)
+{
+   TypeDiagnostic diag;
+   diag.location = Location;
+   diag.code = ParserErrorCode::OverrideProtectedGlobal;
+   diag.message = "cannot override built-in through computed _G key";
    this->diagnostics_.push_back(std::move(diag));
 }
 

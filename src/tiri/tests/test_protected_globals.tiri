@@ -40,6 +40,19 @@ end
    assert_activation_fails([[_G['tostring'] = 5]], "_G['tostring'] assignment")
 end
 
+@Test function RejectsGlobalEnvironmentComputedIndexAssignment()
+   assert_activation_fails([[local k = 'tostring'; _G[k] = 5]], "_G[k] assignment")
+end
+
+@Test function AllowsComputedIndexAssignmentToLocalNamedGlobalEnvironment()
+   assert_activation_succeeds([[
+      local _G = {}
+      local k = 'tostring'
+      _G[k] = 5
+      assert(_G.tostring is 5)
+   ]], 'local _G computed index assignment')
+end
+
 @Test function RejectsProtectedNameInMultiTargetGlobalDeclaration()
    assert_activation_fails([[global a, tostring = 1, 2]], 'multi-target global declaration')
 end
@@ -83,4 +96,3 @@ end
       assert(myThing is 2)
    ]], 'script-created global reassignment')
 end
-
