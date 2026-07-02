@@ -680,6 +680,25 @@ Areas for investigation:
    assert(trace_events > 0, "Trace handler should run at least once")
 end
 
+@Test(hotpath=1000) function JitAttachTraceEventAllocatingHandler()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   records = {}
+   trace_events = 0
+   function trace_handler(TraceNo, Reason)
+      records[trace_events] = "trace:" .. tostring(TraceNo) .. ":" .. tostring(Reason)
+      trace_events++
+   end
+
+   jit.attach(trace_handler, "trace")
+   build_trace()
+   jit.attach(trace_handler)
+
+   assert(trace_events > 0, "Allocating trace handler should run at least once")
+   assert(records[0] != nil, "Allocating trace handler should record its first event")
+end
+
 @Test(hotpath=100) function ArrayIteratorTraces()
    cached_trace_no = nil
    cached_trace_info = nil
