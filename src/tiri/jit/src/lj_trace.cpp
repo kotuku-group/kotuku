@@ -122,7 +122,7 @@ static void trace_abort_restore_retry_stack(jit_State *J, CSTRING Path)
 void lj_trace_err(jit_State *J, TraceError e)
 {
 #ifdef LUA_USE_ASSERT
-   kt::Log(__FUNCTION__).msg("Aborting JIT trace.");
+   kt::Log(__FUNCTION__).msg("Aborting JIT trace.  Error: %d", int(e));
 #endif
 
    // Mark that we're aborting trace recording. This flag survives through Windows SEH unwinding
@@ -152,7 +152,7 @@ void lj_trace_err(jit_State *J, TraceError e)
 void lj_trace_err_info(jit_State *J, TraceError e)
 {
 #ifdef LUA_USE_ASSERT
-   kt::Log(__FUNCTION__).msg("Aborting JIT trace.");
+   kt::Log(__FUNCTION__).msg("Aborting JIT trace.  Error: %d", int(e));
 #endif
 
    J->abort_in_progress = true; // Mark that we're aborting trace recording.

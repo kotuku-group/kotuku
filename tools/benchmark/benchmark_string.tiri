@@ -71,6 +71,23 @@ end
    glStringBenchmarkSink += checksum
 end
 
+-- This is the standard Lua trick for concatenating strings in a loop.
+
+@Test function StringConcatBigTable()
+   local a, b, c = "foo", "bar", "baz"
+   local checksum = 0
+   local result = {}
+   for i in {0 to 1000} do
+      table.insert(result, "Hello" .. " " .. "World" .. "!")
+      table.insert(result, a .. b .. c)
+      table.insert(result, "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4")
+      table.insert(result, "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1))
+   end
+
+   concat_result = table.concat(result)
+   glStringBenchmarkSink += #concat_result
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Build a string by concatenating multiple parts - small buffer version
 

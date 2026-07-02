@@ -11,10 +11,13 @@
 #include "lj_meta.h"
 #include "lj_array.h"
 #include "lj_str.h"
+#include "lj_strfmt.h"
+#include "lj_buf.h"
 #include "lj_vmarray.h"
 #include "lj_vm.h"
 #include "lj_frame.h"
 
+#include <cstring>
 #include <string>
 
 //********************************************************************************************************************
@@ -351,6 +354,48 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Val)
    if (idx + 1 > Array->capacity and not lj_array_grow(L, Array, idx + 1)) lj_err_msg(L, ErrMsg::ARREXT);
    arr_store_elem(L, Array, idx, Val);
    Array->len = idx + 1;
+}
+
+//********************************************************************************************************************
+
+static void lj_arr_append_bytes(lua_State *L, GCarray *Array, const char *Data, MSize Len)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
+   if (Len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+
+   MSize new_len = Array->len + Len;
+   if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (Len > 0) memcpy((uint8_t*)Array->arraydata() + Array->len, Data, Len);
+   Array->len = new_len;
+}
+
+//********************************************************************************************************************
+// Append string bytes to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putstr(lua_State *L, GCarray *Array, GCstr *Str)
+{
+   lj_arr_append_bytes(L, Array, strdata(Str), Str->len);
+}
+
+//********************************************************************************************************************
+// Append the bytes currently held by a string buffer to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putsbuf(lua_State *L, GCarray *Array, SBuf *Buf)
+{
+   lj_arr_append_bytes(L, Array, Buf->b, sbuflen(Buf));
+}
+
+//********************************************************************************************************************
+// Append a number TValue formatted with concat/tostring semantics to a byte array from a recorded trace.
+
+extern "C" void lj_arr_putnumtv(lua_State *L, GCarray *Array, cTValue *Value)
+{
+   SBuf *sb;
+   if (tvisint(Value)) sb = lj_strfmt_putint(lj_buf_tmp_(L), intV(Value));
+   else if (tvisnum(Value)) sb = lj_strfmt_putfnum(lj_buf_tmp_(L), STRFMT_G14, numV(Value));
+   else lj_err_msg(L, ErrMsg::BADVAL);
+   lj_arr_append_bytes(L, Array, sb->b, sbuflen(sb));
 }
 
 //********************************************************************************************************************

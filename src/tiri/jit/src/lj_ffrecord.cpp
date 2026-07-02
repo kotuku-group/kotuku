@@ -713,6 +713,27 @@ static bool array_push_recordable(GCarray *Array, cTValue *Val)
    }
 }
 
+static int recff_arg_count(jit_State *J)
+{
+   return int(J->L->top - J->L->base);
+}
+
+static TRef recff_concat_tostr(jit_State *J, TRef Value)
+{
+   if (tref_isnumber(Value)) {
+      return emitir(IRT(IR_TOSTR, IRT_STR), Value, tref_isnum(Value) ? IRTOSTR_NUM : IRTOSTR_INT);
+   }
+   return Value;
+}
+
+static bool recff_is_number_str_args(jit_State *J, int Start, int Stop)
+{
+   for (int i = Start; i < Stop; i++) {
+      if (not tref_isnumber_str(J->base[i])) return false;
+   }
+   return true;
+}
+
 //********************************************************************************************************************
 // Record array.push(receiver, value).  Multi-value push falls back to the interpreter.
 
@@ -741,45 +762,90 @@ static void recff_array_push(jit_State* J, RecordFFData* rd)
 }
 
 //********************************************************************************************************************
-// Record array.append(receiver, value) - the helper behind compound concatenation (..=).  Array receivers append in
-// place via lj_arr_push1(); string and number receivers concatenate to a string, mirroring BC_CAT recording.
+// Record array.append(receiver, value, ...) - the helper behind compound concatenation (..=).
+
+static bool recff_byte_array_append_piece_recordable(cTValue *Value, TRef Piece)
+{
+   return (tvisstr(Value) and tref_isstr(Piece)) or (tvisnumber(Value) and tref_isnumber(Piece));
+}
+
+static void recff_byte_array_append_piece(jit_State *J, TRef ArrayRef, cTValue *Value, TRef Piece)
+{
+   if (tvisstr(Value) and tref_isstr(Piece)) {
+      recff_ir_call_fixed(J, IRCALL_lj_arr_putstr, ArrayRef, Piece, TREF_NIL, TREF_NIL);
+   }
+   else {
+      TRef tmp_ref = recff_tmpref(J, Piece, IRTMPREF_IN1);
+      recff_ir_call_fixed(J, IRCALL_lj_arr_putnumtv, ArrayRef, tmp_ref, TREF_NIL, TREF_NIL);
+   }
+}
 
 static void recff_array_append(jit_State* J, RecordFFData* rd)
 {
    TRef left = J->base[0];
-   TRef right = left ? J->base[1] : 0;
-   if (!right) {
+   int arg_count = left ? recff_arg_count(J) : 0;
+   if (arg_count < 2) {
       recff_nyi(J, rd);
       return;
    }
 
    if (tref_isarray(left)) {
       GCarray *arr = arrayV(&rd->argv[0]);
-      cTValue *val = &rd->argv[1];
-
-      if (not array_push_recordable(arr, val)) {
-         recff_nyi(J, rd);
-         return;
-      }
 
       // Guard the element type so the trace only runs for arrays matching the recorded semantics.
       TRef et_ref = emitir(IRT(IR_FLOAD, IRT_U8), left, IRFL_ARRAY_ELEMTYPE);
       emitir(IRTGI(IR_EQ), et_ref, lj_ir_kint(J, int32_t(arr->elemtype)));
 
-      TRef tmp_ref = recff_tmpref(J, right, IRTMPREF_IN1);
-      recff_ir_call_fixed(J, IRCALL_lj_arr_push1, left, tmp_ref, TREF_NIL, TREF_NIL);
+      if (arr->elemtype IS AET::BYTE) {
+         for (int i = 1; i < arg_count; i++) {
+            cTValue *val = &rd->argv[i];
+            TRef piece = J->base[i];
+            if (not recff_byte_array_append_piece_recordable(val, piece)) {
+               recff_nyi(J, rd);
+               return;
+            }
+         }
+
+         if (arg_count IS 2) {
+            cTValue *val = &rd->argv[1];
+            TRef piece = J->base[1];
+            recff_byte_array_append_piece(J, left, val, piece);
+         }
+         else {
+            TRef buf_ref = recff_bufhdr(J);
+            for (int i = 1; i < arg_count; i++) {
+               buf_ref = emitir(IRTG(IR_BUFPUT, IRT_PGC), buf_ref, recff_concat_tostr(J, J->base[i]));
+            }
+            recff_ir_call_fixed(J, IRCALL_lj_arr_putsbuf, left, buf_ref, TREF_NIL, TREF_NIL);
+         }
+      }
+      else {
+         if (arg_count != 2 or not array_push_recordable(arr, &rd->argv[1])) {
+            recff_nyi(J, rd);
+            return;
+         }
+
+         TRef tmp_ref = recff_tmpref(J, J->base[1], IRTMPREF_IN1);
+         recff_ir_call_fixed(J, IRCALL_lj_arr_push1, left, tmp_ref, TREF_NIL, TREF_NIL);
+      }
+
       J->base[0] = left;  // append() returns the receiver array.
    }
-   else if (tref_isnumber_str(left) and tref_isnumber_str(right)) {
-      if (tref_isnumber(left)) {
-         left = emitir(IRT(IR_TOSTR, IRT_STR), left, tref_isnum(left) ? IRTOSTR_NUM : IRTOSTR_INT);
-      }
-      if (tref_isnumber(right)) {
-         right = emitir(IRT(IR_TOSTR, IRT_STR), right, tref_isnum(right) ? IRTOSTR_NUM : IRTOSTR_INT);
-      }
+   else if (tref_isnumber_str(left) and recff_is_number_str_args(J, 1, arg_count)) {
       TRef hdr = recff_bufhdr(J);
-      TRef tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), hdr, left);
-      tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, right);
+      TRef rhs = recff_concat_tostr(J, J->base[1]);
+
+      if (arg_count > 2) {
+         TRef rhs_tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), hdr, rhs);
+         for (int i = 2; i < arg_count; i++) {
+            rhs_tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), rhs_tr, recff_concat_tostr(J, J->base[i]));
+         }
+         rhs = emitir(IRTG(IR_BUFSTR, IRT_STR), rhs_tr, hdr);
+         hdr = recff_bufhdr(J);
+      }
+
+      TRef tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), hdr, recff_concat_tostr(J, left));
+      tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, rhs);
       J->base[0] = emitir(IRTG(IR_BUFSTR, IRT_STR), tr, hdr);
    }
    else {

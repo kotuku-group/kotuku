@@ -574,7 +574,8 @@ static AliasRet aa_fref(jit_State* J, IRIns* refa, IRIns* refb)
 // True for C helpers that change an array's length or may reallocate its storage.
 static bool ircall_mutates_array(uint32_t CallId)
 {
-   return CallId IS IRCALL_lj_arr_push1 or CallId IS IRCALL_lj_arr_clear or CallId IS IRCALL_lj_arr_resize;
+   return CallId IS IRCALL_lj_arr_push1 or CallId IS IRCALL_lj_arr_putstr or CallId IS IRCALL_lj_arr_putsbuf or
+      CallId IS IRCALL_lj_arr_putnumtv or CallId IS IRCALL_lj_arr_clear or CallId IS IRCALL_lj_arr_resize;
 }
 
 // Only the loads for mutable fields end up here (see FOLD).

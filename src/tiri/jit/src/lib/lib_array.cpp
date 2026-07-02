@@ -2673,20 +2673,150 @@ LJLIB_CF(array_clone)
 //********************************************************************************************************************
 // Created exclusively for implementing array<byte> concatenation operations
 
+struct ArrayAppendPiece {
+   enum class Kind : uint8_t {
+      String,
+      Scratch,
+      ByteArray
+   };
+
+   Kind kind = Kind::String;
+   const char *data = nullptr;
+   GCarray *array = nullptr;
+   MSize offset = 0;
+   MSize len = 0;
+};
+
+static void array_append_add_len(lua_State *L, MSize &Total, MSize Len)
+{
+   if (Len > (~MSize(0) - Total)) lj_err_caller(L, ErrMsg::ARREXT);
+   Total += Len;
+}
+
+static constexpr int max_array_append_stack_pieces = 16;
+
+static void array_append_store_piece(ArrayAppendPiece *Pieces, int &PieceCount, const ArrayAppendPiece &Piece)
+{
+   lj_assertX(PieceCount < max_array_append_stack_pieces, "array append stack piece overflow");
+   Pieces[PieceCount] = Piece;
+   PieceCount++;
+}
+
+static void array_append_push_number(lua_State *L, SBuf *Scratch, cTValue *Value, ArrayAppendPiece *Pieces,
+   int &PieceCount, MSize &Total)
+{
+   MSize offset = sbuflen(Scratch);
+   if (tvisint(Value)) lj_strfmt_putint(Scratch, intV(Value));
+   else lj_strfmt_putnum(Scratch, Value);
+
+   MSize len = sbuflen(Scratch) - offset;
+   array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::Scratch, nullptr, nullptr, offset, len });
+   array_append_add_len(L, Total, len);
+}
+
+static void array_append_push_piece(lua_State *L, cTValue *Value, ArrayAppendPiece *Pieces, int &PieceCount,
+   SBuf *Scratch, MSize &Total)
+{
+   if (tvisstr(Value)) {
+      GCstr *str = strV(Value);
+      array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::String, strdata(str), nullptr, 0,
+         str->len });
+      array_append_add_len(L, Total, str->len);
+      return;
+   }
+
+   if (tvisnumber(Value)) {
+      array_append_push_number(L, Scratch, Value, Pieces, PieceCount, Total);
+      return;
+   }
+
+   if (tvisarray(Value)) {
+      GCarray *source = arrayV(Value);
+      if (source->elemtype IS AET::BYTE) {
+         array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::ByteArray, nullptr, source, 0,
+            source->len });
+         array_append_add_len(L, Total, source->len);
+         return;
+      }
+   }
+
+   lj_err_optype(L, Value, ErrMsg::OPCAT);
+}
+
+static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
+{
+   if (Arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+
+   if (PieceCount > max_array_append_stack_pieces) {
+      L->top = L->base + 1 + PieceCount;
+      lua_concat(L, PieceCount);
+      PieceCount = 1;
+   }
+
+   SBuf *scratch = lj_buf_tmp_(L);
+   ArrayAppendPiece pieces[max_array_append_stack_pieces];
+   int piece_count = 0;
+
+   MSize append_len = 0;
+   for (int i = 0; i < PieceCount; i++) {
+      array_append_push_piece(L, L->base + i + 1, pieces, piece_count, scratch, append_len);
+   }
+
+   if (append_len > (~MSize(0) - Arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   MSize old_len = Arr->len;
+   MSize new_len = old_len + append_len;
+   if (new_len > Arr->capacity and not lj_array_grow(L, Arr, new_len)) lj_err_caller(L, ErrMsg::ARREXT);
+
+   uint8_t *dest_base = Arr->get<uint8_t>();
+   MSize write_pos = old_len;
+   for (int i = 0; i < piece_count; i++) {
+      const ArrayAppendPiece &piece = pieces[i];
+      if (piece.len IS 0) continue;
+
+      if (piece.kind IS ArrayAppendPiece::Kind::String) {
+         memcpy(dest_base + write_pos, piece.data, piece.len);
+      }
+      else if (piece.kind IS ArrayAppendPiece::Kind::Scratch) {
+         memcpy(dest_base + write_pos, scratch->b + piece.offset, piece.len);
+      }
+      else {
+         memmove(dest_base + write_pos, piece.array->get<const char>(), piece.len);
+      }
+      write_pos += piece.len;
+   }
+
+   Arr->len = new_len;
+}
+
+static void array_append_reduce_rhs(lua_State *L, int PieceCount)
+{
+   L->top = L->base + 1 + PieceCount;
+   if (PieceCount > 1) lua_concat(L, PieceCount);
+}
+
 LJLIB_CF(array_append)      LJLIB_REC(.)
 {
    TValue *left = lj_lib_checkany(L, 1);
-   lj_lib_checkany(L, 2);
+   int piece_count = lua_gettop(L) - 1;
+   if (piece_count < 1) lj_err_argv(L, 2, ErrMsg::NOVAL);
 
    if (tvisarray(left)) {
       GCarray *arr = arrayV(left);
+      if (arr->elemtype IS AET::BYTE) {
+         array_append_byte_pieces(L, arr, piece_count);
+         setarrayV(L, L->base, arr);
+         L->top = L->base + 1;
+         return 1;
+      }
+
+      array_append_reduce_rhs(L, piece_count);
       lj_cf_array_push(L);
       setarrayV(L, L->base, arr);
       L->top = L->base + 1;
       return 1;
    }
 
-   L->top = L->base + 2;
+   array_append_reduce_rhs(L, piece_count);
    lua_concat(L, 2);
    return 1;
 }
