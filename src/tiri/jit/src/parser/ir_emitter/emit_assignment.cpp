@@ -24,6 +24,50 @@ static bool contains_safe_nav_target(const ExprNode& Expr)
    }
 }
 
+static bool emit_identifier_name_is(GCstr *Name, std::string_view Text)
+{
+   return Name and std::string_view(strdata(Name), Name->len) IS Text;
+}
+
+static GCstr * emit_literal_string_key(const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::LiteralExpr) return nullptr;
+   const auto &literal = std::get<LiteralValue>(Expr.data);
+   if (literal.kind != LiteralKind::String) return nullptr;
+   return literal.string_value;
+}
+
+static bool is_global_environment_reference(LexState &State, const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *name_ref = std::get_if<NameRef>(&Expr.data);
+   if (not name_ref or not emit_identifier_name_is(name_ref->identifier.symbol, "_G")) return false;
+
+   ExpDesc resolved;
+   State.var_lookup_symbol(name_ref->identifier.symbol, &resolved);
+   return resolved.k IS ExpKind::Global or resolved.k IS ExpKind::Unscoped;
+}
+
+static GCstr * protected_global_store_key(LexState &State, const ExprNode &Expr)
+{
+   GCstr *key = nullptr;
+
+   if (Expr.kind IS AstNodeKind::MemberExpr) {
+      const auto &payload = std::get<MemberExprPayload>(Expr.data);
+      if (payload.table and is_global_environment_reference(State, *payload.table)) key = payload.member.symbol;
+   }
+   else if (Expr.kind IS AstNodeKind::IndexExpr) {
+      const auto &payload = std::get<IndexExprPayload>(Expr.data);
+      if (payload.table and payload.index and is_global_environment_reference(State, *payload.table)) {
+         key = emit_literal_string_key(*payload.index);
+      }
+   }
+
+   if (key and ((key->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) return key;
+   return nullptr;
+}
+
 static void patch_safe_nav_skip_here(PreparedAssignment& Target, FuncState& State)
 {
    if (Target.safe_nav_skip.valid()) Target.safe_nav_skip.patch_to(BCPos(State.pc));
@@ -757,6 +801,14 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
       if (not node) {
          return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
             ParserErrorCode::InternalInvariant, "assignment target missing"));
+      }
+
+      if (GCstr *protected_name = protected_global_store_key(this->lex_state, *node)) {
+         return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
+            ParserErrorCode::OverrideProtectedGlobal,
+            std::format("cannot override built-in '{}'",
+               std::string_view(strdata(protected_name), protected_name->len)),
+            node->span));
       }
 
       PreparedAssignment prepared;
