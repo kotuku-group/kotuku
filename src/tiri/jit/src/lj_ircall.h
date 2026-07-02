@@ -214,8 +214,6 @@ typedef struct CCallInfo {
   _(ANY,        lj_arr_push1,      3,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_putstr,     3,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_putsbuf,    3,   S, NIL, CCI_L|CCI_T) \
-  _(ANY,        lj_arr_putint,     3,   S, NIL, CCI_L|CCI_T) \
-  _(ANY,        lj_arr_putnum,     3,   S, NIL, XA_FP|CCI_L|CCI_T) \
   _(ANY,        lj_arr_putnumtv,   3,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_clear,      2,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_resize,     3,   S, INT, CCI_L|CCI_T) \

@@ -2773,18 +2773,14 @@ static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
       const ArrayAppendPiece &piece = pieces[i];
       if (piece.len IS 0) continue;
 
-      const char *source = nullptr;
       if (piece.kind IS ArrayAppendPiece::Kind::String) {
-         source = piece.data;
-         memcpy(dest_base + write_pos, source, piece.len);
+         memcpy(dest_base + write_pos, piece.data, piece.len);
       }
       else if (piece.kind IS ArrayAppendPiece::Kind::Scratch) {
-         source = scratch->b + piece.offset;
-         memcpy(dest_base + write_pos, source, piece.len);
+         memcpy(dest_base + write_pos, scratch->b + piece.offset, piece.len);
       }
       else {
-         source = piece.array->get<const char>();
-         memmove(dest_base + write_pos, source, piece.len);
+         memmove(dest_base + write_pos, piece.array->get<const char>(), piece.len);
       }
       write_pos += piece.len;
    }

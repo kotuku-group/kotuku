@@ -387,24 +387,6 @@ extern "C" void lj_arr_putsbuf(lua_State *L, GCarray *Array, SBuf *Buf)
 }
 
 //********************************************************************************************************************
-// Append an integer formatted with concat/tostring semantics to a byte array from a recorded trace.
-
-extern "C" void lj_arr_putint(lua_State *L, GCarray *Array, int32_t Value)
-{
-   SBuf *sb = lj_strfmt_putint(lj_buf_tmp_(L), Value);
-   lj_arr_append_bytes(L, Array, sb->b, sbuflen(sb));
-}
-
-//********************************************************************************************************************
-// Append a number formatted with concat/tostring semantics to a byte array from a recorded trace.
-
-extern "C" void lj_arr_putnum(lua_State *L, GCarray *Array, double Value)
-{
-   SBuf *sb = lj_strfmt_putfnum(lj_buf_tmp_(L), STRFMT_G14, Value);
-   lj_arr_append_bytes(L, Array, sb->b, sbuflen(sb));
-}
-
-//********************************************************************************************************************
 // Append a number TValue formatted with concat/tostring semantics to a byte array from a recorded trace.
 
 extern "C" void lj_arr_putnumtv(lua_State *L, GCarray *Array, cTValue *Value)
