@@ -29,10 +29,13 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <string_view>
 #include <kotuku/strings.hpp>
 #include <kotuku/main.h>
 
 #define LJLIB_MODULE_array
+
+static constexpr std::string_view glArrayAppendHelperKey("\x1f" "array.append", 13);
 
 constexpr auto HASH_INT     = kt::strhash("int");
 constexpr auto HASH_BYTE    = kt::strhash("byte");
@@ -2828,6 +2831,13 @@ extern "C" int luaopen_array(lua_State *L)
 {
    LJ_LIB_REG(L, "array", array);
    // Stack: [..., array_lib_table]
+
+   // Compound concatenation lowers through this hidden key so rebinding the public array global cannot shadow it.
+   lua_getfield(L, -1, "append");
+   lua_pushlstring(L, glArrayAppendHelperKey.data(), glArrayAppendHelperKey.size());
+   lua_pushvalue(L, -2);
+   lua_rawset(L, LUA_GLOBALSINDEX);
+   lua_pop(L, 1);
 
    // Use the library table directly as the base metatable for arrays.
    // This allows lj_arr_get to find methods like concat, sort, etc. via direct table lookup.

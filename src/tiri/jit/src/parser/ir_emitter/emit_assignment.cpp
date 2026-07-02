@@ -49,6 +49,12 @@ static ParserResult<IrEmitUnit> assignment_value_count_error(
       ParserError(ParserErrorCode::InternalInvariant, Token::from_span(span, TokenKind::Unknown), Message));
 }
 
+static GCstr * array_append_helper_key(LexState *State)
+{
+   static constexpr std::string_view key("\x1f" "array.append", 13);
+   return State->keepstr(key);
+}
+
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
@@ -316,11 +322,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
    if (use_append_helper) {
       ExpDesc append_func;
       append_func.init(ExpKind::Global, 0);
-      append_func.u.sval = this->func_state.ls->keepstr("array");
-      this->materialise_to_next_reg(append_func, "array append interface");
-
-      ExpDesc append_key(this->func_state.ls->keepstr("append"));
-      expr_index(&this->func_state, &append_func, &append_key);
+      append_func.u.sval = array_append_helper_key(this->func_state.ls);
       this->materialise_to_next_reg(append_func, "array append helper");
 
       RegisterAllocator call_allocator(&this->func_state);
