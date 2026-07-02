@@ -1,0 +1,681 @@
+// VERIFIED: 2026-02-10
+// UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
+// UPDATED: 2026-04-03 -- Documented `is not` as an inequality operator equivalent to `!=`.
+// UPDATED: 2026-03-31 — Added 'has' flag testing operator section and updated precedence table.
+// UPDATED: 2026-05-23 — Added comparison chaining section for ordering operators.
+// UPDATED: 2026-05-25 — Added approximate equality operator (≈) section and updated precedence table.
+
+[[ch-operators]]
+== Operators
+indexterm:[operators] This chapter defines all operators in Tiri: their syntax, operand types, return values, precedence, associativity, and metamethod support.  Compound assignment is covered in <<sec-compound-assignment>>; the full precedence table appears in <<sec-operator-precedence>>.
+
+[[sec-arithmetic-operators]]
+=== Arithmetic Operators
+indexterm:[operators, arithmetic] Arithmetic operators accept numeric operands.  The runtime coerces strings that represent valid numbers to numbers automatically.  If an operand is neither numeric nor string-coercible and no metamethod is defined, the runtime raises an error.
+
+[cols="2,3,3a,3",options="header"]
+|===
+|Operator |Syntax |Effect |Metamethod
+|Addition      |`a + b`  |Sum of `a` and `b`           |`__add`
+|Subtraction   |`a - b`  |Difference of `a` and `b`    |`__sub`
+|Multiplication|`a * b`  |Product of `a` and `b`       |`__mul`
+|Division      |`a / b`  |Quotient of `a` and `b`      |`__div`
+|Modulo        |`a % b`  |Remainder of `a / b`         |`__mod`
+|Exponentiation|`a pass:[**] b` |`a` raised to the power `b`  |`__pow`
+|Unary negation|`-a`     |Negation of `a`              |`__unm`
+|===
+
+Division always produces a floating-point result.  Dividing by zero yields `inf` or `-inf`; dividing zero by zero yields `nan`.
+
+Exponentiation is right-associative: `2 pass:[**] 3 pass:[**] 2` evaluates as `2 pass:[**] (3 pass:[**] 2)` = `512`.  All other arithmetic operators are left-associative.
+
+Integer arithmetic does not overflow.  Results that exceed the integer range are promoted to floating-point.
+
+[source,tiri]
+----
+x = 10 + 3     -- 13
+y = 10 / 3     -- 3.3333333333333
+z = 10 % 3     -- 1
+w = 2 ** 10    -- 1024
+n = -42        -- unary negation
+----
+
+[[sec-comparison-operators]]
+=== Comparison Operators
+indexterm:[operators, comparison] Comparison operators return a boolean value.  The equality operators (`is`, `is not`, `!=`) accept operands of any type.  The ordering operators (`<`, `>`, `\<=`, `>=`) accept two numbers or two strings; comparing other types without a metamethod raises an error.
+
+[cols="2,3,3a,3",options="header"]
+|===
+|Operator |Syntax |Effect |Metamethod
+|Equal             |`a is b`  |`true` if `a` equals `b`              |`__eq`
+|Not equal         |`a is not b`|`true` if `a` does not equal `b`    |`__eq` (negated)
+|Not equal         |`a != b`  |`true` if `a` does not equal `b`      |`__eq` (negated)
+|Less than         |`a < b`   |`true` if `a` is less than `b`        |`__lt`
+|Greater than      |`a > b`   |`true` if `a` is greater than `b`     |`__lt` (swapped)
+|Less than or equal|`a \<= b` |`true` if `a` is at most `b`          |`__le`
+|Greater or equal  |`a >= b`  |`true` if `a` is at least `b`         |`__le` (swapped)
+|Approximate equal |`a ≈ b`   |`true` if `\|a - b\| \<= 1e-5`       |None
+|===
+
+==== Equality Semantics
+
+The `is` operator compares by value for value types (numbers, strings, booleans, nil).  For reference types, the default behaviour is identity comparison: two distinct tables, functions, or userdata values are never equal unless a `pass:[__]eq` metamethod overrides this.  The runtime invokes the `pass:[__]eq` metamethod only when both operands share the same metatable.
+
+**Arrays are the deliberate exception.** Although arrays are reference types, `is` compares them by content: two arrays are equal if they share the same element type, length, and element values.  This is implemented via a built-in `pass:[__]eq` metamethod on the array base metatable.  The rationale is that arrays model typed value sequences — they are routinely constructed, returned, and compared without the caller retaining a reference to the original.  Identity comparison would make array equality impractical in most use cases.  To test whether two array variables refer to the same underlying object, use `rawequal(a, b)`.
+
+`is not` and `!=` both negate the result of `is`.
+
+`nil is nil` evaluates to `true`.  Values of different types are never equal.
+
+.Equality summary by type
+[cols="1,2,2",options="header"]
+|===
+|Type |`is` behaviour |Override
+
+|nil, bool, number, string
+|Value comparison
+|N/A
+
+|Array
+|Content comparison (type, length, elements)
+|Built-in `pass:[__]eq`
+
+|Table, function, userdata, object
+|Identity (same reference)
+|Custom `pass:[__]eq`
+|===
+
+==== String Ordering
+
+String comparison is lexicographic and byte-by-byte.  The comparison applies no locale-aware collation.
+
+[source,tiri]
+----
+print(1 is 1)          -- true
+print(1 is not 2)      -- true
+print('abc' is 'abc')  -- true
+print({} is {})        -- false (distinct tables)
+
+a = array<int> { 1, 2 }
+b = array<int> { 1, 2 }
+print(a is b)          -- true  (content equality)
+print(rawequal(a, b))  -- false (distinct references)
+
+print(1 < 2)           -- true
+print('abc' < 'abd')   -- true
+----
+
+[[sec-comparison-chaining]]
+==== Comparison Chaining
+indexterm:[operators, comparison chaining] Adjacent ordering operators (`<`, `\<=`, `>`, `>=`) form a comparison chain.  The expression `a op1 b op2 c` evaluates as `(a op1 b) and (b op2 c)`, except that `b` is evaluated exactly once.  Chains of three or more operands extend this pattern: each adjacent pair is tested in left-to-right order.
+
+[source,ebnf]
+----
+comparison_chain = expression ordering_op expression
+                   { ordering_op expression } ;
+ordering_op      = "<" | "<=" | ">" | ">=" ;
+----
+
+The chain short-circuits: if any comparison yields `false`, the remaining operands are not evaluated and the chain produces `false`.  If all comparisons succeed, the chain produces `true`.
+
+[source,tiri]
+----
+x = 5
+0 <= x < 10          -- true  (range check)
+10 > x >= 0          -- true  (descending direction)
+0 <= x < y <= 100    -- chains of three or more operands
+----
+
+===== Operand Evaluation
+
+Each interior operand is evaluated exactly once, regardless of how many comparisons reference it.  This is significant when an operand is a function call with side effects.
+
+[source,tiri]
+----
+function sensor()
+   return read_value()    -- called once, not twice
+end
+
+0 < sensor() < 100    -- sensor() is evaluated once
+----
+
+===== Scope
+
+Comparison chaining applies only to ordering operators.  The equality operators `is`, `is not` and `!=` do not participate in chains; they retain their standard left-associative behaviour.  An expression that mixes ordering and equality operators is parsed as an ordering chain for the ordering portion, with the result compared to the equality operand in the usual left-associative manner.
+
+[source,tiri]
+----
+0 < 1 is true       -- (0 < 1) is true → true
+1 is 1 is true      -- (1 is 1) is true → true (left-associative)
+----
+
+[[sec-logical-operators]]
+=== Logical Operators
+indexterm:[operators, logical] Logical operators use standard falsiness: only `nil` and `false` are false.  All other values -- including `0`, `""`, and empty tables -- are true.
+
+[cols="2,3,5a",options="header"]
+|===
+|Operator |Syntax |Effect
+|`and` |`a and b` |Returns `a` if `a` is false; otherwise returns `b`
+|`or`  |`a or b`  |Returns `a` if `a` is true; otherwise returns `b`
+|`not` |`not a`   |Returns `true` if `a` is false; `false` otherwise
+|===
+
+Both `and` and `or` short-circuit: the operator does not evaluate the right operand if the left operand determines the result.  Both return the determining operand, not a boolean coercion.
+
+No metamethods apply to logical operators.
+
+[source,tiri]
+----
+x = nil and 'hello'    -- nil (short-circuit)
+y = 'ok' or 'fallback' -- 'ok' (short-circuit)
+z = not false          -- true
+----
+
+[[sec-bitwise-operators]]
+=== Bitwise Operators
+indexterm:[operators, bitwise] Bitwise operators operate on 32-bit integers using two's-complement representation.  Non-integer operands are truncated to 32-bit integers before the operation.  Shift operators mask the shift count to the range 0-31.
+
+[cols="2,3,5a",options="header"]
+|===
+|Operator |Syntax |Effect
+|AND        |`a & b`  |Bitwise AND
+|OR         |`a \| b` |Bitwise OR
+|XOR        |`a ^ b`  |Bitwise exclusive OR
+|NOT        |`~a`     |Bitwise ones' complement
+|Left shift |`a << b` |Shift `a` left by `b` bits
+|Right shift|`a >> b` |Logical (unsigned) right shift of `a` by `b` bits
+|===
+
+Bitwise operators have no metamethods.
+
+[source,tiri]
+----
+flags  = 0xFF & 0x0F    -- 0x0F (15)
+mask   = 1 << 4         -- 16
+bits   = ~0             -- -1 (all bits set)
+value  = 0xA0 | 0x0B    -- 0xAB (171)
+toggle = flags ^ mask   -- XOR toggle
+----
+
+[[sec-flag-testing-operator]]
+=== Flag Testing Operator
+indexterm:[operators, flag testing] The `has` operator tests whether bitwise flags are set in an integer value.
+
+[source,ebnf]
+----
+has_expr = expression "has" expression ;
+----
+
+`a has b` evaluates to `true` if `(a & b) != 0`; `false` otherwise.  Both operands must be numeric.  If either operand is not a number, the runtime raises an error.
+
+The right-hand operand binds loosely enough that bitwise OR expressions are consumed without parentheses.  `flags has FLAG_A | FLAG_B` tests whether `flags` contains _any_ of the specified flags; parentheses are not required around the right-hand side.
+
+When both operands are numeric constants, the compiler folds the expression at compile time.
+
+[source,tiri]
+----
+perms = PERMIT_READ | PERMIT_EXECUTE
+
+perms has PERMIT_READ                 -- true
+perms has PERMIT_WRITE                -- false
+perms has PERMIT_READ | PERMIT_WRITE  -- true (any flag matches)
+not (perms has PERMIT_WRITE)          -- true
+----
+
+The `has` operator combines naturally with logical operators:
+
+[source,tiri]
+----
+if perms has PERMIT_READ and perms has PERMIT_EXECUTE then
+   run(file)
+end
+----
+
+[[sec-approximate-equality]]
+=== Approximate Equality Operator
+indexterm:[operators, approximate equality] The `≈` operator tests whether two numeric values are approximately equal within a fixed tolerance.
+
+[source,ebnf]
+----
+approx_expr = expression "≈" expression ;
+----
+
+`a ≈ b` evaluates to `true` if `|a - b| \<= 1e-5`; `false` otherwise.  Both operands must be numeric.  If either operand is not a number, the runtime raises an error.
+
+The operator returns a boolean and does not invoke metamethods.  Each operand is evaluated exactly once.
+
+When both operands are numeric constants, the compiler folds the expression at compile time.
+
+[source,tiri]
+----
+0.1 + 0.2 ≈ 0.3             -- true
+not (0.1 + 0.2 is 0.3)      -- true  (exact equality exposes precision)
+1.0 ≈ 1.000009              -- true  (within tolerance)
+not (1.0 ≈ 1.00002)         -- true  (beyond tolerance)
+----
+
+`NaN` is not approximately equal to itself.  Infinity subtracted from infinity yields `NaN`, so `inf ≈ inf` evaluates to `false`.
+
+[source,tiri]
+----
+nan = 0 / 0
+not (nan ≈ nan)              -- true
+
+inf = 1 / 0
+not (inf ≈ inf)              -- true
+----
+
+[[sec-string-concatenation]]
+=== String Concatenation
+indexterm:[operators, string concatenation] The `..` operator concatenates two values into a string.  The operator accepts both strings and numbers; it converts numbers to their string representation automatically.  Other types require a `pass:[__]concat` metamethod.
+
+[source,ebnf]
+----
+concat_expr = expression ".." expression ;
+----
+
+Concatenation is right-associative: `a .. b .. c` evaluates as `a .. (b .. c)`.
+
+If an operand is not a string or number and has no `pass:[__]concat` metamethod, the runtime raises `"attempt to concatenate a <type> value"`.
+
+[source,tiri]
+----
+greeting = 'Hello, ' .. 'world!'    -- 'Hello, world!'
+label = 'Item #' .. 42              -- 'Item #42'
+----
+
+[[sec-length-operator]]
+=== Length Operator
+indexterm:[operators, length] The unary `#` operator returns the length of a value.
+
+[cols="2,5a",options="header"]
+|===
+|Operand type |Result
+|String |Byte count
+|Table  |Length of the sequential integer-keyed portion (highest integer index `n` where `t[n]` is not `nil`)
+|Array  |Element count
+|===
+
+The `pass:[__]len` metamethod overrides the default behaviour.  If a non-string, non-table, non-array value lacks a `pass:[__]len` metamethod, the runtime raises an error.
+
+[source,tiri]
+----
+print(#'hello')             -- 5
+print(#{ 'a', 'b', 'c' })   -- 3
+----
+
+[[sec-compound-assignment]]
+=== Compound Assignment
+indexterm:[operators, compound assignment] Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  The target must be an assignable location: a local, upvalue, global, field, or index.  Applying compound assignment to a constant or a function call result is a compile-time error.
+
+[cols="2,3,5a",options="header"]
+|===
+|Operator |Syntax |Effect
+|`+=`  |`x += expr`  |Addition assignment
+|`-=`  |`x -= expr`  |Subtraction assignment
+|`*=`  |`x *= expr`  |Multiplication assignment
+|`/=`  |`x /= expr`  |Division assignment
+|`%=`  |`x %= expr`  |Modulo assignment
+|`..=` |`s ..= expr` |Concatenation assignment
+|`?=`  |`x ?= expr`  |If-nil assignment: assigns only if the current value of `x` is `nil`
+|`??=` |`x ??= expr` |If-empty assignment: assigns only if the current value of `x` is falsey under extended semantics (see <<sec-truthiness>>).  Incurs a performance penalty compared to `?=` due to the broader falsiness check.
+|===
+
+Compound assignment on an undeclared variable is an error.  The variable must exist before a compound operator can modify it.
+
+Safe navigation may appear on the left-hand side of any assignment form listed above.  If a guarded hop yields `nil`, the assignment is skipped.
+
+[source,tiri]
+----
+config?.theme = 'dark'
+stats?.count += 1
+opts?.timeout ?= 30
+opts?.label ??= 'untitled'
+----
+
+For single-target assignments, a failed safe-nav hop also short-circuits RHS evaluation:
+
+[source,tiri]
+----
+config?.theme = load_theme()    -- load_theme() is not called if config is nil
+----
+
+Bitwise compound assignment (`&=`, `|=`, `^=`) does not exist.  Use `x = x & y` instead.
+
+[source,tiri]
+----
+count += 1
+name ..= ' Jr.'
+config ?= load_defaults()    -- assigns only if config is nil
+label ??= 'untitled'         -- assigns only if label is falsey
+----
+
+[[sec-postfix-increment]]
+=== Postfix Increment
+indexterm:[operators, postfix increment] The `++` operator increments a numeric variable by 1.
+
+[source,ebnf]
+----
+postfix_increment = assignable "++" ;
+----
+
+The target must be an assignable numeric location: a local, upvalue, global, field access, or indexed element.  Applying `++` to a constant or non-numeric value is an error.
+
+[source,tiri]
+----
+count = 0
+count++             -- count is now 1
+t = { score = 10 }
+t.score++           -- t.score is now 11
+----
+
+Use `++` only as a statement.  Its return value as an expression is unspecified.
+
+NOTE: There is no `--` decrement operator.  The `--` character sequence begins a comment.  Use `x -= 1` instead.
+
+[[sec-conditional-operators]]
+=== Conditional Operators
+indexterm:[operators, conditional] Conditional operators use extended falsiness: `nil`, `false`, `0` (integer and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are all falsey.  All other values are truthy.  See <<sec-truthiness>> for the full definition.
+
+==== If-Empty Binary Operator (??)
+
+`result = a ?? b`
+
+Returns `a` if `a` is truthy under extended falsiness; otherwise returns `b`.  The operator does not evaluate the right operand if `a` is truthy (short-circuit evaluation).
+
+The `??` operator differs from `or` in that `or` uses standard falsiness (only `nil` and `false` are falsey), while `??` also treats `0`, `""`, and empty collections as falsey.
+
+[source,tiri]
+----
+a = 0 or 'default'      -- 0 (zero is truthy under standard rules)
+b = 0 ?? 'default'      -- 'default' (zero is falsey under extended rules)
+c = '' ?? 'fallback'    -- 'fallback'
+d = '' ?? 0 ?? 'final'  -- 'final' (both '' and 0 are falsey)
+e = {} ?? 'empty'       -- 'empty' (an empty table is falsey under extended rules)
+----
+
+==== If-Empty Guard Operator (?!)
+
+`variable ?! return`
+
+The `?!` operator serves as a guard for control flow.  The RHS can be a `return`, `break`, `continue` or `raise` statement:
+
+[source,tiri]
+----
+value ?! raise 'Value is empty'
+user_input ?! return ERR_InvalidInput
+----
+
+Line breaks immediately following `?!` or `??` are forbidden.  The RHS must appear on the same line as the operator.
+
+==== If-Empty Postfix Operator (??)
+
+`x??`
+
+When `??` appears with no right-hand operand, it acts as a postfix presence-check operator.  Returns `false` if the value is falsey under extended semantics; `true` otherwise.
+
+The postfix form binds tightly and evaluates before logical operators.
+
+[source,tiri]
+----
+if comment?? then
+   print('Comment exists')
+end
+
+if config.timeout?? then
+   apply_timeout(config.timeout)
+end
+----
+
+[[sec-ternary-operator]]
+=== Ternary Operator
+[source,ebnf]
+----
+ternary_expression = expression "?" expression ":>" expression ;
+----
+
+indexterm:[operators, ternary] Evaluates `condition` using extended falsiness.  If truthy, evaluates and returns `true_expr`; if falsey, evaluates and returns `false_expr`.  Only the selected branch is evaluated (short-circuit).
+
+The ternary is right-associative: `a ? b :> c ? d :> e` parses as `a ? b :> (c ? d :> e)`.
+
+In expression lists, parentheses are required to avoid ambiguity:
+
+[source,tiri]
+----
+local a, b = (cond ? x :> y), z
+----
+
+[source,tiri]
+----
+status = user ? 'logged in' :> 'guest'
+max = a > b ? a :> b
+label = count is 0 ? 'none' :> f'{count} items'
+----
+
+[[sec-safe-navigation]]
+=== Safe Navigation
+indexterm:[operators, safe navigation] The safe navigation operators provide nil-safe access to fields, methods, and indices.  If the receiver is `nil`, the expression evaluates to `nil` without raising an error.
+
+[cols="2,3,5a",options="header"]
+|===
+|Operator |Syntax |Effect
+|Safe field access |`obj?.field`    |Returns `nil` if `obj` is `nil`; otherwise returns `obj.field`
+|Safe field call   |`obj?.field()`  |Returns `nil` if `obj` or `field` is `nil`; otherwise calls `obj.field()`
+|Safe method call  |`obj?:method()` |Returns `nil` if `obj` is `nil`; otherwise calls `obj:method()`
+|Safe index access |`obj?[key]`     |Returns `nil` if `obj` is `nil`; otherwise returns `obj[key]`
+|===
+
+Safe navigation checks for `nil` only.  Other falsey values (`false`, `0`, `""`) are treated as valid receivers and access proceeds.
+
+The operators support chaining.  Each operator in the chain independently checks for `nil`:
+
+[source,tiri]
+----
+city = user?.profile?.address?.city
+----
+
+If `user`, `profile`, or `address` is `nil` at any point, the entire expression evaluates to `nil`.
+
+Safe navigation also applies on the left-hand side of assignments.  In assignment context, a safe-nav hop guards the store instead of producing a read result:
+
+[source,tiri]
+----
+user?.profile?.name = 'Guest'
+user?.stats?.count += 1
+user?.profile?.nickname ?= 'Anonymous'
+user?.profile?.tag ??= 'new'
+----
+
+If any guarded hop in the target chain is `nil`, the assignment is skipped without raising an error.
+
+Safe navigation combines naturally with the `??` operator for default values:
+
+[source,tiri]
+----
+name = user?.name ?? 'Guest'
+----
+
+[[sec-membership-operator]]
+=== Membership Operator
+[source,ebnf]
+----
+result = value in container
+----
+
+indexterm:[operators, membership] Returns `true` if `container` contains `value`; `false` otherwise.  The expression `a in b` is equivalent to `b:contains(a)`.
+
+The `in` operator requires the right-hand operand to provide a `:contains()` method.  The built-in types that define this method are ranges, strings and arrays.  Any user-defined type with a compliant `:contains()` method will also support `in`.  If the right-hand operand lacks a `:contains()` method, the runtime raises an error.
+
+[source,tiri]
+----
+if x in {0 to 10} then
+   print('x is in range')
+end
+
+arr = { 'red', 'green', 'blue' }
+if 'green' in arr then
+   print('found')
+end
+----
+
+NOTE: The `in` keyword also appears in `for` loops (`for k, v in pairs(t) do`).  The membership operator is distinguished by its appearance outside of `for` statements.
+
+[[sec-pipe-operator]]
+=== Pipe Operator
+indexterm:[operators, pipe] The pipe operator (`|>`) passes the result of the left-hand expression as arguments to the right-hand function call.
+
+[source,ebnf]
+----
+pipe_expr = expression "|>" function_call ;
+----
+
+The right-hand side must be a function call; `x |> 5` is a syntax error.  When the LHS is a range or array, the RHS accepts a bare function reference without parentheses; the pipe becomes an iteration operator (see <<sec-pipe-iteration,Pipe Iteration>>).
+
+[source,tiri]
+----
+result = 'hello' |> string.upper()
+safe = tonumber(input) |> clamp(0, 100)
+----
+
+==== Multi-Value Forwarding
+
+When the LHS returns multiple values, the pipe forwards all values as arguments to the RHS:
+
+[%unbreakable]
+[source,tiri]
+----
+function get_bounds()
+   return 10, 20
+end
+
+result = get_bounds() |> math.max()  -- math.max(10, 20) = 20
+----
+
+==== Result Limiting
+
+The syntax `|N>` limits the number of values forwarded from the LHS:
+
+[source,tiri]
+----
+function get_many()
+   return 1, 2, 3, 4, 5
+end
+
+result = get_many() |2> math.max()  -- math.max(1, 2) = 2
+----
+
+==== Chaining
+
+Pipes chain for multi-step transformations:
+
+[source,tiri]
+----
+result = 3 |> double() |> square()  -- square(double(3))
+----
+
+[[sec-pipe-iteration]]
+==== Pipe Iteration
+
+The pipe operator doubles as an iteration operator when the LHS is a range or array and the RHS is a bare function reference (not a function call with parentheses).  The compiler rewrites the expression to an `:each()` method call on the LHS, invoking the function once for each element.
+
+===== Distinguishing Transform from Iteration
+
+The RHS syntax determines the pipe mode:
+
+[cols="3,3,4a",options="header"]
+|===
+|Syntax           |Mode       |Equivalent
+
+|`x \|> func()`   |Transform  |`func(x)`
+|`range \|> func` |Iteration  |`range:each(func)`
+|`array \|> func` |Iteration  |`array:each(func)`
+|===
+
+===== Ranges
+
+When the LHS is a range literal, the pipe calls the RHS function for each value in the range:
+
+[source,tiri]
+----
+{1 to 5} |> print     -- prints 1, 2, 3, 4
+{1 into 5} |> print   -- prints 1, 2, 3, 4, 5
+----
+
+Return `false` from the callback to terminate iteration early:
+
+[source,tiri]
+----
+{1 to 1000} |> i => do
+   if found_target(i) then
+      print('Found at', i)
+      return false
+   end
+end
+----
+
+For ranges stored in variables, use the `:each()` method directly: `r:each(func)`.
+
+===== Arrays
+
+Array literals and typed array variables also support pipe iteration.  The callback receives the element value and its index:
+
+[source,tiri]
+----
+array<int> { 10, 20, 30 } |> function(v, i)
+   print(f'[{i}] = {v}')
+end
+
+items = array<string> { 'a', 'b', 'c' }
+items |> print          -- prints a, b, c
+----
+
+===== Chaining Iterations
+
+Pipe iteration returns the original range or array, enabling multiple iteration passes to be chained:
+
+[source,tiri]
+----
+{1 to 4} |> function(i) log_value(i) end
+       |> function(i) process(i) end
+
+array<int> { 5, 10, 15 } |> function(v) validate(v) end
+                         |> function(v) store(v) end
+----
+
+[[sec-operator-precedence]]
+=== Operator Precedence
+indexterm:[operators, precedence] The following table lists all operators from highest to lowest precedence.  Operators on the same row share the same precedence level.
+
+[cols="1,4a,2",options="header"]
+|===
+|Level |Operators |Associativity
+|10 |`pass:[**]`                          |Right
+|9  |`-` (unary), `not`, `#`, `~` (unary) |Unary (right)
+|8  |`*`, `/`, `%`                        |Left
+|7  |`+`, `-`                             |Left
+|6  |`..`, `<<`, `>>`                     |`..` right; shifts left
+|5  |`&`                                  |Left
+|4  |`^`, `is`, `is not`, `!=`, `<`, `>`, `\<=`, `>=`, `in` |Left
+|3  |`has`, `≈`, `\|`, `and`, `\|>`       |Left
+|2  |`or`, `??`, `? :>`                   |Left (`? :>` right)
+|===
+
+Postfix operators (`++`, `??` postfix) bind tighter than all binary operators and evaluate immediately after suffix chains (field access, indexing, calls).
+
+Parentheses override precedence: `(a + b) * c` forces addition before multiplication.
+
+See <<appendix-operator-precedence>> for a quick-reference card.
+
+==== Precedence Examples
+
+[source,tiri]
+----
+2 + 3 * 4           -- 14 (multiplication before addition)
+2 ** 3 ** 2         -- 512 (right-associative: 2 ** (3 ** 2))
+'a' .. 'b' .. 'c'   -- 'abc' (right-associative)
+x > 0 and x < 10    -- comparison before logical
+a & 0xFF | 0x100    -- AND before OR (C-style)
+flags has F1 | F2   -- has (level 3) consumes bitwise OR on RHS
+0.1 + 0.2 ≈ 0.3     -- arithmetic (level 7) before approx (level 3)
+----

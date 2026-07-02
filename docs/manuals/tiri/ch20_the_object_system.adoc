@@ -1,0 +1,397 @@
+// VERIFIED: 2026-02-13
+
+[[ch-the-object-system]]
+== The Object System
+indexterm:[objects] Tiri provides full interoperability with the Kōtuku application framework through a native object interface.  This chapter defines the interface for creating, configuring, querying, and destroying Kōtuku objects from Tiri scripts.
+
+All object interface functions are accessed through the `obj` namespace.  Object instances expose fields, actions, and methods directly on the interface value returned by `obj.new()` or `obj.find()`.
+
+[[sec-object-oriented-design]]
+=== Object-Oriented Design
+
+Kōtuku implements a class-based object system in which every object is an instance of a registered class.  Each class defines the fields, actions, and methods that its instances expose.  Class definitions can be queried at run-time, allowing programs to implement dynamic introspection and invocation logic.
+
+The object system enforces three structural invariants:
+
+Hierarchical ownership:: Every object has exactly one parent.  The executing script owns objects created by `obj.new()`.  An object becomes a parent when a new object is created within its scope, via `object_ref.new()`.
+
+Reference semantics:: Object interfaces are references to underlying C++ objects.  Multiple Tiri variables may reference the same object.  Assigning an object to a new variable does not copy the object.
+
+Thread-safe access:: Objects are treated as shared resources by default.  The `with` statement (<<sec-object-locking>>) provides explicit locking for thread safety and performance.
+
+[[sec-creating-objects]]
+=== Creating Objects
+==== obj.new()
+
+[.api]`object = obj.new(ClassName, [Fields])`
+
+indexterm:[objects, creation] Creates a new instance of the class identified by `ClassName`.  `ClassName` is a case-insensitive string or a numeric class ID.
+
+If the optional `Fields` table is provided, all key-value pairs are set on the object and `init()` is called automatically.  If `Fields` is omitted, the object remains uninitialised and requires manual field assignment followed by an `init()` call.
+
+Raises an exception on failure.  Never returns `nil`.
+
+[source,tiri]
+----
+-- Manual initialisation
+file = obj.new('file')
+file.path  = 'readme.md'
+file.flags = FL_READ
+err = file.init()
+
+-- Automatic initialisation with field table
+file = obj.new('file', { path = 'readme.md', flags = FL_READ })
+----
+
+==== object.init()
+
+[.api]`err = object.init()`
+
+Initialises the object if not already initialised via `obj.new()`.  Returns an `ERR` code indicating success or failure.  Does not raise exceptions unless called within a `try` statement.
+
+Initialise an object before any interaction beyond setting field values.  Calling actions or methods on an uninitialised object will raise an exception.
+
+==== obj.find()
+
+[.api]`object = obj.find(Name, [ClassName])` +
+[.api]`object = obj.find(ObjectID, [ClassName])`
+
+Retrieves the interface of an existing object by name or numeric ID.  The optional `ClassName` parameter restricts the search to a specific class.  Returns `nil` if no matching object is found.
+
+Objects returned by `obj.find()` are weakly referenced (<<sec-object-lifecycle>>).
+
+[source,tiri]
+----
+window = obj.find('my_window', 'Surface')
+surface = obj.find(window.surface)
+----
+
+Two special names are recognised:
+
+[cols="1,3a",options="header"]
+|===
+|Name |Description
+
+|`'self'`
+|Returns the executing script object.
+
+|`'owner'`
+|Returns the owner of the executing script.
+|===
+
+==== obj.class()
+
+[.api]`metaclass = obj.class(Object)`
+
+Returns the MetaClass object for the given `Object`.  The MetaClass provides access to class-level information such as the class name, fields and registered methods.  Full documentation for the MetaClass interface is provided in the Kōtuku API manual.
+
+[[sec-field-access]]
+=== Field Access
+indexterm:[objects, field access] Object fields are read and written using standard dot notation:
+
+[source,tiri]
+----
+value = object.fieldName
+object.fieldName = value
+----
+
+Field names are case-sensitive and defined in lower camel-case, with the following being valid examples: `id`, `x`, `surfaceID`, `vectorObject`.  Abbreviations are never mixed-case (no `surfaceId`).
+
+An exception can be thrown if:
+
+* The `fieldName` does not exist.
+* Permission restrictions are breached, such as writing a read-only field.
+* The field returns an error code (applies to fields that are represented by a function).
+
+==== object.get()
+
+[.api]`value = object.get(FieldName, [Default])` 💤
+
+Reads a field value by name.  If the object is inaccessible or the field cannot be read, returns `Default` or `nil`.  Exceptions are never thrown — the `Default` value has priority.
+
+If the object's class defines support for `getKey()`, the call is diverted to the `getKey()` method in cases where `FieldName` does not exist.
+
+==== object.set()
+
+[.api]`err = object.set(FieldName, Value)` 💤
+
+Writes a field value by name.  Returns an `ERR` code.  Equivalent to `object.fieldName = value` but returns the error code rather than raising an exception on failure.  Encapsulation in a `try` statement will promote error codes to exceptions.
+
+==== object.getKey(), object.setKey()
+
+[.api]`value = object.getKey(Key, [Default])` 💤
+
+[.api]`object.setKey(Key, Value)` 💤
+
+Some classes support arbitrary key-value string storage.  `getKey()` retrieves a value by key name, returning `Default` or `nil` if the key does not exist or the class does not support key-value storage.  `setKey()` stores or updates a key-value pair.
+
+`setKey()` will throw exceptions if encapsulated in a `try` statement.
+
+[source,tiri]
+----
+script.setKey('Title', 'My Program Name')
+title = script.getKey('Title', 'UNDEFINED')
+----
+
+Some classes treat keys as parseable strings that are backed by built-in functionality.  For instance, in this conceptual example the value of slot 10 is retrieved from an `item` array:
+
+`item = view.getKey('item[10]')`
+
+==== object._state()
+
+[.api]`tbl = object._state()`
+
+Returns a table attached to the object for storing custom script-level data.  The table is created on first call and persists for the lifetime of the object.  Subsequent calls return the same table.  The table is automatically removed when the object is destroyed.
+
+The table and its content are never visible to the object's class.
+
+[source,tiri]
+----
+state = viewport._state()
+state.clickCount = 0
+----
+
+[[sec-actions-and-methods]]
+=== Actions & Methods
+indexterm:[actions] indexterm:[methods] Actions and methods are the primary means of interacting with an initialised object.  Actions are contractual operations defined by the framework (common across many classes), while methods are class-specific operations.
+
+[discrete]
+==== Naming Convention
+
+To prevent pollution with field names, actions are prefixed with `ac`.  Methods are prefixed with `mt`.  Action and method names are case-sensitive and written in camel-case.
+
+[source,tiri]
+----
+rect.acRedimension(20, 20, 0, 100, 100, 0)
+err = xml.mtFindTag('/document/body')
+----
+
+[discrete]
+==== Return Values
+
+Every action and method call returns an `ERR` code as its first result.  Additional return values follow if the action or method defines result parameters:
+
+[source,tiri]
+----
+err = rect.acRedimension(20, 20, 0, 100, 100, 0)
+err, tag = xml.mtFindTag('/document/body')
+----
+
+The `ERR` code indicates whether the operation succeeded.  Even when an error is returned, result parameters are populated (with nil or default values), as some implementations return information on error.
+
+Error codes are automatically promoted to exceptions if the call is encapsulated in a `try` statement.  Otherwise use the `check` keyword or compare the error code to verify success.
+
+For complete documentation of the actions and methods supported by each class, refer to the published API documentation.
+
+[[sec-object-relationships]]
+=== Object Relationships
+indexterm:[objects, relationships] Kōtuku enforces a strict parent-child hierarchy.  Every object has exactly one parent and may have any number of children.  By default, `obj.new()` creates objects owned by the script.
+
+[discrete]
+==== Creating Child Objects
+
+To create an object as a child of an existing object, call `new()` on the target object:
+
+[source,tiri]
+----
+viewport = obj.new('VectorViewport', { ... })
+
+viewport.new('VectorRectangle', {
+   x = 0, y = 0, width = '100%',
+   height = '100%', fill = 'rgb(255,0,0)'
+})
+----
+
+The creation process is functionally identical to `obj.new()`, but the new object's parent is set to the object on which `new()` was called.  All objects support the `new()` method.
+
+Child objects are weakly referenced (<<sec-object-lifecycle>>).  If the parent is destroyed, all children are destroyed with it.
+
+==== object.children()
+
+[.api]`list = object.children([ClassName])`
+
+Returns an `array<int>` list of child object IDs.  If `ClassName` is provided, the result is filtered to include only children of that class.  Returns an empty array if the object has no children.
+
+[source,tiri]
+----
+all = viewport.children()
+rects = viewport.children('VectorRectangle')
+----
+
+Convert a child ID to an object interface with `obj.find()`:
+
+[source,tiri]
+----
+for id in values(all) do
+   child = obj.find(id)
+   -- child is now accessible as an object
+end
+----
+
+[[sec-object-lifecycle]]
+=== Object Lifecycle
+indexterm:[objects, lifecycle] Object interfaces hold either a strong or weak reference to the underlying Kōtuku object.  The reference type determines when the object is eligible for destruction.
+
+[discrete]
+==== Strong References
+
+Objects created directly with `obj.new()` are strongly referenced.  The garbage collector destroys the object when all strong references are released:
+
+[source,tiri]
+----
+file = obj.new('file', { path = 'readme.md', flags = '!READ' })
+-- ...
+file = nil   -- object is eligible for garbage collection
+----
+
+[discrete]
+==== Weak References
+
+Objects obtained through `obj.find()`, or created as children of another object (via `parent.new()`), are weakly referenced.  A weak reference does not prevent the object from being destroyed by its owner.
+
+Use `exists()` to verify that a weakly referenced object is still alive before accessing it.
+
+==== object.exists()
+
+[.api]`alive = object.exists()`
+
+Returns `true` if the object is still alive.  Returns `nil` if the object has been destroyed.  Use this method to verify weakly referenced objects before access.
+
+==== object.detach()
+
+[.api]`object.detach()`
+
+Unlinks the object from the script and the garbage collector, demoting the reference from strong to weak.  Once detached, the object persists until its parent is destroyed or `free()` is called.
+
+If the object is already weakly referenced (e.g. created as a child), `detach()` has no effect.
+
+==== object.free()
+
+[.api]`object.free()`
+
+Immediately destroys the underlying object resource.  The interface value remains but is inert; further field access or method calls on a freed interface raise an exception.
+
+Prefer setting references to `nil` and allowing garbage collection to handle cleanup.  Reserve `free()` for weakly referenced objects that require explicit removal.
+
+==== Garbage Collection
+
+The garbage collector terminates strongly referenced objects when all references are released or the script terminates.  To force immediate collection:
+
+[source,tiri]
+----
+object = nil
+processing.collect()
+----
+
+For objects with a single reference, assigning `nil` makes the object eligible for collection on the next GC cycle.
+
+[[sec-subscriptions]]
+=== Subscriptions
+indexterm:[objects, subscriptions] Subscriptions allow a script to hook into the actions and methods invoked on an object.  When the subscribed action or method executes, the registered callback function is called.
+
+==== object.subscribe()
+
+[.api]`object.subscribe(ActionName, Callback, [CustomRef])`
+
+Subscribes to the named action or method.  `ActionName` is a string identifying the action (without the `ac` or `mt` prefix).  `Callback` is the function to invoke.  `CustomRef` is an optional value passed through to the callback.
+
+[source,tiri]
+----
+function on_deactivate(UID, Args, CustomRef)
+   print('Download complete.')
+end
+
+http = obj.new('http', { src = 'https://example.com/data' })
+err = http.acActivate()
+http.subscribe('deactivate', on_deactivate, customref)
+----
+
+==== Callback Signature
+
+The callback receives three arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Argument |Type |Description
+
+|`UID`
+|integer
+|The object ID of the object that triggered the subscription.
+
+|`Args`
+|table
+|Named arguments for the action or method that was invoked.  The table keys correspond to the action's parameter names.
+
+|`CustomRef`
+|any
+|The optional custom reference passed to `subscribe()`.  `nil` if none was provided.
+|===
+
+==== object.unsubscribe()
+
+[.api]`object.unsubscribe(ActionName)`
+
+Removes the subscription for the named action or method.  Associated resources held by the subscription are released.
+
+[source,tiri]
+----
+http.unsubscribe('deactivate')
+----
+
+[[sec-object-locking]]
+=== Object Locking
+indexterm:[objects, locking] The `with` statement locks one or more Kōtuku objects for the duration of a block.  Objects are automatically unlocked when the scope exits through any path: normal completion, `return`, `break`, `continue`, or exception unwinding.
+
+[discrete]
+==== Syntax
+
+[source,tiri]
+----
+with object do
+   -- object is locked
+end
+----
+
+Multiple objects are locked in a single statement:
+
+[source,tiri]
+----
+with obj1, obj2, obj3 do
+   -- all three are locked
+end
+-- unlocked in LIFO order (obj3 first, then obj2, then obj1)
+----
+
+[discrete]
+==== Semantics
+
+Locking serves two purposes:
+
+Thread safety:: In multi-threaded programs, locking prevents data corruption when objects are shared across threads.  A locked object cannot be destroyed or modified by another thread.
+
+Performance:: Locking an object keeps it in an accessible state, avoiding repeated lock/release cycles on each field read or write.  Field access is approximately 2x faster when an object is pre-locked.
+
+[source,tiri]
+----
+xml = obj.new('xml', { source = myfile })
+
+with xml do
+   for i = 0, 100000 do
+      val = xml.source   -- immediate access, no per-field lock overhead
+   end
+end
+----
+
+[discrete]
+==== Scope Rules
+
+Variables declared inside the `with` block are local to that scope, following the same rules as `do pass:[...] end` blocks.
+
+[discrete]
+==== Errors
+
+Passing a non-object value (such as a table, string, or number) to `with` raises an exception.
+
+If the object cannot be locked (e.g. it has been destroyed), an exception is raised.
+
+The unlock operation is implemented via the `pass:[__]close` metamethod, ensuring that locks are released even if an exception occurs within the block.
