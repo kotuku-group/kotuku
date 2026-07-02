@@ -1,44 +1,81 @@
 ----------------------------------------------------------------------------------------------------------------------
 -- STRING OPERATIONS
 ----------------------------------------------------------------------------------------------------------------------
+
+global glStringBenchmarkSink = 0
+
 -- Goal: Get the length of strings of varying sizes
 
 @Test function StringGetLength()
    local short_str  = "Hello"
    local medium_str = "The quick brown fox jumps over the lazy dog."
    local long_str   = string.rep("Lorem ipsum dolor sit amet, consectetur adipiscing elit. ", 20)
+   local checksum = 0
 
    for i in {0 to 100000} do
       local len1 = #short_str
       local len2 = #medium_str
       local len3 = #long_str
+      checksum += len1 + len2 + len3
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Build a string by concatenating multiple parts
 
 @Test function StringConcatenateMultiple()
-   for i in {0 to 100000} do
+   local a, b, c = "foo", "bar", "baz"
+   local checksum = 0
+   for i in {0 to 10000} do
       -- Concatenate literals
       local result = "Hello" .. " " .. "World" .. "!"
 
       -- Concatenate with variables
-      local a, b, c = "foo", "bar", "baz"
-      result = a .. b .. c
+      result ..= a .. b .. c
 
-      -- Build a longer string from parts
-      local parts = "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4"
+      -- Build a longer string from parts - parser could concat the RHS to a single string in advance
+      result ..= "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4"
 
       -- Concatenate numbers converted to strings
       result = "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1)
+
+      -- Perform a real-work operation so that the result is used and not optimised away.
+      checksum += #result
    end
+
+   glStringBenchmarkSink += checksum
+end
+
+@Test function StringConcatenateMultipleByteArray()
+   local a, b, c = "foo", "bar", "baz"
+   local result = array<byte>
+   local checksum = 0
+   for i in {0 to 10000} do
+      -- Concatenate literals
+      result:clear()
+      result ..= "Hello" .. " " .. "World" .. "!"
+
+      -- Concatenate with variables
+      result ..= a .. b .. c
+
+      -- Build a longer string from parts
+      result ..= "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4"
+
+      -- Concatenate numbers converted to strings
+      result ..= "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1)
+      checksum += #result
+   end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Build a string incrementally using append operations
 
 @Test function StringBuildIncrementally()
+   local checksum = 0
    for i in {0 to 1000} do
       local result = ""
       for j in {0 to 100} do
@@ -52,7 +89,10 @@ end
       sentence ..= "brown "
       sentence ..= "fox "
       sentence ..= "jumps."
+      checksum += #result + #sentence
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -62,23 +102,31 @@ end
    local name = "Alice"
    local age = 30
    local score = 95.5
+   local checksum = 0
 
    for i in {0 to 1000} do
       local msg1 = string.format("Name: %s, Age: %d", name, age)
       local msg2 = string.format("Score: %.2f out of 100", score)
       local msg3 = string.format("Item %05d costs $%8.2f", i, i * 1.99)
+      checksum += #msg1 + #msg2 + #msg3
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 @Test function StringInterp()
    local name = "Alice"
    local age = 30
+   local checksum = 0
 
    for i in {0 to 10000} do
       local msg4 = f"Name: {name}, Age: {age}"
       local msg5 = f"Iteration {i} of 100000"
       local msg6 = f"Result: {i * 2 + 1}"
+      checksum += #msg4 + #msg5 + #msg6
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -86,6 +134,7 @@ end
 
 @Test function StringExtractSubstring()
    local text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs."
+   local checksum = 0
 
    for i in {0 to 10000} do
       -- Extract from beginning
@@ -103,7 +152,10 @@ end
       -- Variable position extraction
       local pos = (i % 40) + 1
       local chunk = string.substr(text, pos, pos + 10)
+      checksum += #first_word + #middle + #last_part + #from_end + #chunk
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -113,6 +165,7 @@ end
    local text = "The quick brown fox jumps over the lazy dog. The fox is quick."
    local paragraph = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. " ..
                      "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+   local checksum = 0
 
    for i in {0 to 5000000} do
       -- Find word at beginning
@@ -130,7 +183,10 @@ end
       -- Find in longer text
       local pos5 = string.find(paragraph, "dolor")
       local pos6 = string.find(paragraph, "magna")
+      checksum += pos1 + pos2 + pos3 + (pos4 ?? 0) + pos5 + pos6
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -138,6 +194,7 @@ end
 
 @Test function StringReplaceWords()
    local text = "The quick brown fox jumps over the lazy dog."
+   local checksum = 0
 
    for i in {0 to 100} do
       -- Replace single occurrence
@@ -154,7 +211,10 @@ end
       local result4 = string.replace(text, "quick", "slow")
       result4 = string.replace(result4, "brown", "white")
       result4 = string.replace(result4, "lazy", "energetic")
+      checksum += #result1 + #result2 + #result3 + #result4
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -162,10 +222,14 @@ end
 
 @Test function StringCSV()
    local csv_data = "apple,banana,cherry,date,elderberry,fig,grape"
+   local checksum = 0
 
    for i in {0 to 100} do
       local items = string.split(csv_data, ",")
+      checksum += #items
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 -- Use regex for more sophisticated splitting
@@ -174,10 +238,14 @@ rx_split = regex.new("[^;,:]+")
 
 @Test function RegexSplit()
    local mixed = "one;two,three:four"
+   local checksum = 0
 
    for i in {0 to 1000} do
       local parts = rx_split.split(mixed)
+      checksum += #parts
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -197,6 +265,7 @@ rx_digits   = regex.new("^\\d+$")
    local not_hex       = "#xyz123"
    local digits_only   = "1234567890"
    local mixed         = "abc123"
+   local checksum = 0
 
    for i in {0 to 1000} do
       local r1 = rx_email.test(valid_email)
@@ -207,7 +276,11 @@ rx_digits   = regex.new("^\\d+$")
       local r6 = rx_hexcolor.test(not_hex)
       local r7 = rx_digits.test(digits_only)
       local r8 = rx_digits.test(mixed)
+      checksum += (r1 ? 1 :> 0) + (r2 ? 1 :> 0) + (r3 ? 1 :> 0) + (r4 ? 1 :> 0) +
+                  (r5 ? 1 :> 0) + (r6 ? 1 :> 0) + (r7 ? 1 :> 0) + (r8 ? 1 :> 0)
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -223,6 +296,7 @@ rx_numbers    = regex.new("\\d+")
    local html      = "<b>Hello</b> <i>World</i>!"
    local sentence  = "The quick brown fox jumps over the lazy dog."
    local data      = "item:100 cost:250 qty:3"
+   local checksum = 0
 
    for i in {0 to 1000} do
       -- Collapse multiple spaces into one
@@ -236,7 +310,10 @@ rx_numbers    = regex.new("\\d+")
 
       -- Replace numbers with a placeholder
       local r4 = rx_numbers.replace(data, "N")
+      checksum += #r1 + #r2 + #r3 + #r4
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -249,6 +326,7 @@ end
    local str4 = "Apple"
    local long1 = "The quick brown fox jumps over the lazy dog"
    local long2 = "The quick brown fox jumps over the lazy cat"
+   local checksum = 0
 
    for i in {0 to 4000000} do
       -- Equality comparison
@@ -268,7 +346,12 @@ end
       -- Compare longer strings
       local eq_long = long1 is long2
       local lt_long = long1 < long2
+      checksum += (eq1 ? 1 :> 0) + (eq2 ? 1 :> 0) + (eq3 ? 1 :> 0) + (neq1 ? 1 :> 0) +
+                  (lt1 ? 1 :> 0) + (gt1 ? 1 :> 0) + (le1 ? 1 :> 0) + (ge1 ? 1 :> 0) +
+                  (eq_long ? 1 :> 0) + (lt_long ? 1 :> 0)
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -278,6 +361,7 @@ end
    local mixed = "Hello World! This Is A Test."
    local lower = "all lowercase text here"
    local upper = "ALL UPPERCASE TEXT HERE"
+   local checksum = 0
 
    for i in {0 to 40000} do
       -- Convert to uppercase
@@ -290,7 +374,10 @@ end
 
       -- Round-trip conversion
       local round = string.lower(string.upper(mixed))
+      checksum += #up1 + #up2 + #lo1 + #lo2 + #round
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -302,6 +389,7 @@ end
    local right_pad = "Right padded   "
    local tabs = "\t\tTabbed content\t\t"
    local mixed_ws = "  \t Mixed whitespace \n  "
+   local checksum = 0
 
    for i in {0 to 1000} do
       local trimmed1 = padded:trim()
@@ -309,7 +397,10 @@ end
       local trimmed3 = right_pad:rtrim()
       local trimmed4 = tabs:trim()
       local trimmed5 = mixed_ws:trim()
+      checksum += #trimmed1 + #trimmed2 + #trimmed3 + #trimmed4 + #trimmed5
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -317,6 +408,7 @@ end
 
 @Test function StringAccessCharacters()
    local text = "Hello, World!"
+   local checksum = 0
 
    for i in {0 to 100} do
       -- Get character at specific position using string.sub
@@ -336,10 +428,13 @@ end
       local str = string.char(72, 105, 33)   -- "Hi!"
 
       -- Variable position access
-      local pos = (i % #text) + 1
+      local pos = i % #text
       local var_char = string.substr(text, pos, pos)
       local var_code = string.byte(text, pos)
+      checksum += #char1 + #char2 + #char3 + code1 + code2 + #codes + #chr + #str + #var_char + var_code
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -350,6 +445,7 @@ end
    local date = "2024-01-15"
    local log_line = "[ERROR] 2024-01-15 10:30:45 - Connection failed"
    local url = "https://www.example.com:8080/path/to/page?query=value"
+   local checksum = 0
 
    for i in {0 to 1000} do
       -- Extract with captures
@@ -368,7 +464,10 @@ end
       local protocol = rxProtocol.extract(url)
       local host = rxUrlHost.extract(url)
       local port = rxUrlPort.extract(url)
+      checksum += #user + #domain + #year + #month + #day + #level + #timestamp + #protocol + #host + #port
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -378,6 +477,7 @@ end
    local char = "x"
    local word = "abc"
    local line = "-"
+   local checksum = 0
 
    for i in {0 to 100000} do
       -- Repeat single character
@@ -397,7 +497,10 @@ end
       -- Variable repetition
       local count = (i % 10) + 1
       local var_rep = string.rep("*", count)
+      checksum += #repeated1 + #repeated2 + #repeated3 + #repeated4 + #separator + #with_sep + #var_rep
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -408,6 +511,7 @@ end
    local medium = "The quick brown fox"
    local long = "Pack my box with five dozen liquor jugs. The quick brown fox jumps over the lazy dog."
    local test = "racecar"
+   local checksum = 0
 
    for i in {0 to 100000} do
       -- Reverse strings of different lengths
@@ -420,7 +524,10 @@ end
 
       -- Palindrome check pattern
       local is_palindrome = test is string.reverse(test)
+      checksum += #rev1 + #rev2 + #rev3 + #double_rev + (is_palindrome ? 1 :> 0)
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -431,6 +538,7 @@ end
    local path = "/home/user/documents/file.pdf"
    local url = "https://www.example.com/page"
    local extensions = array<string> {".txt", ".pdf", ".doc", ".csv"}
+   local checksum = 0
 
    for i in {0 to 1000} do
       local starts_with_doc = filename:startsWith("doc")
@@ -443,7 +551,12 @@ end
 
       -- Variable prefix/suffix checks
       local chk = filename:endsWith(extensions[i % 4])
+      checksum += (starts_with_doc ? 1 :> 0) + (starts_with_http ? 1 :> 0) +
+                  (starts_with_slash ? 1 :> 0) + (ends_with_txt ? 1 :> 0) +
+                  (ends_with_pdf ? 1 :> 0) + (ends_with_com ? 1 :> 0) + (chk ? 1 :> 0)
    end
+
+   glStringBenchmarkSink += checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -458,8 +571,9 @@ end
    local bool_true = true
    local bool_false = false
    local tbl = { a = 1 }
+   local checksum = 0
 
-   for i in {0 to 1000000} do
+   for i in {0 to 10000} do
       -- Convert integers to string
       local s1 = tostring(int_val)
       local s2 = tostring(neg_int)
@@ -497,5 +611,9 @@ end
       -- Large and small numbers
       local s19 = tostring(999999999)
       local s20 = tostring(0.000001)
+      checksum += #s1 + #s2 + #s3 + #s4 + #s5 + #s6 + #s7 + #s8 + #s9 + #s10 +
+                  #s11 + #s12 + #s13 + #s14 + #s15 + #s16 + #s17 + #s18 + #s19 + #s20
    end
+
+   glStringBenchmarkSink += checksum
 end
