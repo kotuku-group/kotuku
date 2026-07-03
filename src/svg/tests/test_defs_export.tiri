@@ -3,13 +3,22 @@
    include 'svg'
    include 'vector'
 
+local glSVGFolder
 glFiles = array<string>
+
+@BeforeAll function setup(State:table)
+   glSVGFolder = State.folder
+end
 
 @AfterAll function removeFiles()
    for path in values(glFiles) do
       mSys.DeleteFile(path)
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
+
+glImagePath = <{ glSVGFolder .. 'basics/sign.png' }>
 
 function saveScene(Scene:obj, Path:str):str
    svg = obj.new('svg', { target=Scene })
@@ -38,6 +47,8 @@ function transitionStops()
       transitionStop(1.0, 'scale(2)')
    }
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 @Test function SavesClipDefWithMapKeyId()
    local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
@@ -105,4 +116,44 @@ end
    assertContains(saved, 'id="text_transition"', 'Transition should use the scene def key')
    assertContains(saved, '<stop offset="0"', 'Transition definition should include XMLDef stop elements')
    assertContains(saved, 'transform="matrix(', 'Transition definition should include XMLDef transform matrices')
+end
+
+@Test function SavesVectorImageDefWithExistingPath()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local source = obj.new('image', { src=glImagePath, bitsPerPixel=32 })
+   local image = scene.new('VectorImage', { image=source, units=VUNIT_BOUNDING_BOX })
+
+   check scene.mtAddDef('sign_image', image)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='url(#sign_image)' })
+
+   local saved = saveScene(scene, 'temp:svg_defs_image_path.svg')
+   assertContains(saved, '<image', 'Saved SVG should contain the image definition')
+   assertContains(saved, 'id="sign_image"', 'VectorImage should use the scene def key')
+   assertContains(saved, 'xmlns:xlink="http://www.w3.org/1999/xlink"', 'Saved SVG should declare the xlink namespace')
+   assertContains(saved, 'xlink:href=', 'VectorImage should export a source reference')
+   assertContains(saved, 'sign.png', 'VectorImage should preserve an existing source path')
+   assert(string.find(saved, 'data:image/png;base64,', 0, true) is nil, 'Existing image paths should not be embedded')
+end
+
+@Test function SavesVectorImageDefWithEmbeddedBitmapFallback()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local source = obj.new('image', { src=glImagePath, bitsPerPixel=32 })
+   local image = scene.new('VectorImage', { bitmap=source.bitmap, units=VUNIT_BOUNDING_BOX })
+
+   check scene.mtAddDef('embedded_image', image)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='url(#embedded_image)' })
+
+   local saved = saveScene(scene, 'temp:svg_defs_image_embedded.svg')
+   assertContains(saved, '<image', 'Saved SVG should contain the image definition')
+   assertContains(saved, 'id="embedded_image"', 'Embedded VectorImage should use the scene def key')
+   assertContains(saved, 'xlink:href="data:image/png;base64,', 'VectorImage without a valid path should embed PNG data')
+
+   local loaded_scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   loaded_scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=loaded_scene, path='temp:svg_defs_image_embedded.svg' })
+   local err, loaded_image = loaded_scene.mtFindDef('embedded_image')
+   assert(err is ERR_Okay, 'Embedded VectorImage data should load back as a definition')
+   assert(loaded_image != nil, 'Embedded VectorImage definition should be available after reload')
 end
