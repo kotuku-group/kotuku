@@ -363,6 +363,7 @@ WRITE_TABLE * get_write_table(objMetaClass *);
 
 struct lua_ref {
    CPTR Address;
+   const struct_record *Def;
    int Ref;
 };
 

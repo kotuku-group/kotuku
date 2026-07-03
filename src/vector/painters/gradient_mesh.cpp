@@ -22,6 +22,26 @@ TODO:
 
 *********************************************************************************************************************/
 
+static void invalidate_mesh(extGradientMesh *Self) noexcept
+{
+   Self->MeshTriangles.Valid = false;
+   if (Self->initialised()) Self->modified();
+}
+
+static ERR validate_mesh_dimensions(extGradientMesh *Self, int Rows, int Columns) noexcept
+{
+   if ((Rows < 0) or (Columns < 0)) return kt::Log().warning(ERR::InvalidValue);
+
+   if ((Self->Mesh) and (not Self->Mesh->patches.empty()) and (Rows > 0) and (Columns > 0)) {
+      if ((Rows * Columns) != int(Self->Mesh->patches.size())) return kt::Log().warning(ERR::InvalidValue);
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Drop fields that are irrelevant to mesh gradients.
+
 static ERR GRADIENTMESH_SET_Colour(extGradientMesh *, const std::span<const float> &)
 {
    return kt::Log().warning(ERR::UnsupportedField);
@@ -48,27 +68,27 @@ static MeshPatchRecord mesh_patch_to_record(const MeshPatch &Patch)
 {
    MeshPatchRecord record = {};
 
-   record.TopP0X = Patch.edge[0].p0.x;       record.TopP0Y = Patch.edge[0].p0.y;
-   record.TopC0X = Patch.edge[0].c0.x;       record.TopC0Y = Patch.edge[0].c0.y;
-   record.TopC1X = Patch.edge[0].c1.x;       record.TopC1Y = Patch.edge[0].c1.y;
-   record.TopP1X = Patch.edge[0].p1.x;       record.TopP1Y = Patch.edge[0].p1.y;
-   record.RightP0X = Patch.edge[1].p0.x;     record.RightP0Y = Patch.edge[1].p0.y;
-   record.RightC0X = Patch.edge[1].c0.x;     record.RightC0Y = Patch.edge[1].c0.y;
-   record.RightC1X = Patch.edge[1].c1.x;     record.RightC1Y = Patch.edge[1].c1.y;
-   record.RightP1X = Patch.edge[1].p1.x;     record.RightP1Y = Patch.edge[1].p1.y;
-   record.BottomP0X = Patch.edge[2].p0.x;    record.BottomP0Y = Patch.edge[2].p0.y;
-   record.BottomC0X = Patch.edge[2].c0.x;    record.BottomC0Y = Patch.edge[2].c0.y;
-   record.BottomC1X = Patch.edge[2].c1.x;    record.BottomC1Y = Patch.edge[2].c1.y;
-   record.BottomP1X = Patch.edge[2].p1.x;    record.BottomP1Y = Patch.edge[2].p1.y;
-   record.LeftP0X = Patch.edge[3].p0.x;      record.LeftP0Y = Patch.edge[3].p0.y;
-   record.LeftC0X = Patch.edge[3].c0.x;      record.LeftC0Y = Patch.edge[3].c0.y;
-   record.LeftC1X = Patch.edge[3].c1.x;      record.LeftC1Y = Patch.edge[3].c1.y;
-   record.LeftP1X = Patch.edge[3].p1.x;      record.LeftP1Y = Patch.edge[3].p1.y;
+   record.Top.StartX = Patch.edge[0].p0.x;    record.Top.StartY = Patch.edge[0].p0.y;
+   record.Top.X1 = Patch.edge[0].c0.x;        record.Top.Y1 = Patch.edge[0].c0.y;
+   record.Top.X2 = Patch.edge[0].c1.x;        record.Top.Y2 = Patch.edge[0].c1.y;
+   record.Top.EndX = Patch.edge[0].p1.x;      record.Top.EndY = Patch.edge[0].p1.y;
+   record.Right.StartX = Patch.edge[1].p0.x;  record.Right.StartY = Patch.edge[1].p0.y;
+   record.Right.X1 = Patch.edge[1].c0.x;      record.Right.Y1 = Patch.edge[1].c0.y;
+   record.Right.X2 = Patch.edge[1].c1.x;      record.Right.Y2 = Patch.edge[1].c1.y;
+   record.Right.EndX = Patch.edge[1].p1.x;    record.Right.EndY = Patch.edge[1].p1.y;
+   record.Bottom.StartX = Patch.edge[2].p0.x; record.Bottom.StartY = Patch.edge[2].p0.y;
+   record.Bottom.X1 = Patch.edge[2].c0.x;     record.Bottom.Y1 = Patch.edge[2].c0.y;
+   record.Bottom.X2 = Patch.edge[2].c1.x;     record.Bottom.Y2 = Patch.edge[2].c1.y;
+   record.Bottom.EndX = Patch.edge[2].p1.x;   record.Bottom.EndY = Patch.edge[2].p1.y;
+   record.Left.StartX = Patch.edge[3].p0.x;   record.Left.StartY = Patch.edge[3].p0.y;
+   record.Left.X1 = Patch.edge[3].c0.x;       record.Left.Y1 = Patch.edge[3].c0.y;
+   record.Left.X2 = Patch.edge[3].c1.x;       record.Left.Y2 = Patch.edge[3].c1.y;
+   record.Left.EndX = Patch.edge[3].p1.x;     record.Left.EndY = Patch.edge[3].p1.y;
 
-   record.TopLeft = Patch.corner[0];
-   record.TopRight = Patch.corner[1];
+   record.TopLeft     = Patch.corner[0];
+   record.TopRight    = Patch.corner[1];
    record.BottomRight = Patch.corner[2];
-   record.BottomLeft = Patch.corner[3];
+   record.BottomLeft  = Patch.corner[3];
 
    return record;
 }
@@ -78,20 +98,20 @@ static MeshPatch record_to_mesh_patch(const MeshPatchRecord &Record)
    MeshPatch patch = {};
 
    patch.edge[0] = {
-      { Record.TopP0X, Record.TopP0Y }, { Record.TopC0X, Record.TopC0Y },
-      { Record.TopC1X, Record.TopC1Y }, { Record.TopP1X, Record.TopP1Y }
+      { Record.Top.StartX, Record.Top.StartY }, { Record.Top.X1, Record.Top.Y1 },
+      { Record.Top.X2, Record.Top.Y2 }, { Record.Top.EndX, Record.Top.EndY }
    };
    patch.edge[1] = {
-      { Record.RightP0X, Record.RightP0Y }, { Record.RightC0X, Record.RightC0Y },
-      { Record.RightC1X, Record.RightC1Y }, { Record.RightP1X, Record.RightP1Y }
+      { Record.Right.StartX, Record.Right.StartY }, { Record.Right.X1, Record.Right.Y1 },
+      { Record.Right.X2, Record.Right.Y2 }, { Record.Right.EndX, Record.Right.EndY }
    };
    patch.edge[2] = {
-      { Record.BottomP0X, Record.BottomP0Y }, { Record.BottomC0X, Record.BottomC0Y },
-      { Record.BottomC1X, Record.BottomC1Y }, { Record.BottomP1X, Record.BottomP1Y }
+      { Record.Bottom.StartX, Record.Bottom.StartY }, { Record.Bottom.X1, Record.Bottom.Y1 },
+      { Record.Bottom.X2, Record.Bottom.Y2 }, { Record.Bottom.EndX, Record.Bottom.EndY }
    };
    patch.edge[3] = {
-      { Record.LeftP0X, Record.LeftP0Y }, { Record.LeftC0X, Record.LeftC0Y },
-      { Record.LeftC1X, Record.LeftC1Y }, { Record.LeftP1X, Record.LeftP1Y }
+      { Record.Left.StartX, Record.Left.StartY }, { Record.Left.X1, Record.Left.Y1 },
+      { Record.Left.X2, Record.Left.Y2 }, { Record.Left.EndX, Record.Left.EndY }
    };
 
    patch.corner[0] = Record.TopLeft;
@@ -143,23 +163,6 @@ metadata is supplied, assigning #Patches defaults to a single-row mesh for simpl
 
 -END-
 *********************************************************************************************************************/
-
-static void invalidate_mesh(extGradientMesh *Self) noexcept
-{
-   Self->MeshTriangles.Valid = false;
-   if (Self->initialised()) Self->modified();
-}
-
-static ERR validate_mesh_dimensions(extGradientMesh *Self, int Rows, int Columns) noexcept
-{
-   if ((Rows < 0) or (Columns < 0)) return kt::Log().warning(ERR::InvalidValue);
-
-   if ((Self->Mesh) and (not Self->Mesh->patches.empty()) and (Rows > 0) and (Columns > 0)) {
-      if ((Rows * Columns) != int(Self->Mesh->patches.size())) return kt::Log().warning(ERR::InvalidValue);
-   }
-
-   return ERR::Okay;
-}
 
 static ERR GRADIENTMESH_GET_Rows(extGradientMesh *Self, int &Value)
 {
@@ -269,14 +272,15 @@ static ERR GRADIENTMESH_GET_XMLDef(extGradientMesh *, std::string_view &Value)
 #include "gradient_mesh_def.cpp"
 
 static const FieldArray clGradientMeshFields[] = {
+   // Mark these fields as unsupported
    { "Colour",       FDF_SYSTEM|FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW|FDF_PURE, nullptr, GRADIENTMESH_SET_Colour },
    { "ColourMap",    FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, GRADIENTMESH_SET_ColourMap },
    { "SpreadMethod", FDF_SYSTEM|FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTMESH_SET_SpreadMethod, &clGradientSpreadMethod },
    { "Stops",        FDF_SYSTEM|FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, nullptr, GRADIENTMESH_SET_Stops, "GradientStop" },
+   // Mesh fields
    { "Rows",         FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Rows, GRADIENTMESH_SET_Rows },
    { "Columns",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Columns, GRADIENTMESH_SET_Columns },
-   { "Patches",      FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Patches,
-      GRADIENTMESH_SET_Patches, "MeshPatchRecord" },
+   { "Patches",      FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Patches, GRADIENTMESH_SET_Patches, "MeshPatchRecord" },
    { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTMESH_GET_XMLDef },
    END_FIELD
 };

@@ -15,8 +15,7 @@ function absValue(Value)
 end
 
 function assertNear(Actual, Expected, Message)
-   assert(absValue(Actual - Expected) < 0.0001,
-      Message .. ' expected ' .. Expected .. ', got ' .. Actual)
+   assert(Actual ≈ Expected, Message .. ' expected ' .. Expected .. ', got ' .. Actual)
 end
 
 function countMatches(Text:str, Needle:str)
@@ -89,17 +88,16 @@ function assertColourNear(Actual, Expected, Label:str)
 end
 
 function assertPatchNear(Actual, Expected, Label:str)
-   local coords = {
-      'topP0X', 'topP0Y', 'topC0X', 'topC0Y', 'topC1X', 'topC1Y', 'topP1X', 'topP1Y',
-      'rightP0X', 'rightP0Y', 'rightC0X', 'rightC0Y', 'rightC1X', 'rightC1Y', 'rightP1X', 'rightP1Y',
-      'bottomP0X', 'bottomP0Y', 'bottomC0X', 'bottomC0Y', 'bottomC1X', 'bottomC1Y', 'bottomP1X', 'bottomP1Y',
-      'leftP0X', 'leftP0Y', 'leftC0X', 'leftC0Y', 'leftC1X', 'leftC1Y', 'leftP1X', 'leftP1Y'
-   }
+   local coords = { 'startX', 'startY', 'x1', 'y1', 'x2', 'y2', 'endX', 'endY' }
    local colours = { 'topLeft', 'topRight', 'bottomRight', 'bottomLeft' }
 
    for i=0, #coords - 1 do
       local field = coords[i]
-      assertNear(Actual[field], Expected[field], Label .. '.' .. field)
+
+      assertNear(Actual.top[field], Expected.top[field], Label .. '.' .. field)
+      assertNear(Actual.right[field], Expected.right[field], Label .. '.' .. field)
+      assertNear(Actual.bottom[field], Expected.bottom[field], Label .. '.' .. field)
+      assertNear(Actual.left[field], Expected.left[field], Label .. '.' .. field)
    end
 
    for i=0, #colours - 1 do
@@ -126,10 +124,10 @@ end
 
 @Test function ParserPreservesSharedEdgeRows()
    local scene, gradient = loadMesh(glSVGFolder .. 'gradients/meshgradient_2x2.svg')
-
+   local patches = gradient.patches
    assertMetadata(gradient, 'parsed mesh')
-   assertNear(gradient.patches[1].leftP1X, gradient.patches[0].rightP0X, 'same-row inherited left edge')
-   assertNear(gradient.patches[2].topP1Y, gradient.patches[0].bottomP0Y, 'multi-row inherited top edge')
+   assertNear(patches[1].left.endX, patches[0].right.startX, 'same-row inherited left edge')
+   assertNear(patches[2].top.endY, patches[0].bottom.startY, 'multi-row inherited top edge')
 end
 
 @Test function SaveRoundTripsRowsAndPatchData()
@@ -138,18 +136,15 @@ end
    local saved = saveScene(scene, output_path)
 
    assert(countMatches(saved, '<meshrow') is 2, 'Saved meshgradient should contain two mesh rows')
-   assert(string.find(saved, 'kotuku:x', 0, true) is nil,
-      'A standard shared-edge grid should not require independent-patch metadata')
-   assert(string.find(saved, 'gradientTransform=', 0, true) != nil,
-      'Saved meshgradient should preserve the gradient transform')
+   assert(string.find(saved, 'kotuku:x', 0, true) is nil, 'A standard shared-edge grid should not require independent-patch metadata')
+   assert(string.find(saved, 'gradientTransform=', 0, true) != nil, 'Saved meshgradient should preserve the gradient transform')
 
    local reparsed_scene, reparsed_gradient = loadMesh(output_path)
    assertMetadata(reparsed_gradient, 'reparsed mesh')
    assertPatchesMatch(reparsed_gradient, gradient, 'round-trip')
 
    local resaved = saveScene(reparsed_scene, 'temp:meshgradient_2x2_roundtrip_resave.svg')
-   assert(string.find(resaved, 'gradientTransform=', 0, true) != nil,
-      'Reparsed meshgradient should save the gradient transform again')
+   assert(string.find(resaved, 'gradientTransform=', 0, true) != nil, 'Reparsed meshgradient should save the gradient transform again')
 end
 
 @Test function MalformedMeshStopPathsAreRejected()
