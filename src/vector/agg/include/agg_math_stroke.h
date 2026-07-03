@@ -301,21 +301,23 @@ void math_stroke<VC>::calc_join(VC& vc, const vertex_dist& v0, const vertex_dist
             // out this entire "if".
 
             if (m_approx_scale * (m_width_abs - dbevel) < m_width_eps) {
-                if (calc_intersection(v0.x + dx1, v0.y - dy1, v1.x + dx1, v1.y - dy1,
-                        v1.x + dx2, v1.y - dy2, v2.x + dx2, v2.y - dy2, &dx, &dy)) {
+               if (calc_intersection(v0.x + dx1, v0.y - dy1, v1.x + dx1, v1.y - dy1,
+                     v1.x + dx2, v1.y - dy2, v2.x + dx2, v2.y - dy2, &dx, &dy)) {
 
-                    // For a genuine outer join the intersection lies at most ~m_width_abs from v1.  When the two
-                    // segments are near-collinear the offset lines become near-parallel and calc_intersection can
-                    // still report success while returning a point far outside the join, producing a spike.  Guard
-                    // against this by validating the intersection distance and falling back to the bevel point.
+                  // A small real turn places the miter at m_width_abs / cos(theta / 2), not exactly m_width_abs.
+                  // Accept intersections near that expected radius, while rejecting numeric spikes from near-parallel
+                  // offset lines.  Rejected intersections continue to the normal round/bevel join below.
 
-                    if (calc_sq_distance(v1.x, v1.y, dx, dy) <= m_width_abs * m_width_abs) {
-                       add_vertex(vc, dx, dy);
-                    }
-                    else add_vertex(vc, v1.x + dx1, v1.y - dy1);
-                }
-                else add_vertex(vc, v1.x + dx1, v1.y - dy1);
-                return;
+                  const double expected_miter_distance = (dbevel > vertex_dist_epsilon) ?
+                     (m_width_abs * m_width_abs / dbevel) : m_width_abs;
+                  const double distance_tolerance = std::max(m_width_abs * 1.0e-6, m_width_abs / 1024.0);
+                  const double max_miter_distance = expected_miter_distance + distance_tolerance;
+
+                  if (calc_sq_distance(v1.x, v1.y, dx, dy) <= max_miter_distance * max_miter_distance) {
+                     add_vertex(vc, dx, dy);
+                     return;
+                  }
+               }
             }
          }
 
