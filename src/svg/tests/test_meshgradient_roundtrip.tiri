@@ -4,10 +4,19 @@
    include 'vector'
 
 local glSVGFolder
+local glFiles = array<string>
 
 @BeforeAll function setup(State:table)
    glSVGFolder = State.folder
 end
+
+@AfterAll function removeFiles()
+   for path in values(glFiles) do
+      mSys.DeleteFile(path)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function absValue(Value)
    if Value < 0 then return -Value end
@@ -159,8 +168,8 @@ end
 
 function saveScene(Scene:obj, Path:str):str
    local svg = obj.new('svg', { target=Scene })
-   local file = obj.new('file', { path=Path, flags='!NEW|WRITE' })
-
+   local file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   glFiles:push(Path)
    check svg.acSaveToObject(file, 0)
    file = nil
    return io.readAll(Path)
@@ -209,12 +218,15 @@ end
 function assertMalformedPathRejected(PathValue:str, Label:str)
    local path = 'temp:meshgradient_malformed_' .. Label .. '.svg'
    io.writeAll(path, malformedMesh(PathValue))
+   glFiles:push(path)
 
    local scene, gradient = loadMesh(path)
    assert(gradient.rows is 0, Label .. ' should not produce mesh rows')
    assert(gradient.columns is 0, Label .. ' should not produce mesh columns')
    assert(#gradient.patches is 0, Label .. ' should not produce patch records')
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 @Test function ParserPreservesSharedEdgeRows()
    local scene, gradient = loadMesh(glSVGFolder .. 'gradients/meshgradient_2x2.svg')
@@ -244,6 +256,7 @@ end
 @Test function HrefOverrideUsesOwnRowsAndColumns()
    local input_path = 'temp:meshgradient_href_override.svg'
    io.writeAll(input_path, inheritedOverrideMesh())
+   glFiles:push(input_path)
 
    local scene, gradient = loadMesh(input_path)
    assert(gradient.rows is 3, 'Override mesh should use its own three rows')

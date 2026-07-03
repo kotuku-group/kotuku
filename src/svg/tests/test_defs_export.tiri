@@ -3,9 +3,18 @@
    include 'svg'
    include 'vector'
 
+glFiles = array<string>
+
+@AfterAll function removeFiles()
+   for path in values(glFiles) do
+      mSys.DeleteFile(path)
+   end
+end
+
 function saveScene(Scene:obj, Path:str):str
-   local svg = obj.new('svg', { target=Scene })
-   local file = obj.new('file', { path=Path, flags='!NEW|WRITE' })
+   svg = obj.new('svg', { target=Scene })
+   file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   glFiles:push(Path)
 
    check svg.acSaveToObject(file, 0)
    file = nil
